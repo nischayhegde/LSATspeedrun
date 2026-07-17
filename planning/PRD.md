@@ -21,6 +21,9 @@ For every question, the LLM can dynamically generate:
 - A transition to the next case
 - A concise case debrief
 
+**This story-mode procedural generation will come after a quick 30-40 holistic diagnostic which will comprehensively test the user's LSAT readiness to jumpstart the algorithm. This diagnostic won't just ask the user to answer mcq questions, it will ask them to provide reasoning/explanations which will also be graded.**
+
+
 *A example scenario:*
 
 **Case 184: The Sleepless Trial**
@@ -32,7 +35,7 @@ The LLM detective partner will evaluate how the student approaches the question,
 
 The question bank should contain more than questions and correct answers. Each question should eventually have a structured record containing its question type, tested skills, prerequisites, difficulty, canonical reasoning, logical structure, explanation for the correct answer, explanation for every wrong answer, and applicable trap suspects. The LLM can generate initial metadata offline, but it should be reviewed before being used for grading or instruction.
 
-The detective gamification remains centered on mastery. Correctly solving and explaining questions earns XP, repairs districts, advances detective rank, and helps capture recurring trap suspects. Missed questions enter the Trap Vault and later return as appeals. Worked examples introduce new reasoning tools, guidance fades during subsequent cases, and timed trials remove all assistance. The system will use retrieval practice, spacing, interleaving, prerequisite sequencing, step-level feedback, transfer, and mastery learning to determine when questions reappear.
+The detective gamification remains centered on mastery. Correctly solving and explaining questions earns XP, repairs districts, advances detective rank, and helps capture recurring trap suspects. Missed questions enter the Trap Vault and later return as appeals. Worked examples introduce new reasoning tools, guidance fades during subsequent cases, and timed trials remove all assistance. The system will use retrieval practice, spacing, interleaving, prerequisite sequencing, step-level feedback, transfer, and mastery learning to determine when questions reappear. We will have an LSAT "readiness" calculation which will translate into an estimated score.
 
 To prevent distraction, the generated story content should be limited to a few sentences before and after each question. There should be no lengthy conversations, exploration requirements, inventory management, or story choices unrelated to learning. The LLM makes every session feel fresh and personalized, but approximately 90% of the student’s time remains focused on analyzing and answering real LSAT questions.
 
