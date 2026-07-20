@@ -135,9 +135,9 @@ We are targeting pre-law students who feel unmotivated or bored by typical LSAT 
 
 - **2D graphics — PixiJS with `@pixi/react`:** PixiJS renders detective scenes, characters, animations, and effects. It supports the story without turning the MVP into an interactive game world. Question answering and reasoning remain in the DOM for readability, accessibility, and text selection.
 
-- **Backend — Flask (Python) with SQLAlchemy and Alembic, deployed on Railway:** Flask owns the adaptive scheduler, readiness calculation, deterministic answer grading, saved progress, CAPM and ghost scoring, and LLM orchestration. Slow work, such as generating case framing, precomputing metadata, and calling an LLM, runs in a Railway worker so it does not delay answer submission or timed practice.
+- **Backend — Flask (Python) with SQLAlchemy and Alembic, deployed on AWS**
 
-- **Database — PostgreSQL on Railway:** PostgreSQL stores questions, answer choices, skills, explanations, attempts, feedback, review schedules, story progress, and generated content. `JSONB` can hold versioned story content and structured LLM feedback while canonical question content and correctness data remain protected.
+- **Database — PostgreSQL on AWS:**
 
 - **Authentication — Google sign-in:** Google authentication is required for the MVP so users can save and return to their progress.
 

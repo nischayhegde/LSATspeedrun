@@ -1,0 +1,94 @@
+import type { AttemptResult, DailySummary, DiagnosticResults, StudySession, User } from './types'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/v1'
+
+export class ApiError extends Error {
+  status: number
+  code: string
+
+  constructor(message: string, status: number, code = 'request_failed') {
+    super(message)
+    this.status = status
+    this.code = code
+  }
+}
+
+function readCookie(name: string) {
+  const value = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith(`${name}=`))
+    ?.split('=')[1]
+  return value ? decodeURIComponent(value) : undefined
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = init.method || 'GET'
+  const headers = new Headers(init.headers)
+  if (init.body) headers.set('Content-Type', 'application/json')
+  if (!['GET', 'HEAD'].includes(method.toUpperCase())) {
+    const csrf = readCookie('sherlock_csrf')
+    if (csrf) headers.set('X-CSRF-Token', csrf)
+  }
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new ApiError(data?.error?.message || 'The Bureau could not complete that request.', response.status, data?.error?.code)
+  }
+  return data as T
+}
+
+export const api = {
+  authConfig: () => request<{ google_client_id?: string | null; dev_auth_enabled: boolean }>('/auth/config'),
+  me: () => request<{ user: User }>('/me'),
+  googleLogin: (credential: string) =>
+    request<{ user: User }>('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) }),
+  devLogin: () =>
+    request<{ user: User }>('/auth/dev', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'detective@localhost.test', display_name: 'Local Detective' }),
+    }),
+  logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
+  savePreferences: (target_minutes: number) =>
+    request<{ user: User }>('/me/preferences', { method: 'PATCH', body: JSON.stringify({ target_minutes }) }),
+  currentDiagnostic: () =>
+    request<{
+      status: 'not_started' | 'in_progress' | 'completed'
+      session: StudySession | null
+      results: DiagnosticResults | null
+    }>('/diagnostics/current'),
+  startDiagnostic: () =>
+    request<{ session: StudySession; results?: DiagnosticResults }>('/diagnostics', { method: 'POST' }),
+  startDaily: () => request<{ session: StudySession }>('/study-sessions', { method: 'POST' }),
+  session: (id: string) => request<{ session: StudySession; summary?: DailySummary }>(`/study-sessions/${id}`),
+  submitAttempt: (
+    sessionId: string,
+    body: { item_id: string; selected_label: string; reasoning?: string; elapsed_ms: number },
+    idempotencyKey: string,
+  ) =>
+    request<{ result: AttemptResult }>(`/study-sessions/${sessionId}/attempts`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(body),
+    }),
+  sessionSummary: (id: string) =>
+    request<{ session: StudySession; summary: DailySummary }>(`/study-sessions/${id}/summary`),
+  progress: () =>
+    request<{
+      readiness: DiagnosticResults | null
+      story: User['story']
+      totals: { sessions: number; attempts: number; accuracy: number }
+      skills: Array<{
+        name: string
+        attempts: number
+        accuracy: number
+        average_time_seconds: number
+        explanation_accuracy?: number | null
+        pace_unlocked: boolean
+      }>
+      pace_history: Array<{ date: string; accuracy: number; capm?: number | null; questions: number }>
+    }>('/progress'),
+}
