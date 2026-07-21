@@ -26,6 +26,7 @@ class User(db.Model):
     avatar_url = db.Column(db.Text, nullable=True)
     target_minutes = db.Column(db.Integer, nullable=False, default=20)
     onboarding_complete = db.Column(db.Boolean, nullable=False, default=False)
+    story_intro_seen = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
@@ -135,6 +136,9 @@ class SessionItem(db.Model):
     requires_reasoning = db.Column(db.Boolean, nullable=False, default=False)
     story_json = db.Column(db.JSON, nullable=True)
     served_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    active_elapsed_ms = db.Column(db.Integer, nullable=False, default=0)
+    timer_started_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    paused_at = db.Column(db.DateTime(timezone=True), nullable=True)
     completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     session = db.relationship("StudySession", back_populates="items")

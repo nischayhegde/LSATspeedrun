@@ -13,8 +13,10 @@ from .models import Attempt, AuthSession, Question, SessionItem, StudySession, U
 from .services import (
     calculate_session_summary,
     create_study_session,
+    pause_study_session,
     progress_dashboard,
     request_item_hint,
+    resume_study_session,
     run_attempt_coaching,
     serialize_attempt_result,
     serialize_session,
@@ -159,7 +161,7 @@ def current_diagnostic():
         return jsonify({"status": "not_started", "session": None, "results": None})
     if session.status == "completed":
         return jsonify({"status": "completed", "session": serialize_session(session, False), "results": session.summary_json})
-    return jsonify({"status": "in_progress", "session": serialize_session(session), "results": None})
+    return jsonify({"status": session.status, "session": serialize_session(session), "results": None})
 
 
 @api.post("/diagnostics")
@@ -183,6 +185,8 @@ def start_daily_session():
     diagnostic = StudySession.query.filter_by(user_id=g.current_user.id, mode="diagnostic", status="completed").first()
     if not diagnostic:
         return error("diagnostic_required", "Complete the diagnostic before opening daily case files.", 409)
+    if not g.current_user.story_intro_seen:
+        return error("story_introduction_required", "Enter the Lantern Bureau story before opening daily case files.", 409)
     try:
         session = create_study_session(g.current_user, "daily")
     except RuntimeError:
@@ -192,6 +196,24 @@ def start_daily_session():
 
 def _owned_session(session_id: str) -> StudySession | None:
     return StudySession.query.filter_by(id=session_id, user_id=g.current_user.id).first()
+
+
+@api.get("/study-sessions/current")
+@require_auth
+def current_study_session():
+    mode = request.args.get("mode", "daily")
+    if mode not in {"daily", "diagnostic"}:
+        return error("invalid_mode", "Session mode must be daily or diagnostic.")
+    session = (
+        StudySession.query.filter(
+            StudySession.user_id == g.current_user.id,
+            StudySession.mode == mode,
+            StudySession.status.in_(["in_progress", "paused"]),
+        )
+        .order_by(StudySession.started_at.desc())
+        .first()
+    )
+    return jsonify({"session": serialize_session(session) if session else None})
 
 
 @api.get("/study-sessions/<session_id>")
@@ -204,6 +226,43 @@ def get_session(session_id: str):
     if session.status == "completed":
         payload["summary"] = session.summary_json or calculate_session_summary(session)
     return jsonify(payload)
+
+
+@api.post("/study-sessions/<session_id>/pause")
+@require_auth
+def pause_session(session_id: str):
+    session = _owned_session(session_id)
+    if not session:
+        return error("session_not_found", "That case session was not found.", 404)
+    try:
+        pause_study_session(session)
+    except ValueError:
+        return error("session_complete", "This session is already complete.", 409)
+    return jsonify({"session": serialize_session(session, False)})
+
+
+@api.post("/study-sessions/<session_id>/resume")
+@require_auth
+def resume_session(session_id: str):
+    session = _owned_session(session_id)
+    if not session:
+        return error("session_not_found", "That case session was not found.", 404)
+    try:
+        resume_study_session(session)
+    except ValueError:
+        return error("session_complete", "This session is already complete.", 409)
+    return jsonify({"session": serialize_session(session)})
+
+
+@api.post("/story/introduction/complete")
+@require_auth
+def complete_story_introduction():
+    diagnostic = StudySession.query.filter_by(user_id=g.current_user.id, mode="diagnostic", status="completed").first()
+    if not diagnostic:
+        return error("diagnostic_required", "Complete the diagnostic before entering the story.", 409)
+    g.current_user.story_intro_seen = True
+    db.session.commit()
+    return jsonify({"user": serialize_user(g.current_user)})
 
 
 @api.post("/study-sessions/<session_id>/attempts")
@@ -297,3 +356,4 @@ def progress():
     payload = progress_dashboard(g.current_user)
     db.session.commit()
     return jsonify(payload)
+    resume_study_session,

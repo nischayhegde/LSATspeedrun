@@ -13,6 +13,7 @@ export type User = {
   target_minutes: number
   onboarding_complete: boolean
   diagnostic_complete: boolean
+  story_intro_seen: boolean
   next_route: string
   story: StoryProgress
 }
@@ -81,6 +82,7 @@ export type SessionItem = {
   position: number
   requires_reasoning: boolean
   served_at: string
+  elapsed_ms: number
   story: StoryFrame
   hints: CoachingHint[]
   question: Question
@@ -89,7 +91,7 @@ export type SessionItem = {
 export type StudySession = {
   id: string
   mode: 'diagnostic' | 'daily'
-  status: 'in_progress' | 'completed'
+  status: 'in_progress' | 'paused' | 'completed'
   target_minutes: number
   total_items: number
   current_index: number

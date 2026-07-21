@@ -13,6 +13,7 @@ import {
   Gauge,
   LockKeyhole,
   Medal,
+  PauseCircle,
   Play,
   RotateCcw,
   ShieldCheck,
@@ -168,6 +169,10 @@ export function DiagnosticPage() {
     mutationFn: api.startDiagnostic,
     onSuccess: () => diagnostic.refetch(),
   })
+  const resume = useMutation({
+    mutationFn: (sessionId: string) => api.resumeSession(sessionId),
+    onSuccess: () => diagnostic.refetch(),
+  })
 
   useEffect(() => {
     if (diagnostic.data?.status === 'completed') navigate('/diagnostic/results', { replace: true })
@@ -175,6 +180,9 @@ export function DiagnosticPage() {
   if (diagnostic.isLoading) return <LoadingScreen />
   if (diagnostic.error) return <ErrorNotice error={diagnostic.error} />
   if (diagnostic.data?.status === 'in_progress' && diagnostic.data.session) return <QuestionFlow session={diagnostic.data.session} />
+  if (diagnostic.data?.status === 'paused' && diagnostic.data.session) {
+    return <PausedSessionPanel session={diagnostic.data.session} onResume={() => resume.mutate(diagnostic.data!.session!.id)} loading={resume.isPending} error={resume.error} />
+  }
 
   return (
     <div className="diagnostic-intro page-hero">
@@ -249,7 +257,79 @@ export function DiagnosticResultsPage() {
           <div className="case-note"><BrainCircuit /><p>Your first daily shift will prioritize weak types while interleaving stronger ones to keep the reasoning flexible.</p></div>
         </div>
       </section>
-      <button className="primary-button large-button center-button" onClick={() => navigate('/study')}>Enter story mode <ArrowRight /></button>
+      <button className="primary-button large-button center-button" onClick={() => navigate('/story/introduction')}>Enter Chapter 1: The Lantern Bureau <ArrowRight /></button>
+    </div>
+  )
+}
+
+function PausedSessionPanel({ session, onResume, loading, error }: { session: import('./types').StudySession; onResume: () => void; loading: boolean; error?: unknown }) {
+  return (
+    <div className="paused-page page-hero">
+      <div className="intro-scene"><NoirScene chapter={1} compact /></div>
+      <div className="intro-copy">
+        <div className="pause-seal"><PauseCircle /></div>
+        <div className="eyebrow">CASE FILE SAFELY PAUSED</div>
+        <h1>Your place is<br />exactly where you left it.</h1>
+        <p>Completed answers, written reasoning, hints, and active time are already saved. Time away from this screen is not counted.</p>
+        <div className="resume-progress-card">
+          <div><span>PROGRESS</span><strong>{session.current_index} of {session.total_items}</strong></div>
+          <div className="metric-bar"><div><span>{session.mode === 'diagnostic' ? 'Diagnostic evidence collected' : 'Case files closed'}</span><strong>{session.progress_percent}%</strong></div><div><span style={{ width: `${session.progress_percent}%` }} /></div></div>
+        </div>
+        {error ? <ErrorNotice error={error} /> : null}
+        <button className="primary-button large-button" onClick={onResume} disabled={loading}>{loading ? 'Reopening file…' : <>Resume where I left off <ArrowRight /></>}</button>
+        <small>You can save and exit again at any point.</small>
+      </div>
+    </div>
+  )
+}
+
+export function StoryIntroductionPage() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const me = useQuery({ queryKey: ['me'], queryFn: api.me })
+  const diagnostic = useQuery({ queryKey: ['diagnostic'], queryFn: api.currentDiagnostic })
+  const enter = useMutation({
+    mutationFn: async () => {
+      const updated = await api.completeStoryIntroduction()
+      const started = await api.startDaily()
+      return { ...started, user: updated.user }
+    },
+    onSuccess: ({ session, user }) => {
+      queryClient.setQueryData(['me'], { user })
+      navigate(`/study/${session.id}`)
+    },
+  })
+  if (me.isLoading || diagnostic.isLoading) return <LoadingScreen label="Opening the Bureau doors…" />
+  if (me.error || diagnostic.error) return <ErrorNotice error={me.error || diagnostic.error} />
+  if (!me.data!.user.diagnostic_complete || diagnostic.data?.status !== 'completed') return <Navigate to="/diagnostic" replace />
+  if (me.data!.user.story_intro_seen) return <Navigate to="/study" replace />
+  const results = diagnostic.data.results!
+  return (
+    <div className="story-intro-page">
+      <section className="story-intro-hero">
+        <div className="story-intro-scene"><NoirScene chapter={1} /></div>
+        <div className="story-intro-copy">
+          <div className="eyebrow">DIAGNOSTIC COMPLETE · STORY MODE UNLOCKED</div>
+          <h1>Welcome to the<br />Lantern Bureau.</h1>
+          <p>Chief Mira Voss has reviewed your diagnostic. From this point forward, every LSAT question arrives as an evidence file selected from your weak areas, timing, recent mistakes, and reasoning quality.</p>
+          <blockquote>“The answer key tells us what happened. Your reasoning tells us where to investigate next.”<span>— Chief Mira Voss</span></blockquote>
+        </div>
+      </section>
+      <section className="story-handoff contained wide">
+        <div className="handoff-heading"><div><div className="eyebrow">YOUR FIRST ASSIGNMENT</div><h2>The Vanishing Premise</h2></div><div className="score-file"><span>ENTRY SCORE</span><strong>{results.estimated_score}</strong><small>{results.confidence_low}–{results.confidence_high} confidence range</small></div></div>
+        <div className="story-cast-grid">
+          <article><span className="cast-monogram">RV</span><small>LEAD DETECTIVE</small><h3>Rowan Vale</h3><p>Your field partner. Rowan provides controlled hints without giving away the evidence.</p></article>
+          <article><span className="cast-monogram">MV</span><small>BUREAU CHIEF</small><h3>Mira Voss</h3><p>Turns your diagnostic into a daily plan and tracks whether accuracy is becoming speed.</p></article>
+          <article><span className="cast-monogram antagonist">MQ</span><small>RECURRING ADVERSARY</small><h3>Mori Quill</h3><p>A specialist in attractive wrong answers, hidden assumptions, and arguments that almost work.</p></article>
+        </div>
+        <div className="handoff-plan">
+          <div><Target /><span><strong>First priority</strong>{results.weak_areas[0]?.name || 'Balanced reasoning'}</span></div>
+          <div><Clock3 /><span><strong>Shift length</strong>{me.data!.user.target_minutes} minutes</span></div>
+          <div><ShieldCheck /><span><strong>Training rule</strong>Accuracy before speed</span></div>
+        </div>
+        {enter.error && <ErrorNotice error={enter.error} />}
+        <button className="primary-button large-button center-button" onClick={() => enter.mutate()} disabled={enter.isPending}>{enter.isPending ? 'Preparing your first assignment…' : <>Accept first assignment <ArrowRight /></>}</button>
+      </section>
     </div>
   )
 }
@@ -258,14 +338,22 @@ export function StudyHomePage() {
   const navigate = useNavigate()
   const me = useQuery({ queryKey: ['me'], queryFn: api.me })
   const progress = useQuery({ queryKey: ['progress'], queryFn: api.progress })
+  const current = useQuery({ queryKey: ['current-session', 'daily'], queryFn: () => api.currentSession('daily') })
   const start = useMutation({
-    mutationFn: api.startDaily,
+    mutationFn: async () => {
+      const existing = current.data?.session
+      if (existing?.status === 'paused') return api.resumeSession(existing.id)
+      if (existing?.status === 'in_progress') return { session: existing }
+      return api.startDaily()
+    },
     onSuccess: ({ session }) => navigate(`/study/${session.id}`),
   })
-  if (me.isLoading || progress.isLoading) return <LoadingScreen />
-  if (me.error || progress.error) return <ErrorNotice error={me.error || progress.error} />
+  if (me.isLoading || progress.isLoading || current.isLoading) return <LoadingScreen />
+  if (me.error || progress.error || current.error) return <ErrorNotice error={me.error || progress.error || current.error} />
   const user = me.data!.user
+  if (!user.story_intro_seen) return <Navigate to="/story/introduction" replace />
   const weak = progress.data!.skills.slice(0, 3)
+  const activeSession = current.data!.session
   return (
     <div className="study-home">
       <section className="study-hero">
@@ -274,7 +362,7 @@ export function StudyHomePage() {
           <h1>Good evening,<br />Detective {user.display_name.split(' ')[0]}.</h1>
           <p>A fresh set of arguments crossed Chief Voss's desk. Today's files have been selected from your timing, recent misses, and diagnostic profile.</p>
           <button className="primary-button large-button" onClick={() => start.mutate()} disabled={start.isPending}>
-            {start.isPending ? 'Unsealing case files…' : <><Play fill="currentColor" /> Start {user.target_minutes}-minute shift</>}
+            {start.isPending ? 'Unsealing case files…' : <><Play fill="currentColor" /> {activeSession ? `Resume shift · ${activeSession.current_index}/${activeSession.total_items} closed` : `Start ${user.target_minutes}-minute shift`}</>}
           </button>
           {start.error && <ErrorNotice error={start.error} />}
         </div>
@@ -308,9 +396,11 @@ export function StudyHomePage() {
 export function SessionPage() {
   const { sessionId } = useParams()
   const query = useQuery({ queryKey: ['session', sessionId], queryFn: () => api.session(sessionId!), enabled: Boolean(sessionId) })
+  const resume = useMutation({ mutationFn: () => api.resumeSession(sessionId!), onSuccess: () => query.refetch() })
   if (query.isLoading) return <LoadingScreen label="Restoring your active case…" />
   if (query.error) return <ErrorNotice error={query.error} />
   if (query.data!.session.status === 'completed') return <Navigate to={`/session/${sessionId}/summary`} replace />
+  if (query.data!.session.status === 'paused') return <PausedSessionPanel session={query.data!.session} onResume={() => resume.mutate()} loading={resume.isPending} error={resume.error} />
   return <QuestionFlow session={query.data!.session} />
 }
 

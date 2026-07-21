@@ -56,14 +56,22 @@ export const api = {
     request<{ user: User }>('/me/preferences', { method: 'PATCH', body: JSON.stringify({ target_minutes }) }),
   currentDiagnostic: () =>
     request<{
-      status: 'not_started' | 'in_progress' | 'completed'
+      status: 'not_started' | 'in_progress' | 'paused' | 'completed'
       session: StudySession | null
       results: DiagnosticResults | null
     }>('/diagnostics/current'),
   startDiagnostic: () =>
     request<{ session: StudySession; results?: DiagnosticResults }>('/diagnostics', { method: 'POST' }),
   startDaily: () => request<{ session: StudySession }>('/study-sessions', { method: 'POST' }),
+  currentSession: (mode: 'daily' | 'diagnostic' = 'daily') =>
+    request<{ session: StudySession | null }>(`/study-sessions/current?mode=${mode}`),
   session: (id: string) => request<{ session: StudySession; summary?: DailySummary }>(`/study-sessions/${id}`),
+  pauseSession: (id: string, keepalive = false) =>
+    request<{ session: StudySession }>(`/study-sessions/${id}/pause`, { method: 'POST', keepalive }),
+  resumeSession: (id: string) =>
+    request<{ session: StudySession }>(`/study-sessions/${id}/resume`, { method: 'POST' }),
+  completeStoryIntroduction: () =>
+    request<{ user: User }>('/story/introduction/complete', { method: 'POST' }),
   submitAttempt: (
     sessionId: string,
     body: { item_id: string; selected_label: string; reasoning?: string; elapsed_ms: number },

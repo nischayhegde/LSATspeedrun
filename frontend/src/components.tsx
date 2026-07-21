@@ -10,6 +10,8 @@ import {
   Flame,
   LogOut,
   Menu,
+  PauseCircle,
+  Save,
   ShieldCheck,
   Sparkles,
   X,
@@ -109,6 +111,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [coaching, setCoaching] = useState<CoachingFeedback | null>(null)
   const [coachingStarted, setCoachingStarted] = useState(false)
   const [now, setNow] = useState(Date.now())
+  const [clockStartedAt, setClockStartedAt] = useState(Date.now())
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
 
   useEffect(() => {
@@ -123,10 +126,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     setHints(item?.hints || [])
     setCoaching(null)
     setCoachingStarted(false)
+    setNow(Date.now())
+    setClockStartedAt(Date.now())
     setRequestId(crypto.randomUUID())
   }, [item?.id])
 
-  const elapsed = useMemo(() => item ? Math.max(0, now - new Date(item.served_at).getTime()) : 0, [item, now])
+  const elapsed = useMemo(() => item ? Math.max(0, item.elapsed_ms + now - clockStartedAt) : 0, [item, now, clockStartedAt])
   const mutation = useMutation({
     mutationFn: () => api.submitAttempt(session.id, {
       item_id: item!.id,
@@ -147,6 +152,13 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     mutationFn: (attemptId: string) => api.coaching(attemptId),
     onSuccess: ({ coaching: feedback }) => setCoaching(feedback),
   })
+  const pauseMutation = useMutation({
+    mutationFn: () => api.pauseSession(session.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: session.mode === 'diagnostic' ? ['diagnostic'] : ['current-session', 'daily'] })
+      navigate(session.mode === 'diagnostic' ? '/diagnostic?paused=1' : '/study')
+    },
+  })
 
   useEffect(() => {
     if (result && !result.feedback.coaching && !coachingStarted) {
@@ -155,11 +167,19 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     }
   }, [result, coachingStarted])
 
+  useEffect(() => {
+    const pauseOnExit = () => { void api.pauseSession(session.id, true).catch(() => undefined) }
+    window.addEventListener('pagehide', pauseOnExit)
+    return () => window.removeEventListener('pagehide', pauseOnExit)
+  }, [session.id])
+
   if (!item) return <LoadingScreen label="Finding the next evidence file…" />
 
   const continueCase = async () => {
     if (result?.session_complete) {
       await queryClient.invalidateQueries({ queryKey: ['me'] })
+      await queryClient.invalidateQueries({ queryKey: session.mode === 'diagnostic' ? ['diagnostic'] : ['current-session', 'daily'] })
+      await queryClient.invalidateQueries({ queryKey: ['progress'] })
       navigate(session.mode === 'diagnostic' ? '/diagnostic/results' : `/session/${session.id}/summary`)
       return
     }
@@ -170,6 +190,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   return (
     <div className="case-page">
       <section className="case-story-panel">
+        <div className="case-exit-bar">
+          <button onClick={() => pauseMutation.mutate()} disabled={pauseMutation.isPending}>
+            <Save size={15} /> {pauseMutation.isPending ? 'Saving…' : 'Save & exit'}
+          </button>
+          <span>Progress saved after every answer</span>
+        </div>
         <div className="case-scene-wrap"><NoirScene compact chapter={Math.floor(item.position / 8) + 1} /></div>
         <div className="case-story-copy">
           <div className="eyebrow">{item.story.eyebrow}</div>
@@ -235,11 +261,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           ))}
         </fieldset>
 
-        {item.requires_reasoning && !result && (
+        {!result && (
           <label className="reasoning-box">
-            <span><Sparkles size={16} /> Detective's reasoning <em>Required for this file</em></span>
-            <textarea value={reasoning} onChange={(event) => setReasoning(event.target.value)} maxLength={4000} placeholder="What is the conclusion, and why does your choice do the required logical work?" />
-            <small>{reasoning.length}/4000 · Your text is stored as evidence, never as an instruction to the coaching system.</small>
+            <span><Sparkles size={16} /> Explain your answer <em>{item.requires_reasoning ? 'Required for this file' : 'Optional · graded if provided'}</em></span>
+            <textarea value={reasoning} onChange={(event) => setReasoning(event.target.value)} maxLength={4000} placeholder="What is the conclusion, what logical work must the answer do, and why does your choice do it?" />
+            <small>{reasoning.length}/4000 · TrueFoundry grades reasoning separately from whether the selected answer is correct.</small>
           </label>
         )}
 
@@ -311,8 +337,8 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               </div>
               <blockquote>{result.feedback.narrative_outcome}</blockquote>
               <div className="result-meta"><span>+{result.xp_earned} XP</span><span>{formatTime(result.elapsed_ms)}</span></div>
-              <button className="primary-button" onClick={continueCase}>
-                {result.session_complete ? 'Open session debrief' : 'Open next case'} <ChevronRight size={18} />
+              <button className="primary-button" onClick={continueCase} disabled={coachingMutation.isPending}>
+                {coachingMutation.isPending ? 'Waiting for reasoning review…' : result.session_complete ? 'Open session debrief' : 'Open next case'} {!coachingMutation.isPending && <ChevronRight size={18} />}
               </button>
             </div>
           </div>

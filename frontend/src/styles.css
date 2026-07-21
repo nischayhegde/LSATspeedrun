@@ -152,10 +152,51 @@ code { font-size: .84em; padding: .15rem .35rem; border-radius: 4px; background:
 .intro-facts span { display: flex; color: var(--muted); flex-direction: column; font-size: .68rem; }
 .intro-facts strong { color: var(--ink); font-size: .77rem; }
 .intro-copy > small { margin-top: 1rem; color: var(--muted); font-size: .7rem; }
+.pause-seal { display: grid; width: 56px; height: 56px; margin-bottom: 1.2rem; place-items: center; border: 1px solid var(--gold); border-radius: 50%; color: #8d6a31; background: #fff9e9; }
+.resume-progress-card { width: 100%; margin: 1.2rem 0 1.8rem; padding: 1.1rem; border: 1px solid var(--line); background: #fff; }
+.resume-progress-card > div:first-child { display: flex; margin-bottom: .85rem; justify-content: space-between; }
+.resume-progress-card > div:first-child span { color: var(--muted); font-size: .6rem; font-weight: 800; letter-spacing: .13em; }
+.resume-progress-card > div:first-child strong { color: var(--green); font-size: .8rem; }
+
+/* Diagnostic-to-story handoff */
+.story-intro-page { min-height: calc(100vh - 72px); background: #f4f0e6; }
+.story-intro-hero { position: relative; min-height: 610px; overflow: hidden; color: #fff; background: var(--deep); }
+.story-intro-scene { position: absolute; inset: 0 50% 0 0; }
+.story-intro-scene .noir-scene { height: 100%; min-height: 100%; }
+.story-intro-copy { position: relative; z-index: 2; width: 50%; margin-left: 50%; padding: clamp(4rem, 8vw, 7rem) 6vw 4rem; }
+.story-intro-copy h1 { margin: .6rem 0 1.1rem; color: #fff8e9; font-size: clamp(3.4rem, 5.8vw, 6.2rem); line-height: .92; }
+.story-intro-copy > p { color: #b4c2bd; line-height: 1.72; }
+.story-intro-copy blockquote { margin: 2rem 0 0; padding: 1.2rem 0 0 1.2rem; border-top: 1px solid rgba(255,255,255,.1); border-left: 3px solid var(--gold); color: #e4e9e4; font-family: Georgia, serif; font-size: 1rem; font-style: italic; line-height: 1.6; }
+.story-intro-copy blockquote span { display: block; margin-top: .7rem; color: #d6b878; font-family: 'DM Sans'; font-size: .63rem; font-style: normal; letter-spacing: .08em; }
+.story-handoff { padding: 4.5rem 0 6rem; }
+.handoff-heading { display: flex; margin-bottom: 2rem; align-items: center; justify-content: space-between; }
+.handoff-heading h2 { margin: .35rem 0 0; font-size: 3rem; }
+.score-file { display: flex; min-width: 150px; padding: .8rem 1.1rem; align-items: center; flex-direction: column; border: 1px solid var(--gold); background: #fff; }
+.score-file span { color: #8f6d38; font-size: .52rem; font-weight: 800; letter-spacing: .12em; }
+.score-file strong { color: var(--green); font-family: 'Libre Caslon Display', Georgia, serif; font-size: 2.7rem; line-height: 1; }
+.score-file small { color: var(--muted); font-size: .56rem; }
+.story-cast-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.story-cast-grid article { min-height: 250px; padding: 1.5rem; border: 1px solid var(--line); background: #fff; }
+.cast-monogram { display: grid; width: 48px; height: 48px; margin-bottom: 1.4rem; place-items: center; border: 1px solid var(--gold); border-radius: 50%; color: #8b6833; font-family: Georgia, serif; font-weight: 700; }
+.cast-monogram.antagonist { color: #7e3834; border-color: #b66a62; }
+.story-cast-grid small { color: #92703a; font-size: .55rem; font-weight: 800; letter-spacing: .12em; }
+.story-cast-grid h3 { margin: .35rem 0 .7rem; font-family: 'Libre Caslon Display', Georgia, serif; font-size: 1.7rem; }
+.story-cast-grid p { color: var(--muted); font-size: .76rem; line-height: 1.6; }
+.handoff-plan { display: grid; margin-top: 1rem; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); background: #fff; }
+.handoff-plan > div { display: flex; min-height: 90px; padding: 1rem; align-items: center; gap: .7rem; }
+.handoff-plan > div + div { border-left: 1px solid var(--line); }
+.handoff-plan svg { color: #98723b; }
+.handoff-plan span { display: flex; color: var(--muted); flex-direction: column; font-size: .7rem; }
+.handoff-plan strong { color: var(--ink); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase; }
 
 /* Active question */
 .case-page { display: grid; min-height: calc(100vh - 72px); grid-template-columns: minmax(310px, 36vw) minmax(0, 1fr); background: #e7e3d9; }
 .case-story-panel { position: sticky; top: 72px; height: calc(100vh - 72px); overflow-y: auto; color: #dbe5df; background: var(--deep); }
+.case-exit-bar { display: flex; min-height: 44px; padding: .55rem 1rem; align-items: center; justify-content: space-between; gap: .8rem; border-bottom: 1px solid rgba(255,255,255,.08); background: #091413; }
+.case-exit-bar button { display: inline-flex; padding: .42rem .62rem; align-items: center; gap: .38rem; border: 1px solid rgba(220,172,93,.3); border-radius: 3px; color: #e5ca96; background: transparent; font-size: .67rem; font-weight: 700; }
+.case-exit-bar button:hover:not(:disabled) { border-color: var(--gold); background: rgba(220,172,93,.08); }
+.case-exit-bar button:disabled { opacity: .55; }
+.case-exit-bar span { color: #70817c; font-size: .55rem; }
 .case-scene-wrap { height: 35%; min-height: 240px; }
 .case-scene-wrap .noir-scene { height: 100%; min-height: 100%; }
 .case-story-copy { padding: clamp(1.7rem, 4vw, 3.5rem); }
@@ -407,6 +448,13 @@ code { font-size: .84em; padding: .15rem .35rem; border-radius: 4px; background:
   .page-hero { display: block; }
   .intro-scene { min-height: 300px; }
   .intro-copy { padding: 3.5rem 1.4rem 5rem; }
+  .story-intro-hero { min-height: auto; }
+  .story-intro-scene { position: relative; inset: auto; height: 300px; }
+  .story-intro-copy { width: auto; margin-left: 0; padding: 3rem 1.4rem 4rem; }
+  .story-intro-copy h1 { font-size: 3.5rem; }
+  .handoff-heading { align-items: flex-start; gap: 1.5rem; flex-direction: column; }
+  .story-cast-grid, .handoff-plan { grid-template-columns: 1fr; }
+  .handoff-plan > div + div { border-top: 1px solid var(--line); border-left: 0; }
   .intro-facts { grid-template-columns: 1fr; }
   .intro-facts > div + div { padding-left: .5rem; border-top: 1px solid var(--line); border-left: 0; }
   .case-page { display: block; }

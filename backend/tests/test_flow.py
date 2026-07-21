@@ -51,8 +51,17 @@ def test_diagnostic_to_story_flow_and_progress(app):
     assert session["total_items"] == 6
     assert "correct_answer" not in session["current_item"]["question"]
     assert session["current_item"]["served_at"].endswith("Z")
+    first_item_id = session["current_item"]["id"]
+    paused = client.post(f"/v1/study-sessions/{session['id']}/pause", headers=headers)
+    assert paused.status_code == 200
+    assert paused.json["session"]["status"] == "paused"
+    assert client.get("/v1/diagnostics/current").json["status"] == "paused"
+    resumed = client.post(f"/v1/study-sessions/{session['id']}/resume", headers=headers)
+    assert resumed.status_code == 200
+    assert resumed.json["session"]["current_item"]["id"] == first_item_id
+    assert resumed.json["session"]["current_item"]["elapsed_ms"] >= 0
 
-    first_item = session["current_item"]
+    first_item = resumed.json["session"]["current_item"]
     first_payload = {
         "item_id": first_item["id"],
         "selected_label": correct_label(app, first_item["id"]),
@@ -87,6 +96,14 @@ def test_diagnostic_to_story_flow_and_progress(app):
     assert results["status"] == "completed"
     assert results["results"]["estimated_score"] == 180
     assert results["results"]["questions_completed"] == 6
+    me_after_diagnostic = client.get("/v1/me").json["user"]
+    assert me_after_diagnostic["next_route"] == "/story/introduction"
+    blocked_daily = client.post("/v1/study-sessions", headers=headers)
+    assert blocked_daily.status_code == 409
+    assert blocked_daily.json["error"]["code"] == "story_introduction_required"
+    intro = client.post("/v1/story/introduction/complete", headers=headers)
+    assert intro.status_code == 200
+    assert intro.json["user"]["story_intro_seen"] is True
 
     daily = client.post("/v1/study-sessions", headers=headers)
     assert daily.status_code == 201
@@ -190,6 +207,8 @@ def test_truefoundry_hinting_and_explanation_grading(app, monkeypatch):
         },
         headers={**headers, "Idempotency-Key": "coaching-diagnostic"},
     )
+    intro = client.post("/v1/story/introduction/complete", headers=headers)
+    assert intro.status_code == 200
 
     daily = client.post("/v1/study-sessions", headers=headers).json["session"]
     item = daily["current_item"]

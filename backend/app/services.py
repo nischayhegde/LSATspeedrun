@@ -123,6 +123,8 @@ def serialize_user(user: User) -> dict:
         next_route = "/onboarding"
     elif not diagnostic or diagnostic.status != "completed":
         next_route = "/diagnostic"
+    elif not user.story_intro_seen:
+        next_route = "/story/introduction"
     else:
         next_route = "/study"
     return {
@@ -133,6 +135,7 @@ def serialize_user(user: User) -> dict:
         "target_minutes": user.target_minutes,
         "onboarding_complete": user.onboarding_complete,
         "diagnostic_complete": bool(diagnostic and diagnostic.status == "completed"),
+        "story_intro_seen": user.story_intro_seen,
         "next_route": next_route,
         "story": {
             "xp": story.xp,
@@ -170,14 +173,27 @@ def serialize_question(question: Question) -> dict:
 def serialize_item(item: SessionItem, commit_served: bool = True) -> dict:
     if not item.served_at:
         item.served_at = utcnow()
+        item.timer_started_at = item.served_at
+        item.active_elapsed_ms = item.active_elapsed_ms or 0
         if commit_served:
             db.session.commit()
+    elif item.session.status == "in_progress" and not item.timer_started_at and not item.completed_at:
+        item.timer_started_at = utcnow()
+        if commit_served:
+            db.session.commit()
+    elapsed_ms = item.active_elapsed_ms or 0
+    if item.timer_started_at and item.session.status == "in_progress":
+        timer_started = item.timer_started_at
+        if timer_started.tzinfo is None:
+            timer_started = timer_started.replace(tzinfo=timezone.utc)
+        elapsed_ms += max(0, int((utcnow() - timer_started).total_seconds() * 1000))
     saved_hints = HintEvent.query.filter_by(session_item_id=item.id).order_by(HintEvent.level).all()
     return {
         "id": item.id,
         "position": item.position,
         "requires_reasoning": item.requires_reasoning,
         "served_at": _iso_utc(item.served_at),
+        "elapsed_ms": elapsed_ms,
         "story": item.story_json,
         "hints": [event.content_json for event in saved_hints],
         "question": serialize_question(item.question),
@@ -281,7 +297,11 @@ def select_daily_questions(user: User, count: int) -> list[Question]:
 
 def create_study_session(user: User, mode: str) -> StudySession:
     active = (
-        StudySession.query.filter_by(user_id=user.id, mode=mode, status="in_progress")
+        StudySession.query.filter(
+            StudySession.user_id == user.id,
+            StudySession.mode == mode,
+            StudySession.status.in_(["in_progress", "paused"]),
+        )
         .order_by(StudySession.started_at.desc())
         .first()
     )
@@ -326,14 +346,48 @@ def create_study_session(user: User, mode: str) -> StudySession:
 
 
 def _elapsed_ms(item: SessionItem, client_elapsed_ms: int | None) -> int:
-    served = item.served_at or utcnow()
-    if served.tzinfo is None:
-        served = served.replace(tzinfo=timezone.utc)
-    server_ms = int((utcnow() - served).total_seconds() * 1000)
+    server_ms = item.active_elapsed_ms or 0
+    if item.timer_started_at:
+        started = item.timer_started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        server_ms += max(0, int((utcnow() - started).total_seconds() * 1000))
     server_ms = max(1000, min(server_ms, 15 * 60 * 1000))
     if client_elapsed_ms and client_elapsed_ms > 0:
-        return max(1000, min(server_ms, client_elapsed_ms + 15_000))
+        server_ms = max(server_ms, min(client_elapsed_ms, 15 * 60 * 1000))
     return server_ms
+
+
+def pause_study_session(session: StudySession) -> StudySession:
+    if session.status == "paused":
+        return session
+    if session.status != "in_progress":
+        raise ValueError("session_complete")
+    item = SessionItem.query.filter_by(session_id=session.id, position=session.current_index).first()
+    if item and item.timer_started_at:
+        started = item.timer_started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        item.active_elapsed_ms = (item.active_elapsed_ms or 0) + max(0, int((utcnow() - started).total_seconds() * 1000))
+        item.timer_started_at = None
+        item.paused_at = utcnow()
+    session.status = "paused"
+    db.session.commit()
+    return session
+
+
+def resume_study_session(session: StudySession) -> StudySession:
+    if session.status == "in_progress":
+        return session
+    if session.status != "paused":
+        raise ValueError("session_complete")
+    item = SessionItem.query.filter_by(session_id=session.id, position=session.current_index).first()
+    if item:
+        item.timer_started_at = utcnow()
+        item.paused_at = None
+    session.status = "in_progress"
+    db.session.commit()
+    return session
 
 
 def _feedback(question: Question, selected_label: str, is_correct: bool, story: dict, reasoning: str | None) -> dict:
@@ -440,6 +494,9 @@ def submit_attempt(user: User, session: StudySession, payload: dict, idempotency
     )
     db.session.add(attempt)
     item.completed_at = utcnow()
+    item.active_elapsed_ms = elapsed_ms
+    item.timer_started_at = None
+    item.paused_at = None
     session.current_index += 1
 
     story = story_progress_for(user)

@@ -4,6 +4,8 @@ A local-first MVP of the story-driven LSAT practice app described in [planning/F
 
 Written explanations and controlled hints are powered through TrueFoundry with `gpt-5.6-luna` at `xhigh` reasoning effort. The verified Qbank answer key still determines correctness; the model grades reasoning and provides coaching only.
 
+The diagnostic and daily cases are resumable. “Save & exit” commits the active timer and pauses the session, so time away is excluded. Every question offers an explanation box—required on selected diagnostic items and optional-but-graded everywhere else. Completing the diagnostic unlocks a dedicated Lantern Bureau story introduction before the first adaptive shift.
+
 ## Run locally
 
 Requirements: Python 3.11+ and Node 20+.
