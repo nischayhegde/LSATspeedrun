@@ -17,7 +17,7 @@ import {
 import { NavLink, useNavigate } from 'react-router-dom'
 
 import { api, ApiError } from './api'
-import type { AttemptResult, StudySession, User } from './types'
+import type { AttemptResult, CoachingFeedback, CoachingHint, StudySession, User } from './types'
 
 export function LoadingScreen({ label = 'Opening the case file…' }: { label?: string }) {
   return (
@@ -105,6 +105,9 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [selected, setSelected] = useState('')
   const [reasoning, setReasoning] = useState('')
   const [result, setResult] = useState<AttemptResult | null>(null)
+  const [hints, setHints] = useState<CoachingHint[]>(item?.hints || [])
+  const [coaching, setCoaching] = useState<CoachingFeedback | null>(null)
+  const [coachingStarted, setCoachingStarted] = useState(false)
   const [now, setNow] = useState(Date.now())
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
 
@@ -117,6 +120,9 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     setSelected('')
     setReasoning('')
     setResult(null)
+    setHints(item?.hints || [])
+    setCoaching(null)
+    setCoachingStarted(false)
     setRequestId(crypto.randomUUID())
   }, [item?.id])
 
@@ -128,8 +134,26 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       reasoning,
       elapsed_ms: elapsed,
     }, requestId),
-    onSuccess: ({ result: attempt }) => setResult(attempt),
+    onSuccess: ({ result: attempt }) => {
+      setResult(attempt)
+      setCoaching(attempt.feedback.coaching || null)
+    },
   })
+  const hintMutation = useMutation({
+    mutationFn: () => api.requestHint(session.id, item!.id),
+    onSuccess: ({ hint }) => setHints((current) => [...current.filter((value) => value.level !== hint.level), hint].sort((a, b) => a.level - b.level)),
+  })
+  const coachingMutation = useMutation({
+    mutationFn: (attemptId: string) => api.coaching(attemptId),
+    onSuccess: ({ coaching: feedback }) => setCoaching(feedback),
+  })
+
+  useEffect(() => {
+    if (result && !result.feedback.coaching && !coachingStarted) {
+      setCoachingStarted(true)
+      coachingMutation.mutate(result.attempt_id)
+    }
+  }, [result, coachingStarted])
 
   if (!item) return <LoadingScreen label="Finding the next evidence file…" />
 
@@ -181,6 +205,25 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         {item.question.stimulus && <p className="stimulus">{item.question.stimulus}</p>}
         <h3 className="stem">{item.question.stem}</h3>
 
+        {!result && (
+          <div className="hint-section">
+            <div className="hint-actions">
+              <button className="hint-button" onClick={() => hintMutation.mutate()} disabled={hintMutation.isPending || hints.length >= 3}>
+                <Sparkles size={16} />
+                {hintMutation.isPending ? 'Rowan is reviewing the file…' : hints.length ? `Request clue ${hints.length + 1} of 3` : 'Ask Rowan for a controlled hint'}
+              </button>
+              <small>Hints guide the method without revealing the keyed answer.</small>
+            </div>
+            {hintMutation.error && <ErrorNotice error={hintMutation.error} />}
+            {hints.map((hint) => (
+              <div className="hint-card" key={hint.level}>
+                <span>CLUE {hint.level}</span>
+                <div><strong>{hint.focus}</strong><p>{hint.hint}</p><small>Try this: {hint.strategy}</small></div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <fieldset className="choices" disabled={Boolean(result) || mutation.isPending}>
           <legend className="sr-only">Answer choices</legend>
           {item.question.choices.map((choice) => (
@@ -214,7 +257,58 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               <div className="eyebrow">DETERMINISTIC ANSWER CHECK</div>
               <h2>{result.feedback.headline}</h2>
               <p>{result.feedback.diagnosis}</p>
-              <div className="coaching-note"><ShieldCheck size={18} /><span>{result.feedback.coaching}</span></div>
+              <div className="coaching-note"><ShieldCheck size={18} /><span>{result.feedback.coaching_notice}</span></div>
+              <div className="ai-coaching-panel">
+                <div className="ai-coaching-header">
+                  <div><Sparkles size={18} /><span><strong>TrueFoundry reasoning review</strong><small>gpt-5.6-luna · xhigh</small></span></div>
+                  <span className="verified-pill"><ShieldCheck size={13} /> Key verified</span>
+                </div>
+                {!coaching && coachingMutation.isPending && (
+                  <div className="coaching-loading"><span className="coaching-spinner" /><div><strong>Tracing your reasoning…</strong><small>Grading the explanation and analyzing each answer choice.</small></div></div>
+                )}
+                {!coaching && coachingMutation.error && (
+                  <div className="coaching-retry">
+                    <ErrorNotice error={coachingMutation.error} />
+                    <button className="secondary-button" onClick={() => coachingMutation.mutate(result.attempt_id)}>Retry AI review</button>
+                  </div>
+                )}
+                {coaching && (
+                  <div className="coaching-results">
+                    <div className="grade-row">
+                      <div className="explanation-grade">
+                        {coaching.explanation_grade == null ? <strong>—</strong> : <strong>{coaching.explanation_grade}</strong>}
+                        <span>{coaching.explanation_grade == null ? 'QUICK FILE' : 'REASONING / 100'}</span>
+                      </div>
+                      <div><span className={`verdict verdict-${coaching.reasoning_verdict}`}>{coaching.reasoning_verdict.replace('_', ' ')}</span><p>{coaching.reasoning_summary}</p></div>
+                    </div>
+                    {coaching.first_error && (
+                      <div className="first-error-card">
+                        <span>FIRST REASONING BREAK · {coaching.first_error.code.replaceAll('_', ' ')}</span>
+                        <strong>{coaching.first_error.description}</strong>
+                        <p><b>Repair:</b> {coaching.first_error.repair}</p>
+                      </div>
+                    )}
+                    <div className="answer-analysis-card correct-analysis">
+                      <span>WHY {result.feedback.correct_label} WORKS</span>
+                      <p>{coaching.answer_analysis.correct_answer_explanation}</p>
+                    </div>
+                    {!result.is_correct && (
+                      <div className="answer-analysis-card wrong-analysis">
+                        <span>WHY {result.feedback.selected_label} FAILS</span>
+                        <p>{coaching.answer_analysis.selected_answer_explanation}</p>
+                      </div>
+                    )}
+                    <details className="choice-analysis-list">
+                      <summary>Review every answer choice</summary>
+                      {coaching.answer_analysis.choice_explanations.map((choice) => (
+                        <div key={choice.label}><span className={choice.is_correct ? 'correct-choice-mark' : ''}>{choice.label}</span><p>{choice.explanation}</p></div>
+                      ))}
+                    </details>
+                    <div className="next-step"><strong>Next-step clue</strong><p>{coaching.next_step_hint}</p></div>
+                    <p className="ai-debrief">{coaching.debrief}</p>
+                  </div>
+                )}
+              </div>
               <blockquote>{result.feedback.narrative_outcome}</blockquote>
               <div className="result-meta"><span>+{result.xp_earned} XP</span><span>{formatTime(result.elapsed_ms)}</span></div>
               <button className="primary-button" onClick={continueCase}>
@@ -227,4 +321,3 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     </div>
   )
 }
-

@@ -43,12 +43,46 @@ export type StoryFrame = {
   transition: string
 }
 
+export type CoachingHint = {
+  level: number
+  focus: string
+  hint: string
+  strategy: string
+  provider: string
+  model: string
+  reasoning_effort: string
+  prompt_version: string
+}
+
+export type CoachingFeedback = {
+  provider: string
+  model: string
+  reasoning_effort: string
+  prompt_version: string
+  explanation_grade?: number | null
+  reasoning_verdict: 'strong' | 'mostly_correct' | 'partial' | 'misconception' | 'unsupported' | 'not_provided'
+  reasoning_summary: string
+  first_error?: {
+    code: string
+    description: string
+    repair: string
+  } | null
+  answer_analysis: {
+    correct_answer_explanation: string
+    selected_answer_explanation: string
+    choice_explanations: Array<{ label: string; is_correct: boolean; explanation: string }>
+  }
+  next_step_hint: string
+  debrief: string
+}
+
 export type SessionItem = {
   id: string
   position: number
   requires_reasoning: boolean
   served_at: string
   story: StoryFrame
+  hints: CoachingHint[]
   question: Question
 }
 
@@ -82,6 +116,7 @@ export type DiagnosticResults = {
   confidence_high: number
   accuracy: number
   questions_completed: number
+  explanation_accuracy?: number | null
   section_accuracy: Record<string, number>
   weak_areas: SkillSummary[]
   message: string
@@ -116,16 +151,17 @@ export type AttemptResult = {
   elapsed_ms: number
   session_complete: boolean
   session_id: string
+  coaching_status: 'pending' | 'processing' | 'completed' | 'failed'
   feedback: {
     is_correct: boolean
     selected_label: string
     correct_label: string
     headline: string
     diagnosis: string
-    coaching: string
+    coaching_notice: string
     first_error_code?: string | null
     narrative_outcome: string
     transition: string
+    coaching?: CoachingFeedback
   }
 }
-

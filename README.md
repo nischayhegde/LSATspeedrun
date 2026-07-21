@@ -2,6 +2,8 @@
 
 A local-first MVP of the story-driven LSAT practice app described in [planning/Final PRD.md](planning/Final%20PRD.md). It includes Google authentication, a resumable diagnostic, deterministic scoring, adaptive detective cases, XP, pace gating, session summaries, and account-backed progress.
 
+Written explanations and controlled hints are powered through TrueFoundry with `gpt-5.6-luna` at `xhigh` reasoning effort. The verified Qbank answer key still determines correctness; the model grades reasoning and provides coaching only.
+
 ## Run locally
 
 Requirements: Python 3.11+ and Node 20+.
@@ -60,6 +62,18 @@ Set-Location backend
 ```
 
 Only section, type, and difficulty metadata are sent. Student reasoning is never sent by this job, generated HTML is stripped, and the original question content and answer key remain separate.
+
+## TrueFoundry reasoning coach
+
+The API reads `TFY_URL` and `TFY_API_KEY` from either the repository-root `.env` or `backend/.env`. When configured, each active question supports three progressively stronger pre-answer hints. After filing an answer, the frontend requests a structured review containing:
+
+- A 0–100 explanation grade independent of answer correctness
+- The first reasoning error and a concrete repair
+- An explanation of why the verified answer works
+- An explanation of why the selected wrong answer fails
+- Concise analysis of every answer choice
+
+The model and reasoning effort are fixed server-side to `gpt-5.6-luna` and `xhigh`. Student reasoning is enclosed as untrusted JSON data, the provider receives no tools or secrets, output is schema-validated and length-limited, and generated hints are rejected if they reveal the keyed answer. Coaching and hint records are saved to the user account.
 
 ## Verify
 

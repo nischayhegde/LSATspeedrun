@@ -1,4 +1,4 @@
-import type { AttemptResult, DailySummary, DiagnosticResults, StudySession, User } from './types'
+import type { AttemptResult, CoachingFeedback, CoachingHint, DailySummary, DiagnosticResults, StudySession, User } from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/v1'
 
@@ -74,6 +74,10 @@ export const api = {
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(body),
     }),
+  coaching: (attemptId: string) =>
+    request<{ status: 'completed'; coaching: CoachingFeedback }>(`/attempts/${attemptId}/coaching`, { method: 'POST' }),
+  requestHint: (sessionId: string, itemId: string) =>
+    request<{ hint: CoachingHint }>(`/study-sessions/${sessionId}/items/${itemId}/hints`, { method: 'POST' }),
   sessionSummary: (id: string) =>
     request<{ session: StudySession; summary: DailySummary }>(`/study-sessions/${id}/summary`),
   progress: () =>

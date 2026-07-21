@@ -7,12 +7,15 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
 from .auth import clear_auth_cookies, issue_auth_cookies, require_auth
+from .coaching import CoachingProviderError, provider_ready
 from .extensions import db
-from .models import AuthSession, Question, StudySession, User, utcnow
+from .models import Attempt, AuthSession, Question, SessionItem, StudySession, User, utcnow
 from .services import (
     calculate_session_summary,
     create_study_session,
     progress_dashboard,
+    request_item_hint,
+    run_attempt_coaching,
     serialize_attempt_result,
     serialize_session,
     serialize_user,
@@ -51,7 +54,17 @@ def _upsert_google_user(claims: dict) -> User:
 
 @api.get("/health")
 def health():
-    return jsonify({"status": "ok", "questions": Question.query.count()})
+    return jsonify(
+        {
+            "status": "ok",
+            "questions": Question.query.count(),
+            "coaching": {
+                "ready": provider_ready(),
+                "model": current_app.config["COACHING_MODEL"],
+                "reasoning_effort": current_app.config["COACHING_REASONING_EFFORT"],
+            },
+        }
+    )
 
 
 @api.get("/auth/config")
@@ -219,6 +232,49 @@ def create_attempt(session_id: str):
         status = 409 if code in {"idempotency_conflict", "session_complete", "invalid_session_item"} else 400
         return error(code, messages.get(code, "The attempt could not be saved."), status)
     return jsonify({"result": serialize_attempt_result(attempt, duplicate)})
+
+
+@api.post("/attempts/<attempt_id>/coaching")
+@require_auth
+def coach_attempt(attempt_id: str):
+    attempt = Attempt.query.filter_by(id=attempt_id, user_id=g.current_user.id).first()
+    if not attempt:
+        return error("attempt_not_found", "That filed answer was not found.", 404)
+    if not provider_ready():
+        return error("coaching_not_configured", "TrueFoundry coaching is not configured.", 503)
+    try:
+        coaching = run_attempt_coaching(attempt)
+    except ValueError as exc:
+        if str(exc) == "coaching_in_progress":
+            return error("coaching_in_progress", "The AI coach is already reviewing this explanation.", 409)
+        raise
+    except CoachingProviderError as exc:
+        return error("coaching_failed", str(exc), 502)
+    return jsonify({"status": "completed", "coaching": coaching})
+
+
+@api.post("/study-sessions/<session_id>/items/<item_id>/hints")
+@require_auth
+def create_hint(session_id: str, item_id: str):
+    session = _owned_session(session_id)
+    if not session:
+        return error("session_not_found", "That case session was not found.", 404)
+    item = SessionItem.query.filter_by(id=item_id, session_id=session.id).first()
+    if not item or session.status != "in_progress" or item.position != session.current_index:
+        return error("invalid_session_item", "Hints are available only for the active evidence file.", 409)
+    if item.attempt:
+        return error("answer_already_filed", "This answer has already been filed.", 409)
+    if not provider_ready():
+        return error("coaching_not_configured", "TrueFoundry coaching is not configured.", 503)
+    try:
+        hint = request_item_hint(g.current_user, item)
+    except ValueError as exc:
+        if str(exc) == "hint_limit_reached":
+            return error("hint_limit_reached", "All three controlled hints have been used.", 409)
+        raise
+    except CoachingProviderError as exc:
+        return error("hint_failed", str(exc), 502)
+    return jsonify({"hint": hint})
 
 
 @api.get("/study-sessions/<session_id>/summary")

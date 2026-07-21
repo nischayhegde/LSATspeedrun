@@ -232,7 +232,7 @@ export function DiagnosticResultsPage() {
             {results.weak_areas.map((skill, index) => (
               <div key={skill.name}>
                 <span className="rank-number">0{index + 1}</span>
-                <div><strong>{skill.name}</strong><small>{skill.average_time_seconds}s average · {skill.attempts} observed</small></div>
+                <div><strong>{skill.name}</strong><small>{skill.average_time_seconds}s average · {skill.attempts} observed{skill.explanation_accuracy != null ? ` · ${skill.explanation_accuracy}% reasoning` : ''}</small></div>
                 <div className="accuracy-ring">{skill.accuracy}%</div>
               </div>
             ))}
@@ -386,7 +386,7 @@ export function ProgressPage() {
           <div className="card-heading"><BrainCircuit /><div><small>SKILL RECORD</small><h2>Accuracy and timing</h2></div></div>
           {data.skills.length ? data.skills.slice(0, 10).map((skill) => (
             <div className="skill-row" key={skill.name}>
-              <div><strong>{skill.name}</strong><small>{skill.attempts} attempts · {skill.average_time_seconds}s average</small></div>
+              <div><strong>{skill.name}</strong><small>{skill.attempts} attempts · {skill.average_time_seconds}s average{skill.explanation_accuracy != null ? ` · ${skill.explanation_accuracy}% reasoning` : ''}</small></div>
               <div className="mini-bar"><span style={{ width: `${skill.accuracy}%` }} /></div>
               <strong>{skill.accuracy}%</strong>
               <span className={`pace-lock ${skill.pace_unlocked ? 'unlocked' : ''}`} title={skill.pace_unlocked ? 'CAPM active' : 'Accuracy-first'}>{skill.pace_unlocked ? <Zap /> : <LockKeyhole />}</span>
@@ -405,4 +405,3 @@ export function ProgressPage() {
     </div>
   )
 }
-

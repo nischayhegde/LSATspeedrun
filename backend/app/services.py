@@ -9,10 +9,12 @@ from datetime import timezone
 from flask import current_app
 from sqlalchemy import func
 
+from .coaching import CoachingProviderError, generate_attempt_coaching, generate_hint
 from .extensions import db
 from .models import (
     Attempt,
     CaseFrame,
+    HintEvent,
     Question,
     SessionItem,
     SkillProgress,
@@ -170,12 +172,14 @@ def serialize_item(item: SessionItem, commit_served: bool = True) -> dict:
         item.served_at = utcnow()
         if commit_served:
             db.session.commit()
+    saved_hints = HintEvent.query.filter_by(session_item_id=item.id).order_by(HintEvent.level).all()
     return {
         "id": item.id,
         "position": item.position,
         "requires_reasoning": item.requires_reasoning,
         "served_at": _iso_utc(item.served_at),
         "story": item.story_json,
+        "hints": [event.content_json for event in saved_hints],
         "question": serialize_question(item.question),
     }
 
@@ -342,18 +346,16 @@ def _feedback(question: Question, selected_label: str, is_correct: bool, story: 
         )
         first_error = "answer_task_mismatch"
     if reasoning:
-        coaching = (
-            "Your written reasoning has been saved. The local coaching fallback checks completion only; connect each claim to language in the stimulus before your next pass."
-        )
+        coaching = "Your written reasoning is saved. The TrueFoundry coach will grade the reasoning independently of answer correctness."
     else:
-        coaching = "Name the conclusion and the answer choice's logical job before moving on."
+        coaching = "The TrueFoundry coach will explain the correct answer and each distractor."
     return {
         "is_correct": is_correct,
         "selected_label": selected_label,
         "correct_label": question.correct_answer,
         "headline": "Case closed" if is_correct else "False trail identified",
         "diagnosis": diagnosis,
-        "coaching": coaching,
+        "coaching_notice": coaching,
         "first_error_code": first_error,
         "narrative_outcome": story["correct_outcome"] if is_correct else story["incorrect_outcome"],
         "transition": story["transition"],
@@ -414,11 +416,7 @@ def submit_attempt(user: User, session: StudySession, payload: dict, idempotency
     elapsed_ms = _elapsed_ms(item, client_ms)
     is_correct = selected_label == item.question.correct_answer
     explanation_score = None
-    if reasoning:
-        explanation_score = min(1.0, 0.45 + len(reasoning.split()) / 100)
-        if not is_correct:
-            explanation_score *= 0.65
-    _, pace_scored = _update_skill(user.id, item.question, is_correct, explanation_score, elapsed_ms)
+    _, pace_scored = _update_skill(user.id, item.question, is_correct, None, elapsed_ms)
 
     answer_value = 1.0 if is_correct else -0.25
     capm_points = DIFFICULTY_WEIGHTS[item.question.difficulty] * answer_value
@@ -438,6 +436,7 @@ def submit_attempt(user: User, session: StudySession, payload: dict, idempotency
         pace_scored=pace_scored and session.mode == "daily",
         xp_earned=xp,
         feedback_json=feedback,
+        coaching_status="pending",
     )
     db.session.add(attempt)
     item.completed_at = utcnow()
@@ -468,9 +467,74 @@ def serialize_attempt_result(attempt: Attempt, duplicate: bool = False) -> dict:
         "pace_scored": attempt.pace_scored,
         "elapsed_ms": attempt.server_elapsed_ms,
         "feedback": attempt.feedback_json,
+        "coaching_status": attempt.coaching_status,
         "session_complete": session.status == "completed",
         "session_id": session.id,
     }
+
+
+def run_attempt_coaching(attempt: Attempt) -> dict:
+    existing_feedback = (attempt.feedback_json or {}).get("coaching")
+    if attempt.coaching_status == "completed" and existing_feedback:
+        return existing_feedback
+    if attempt.coaching_status == "processing":
+        raise ValueError("coaching_in_progress")
+
+    attempt.coaching_status = "processing"
+    db.session.commit()
+    try:
+        coaching, _metadata = generate_attempt_coaching(attempt)
+    except CoachingProviderError:
+        attempt.coaching_status = "failed"
+        db.session.commit()
+        raise
+
+    if coaching["explanation_grade"] is not None:
+        normalized_score = coaching["explanation_grade"] / 100
+        stat = SkillProgress.query.filter_by(
+            user_id=attempt.user_id,
+            skill_name=attempt.session_item.question.question_type,
+        ).first()
+        if stat:
+            stat.explanation_total += normalized_score
+            stat.explanation_count += 1
+        attempt.explanation_score = normalized_score
+
+    feedback = dict(attempt.feedback_json or {})
+    feedback["coaching"] = coaching
+    attempt.feedback_json = feedback
+    attempt.coaching_status = "completed"
+    attempt.coaching_model = coaching["model"]
+    attempt.coached_at = utcnow()
+    db.session.flush()
+    session = attempt.session_item.session
+    if session.status == "completed":
+        session.summary_json = calculate_session_summary(session)
+    db.session.commit()
+    return coaching
+
+
+def request_item_hint(user: User, item: SessionItem) -> dict:
+    saved = HintEvent.query.filter_by(session_item_id=item.id).order_by(HintEvent.level).all()
+    if len(saved) >= 3:
+        raise ValueError("hint_limit_reached")
+    level = len(saved) + 1
+    existing = HintEvent.query.filter_by(session_item_id=item.id, level=level).first()
+    if existing:
+        return existing.content_json
+
+    hint, _metadata = generate_hint(item, level)
+    event = HintEvent(
+        user_id=user.id,
+        session_item_id=item.id,
+        level=level,
+        content_json=hint,
+        model=hint["model"],
+        prompt_version=hint["prompt_version"],
+    )
+    db.session.add(event)
+    db.session.commit()
+    return hint
 
 
 def _diagnostic_summary(session: StudySession, attempts: list[Attempt]) -> dict:
@@ -481,7 +545,10 @@ def _diagnostic_summary(session: StudySession, attempts: list[Attempt]) -> dict:
         if a.is_correct
     )
     weighted_accuracy = earned_weight / total_weight
-    estimated_score = max(120, min(180, round(120 + weighted_accuracy * 60)))
+    explanation_scores = [a.explanation_score for a in attempts if a.explanation_score is not None]
+    explanation_average = sum(explanation_scores) / len(explanation_scores) if explanation_scores else None
+    reasoning_adjustment = round((explanation_average - 0.5) * 4) if explanation_average is not None else 0
+    estimated_score = max(120, min(180, round(120 + weighted_accuracy * 60) + reasoning_adjustment))
     margin = 4 if len(attempts) >= 30 else 7
     skills = _skill_breakdown(attempts)
     weak = sorted(skills, key=lambda value: (value["accuracy"], -value["attempts"]))[:4]
@@ -497,6 +564,7 @@ def _diagnostic_summary(session: StudySession, attempts: list[Attempt]) -> dict:
         "confidence_high": min(180, estimated_score + margin),
         "accuracy": round(sum(a.is_correct for a in attempts) / max(1, len(attempts)) * 100),
         "questions_completed": len(attempts),
+        "explanation_accuracy": round(explanation_average * 100) if explanation_average is not None else None,
         "section_accuracy": section_accuracy,
         "weak_areas": weak,
         "message": "This is an unofficial starting estimate. It becomes more useful as Sherlock collects more timed evidence.",

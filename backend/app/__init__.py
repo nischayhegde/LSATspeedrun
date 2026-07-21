@@ -19,6 +19,7 @@ from .story_generator import generate_missing_frames
 def create_app(test_config: dict | None = None) -> Flask:
     backend_dir = Path(__file__).resolve().parents[1]
     load_dotenv(backend_dir / ".env")
+    load_dotenv(backend_dir.parent / ".env")
 
     app = Flask(__name__, instance_relative_config=True)
     is_production = os.getenv("FLASK_ENV", "development") == "production"
@@ -46,6 +47,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         STORY_LLM_BASE_URL=os.getenv("STORY_LLM_BASE_URL", ""),
         STORY_LLM_API_KEY=os.getenv("STORY_LLM_API_KEY", ""),
         STORY_LLM_MODEL=os.getenv("STORY_LLM_MODEL", ""),
+        TFY_API_KEY=os.getenv("TFY_API_KEY", "").strip().strip('"'),
+        TFY_URL=os.getenv("TFY_URL", "").strip().strip('"'),
+        COACHING_MODEL="gpt-5.6-luna",
+        COACHING_REASONING_EFFORT="xhigh",
     )
     if test_config:
         app.config.update(test_config)

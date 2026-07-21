@@ -159,9 +159,28 @@ class Attempt(db.Model):
     pace_scored = db.Column(db.Boolean, nullable=False, default=False)
     xp_earned = db.Column(db.Integer, nullable=False, default=0)
     feedback_json = db.Column(db.JSON, nullable=True)
+    coaching_status = db.Column(db.String(30), nullable=False, default="pending")
+    coaching_model = db.Column(db.String(100), nullable=True)
+    coached_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
 
     session_item = db.relationship("SessionItem", back_populates="attempt")
+
+
+class HintEvent(db.Model):
+    __tablename__ = "hint_events"
+    __table_args__ = (UniqueConstraint("session_item_id", "level", name="uq_item_hint_level"),)
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_item_id = db.Column(db.String(36), db.ForeignKey("session_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    level = db.Column(db.Integer, nullable=False)
+    content_json = db.Column(db.JSON, nullable=False)
+    model = db.Column(db.String(100), nullable=False)
+    prompt_version = db.Column(db.String(30), nullable=False, default="hint-v1")
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    session_item = db.relationship("SessionItem")
 
 
 class SkillProgress(db.Model):
