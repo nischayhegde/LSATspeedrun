@@ -13,7 +13,7 @@ import type {
 } from './types'
 import type { CinematicStoryPayload } from './story/adaptStoryBeat'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/v1'
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/v1' : 'http://localhost:5000/v1')
 
 export class ApiError extends Error {
   status: number

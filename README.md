@@ -105,6 +105,18 @@ Restart the API. The frontend reads the public client ID from the API; the backe
 
 For shared or production environments, set a strong `SECRET_KEY`, use PostgreSQL through `DATABASE_URL`, set `DEV_AUTH_ENABLED=false`, `AUTO_SEED=false`, `ALLOW_UNREVIEWED_QUESTIONS=false`, and configure exact frontend/API origins.
 
+### Google sign-in on AWS or another deployed host
+
+Google Identity Services requires HTTPS for non-localhost JavaScript origins. Do not use a plain-HTTP EC2 public hostname as the production OAuth origin. Put the application behind HTTPS—normally a custom domain with CloudFront/ALB and ACM, or a reverse proxy with a trusted certificate—then add the exact frontend origin to the Google OAuth Web client:
+
+```text
+https://app.example.com
+```
+
+In Google Cloud Console, open **APIs & Services → Credentials → OAuth 2.0 Client IDs**, edit the Web client, and add that value under **Authorized JavaScript origins**. The sign-in button used here does not require a redirect URI. Restart the API after setting the same public client ID in the deployed backend.
+
+Use `backend/.env.production.example` as the production configuration template. If one HTTPS host reverse-proxies `/v1` to Flask while serving the frontend, use `frontend/.env.production.example`; production builds also default to same-origin `/v1` when `VITE_API_URL` is omitted. If the API uses a separate host, set `VITE_API_URL=https://api.example.com/v1` and keep `FRONTEND_ORIGIN` set to the exact frontend origin.
+
 ## TrueFoundry cinematic story and reasoning coach
 
 Set `TFY_URL` and `TFY_API_KEY` in `backend/.env` or the repository-root `.env`:
