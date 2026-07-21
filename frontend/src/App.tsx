@@ -13,6 +13,8 @@ import {
   ProgressPage,
   SessionPage,
   SessionSummaryPage,
+  StoryIntroductionPage,
+  StoryHubPage,
   StudyHomePage,
 } from './pages'
 
@@ -58,6 +60,8 @@ export default function App() {
       <Route path="/onboarding" element={<Protected><OnboardingPage /></Protected>} />
       <Route path="/diagnostic" element={<Protected><DiagnosticPage /></Protected>} />
       <Route path="/diagnostic/results" element={<Protected><DiagnosticResultsPage /></Protected>} />
+      <Route path="/story/introduction" element={<Protected><StoryIntroductionPage /></Protected>} />
+      <Route path="/story" element={<Protected><StoryHubPage /></Protected>} />
       <Route path="/study" element={<Protected><StudyHomePage /></Protected>} />
       <Route path="/study/:sessionId" element={<Protected><SessionPage /></Protected>} />
       <Route path="/session/:sessionId/summary" element={<Protected><SessionSummaryPage /></Protected>} />
@@ -68,4 +72,3 @@ export default function App() {
     </Routes>
   )
 }
-

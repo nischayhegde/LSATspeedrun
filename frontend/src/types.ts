@@ -13,6 +13,7 @@ export type User = {
   target_minutes: number
   onboarding_complete: boolean
   diagnostic_complete: boolean
+  story_intro_seen: boolean
   next_route: string
   story: StoryProgress
 }
@@ -76,12 +77,57 @@ export type CoachingFeedback = {
   debrief: string
 }
 
+export type PlannedStoryBeat = {
+  position?: number
+  question_id?: string
+  story_role?: string
+  setup_hook?: string
+  payoff_hook?: string
+  label?: string
+  title?: string
+}
+
+export type SessionStoryPlan = {
+  arc_title?: string
+  arc_premise?: string
+  arc_objective?: string
+  arc_climax?: string
+  resolution_hook?: string
+  episode_label?: string
+  total_beats?: number
+  source?: 'truefoundry' | 'fallback' | string
+  model?: string | null
+  prompt_version?: string
+  reasoning_effort?: string | null
+  // Tolerate the nested shape used by early localhost sessions.
+  arc?: {
+    title?: string
+    premise?: string
+    objective?: string
+    climax?: string
+    resolution_hook?: string
+  }
+}
+
 export type SessionItem = {
   id: string
   position: number
   requires_reasoning: boolean
   served_at: string
-  story: StoryFrame
+  elapsed_ms: number
+  timer_started: boolean
+  timer_active: boolean
+  draft: {
+    selected_label?: string | null
+    reasoning: string
+    updated_at?: string | null
+  }
+  story: import('./story/adaptStoryBeat').CinematicStoryPayload
+  story_generation_status: 'fallback' | 'processing' | 'completed' | 'frozen'
+  planned_story_role?: string | null
+  planned_story_beat?: PlannedStoryBeat | string | null
+  // Backward-compatible alias for sessions created during story-plan rollout.
+  planned_beat?: PlannedStoryBeat | string | null
   hints: CoachingHint[]
   question: Question
 }
@@ -89,14 +135,19 @@ export type SessionItem = {
 export type StudySession = {
   id: string
   mode: 'diagnostic' | 'daily' | 'review' | 'boss'
-  status: 'in_progress' | 'completed'
+  status: 'in_progress' | 'paused' | 'completed'
   target_minutes: number
   total_items: number
   current_index: number
   progress_percent: number
   started_at: string
   completed_at?: string | null
+  story_plan?: SessionStoryPlan | null
   current_item?: SessionItem | null
+  pending_item?: SessionItem | null
+  pending_result?: AttemptResult | null
+  results_seen: boolean
+  summary_seen: boolean
 }
 
 export type SkillSummary = {
@@ -215,6 +266,9 @@ export type AttemptResult = {
   session_complete: boolean
   session_id: string
   coaching_status: 'pending' | 'processing' | 'completed' | 'failed'
+  has_reasoning: boolean
+  story_snapshot?: import('./story/adaptStoryBeat').CinematicStoryPayload | null
+  planned_story_beat?: PlannedStoryBeat | null
   feedback: {
     is_correct: boolean
     selected_label: string

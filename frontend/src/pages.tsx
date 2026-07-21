@@ -16,6 +16,7 @@ import {
   Gauge,
   LockKeyhole,
   Medal,
+  PauseCircle,
   Play,
   RotateCcw,
   ShieldCheck,
@@ -27,9 +28,9 @@ import {
 } from 'lucide-react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
-import { api, ApiError } from './api'
+import { api } from './api'
 import { Brand, CaseBoardGraphic, ErrorNotice, EvidenceFileGraphic, LoadingScreen, NoirScene, QuestionFlow } from './components'
-import type { DiagnosticResults, DailySummary } from './types'
+import type { DiagnosticResults, DailySummary, StudySession } from './types'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -147,7 +148,7 @@ export function OnboardingPage() {
       </div>
       <div className="time-grid">
         {timeOptions.map(({ minutes, label, detail, icon: Icon }) => (
-          <button key={minutes} className={`time-option ${selected === minutes ? 'selected' : ''}`} onClick={() => setSelected(minutes)}>
+          <button key={minutes} className={`time-option ${selected === minutes ? 'selected' : ''}`} onClick={() => setSelected(minutes)} aria-pressed={selected === minutes}>
             <span className="time-icon"><Icon /></span>
             <strong>{minutes}<small>MIN</small></strong>
             <span>{label}</span>
@@ -171,13 +172,21 @@ export function DiagnosticPage() {
     mutationFn: api.startDiagnostic,
     onSuccess: () => diagnostic.refetch(),
   })
+  const resume = useMutation({
+    mutationFn: (sessionId: string) => api.resumeSession(sessionId),
+    onSuccess: () => diagnostic.refetch(),
+  })
 
   useEffect(() => {
     if (diagnostic.data?.status === 'completed') navigate('/diagnostic/results', { replace: true })
   }, [diagnostic.data?.status, navigate])
   if (diagnostic.isLoading) return <LoadingScreen />
   if (diagnostic.error) return <ErrorNotice error={diagnostic.error} />
+  if (diagnostic.data?.session?.pending_result) return <QuestionFlow session={diagnostic.data.session} />
   if (diagnostic.data?.status === 'in_progress' && diagnostic.data.session) return <QuestionFlow session={diagnostic.data.session} />
+  if (diagnostic.data?.status === 'paused' && diagnostic.data.session) {
+    return <PausedSessionPanel session={diagnostic.data.session} onResume={() => resume.mutate(diagnostic.data!.session!.id)} loading={resume.isPending} error={resume.error} />
+  }
 
   return (
     <div className="diagnostic-intro page-hero">
@@ -193,8 +202,14 @@ export function DiagnosticPage() {
         </div>
         {start.error && <ErrorNotice error={start.error} />}
         <button className="primary-button large-button" onClick={() => start.mutate()} disabled={start.isPending}>
-          {start.isPending ? 'Assembling files…' : <>Begin diagnostic <ChevronRight /></>}
+          {start.isPending ? 'Selecting Qbank evidence & plotting arc…' : <>Begin diagnostic <ChevronRight /></>}
         </button>
+        {start.isPending && (
+          <div className="session-planning-status" role="status" aria-live="polite">
+            <Sparkles />
+            <div><strong>Building one connected diagnostic story.</strong><small>TrueFoundry is selecting canonical Qbank evidence and plotting the full arc. This usually takes under a minute; one bounded retry may take longer, and a Bureau fallback opens automatically if live planning remains unavailable.</small></div>
+          </div>
+        )}
         <small>Every answer is saved the moment you file it. You can safely return later.</small>
       </div>
     </div>
@@ -252,20 +267,124 @@ export function DiagnosticResultsPage() {
           <div className="case-note"><BrainCircuit /><p>Your first daily shift will prioritize weak types while interleaving stronger ones to keep the reasoning flexible.</p></div>
         </div>
       </section>
-      <button className="primary-button large-button center-button" onClick={() => navigate('/study')}>Enter story mode <ArrowRight /></button>
+      <button className="primary-button large-button center-button" onClick={() => navigate('/story/introduction')}>Enter Chapter 1: The Lantern Bureau <ArrowRight /></button>
+    </div>
+  )
+}
+
+function sessionArcCopy(session?: StudySession | null) {
+  const plan = session?.story_plan
+  return {
+    title: plan?.arc_title || plan?.arc?.title,
+    objective: plan?.arc_objective || plan?.arc?.objective,
+  }
+}
+
+function PausedSessionPanel({ session, onResume, loading, error }: { session: StudySession; onResume: () => void; loading: boolean; error?: unknown }) {
+  const arc = sessionArcCopy(session)
+  return (
+    <div className="paused-page page-hero">
+      <div className="intro-scene"><NoirScene chapter={1} compact /></div>
+      <div className="intro-copy">
+        <div className="pause-seal"><PauseCircle /></div>
+        <div className="eyebrow">CASE FILE SAFELY PAUSED</div>
+        <h1>Your place is<br />exactly where you left it.</h1>
+        <p>Completed answers, written reasoning, hints, and active time are already saved. Time away from this screen is not counted.</p>
+        {arc.title && (
+          <div className="paused-story-arc">
+            <small>STORY ARC ON HOLD</small>
+            <strong>{arc.title}</strong>
+            {arc.objective && <p>{arc.objective}</p>}
+          </div>
+        )}
+        <div className="resume-progress-card">
+          <div><span>PROGRESS</span><strong>{session.current_index} of {session.total_items}</strong></div>
+          <div className="metric-bar"><div><span>{session.mode === 'diagnostic' ? 'Diagnostic evidence collected' : 'Case files closed'}</span><strong>{session.progress_percent}%</strong></div><div><span style={{ width: `${session.progress_percent}%` }} /></div></div>
+        </div>
+        {error ? <ErrorNotice error={error} /> : null}
+        <button className="primary-button large-button" onClick={onResume} disabled={loading}>{loading ? 'Reopening file…' : <>Resume where I left off <ArrowRight /></>}</button>
+        <small>You can save and exit again at any point.</small>
+      </div>
+    </div>
+  )
+}
+
+export function StoryIntroductionPage() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const me = useQuery({ queryKey: ['me'], queryFn: api.me })
+  const diagnostic = useQuery({ queryKey: ['diagnostic'], queryFn: api.currentDiagnostic })
+  const enter = useMutation({
+    mutationFn: async () => {
+      const updated = await api.completeStoryIntroduction()
+      const started = await api.startDaily()
+      return { ...started, user: updated.user }
+    },
+    onSuccess: ({ session, user }) => {
+      queryClient.setQueryData(['me'], { user })
+      navigate(`/study/${session.id}`)
+    },
+  })
+  if (me.isLoading || diagnostic.isLoading) return <LoadingScreen label="Opening the Bureau doors…" />
+  if (me.error || diagnostic.error) return <ErrorNotice error={me.error || diagnostic.error} />
+  if (!me.data!.user.diagnostic_complete || diagnostic.data?.status !== 'completed') return <Navigate to="/diagnostic" replace />
+  if (me.data!.user.story_intro_seen) return <Navigate to="/study" replace />
+  const results = diagnostic.data.results!
+  return (
+    <div className="story-intro-page">
+      <section className="story-intro-hero">
+        <div className="story-intro-scene"><NoirScene chapter={1} /></div>
+        <div className="story-intro-copy">
+          <div className="eyebrow">DIAGNOSTIC COMPLETE · STORY MODE UNLOCKED</div>
+          <h1>Welcome to the<br />Lantern Bureau.</h1>
+          <p>Chief Mira Voss has reviewed your diagnostic. From this point forward, every LSAT question arrives as an evidence file selected from your weak areas, timing, recent mistakes, and reasoning quality.</p>
+          <blockquote>“The answer key tells us what happened. Your reasoning tells us where to investigate next.”<span>— Chief Mira Voss</span></blockquote>
+        </div>
+      </section>
+      <section className="story-handoff contained wide">
+        <div className="handoff-heading"><div><div className="eyebrow">YOUR FIRST ASSIGNMENT</div><h2>The Vanishing Premise</h2></div><div className="score-file"><span>ENTRY SCORE</span><strong>{results.estimated_score}</strong><small>{results.confidence_low}–{results.confidence_high} confidence range</small></div></div>
+        <div className="story-cast-grid">
+          <article><span className="cast-monogram">RV</span><small>LEAD DETECTIVE</small><h3>Rowan Vale</h3><p>Your field partner. Rowan provides controlled hints without giving away the evidence.</p></article>
+          <article><span className="cast-monogram">MV</span><small>BUREAU CHIEF</small><h3>Mira Voss</h3><p>Turns your diagnostic into a daily plan and tracks whether accuracy is becoming speed.</p></article>
+          <article><span className="cast-monogram antagonist">MQ</span><small>RECURRING ADVERSARY</small><h3>Mori Quill</h3><p>A specialist in attractive wrong answers, hidden assumptions, and arguments that almost work.</p></article>
+        </div>
+        <div className="handoff-plan">
+          <div><Target /><span><strong>First priority</strong>{results.weak_areas[0]?.name || 'Balanced reasoning'}</span></div>
+          <div><Clock3 /><span><strong>Shift length</strong>{me.data!.user.target_minutes} minutes</span></div>
+          <div><ShieldCheck /><span><strong>Training rule</strong>Accuracy before speed</span></div>
+        </div>
+        {enter.error && <ErrorNotice error={enter.error} />}
+        <button className="primary-button large-button center-button" onClick={() => enter.mutate()} disabled={enter.isPending}>{enter.isPending ? 'Selecting Qbank evidence & plotting arc…' : <>Accept first assignment <ArrowRight /></>}</button>
+        {enter.isPending && (
+          <div className="session-planning-status centered-planning-status" role="status" aria-live="polite">
+            <Sparkles />
+            <div><strong>Plotting your first connected Bureau case.</strong><small>TrueFoundry is matching canonical Qbank evidence to your diagnostic profile. This usually takes under a minute; one bounded retry may take longer, and the saved fallback arc opens automatically if needed.</small></div>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
 
 export function StudyHomePage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const me = useQuery({ queryKey: ['me'], queryFn: api.me })
   const progress = useQuery({ queryKey: ['progress'], queryFn: api.progress })
   const coldCases = useQuery({ queryKey: ['cold-cases'], queryFn: api.coldCases })
   const bossCase = useQuery({ queryKey: ['boss-case'], queryFn: api.bossCase })
+  const current = useQuery({ queryKey: ['current-session', 'daily'], queryFn: () => api.currentSession('daily') })
   const start = useMutation({
-    mutationFn: api.startDaily,
-    onSuccess: ({ session }) => navigate(`/study/${session.id}`),
+    mutationFn: async () => {
+      const existing = current.data?.session
+      if (existing?.status === 'paused') return api.resumeSession(existing.id)
+      if (existing?.status === 'in_progress') return { session: existing }
+      return api.startDaily()
+    },
+    onSuccess: ({ session }) => {
+      queryClient.setQueryData(['session', session.id], { session })
+      navigate(`/study/${session.id}`)
+    },
   })
   const startReview = useMutation({
     mutationFn: api.startReview,
@@ -275,13 +394,17 @@ export function StudyHomePage() {
     mutationFn: api.startBoss,
     onSuccess: ({ session }) => navigate(`/study/${session.id}`),
   })
-  if (me.isLoading || progress.isLoading || coldCases.isLoading || bossCase.isLoading) return <LoadingScreen />
-  if (me.error || progress.error) return <ErrorNotice error={me.error || progress.error} />
+  if (me.isLoading || progress.isLoading || current.isLoading || coldCases.isLoading || bossCase.isLoading) return <LoadingScreen />
+  if (me.error || progress.error || current.error || coldCases.error || bossCase.error) return <ErrorNotice error={me.error || progress.error || current.error || coldCases.error || bossCase.error} />
   const user = me.data!.user
+  if (!user.story_intro_seen) return <Navigate to="/story/introduction" replace />
+  if (user.next_route.startsWith('/study/') || user.next_route.startsWith('/session/')) return <Navigate to={user.next_route} replace />
   const weak = progress.data!.skills.slice(0, 3)
   const bossProgress = bossCase.data?.available
     ? 100
     : Math.max(0, ((8 - (bossCase.data?.cases_until_boss ?? 8)) / 8) * 100)
+  const activeSession = current.data!.session
+  const activeArc = sessionArcCopy(activeSession)
   return (
     <div className="study-home">
       <section className="study-hero">
@@ -289,9 +412,18 @@ export function StudyHomePage() {
           <div className="eyebrow">THE LANTERN BUREAU · CHAPTER {user.story.chapter}</div>
           <h1>Good evening,<br />Detective {user.display_name.split(' ')[0]}.</h1>
           <p>A fresh set of arguments crossed Chief Voss's desk. Today's files have been selected from your timing, recent misses, and diagnostic profile.</p>
+          {activeArc.title && (
+            <div className="active-session-arc"><small>RESUME TONIGHT'S STORY ARC</small><strong>{activeArc.title}</strong></div>
+          )}
           <button className="primary-button large-button" onClick={() => start.mutate()} disabled={start.isPending}>
-            {start.isPending ? 'Unsealing case files…' : <><Play fill="currentColor" /> Start {user.target_minutes}-minute shift</>}
+            {start.isPending ? activeSession ? 'Restoring saved story arc…' : 'Selecting Qbank evidence & plotting arc…' : <><Play fill="currentColor" /> {activeSession ? `Resume shift · ${activeSession.current_index}/${activeSession.total_items} closed` : `Start ${user.target_minutes}-minute shift`}</>}
           </button>
+          {start.isPending && !activeSession && (
+            <div className="session-planning-status dark-planning-status" role="status" aria-live="polite">
+              <Sparkles />
+              <div><strong>Planning tonight's connected investigation.</strong><small>TrueFoundry is selecting canonical Qbank evidence and assigning every file a story beat. This usually takes under a minute; one bounded retry may take longer, and a Bureau fallback opens automatically if live planning remains unavailable.</small></div>
+            </div>
+          )}
           {start.error && <ErrorNotice error={start.error} />}
         </div>
         <div className="study-scene"><NoirScene chapter={user.story.chapter} /></div>
@@ -365,9 +497,12 @@ export function StudyHomePage() {
 export function SessionPage() {
   const { sessionId } = useParams()
   const query = useQuery({ queryKey: ['session', sessionId], queryFn: () => api.session(sessionId!), enabled: Boolean(sessionId) })
+  const resume = useMutation({ mutationFn: () => api.resumeSession(sessionId!), onSuccess: () => query.refetch() })
   if (query.isLoading) return <LoadingScreen label="Restoring your active case…" />
   if (query.error) return <ErrorNotice error={query.error} />
+  if (query.data!.session.pending_result) return <QuestionFlow session={query.data!.session} />
   if (query.data!.session.status === 'completed') return <Navigate to={`/session/${sessionId}/summary`} replace />
+  if (query.data!.session.status === 'paused') return <PausedSessionPanel session={query.data!.session} onResume={() => resume.mutate()} loading={resume.isPending} error={resume.error} />
   return <QuestionFlow session={query.data!.session} />
 }
 
@@ -376,6 +511,16 @@ export function SessionSummaryPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const query = useQuery({ queryKey: ['summary', sessionId], queryFn: () => api.sessionSummary(sessionId!), enabled: Boolean(sessionId) })
+  const leave = useMutation({
+    mutationFn: async (destination: string) => {
+      await api.acknowledgeSummary(sessionId!)
+      return destination
+    },
+    onSuccess: async (destination) => {
+      await queryClient.invalidateQueries({ queryKey: ['me'] })
+      navigate(destination)
+    },
+  })
   useEffect(() => {
     if (query.data) {
       void queryClient.invalidateQueries({ queryKey: ['me'] })
@@ -415,9 +560,10 @@ export function SessionSummaryPage() {
           </div>
         </div>
       </section>
+      {leave.error && <ErrorNotice error={leave.error} />}
       <div className="summary-actions">
-        <button className="secondary-button" onClick={() => navigate(isReview ? '/archive' : '/progress')}>{isReview ? <Archive /> : <BarChart3 />} {isReview ? 'Open archive' : 'View progress'}</button>
-        <button className="primary-button" onClick={() => navigate('/study')}>Return to Bureau <ArrowRight /></button>
+        <button className="secondary-button" onClick={() => leave.mutate(isReview ? '/archive' : '/progress')} disabled={leave.isPending}>{isReview ? <Archive /> : <BarChart3 />} {isReview ? 'Open archive' : 'View progress'}</button>
+        <button className="primary-button" onClick={() => leave.mutate('/study')} disabled={leave.isPending}>{leave.isPending ? 'Securing debrief…' : <>Return to Bureau <ArrowRight /></>}</button>
       </div>
     </div>
   )
@@ -624,6 +770,50 @@ export function EvidenceLockerPage() {
         </section>
       )}
       {data.review && <div className="review-schedule-note"><RotateCcw /><span><strong>Cold-case schedule</strong> Next review {new Date(data.review.due_at).toLocaleString()} · {data.review.lapses} lapse{data.review.lapses === 1 ? '' : 's'}</span></div>}
+    </div>
+  )
+}
+
+export function StoryHubPage() {
+  const navigate = useNavigate()
+  const me = useQuery({ queryKey: ['me'], queryFn: api.me })
+  const story = useQuery({ queryKey: ['story-progress'], queryFn: api.storyProgress })
+  if (me.isLoading || story.isLoading) return <LoadingScreen label="Opening the Lantern Bureau archive…" />
+  if (me.error || story.error) return <ErrorNotice error={me.error || story.error} />
+  if (!me.data!.user.story_intro_seen) return <Navigate to="/story/introduction" replace />
+  const data = story.data!
+  const state = data.state as { active_chapter_title?: string; last_hook?: string; last_case_title?: string; featured_cast?: string[] }
+  return (
+    <div className="story-hub-page">
+      <section className="story-hub-hero">
+        <div className="contained wide">
+          <div className="eyebrow">PERSISTENT STORY ARCHIVE · CHAPTER {data.chapter}</div>
+          <h1>{state.active_chapter_title || 'The Compass in Shadow'}</h1>
+          <p>{state.last_hook || 'The Lantern Bureau has opened its doors. Every solved evidence file moves the investigation forward.'}</p>
+          <div className="story-hub-stats"><span><strong>{data.cases_solved}</strong> cases closed</span><span><strong>{data.xp}</strong> Bureau XP</span><span><strong>{data.cast.length}</strong> recurring characters</span></div>
+          <button className="primary-button large-button" onClick={() => navigate('/study')}><Play fill="currentColor" /> Continue investigation</button>
+        </div>
+        <div className="study-scene"><NoirScene chapter={data.chapter} /></div>
+      </section>
+      <section className="story-archive contained wide">
+        <div className="section-title"><div><div className="eyebrow">BUREAU PERSONNEL</div><h2>The recurring cast</h2></div><p>Allies, rivals, witnesses, and adversaries return across diagnostic trials and daily cases.</p></div>
+        <div className="cast-dossier-grid">
+          {data.cast.map((character) => (
+            <article key={character.id} style={{ '--cast-accent': character.accent || '#dcac5d' } as React.CSSProperties}>
+              <div className="dossier-portrait"><span>{(character.name || 'Unknown').split(' ').map((part) => part[0]).slice(0, 2).join('')}</span><i /><b /></div>
+              <small>{character.title}</small><h3>{character.name}</h3><p>{character.role}</p>
+            </article>
+          ))}
+        </div>
+        <div className="section-title case-log-title"><div><div className="eyebrow">CASE LOG</div><h2>Your story so far</h2></div></div>
+        <div className="story-case-log">
+          {data.recent_cases.length ? data.recent_cases.map((caseFile, index) => (
+            <article key={`${caseFile.session_id}-${caseFile.completed_at}-${index}`} className={caseFile.correct ? 'case-cleared' : 'case-reopened'}>
+              <span>{caseFile.correct ? '✓' : '↺'}</span><div><small>{caseFile.chapter_title}</small><h3>{caseFile.case_title}</h3><p>{caseFile.source === 'truefoundry' ? 'Cinematic TrueFoundry story beat' : 'Bureau fallback scene'} · {new Date(caseFile.completed_at).toLocaleDateString()}</p></div>
+            </article>
+          )) : <div className="empty-state">Your completed animated cases will appear here.</div>}
+        </div>
+      </section>
     </div>
   )
 }

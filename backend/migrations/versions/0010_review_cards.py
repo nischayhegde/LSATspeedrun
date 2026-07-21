@@ -1,14 +1,14 @@
-"""Add spaced-repetition review cards.
+"""Add spaced-repetition review cards after the resumable story flow.
 
-Revision ID: 0003_review_cards
-Revises: 0002_llm_coaching
+Revision ID: 0010_review_cards
+Revises: 0009_session_sequence_plan
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0003_review_cards"
-down_revision = "0002_llm_coaching"
+revision = "0010_review_cards"
+down_revision = "0009_session_sequence_plan"
 branch_labels = None
 depends_on = None
 
@@ -34,4 +34,7 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_index("ix_review_cards_due_at", table_name="review_cards")
+    op.drop_index("ix_review_cards_question_id", table_name="review_cards")
+    op.drop_index("ix_review_cards_user_id", table_name="review_cards")
     op.drop_table("review_cards")

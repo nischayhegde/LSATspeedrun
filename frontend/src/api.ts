@@ -11,6 +11,7 @@ import type {
   StudySession,
   User,
 } from './types'
+import type { CinematicStoryPayload } from './story/adaptStoryBeat'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/v1'
 
@@ -68,7 +69,7 @@ export const api = {
     request<{ user: User }>('/me/preferences', { method: 'PATCH', body: JSON.stringify({ target_minutes }) }),
   currentDiagnostic: () =>
     request<{
-      status: 'not_started' | 'in_progress' | 'completed'
+      status: 'not_started' | 'in_progress' | 'paused' | 'debrief' | 'completed'
       session: StudySession | null
       results: DiagnosticResults | null
     }>('/diagnostics/current'),
@@ -79,7 +80,27 @@ export const api = {
   startReview: () => request<{ session: StudySession }>('/review-sessions', { method: 'POST' }),
   bossCase: () => request<BossCaseStatus>('/boss-case'),
   startBoss: () => request<{ session: StudySession }>('/boss-sessions', { method: 'POST' }),
+  currentSession: (mode: StudySession['mode'] = 'daily') =>
+    request<{ session: StudySession | null }>(`/study-sessions/current?mode=${mode}`),
   session: (id: string) => request<{ session: StudySession; summary?: DailySummary }>(`/study-sessions/${id}`),
+  pauseSession: (id: string, keepalive = false) =>
+    request<{ session: StudySession }>(`/study-sessions/${id}/pause`, { method: 'POST', keepalive }),
+  resumeSession: (id: string) =>
+    request<{ session: StudySession }>(`/study-sessions/${id}/resume`, { method: 'POST' }),
+  acknowledgeDebrief: (id: string) =>
+    request<{ session: StudySession }>(`/study-sessions/${id}/debrief/acknowledge`, { method: 'POST' }),
+  acknowledgeSummary: (id: string) =>
+    request<{ ok: boolean }>(`/study-sessions/${id}/summary/acknowledge`, { method: 'POST' }),
+  saveDraft: (sessionId: string, itemId: string, draft: { selected_label?: string; reasoning: string }, keepalive = false) =>
+    request<{ saved: boolean; draft: { selected_label?: string | null; reasoning: string; updated_at: string } }>(`/study-sessions/${sessionId}/items/${itemId}/draft`, {
+      method: 'PATCH',
+      body: JSON.stringify(draft),
+      keepalive,
+    }),
+  startEvidenceTimer: (sessionId: string, itemId: string) =>
+    request<{ item: import('./types').SessionItem }>(`/study-sessions/${sessionId}/items/${itemId}/timer/start`, { method: 'POST' }),
+  completeStoryIntroduction: () =>
+    request<{ user: User }>('/story/introduction/complete', { method: 'POST' }),
   submitAttempt: (
     sessionId: string,
     body: { item_id: string; selected_label: string; reasoning?: string; elapsed_ms: number },
@@ -94,6 +115,8 @@ export const api = {
     request<{ status: 'completed'; coaching: CoachingFeedback }>(`/attempts/${attemptId}/coaching`, { method: 'POST' }),
   requestHint: (sessionId: string, itemId: string) =>
     request<{ hint: CoachingHint }>(`/study-sessions/${sessionId}/items/${itemId}/hints`, { method: 'POST' }),
+  generateStory: (sessionId: string, itemId: string) =>
+    request<{ story: CinematicStoryPayload }>(`/study-sessions/${sessionId}/items/${itemId}/story`, { method: 'POST' }),
   sessionSummary: (id: string) =>
     request<{ session: StudySession; summary: DailySummary }>(`/study-sessions/${id}/summary`),
   archive: (filters: { correctness?: string; section?: string; question_type?: string; page?: number } = {}) => {
@@ -124,4 +147,12 @@ export const api = {
       }>
       pace_history: Array<{ date: string; accuracy: number; capm?: number | null; questions: number }>
     }>('/progress'),
+  storyProgress: () => request<{
+    chapter: number
+    xp: number
+    cases_solved: number
+    state: Record<string, unknown>
+    cast: Array<Record<string, string>>
+    recent_cases: Array<{ session_id: string; mode: string; case_title: string; chapter_title: string; location_id: string; source: string; completed_at: string; correct: boolean }>
+  }>('/story/progress'),
 }

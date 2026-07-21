@@ -33,6 +33,12 @@ Before each session, the adaptive system selects questions using:
 
 The system uses these signals to create a daily session that focuses on the work most likely to improve the user’s score. More advanced prerequisites, retention models, and mastery rules can be added later.
 
+Session construction has two bounded stages. First, the deterministic learning scheduler filters eligible Qbank records, ranks them from the signals above, selects a complete fallback sequence, and creates a bounded candidate pool of no more than 96 questions. Second, the TrueFoundry session planner may select and order only unique question IDs from that pool. It cannot introduce a question the learning layer did not make eligible. Diagnostic output must also pass deterministic coverage checks for section balance, question-type diversity, and difficulty bands.
+
+The planner receives an answer-safe candidate manifest: internal candidate ID, bounded question stem or evidence excerpt, topic, question type, section, difficulty, and backend-derived `story_fit` allowlists for canonical character and location IDs. It must never receive answer choices, the answer key, canonical explanations, wrong-answer analysis, or trap metadata. Planning output must match a strict JSON schema and is rejected if it has the wrong count, duplicates, out-of-pool IDs, invented or question-incompatible cast/locations, copied question language, answer-like language, unsafe instructions, or insufficient diagnostic/daily diversity coverage.
+
+An accepted plan contains one cohesive session arc plus a story role, pre-answer setup hook, and answer-neutral post-grade payoff hook for every selected question. The selected order and plan are saved before the session begins. Refreshing, signing out, pausing, or resuming restores the same order and current beat; resume never silently asks the LLM to plan a different session. If TrueFoundry is unavailable or any validation fails, the deterministic fallback questions open inside a deterministic connected arc. The planner uses `gpt-5.6-luna` at `xhigh` reasoning effort.
+
 Some questions ask the user to write out their reasoning. Other questions are quick and do not require a written explanation. Reasoning is entered as free text. The system must treat that text as untrusted input and protect the LLM workflow from prompt injection.
 
 The timing of feedback can change based on the story beat. The app may give feedback after a question or hold it until the next appropriate part of the case. In every mode, the known answer key decides whether an answer is correct; the LLM does not decide correctness.
@@ -47,9 +53,20 @@ When a user gives a written explanation, the LLM uses the known answer, validate
 
 ## Story mode
 
-Each question is a short micro-case, not part of one large mystery that controls question selection. This lets the adaptive system choose the best question for learning instead of choosing an inferior question because it fits the current story.
+Each diagnostic or daily session is one cohesive mystery with setup, complications, convergence, and a resolution hook. The story never has unrestricted control of question selection: it can connect and order only the bounded, learning-appropriate Qbank candidates supplied by the deterministic scheduler. This keeps the adaptive learning constraints authoritative without reducing the experience to disconnected micro-cases.
 
-The persistent story connects sessions through detective characters, recurring antagonists, side characters, and a cohesive detective world. For every question, the LLM can generate:
+At session creation, the validated sequence planner generates:
+
+- An arc title, premise, and objective
+- A planned climax and resolution hook
+- A distinct story role for every selected evidence file
+- A canonical 3–5 character scene cast and renderable location matched to that question's broad domain and logical task
+- A setup hook that is safe to show before the user answers
+- A payoff hook that advances the investigation after grading and works for either answer outcome
+
+The complete plan and question order are persisted with the session. The player UI shows stable arc metadata and only the current per-question beat; future per-question beats remain hidden. The same arc, episode position, setup, and payoff return after pause, refresh, sign-out, or resume.
+
+The persistent story connects sessions through detective characters, recurring antagonists, side characters, and a cohesive detective world. Within each planned beat, the cinematic director can generate:
 
 - A case name
 - A two- or three-sentence case brief
@@ -62,17 +79,19 @@ The persistent story connects sessions through detective characters, recurring a
 - A transition to the next case
 - A concise case debrief
 
-Story content must stay short. Around 90% of a student’s time should be spent reading, analyzing, and answering LSAT questions.
+The planner and cinematic director must not receive answer choices or the answer key before grading. Their setup text cannot solve, paraphrase, fictionalize, eliminate answers for, or hint at the result of the canonical question. Strict schema, length, safety, answer-language, and question-copy validation applies before generated narrative reaches the student. If live generation fails, a connected deterministic Bureau plan and per-question fallback scene preserve the full learning flow.
+
+The session planner and cinematic director use TrueFoundry with `gpt-5.6-luna` at `xhigh` reasoning effort. Story content must stay short. Around 90% of a student’s time should be spent reading, analyzing, and answering LSAT questions.
 
 The MVP does not include an interactive city map, exploration, inventory, or story choices unrelated to learning. Instead, it uses polished 2D scenes, graphics, and animations to support the story. XP is the main launch progression system. Ranks, district repairs, the Trap Vault, and other game systems can be added later if they clearly support learning.
 
 ### Example scenario
 
-**Case 184: The Sleepless Trial**
+**Episode 04 · Rising Complication: The Sleepless Trial**
 
-A medical researcher claims that a new supplement caused participants to sleep longer. The department is preparing to approve the treatment, but the chief detective suspects that the study overlooked another explanation. Examine the researcher’s report before the department makes its decision.
+A chain of earlier files has led the detectives to a disputed medical report. The current episode frames the report as the next evidence link without revealing how its argument works or which answer is correct.
 
-The app then displays the corresponding LSAT question without changing its wording.
+The app then displays the corresponding LSAT question and choices without changing their wording. After deterministic grading, the episode’s answer-neutral payoff carries the investigation into the next planned file.
 
 ---
 
@@ -141,13 +160,15 @@ We are targeting pre-law students who feel unmotivated or bored by typical LSAT 
 
 - **Authentication — Google sign-in:** Google authentication is required for the MVP so users can save and return to their progress.
 
+- **AI runtime — TrueFoundry:** The validated session planner, per-question cinematic director, written-reasoning grader, controlled hints, and wrong-answer explanations use `gpt-5.6-luna` at `xhigh` reasoning effort. The deterministic learning layer owns eligibility and scoring; generated narrative and coaching remain separately validated, labeled, and recoverable through saved fallbacks.
+
 - **Architecture principle:** The Vercel-hosted React/PixiJS client communicates only with the Railway-hosted Flask API. Flask owns application and learning logic, and Railway PostgreSQL is the auditable source of truth. Canonical question content, answer keys, and validated explanations remain separate from generated narrative and coaching output.
 
 ## MVP boundaries
 
 - The MVP launches as a web app. A React Native and Expo mobile app is a later decision, not a required launch deliverable.
 - The question-bank source and licensing plan must be decided before production launch.
-- The MVP focuses on timed adaptive practice, short story scenes, XP, pace tracking, and saved progress. It does not require an interactive game world.
+- The MVP focuses on timed adaptive practice, connected session arcs with short animated story scenes, XP, pace tracking, and saved progress. It does not require an interactive game world.
 - Public leaderboards, interactive maps, ranks, district repairs, the Trap Vault, and full mastery or retention systems do not block the MVP.
 
 ## Weekly checkpoints (to August 10)
@@ -156,8 +177,8 @@ Each week ends with something that runs and can be shown. If a week slips, cut s
 
 - **Week 1 (July 17–25) — the core loop works:** Set up the React app, Flask API, and Postgres schema for users, questions, answer choices, explanations, attempts, skills, and Google sign-in. Load a small seed set of questions with correct answers and validated explanations. A student can sign in, open a question, answer it, and receive deterministic scoring. Checkpoint: a bare answer-and-score loop deployed to a preview URL.
 
-- **Week 2 (July 26–August 1) — diagnosis and detective framing:** Add the 30–40 question diagnostic, initial readiness score, weak-area breakdown, and LLM case framing around a question. Add first-error feedback that uses the answer key and validated explanation rather than deciding correctness. Checkpoint: a student completes the diagnostic and plays three or four framed cases with a real debrief.
+- **Week 2 (July 26–August 1) — diagnosis and connected detective framing:** Add the 30–40 question diagnostic, initial readiness score, weak-area breakdown, validated session-sequence planner, and question-matched cinematic framing. Add first-error feedback that uses the answer key and validated explanation rather than deciding correctness. Checkpoint: a student completes the diagnostic and plays three or four connected story beats with a real debrief.
 
-- **Week 3 (August 2–8) — speed and adaptive selection:** Add CAPM, per-session pace, and the first past-performance comparison. Add the first scheduler version using accuracy, explanation accuracy, time spent, recent mistakes, and interleaving. Checkpoint: a returning student sees their pace against a past session and receives questions based on their history.
+- **Week 3 (August 2–8) — speed and adaptive selection:** Add CAPM, per-session pace, and the first past-performance comparison. Add the first scheduler version using accuracy, explanation accuracy, time spent, recent mistakes, and interleaving, then constrain the story planner to that bounded eligible pool. Checkpoint: a returning student sees their pace against a past session and receives a stable connected sequence based on their history.
 
 - **Week 4 (August 9–10) — polish and test:** Tighten the session summary, debrief, and XP progress. Fix the largest issues found in play-throughs. Test with a few pre-law students and watch where they get confused or stop. Checkpoint: a deployed build that a new user can use from sign-in through a saved study session, plus a short list of fixes based on observed use.
