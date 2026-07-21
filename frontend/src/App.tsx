@@ -4,8 +4,10 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { api } from './api'
 import { AppShell, LoadingScreen } from './components'
 import {
+  CaseArchivePage,
   DiagnosticPage,
   DiagnosticResultsPage,
+  EvidenceLockerPage,
   LoginPage,
   OnboardingPage,
   ProgressPage,
@@ -20,7 +22,25 @@ function Protected({ children }: { children: React.ReactNode }) {
 
   if (me.isLoading) return <LoadingScreen />
   if (me.isError) return <Navigate to="/login" replace state={{ from: location.pathname }} />
-  return <AppShell user={me.data!.user}>{children}</AppShell>
+
+  const user = me.data!.user
+  const path = location.pathname
+
+  // Mandatory intake sequence: first onboarding, then the diagnostic. The rest
+  // of the app stays locked until the diagnostic is completed.
+  if (!user.onboarding_complete) {
+    if (path !== '/onboarding') return <Navigate to="/onboarding" replace />
+  } else if (!user.diagnostic_complete) {
+    if (path !== '/diagnostic' && path !== '/diagnostic/results') {
+      return <Navigate to="/diagnostic" replace />
+    }
+  } else {
+    // Intake finished — keep users out of the setup-only screens.
+    if (path === '/onboarding') return <Navigate to="/study" replace />
+    if (path === '/diagnostic') return <Navigate to="/diagnostic/results" replace />
+  }
+
+  return <AppShell user={user}>{children}</AppShell>
 }
 
 function HomeRedirect() {
@@ -42,6 +62,8 @@ export default function App() {
       <Route path="/study/:sessionId" element={<Protected><SessionPage /></Protected>} />
       <Route path="/session/:sessionId/summary" element={<Protected><SessionSummaryPage /></Protected>} />
       <Route path="/progress" element={<Protected><ProgressPage /></Protected>} />
+      <Route path="/archive" element={<Protected><CaseArchivePage /></Protected>} />
+      <Route path="/archive/:attemptId" element={<Protected><EvidenceLockerPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

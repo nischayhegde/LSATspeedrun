@@ -4,7 +4,7 @@ import hashlib
 import math
 from copy import deepcopy
 from collections import defaultdict
-from datetime import timezone
+from datetime import timedelta, timezone
 
 from flask import current_app
 from sqlalchemy import func
@@ -16,6 +16,7 @@ from .models import (
     CaseFrame,
     HintEvent,
     Question,
+    ReviewCard,
     SessionItem,
     SkillProgress,
     StoryProgress,
@@ -23,6 +24,8 @@ from .models import (
     User,
     utcnow,
 )
+
+REVIEW_INTERVAL_DAYS = [1, 3, 7, 14, 30]
 
 
 DIFFICULTY_WEIGHTS = {1: 0.75, 2: 0.9, 3: 1.0, 4: 1.15, 5: 1.3}
@@ -279,6 +282,99 @@ def select_daily_questions(user: User, count: int) -> list[Question]:
     return selected
 
 
+def select_review_questions(user: User, count: int = 10) -> list[Question]:
+    cards = (
+        ReviewCard.query.filter(
+            ReviewCard.user_id == user.id,
+            ReviewCard.due_at <= utcnow(),
+        )
+        .order_by(ReviewCard.due_at, ReviewCard.lapses.desc())
+        .limit(count)
+        .all()
+    )
+    return [card.question for card in cards]
+
+
+def select_boss_questions(user: User, count: int = 5) -> list[Question]:
+    questions = _eligible_questions()
+    stats = {
+        stat.skill_name: stat
+        for stat in SkillProgress.query.filter_by(user_id=user.id).all()
+    }
+
+    def boss_priority(question: Question) -> tuple[float, int]:
+        stat = stats.get(question.question_type)
+        weakness = 1.0
+        if stat and stat.attempts:
+            weakness = 1 - stat.correct / stat.attempts
+        return (weakness + question.difficulty * 0.12, _stable_number(f"boss:{user.id}:{question.id}"))
+
+    questions.sort(key=boss_priority, reverse=True)
+    return questions[:count]
+
+
+def _create_session_from_questions(
+    user: User,
+    mode: str,
+    questions: list[Question],
+    target_minutes: int,
+    blueprint: str,
+) -> StudySession:
+    if not questions:
+        raise RuntimeError("No reviewed and licensed questions are available")
+
+    story = story_progress_for(user)
+    session = StudySession(
+        user_id=user.id,
+        mode=mode,
+        target_minutes=target_minutes,
+        total_items=len(questions),
+        blueprint_version=blueprint,
+    )
+    db.session.add(session)
+    db.session.flush()
+    for position, question in enumerate(questions):
+        requires_reasoning = (
+            position % 5 == 2
+            if mode == "diagnostic"
+            else position % 4 == 1
+        )
+        frame = build_story_frame(
+            question,
+            position + story.cases_solved,
+            story.chapter,
+        )
+        if mode == "review":
+            frame.update(
+                {
+                    "title": f"Cold Case: {frame['title']}",
+                    "eyebrow": f"Evidence archive · Reopened file {position + 1}",
+                    "brief": "A prior false trail has resurfaced. Reconstruct the reasoning without relying on the old answer.",
+                }
+            )
+        elif mode == "boss":
+            frame.update(
+                {
+                    "title": f"Quill File {position + 1}: {frame['title']}",
+                    "eyebrow": f"Chapter {story.chapter} confrontation · Sealed evidence",
+                    "presenting_character": "Professor Mori Quill",
+                    "brief": "Professor Quill has assembled this argument from one of your weakest case types. Break the chain before the file is sealed.",
+                    "dialogue": "You have seen premises like these before, Detective. Let us see whether you learned where they fracture.",
+                }
+            )
+        db.session.add(
+            SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=position,
+                requires_reasoning=requires_reasoning,
+                story_json=frame,
+            )
+        )
+    db.session.commit()
+    return session
+
+
 def create_study_session(user: User, mode: str) -> StudySession:
     active = (
         StudySession.query.filter_by(user_id=user.id, mode=mode, status="in_progress")
@@ -293,36 +389,27 @@ def create_study_session(user: User, mode: str) -> StudySession:
         target_minutes = 70
         questions = select_diagnostic_questions(current_app.config["DIAGNOSTIC_SIZE"])
         blueprint = "diagnostic-v1"
+    elif mode == "review":
+        target_minutes = 20
+        questions = select_review_questions(user)
+        blueprint = "cold-cases-v1"
+    elif mode == "boss":
+        target_minutes = 15
+        questions = select_boss_questions(user)
+        blueprint = f"quill-boss-chapter-{story.chapter}"
     else:
         target_minutes = user.target_minutes
         question_count = max(4, min(20, math.ceil(target_minutes / 2.5)))
         questions = select_daily_questions(user, question_count)
         blueprint = "adaptive-v1"
 
-    if not questions:
-        raise RuntimeError("No reviewed and licensed questions are available")
-
-    session = StudySession(
-        user_id=user.id,
-        mode=mode,
-        target_minutes=target_minutes,
-        total_items=len(questions),
-        blueprint_version=blueprint,
+    return _create_session_from_questions(
+        user,
+        mode,
+        questions,
+        target_minutes,
+        blueprint,
     )
-    db.session.add(session)
-    db.session.flush()
-    for position, question in enumerate(questions):
-        requires_reasoning = position % 5 == 2 if mode == "diagnostic" else position % 4 == 1
-        item = SessionItem(
-            session_id=session.id,
-            question_id=question.id,
-            position=position,
-            requires_reasoning=requires_reasoning,
-            story_json=build_story_frame(question, position + story.cases_solved, story.chapter),
-        )
-        db.session.add(item)
-    db.session.commit()
-    return session
 
 
 def _elapsed_ms(item: SessionItem, client_elapsed_ms: int | None) -> int:
@@ -387,6 +474,81 @@ def _update_skill(user_id: str, question: Question, is_correct: bool, explanatio
     return stat, prior_pace_unlocked
 
 
+def _update_review_card(
+    user: User,
+    question: Question,
+    is_correct: bool,
+    session_mode: str,
+) -> None:
+    card = ReviewCard.query.filter_by(
+        user_id=user.id,
+        question_id=question.id,
+    ).first()
+    now = utcnow()
+    if not card:
+        if is_correct:
+            return
+        card = ReviewCard(
+            user_id=user.id,
+            question_id=question.id,
+            box=0,
+            reps=0,
+            lapses=1,
+            last_result=False,
+            due_at=now,
+            last_reviewed_at=now,
+        )
+        db.session.add(card)
+        return
+
+    card.reps += 1
+    card.last_result = is_correct
+    card.last_reviewed_at = now
+    if is_correct:
+        card.box = min(card.box + 1, len(REVIEW_INTERVAL_DAYS))
+        interval_index = min(card.box - 1, len(REVIEW_INTERVAL_DAYS) - 1)
+        card.due_at = now + timedelta(days=REVIEW_INTERVAL_DAYS[interval_index])
+    else:
+        card.box = 0
+        card.lapses += 1
+        card.due_at = now + (timedelta(days=1) if session_mode == "review" else timedelta())
+
+
+def ensure_historical_review_cards(user: User) -> None:
+    existing_ids = {
+        row[0]
+        for row in db.session.query(ReviewCard.question_id)
+        .filter(ReviewCard.user_id == user.id)
+        .all()
+    }
+    latest_by_question: dict[str, Attempt] = {}
+    attempts = (
+        Attempt.query.join(SessionItem)
+        .filter(Attempt.user_id == user.id)
+        .order_by(Attempt.created_at)
+        .all()
+    )
+    for attempt in attempts:
+        latest_by_question[attempt.session_item.question_id] = attempt
+    now = utcnow()
+    for question_id, attempt in latest_by_question.items():
+        if question_id in existing_ids or attempt.is_correct:
+            continue
+        db.session.add(
+            ReviewCard(
+                user_id=user.id,
+                question_id=question_id,
+                box=0,
+                reps=0,
+                lapses=1,
+                last_result=False,
+                due_at=now,
+                last_reviewed_at=attempt.created_at,
+            )
+        )
+    db.session.flush()
+
+
 def submit_attempt(user: User, session: StudySession, payload: dict, idempotency_key: str) -> tuple[Attempt, bool]:
     existing = Attempt.query.filter_by(idempotency_key=idempotency_key).first()
     if existing:
@@ -417,6 +579,7 @@ def submit_attempt(user: User, session: StudySession, payload: dict, idempotency
     is_correct = selected_label == item.question.correct_answer
     explanation_score = None
     _, pace_scored = _update_skill(user.id, item.question, is_correct, None, elapsed_ms)
+    _update_review_card(user, item.question, is_correct, session.mode)
 
     answer_value = 1.0 if is_correct else -0.25
     capm_points = DIFFICULTY_WEIGHTS[item.question.difficulty] * answer_value
@@ -451,6 +614,15 @@ def submit_attempt(user: User, session: StudySession, payload: dict, idempotency
     if session.current_index >= session.total_items:
         session.status = "completed"
         session.completed_at = utcnow()
+        if session.mode == "boss":
+            milestone = max(1, story.cases_solved // 8)
+            state = dict(story.state_json or {})
+            defeated = list(state.get("defeated_boss_chapters", []))
+            if milestone not in defeated:
+                defeated.append(milestone)
+                story.xp += 100
+            state["defeated_boss_chapters"] = defeated
+            story.state_json = state
         db.session.flush()
         session.summary_json = calculate_session_summary(session)
     db.session.commit()
@@ -634,7 +806,7 @@ def calculate_session_summary(session: StudySession) -> dict:
         minutes = sum(a.server_elapsed_ms for a in paced) / 60_000
         capm = round(sum(a.capm_points for a in paced) / max(0.1, minutes), 2)
     summary = {
-        "kind": "daily",
+        "kind": session.mode,
         "accuracy": accuracy,
         "correct": sum(a.is_correct for a in attempts),
         "questions_completed": len(attempts),
@@ -649,8 +821,187 @@ def calculate_session_summary(session: StudySession) -> dict:
         ),
         "skills": _skill_breakdown(attempts),
     }
+    if session.mode == "boss":
+        summary["xp_earned"] += 100
+        summary["boss_reward_xp"] = 100
     summary["ghost"] = _ghost_for(session, accuracy, capm)
     return summary
+
+
+def cold_case_dashboard(user: User) -> dict:
+    ensure_historical_review_cards(user)
+    now = utcnow()
+    base = ReviewCard.query.filter_by(user_id=user.id)
+    due_query = base.filter(ReviewCard.due_at <= now)
+    due_cards = due_query.order_by(
+        ReviewCard.due_at,
+        ReviewCard.lapses.desc(),
+    ).limit(6).all()
+    next_card = base.filter(ReviewCard.due_at > now).order_by(ReviewCard.due_at).first()
+    return {
+        "due_count": due_query.count(),
+        "total_cards": base.count(),
+        "next_due_at": _iso_utc(next_card.due_at) if next_card else None,
+        "cards": [
+            {
+                "id": card.id,
+                "question_id": card.question_id,
+                "section": card.question.section,
+                "question_type": card.question.question_type,
+                "difficulty": card.question.difficulty,
+                "stem": card.question.stem,
+                "lapses": card.lapses,
+                "box": card.box,
+                "due_at": _iso_utc(card.due_at),
+            }
+            for card in due_cards
+        ],
+    }
+
+
+def boss_case_status(user: User) -> dict:
+    story = story_progress_for(user)
+    milestone = story.cases_solved // 8
+    state = story.state_json or {}
+    defeated = set(state.get("defeated_boss_chapters", []))
+    active = (
+        StudySession.query.filter_by(
+            user_id=user.id,
+            mode="boss",
+            status="in_progress",
+        )
+        .order_by(StudySession.started_at.desc())
+        .first()
+    )
+    available = milestone >= 1 and milestone not in defeated
+    return {
+        "available": available,
+        "chapter": max(1, milestone),
+        "cases_until_boss": 0 if available else max(0, 8 - story.cases_solved % 8),
+        "active_session_id": active.id if active else None,
+        "reward_xp": 100,
+        "defeated": sorted(defeated),
+    }
+
+
+def archive_cases(
+    user: User,
+    correctness: str | None = None,
+    section: str | None = None,
+    question_type: str | None = None,
+    page: int = 1,
+    per_page: int = 20,
+) -> dict:
+    query = (
+        Attempt.query.join(SessionItem)
+        .join(Question)
+        .filter(Attempt.user_id == user.id)
+    )
+    if correctness == "correct":
+        query = query.filter(Attempt.is_correct.is_(True))
+    elif correctness == "incorrect":
+        query = query.filter(Attempt.is_correct.is_(False))
+    if section:
+        query = query.filter(Question.section == section)
+    if question_type:
+        query = query.filter(Question.question_type == question_type)
+
+    total = query.count()
+    attempts = (
+        query.order_by(Attempt.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    types = [
+        row[0]
+        for row in db.session.query(Question.question_type)
+        .join(SessionItem)
+        .join(Attempt)
+        .filter(Attempt.user_id == user.id)
+        .distinct()
+        .order_by(Question.question_type)
+        .all()
+    ]
+    return {
+        "cases": [
+            {
+                "attempt_id": attempt.id,
+                "question_id": attempt.session_item.question_id,
+                "title": (attempt.session_item.story_json or {}).get("title", "Archived case"),
+                "section": attempt.session_item.question.section,
+                "question_type": attempt.session_item.question.question_type,
+                "difficulty": attempt.session_item.question.difficulty,
+                "stem": attempt.session_item.question.stem,
+                "selected_label": attempt.selected_label,
+                "correct_label": attempt.session_item.question.correct_answer,
+                "is_correct": attempt.is_correct,
+                "reasoning_provided": bool(attempt.reasoning_text),
+                "explanation_score": (
+                    round(attempt.explanation_score * 100)
+                    if attempt.explanation_score is not None
+                    else None
+                ),
+                "elapsed_ms": attempt.server_elapsed_ms,
+                "session_mode": attempt.session_item.session.mode,
+                "attempted_at": _iso_utc(attempt.created_at),
+            }
+            for attempt in attempts
+        ],
+        "filters": {"question_types": types},
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "pages": math.ceil(total / per_page) if total else 0,
+        },
+    }
+
+
+def archive_case_detail(user: User, attempt_id: str) -> dict | None:
+    attempt = Attempt.query.filter_by(id=attempt_id, user_id=user.id).first()
+    if not attempt:
+        return None
+    item = attempt.session_item
+    question = item.question
+    card = ReviewCard.query.filter_by(
+        user_id=user.id,
+        question_id=question.id,
+    ).first()
+    question_payload = serialize_question(question)
+    question_payload["correct_answer"] = question.correct_answer
+    return {
+        "attempt": {
+            "id": attempt.id,
+            "selected_label": attempt.selected_label,
+            "is_correct": attempt.is_correct,
+            "reasoning_text": attempt.reasoning_text,
+            "explanation_score": (
+                round(attempt.explanation_score * 100)
+                if attempt.explanation_score is not None
+                else None
+            ),
+            "elapsed_ms": attempt.server_elapsed_ms,
+            "feedback": attempt.feedback_json,
+            "coaching_status": attempt.coaching_status,
+            "attempted_at": _iso_utc(attempt.created_at),
+        },
+        "question": question_payload,
+        "story": item.story_json,
+        "session": {
+            "id": item.session.id,
+            "mode": item.session.mode,
+        },
+        "review": (
+            {
+                "box": card.box,
+                "lapses": card.lapses,
+                "due_at": _iso_utc(card.due_at),
+            }
+            if card
+            else None
+        ),
+    }
 
 
 def progress_dashboard(user: User) -> dict:

@@ -6,7 +6,7 @@ import pytest
 
 from app import create_app
 from app.extensions import db
-from app.models import SessionItem
+from app.models import SessionItem, User
 
 
 @pytest.fixture(scope="module")
@@ -32,6 +32,12 @@ def login(client, email="detective@example.test"):
 def correct_label(app, item_id):
     with app.app_context():
         return db.session.get(SessionItem, item_id).question.correct_answer
+
+
+def wrong_label(app, item_id):
+    with app.app_context():
+        item = db.session.get(SessionItem, item_id)
+        return next(choice.label for choice in item.question.choices if choice.label != item.question.correct_answer)
 
 
 def test_csrf_protects_writes(app):
@@ -96,6 +102,72 @@ def test_diagnostic_to_story_flow_and_progress(app):
     progress = client.get("/v1/progress").json
     assert progress["readiness"]["estimated_score"] == 180
     assert progress["totals"]["attempts"] == 6
+
+
+def test_archive_cold_cases_and_boss_flow(app):
+    client = app.test_client()
+    headers = login(client, "review@example.test")
+    assert client.patch("/v1/me/preferences", json={"target_minutes": 20}, headers=headers).status_code == 200
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+
+    for index in range(session["total_items"]):
+        state = client.get("/v1/diagnostics/current").json["session"]
+        item = state["current_item"]
+        payload = {
+            "item_id": item["id"],
+            "selected_label": wrong_label(app, item["id"]) if index == 0 else correct_label(app, item["id"]),
+            "elapsed_ms": 30_000,
+        }
+        if item["requires_reasoning"]:
+            payload["reasoning"] = "I identified the conclusion and tested each choice against the required task."
+        response = client.post(
+            f"/v1/study-sessions/{session['id']}/attempts",
+            json=payload,
+            headers={**headers, "Idempotency-Key": f"review-diagnostic-{index}"},
+        )
+        assert response.status_code == 200
+
+    archive = client.get("/v1/archive").json
+    assert archive["pagination"]["total"] == 6
+    missed = client.get("/v1/archive?correctness=incorrect").json
+    assert len(missed["cases"]) == 1
+    detail = client.get(f"/v1/archive/{missed['cases'][0]['attempt_id']}").json
+    assert detail["question"]["correct_answer"]
+    assert detail["attempt"]["is_correct"] is False
+
+    cold = client.get("/v1/cold-cases").json
+    assert cold["due_count"] == 1
+    review = client.post("/v1/review-sessions", headers=headers)
+    assert review.status_code == 201
+    review_session = review.json["session"]
+    assert review_session["mode"] == "review"
+    review_item = review_session["current_item"]
+    payload = {
+        "item_id": review_item["id"],
+        "selected_label": correct_label(app, review_item["id"]),
+        "elapsed_ms": 30_000,
+    }
+    if review_item["requires_reasoning"]:
+        payload["reasoning"] = "On review, the verified choice directly performs the exact task in the stem."
+    filed = client.post(
+        f"/v1/study-sessions/{review_session['id']}/attempts",
+        json=payload,
+        headers={**headers, "Idempotency-Key": "cold-case-recovery"},
+    )
+    assert filed.status_code == 200
+    assert client.get("/v1/cold-cases").json["due_count"] == 0
+
+    with app.app_context():
+        user = User.query.filter_by(email="review@example.test").first()
+        user.story_progress.cases_solved = 8
+        user.story_progress.chapter = 2
+        db.session.commit()
+    boss = client.get("/v1/boss-case").json
+    assert boss["available"] is True
+    boss_session = client.post("/v1/boss-sessions", headers=headers)
+    assert boss_session.status_code == 201
+    assert boss_session.json["session"]["mode"] == "boss"
+    assert boss_session.json["session"]["current_item"]["story"]["presenting_character"] == "Professor Mori Quill"
 
 
 def test_google_identity_is_verified_server_side(app, monkeypatch):

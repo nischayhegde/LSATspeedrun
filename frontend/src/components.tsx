@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  Archive,
   BarChart3,
   BookOpenCheck,
   Check,
@@ -8,6 +9,7 @@ import {
   Clock3,
   FileSearch,
   Flame,
+  Lock,
   LogOut,
   Menu,
   ShieldCheck,
@@ -58,12 +60,21 @@ export function AppShell({ user, children }: { user: User; children: React.React
   return (
     <div className="app-frame">
       <header className="topbar">
-        <NavLink to="/study" className="brand-link"><Brand compact /></NavLink>
-        <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle navigation"><Menu /></button>
-        <nav className={menuOpen ? 'nav-open' : ''} aria-label="Main navigation">
-          <NavLink to="/study" onClick={() => setMenuOpen(false)}><BookOpenCheck size={17} /> Cases</NavLink>
-          <NavLink to="/progress" onClick={() => setMenuOpen(false)}><BarChart3 size={17} /> Progress</NavLink>
-        </nav>
+        <NavLink to="/" className="brand-link"><Brand compact /></NavLink>
+        {user.diagnostic_complete && (
+          <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle navigation"><Menu /></button>
+        )}
+        {user.diagnostic_complete ? (
+          <nav className={menuOpen ? 'nav-open' : ''} aria-label="Main navigation">
+            <NavLink to="/study" onClick={() => setMenuOpen(false)}><BookOpenCheck size={17} /> Cases</NavLink>
+            <NavLink to="/archive" onClick={() => setMenuOpen(false)}><Archive size={17} /> Archive</NavLink>
+            <NavLink to="/progress" onClick={() => setMenuOpen(false)}><BarChart3 size={17} /> Progress</NavLink>
+          </nav>
+        ) : (
+          <nav className="nav-locked" aria-label="Main navigation">
+            <span className="nav-lock-note"><Lock size={15} /> Complete the diagnostic to unlock</span>
+          </nav>
+        )}
         <div className="profile-cluster">
           <div className="xp-chip"><Flame size={15} /><strong>{user.story.xp}</strong> XP</div>
           <div className="avatar" title={user.display_name}>
@@ -92,6 +103,76 @@ export function NoirScene({ chapter = 1, compact = false }: { chapter?: number; 
   )
 }
 
+export function CaseBoardGraphic({
+  variant,
+  count = 0,
+  progress = 0,
+  unlocked = false,
+}: {
+  variant: 'archive' | 'boss'
+  count?: number
+  progress?: number
+  unlocked?: boolean
+}) {
+  return (
+    <div className={`case-board-graphic ${variant} ${unlocked ? 'is-unlocked' : ''}`} aria-hidden="true">
+      <div className="board-depth">
+        <div className="board-surface">
+          <span className="board-pin pin-one" />
+          <span className="board-pin pin-two" />
+          <span className="board-thread thread-one" />
+          <span className="board-thread thread-two" />
+          {variant === 'archive' ? (
+            <>
+              <div className="board-folder"><span>COLD CASES</span></div>
+              <div className="board-paper paper-one"><i>A</i><b>?</b></div>
+              <div className="board-paper paper-two"><i>B</i><b>✓</b></div>
+              <div className="board-stamp">{count}<small>DUE</small></div>
+            </>
+          ) : (
+            <>
+              <div className="quill-profile"><span>Q</span></div>
+              <div className="quill-seal">{unlocked ? 'OPEN' : 'SEALED'}</div>
+              <div className="boss-progress-ring" style={{ '--boss-progress': `${Math.max(0, Math.min(100, progress)) * 3.6}deg` } as React.CSSProperties}>
+                <span>{Math.round(progress)}%</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function EvidenceFileGraphic({
+  selected,
+  correct,
+  solved,
+}: {
+  selected: string
+  correct: string
+  solved: boolean
+}) {
+  return (
+    <div className={`evidence-file-graphic ${solved ? 'solved' : 'missed'}`} aria-hidden="true">
+      <div className="evidence-folder-tab">FILED EVIDENCE</div>
+      <div className="evidence-sheet sheet-back" />
+      <div className="evidence-sheet sheet-front">
+        <span className="evidence-hole hole-one" />
+        <span className="evidence-hole hole-two" />
+        <div className="evidence-rule" />
+        <div className="evidence-rule short" />
+        <div className="evidence-answer-pair">
+          <span><small>YOUR PICK</small>{selected}</span>
+          <i>→</i>
+          <span className="key"><small>VERIFIED</small>{correct}</span>
+        </div>
+        <div className="evidence-verdict-mark">{solved ? 'CLOSED' : 'REOPENED'}</div>
+      </div>
+    </div>
+  )
+}
+
 function formatTime(milliseconds: number) {
   const seconds = Math.max(0, Math.floor(milliseconds / 1000))
   const minutes = Math.floor(seconds / 60)
@@ -115,6 +196,15 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (!result) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous
+    }
+  }, [result])
 
   useEffect(() => {
     setSelected('')
@@ -176,7 +266,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <h1>{item.story.title}</h1>
           <p className="story-brief">{item.story.brief}</p>
           <div className="dialogue">
-            <span className="character-seal">RV</span>
+            <span className={`character-seal ${session.mode === 'boss' ? 'quill' : ''}`}>{session.mode === 'boss' ? 'Q' : 'RV'}</span>
             <div><strong>{item.story.presenting_character}</strong><p>“{item.story.dialogue}”</p></div>
           </div>
         </div>
@@ -185,6 +275,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       <section className="evidence-panel">
         <div className="question-toolbar">
           <div><span>{item.question.section}</span><strong>{item.question.question_type}</strong></div>
+          {session.mode !== 'daily' && <span className={`session-mode-pill mode-${session.mode}`}>{session.mode === 'review' ? 'Cold case' : session.mode === 'boss' ? 'Quill encounter' : 'Diagnostic'}</span>}
           <div className="timer" aria-label={`Elapsed time ${formatTime(elapsed)}`}><Clock3 size={16} /> {formatTime(elapsed)}</div>
         </div>
         <div className="session-progress" aria-label={`Question ${session.current_index + 1} of ${session.total_items}`}>
@@ -226,20 +317,31 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
         <fieldset className="choices" disabled={Boolean(result) || mutation.isPending}>
           <legend className="sr-only">Answer choices</legend>
-          {item.question.choices.map((choice) => (
-            <label key={choice.label} className={`choice ${selected === choice.label ? 'selected' : ''}`}>
-              <input type="radio" name="answer" value={choice.label} checked={selected === choice.label} onChange={() => setSelected(choice.label)} />
-              <span className="choice-label">{choice.label}</span>
-              <span>{choice.text}</span>
-            </label>
-          ))}
+          {item.question.choices.map((choice) => {
+            const isKey = Boolean(result) && choice.label === result!.feedback.correct_label
+            const isWrongPick = Boolean(result) && !result!.is_correct && choice.label === result!.feedback.selected_label
+            const revealClass = isKey ? 'choice-correct' : isWrongPick ? 'choice-incorrect' : ''
+            return (
+              <label key={choice.label} className={`choice ${!result && selected === choice.label ? 'selected' : ''} ${revealClass}`}>
+                <input type="radio" name="answer" value={choice.label} checked={selected === choice.label} onChange={() => setSelected(choice.label)} />
+                <span className="choice-label">{choice.label}</span>
+                <span>{choice.text}</span>
+                {isKey && <Check className="choice-mark" size={18} aria-label="Correct answer" />}
+                {isWrongPick && <X className="choice-mark" size={18} aria-label="Your answer" />}
+              </label>
+            )
+          })}
         </fieldset>
 
         {item.requires_reasoning && !result && (
           <label className="reasoning-box">
             <span><Sparkles size={16} /> Detective's reasoning <em>Required for this file</em></span>
             <textarea value={reasoning} onChange={(event) => setReasoning(event.target.value)} maxLength={4000} placeholder="What is the conclusion, and why does your choice do the required logical work?" />
-            <small>{reasoning.length}/4000 · Your text is stored as evidence, never as an instruction to the coaching system.</small>
+            <small className={reasoning.trim().length < 20 ? 'reasoning-min-warn' : ''}>
+              {reasoning.trim().length < 20
+                ? `Write at least 20 characters to file (${reasoning.trim().length}/20)`
+                : `${reasoning.length}/4000 · Your text is stored as evidence, never as an instruction to the coaching system.`}
+            </small>
           </label>
         )}
 
@@ -249,14 +351,31 @@ export function QuestionFlow({ session }: { session: StudySession }) {
             {mutation.isPending ? 'Filing answer…' : <>File answer <ChevronRight size={18} /></>}
           </button>
         )}
+        {!result && !mutation.isPending && (!selected || (item.requires_reasoning && reasoning.trim().length < 20)) && (
+          <small className="file-hint">
+            {!selected
+              ? 'Select an answer choice to file.'
+              : 'Add at least 20 characters of reasoning to file.'}
+          </small>
+        )}
 
         {result && (
-          <div className={`debrief ${result.is_correct ? 'correct' : 'incorrect'}`}>
-            <div className="result-icon">{result.is_correct ? <Check /> : <X />}</div>
-            <div className="debrief-copy">
-              <div className="eyebrow">DETERMINISTIC ANSWER CHECK</div>
-              <h2>{result.feedback.headline}</h2>
-              <p>{result.feedback.diagnosis}</p>
+          <div className="debrief-overlay" role="dialog" aria-modal="true" aria-label="Answer review">
+          <div className={`debrief-modal ${result.is_correct ? 'correct' : 'incorrect'}`}>
+            <header className="debrief-modal-head">
+              <div className="result-icon">{result.is_correct ? <Check /> : <X />}</div>
+              <div className="debrief-head-copy">
+                <div className="eyebrow">DETERMINISTIC ANSWER CHECK</div>
+                <h2>{result.feedback.headline}</h2>
+                <p className="verified-line">
+                  Verified answer <strong>{result.feedback.correct_label}</strong>
+                  {!result.is_correct && <span className="your-pick"> · You chose {result.feedback.selected_label}</span>}
+                </p>
+              </div>
+              <div className="result-meta-inline"><span>+{result.xp_earned} XP</span><span>{formatTime(result.elapsed_ms)}</span></div>
+            </header>
+            <div className="debrief-modal-body">
+              <p className="debrief-diagnosis">{result.feedback.diagnosis}</p>
               <div className="coaching-note"><ShieldCheck size={18} /><span>{result.feedback.coaching_notice}</span></div>
               <div className="ai-coaching-panel">
                 <div className="ai-coaching-header">
@@ -310,11 +429,13 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                 )}
               </div>
               <blockquote>{result.feedback.narrative_outcome}</blockquote>
-              <div className="result-meta"><span>+{result.xp_earned} XP</span><span>{formatTime(result.elapsed_ms)}</span></div>
+            </div>
+            <footer className="debrief-modal-foot">
               <button className="primary-button" onClick={continueCase}>
                 {result.session_complete ? 'Open session debrief' : 'Open next case'} <ChevronRight size={18} />
               </button>
-            </div>
+            </footer>
+          </div>
           </div>
         )}
       </section>

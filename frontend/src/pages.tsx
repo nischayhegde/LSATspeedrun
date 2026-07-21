@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
+  Archive,
   BarChart3,
   BookOpen,
   BrainCircuit,
+  Check,
   CheckCircle2,
   ChevronRight,
   Clock3,
   Crosshair,
   FileCheck2,
+  FolderOpen,
   Gauge,
   LockKeyhole,
   Medal,
@@ -25,7 +28,7 @@ import {
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { api, ApiError } from './api'
-import { Brand, ErrorNotice, LoadingScreen, NoirScene, QuestionFlow } from './components'
+import { Brand, CaseBoardGraphic, ErrorNotice, EvidenceFileGraphic, LoadingScreen, NoirScene, QuestionFlow } from './components'
 import type { DiagnosticResults, DailySummary } from './types'
 
 export function LoginPage() {
@@ -258,14 +261,27 @@ export function StudyHomePage() {
   const navigate = useNavigate()
   const me = useQuery({ queryKey: ['me'], queryFn: api.me })
   const progress = useQuery({ queryKey: ['progress'], queryFn: api.progress })
+  const coldCases = useQuery({ queryKey: ['cold-cases'], queryFn: api.coldCases })
+  const bossCase = useQuery({ queryKey: ['boss-case'], queryFn: api.bossCase })
   const start = useMutation({
     mutationFn: api.startDaily,
     onSuccess: ({ session }) => navigate(`/study/${session.id}`),
   })
-  if (me.isLoading || progress.isLoading) return <LoadingScreen />
+  const startReview = useMutation({
+    mutationFn: api.startReview,
+    onSuccess: ({ session }) => navigate(`/study/${session.id}`),
+  })
+  const startBoss = useMutation({
+    mutationFn: api.startBoss,
+    onSuccess: ({ session }) => navigate(`/study/${session.id}`),
+  })
+  if (me.isLoading || progress.isLoading || coldCases.isLoading || bossCase.isLoading) return <LoadingScreen />
   if (me.error || progress.error) return <ErrorNotice error={me.error || progress.error} />
   const user = me.data!.user
   const weak = progress.data!.skills.slice(0, 3)
+  const bossProgress = bossCase.data?.available
+    ? 100
+    : Math.max(0, ((8 - (bossCase.data?.cases_until_boss ?? 8)) / 8) * 100)
   return (
     <div className="study-home">
       <section className="study-hero">
@@ -285,6 +301,47 @@ export function StudyHomePage() {
         <div className="dashboard-stat"><span><Target /></span><div><small>ACCURACY</small><strong>{progress.data!.totals.accuracy}%</strong><em>{progress.data!.totals.attempts} files reviewed</em></div></div>
         <div className="dashboard-stat"><span><FileCheck2 /></span><div><small>CASES CLOSED</small><strong>{user.story.cases_solved}</strong><em>Chapter {user.story.chapter}</em></div></div>
         <div className="dashboard-stat"><span><Sparkles /></span><div><small>BUREAU XP</small><strong>{user.story.xp}</strong><em>Progress preserved</em></div></div>
+      </section>
+      <section className="special-operations contained wide">
+        <article className="operation-card cold-case-operation">
+          <div className="operation-copy">
+            <div className="eyebrow">EVIDENCE ARCHIVE</div>
+            <h2>{coldCases.data?.due_count || 0} cold cases due</h2>
+            <p>Reopen prior misses on a spaced schedule. Correct recoveries move the evidence farther into the future.</p>
+            <div className="operation-actions">
+              <button className="secondary-button" onClick={() => navigate('/archive')}><FolderOpen /> Browse archive</button>
+              <button
+                className="primary-button"
+                onClick={() => startReview.mutate()}
+                disabled={!coldCases.data?.due_count || startReview.isPending}
+              >
+                <RotateCcw /> {startReview.isPending ? 'Reopening…' : 'Review due cases'}
+              </button>
+            </div>
+            {startReview.error && <ErrorNotice error={startReview.error} />}
+          </div>
+          <CaseBoardGraphic variant="archive" count={coldCases.data?.due_count || 0} />
+        </article>
+        <article className={`operation-card boss-operation ${bossCase.data?.available || bossCase.data?.active_session_id ? 'unlocked' : ''}`}>
+          <div className="operation-copy">
+            <div className="eyebrow">PROFESSOR QUILL · CHAPTER {bossCase.data?.chapter || 1}</div>
+            <h2>{bossCase.data?.available ? 'Confrontation unlocked' : 'A sealed challenge awaits'}</h2>
+            <p>
+              {bossCase.data?.available
+                ? `Five high-difficulty files target your weakest evidence. Clear them for +${bossCase.data.reward_xp} bonus XP.`
+                : `${bossCase.data?.cases_until_boss ?? 8} more daily cases until Quill reveals the next chapter file.`}
+            </p>
+            <button
+              className="primary-button"
+              onClick={() => startBoss.mutate()}
+              disabled={!bossCase.data?.available && !bossCase.data?.active_session_id}
+            >
+              <Trophy /> {startBoss.isPending ? 'Opening sealed file…' : bossCase.data?.active_session_id ? 'Resume confrontation' : 'Open boss case'}
+            </button>
+            {startBoss.error && <ErrorNotice error={startBoss.error} />}
+          </div>
+          <CaseBoardGraphic variant="boss" progress={bossProgress} unlocked={Boolean(bossCase.data?.available || bossCase.data?.active_session_id)} />
+        </article>
       </section>
       <section className="today-plan contained wide">
         <div className="section-title"><div><div className="eyebrow">ADAPTIVE BRIEF</div><h2>Today's investigative leads</h2></div><button className="text-button" onClick={() => navigate('/progress')}>Full progress <ArrowRight /></button></div>
@@ -328,13 +385,16 @@ export function SessionSummaryPage() {
   if (query.isLoading) return <LoadingScreen label="Writing the case debrief…" />
   if (query.error) return <ErrorNotice error={query.error} />
   const summary = query.data!.summary
+  const mode = query.data!.session.mode
+  const isReview = mode === 'review'
+  const isBoss = mode === 'boss'
   return (
     <div className="summary-page contained wide">
       <section className="summary-title">
         <div className="completion-seal"><CheckCircle2 /></div>
-        <div className="eyebrow">SHIFT COMPLETE</div>
-        <h1>Case files secured.</h1>
-        <p>Progress, timing, and skill evidence have been saved to your Bureau record.</p>
+        <div className="eyebrow">{isBoss ? 'QUILL CONFRONTATION COMPLETE' : isReview ? 'COLD CASE REVIEW COMPLETE' : 'SHIFT COMPLETE'}</div>
+        <h1>{isBoss ? 'The chapter file is yours.' : isReview ? 'Old evidence, new clarity.' : 'Case files secured.'}</h1>
+        <p>{isReview ? 'Your review schedule has been updated from today’s recoveries.' : 'Progress, timing, and skill evidence have been saved to your Bureau record.'}</p>
       </section>
       <section className="summary-metrics">
         <div><Target /><small>ACCURACY</small><strong>{summary.accuracy}%</strong><span>{summary.correct}/{summary.questions_completed} correct</span></div>
@@ -356,7 +416,7 @@ export function SessionSummaryPage() {
         </div>
       </section>
       <div className="summary-actions">
-        <button className="secondary-button" onClick={() => navigate('/progress')}><BarChart3 /> View progress</button>
+        <button className="secondary-button" onClick={() => navigate(isReview ? '/archive' : '/progress')}>{isReview ? <Archive /> : <BarChart3 />} {isReview ? 'Open archive' : 'View progress'}</button>
         <button className="primary-button" onClick={() => navigate('/study')}>Return to Bureau <ArrowRight /></button>
       </div>
     </div>
@@ -402,6 +462,168 @@ export function ProgressPage() {
           ) : <div className="empty-chart"><RotateCcw /><strong>Your first ghost appears after two scored shifts.</strong><p>New skills stay in accuracy-first mode until the pace gate opens.</p></div>}
         </div>
       </section>
+    </div>
+  )
+}
+
+export function CaseArchivePage() {
+  const navigate = useNavigate()
+  const [correctness, setCorrectness] = useState('')
+  const [section, setSection] = useState('')
+  const [questionType, setQuestionType] = useState('')
+  const [page, setPage] = useState(1)
+  const archive = useQuery({
+    queryKey: ['archive', correctness, section, questionType, page],
+    queryFn: () => api.archive({
+      correctness,
+      section,
+      question_type: questionType,
+      page,
+    }),
+  })
+  const coldCases = useQuery({ queryKey: ['cold-cases'], queryFn: api.coldCases })
+  const startReview = useMutation({
+    mutationFn: api.startReview,
+    onSuccess: ({ session }) => navigate(`/study/${session.id}`),
+  })
+  if (archive.isLoading || coldCases.isLoading) return <LoadingScreen label="Opening the evidence archive…" />
+  if (archive.error) return <ErrorNotice error={archive.error} />
+  const data = archive.data!
+  return (
+    <div className="archive-page contained wide">
+      <section className="archive-title archive-hero">
+        <div className="archive-hero-copy">
+          <div className="eyebrow">THE LANTERN BUREAU · EVIDENCE ARCHIVE</div>
+          <h1>Every filed answer leaves a record.</h1>
+          <p>Review the original evidence, your reasoning, the verified key, and the coach’s analysis without spending another model call.</p>
+          <div className="archive-hero-actions">
+            <button
+              className="primary-button"
+              disabled={!coldCases.data?.due_count || startReview.isPending}
+              onClick={() => startReview.mutate()}
+            >
+              <RotateCcw /> {startReview.isPending ? 'Reopening files…' : `Review ${coldCases.data?.due_count || 0} due`}
+            </button>
+            <span><strong>{data.pagination.total}</strong> filed cases · <strong>{coldCases.data?.total_cards || 0}</strong> in rotation</span>
+          </div>
+          {startReview.error && <ErrorNotice error={startReview.error} />}
+        </div>
+        <CaseBoardGraphic variant="archive" count={coldCases.data?.due_count || 0} />
+      </section>
+      <section className="archive-filters" aria-label="Archive filters">
+        <select value={correctness} onChange={(event) => { setCorrectness(event.target.value); setPage(1) }}>
+          <option value="">All outcomes</option>
+          <option value="incorrect">False trails</option>
+          <option value="correct">Closed cases</option>
+        </select>
+        <select value={section} onChange={(event) => { setSection(event.target.value); setPage(1) }}>
+          <option value="">All sections</option>
+          <option value="Logical Reasoning">Logical Reasoning</option>
+          <option value="Reading Comprehension">Reading Comprehension</option>
+        </select>
+        <select value={questionType} onChange={(event) => { setQuestionType(event.target.value); setPage(1) }}>
+          <option value="">All evidence types</option>
+          {data.filters.question_types.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select>
+      </section>
+      <section className="archive-list">
+        {data.cases.map((caseFile) => (
+          <button className="archive-row" key={caseFile.attempt_id} onClick={() => navigate(`/archive/${caseFile.attempt_id}`)}>
+            <span className={`archive-outcome ${caseFile.is_correct ? 'closed' : 'missed'}`}>{caseFile.is_correct ? <CheckCircle2 /> : <RotateCcw />}</span>
+            <span className="archive-row-copy">
+              <small>{caseFile.section} · {caseFile.question_type} · {'◆'.repeat(caseFile.difficulty)}</small>
+              <strong>{caseFile.title}</strong>
+              <p>{caseFile.stem}</p>
+            </span>
+            <span className="archive-row-meta">
+              <strong>{caseFile.selected_label} → {caseFile.correct_label}</strong>
+              <small>{new Date(caseFile.attempted_at).toLocaleDateString()}</small>
+              {caseFile.explanation_score != null && <em>{caseFile.explanation_score} reasoning</em>}
+            </span>
+            <ChevronRight />
+          </button>
+        ))}
+        {!data.cases.length && <div className="empty-state">No case files match these filters.</div>}
+      </section>
+      {data.pagination.pages > 1 && (
+        <div className="archive-pagination">
+          <button className="secondary-button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</button>
+          <span>Page {page} of {data.pagination.pages}</span>
+          <button className="secondary-button" disabled={page >= data.pagination.pages} onClick={() => setPage((value) => value + 1)}>Next</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function EvidenceLockerPage() {
+  const { attemptId } = useParams()
+  const navigate = useNavigate()
+  const record = useQuery({
+    queryKey: ['archive-case', attemptId],
+    queryFn: () => api.archiveCase(attemptId!),
+    enabled: Boolean(attemptId),
+  })
+  if (record.isLoading) return <LoadingScreen label="Retrieving the sealed evidence…" />
+  if (record.error) return <ErrorNotice error={record.error} />
+  const data = record.data!
+  const coaching = data.attempt.feedback?.coaching
+  return (
+    <div className="locker-page contained wide">
+      <button className="text-button locker-back" onClick={() => navigate('/archive')}>← Back to archive</button>
+      <section className="locker-header">
+        <div>
+          <div className="eyebrow">EVIDENCE LOCKER · {data.question.section}</div>
+          <h1>{data.story.title}</h1>
+          <p>{data.question.question_type} · Difficulty {'◆'.repeat(data.question.difficulty)} · Filed {new Date(data.attempt.attempted_at).toLocaleString()}</p>
+        </div>
+        <div className="locker-visual-cluster">
+          <EvidenceFileGraphic selected={data.attempt.selected_label} correct={data.question.correct_answer} solved={data.attempt.is_correct} />
+          <div className={`locker-verdict ${data.attempt.is_correct ? 'closed' : 'missed'}`}>
+            {data.attempt.is_correct ? <CheckCircle2 /> : <RotateCcw />}
+            <strong>{data.attempt.is_correct ? 'CASE CLOSED' : 'FALSE TRAIL'}</strong>
+            <span>You chose {data.attempt.selected_label} · Key {data.question.correct_answer}</span>
+          </div>
+        </div>
+      </section>
+      {data.question.passage && <details className="passage locker-passage"><summary>Reading passage</summary><p>{data.question.passage.text}</p></details>}
+      {data.question.stimulus && <p className="stimulus">{data.question.stimulus}</p>}
+      <h2 className="locker-stem">{data.question.stem}</h2>
+      <section className="locker-choices">
+        {data.question.choices.map((choice) => {
+          const correct = choice.label === data.question.correct_answer
+          const wrongPick = !data.attempt.is_correct && choice.label === data.attempt.selected_label
+          return (
+            <div className={`choice ${correct ? 'choice-correct' : wrongPick ? 'choice-incorrect' : ''}`} key={choice.label}>
+              <span className="choice-label">{choice.label}</span>
+              <span>{choice.text}</span>
+              {correct && <Check className="choice-mark" />}
+              {wrongPick && <RotateCcw className="choice-mark" />}
+            </div>
+          )
+        })}
+      </section>
+      <section className="locker-grid">
+        <article className="report-card">
+          <div className="card-heading"><BrainCircuit /><div><small>YOUR FILED REASONING</small><h2>Original statement</h2></div></div>
+          <p>{data.attempt.reasoning_text || 'No written reasoning was provided for this file.'}</p>
+          {data.attempt.explanation_score != null && <div className="locker-score">{data.attempt.explanation_score}<span>/ 100 reasoning</span></div>}
+        </article>
+        <article className="report-card">
+          <div className="card-heading"><ShieldCheck /><div><small>VERIFIED REVIEW</small><h2>Coach’s finding</h2></div></div>
+          <p>{coaching?.reasoning_summary || data.attempt.feedback?.diagnosis || 'No coaching review is stored for this case.'}</p>
+          {coaching?.first_error && <div className="first-error-card"><span>FIRST BREAK · {coaching.first_error.code.replaceAll('_', ' ')}</span><strong>{coaching.first_error.description}</strong><p><b>Repair:</b> {coaching.first_error.repair}</p></div>}
+        </article>
+      </section>
+      {coaching && (
+        <section className="report-card locker-analysis">
+          <div className="card-heading"><Sparkles /><div><small>ANSWER ANALYSIS</small><h2>Reconstruct the evidence</h2></div></div>
+          <div className="answer-analysis-card correct-analysis"><span>WHY {data.question.correct_answer} WORKS</span><p>{coaching.answer_analysis.correct_answer_explanation}</p></div>
+          {!data.attempt.is_correct && <div className="answer-analysis-card wrong-analysis"><span>WHY {data.attempt.selected_label} FAILS</span><p>{coaching.answer_analysis.selected_answer_explanation}</p></div>}
+          <details className="choice-analysis-list"><summary>Review every answer choice</summary>{coaching.answer_analysis.choice_explanations.map((choice) => <div key={choice.label}><span className={choice.is_correct ? 'correct-choice-mark' : ''}>{choice.label}</span><p>{choice.explanation}</p></div>)}</details>
+        </section>
+      )}
+      {data.review && <div className="review-schedule-note"><RotateCcw /><span><strong>Cold-case schedule</strong> Next review {new Date(data.review.due_at).toLocaleString()} · {data.review.lapses} lapse{data.review.lapses === 1 ? '' : 's'}</span></div>}
     </div>
   )
 }

@@ -199,6 +199,24 @@ class SkillProgress(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
 
+class ReviewCard(db.Model):
+    __tablename__ = "review_cards"
+    __table_args__ = (UniqueConstraint("user_id", "question_id", name="uq_user_question_review"),)
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = db.Column(db.String(80), db.ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    box = db.Column(db.Integer, nullable=False, default=0)
+    reps = db.Column(db.Integer, nullable=False, default=0)
+    lapses = db.Column(db.Integer, nullable=False, default=0)
+    last_result = db.Column(db.Boolean, nullable=True)
+    due_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    last_reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    question = db.relationship("Question")
+
+
 class StoryProgress(db.Model):
     __tablename__ = "story_progress"
 

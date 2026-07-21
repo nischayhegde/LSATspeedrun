@@ -9,9 +9,13 @@ from google.oauth2 import id_token
 from .auth import clear_auth_cookies, issue_auth_cookies, require_auth
 from .coaching import CoachingProviderError, provider_ready
 from .extensions import db
-from .models import Attempt, AuthSession, Question, SessionItem, StudySession, User, utcnow
+from .models import Attempt, Question, SessionItem, StudySession, User, utcnow
 from .services import (
+    archive_case_detail,
+    archive_cases,
+    boss_case_status,
     calculate_session_summary,
+    cold_case_dashboard,
     create_study_session,
     progress_dashboard,
     request_item_hint,
@@ -190,6 +194,54 @@ def start_daily_session():
     return jsonify({"session": serialize_session(session)}), 201
 
 
+@api.get("/cold-cases")
+@require_auth
+def cold_cases():
+    payload = cold_case_dashboard(g.current_user)
+    db.session.commit()
+    return jsonify(payload)
+
+
+@api.post("/review-sessions")
+@require_auth
+def start_review_session():
+    diagnostic = StudySession.query.filter_by(
+        user_id=g.current_user.id,
+        mode="diagnostic",
+        status="completed",
+    ).first()
+    if not diagnostic:
+        return error("diagnostic_required", "Complete the diagnostic before reopening cold cases.", 409)
+    cold_case_dashboard(g.current_user)
+    try:
+        session = create_study_session(g.current_user, "review")
+    except RuntimeError:
+        return error("no_cold_cases", "No cold cases are due for review.", 409)
+    return jsonify({"session": serialize_session(session)}), 201
+
+
+@api.get("/boss-case")
+@require_auth
+def boss_case():
+    return jsonify(boss_case_status(g.current_user))
+
+
+@api.post("/boss-sessions")
+@require_auth
+def start_boss_session():
+    status = boss_case_status(g.current_user)
+    if status["active_session_id"]:
+        session = _owned_session(status["active_session_id"])
+        return jsonify({"session": serialize_session(session)})
+    if not status["available"]:
+        return error("boss_locked", "Close more daily cases before confronting Professor Quill.", 409)
+    try:
+        session = create_study_session(g.current_user, "boss")
+    except RuntimeError:
+        return error("content_unavailable", "No boss-case evidence is available.", 503)
+    return jsonify({"session": serialize_session(session)}), 201
+
+
 def _owned_session(session_id: str) -> StudySession | None:
     return StudySession.query.filter_by(id=session_id, user_id=g.current_user.id).first()
 
@@ -296,4 +348,33 @@ def session_summary(session_id: str):
 def progress():
     payload = progress_dashboard(g.current_user)
     db.session.commit()
+    return jsonify(payload)
+
+
+@api.get("/archive")
+@require_auth
+def case_archive():
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        per_page = max(1, min(50, int(request.args.get("per_page", 20))))
+    except (TypeError, ValueError):
+        return error("invalid_pagination", "Page values must be numbers.")
+    return jsonify(
+        archive_cases(
+            g.current_user,
+            correctness=request.args.get("correctness") or None,
+            section=request.args.get("section") or None,
+            question_type=request.args.get("question_type") or None,
+            page=page,
+            per_page=per_page,
+        )
+    )
+
+
+@api.get("/archive/<attempt_id>")
+@require_auth
+def case_archive_detail(attempt_id: str):
+    payload = archive_case_detail(g.current_user, attempt_id)
+    if not payload:
+        return error("case_not_found", "That archived case was not found.", 404)
     return jsonify(payload)

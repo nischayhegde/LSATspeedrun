@@ -88,7 +88,7 @@ export type SessionItem = {
 
 export type StudySession = {
   id: string
-  mode: 'diagnostic' | 'daily'
+  mode: 'diagnostic' | 'daily' | 'review' | 'boss'
   status: 'in_progress' | 'completed'
   target_minutes: number
   total_items: number
@@ -123,12 +123,13 @@ export type DiagnosticResults = {
 }
 
 export type DailySummary = {
-  kind: 'daily'
+  kind: 'daily' | 'review' | 'boss'
   accuracy: number
   correct: number
   questions_completed: number
   elapsed_minutes: number
   xp_earned: number
+  boss_reward_xp?: number
   capm?: number | null
   pace_unlocked: boolean
   pace_message: string
@@ -140,6 +141,68 @@ export type DailySummary = {
     delta_percent: number
     message: string
   } | null
+}
+
+export type ArchiveCase = {
+  attempt_id: string
+  question_id: string
+  title: string
+  section: string
+  question_type: string
+  difficulty: number
+  stem: string
+  selected_label: string
+  correct_label: string
+  is_correct: boolean
+  reasoning_provided: boolean
+  explanation_score?: number | null
+  elapsed_ms: number
+  session_mode: StudySession['mode']
+  attempted_at: string
+}
+
+export type ArchiveCaseDetail = {
+  attempt: {
+    id: string
+    selected_label: string
+    is_correct: boolean
+    reasoning_text?: string | null
+    explanation_score?: number | null
+    elapsed_ms: number
+    feedback?: AttemptResult['feedback'] | null
+    coaching_status: AttemptResult['coaching_status']
+    attempted_at: string
+  }
+  question: Question & { correct_answer: string }
+  story: StoryFrame
+  session: { id: string; mode: StudySession['mode'] }
+  review?: { box: number; lapses: number; due_at: string } | null
+}
+
+export type ColdCases = {
+  due_count: number
+  total_cards: number
+  next_due_at?: string | null
+  cards: Array<{
+    id: string
+    question_id: string
+    section: string
+    question_type: string
+    difficulty: number
+    stem: string
+    lapses: number
+    box: number
+    due_at: string
+  }>
+}
+
+export type BossCaseStatus = {
+  available: boolean
+  chapter: number
+  cases_until_boss: number
+  active_session_id?: string | null
+  reward_xp: number
+  defeated: number[]
 }
 
 export type AttemptResult = {

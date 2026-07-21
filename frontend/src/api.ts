@@ -1,4 +1,16 @@
-import type { AttemptResult, CoachingFeedback, CoachingHint, DailySummary, DiagnosticResults, StudySession, User } from './types'
+import type {
+  ArchiveCase,
+  ArchiveCaseDetail,
+  AttemptResult,
+  BossCaseStatus,
+  CoachingFeedback,
+  CoachingHint,
+  ColdCases,
+  DailySummary,
+  DiagnosticResults,
+  StudySession,
+  User,
+} from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/v1'
 
@@ -63,6 +75,10 @@ export const api = {
   startDiagnostic: () =>
     request<{ session: StudySession; results?: DiagnosticResults }>('/diagnostics', { method: 'POST' }),
   startDaily: () => request<{ session: StudySession }>('/study-sessions', { method: 'POST' }),
+  coldCases: () => request<ColdCases>('/cold-cases'),
+  startReview: () => request<{ session: StudySession }>('/review-sessions', { method: 'POST' }),
+  bossCase: () => request<BossCaseStatus>('/boss-case'),
+  startBoss: () => request<{ session: StudySession }>('/boss-sessions', { method: 'POST' }),
   session: (id: string) => request<{ session: StudySession; summary?: DailySummary }>(`/study-sessions/${id}`),
   submitAttempt: (
     sessionId: string,
@@ -80,6 +96,19 @@ export const api = {
     request<{ hint: CoachingHint }>(`/study-sessions/${sessionId}/items/${itemId}/hints`, { method: 'POST' }),
   sessionSummary: (id: string) =>
     request<{ session: StudySession; summary: DailySummary }>(`/study-sessions/${id}/summary`),
+  archive: (filters: { correctness?: string; section?: string; question_type?: string; page?: number } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value != null && value !== '') params.set(key, String(value))
+    })
+    const query = params.toString()
+    return request<{
+      cases: ArchiveCase[]
+      filters: { question_types: string[] }
+      pagination: { page: number; per_page: number; total: number; pages: number }
+    }>(`/archive${query ? `?${query}` : ''}`)
+  },
+  archiveCase: (attemptId: string) => request<ArchiveCaseDetail>(`/archive/${attemptId}`),
   progress: () =>
     request<{
       readiness: DiagnosticResults | null
