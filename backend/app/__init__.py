@@ -13,7 +13,6 @@ from .auth import init_auth
 from .extensions import db
 from .routes import api
 from .seed import seed_questions
-from .story_generator import generate_missing_frames
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -44,9 +43,6 @@ def create_app(test_config: dict | None = None) -> Flask:
         CSRF_COOKIE="sherlock_csrf",
         COOKIE_SECURE=is_production,
         REPO_ROOT=str(backend_dir.parent),
-        STORY_LLM_BASE_URL=os.getenv("STORY_LLM_BASE_URL", ""),
-        STORY_LLM_API_KEY=os.getenv("STORY_LLM_API_KEY", ""),
-        STORY_LLM_MODEL=os.getenv("STORY_LLM_MODEL", ""),
         TFY_API_KEY=os.getenv("TFY_API_KEY", "").strip().strip('"'),
         TFY_URL=os.getenv("TFY_URL", "").strip().strip('"'),
         COACHING_MODEL="gpt-5.6-luna",
@@ -72,12 +68,6 @@ def create_app(test_config: dict | None = None) -> Flask:
     def seed_command(force: bool):
         count = seed_questions(force=force)
         click.echo(f"Seeded {count} questions.")
-
-    @app.cli.command("generate-stories")
-    @click.option("--limit", default=25, type=int, show_default=True)
-    def generate_stories_command(limit: int):
-        generated = generate_missing_frames(limit=max(1, min(limit, 500)))
-        click.echo(f"Generated {generated} cached story frames.")
 
     @app.after_request
     def security_headers(response):
