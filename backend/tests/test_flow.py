@@ -209,6 +209,7 @@ def test_hugging_face_schema_is_mapped_to_questions_and_passages(monkeypatch):
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "AUTO_SEED": False,
             "DEV_AUTH_ENABLED": True,
+            "QUESTION_BANK_DIR": "",
         }
     )
 
@@ -235,6 +236,39 @@ def test_hugging_face_schema_is_mapped_to_questions_and_passages(monkeypatch):
         assert rc.correct_answer == "C"
         assert [choice.label for choice in rc.choices] == list("ABCDE")
         assert all(question.source.startswith(SOURCE_PREFIX) for question in Question.query.all())
+
+
+def test_repository_snapshot_is_used_without_hugging_face(tmp_path, monkeypatch):
+    bank_dir = tmp_path / "question_bank"
+    for dataset_slug in ("lsat-lr", "lsat-rc"):
+        for split in ("train", "validation", "test"):
+            split_dir = bank_dir / dataset_slug
+            split_dir.mkdir(parents=True, exist_ok=True)
+            row = {
+                "context": "A reading passage." if dataset_slug == "lsat-rc" else "A reasoning stimulus.",
+                "id_string": f"{split}-{dataset_slug}",
+                "answers": ["one", "two", "three", "four", "five"],
+                "label": 1,
+                "question": "Which answer is supported?",
+            }
+            (split_dir / f"{split}.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    def unexpected_download(_dataset: str, _split: str):
+        raise AssertionError("Hugging Face should not be called when the repository snapshot is complete")
+
+    monkeypatch.setattr("app.seed._iter_dataset_rows", unexpected_download)
+    application = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "AUTO_SEED": False,
+            "DEV_AUTH_ENABLED": True,
+            "QUESTION_BANK_DIR": str(bank_dir),
+        }
+    )
+    with application.app_context():
+        assert seed_questions() == 6
+        assert Question.query.count() == 6
 
 
 def test_coaching_can_run_as_a_durable_async_job(app, monkeypatch):

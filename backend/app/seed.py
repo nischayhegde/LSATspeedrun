@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import requests
 from flask import current_app
@@ -20,6 +22,32 @@ DATASETS = {
 }
 SOURCE_PREFIX = "https://huggingface.co/datasets/tasksource/lsat-"
 CHOICE_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _snapshot_path(dataset: str, split: str) -> Path | None:
+    configured = current_app.config.get("QUESTION_BANK_DIR")
+    if not configured:
+        return None
+    return Path(configured) / dataset.rsplit("/", 1)[-1] / f"{split}.jsonl"
+
+
+def _iter_snapshot_rows(dataset: str, split: str) -> Iterator[dict] | None:
+    path = _snapshot_path(dataset, split)
+    if path is None or not path.is_file():
+        return None
+
+    def read_rows() -> Iterator[dict]:
+        with path.open("r", encoding="utf-8") as snapshot:
+            for line_number, line in enumerate(snapshot, start=1):
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as error:
+                    raise RuntimeError(f"Invalid JSON in {path} at line {line_number}") from error
+                if not isinstance(row, dict):
+                    raise RuntimeError(f"Invalid row in {path} at line {line_number}")
+                yield row
+
+    return read_rows()
 
 
 def _question_type(section: str, stem: str) -> str:
@@ -109,6 +137,20 @@ def _iter_dataset_rows(dataset: str, split: str) -> Iterator[dict]:
         # above handles shared-IP traffic and stricter future limits.
         if offset < total:
             time.sleep(float(current_app.config.get("HUGGINGFACE_REQUEST_INTERVAL_SECONDS", 1.1)))
+
+
+def _iter_question_rows(dataset: str, split: str) -> Iterator[dict]:
+    snapshot_rows = _iter_snapshot_rows(dataset, split)
+    if snapshot_rows is not None:
+        current_app.logger.info("Loading %s (%s) from the repository snapshot", dataset, split)
+        yield from snapshot_rows
+        return
+    current_app.logger.warning(
+        "Repository snapshot missing for %s (%s); downloading from Hugging Face",
+        dataset,
+        split,
+    )
+    yield from _iter_dataset_rows(dataset, split)
 
 
 def _validated_record(row: dict, dataset: str) -> tuple[str, str, list[str], int, str]:
@@ -240,7 +282,7 @@ def seed_questions(force: bool = False) -> int:
     try:
         for dataset, section in DATASETS.items():
             for split in SPLITS:
-                for row in _iter_dataset_rows(dataset, split):
+                for row in _iter_question_rows(dataset, split):
                     _upsert_row(row, dataset, section, split, passages, questions, choices)
                     count += 1
         db.session.commit()

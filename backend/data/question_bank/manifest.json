@@ -1,0 +1,52 @@
+{
+  "datasets": {
+    "tasksource/lsat-lr": {
+      "revision": "57716ef18b1d9f6d609b503f1f7c87a7b81f7d2c",
+      "splits": {
+        "test": {
+          "path": "lsat-lr/test.jsonl",
+          "questions": 510,
+          "sha256": "7ab99b95545a22f7b53b1db5c86ce766ebf117a7fb2ff5c5ecf575ecbb4c0d68"
+        },
+        "train": {
+          "path": "lsat-lr/train.jsonl",
+          "questions": 3504,
+          "sha256": "8772cbe3ea7576665558029324eccbf228ab0a773fb16a34bbfe26a4264c4729"
+        },
+        "validation": {
+          "path": "lsat-lr/validation.jsonl",
+          "questions": 506,
+          "sha256": "68814c26684c1dfbe709ade7adc4d6f200e2f8fa72e2c400b14b9180f3accd86"
+        }
+      },
+      "total_questions": 4520,
+      "url": "https://huggingface.co/datasets/tasksource/lsat-lr"
+    },
+    "tasksource/lsat-rc": {
+      "revision": "f0923a196e509340a94d1954e237ac95c65e6cf8",
+      "splits": {
+        "test": {
+          "path": "lsat-rc/test.jsonl",
+          "questions": 269,
+          "sha256": "5fcf46724df2ef67f53bca82409d460ef1720f6b87a8882dce2077da40aae529"
+        },
+        "train": {
+          "path": "lsat-rc/train.jsonl",
+          "questions": 1827,
+          "sha256": "43401228f6ded2e0b8a017d696491d7af8c1d75b1098b8d018067c5d4f85b40b"
+        },
+        "validation": {
+          "path": "lsat-rc/validation.jsonl",
+          "questions": 270,
+          "sha256": "1257e9e665a23e67aa4d69ebe17eaaaca5e71351f63a90eaae7a3443f8b454cc"
+        }
+      },
+      "total_questions": 2366,
+      "url": "https://huggingface.co/datasets/tasksource/lsat-rc"
+    }
+  },
+  "generated_at": "2026-07-22T20:25:37.783309+00:00",
+  "schema_version": 1,
+  "source": "Hugging Face Dataset Server",
+  "total_questions": 6886
+}

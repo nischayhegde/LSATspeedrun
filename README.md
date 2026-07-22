@@ -11,12 +11,26 @@ There is no diagnostic, story mode, adaptive scheduler, spaced-repetition queue,
 
 ## Question data
 
-The app loads all splits from these Hugging Face datasets:
+The repository includes a complete question-only snapshot of every split from these Hugging Face datasets:
 
 - [tasksource/lsat-lr](https://huggingface.co/datasets/tasksource/lsat-lr): 4,520 LR questions
 - [tasksource/lsat-rc](https://huggingface.co/datasets/tasksource/lsat-rc): 2,366 RC questions
 
-The combined bank contains 6,886 questions. `backend/app/seed.py` downloads train, validation, and test rows through the Hugging Face Dataset Server, maps zero-based labels to A–E, deduplicates RC passages, and records the upstream dataset and split on each question. Only records with the Hugging Face source prefix are eligible for practice, so historical local-bank rows cannot be selected.
+The combined bank contains 6,886 questions. The six JSONL files and their checksum manifest live in
+`backend/data/question_bank/`. They contain question content only—never users, attempts, AI feedback, or secrets.
+`backend/app/seed.py` loads the repository snapshot first, maps zero-based labels to A–E, deduplicates RC
+passages, and records the upstream dataset and split on each question. If a split file is unavailable, it falls
+back to the Hugging Face Dataset Server. Only records with the Hugging Face source prefix are eligible for
+practice, so historical local-bank rows cannot be selected.
+
+Refresh the repository snapshot explicitly with:
+
+```powershell
+.\.venv\Scripts\python.exe backend\scripts\snapshot_question_bank.py
+```
+
+The snapshot manifest pins the observed upstream revisions and records the row count and SHA-256 digest of each
+file, making it possible to detect an incomplete or changed archive.
 
 The upstream dataset cards do not currently declare a license. Confirm that your intended use complies with the dataset terms and applicable LSAT content rights before publishing or commercial deployment.
 
@@ -38,7 +52,8 @@ cd backend
 ..\.venv\Scripts\python.exe run.py
 ```
 
-In development, `AUTO_SEED=true` by default. The first API startup downloads and inserts the Hugging Face datasets, which can take a little while. You can seed or refresh explicitly:
+In development, `AUTO_SEED=true` by default. The first API startup inserts the repository snapshot into the local
+database. You can seed or refresh the database explicitly:
 
 ```powershell
 cd backend
@@ -84,8 +99,12 @@ Google authentication is verified server-side. The backend issues its own HttpOn
 The model receives the canonical passage or stimulus, stem, choices, verified key, selected answer, and student reasoning. Student text is treated as untrusted quoted data. Model output is schema-validated and cannot change correctness.
 
 For production, `AUTO_SEED` defaults to false. Run the seed command as a deployment task after migrating the database.
+`QUESTION_BANK_DIR` normally needs no configuration; it defaults to `backend/data/question_bank`. Set it only to
+use a snapshot stored elsewhere. Setting it to an empty value disables the local copy and uses Hugging Face.
 
-The Dataset Server enforces a per-minute request limit. The importer throttles page requests and honors `Retry-After`; a complete first import can take roughly three to five minutes on a shared IP.
+The Dataset Server enforces a per-minute request limit. Both the fallback importer and snapshot refresh utility
+throttle page requests and honor `Retry-After`; refreshing the archive can take roughly three to five minutes on
+a shared IP.
 
 ## API
 

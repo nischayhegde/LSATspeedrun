@@ -74,6 +74,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             0.0,
             float(os.getenv("HUGGINGFACE_REQUEST_INTERVAL_SECONDS", "1.1")),
         ),
+        QUESTION_BANK_DIR=os.getenv(
+            "QUESTION_BANK_DIR",
+            str(backend_dir / "data" / "question_bank"),
+        ),
         AUTH_COOKIE="lsat_session",
         CSRF_COOKIE="lsat_csrf",
         COOKIE_SECURE=is_production,
@@ -103,7 +107,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(api, url_prefix="/v1")
 
     @app.cli.command("seed")
-    @click.option("--force", is_flag=True, help="Refresh records from the Hugging Face datasets.")
+    @click.option("--force", is_flag=True, help="Refresh records from the repository question snapshot.")
     def seed_command(force: bool):
         count = seed_questions(force=force)
         click.echo(f"Seeded {count} questions.")
