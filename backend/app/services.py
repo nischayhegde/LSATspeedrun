@@ -9,6 +9,7 @@ from sqlalchemy import or_
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
 from .extensions import db
+from .game import CLIENT_BY_KEY, lock_user_profile, serialize_settlement, settle_attempt, snapshot_case_context
 from .models import Attempt, Question, SessionItem, SkillProgress, StudySession, User, utcnow
 from .seed import SOURCE_PREFIX
 
@@ -38,12 +39,19 @@ def find_resumable_session(user: User) -> StudySession | None:
 
 def serialize_user(user: User) -> dict:
     active = find_resumable_session(user)
+    if not user.game_profile:
+        next_route = "/onboarding"
+    elif active:
+        next_route = f"/cases/{active.id}"
+    else:
+        next_route = "/office"
     return {
         "id": user.id,
         "email": user.email,
         "display_name": user.display_name,
         "avatar_url": user.avatar_url,
-        "next_route": f"/practice/{active.id}" if active else "/practice",
+        "next_route": next_route,
+        "game_ready": bool(user.game_profile),
     }
 
 
@@ -80,11 +88,58 @@ def _elapsed_ms(item: SessionItem) -> int:
     return elapsed_ms
 
 
+def _target_time_seconds(item: SessionItem) -> int:
+    """Return the case target, including passage reuse for RC questions."""
+    if item.question.section == "Logical Reasoning":
+        return 150
+    previous = None
+    if item.position > 0:
+        previous = SessionItem.query.filter_by(
+            session_id=item.session_id,
+            position=item.position - 1,
+        ).first()
+    if (
+        item.question.passage_id
+        and previous
+        and previous.question.passage_id == item.question.passage_id
+    ):
+        return 135
+    return 330
+
+
+def _is_unfinished_current_item(item: SessionItem) -> bool:
+    session = item.session
+    return (
+        session.status in {"in_progress", "paused"}
+        and session.pending_attempt_id is None
+        and item.position == session.current_index
+        and item.completed_at is None
+        and item.attempt is None
+    )
+
+
+def _freeze_current_case(item: SessionItem, user: User) -> bool:
+    """Adopt only the visible unfinished case into the tycoon economy."""
+    if (
+        item.game_context_json is not None
+        or not user.game_profile
+        or not _is_unfinished_current_item(item)
+    ):
+        return False
+    # Migration 0012 gave old rows the LR default. Recompute RC timing when an
+    # unfinished legacy item first enters the tycoon flow.
+    item.target_time_seconds = _target_time_seconds(item)
+    item.game_context_json = snapshot_case_context(user.game_profile)
+    return True
+
+
 def serialize_item(item: SessionItem, commit: bool = True) -> dict:
     changed = False
     now = utcnow()
     if not item.served_at:
         item.served_at = now
+        changed = True
+    if _freeze_current_case(item, item.session.user):
         changed = True
     if (
         item.session.status == "in_progress"
@@ -99,11 +154,24 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
         changed = True
     if changed and commit:
         db.session.commit()
+    context = item.game_context_json or {}
+    client_key = str(context.get("client_key") or "walk_in")
+    client = CLIENT_BY_KEY.get(client_key, CLIENT_BY_KEY["walk_in"])
     return {
         "id": item.id,
         "position": item.position,
         "served_at": _iso_utc(item.served_at),
         "elapsed_ms": _elapsed_ms(item),
+        "target_time_seconds": item.target_time_seconds,
+        "case_terms": (
+            {
+                "client_key": client["key"],
+                "client_name": client["name"],
+                "base_fee": int(context.get("base_fee") or client["base_fee"]),
+            }
+            if context
+            else None
+        ),
         "timer_active": bool(item.timer_started_at and item.session.status == "in_progress"),
         "draft": {
             "selected_label": item.draft_selected_label,
@@ -152,8 +220,14 @@ def select_random_questions(count: int) -> list[Question]:
 
 
 def create_study_session(user: User) -> StudySession:
+    # The account row is the cross-request mutex for the single active case
+    # batch. Both POST /study-sessions and final acknowledgement use this path.
+    profile = lock_user_profile(user.id)
+    if not profile:
+        raise ValueError("onboarding_required")
     active = find_resumable_session(user)
     if active:
+        db.session.commit()
         return active
 
     questions = select_random_questions(int(current_app.config["PRACTICE_SESSION_SIZE"]))
@@ -168,15 +242,22 @@ def create_study_session(user: User) -> StudySession:
     )
     db.session.add(session)
     db.session.flush()
+    previous_passage_id = None
     for position, question in enumerate(questions):
+        if question.section == "Logical Reasoning":
+            target_time_seconds = 150
+        else:
+            target_time_seconds = 135 if question.passage_id and question.passage_id == previous_passage_id else 330
         db.session.add(
             SessionItem(
                 session_id=session.id,
                 question_id=question.id,
                 position=position,
-                requires_reasoning=False,
+                requires_reasoning=True,
+                target_time_seconds=target_time_seconds,
             )
         )
+        previous_passage_id = question.passage_id
     db.session.commit()
     return session
 
@@ -198,6 +279,7 @@ def pause_study_session(session: StudySession) -> StudySession:
         )
         item.timer_started_at = None
         item.paused_at = utcnow()
+        item.timer_compromised = True
     session.status = "paused"
     db.session.commit()
     return session
@@ -226,8 +308,6 @@ def _feedback(question: Question, selected_label: str, is_correct: bool, reasoni
         ),
         "coaching_notice": (
             "Your reasoning will be graded, and every answer choice will be explained."
-            if reasoning
-            else "Every answer choice will be explained by the AI coach."
         ),
     }
 
@@ -261,6 +341,8 @@ def submit_attempt(
     payload: dict,
     idempotency_key: str,
 ) -> tuple[Attempt, bool]:
+    if not user.game_profile:
+        raise ValueError("onboarding_required")
     requested_item_id = payload.get("item_id")
     existing = Attempt.query.filter_by(idempotency_key=idempotency_key).first()
     if existing:
@@ -281,11 +363,16 @@ def submit_attempt(
         raise ValueError("invalid_session_item")
     if item.attempt:
         return item.attempt, True
+    _freeze_current_case(item, user)
+    if item.game_context_json is None:
+        raise ValueError("game_context_required")
 
     selected_label = str(payload.get("selected_label", "")).strip().upper()
     if selected_label not in {choice.label for choice in item.question.choices}:
         raise ValueError("invalid_choice")
     reasoning = str(payload.get("reasoning") or "").strip()[:4000] or None
+    if not reasoning:
+        raise ValueError("reasoning_required")
     elapsed_ms = max(1000, min(_elapsed_ms(item), 15 * 60 * 1000))
     is_correct = selected_label == item.question.correct_answer
     _update_skill(user.id, item.question, is_correct, elapsed_ms)
@@ -335,6 +422,7 @@ def serialize_attempt_result(attempt: Attempt, duplicate: bool = False) -> dict:
         "feedback": attempt.feedback_json,
         "coaching_status": attempt.coaching_status,
         "has_reasoning": bool(attempt.reasoning_text),
+        "game_reward": serialize_settlement(attempt.settlement),
         "session_complete": session.status == "completed",
         "session_id": session.id,
     }
@@ -343,6 +431,9 @@ def serialize_attempt_result(attempt: Attempt, duplicate: bool = False) -> dict:
 def run_attempt_coaching(attempt: Attempt) -> dict:
     existing_feedback = (attempt.feedback_json or {}).get("coaching")
     if attempt.coaching_status == "completed" and existing_feedback:
+        if not attempt.settlement:
+            settle_attempt(attempt, existing_feedback)
+            db.session.commit()
         return existing_feedback
     if attempt.coaching_status == "processing" and attempt.coaching_started_at:
         started = attempt.coaching_started_at
@@ -361,6 +452,8 @@ def run_attempt_coaching(attempt: Attempt) -> dict:
         attempt.coaching_started_at = None
         db.session.commit()
         raise
+
+    settle_attempt(attempt, coaching)
 
     if coaching["explanation_grade"] is not None and not attempt.explanation_score_applied:
         normalized_score = coaching["explanation_grade"] / 100

@@ -8,6 +8,9 @@ from sqlalchemy import MetaData, create_engine, func, insert, select
 from sqlalchemy.engine import make_url
 
 
+REQUIRED_TARGET_REVISION = "0012_lawyer_tycoon"
+
+
 def normalize_postgres_url(value: str) -> str:
     if value.startswith("postgres://"):
         return value.replace("postgres://", "postgresql+psycopg://", 1)
@@ -31,6 +34,36 @@ def validate_source(source_url: str) -> None:
         raise SystemExit("The configured SQLite database file does not exist.")
 
 
+def validate_sqlite_foreign_keys(source_engine) -> None:
+    with source_engine.connect() as source_connection:
+        violations = source_connection.exec_driver_sql("PRAGMA foreign_key_check").mappings().all()
+    if not violations:
+        return
+
+    examples = ", ".join(
+        f"{violation['table']} rowid={violation['rowid']} -> {violation['parent']}"
+        for violation in violations[:5]
+    )
+    remainder = len(violations) - 5
+    if remainder > 0:
+        examples += f", and {remainder} more"
+    raise SystemExit(
+        f"SQLite foreign-key integrity check failed with {len(violations)} violation(s): {examples}"
+    )
+
+
+def validate_target_revision(target_connection, alembic_version_table) -> None:
+    revisions = set(
+        target_connection.execute(select(alembic_version_table.c.version_num)).scalars().all()
+    )
+    if revisions != {REQUIRED_TARGET_REVISION}:
+        found = ", ".join(sorted(revisions)) if revisions else "none"
+        raise SystemExit(
+            "PostgreSQL must be migrated to Alembic revision "
+            f"{REQUIRED_TARGET_REVISION} before copying data; found {found}."
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Copy an existing LSAT Speedrun SQLite database into an empty, migrated PostgreSQL database."
@@ -46,6 +79,7 @@ def main() -> None:
 
     source_engine = create_engine(source_url)
     target_engine = create_engine(target_url, pool_pre_ping=True)
+    validate_sqlite_foreign_keys(source_engine)
     source_metadata = MetaData()
     target_metadata = MetaData()
     source_metadata.reflect(bind=source_engine)
@@ -60,6 +94,7 @@ def main() -> None:
         if table.name != "alembic_version" and table.name in source_metadata.tables
     ]
     with target_engine.connect() as target_connection:
+        validate_target_revision(target_connection, target_metadata.tables["alembic_version"])
         populated = [
             table.name
             for table in copy_tables

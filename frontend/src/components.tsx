@@ -1,16 +1,44 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, BookOpen, Brain, Check, Clock3, LogOut, Pause, X } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import {
+  ArrowRight,
+  BookOpen,
+  Brain,
+  BriefcaseBusiness,
+  Building2,
+  Check,
+  Clock3,
+  Coins,
+  Flame,
+  LayoutGrid,
+  LogOut,
+  Map,
+  Pause,
+  Scale,
+  Sparkles,
+  Star,
+  X,
+} from 'lucide-react'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from './api'
-import type { CoachingFeedback, StudySession, User } from './types'
+import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StudySession, User } from './types'
 
 
-export function LoadingScreen({ label = 'Loading…' }: { label?: string }) {
+export function formatMoney(value: number, compact = false) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+    notation: compact && Math.abs(value) >= 10_000 ? 'compact' : 'standard',
+  }).format(value)
+}
+
+
+export function LoadingScreen({ label = 'Opening the firm…' }: { label?: string }) {
   return (
     <div className="loading-screen" role="status">
-      <span className="spinner" />
+      <span className="legal-spinner"><Scale size={24} /></span>
       <span>{label}</span>
     </div>
   )
@@ -23,19 +51,31 @@ export function ErrorNotice({ error }: { error: unknown }) {
 }
 
 
-export function Brand() {
-  return (
-    <Link className="brand" to="/practice" aria-label="LSAT Speedrun home">
-      <span className="brand-mark">LS</span>
-      <span>LSAT Speedrun</span>
-    </Link>
+export function Brand({ light = false, caseFile = false }: { light?: boolean; caseFile?: boolean }) {
+  const contents = (
+    <>
+      <span className="brand-mark"><Scale size={19} /></span>
+      <span className="brand-word"><strong>LAWYER</strong><small>{caseFile ? 'CASE FILE' : 'TYCOON'}</small></span>
+    </>
   )
+  if (caseFile) return <div className="brand case-brand" aria-label="Lawyer Tycoon active case">{contents}</div>
+  return <Link className={`brand ${light ? 'light' : ''}`} to="/office" aria-label="Lawyer Tycoon office">{contents}</Link>
 }
 
 
-export function AppShell({ user, children }: { user: User; children: React.ReactNode }) {
+const navItems = [
+  { to: '/office', label: 'Office', icon: Building2 },
+  { to: '/cases', label: 'Do Cases', icon: BriefcaseBusiness },
+  { to: '/firm', label: 'Firm', icon: LayoutGrid },
+  { to: '/map', label: 'Empire', icon: Map },
+]
+
+
+export function AppShell({ user, game, children }: { user: User; game?: GameState | null; children: React.ReactNode }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
+  const isActiveCase = /^\/cases\/[^/]+/.test(location.pathname)
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {
@@ -44,20 +84,47 @@ export function AppShell({ user, children }: { user: User; children: React.React
     },
   })
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isActiveCase ? 'active-case' : ''}`}>
       <header className="app-header">
-        <Brand />
-        <div className="account-menu">
-          {user.avatar_url
-            ? <img src={user.avatar_url} alt="" referrerPolicy="no-referrer" />
-            : <span className="avatar-fallback">{user.display_name.slice(0, 1).toUpperCase()}</span>}
-          <span className="account-name">{user.display_name}</span>
-          <button className="icon-button" onClick={() => logout.mutate()} aria-label="Sign out" title="Sign out">
-            <LogOut size={18} />
-          </button>
+        <Brand caseFile={isActiveCase} />
+        {game && !isActiveCase && (
+          <nav className="desktop-nav" aria-label="Primary navigation">
+            {navItems.map(({ to, label, icon: Icon }) => (
+              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''}>
+                <Icon size={17} /><span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        )}
+        <div className="header-right">
+          {game && (
+            <div className="header-economy" aria-label="Firm standing">
+              <span><Coins size={16} />{formatMoney(game.cash, true)}</span>
+              <span><Star size={16} />{game.reputation.toFixed(1)}</span>
+              {game.current_streak > 0 && <span className="streak"><Flame size={16} />{game.current_streak}</span>}
+            </div>
+          )}
+          <div className="account-menu">
+            {user.avatar_url
+              ? <img src={user.avatar_url} alt="" referrerPolicy="no-referrer" />
+              : <span className="avatar-fallback">{user.display_name.slice(0, 1).toUpperCase()}</span>}
+            <span className="account-name">{game?.lawyer_name || user.display_name}</span>
+            <button className="icon-button" onClick={() => logout.mutate()} aria-label="Sign out" title="Sign out">
+              <LogOut size={17} />
+            </button>
+          </div>
         </div>
       </header>
       <main>{children}</main>
+      {game && !isActiveCase && (
+        <nav className="mobile-nav" aria-label="Primary navigation">
+          {navItems.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''}>
+              <Icon size={20} /><span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+      )}
     </div>
   )
 }
@@ -71,45 +138,89 @@ function formatTime(milliseconds: number) {
 }
 
 
-function CoachingPanel({ coaching }: { coaching: CoachingFeedback }) {
+function CaseScore({ reward }: { reward: AttemptReward }) {
+  const repPositive = reward.reputation_change >= 0
+  return (
+    <section className="case-score-card" role="status" aria-live="polite" aria-label="Case score and payout">
+      <div className="score-seal">
+        <span>CASE SCORE</span>
+        <strong>{reward.score}</strong>
+        <small>/ 20</small>
+      </div>
+      <div className="score-breakdown">
+        <div><span>Verified answer</span><strong>+{reward.breakdown.answer}</strong></div>
+        <div><span>{reward.explanation_grade} reasoning</span><strong>+{reward.breakdown.explanation}</strong></div>
+        <div><span>Time · {Math.round(reward.timing.elapsed_seconds)}s / {reward.timing.target_seconds}s</span><strong>+{reward.breakdown.time}</strong></div>
+      </div>
+      <div className="settlement-total">
+        <div><Coins /><span>Fee earned</span><strong>+{formatMoney(reward.payout)}</strong></div>
+        <div className={repPositive ? 'positive' : 'negative'}>
+          <Star /><span>Reputation</span><strong>{repPositive ? '+' : ''}{reward.reputation_change.toFixed(1)}</strong>
+        </div>
+      </div>
+      {(reward.streak_bonus > 0 || reward.staff_bonus > 0 || reward.contract_bonus > 0) && (
+        <div className="bonus-ribbon">
+          <Sparkles size={16} />
+          {[
+            reward.streak_bonus > 0 && `Streak +${formatMoney(reward.streak_bonus)}`,
+            reward.staff_bonus > 0 && `Staff +${formatMoney(reward.staff_bonus)}`,
+            reward.contract_bonus > 0 && `Contract +${formatMoney(reward.contract_bonus)}`,
+          ].filter(Boolean).join(' · ')}
+        </div>
+      )}
+    </section>
+  )
+}
+
+
+function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: CoachingFeedback; reward?: AttemptReward | null; selectedLabel?: string }) {
+  const correctLabel = coaching.answer_analysis.choice_explanations.find((choice) => choice.is_correct)?.label
+  const selectedIsWrong = Boolean(selectedLabel && correctLabel && selectedLabel !== correctLabel)
   return (
     <section className="coaching-panel">
       <div className="coaching-heading">
         <div>
-          <span className="eyebrow">AI REVIEW</span>
-          <h3>Answer explanations</h3>
+          <span className="eyebrow">CASE DEBRIEF</span>
+          <h2>Your reasoning, reviewed</h2>
         </div>
-        {coaching.explanation_grade != null && (
-          <div className="grade-badge">
-            <strong>{coaching.explanation_grade}</strong>
-            <span>reasoning</span>
-          </div>
-        )}
+        {reward && <span className={`grade-pill grade-${reward.explanation_grade.toLowerCase()}`}>{reward.explanation_grade}</span>}
       </div>
 
-      {coaching.explanation_grade != null && (
-        <div className="reasoning-review">
-          <strong>{coaching.reasoning_verdict.replace('_', ' ')}</strong>
-          <p>{coaching.reasoning_summary}</p>
-          {coaching.first_error && (
-            <p><b>First issue:</b> {coaching.first_error.description} {coaching.first_error.repair}</p>
-          )}
-        </div>
-      )}
+      <div className="debrief-grid">
+        <article className="debrief-note strength">
+          <span><Check size={15} /> What you understood</span>
+          <p>{coaching.understood_correctly || coaching.reasoning_summary}</p>
+        </article>
+        <article className="debrief-note repair">
+          <span><Brain size={15} /> Decisive improvement</span>
+          <p>{coaching.first_error ? `${coaching.first_error.description} ${coaching.first_error.repair}` : coaching.next_step_hint}</p>
+        </article>
+      </div>
+
+      <article className="solution-method">
+        <span className="eyebrow">THE CLEAN APPROACH</span>
+        <p>{coaching.solution_method || coaching.debrief}</p>
+      </article>
 
       <div className="correct-explanation">
-        <Check size={18} />
-        <p>{coaching.answer_analysis.correct_answer_explanation}</p>
+        <div><Check size={18} /></div>
+        <div><strong>Why the credited answer wins</strong><p>{coaching.answer_analysis.correct_answer_explanation}</p></div>
       </div>
+      {selectedIsWrong && (
+        <div className="selected-explanation">
+          <div><X size={18} /></div>
+          <div><strong>Why your choice {selectedLabel} falls short</strong><p>{coaching.answer_analysis.selected_answer_explanation}</p></div>
+        </div>
+      )}
       <div className="choice-explanations">
         {coaching.answer_analysis.choice_explanations.map((choice) => (
-          <div className={choice.is_correct ? 'choice-explanation correct' : 'choice-explanation'} key={choice.label}>
-            <span>{choice.label}</span>
+          <details className={choice.is_correct ? 'choice-explanation correct' : 'choice-explanation'} key={choice.label} open={choice.is_correct}>
+            <summary><span>{choice.label}</span><strong>{choice.is_correct ? 'Credited answer' : 'Why it falls short'}</strong></summary>
             <p>{choice.explanation}</p>
-          </div>
+          </details>
         ))}
       </div>
-      <div className="next-step"><Brain size={18} /><span>{coaching.next_step_hint}</span></div>
+      <div className="next-step"><Brain size={18} /><span><b>Next-case cue:</b> {coaching.next_step_hint}</span></div>
     </section>
   )
 }
@@ -117,12 +228,14 @@ function CoachingPanel({ coaching }: { coaching: CoachingFeedback }) {
 
 export function QuestionFlow({ session }: { session: StudySession }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const item = session.pending_item || session.current_item
   const result = session.pending_result
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
   const [clock, setClock] = useState(Date.now())
   const [openedAt, setOpenedAt] = useState(Date.now())
+  const verdictRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setSelected(item?.draft.selected_label || '')
@@ -137,6 +250,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   }, [item?.timer_active, result])
 
   useEffect(() => {
+    if (result) verdictRef.current?.focus()
+  }, [result?.attempt_id])
+
+  useEffect(() => {
     if (!item || result) return
     const timeout = window.setTimeout(() => {
       void api.saveDraft(session.id, item.id, { selected_label: selected || undefined, reasoning }).catch(() => undefined)
@@ -147,55 +264,76 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const submit = useMutation({
     mutationFn: () => api.submitAttempt(
       session.id,
-      { item_id: item!.id, selected_label: selected, reasoning: reasoning || undefined },
+      { item_id: item!.id, selected_label: selected, reasoning },
       crypto.randomUUID(),
     ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
   })
-  const continuePractice = useMutation({
+  const continueCases = useMutation({
     mutationFn: () => api.acknowledgeReview(session.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
+    onSuccess: ({ session: nextSession }) => {
+      void queryClient.invalidateQueries({ queryKey: ['game'] })
+      void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+      if (nextSession.id !== session.id) navigate(`/cases/${nextSession.id}`, { replace: true })
+      else void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
+    },
   })
   const savedCoaching = result?.feedback.coaching
+  const savedReward = result?.game_reward
   const coaching = useQuery({
     queryKey: ['coaching', result?.attempt_id],
     queryFn: () => api.coaching(result!.attempt_id),
-    enabled: Boolean(result && !savedCoaching),
+    enabled: Boolean(result && (!savedCoaching || !savedReward)),
+    retry: false,
   })
   const coachingFeedback = savedCoaching || coaching.data?.coaching
+  const reward = savedReward || coaching.data?.reward
+
+  useEffect(() => {
+    if (!coaching.data?.game) return
+    queryClient.setQueryData<GameResponse>(['game'], { game: coaching.data.game, pending_reviews: [] })
+  }, [coaching.data?.game, queryClient])
 
   const elapsed = useMemo(() => {
     if (!item) return 0
     return item.elapsed_ms + (item.timer_active && !result ? Math.max(0, clock - openedAt) : 0)
   }, [clock, item, openedAt, result])
 
-  if (!item) return <ErrorNotice error={new Error('This practice question could not be loaded.')} />
+  if (!item) return <ErrorNotice error={new Error('This case file could not be loaded.')} />
   const question = item.question
+  const timerRatio = elapsed / Math.max(1, item.target_time_seconds * 1000)
 
   return (
     <div className="question-layout">
-      <div className="question-topbar">
-        <div>
+      <div className="case-file-topbar">
+        <div className="matter-tag">
           <span>{question.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
-          <strong>{question.question_type}</strong>
+          <div><small>ACTIVE MATTER</small><strong>{question.question_type}</strong></div>
         </div>
         <div className="question-progress">
-          Question {Math.min(item.position + 1, session.total_items)} of {session.total_items}
+          <strong>Docket {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
+          {item.case_terms && <span>{item.case_terms.client_name} · {formatMoney(item.case_terms.base_fee)} base fee</span>}
         </div>
-        <div className="timer"><Clock3 size={17} /> {formatTime(elapsed)}</div>
+        <div className={`case-timer ${timerRatio > 1 ? 'over' : ''}`}>
+          <Clock3 size={17} />
+          <span>{formatTime(elapsed)}</span>
+          <small>target {formatTime(item.target_time_seconds * 1000)}</small>
+        </div>
       </div>
       <div className="progress-track"><span style={{ width: `${session.progress_percent}%` }} /></div>
 
       <div className={question.passage ? 'question-content with-passage' : 'question-content'}>
         {question.passage && (
           <article className="passage-card">
-            <div className="eyebrow"><BookOpen size={15} /> READING PASSAGE</div>
+            <div className="document-heading"><BookOpen size={16} /><span>EXHIBIT A · READING PASSAGE</span></div>
             <div className="passage-text">{question.passage.text}</div>
           </article>
         )}
 
         <section className="answer-card">
+          <div className="paperclip" aria-hidden="true" />
           {question.stimulus && <div className="stimulus">{question.stimulus}</div>}
+          <span className="question-label">QUESTION PRESENTED</span>
           <h1>{question.stem}</h1>
           <div className="choices" role="radiogroup" aria-label="Answer choices">
             {question.choices.map((choice) => {
@@ -223,52 +361,63 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
           {!result && (
             <div className="reasoning-box">
-              <label htmlFor="reasoning">Explain your reasoning <span>optional — graded by AI</span></label>
+              <div className="reasoning-heading">
+                <label htmlFor="reasoning">Your case theory <b>Required</b></label>
+                <span>{reasoning.trim().length} characters</span>
+              </div>
               <textarea
                 id="reasoning"
                 value={reasoning}
                 onChange={(event) => setReasoning(event.target.value)}
-                placeholder="Why does your choice follow, and what makes the closest alternative wrong?"
-                rows={4}
+                placeholder="Identify the conclusion, decisive evidence or logical relationship, and why your choice answers the exact question…"
+                rows={5}
+                maxLength={4000}
               />
+              <p>Substance beats length. Generic or repeated explanations receive no meaningful payout.</p>
             </div>
           )}
 
           {!result && (
             <div className="answer-actions">
-              <button className="primary-button" disabled={!selected || submit.isPending} onClick={() => submit.mutate()}>
-                {submit.isPending ? 'Checking answer…' : <>Check answer <ArrowRight size={18} /></>}
-              </button>
               {submit.error && <ErrorNotice error={submit.error} />}
+              <button className="primary-button verdict-button" disabled={!selected || !reasoning.trim() || submit.isPending} onClick={() => submit.mutate()}>
+                {submit.isPending ? 'Filing your answer…' : <>Submit case <Scale size={18} /></>}
+              </button>
             </div>
           )}
 
           {result && (
-            <div className={result.is_correct ? 'result-banner correct' : 'result-banner incorrect'}>
+            <div ref={verdictRef} tabIndex={-1} role="status" aria-live="polite" className={result.is_correct ? 'result-banner correct' : 'result-banner incorrect'}>
               <div>{result.is_correct ? <Check /> : <X />}</div>
-              <div><strong>{result.feedback.headline}</strong><span>{result.feedback.diagnosis}</span></div>
+              <div>
+                <span className="eyebrow">VERIFIED VERDICT</span>
+                <strong>{result.is_correct ? 'Argument sustained' : 'Argument needs repair'}</strong>
+                <p>{result.feedback.diagnosis}</p>
+              </div>
             </div>
           )}
 
           {result && coaching.isLoading && (
-            <div className="coaching-loading"><span className="spinner" /> Grading your reasoning and explaining every choice…</div>
+            <div className="coaching-loading"><span className="spinner" /> Counsel is reviewing your reasoning and calculating the fee…</div>
           )}
-          {result && coaching.error && !coachingFeedback && (
+          {result && coaching.error && (!coachingFeedback || !reward) && (
             <div className="coaching-error">
               <ErrorNotice error={coaching.error} />
-              <button className="secondary-button" onClick={() => coaching.refetch()}>Retry AI review</button>
+              <button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button>
             </div>
           )}
-          {coachingFeedback && <CoachingPanel coaching={coachingFeedback} />}
+          {reward && <CaseScore reward={reward} />}
+          {coachingFeedback && <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result?.feedback.selected_label} />}
 
           {result && (
             <div className="continue-row">
-              <button className="primary-button" disabled={continuePractice.isPending || coaching.isLoading} onClick={() => continuePractice.mutate()}>
-                {continuePractice.isPending
-                  ? 'Loading…'
-                  : result.session_complete
-                    ? <>View summary <ArrowRight size={18} /></>
-                    : <>Next random question <ArrowRight size={18} /></>}
+              {continueCases.error && <ErrorNotice error={continueCases.error} />}
+              <button
+                className="primary-button next-case-button"
+                disabled={!reward || continueCases.isPending || coaching.isLoading}
+                onClick={() => continueCases.mutate()}
+              >
+                {!reward ? 'Settling fee…' : continueCases.isPending ? 'Opening file…' : <>Next case <ArrowRight size={18} /></>}
               </button>
             </div>
           )}
@@ -281,13 +430,17 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
 export function PauseButton({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const pause = useMutation({
     mutationFn: () => api.pauseSession(sessionId),
-    onSuccess: () => navigate('/practice'),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+      navigate('/office')
+    },
   })
   return (
     <button className="secondary-button compact" onClick={() => pause.mutate()} disabled={pause.isPending}>
-      <Pause size={16} /> Save & exit
+      <Pause size={15} /> Save & return to office
     </button>
   )
 }

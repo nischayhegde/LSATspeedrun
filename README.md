@@ -1,13 +1,14 @@
-# LSAT Speedrun
+# Lawyer Tycoon
 
-LSAT Speedrun is a deliberately simple practice app:
+Lawyer Tycoon turns a serious LSAT question bank into a persistent law-firm management game:
 
-1. Create an account or sign in with Google.
-2. Start a ten-question practice session.
-3. Answer randomly selected Logical Reasoning (LR) and Reading Comprehension (RC) questions.
-4. Review the verified answer, an optional LLM grade of your written reasoning, and an explanation of every answer choice.
+1. Sign in, name a firm, and choose a male or female character presentation.
+2. Open **Do Cases** and answer a randomly selected Logical Reasoning (LR) or Reading Comprehension (RC) question.
+3. Submit the answer together with a required, question-specific explanation.
+4. Receive the verified verdict, an LLM reasoning review, a transparent 1–20 score, cash, and Reputation.
+5. Invest in office upgrades, staff, clients, connections, and rival acquisitions while the persistent 2D office evolves.
 
-There is no diagnostic, story mode, adaptive scheduler, spaced-repetition queue, or game progression. The answer key determines correctness; the LLM only grades reasoning and explains choices.
+There is one question loop throughout the game—no alternate question modes, energy gates, or paid answer power. The verified answer key always determines correctness; the LLM only grades reasoning and explains choices. Economy settlement, timing, Reputation, streaks, purchases, passive income, and account ownership are enforced server-side.
 
 ## Question data
 
@@ -49,11 +50,14 @@ Start the API:
 
 ```powershell
 cd backend
+..\.venv\Scripts\python.exe -m flask --app run.py db upgrade
 ..\.venv\Scripts\python.exe run.py
 ```
 
-In development, `AUTO_SEED=true` by default. The first API startup inserts the repository snapshot into the local
-database. You can seed or refresh the database explicitly:
+Always run the Alembic upgrade before starting a new code version. Runtime startup deliberately does not call
+`db.create_all()` outside tests, because doing so against an older stamped database can make later migrations
+collide. In development, `AUTO_SEED=true` by default, so startup inserts any missing repository questions after
+the schema is current. You can seed or refresh the database explicitly:
 
 ```powershell
 cd backend
@@ -68,7 +72,8 @@ cd frontend
 npm run dev
 ```
 
-Open http://localhost:5173. A local-development sign-in button is enabled unless `DEV_AUTH_ENABLED=false`.
+Open http://localhost:5173. To use the local-development sign-in button, explicitly set
+`DEV_AUTH_ENABLED=true`; it defaults off and is rejected when `FLASK_ENV=production`.
 
 ## Configuration
 
@@ -82,7 +87,7 @@ DATABASE_URL=
 PRACTICE_SESSION_SIZE=10
 HUGGINGFACE_REQUEST_INTERVAL_SECONDS=1.1
 AUTO_SEED=true
-DEV_AUTH_ENABLED=true
+DEV_AUTH_ENABLED=false
 AI_JOBS_MODE=sync
 ```
 
@@ -90,7 +95,7 @@ Google authentication is verified server-side. The backend issues its own HttpOn
 
 `TFY_URL` may be an OpenAI-compatible API base or a full `/chat/completions` URL. Post-answer coaching uses `gpt-5.6-luna` at `xhigh` reasoning effort and returns:
 
-- An optional 0–100 grade for the student's written reasoning
+- A substantive grade mapped to Invalid, Weak, Good, or Excellent
 - A reasoning verdict and first-error repair
 - An explanation of the verified answer
 - An explanation of every answer choice
@@ -106,15 +111,21 @@ The Dataset Server enforces a per-minute request limit. Both the fallback import
 throttle page requests and honor `Retry-After`; refreshing the archive can take roughly three to five minutes on
 a shared IP.
 
-## API
+## Game persistence and API
 
-The active API surface is intentionally small:
+`PlayerProfile`, owned assets, client contracts, daily progress, immutable case settlements, and the cash ledger
+all reference the authenticated user account. A unique settlement and ledger source prevent browser retries or
+SQS/Lambda redelivery from paying the same case twice.
+
+The active API surface includes:
 
 - `POST /v1/auth/google`, `POST /v1/auth/dev`, `POST /v1/auth/logout`
 - `GET /v1/me`
+- `GET /v1/game`, create/edit profile, purchases, firm advancement, client activation, passive collection, and daily rewards
 - `POST /v1/study-sessions`, `GET /v1/study-sessions/current`
 - `GET /v1/study-sessions/:id`, pause/resume, draft, submit, and answer-review acknowledgement endpoints
 - `POST /v1/attempts/:id/coaching`
+- `GET /v1/attempts/:id/reward`
 - `GET /v1/jobs/:id` for asynchronous coaching
 - `GET /v1/study-sessions/:id/summary`
 - `GET /v1/health`
@@ -129,4 +140,4 @@ cd frontend
 npm run build
 ```
 
-The tests cover direct post-login practice access, random Hugging Face-only selection, removal of diagnostic/story endpoints, dataset schema mapping, verified answer scoring, LLM reasoning grades, and all-choice explanations.
+The tests cover onboarding and account isolation, required reasoning, random Hugging Face-only selection, exact score gates, verified-answer authority, immutable exactly-once settlements, purchases, passive-income caps, asynchronous coaching, and all-choice explanations.

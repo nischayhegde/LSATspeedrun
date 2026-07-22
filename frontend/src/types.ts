@@ -4,7 +4,126 @@ export type User = {
   display_name: string
   avatar_url?: string | null
   next_route: string
+  game_ready: boolean
 }
+
+export type CharacterGender = 'male' | 'female'
+
+export type GameRequirement = {
+  reputation: number
+  tier: number
+  assets: string[]
+}
+
+export type GameAsset = {
+  key: string
+  type: 'upgrade' | 'staff' | 'connection' | 'rival'
+  name: string
+  cost: number
+  reputation: number
+  tier: number
+  benefit: string
+  description: string
+  requires?: string[]
+  owned: boolean
+  available: boolean
+  requirements: GameRequirement
+}
+
+export type ClientContract = {
+  cases_remaining: number
+  completed_contracts: number
+  loyalty: number
+}
+
+export type GameClient = {
+  key: string
+  name: string
+  base_fee: number
+  reputation: number
+  tier: number
+  length: number
+  icon: string
+  description: string
+  requires?: string[]
+  requirements: GameRequirement
+  unlocked: boolean
+  selected: boolean
+  on_hold: boolean
+  contract?: ClientContract | null
+}
+
+export type FirmTier = {
+  tier: number
+  name: string
+  cost: number
+  reputation: number
+  short: string
+  owned?: boolean
+  next?: boolean
+  available?: boolean
+}
+
+export type AttemptReward = {
+  id: string
+  rule_version: string
+  explanation_grade: 'Invalid' | 'Weak' | 'Good' | 'Excellent'
+  explanation_score: number
+  score: number
+  breakdown: { answer: number; explanation: number; time: number }
+  timing: { elapsed_seconds: number; target_seconds: number }
+  client_key: string
+  base_fee: number
+  score_multiplier: number
+  firm_multiplier: number
+  streak_bonus: number
+  staff_bonus: number
+  contract_bonus: number
+  payout: number
+  reputation_before: number
+  reputation_after: number
+  reputation_change: number
+  created_at: string
+}
+
+export type GameState = {
+  id: string
+  lawyer_name: string
+  firm_name: string
+  character_gender: CharacterGender
+  cash: number
+  reputation: number
+  reputation_band: { name: string; minimum: number; next?: number | null }
+  office_tier: number
+  office: FirmTier
+  current_streak: number
+  best_streak: number
+  total_cases: number
+  total_correct: number
+  total_validated_correct: number
+  lifetime_earnings: number
+  firm_valuation: number
+  owned_assets: string[]
+  active_client: GameClient & { cases_remaining: number; effective_key: string }
+  passive_income: {
+    hourly_rate: number
+    stored_hours: number
+    cap_hours: number
+    available: number
+    last_collected_at: string
+  }
+  daily: {
+    date: string
+    cases_completed: number
+    claimed: number[]
+    goals: Array<{ cases: number; reward: number; complete: boolean; claimed: boolean }>
+  }
+  achievements: Array<{ key: string; name: string; description: string; unlocked: boolean }>
+  next_milestone?: { kind: 'tier' | 'asset'; name: string; cost: number; reputation: number } | null
+  catalog: { assets: GameAsset[]; clients: GameClient[]; tiers: FirmTier[] }
+}
+
+export type GameResponse = { game: GameState | null; pending_reviews?: string[] }
 
 export type Choice = { label: string; text: string }
 
@@ -26,17 +145,15 @@ export type CoachingFeedback = {
   explanation_grade?: number | null
   reasoning_verdict: 'strong' | 'mostly_correct' | 'partial' | 'misconception' | 'unsupported' | 'not_provided'
   reasoning_summary: string
-  first_error?: {
-    code: string
-    description: string
-    repair: string
-  } | null
+  understood_correctly?: string
+  first_error?: { code: string; description: string; repair: string } | null
   answer_analysis: {
     correct_answer_explanation: string
     selected_answer_explanation: string
     choice_explanations: Array<{ label: string; is_correct: boolean; explanation: string }>
   }
   next_step_hint: string
+  solution_method?: string
   debrief: string
 }
 
@@ -45,12 +162,10 @@ export type SessionItem = {
   position: number
   served_at: string
   elapsed_ms: number
+  target_time_seconds: number
+  case_terms?: { client_key: string; client_name: string; base_fee: number } | null
   timer_active: boolean
-  draft: {
-    selected_label?: string | null
-    reasoning: string
-    updated_at?: string | null
-  }
+  draft: { selected_label?: string | null; reasoning: string; updated_at?: string | null }
   question: Question
 }
 
@@ -63,6 +178,7 @@ export type AttemptResult = {
   session_id: string
   coaching_status: 'pending' | 'processing' | 'completed' | 'failed'
   has_reasoning: boolean
+  game_reward?: AttemptReward | null
   feedback: {
     is_correct: boolean
     selected_label: string

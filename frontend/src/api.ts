@@ -1,4 +1,13 @@
-import type { CoachingFeedback, PracticeSummary, StudySession, User } from './types'
+import type {
+  AttemptReward,
+  CharacterGender,
+  CoachingFeedback,
+  GameResponse,
+  GameState,
+  PracticeSummary,
+  StudySession,
+  User,
+} from './types'
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/v1' : 'http://localhost:5000/v1')
 
@@ -69,6 +78,20 @@ export const api = {
       body: JSON.stringify({ email: 'student@localhost.test', display_name: 'Local Student' }),
     }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
+  game: () => request<GameResponse>('/game'),
+  createGame: (body: { lawyer_name: string; firm_name: string; character_gender: CharacterGender }) =>
+    request<GameResponse>('/game/profile', { method: 'POST', body: JSON.stringify(body) }),
+  updateGame: (body: Partial<{ lawyer_name: string; firm_name: string; character_gender: CharacterGender }>) =>
+    request<{ game: GameState }>('/game/profile', { method: 'PATCH', body: JSON.stringify(body) }),
+  purchase: (assetKey: string) =>
+    request<{ game: GameState }>('/game/purchases', { method: 'POST', body: JSON.stringify({ asset_key: assetKey }) }),
+  advanceFirm: (targetTier: number) =>
+    request<{ game: GameState }>('/game/advance', { method: 'POST', body: JSON.stringify({ target_tier: targetTier }) }),
+  selectClient: (clientKey: string) =>
+    request<{ game: GameState }>('/game/client', { method: 'POST', body: JSON.stringify({ client_key: clientKey }) }),
+  collectPassive: () => request<{ collected: number; game: GameState }>('/game/passive-income/collect', { method: 'POST' }),
+  claimDaily: (milestone: number) =>
+    request<{ claimed: number; game: GameState }>(`/game/daily-rewards/${milestone}/claim`, { method: 'POST' }),
   currentSession: () => request<{ session: StudySession | null }>('/study-sessions/current'),
   startPractice: () => request<{ session: StudySession }>('/study-sessions', { method: 'POST' }),
   session: (id: string) => request<{ session: StudySession; summary?: PracticeSummary }>(`/study-sessions/${id}`),
@@ -98,8 +121,12 @@ export const api = {
       status: string
       coaching?: CoachingFeedback
       job?: AsyncJob<CoachingFeedback>
+      reward?: AttemptReward | null
+      game?: GameState | null
     }>(`/attempts/${attemptId}/coaching`, { method: 'POST' })
     const coaching = response.coaching ?? await waitForJob<CoachingFeedback>(response.job!.id)
-    return { coaching }
+    if (response.reward && response.game) return { coaching, reward: response.reward, game: response.game }
+    const settled = await request<{ reward: AttemptReward | null; game: GameState | null }>(`/attempts/${attemptId}/reward`)
+    return { coaching, reward: settled.reward, game: settled.game }
   },
 }

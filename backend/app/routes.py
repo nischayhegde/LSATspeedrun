@@ -10,6 +10,18 @@ from google.oauth2 import id_token
 from .auth import clear_auth_cookies, issue_auth_cookies, require_auth
 from .coaching import CoachingProviderError, provider_ready
 from .extensions import db
+from .game import (
+    advance_firm,
+    claim_daily_reward,
+    collect_passive_income,
+    create_profile,
+    pending_review_attempts,
+    purchase_asset,
+    select_client,
+    serialize_game,
+    serialize_settlement,
+    update_profile,
+)
 from .jobs import (
     JobQueueError,
     async_jobs_enabled,
@@ -167,6 +179,138 @@ def me():
     return jsonify({"user": serialize_user(g.current_user)})
 
 
+def _game_profile():
+    return g.current_user.game_profile
+
+
+@api.get("/game")
+@require_auth
+def game_state():
+    profile = _game_profile()
+    return jsonify(
+        {
+            "game": serialize_game(profile) if profile else None,
+            "pending_reviews": pending_review_attempts(g.current_user.id) if profile else [],
+        }
+    )
+
+
+@api.post("/game/profile")
+@require_auth
+def start_game_profile():
+    try:
+        profile = create_profile(g.current_user, request.get_json(silent=True) or {})
+    except ValueError as exc:
+        code = str(exc)
+        messages = {
+            "profile_exists": "Your law firm has already been created.",
+            "invalid_character": "Choose the male or female character.",
+            "invalid_name": "Enter a name between 2 and 80 characters.",
+        }
+        return error(code, messages.get(code, "The firm could not be created."), 409 if code == "profile_exists" else 400)
+    return jsonify({"game": serialize_game(profile), "pending_reviews": []}), 201
+
+
+@api.patch("/game/profile")
+@require_auth
+def edit_game_profile():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before editing the firm.", 409)
+    try:
+        update_profile(profile, request.get_json(silent=True) or {})
+    except ValueError as exc:
+        code = str(exc)
+        return error(code, "Choose a valid character and names between 2 and 80 characters.")
+    return jsonify({"game": serialize_game(profile)})
+
+
+def _game_error(code: str):
+    messages = {
+        "asset_not_found": "That firm item does not exist.",
+        "already_owned": "Your firm already owns that item.",
+        "requirements_not_met": "Your firm does not meet the listed requirements yet.",
+        "insufficient_cash": "Your firm does not have enough cash for that purchase.",
+        "maximum_tier": "Your firm has already reached the highest tier.",
+        "invalid_target_tier": "Firm tiers must be unlocked in order.",
+        "client_not_found": "That client is not available.",
+        "invalid_milestone": "That daily goal does not exist.",
+        "already_claimed": "That daily reward has already been claimed.",
+        "goal_incomplete": "Complete the daily goal before claiming its reward.",
+    }
+    status = 404 if code in {"asset_not_found", "client_not_found"} else 409
+    return error(code, messages.get(code, "That game action could not be completed."), status)
+
+
+@api.post("/game/purchases")
+@require_auth
+def buy_game_asset():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before making purchases.", 409)
+    asset_key = str((request.get_json(silent=True) or {}).get("asset_key") or "")
+    try:
+        purchase_asset(profile, asset_key)
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"game": serialize_game(profile)})
+
+
+@api.post("/game/advance")
+@require_auth
+def advance_game_firm():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before advancing the firm.", 409)
+    payload = request.get_json(silent=True) or {}
+    try:
+        target_tier = int(payload.get("target_tier"))
+    except (TypeError, ValueError):
+        return error("invalid_target_tier", "Choose the next firm tier.")
+    try:
+        advance_firm(profile, target_tier)
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"game": serialize_game(profile)})
+
+
+@api.post("/game/client")
+@require_auth
+def activate_game_client():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before choosing clients.", 409)
+    client_key = str((request.get_json(silent=True) or {}).get("client_key") or "")
+    try:
+        select_client(profile, client_key)
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"game": serialize_game(profile)})
+
+
+@api.post("/game/passive-income/collect")
+@require_auth
+def collect_game_passive_income():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before collecting income.", 409)
+    amount = collect_passive_income(profile)
+    return jsonify({"collected": amount, "game": serialize_game(profile)})
+
+
+@api.post("/game/daily-rewards/<int:milestone>/claim")
+@require_auth
+def claim_game_daily_reward(milestone: int):
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before claiming rewards.", 409)
+    try:
+        amount = claim_daily_reward(profile, milestone)
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"claimed": amount, "game": serialize_game(profile)})
+
+
 def _owned_session(session_id: str) -> StudySession | None:
     return StudySession.query.filter_by(id=session_id, user_id=g.current_user.id, mode="practice").first()
 
@@ -174,6 +318,8 @@ def _owned_session(session_id: str) -> StudySession | None:
 @api.post("/study-sessions")
 @require_auth
 def start_practice_session():
+    if not _game_profile():
+        return error("onboarding_required", "Create your lawyer before starting cases.", 409)
     if not eligible_question_count():
         return error(
             "content_unavailable",
@@ -266,8 +412,36 @@ def acknowledge_answer_review(session_id: str):
     session = _owned_session(session_id)
     if not session:
         return error("session_not_found", "That practice session was not found.", 404)
+    pending_attempt = db.session.get(Attempt, session.pending_attempt_id) if session.pending_attempt_id else None
+    if (
+        pending_attempt
+        and pending_attempt.session_item.game_context_json is not None
+        and not pending_attempt.settlement
+    ):
+        return error(
+            "settlement_required",
+            "Finish the case review and settlement before continuing.",
+            409,
+        )
+    completed_batch = session.status == "completed"
     session.pending_attempt_id = None
     db.session.commit()
+    if completed_batch:
+        if not _game_profile():
+            return jsonify(
+                {
+                    "session": serialize_session(session, False),
+                    "continued_from": session.id,
+                    "onboarding_required": True,
+                }
+            )
+        next_session = create_study_session(g.current_user)
+        return jsonify(
+            {
+                "session": serialize_session(next_session),
+                "continued_from": session.id,
+            }
+        )
     return jsonify({"session": serialize_session(session)})
 
 
@@ -286,13 +460,16 @@ def create_attempt(session_id: str):
     except ValueError as exc:
         code = str(exc)
         messages = {
+            "onboarding_required": "Create your lawyer before starting cases.",
+            "game_context_required": "Reload the current case before submitting it.",
             "idempotency_conflict": "That request identifier was already used.",
             "debrief_required": "Review the current answer before continuing.",
             "session_complete": "This practice session is already complete.",
             "invalid_session_item": "This is not the current question. Refresh and try again.",
             "invalid_choice": "Choose one of the available answers.",
+            "reasoning_required": "Explain your reasoning before submitting the case.",
         }
-        status = 409 if code != "invalid_choice" else 400
+        status = 400 if code in {"invalid_choice", "reasoning_required"} else 409
         return error(code, messages.get(code, "The answer could not be saved."), status)
     return jsonify({"result": serialize_attempt_result(attempt, duplicate)})
 
@@ -305,7 +482,16 @@ def coach_attempt(attempt_id: str):
         return error("attempt_not_found", "That answer was not found.", 404)
     saved = (attempt.feedback_json or {}).get("coaching")
     if attempt.coaching_status == "completed" and saved:
-        return jsonify({"status": "completed", "coaching": saved})
+        if not attempt.settlement:
+            run_attempt_coaching(attempt)
+        return jsonify(
+            {
+                "status": "completed",
+                "coaching": saved,
+                "reward": serialize_settlement(attempt.settlement),
+                "game": serialize_game(g.current_user.game_profile) if g.current_user.game_profile else None,
+            }
+        )
     if not provider_ready():
         return error("coaching_not_configured", "AI coaching is not configured.", 503)
     if async_jobs_enabled():
@@ -316,7 +502,14 @@ def coach_attempt(attempt_id: str):
         except JobQueueError as exc:
             return error("job_queue_failed", str(exc), 503)
         if job.status == "completed":
-            return jsonify({"status": "completed", "coaching": job.result_json})
+            return jsonify(
+                {
+                    "status": "completed",
+                    "coaching": job.result_json,
+                    "reward": serialize_settlement(attempt.settlement),
+                    "game": serialize_game(g.current_user.game_profile) if g.current_user.game_profile else None,
+                }
+            )
         return jsonify({"status": job.status, "job": serialize_job(job)}), 202
     try:
         coaching = run_attempt_coaching(attempt)
@@ -326,7 +519,28 @@ def coach_attempt(attempt_id: str):
         raise
     except CoachingProviderError as exc:
         return error("coaching_failed", str(exc), 502)
-    return jsonify({"status": "completed", "coaching": coaching})
+    return jsonify(
+        {
+            "status": "completed",
+            "coaching": coaching,
+            "reward": serialize_settlement(attempt.settlement),
+            "game": serialize_game(g.current_user.game_profile) if g.current_user.game_profile else None,
+        }
+    )
+
+
+@api.get("/attempts/<attempt_id>/reward")
+@require_auth
+def attempt_game_reward(attempt_id: str):
+    attempt = Attempt.query.filter_by(id=attempt_id, user_id=g.current_user.id).first()
+    if not attempt:
+        return error("attempt_not_found", "That answer was not found.", 404)
+    return jsonify(
+        {
+            "reward": serialize_settlement(attempt.settlement),
+            "game": serialize_game(g.current_user.game_profile) if g.current_user.game_profile else None,
+        }
+    )
 
 
 @api.get("/jobs/<job_id>")

@@ -14,6 +14,10 @@ class JobQueueError(RuntimeError):
     pass
 
 
+class JobLeaseActive(JobQueueError):
+    """Tell the SQS handler to retain a duplicate delivery until the lease resolves."""
+
+
 def async_jobs_enabled() -> bool:
     return current_app.config.get("AI_JOBS_MODE") == "sqs"
 
@@ -57,18 +61,46 @@ def _send_job_message(job: AiJob) -> None:
     db.session.commit()
 
 
+def _send_or_fail(job: AiJob) -> None:
+    try:
+        _send_job_message(job)
+    except JobQueueError:
+        job.status = "failed"
+        job.error_message = "The AI coaching request could not be queued. Please retry."
+        job.started_at = None
+        db.session.commit()
+        raise
+
+
 def _enqueue(attempt: Attempt) -> AiJob:
     dedup_key = f"coaching:{attempt.id}"
-    job = AiJob.query.filter_by(dedup_key=dedup_key).first()
-    if job and job.status in {"queued", "processing", "completed"}:
-        if job.status == "queued" and not job.queue_message_id:
-            _send_job_message(job)
+    job = (
+        AiJob.query.populate_existing()
+        .filter_by(dedup_key=dedup_key)
+        .with_for_update()
+        .first()
+    )
+    if job and job.status == "completed":
+        db.session.rollback()
+        return job
+    if job and job.status == "processing" and _lease_is_current(job):
+        db.session.rollback()
+        return job
+    if job and job.status == "queued":
+        should_send = not job.queue_message_id
+        db.session.commit()
+        if should_send:
+            _send_or_fail(job)
         return job
     if job:
+        # A stale processing lease has no trustworthy SQS delivery left. A
+        # user retry explicitly reclaims it and emits a fresh durable message.
+        reset_attempts = job.status == "failed"
         job.status = "queued"
         job.result_json = None
         job.error_message = None
-        job.attempt_count = 0
+        if reset_attempts:
+            job.attempt_count = 0
         job.queue_message_id = None
         job.started_at = None
         job.completed_at = None
@@ -85,15 +117,9 @@ def _enqueue(attempt: Attempt) -> AiJob:
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        job = AiJob.query.filter_by(dedup_key=dedup_key).one()
+        return _enqueue(attempt)
     if job.status == "queued" and not job.queue_message_id:
-        try:
-            _send_job_message(job)
-        except JobQueueError:
-            job.status = "failed"
-            job.error_message = "The AI coaching request could not be queued. Please retry."
-            db.session.commit()
-            raise
+        _send_or_fail(job)
     return job
 
 
@@ -113,7 +139,7 @@ def _lease_is_current(job: AiJob, seconds: int = 255) -> bool:
 def process_ai_job(job_id: str) -> AiJob | None:
     """Claim and execute one durable coaching job."""
 
-    job = db.session.get(AiJob, job_id, with_for_update=True)
+    job = db.session.get(AiJob, job_id, with_for_update=True, populate_existing=True)
     if not job:
         current_app.logger.warning("Ignoring missing AI job %s", job_id)
         db.session.rollback()
@@ -124,7 +150,10 @@ def process_ai_job(job_id: str) -> AiJob | None:
         return job
     if _lease_is_current(job):
         db.session.rollback()
-        return job
+        # Returning normally makes Lambda acknowledge and delete the SQS
+        # message. Raising instead uses partial-batch failure so a crashed
+        # worker's only delivery cannot disappear while its lease is current.
+        raise JobLeaseActive("The AI job is already covered by a current processing lease.")
     if job.kind != "coaching":
         job.status = "failed"
         job.error_message = "This legacy AI job type is no longer supported."
@@ -148,7 +177,12 @@ def process_ai_job(job_id: str) -> AiJob | None:
         result = run_attempt_coaching(attempt)
     except Exception as exc:
         db.session.rollback()
-        failed_job = db.session.get(AiJob, job_id, with_for_update=True)
+        failed_job = db.session.get(
+            AiJob,
+            job_id,
+            with_for_update=True,
+            populate_existing=True,
+        )
         if not failed_job:
             raise
         final_failure = isinstance(exc, (KeyError, TypeError, ValueError)) or failed_job.attempt_count >= max_attempts
@@ -158,7 +192,12 @@ def process_ai_job(job_id: str) -> AiJob | None:
         db.session.commit()
         raise
 
-    completed_job = db.session.get(AiJob, job_id, with_for_update=True)
+    completed_job = db.session.get(
+        AiJob,
+        job_id,
+        with_for_update=True,
+        populate_existing=True,
+    )
     completed_job.status = "completed"
     completed_job.result_json = result
     completed_job.error_message = None

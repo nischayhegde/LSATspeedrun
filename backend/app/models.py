@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import CheckConstraint, UniqueConstraint
 
 from .extensions import db
 
@@ -29,6 +29,13 @@ class User(db.Model):
     story_intro_seen = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    game_profile = db.relationship(
+        "PlayerProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class AuthSession(db.Model):
@@ -118,6 +125,9 @@ class SessionItem(db.Model):
     question_id = db.Column(db.String(80), db.ForeignKey("questions.id"), nullable=False, index=True)
     position = db.Column(db.Integer, nullable=False)
     requires_reasoning = db.Column(db.Boolean, nullable=False, default=False)
+    target_time_seconds = db.Column(db.Integer, nullable=False, default=150)
+    game_context_json = db.Column(db.JSON, nullable=True)
+    timer_compromised = db.Column(db.Boolean, nullable=False, default=False)
     served_at = db.Column(db.DateTime(timezone=True), nullable=True)
     active_elapsed_ms = db.Column(db.Integer, nullable=False, default=0)
     timer_activated_at = db.Column(db.DateTime(timezone=True), nullable=True)
@@ -158,6 +168,194 @@ class Attempt(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
 
     session_item = db.relationship("SessionItem", back_populates="attempt")
+    settlement = db.relationship(
+        "AttemptSettlement",
+        back_populates="attempt",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class PlayerProfile(db.Model):
+    """Account-bound state for the Lawyer Tycoon layer."""
+
+    __tablename__ = "player_profiles"
+    __table_args__ = (
+        CheckConstraint("character_gender in ('male', 'female')", name="ck_profile_character_gender"),
+        CheckConstraint("cash >= 0", name="ck_profile_cash_nonnegative"),
+        CheckConstraint("reputation >= 0 and reputation <= 100", name="ck_profile_reputation_range"),
+        CheckConstraint("office_tier >= 0 and office_tier <= 6", name="ck_profile_office_tier_range"),
+        CheckConstraint("current_streak >= 0 and best_streak >= 0", name="ck_profile_streak_nonnegative"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    lawyer_name = db.Column(db.String(50), nullable=False)
+    firm_name = db.Column(db.String(80), nullable=False)
+    character_gender = db.Column(db.String(12), nullable=False)
+    cash = db.Column(db.BigInteger, nullable=False, default=250)
+    reputation = db.Column(db.Float, nullable=False, default=50.0)
+    office_tier = db.Column(db.Integer, nullable=False, default=0)
+    current_streak = db.Column(db.Integer, nullable=False, default=0)
+    best_streak = db.Column(db.Integer, nullable=False, default=0)
+    total_cases = db.Column(db.Integer, nullable=False, default=0)
+    total_correct = db.Column(db.Integer, nullable=False, default=0)
+    total_validated_correct = db.Column(db.Integer, nullable=False, default=0)
+    lifetime_earnings = db.Column(db.BigInteger, nullable=False, default=250)
+    lifetime_spending = db.Column(db.BigInteger, nullable=False, default=0)
+    active_client_key = db.Column(db.String(60), nullable=False, default="walk_in")
+    client_cases_remaining = db.Column(db.Integer, nullable=False, default=10)
+    last_passive_collected_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    user = db.relationship("User", back_populates="game_profile")
+    assets = db.relationship("PlayerAsset", back_populates="profile", cascade="all, delete-orphan")
+    client_contracts = db.relationship(
+        "PlayerClientContract",
+        back_populates="profile",
+        cascade="all, delete-orphan",
+    )
+
+
+class PlayerAsset(db.Model):
+    __tablename__ = "player_assets"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "asset_key", name="uq_profile_asset"),
+        CheckConstraint("level >= 1", name="ck_player_asset_level"),
+        CheckConstraint("quantity >= 1", name="ck_player_asset_quantity"),
+        CheckConstraint("purchase_price >= 0", name="ck_player_asset_price"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    profile_id = db.Column(
+        db.String(36),
+        db.ForeignKey("player_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    asset_key = db.Column(db.String(80), nullable=False, index=True)
+    asset_type = db.Column(db.String(30), nullable=False, index=True)
+    level = db.Column(db.Integer, nullable=False, default=1)
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+    purchase_price = db.Column(db.BigInteger, nullable=False)
+    state_json = db.Column(db.JSON, nullable=True)
+    purchased_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    profile = db.relationship("PlayerProfile", back_populates="assets")
+
+
+class PlayerClientContract(db.Model):
+    __tablename__ = "player_client_contracts"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "client_key", name="uq_profile_client_contract"),
+        CheckConstraint("cases_remaining >= 0", name="ck_client_cases_remaining"),
+        CheckConstraint("completed_contracts >= 0", name="ck_client_completed_contracts"),
+        CheckConstraint("loyalty >= 0", name="ck_client_loyalty"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    profile_id = db.Column(
+        db.String(36),
+        db.ForeignKey("player_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    client_key = db.Column(db.String(60), nullable=False, index=True)
+    cases_remaining = db.Column(db.Integer, nullable=False)
+    completed_contracts = db.Column(db.Integer, nullable=False, default=0)
+    loyalty = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    profile = db.relationship("PlayerProfile", back_populates="client_contracts")
+
+
+class AttemptSettlement(db.Model):
+    """Immutable, exactly-once economy result for one graded answer."""
+
+    __tablename__ = "attempt_settlements"
+    __table_args__ = (
+        CheckConstraint("total_score >= 1 and total_score <= 20", name="ck_settlement_score_range"),
+        CheckConstraint("payout >= 0", name="ck_settlement_payout_nonnegative"),
+        CheckConstraint("reputation_after >= 0 and reputation_after <= 100", name="ck_settlement_reputation_range"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    attempt_id = db.Column(
+        db.String(36),
+        db.ForeignKey("attempts.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    rule_version = db.Column(db.String(30), nullable=False)
+    explanation_grade = db.Column(db.String(20), nullable=False)
+    explanation_score = db.Column(db.Integer, nullable=False)
+    answer_points = db.Column(db.Integer, nullable=False)
+    explanation_points = db.Column(db.Integer, nullable=False)
+    time_points = db.Column(db.Integer, nullable=False)
+    total_score = db.Column(db.Integer, nullable=False)
+    target_time_seconds = db.Column(db.Integer, nullable=False)
+    elapsed_seconds = db.Column(db.Integer, nullable=False)
+    client_key = db.Column(db.String(60), nullable=False)
+    base_fee = db.Column(db.Integer, nullable=False)
+    score_multiplier_bps = db.Column(db.Integer, nullable=False)
+    firm_multiplier_bps = db.Column(db.Integer, nullable=False)
+    streak_bonus = db.Column(db.Integer, nullable=False, default=0)
+    staff_bonus = db.Column(db.Integer, nullable=False, default=0)
+    contract_bonus = db.Column(db.Integer, nullable=False, default=0)
+    payout = db.Column(db.BigInteger, nullable=False)
+    reputation_before = db.Column(db.Float, nullable=False)
+    reputation_after = db.Column(db.Float, nullable=False)
+    reputation_change = db.Column(db.Float, nullable=False)
+    validated_credit = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    attempt = db.relationship("Attempt", back_populates="settlement")
+
+
+class LedgerEntry(db.Model):
+    __tablename__ = "ledger_entries"
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", "source_id", name="uq_ledger_source"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = db.Column(db.String(40), nullable=False, index=True)
+    source_id = db.Column(db.String(100), nullable=False)
+    amount = db.Column(db.BigInteger, nullable=False)
+    balance_after = db.Column(db.BigInteger, nullable=False)
+    detail_json = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class DailyProgress(db.Model):
+    __tablename__ = "daily_progress"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "activity_date", name="uq_profile_daily_progress"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    profile_id = db.Column(
+        db.String(36),
+        db.ForeignKey("player_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    activity_date = db.Column(db.Date, nullable=False, index=True)
+    cases_completed = db.Column(db.Integer, nullable=False, default=0)
+    claimed_json = db.Column(db.JSON, nullable=False, default=list)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
 
 class SkillProgress(db.Model):
