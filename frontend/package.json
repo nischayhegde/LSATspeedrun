@@ -1,5 +1,5 @@
 {
-  "name": "lsat-sherlock-web",
+  "name": "lsat-speedrun-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -24,4 +24,3 @@
     "vite": "^7.0.4"
   }
 }
-

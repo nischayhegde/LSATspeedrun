@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 import requests
 from flask import current_app
 
-from .models import Attempt, Question, SessionItem
+from .models import Attempt, Question
 
 
 PROMPT_VERSION = "coaching-v1"
-HINT_PROMPT_VERSION = "hint-v1"
 ERROR_CODES = {
     "misread_stem",
     "missed_conclusion",
@@ -180,7 +178,7 @@ def _validate_coaching(raw: dict, attempt: Attempt) -> dict:
 
 def generate_attempt_coaching(attempt: Attempt) -> tuple[dict, dict]:
     question = attempt.session_item.question
-    system = """You are the LSAT Sherlock reasoning coach. Return one JSON object and nothing else.
+    system = """You are the LSAT Speedrun reasoning coach. Return one JSON object and nothing else.
 
 The application's verified answer key has already determined correctness. You MUST NOT independently change or dispute verified_correct_label or selected_is_correct. Your job is explanation grading and instruction.
 
@@ -214,45 +212,4 @@ Return exactly these fields:
     coaching = _validate_coaching(raw, attempt)
     coaching["model"] = metadata["model"]
     return coaching, metadata
-
-
-def _validate_hint(raw: dict, item: SessionItem, level: int) -> dict:
-    question = item.question
-    hint = _clean_text(raw.get("hint"), "hint", 500)
-    focus = _clean_text(raw.get("focus"), "hint focus", 160)
-    strategy = _clean_text(raw.get("strategy"), "hint strategy", 320)
-    combined = f"{hint} {focus} {strategy}"
-    label_reveal = re.search(r"\b(?:answer|choice|option)\s+(?:is\s+)?([A-E])\b", combined, re.IGNORECASE)
-    correct_choice = next(choice.canonical_text for choice in question.choices if choice.label == question.correct_answer)
-    if label_reveal and label_reveal.group(1).upper() == question.correct_answer:
-        raise CoachingProviderError("The generated hint revealed the answer")
-    if len(correct_choice) > 24 and correct_choice.lower() in combined.lower():
-        raise CoachingProviderError("The generated hint quoted the correct answer")
-    return {
-        "level": level,
-        "focus": focus,
-        "hint": hint,
-        "strategy": strategy,
-        "provider": "TrueFoundry",
-        "model": current_app.config["COACHING_MODEL"],
-        "reasoning_effort": current_app.config["COACHING_REASONING_EFFORT"],
-        "prompt_version": HINT_PROMPT_VERSION,
-    }
-
-
-def generate_hint(item: SessionItem, level: int) -> tuple[dict, dict]:
-    system = """You are the pre-answer hint coach for LSAT Sherlock. Return one JSON object and nothing else.
-
-The verified correct answer is provided only so you can avoid misleading the student. Never reveal its label, quote its unique wording, say which option is correct, eliminate every wrong option, or make the answer obvious. Do not rewrite the canonical question.
-
-Hint levels:
-1: Restate the logical task and point to where the student should look.
-2: Identify the key relationship, gap, or contrast they should test.
-3: Give a concrete reasoning procedure or diagnostic question while still withholding the answer.
-
-Return exactly: {"focus": string, "hint": string, "strategy": string}."""
-    raw, metadata = _chat(system, {"hint_level": level, "question": _question_data(item.question)}, max_tokens=1800)
-    hint = _validate_hint(raw, item, level)
-    hint["model"] = metadata["model"]
-    return hint, metadata
 

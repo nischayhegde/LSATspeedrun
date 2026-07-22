@@ -7,7 +7,7 @@ from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
-from .models import AiJob, Attempt, HintEvent, SessionItem, User, utcnow
+from .models import AiJob, Attempt, utcnow
 
 
 class JobQueueError(RuntimeError):
@@ -32,7 +32,7 @@ def serialize_job(job: AiJob) -> dict:
     if job.status == "completed":
         payload["result"] = job.result_json
     elif job.status == "failed":
-        payload["error"] = job.error_message or "AI generation failed. Please retry."
+        payload["error"] = job.error_message or "AI coaching failed. Please retry."
     return payload
 
 
@@ -51,23 +51,16 @@ def _send_job_message(job: AiJob) -> None:
             QueueUrl=queue_url,
             MessageBody=json.dumps({"job_id": job.id}, separators=(",", ":")),
         )
-    except Exception as exc:  # boto3 exception types are intentionally lazy-loaded
-        raise JobQueueError("The AI job could not be queued.") from exc
+    except Exception as exc:  # boto3 exceptions are lazy-loaded
+        raise JobQueueError("The AI coaching request could not be queued.") from exc
     job.queue_message_id = response.get("MessageId")
     db.session.commit()
 
 
-def _enqueue(
-    user_id: str,
-    kind: str,
-    resource_id: str,
-    dedup_key: str,
-    payload: dict | None = None,
-    restart_completed: bool = False,
-) -> AiJob:
+def _enqueue(attempt: Attempt) -> AiJob:
+    dedup_key = f"coaching:{attempt.id}"
     job = AiJob.query.filter_by(dedup_key=dedup_key).first()
-    reusable_statuses = {"queued", "processing"} | ({"completed"} if not restart_completed else set())
-    if job and job.status in reusable_statuses:
+    if job and job.status in {"queued", "processing", "completed"}:
         if job.status == "queued" and not job.queue_message_id:
             _send_job_message(job)
         return job
@@ -79,21 +72,18 @@ def _enqueue(
         job.queue_message_id = None
         job.started_at = None
         job.completed_at = None
-        job.payload_json = payload or {}
     else:
         job = AiJob(
-            user_id=user_id,
-            kind=kind,
-            resource_id=resource_id,
+            user_id=attempt.user_id,
+            kind="coaching",
+            resource_id=attempt.id,
             dedup_key=dedup_key,
-            payload_json=payload or {},
+            payload_json={},
         )
         db.session.add(job)
     try:
         db.session.commit()
     except IntegrityError:
-        # A second request can race the first one. The unique dedup key makes
-        # that harmless and both callers observe the same durable job.
         db.session.rollback()
         job = AiJob.query.filter_by(dedup_key=dedup_key).one()
     if job.status == "queued" and not job.queue_message_id:
@@ -101,56 +91,14 @@ def _enqueue(
             _send_job_message(job)
         except JobQueueError:
             job.status = "failed"
-            job.error_message = "The AI job could not be queued. Please retry."
+            job.error_message = "The AI coaching request could not be queued. Please retry."
             db.session.commit()
             raise
     return job
 
 
 def enqueue_coaching_job(attempt: Attempt) -> AiJob:
-    return _enqueue(attempt.user_id, "coaching", attempt.id, f"coaching:{attempt.id}")
-
-
-def enqueue_story_job(user: User, item: SessionItem) -> AiJob:
-    return _enqueue(user.id, "story", item.id, f"story:{item.id}")
-
-
-def enqueue_hint_job(user: User, item: SessionItem) -> AiJob:
-    from .services import pause_item_timer_for_ai, resume_item_timer_after_ai
-
-    saved_count = HintEvent.query.filter_by(session_item_id=item.id).count()
-    if saved_count >= 3:
-        raise ValueError("hint_limit_reached")
-    level = saved_count + 1
-    dedup_key = f"hint:{item.id}:{level}"
-    existing = AiJob.query.filter_by(dedup_key=dedup_key).first()
-    if existing and existing.status in {"queued", "processing", "completed"}:
-        return _enqueue(user.id, "hint", item.id, dedup_key, existing.payload_json)
-
-    timer_was_active = pause_item_timer_for_ai(item)
-    try:
-        return _enqueue(
-            user.id,
-            "hint",
-            item.id,
-            dedup_key,
-            {"level": level, "resume_timer": timer_was_active},
-        )
-    except Exception:
-        if timer_was_active:
-            resume_item_timer_after_ai(item.id)
-        raise
-
-
-def enqueue_session_plan_job(user: User, mode: str) -> AiJob:
-    return _enqueue(
-        user.id,
-        "session_plan",
-        user.id,
-        f"session-plan:{user.id}:{mode}",
-        {"mode": mode},
-        restart_completed=True,
-    )
+    return _enqueue(attempt)
 
 
 def _lease_is_current(job: AiJob, seconds: int = 255) -> bool:
@@ -163,7 +111,7 @@ def _lease_is_current(job: AiJob, seconds: int = 255) -> bool:
 
 
 def process_ai_job(job_id: str) -> AiJob | None:
-    """Claim and execute one idempotent job. Called by the Lambda handler."""
+    """Claim and execute one durable coaching job."""
 
     job = db.session.get(AiJob, job_id, with_for_update=True)
     if not job:
@@ -177,6 +125,12 @@ def process_ai_job(job_id: str) -> AiJob | None:
     if _lease_is_current(job):
         db.session.rollback()
         return job
+    if job.kind != "coaching":
+        job.status = "failed"
+        job.error_message = "This legacy AI job type is no longer supported."
+        job.completed_at = utcnow()
+        db.session.commit()
+        return job
 
     job.status = "processing"
     job.started_at = utcnow()
@@ -184,65 +138,24 @@ def process_ai_job(job_id: str) -> AiJob | None:
     job.error_message = None
     job.attempt_count = (job.attempt_count or 0) + 1
     db.session.commit()
-    payload = dict(job.payload_json or {})
 
     try:
-        if job.kind == "coaching":
-            from .services import run_attempt_coaching
+        from .services import run_attempt_coaching
 
-            attempt = db.session.get(Attempt, job.resource_id)
-            if not attempt or attempt.user_id != job.user_id:
-                raise ValueError("attempt_not_found")
-            result = run_attempt_coaching(attempt)
-        elif job.kind == "hint":
-            from .services import request_item_hint
-
-            item = db.session.get(SessionItem, job.resource_id)
-            user = db.session.get(User, job.user_id)
-            if not item or not user:
-                raise ValueError("hint_resource_not_found")
-            result = request_item_hint(
-                user,
-                item,
-                expected_level=int(payload["level"]),
-                manage_timer=False,
-            )
-        elif job.kind == "story":
-            from .services import enrich_item_story, public_item_story
-
-            item = db.session.get(SessionItem, job.resource_id)
-            user = db.session.get(User, job.user_id)
-            if not item or not user:
-                raise ValueError("story_resource_not_found")
-            beat = enrich_item_story(user, item)
-            result = public_item_story(item, beat)
-        elif job.kind == "session_plan":
-            from .services import create_study_session, serialize_session
-
-            user = db.session.get(User, job.user_id)
-            if not user:
-                raise ValueError("session_user_not_found")
-            mode = str(payload["mode"])
-            result = serialize_session(create_study_session(user, mode))
-        else:
-            raise ValueError("unsupported_job_kind")
+        attempt = db.session.get(Attempt, job.resource_id)
+        if not attempt or attempt.user_id != job.user_id:
+            raise ValueError("attempt_not_found")
+        result = run_attempt_coaching(attempt)
     except Exception as exc:
         db.session.rollback()
         failed_job = db.session.get(AiJob, job_id, with_for_update=True)
         if not failed_job:
             raise
-        permanent = isinstance(exc, (KeyError, TypeError, ValueError))
-        final_failure = permanent or failed_job.attempt_count >= max_attempts
-        if permanent:
-            failed_job.attempt_count = max_attempts
+        final_failure = isinstance(exc, (KeyError, TypeError, ValueError)) or failed_job.attempt_count >= max_attempts
         failed_job.status = "failed" if final_failure else "queued"
-        failed_job.error_message = "AI generation failed. Please retry." if final_failure else None
+        failed_job.error_message = "AI coaching failed. Please retry." if final_failure else None
         failed_job.started_at = None
         db.session.commit()
-        if final_failure and failed_job.kind == "hint" and payload.get("resume_timer"):
-            from .services import resume_item_timer_after_ai
-
-            resume_item_timer_after_ai(failed_job.resource_id)
         raise
 
     completed_job = db.session.get(AiJob, job_id, with_for_update=True)
@@ -252,8 +165,4 @@ def process_ai_job(job_id: str) -> AiJob | None:
     completed_job.started_at = None
     completed_job.completed_at = utcnow()
     db.session.commit()
-    if completed_job.kind == "hint" and payload.get("resume_timer"):
-        from .services import resume_item_timer_after_ai
-
-        resume_item_timer_after_ai(completed_job.resource_id)
     return completed_job

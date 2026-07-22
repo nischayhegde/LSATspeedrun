@@ -30,8 +30,6 @@ class User(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
-    story_progress = db.relationship("StoryProgress", back_populates="user", uselist=False, cascade="all, delete-orphan")
-
 
 class AuthSession(db.Model):
     __tablename__ = "auth_sessions"
@@ -90,22 +88,6 @@ class QuestionChoice(db.Model):
     question = db.relationship("Question", back_populates="choices")
 
 
-class CaseFrame(db.Model):
-    __tablename__ = "case_frames"
-    __table_args__ = (UniqueConstraint("question_id", "story_version", name="uq_question_story_version"),)
-
-    id = db.Column(db.String(36), primary_key=True, default=new_id)
-    question_id = db.Column(db.String(80), db.ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
-    story_version = db.Column(db.String(30), nullable=False, default="lantern-v1")
-    content_json = db.Column(db.JSON, nullable=False)
-    status = db.Column(db.String(30), nullable=False, default="generated")
-    prompt_version = db.Column(db.String(30), nullable=False, default="case-frame-v1")
-    model = db.Column(db.String(100), nullable=True)
-    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
-
-    question = db.relationship("Question")
-
-
 class StudySession(db.Model):
     __tablename__ = "study_sessions"
 
@@ -116,8 +98,6 @@ class StudySession(db.Model):
     target_minutes = db.Column(db.Integer, nullable=False)
     total_items = db.Column(db.Integer, nullable=False, default=0)
     current_index = db.Column(db.Integer, nullable=False, default=0)
-    blueprint_version = db.Column(db.String(30), nullable=True)
-    sequence_plan_json = db.Column(db.JSON, nullable=True)
     summary_json = db.Column(db.JSON, nullable=True)
     pending_attempt_id = db.Column(db.String(36), nullable=True, index=True)
     results_seen_at = db.Column(db.DateTime(timezone=True), nullable=True)
@@ -138,10 +118,6 @@ class SessionItem(db.Model):
     question_id = db.Column(db.String(80), db.ForeignKey("questions.id"), nullable=False, index=True)
     position = db.Column(db.Integer, nullable=False)
     requires_reasoning = db.Column(db.Boolean, nullable=False, default=False)
-    story_json = db.Column(db.JSON, nullable=True)
-    story_generation_status = db.Column(db.String(30), nullable=False, default="fallback")
-    story_generation_started_at = db.Column(db.DateTime(timezone=True), nullable=True)
-    story_model = db.Column(db.String(100), nullable=True)
     served_at = db.Column(db.DateTime(timezone=True), nullable=True)
     active_elapsed_ms = db.Column(db.Integer, nullable=False, default=0)
     timer_activated_at = db.Column(db.DateTime(timezone=True), nullable=True)
@@ -174,7 +150,6 @@ class Attempt(db.Model):
     pace_scored = db.Column(db.Boolean, nullable=False, default=False)
     xp_earned = db.Column(db.Integer, nullable=False, default=0)
     feedback_json = db.Column(db.JSON, nullable=True)
-    story_snapshot_json = db.Column(db.JSON, nullable=True)
     coaching_status = db.Column(db.String(30), nullable=False, default="pending")
     coaching_started_at = db.Column(db.DateTime(timezone=True), nullable=True)
     coaching_model = db.Column(db.String(100), nullable=True)
@@ -183,22 +158,6 @@ class Attempt(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
 
     session_item = db.relationship("SessionItem", back_populates="attempt")
-
-
-class HintEvent(db.Model):
-    __tablename__ = "hint_events"
-    __table_args__ = (UniqueConstraint("session_item_id", "level", name="uq_item_hint_level"),)
-
-    id = db.Column(db.String(36), primary_key=True, default=new_id)
-    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    session_item_id = db.Column(db.String(36), db.ForeignKey("session_items.id", ondelete="CASCADE"), nullable=False, index=True)
-    level = db.Column(db.Integer, nullable=False)
-    content_json = db.Column(db.JSON, nullable=False)
-    model = db.Column(db.String(100), nullable=False)
-    prompt_version = db.Column(db.String(30), nullable=False, default="hint-v1")
-    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
-
-    session_item = db.relationship("SessionItem")
 
 
 class SkillProgress(db.Model):
@@ -215,38 +174,6 @@ class SkillProgress(db.Model):
     total_time_ms = db.Column(db.BigInteger, nullable=False, default=0)
     recent_mistakes = db.Column(db.Integer, nullable=False, default=0)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
-
-
-class ReviewCard(db.Model):
-    __tablename__ = "review_cards"
-    __table_args__ = (UniqueConstraint("user_id", "question_id", name="uq_user_question_review"),)
-
-    id = db.Column(db.String(36), primary_key=True, default=new_id)
-    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    question_id = db.Column(db.String(80), db.ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
-    box = db.Column(db.Integer, nullable=False, default=0)
-    reps = db.Column(db.Integer, nullable=False, default=0)
-    lapses = db.Column(db.Integer, nullable=False, default=0)
-    last_result = db.Column(db.Boolean, nullable=True)
-    due_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
-    last_reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
-    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
-
-    question = db.relationship("Question")
-
-
-class StoryProgress(db.Model):
-    __tablename__ = "story_progress"
-
-    id = db.Column(db.String(36), primary_key=True, default=new_id)
-    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
-    xp = db.Column(db.Integer, nullable=False, default=0)
-    chapter = db.Column(db.Integer, nullable=False, default=1)
-    cases_solved = db.Column(db.Integer, nullable=False, default=0)
-    state_json = db.Column(db.JSON, nullable=False, default=dict)
-    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
-
-    user = db.relationship("User", back_populates="story_progress")
 
 
 class AiJob(db.Model):

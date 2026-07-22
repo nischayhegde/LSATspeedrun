@@ -525,7 +525,6 @@ Resources:
           FLASK_ENV: production
           DEV_AUTH_ENABLED: "false"
           AUTO_SEED: "false"
-          ALLOW_UNREVIEWED_QUESTIONS: "false"
           TFY_URL: !Ref TrueFoundryUrl
           TFY_API_KEY: !Ref TrueFoundryApiKey
           AI_JOBS_MODE: worker
@@ -677,7 +676,7 @@ Resources:
               AI_JOB_MAX_ATTEMPTS=3
               DEV_AUTH_ENABLED=false
               AUTO_SEED=false
-              ALLOW_UNREVIEWED_QUESTIONS=false
+              PRACTICE_SESSION_SIZE=10
               ENVIRONMENT
 
               install -d -o lsatapp -g lsatapp /opt/lsat-speedrun/backend/instance
@@ -688,6 +687,7 @@ Resources:
               set +a
               cd /opt/lsat-speedrun/backend
               runuser -u lsatapp -- /opt/lsat-speedrun/.venv/bin/python -m flask --app run db --directory migrations upgrade
+              runuser -u lsatapp -- /opt/lsat-speedrun/.venv/bin/python -m flask --app run seed
 
               cat > /etc/systemd/system/lsat-speedrun.service <<'SERVICE'
               [Unit]

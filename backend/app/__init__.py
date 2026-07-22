@@ -67,10 +67,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID", ""),
         DEV_AUTH_ENABLED=os.getenv("DEV_AUTH_ENABLED", safe_dev_default).lower() == "true",
         AUTO_SEED=os.getenv("AUTO_SEED", safe_dev_default).lower() == "true",
-        ALLOW_UNREVIEWED_QUESTIONS=os.getenv("ALLOW_UNREVIEWED_QUESTIONS", safe_dev_default).lower() == "true",
-        DIAGNOSTIC_SIZE=int(os.getenv("DIAGNOSTIC_SIZE", "35")),
-        AUTH_COOKIE="sherlock_session",
-        CSRF_COOKIE="sherlock_csrf",
+        PRACTICE_SESSION_SIZE=max(1, int(os.getenv("PRACTICE_SESSION_SIZE", "10"))),
+        HUGGINGFACE_REQUEST_INTERVAL_SECONDS=max(
+            0.0,
+            float(os.getenv("HUGGINGFACE_REQUEST_INTERVAL_SECONDS", "1.1")),
+        ),
+        AUTH_COOKIE="lsat_session",
+        CSRF_COOKIE="lsat_csrf",
         COOKIE_SECURE=is_production,
         REPO_ROOT=str(backend_dir.parent),
         TFY_API_KEY=os.getenv("TFY_API_KEY", "").strip().strip('"'),
@@ -98,7 +101,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(api, url_prefix="/v1")
 
     @app.cli.command("seed")
-    @click.option("--force", is_flag=True, help="Refresh the local question records.")
+    @click.option("--force", is_flag=True, help="Refresh records from the Hugging Face datasets.")
     def seed_command(force: bool):
         count = seed_questions(force=force)
         click.echo(f"Seeded {count} questions.")

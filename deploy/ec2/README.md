@@ -5,8 +5,7 @@ behind the same CloudFront HTTPS origin. PostgreSQL on private RDS replaces the
 instance-local SQLite database. Slow TrueFoundry work is persisted in
 `ai_jobs`, sent through SQS, and processed by Lambda in private subnets.
 
-The Lambda worker handles session planning, story generation, hints, and
-post-answer coaching. The browser transparently polls `/v1/jobs/<id>`, so the
+The Lambda worker handles post-answer coaching. The browser transparently polls `/v1/jobs/<id>`, so the
 web worker is not held open during a model request. SQS delivery is idempotent,
 has three bounded attempts, and moves exhausted messages to a DLQ.
 
@@ -62,3 +61,5 @@ initialized directly with `flask db upgrade`; the EC2 bootstrap does this.
 - Inspect the worker log group and DLQ output when a job reaches `failed`.
 - Add the CloudFront application URL as an authorized JavaScript origin on the
   Google OAuth web client.
+- Run `flask seed` as a deployment task after migrations so the RDS database
+  contains the Hugging Face LR and RC records.

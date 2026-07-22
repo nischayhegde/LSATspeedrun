@@ -1,168 +1,113 @@
-# LSAT Sherlock
+# LSAT Speedrun
 
-A local-first, story-driven LSAT practice app described in [planning/Final PRD.md](planning/Final%20PRD.md). It includes Google authentication, a mandatory resumable diagnostic, deterministic scoring, adaptive detective cases, XP, pace gating, session summaries, an evidence archive, spaced-repetition cold cases, Professor Quill boss encounters, and account-backed progress. Diagnostic, daily, review, and boss evidence files open inside an animated, persistent Lantern Bureau storyline with recurring characters, locations, dialogue, and outcome scenes. Each session is planned as one connected arc rather than a set of unrelated micro-cases.
+LSAT Speedrun is a deliberately simple practice app:
 
-Session planning, cinematic story beats, written-explanation grading, and controlled hints are powered through TrueFoundry with `gpt-5.6-luna` at `xhigh` reasoning effort. The verified Qbank answer key still determines correctness; the model plans narrative and coaches reasoning but never decides whether an answer is correct.
+1. Create an account or sign in with Google.
+2. Start a ten-question practice session.
+3. Answer randomly selected Logical Reasoning (LR) and Reading Comprehension (RC) questions.
+4. Review the verified answer, an optional LLM grade of your written reasoning, and an explanation of every answer choice.
 
-The diagnostic and daily cases are resumable. “Save & exit” commits the active timer and pauses the session, so time away is excluded. Every question offers an explanation box—required on selected diagnostic items and optional-but-graded everywhere else. Completing the diagnostic unlocks a dedicated Lantern Bureau story introduction before the first adaptive shift.
+There is no diagnostic, story mode, adaptive scheduler, spaced-repetition queue, or game progression. The answer key determines correctness; the LLM only grades reasoning and explains choices.
 
-## Run locally
+## Question data
 
-Requirements: Python 3.11+ and Node 20.19+ (or Node 22.12+).
+The app loads all splits from these Hugging Face datasets:
 
-macOS/Linux:
+- [tasksource/lsat-lr](https://huggingface.co/datasets/tasksource/lsat-lr): 4,520 LR questions
+- [tasksource/lsat-rc](https://huggingface.co/datasets/tasksource/lsat-rc): 2,366 RC questions
 
-```bash
-python3 -m venv .venv
-./.venv/bin/python -m pip install -r backend/requirements.txt
-cp backend/.env.example backend/.env
-cd frontend
-npm install
-cp .env.example .env
-```
+The combined bank contains 6,886 questions. `backend/app/seed.py` downloads train, validation, and test rows through the Hugging Face Dataset Server, maps zero-based labels to A–E, deduplicates RC passages, and records the upstream dataset and split on each question. Only records with the Hugging Face source prefix are eligible for practice, so historical local-bank rows cannot be selected.
 
-Windows PowerShell:
+The upstream dataset cards do not currently declare a license. Confirm that your intended use complies with the dataset terms and applicable LSAT content rights before publishing or commercial deployment.
+
+## Local setup
+
+From the repository root:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python -m pip install -r backend\requirements.txt
-Set-Location frontend
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+cd frontend
 npm install
-Copy-Item .env.example .env
-Set-Location ..
 ```
 
-The local backend defaults already enable development sign-in, SQLite, Qbank seeding, and unreviewed development content. A `backend/.env` file is optional; create it when configuring Google sign-in or when you want to override those defaults. Configure TrueFoundry as described below before copying blank environment templates over an existing setup.
-
-Start the API from the repository root:
-
-```bash
-./.venv/bin/python backend/run.py
-```
+Start the API:
 
 ```powershell
-.\.venv\Scripts\python backend\run.py
+cd backend
+..\.venv\Scripts\python.exe run.py
 ```
 
-Then start the web app in another terminal:
+In development, `AUTO_SEED=true` by default. The first API startup downloads and inserts the Hugging Face datasets, which can take a little while. You can seed or refresh explicitly:
 
 ```powershell
-Set-Location frontend
+cd backend
+..\.venv\Scripts\python.exe -m flask --app run.py seed
+..\.venv\Scripts\python.exe -m flask --app run.py seed --force
+```
+
+Start the frontend in a second terminal:
+
+```powershell
+cd frontend
 npm run dev
 ```
 
-Open http://localhost:5173. The development sign-in button works without external credentials. Progress is stored in `backend/instance/lsat_sherlock.db`.
+Open http://localhost:5173. A local-development sign-in button is enabled unless `DEV_AUTH_ENABLED=false`.
 
-The API defaults to port `5000`. To avoid a local port conflict (notably macOS AirPlay Receiver), choose another port and update `frontend/.env` to match:
+## Configuration
 
-```bash
-PORT=5001 ./.venv/bin/python backend/run.py
-```
+The backend reads `backend/.env`, followed by a root `.env` for values not already set.
 
 ```dotenv
-VITE_API_URL=http://localhost:5001/v1
-```
-
-## Learning and progression flow
-
-After sign-in, users must choose a study target and complete the diagnostic before the rest of the application unlocks. The diagnostic establishes the score estimate, skill baseline, and adaptive scheduler inputs.
-
-- **Daily cases:** adaptive sets prioritize weak skills while interleaving stronger ones.
-- **Evidence Archive:** browse and filter every filed answer, then reopen the original question, selected answer, verified key, written reasoning, timing, and saved coaching.
-- **Cold Cases:** missed questions enter a spaced-repetition queue. Correct recoveries move the question through increasingly longer review intervals.
-- **Professor Quill encounters:** every eight completed daily cases unlocks a five-question boss set emphasizing the user's weakest, highest-difficulty skills and awarding bonus XP.
-- **Reasoning coach:** controlled hints and post-answer analysis are persisted, so archived reviews do not require another model call.
-
-For an existing database, apply schema migrations before starting the API:
-
-```bash
-PYTHONPATH=backend ./.venv/bin/python -m flask --app run db --directory backend/migrations upgrade
-```
-
-Use the `localhost` URL above in the browser: CORS, cookies, and the documented Google origin are configured for `http://localhost:5173`, not `http://127.0.0.1:5173`.
-
-Confirm that the API seeded the parsed Qbank and found the AI configuration:
-
-```bash
-curl http://localhost:5000/v1/health
-```
-
-```powershell
-Invoke-RestMethod http://localhost:5000/v1/health
-```
-
-`questions` should be greater than zero, while `coaching.ready` reports whether TrueFoundry is configured. With `AUTO_SEED=true`, the API seeds Logical Reasoning and Reading Comprehension records from `Qbankparsing/lsat_questions.json` on first startup.
-
-## Configure Google sign-in
-
-Create a Google OAuth 2.0 Web client, add `http://localhost:5173` as an authorized JavaScript origin, and set the same client ID in `backend/.env`:
-
-```dotenv
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-```
-
-Restart the API. The frontend reads the public client ID from the API; the backend independently verifies every Google credential before creating its own HttpOnly session.
-
-For shared or production environments, set a strong `SECRET_KEY`, use PostgreSQL through `DATABASE_URL`, set `DEV_AUTH_ENABLED=false`, `AUTO_SEED=false`, `ALLOW_UNREVIEWED_QUESTIONS=false`, and configure exact frontend/API origins.
-
-### Google sign-in on AWS or another deployed host
-
-Google Identity Services requires HTTPS for non-localhost JavaScript origins. Do not use a plain-HTTP EC2 public hostname as the production OAuth origin. Put the application behind HTTPS—normally a custom domain with CloudFront/ALB and ACM, or a reverse proxy with a trusted certificate—then add the exact frontend origin to the Google OAuth Web client:
-
-```text
-https://app.example.com
-```
-
-In Google Cloud Console, open **APIs & Services → Credentials → OAuth 2.0 Client IDs**, edit the Web client, and add that value under **Authorized JavaScript origins**. The sign-in button used here does not require a redirect URI. Restart the API after setting the same public client ID in the deployed backend.
-
-Use `backend/.env.production.example` as the production configuration template. If one HTTPS host reverse-proxies `/v1` to Flask while serving the frontend, use `frontend/.env.production.example`; production builds also default to same-origin `/v1` when `VITE_API_URL` is omitted. If the API uses a separate host, set `VITE_API_URL=https://api.example.com/v1` and keep `FRONTEND_ORIGIN` set to the exact frontend origin.
-
-## TrueFoundry cinematic story and reasoning coach
-
-Set `TFY_URL` and `TFY_API_KEY` in `backend/.env` or the repository-root `.env`:
-
-```dotenv
+GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
 TFY_URL=https://your-truefoundry-endpoint.example/v1
 TFY_API_KEY=your-key
+DATABASE_URL=
+PRACTICE_SESSION_SIZE=10
+HUGGINGFACE_REQUEST_INTERVAL_SECONDS=1.1
+AUTO_SEED=true
+DEV_AUTH_ENABLED=true
+AI_JOBS_MODE=sync
 ```
 
-`backend/.env` is loaded first and therefore wins when the same variable appears in both files. In particular, blank `TFY_URL=` or `TFY_API_KEY=` entries in `backend/.env` mask populated values in the root `.env`; either fill them in there or remove those duplicate blank entries. Restart the API after changing environment files, then check `/v1/health` as shown above.
+Google authentication is verified server-side. The backend issues its own HttpOnly session cookie and requires a matching CSRF token on state-changing requests.
 
-Session creation first produces the deterministic scheduler's selected fallback list and a bounded pool of eligible Qbank candidates (at most 96). TrueFoundry then receives an answer-safe manifest containing only candidate IDs, bounded stems/evidence excerpts, topics, question types, sections, difficulty, and backend-derived `story_fit` allowlists for canonical character/location IDs. It never receives answer choices, the answer key, canonical explanations, or trap metadata. The planner can select and order only the unique IDs in that bounded manifest; it cannot introduce a question from outside the scheduler's eligible pool.
+`TFY_URL` may be an OpenAI-compatible API base or a full `/chat/completions` URL. Post-answer coaching uses `gpt-5.6-luna` at `xhigh` reasoning effort and returns:
 
-The planner returns one strict, schema-validated arc plus a canonical location, a 3–5 character scene cast, a story role, a pre-answer setup hook, and an answer-neutral payoff hook for every selected question. Locations and characters must come from the renderable Lantern Bureau registries and from that question's broad, answer-neutral `story_fit`; invented characters and unsupported locations are rejected. Diagnostic plans are additionally checked for required section, question-type, and difficulty coverage, while daily plans retain deterministic type/difficulty diversity and interleaving. The validator also rejects wrong counts, duplicates, ineligible IDs, copied question language, internal IDs in narrative prose, answer-like language, and disconnected sequences. The accepted question order and full arc are persisted with the study session, so pause, sign-out, refresh, and resume restore the same episode and never silently re-plan it.
+- An optional 0–100 grade for the student's written reasoning
+- A reasoning verdict and first-error repair
+- An explanation of the verified answer
+- An explanation of every answer choice
+- A next-step suggestion
 
-Session creation waits for the planning call, which usually takes under a minute in local use. A single bounded retry is allowed for a transient provider/transport failure, so an unusually slow failure can take longer. Invalid model output is not retried. If TrueFoundry is unconfigured, remains unavailable, or returns an invalid plan, the API uses the deterministic scheduler list and a connected deterministic Bureau arc. This fallback still persists with the session and preserves stable resume behavior.
+The model receives the canonical passage or stimulus, stem, choices, verified key, selected answer, and student reasoning. Student text is treated as untrusted quoted data. Model output is schema-validated and cannot change correctness.
 
-For every active question, the frontend immediately presents the saved deterministic animated scene while the API requests a question-matched cinematic beat from TrueFoundry using the current session arc and beat as continuity context. Validated scenes are saved with the session and carry the planned setup/payoff forward; a per-question provider failure leaves the safe saved fallback in place and never blocks scoring. Pre-answer cinematic generation receives section and difficulty metadata plus the canonical passage, stimulus, and question stem, but deliberately omits answer choices and the answer key so the narrative cannot bias the diagnostic.
+For production, `AUTO_SEED` defaults to false. Run the seed command as a deployment task after migrating the database.
 
-The legacy `STORY_LLM_*` settings and `flask generate-stories` command have been removed. Cinematic beats are generated per question through TrueFoundry; normal local development should not use the old offline workflow.
+The Dataset Server enforces a per-minute request limit. The importer throttles page requests and honors `Retry-After`; a complete first import can take roughly three to five minutes on a shared IP.
 
-During daily practice, each active question supports three progressively stronger pre-answer hints. Hints are hidden during the diagnostic to protect the baseline estimate. After filing an answer, the frontend requests a structured review containing:
+## API
 
-- A 0–100 explanation grade independent of answer correctness
-- The first reasoning error and a concrete repair
-- An explanation of why the verified answer works
-- An explanation of why the selected wrong answer fails
-- Concise analysis of every answer choice
+The active API surface is intentionally small:
 
-The session planner, cinematic director, and reasoning coach are fixed server-side to `gpt-5.6-luna` with `xhigh` reasoning effort. Student reasoning and planning context are enclosed as untrusted JSON data, the provider receives no tools or secrets, output is schema-validated and length-limited, and generated hints are rejected if they reveal the keyed answer. The session plan, coaching, hints, generated story continuity, drafts, and progress are saved to the user account.
+- `POST /v1/auth/google`, `POST /v1/auth/dev`, `POST /v1/auth/logout`
+- `GET /v1/me`
+- `POST /v1/study-sessions`, `GET /v1/study-sessions/current`
+- `GET /v1/study-sessions/:id`, pause/resume, draft, submit, and answer-review acknowledgement endpoints
+- `POST /v1/attempts/:id/coaching`
+- `GET /v1/jobs/:id` for asynchronous coaching
+- `GET /v1/study-sessions/:id/summary`
+- `GET /v1/health`
 
-## Local troubleshooting
+Older migration-managed databases may still contain unused legacy columns or tables. They are intentionally not mapped or accessed by the current runtime so existing user and attempt data can be retained safely.
 
-- If either server reports that its port is already in use, inspect the listeners with `Get-NetTCPConnection -State Listen | Where-Object LocalPort -in 5000,5173` and stop the stale process or free the port. The frontend API URL and backend CORS origin assume these exact ports.
-- If `coaching.ready` is `false`, check the `backend/.env` precedence described above and restart Flask. Story scenes will still work in deterministic fallback mode, but live story enrichment, hints, and AI debriefs will not.
-- If `questions` is `0`, confirm `Qbankparsing/lsat_questions.json` exists and that `AUTO_SEED=true` and `ALLOW_UNREVIEWED_QUESTIONS=true` are set for local development.
-- If an older, Alembic-managed local database reports missing-column errors, back up `backend/instance/lsat_sherlock.db`, then run `..\.venv\Scripts\python -m flask --app run.py db upgrade` from the `backend` directory. The current migration head is `0010_review_cards`.
-
-## Verify
+## Verification
 
 ```powershell
-.\.venv\Scripts\python -m pytest
-Set-Location frontend
+.\.venv\Scripts\python.exe -m pytest -q
+cd frontend
 npm run build
 ```
 
-## Content notice
-
-The included parsed bank is marked `unknown_needs_verification` / `machine_parsed_needs_review`. It is enabled only for local MVP development. Do not publish or deploy those questions until licensing and human review are complete. With `ALLOW_UNREVIEWED_QUESTIONS=false`, the scheduler serves only records marked `approved` and `published`.
+The tests cover direct post-login practice access, random Hugging Face-only selection, removal of diagnostic/story endpoints, dataset schema mapping, verified answer scoring, LLM reasoning grades, and all-choice explanations.
