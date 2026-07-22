@@ -132,6 +132,25 @@ The active API surface includes:
 
 Older migration-managed databases may still contain unused legacy columns or tables. They are intentionally not mapped or accessed by the current runtime so existing user and attempt data can be retained safely.
 
+## Deploy the AWS sandbox
+
+From `main`, one command validates, commits, pushes, and deploys every non-ignored workspace change:
+
+```powershell
+.\deploy-sandbox.ps1 -CommitMessage "Deploy Lawyer Tycoon updates"
+```
+
+The command runs backend tests and the production frontend build, builds and uploads an immutable Lambda artifact,
+updates CloudFormation, waits for a successful EC2 bootstrap signal and migrations, verifies Lambda → TrueFoundry
+while SQS is paused, then verifies the real SQS → Lambda → TrueFoundry → Tycoon settlement path after enablement.
+Both checks use disposable accounts that are removed afterward. It never force-pushes and refuses
+diverged branches or staged secret-like files. Review `git status` first because all non-ignored changes are committed
+to `main`. It uses the configured Git identity, falls back to `AWS Sandbox Deploy` when one is missing, and accepts
+`-GitUserName` and `-GitUserEmail` overrides.
+
+The command requires the existing `lsatspeedrun-sandbox` stack, GitHub push access, AWS CLI, and the managed
+`sbsandbox` credentials supplied by `sb-aws-creds`.
+
 ## Verification
 
 ```powershell

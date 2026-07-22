@@ -60,6 +60,13 @@ Parameters:
     Type: String
     MinLength: 1
     Description: S3 key containing the Lambda deployment zip.
+  AiWorkerEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Enables SQS delivery only after the web database migration is healthy.
   PermissionsBoundaryArn:
     Type: String
     Default: ""
@@ -73,6 +80,7 @@ Parameters:
 
 Conditions:
   HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundaryArn, ""]]
+  IsAiWorkerEnabled: !Equals [!Ref AiWorkerEnabled, "true"]
 
 Resources:
   Vpc:
@@ -453,6 +461,12 @@ Resources:
           - Effect: Allow
             Action: secretsmanager:GetSecretValue
             Resource: !GetAtt Database.MasterUserSecret.SecretArn
+          - Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !GetAtt AiWorker.Arn
+          - Effect: Allow
+            Action: cloudformation:SignalResource
+            Resource: !Ref AWS::StackId
 
   AiWorkerRole:
     Type: AWS::IAM::Role
@@ -548,7 +562,7 @@ Resources:
       BatchSize: 1
       FunctionResponseTypes:
         - ReportBatchItemFailures
-      Enabled: true
+      Enabled: !If [IsAiWorkerEnabled, true, false]
       ScalingConfig:
         MaximumConcurrency: 2
 
@@ -629,7 +643,17 @@ Resources:
           Fn::Base64:
             !Sub |
               #!/bin/bash
-              set -euo pipefail
+              set -Eeuo pipefail
+
+              signal_failure() {
+                aws cloudformation signal-resource \
+                  --stack-name ${AWS::StackName} \
+                  --logical-resource-id WebInstance \
+                  --unique-id "$(cat /var/lib/cloud/data/instance-id)" \
+                  --status FAILURE \
+                  --region ${AWS::Region} || true
+              }
+              trap signal_failure ERR
 
               dnf update -y
               dnf install -y git nginx python3.11 python3.11-pip openssl
@@ -743,6 +767,13 @@ Resources:
               systemctl daemon-reload
               systemctl enable --now lsat-speedrun nginx
               curl --fail --retry 15 --retry-delay 2 http://127.0.0.1/v1/health
+              aws cloudformation signal-resource \
+                --stack-name ${AWS::StackName} \
+                --logical-resource-id WebInstance \
+                --unique-id "$(cat /var/lib/cloud/data/instance-id)" \
+                --status SUCCESS \
+                --region ${AWS::Region}
+              trap - ERR
       TagSpecifications:
         - ResourceType: launch-template
           Tags:
@@ -759,7 +790,13 @@ Resources:
 
   WebInstance:
     Type: AWS::EC2::Instance
-    DependsOn: DefaultRoute
+    DependsOn:
+      - DefaultRoute
+      - PublicSubnetRouteTableAssociation
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT20M
     Properties:
       LaunchTemplate:
         LaunchTemplateId: !Ref WebLaunchTemplate

@@ -9,6 +9,28 @@ The Lambda worker handles post-answer coaching. The browser transparently polls 
 web worker is not held open during a model request. SQS delivery is idempotent,
 has three bounded attempts, and moves exhausted messages to a DLQ.
 
+## One-command update
+
+For the existing sandbox, run this from the repository root on `main`:
+
+```powershell
+.\deploy-sandbox.ps1 -CommitMessage "Deploy sandbox update"
+```
+
+This is the normal update path. It:
+
+1. Verifies the AWS account, existing stack, Git remote, branch ancestry, and staged file safety.
+2. Runs `pytest`, `npm ci`, the production frontend build, and a clean Linux-compatible Lambda build.
+3. Commits every non-ignored workspace change, pushes `main` without force, and verifies the remote SHA.
+4. Uploads the worker under a commit-and-artifact-hash S3 key and preserves the stack's existing secret parameters and tags.
+5. Pauses SQS delivery, updates Lambda and EC2, and requires EC2 bootstrap, Alembic, seed, and systemd health to succeed.
+6. Proves Lambda → TrueFoundry settlement while paused, then enables and proves the complete SQS path with disposable accounts.
+
+Review `git status` before running it: committing all non-ignored changes is intentional. The command refuses to
+run from a branch other than `main`, with diverged history, during another Git operation, or when secret-like files
+are staged. If it fails after pausing the worker, SQS retains queued jobs and the command tells you to fix the error
+and re-run it; it does not purge the queue or force-enable a partially migrated release.
+
 ## Build the Lambda artifact
 
 The deployment zip must contain Linux Python 3.11 wheels even when it is built
