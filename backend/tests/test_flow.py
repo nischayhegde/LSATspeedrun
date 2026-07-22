@@ -276,7 +276,9 @@ def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monke
     assert coaching["reasoning_verdict"] == "mostly_correct"
     assert len(coaching["answer_analysis"]["choice_explanations"]) == 5
     assert {choice["label"] for choice in coaching["answer_analysis"]["choice_explanations"]} == set("ABCDE")
+    assert coaching["prompt_version"] == "coaching-v2-plain-language"
     assert captured["request"]["reasoning_effort"] == "xhigh"
+    assert "one decisive bottom-line sentence" in captured["request"]["messages"][0]["content"]
     assert coaching_response.json["reward"]["explanation_grade"] == "Excellent"
     assert coaching_response.json["reward"]["score"] == 3
     assert coaching_response.json["game"]["total_cases"] == 1

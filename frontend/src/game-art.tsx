@@ -7,6 +7,70 @@ type OfficeSceneProps = {
   className?: string
 }
 
+export type CharacterMood = 'happy' | 'unhappy' | 'neutral'
+
+export function ClientPortrait({
+  kind = 'briefcase',
+  name,
+  mood = 'neutral',
+  className = '',
+}: {
+  kind?: string
+  name: string
+  mood?: CharacterMood
+  className?: string
+}) {
+  const jacket = kind === 'gem' ? '#5b315f' : kind === 'globe' ? '#285d66' : kind === 'landmark' ? '#67452f' : '#27465a'
+  const hair = kind === 'building' ? '#8b6542' : kind === 'gem' ? '#34213a' : '#3e302a'
+  const mouth = mood === 'happy' ? 'M44 61 Q52 69 60 61' : mood === 'unhappy' ? 'M44 67 Q52 59 60 67' : 'M45 64 Q52 66 59 64'
+  return (
+    <div className={`client-portrait mood-${mood} ${className}`}>
+      <svg viewBox="0 0 104 112" role="img" aria-label={`${name}, ${mood}`}>
+        <circle cx="52" cy="52" r="49" fill="#f2d89d" />
+        <circle cx="52" cy="52" r="45" fill="#faefd5" stroke="#bd8d3f" strokeWidth="2" />
+        <path d="M17 110 Q20 80 52 78 Q84 80 87 110Z" fill={jacket} />
+        <path d="M40 80 L52 98 64 80 59 76H45Z" fill="#fff8e8" />
+        <path d="M49 88 H55 L58 106 H46Z" fill={kind === 'gem' ? '#d99ad8' : '#d59b43'} />
+        <rect x="44" y="69" width="16" height="17" rx="7" fill="#bd7b59" />
+        <ellipse cx="52" cy="51" rx="25" ry="29" fill="#cf916b" />
+        <path d="M28 48 Q27 19 54 19 Q80 20 77 49 Q64 31 31 44Z" fill={hair} />
+        <circle cx="43" cy="52" r="2.5" fill="#23313a" />
+        <circle cx="61" cy="52" r="2.5" fill="#23313a" />
+        <path d={mouth} fill="none" stroke="#7f463d" strokeWidth="2.5" strokeLinecap="round" />
+        {kind === 'gem' && <><circle cx="26" cy="58" r="3.5" fill="#a23ca1" /><circle cx="78" cy="58" r="3.5" fill="#a23ca1" /></>}
+        {(kind === 'building' || kind === 'landmark') && (
+          <g fill="none" stroke="#263a45" strokeWidth="2"><rect x="35" y="46" width="14" height="10" rx="4" /><rect x="55" y="46" width="14" height="10" rx="4" /><path d="M49 50 H55" /></g>
+        )}
+        {kind === 'globe' && <path d="M72 91 l8-3 5 8-8 6Z" fill="#73b9ac" stroke="#d6f0e9" strokeWidth="1" />}
+      </svg>
+      <span aria-hidden="true">{name.slice(0, 1)}</span>
+    </div>
+  )
+}
+
+export function JudgePortrait({ thinking = false, pleased = false }: { thinking?: boolean; pleased?: boolean }) {
+  const mouth = pleased ? 'M42 65 Q52 73 62 65' : 'M43 68 Q52 64 61 68'
+  return (
+    <div className={`judge-portrait ${thinking ? 'is-thinking' : ''} ${pleased ? 'is-pleased' : ''}`} aria-hidden="true">
+      <svg viewBox="0 0 112 125">
+        <circle cx="56" cy="53" r="51" fill="#d7b15f" />
+        <circle cx="56" cy="53" r="46" fill="#173747" stroke="#f1d28e" strokeWidth="3" />
+        <path d="M15 124 Q18 86 56 82 Q94 86 97 124Z" fill="#171c24" />
+        <path d="M36 86 L56 110 76 86 68 79H44Z" fill="#f5ead0" />
+        <rect x="46" y="71" width="20" height="17" rx="8" fill="#b97755" />
+        <ellipse cx="56" cy="52" rx="28" ry="31" fill="#ca8b66" />
+        <path d="M26 46 Q24 17 42 19 Q48 7 58 19 Q68 6 74 19 Q91 19 86 48 Q72 29 30 43Z" fill="#e9e4d8" />
+        <path d="M31 28 Q25 13 38 8 Q51 7 51 24 M61 23 Q61 7 75 8 Q90 13 81 31" fill="#f7f3e8" stroke="#d8d2c6" strokeWidth="3" />
+        <path d="M39 49 Q45 45 50 49 M62 49 Q68 45 74 49" fill="none" stroke="#293842" strokeWidth="2.5" strokeLinecap="round" />
+        <circle cx="45" cy="53" r="2.5" fill="#26333c" /><circle cx="67" cy="53" r="2.5" fill="#26333c" />
+        <path d={mouth} fill="none" stroke="#743e36" strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M8 118 H104" stroke="#c59a47" strokeWidth="5" />
+      </svg>
+      <div className="judge-gavel"><span /><b /></div>
+    </div>
+  )
+}
+
 function LawyerFigure({ gender, tier, x = 560, y = 310 }: { gender: CharacterGender; tier: number; x?: number; y?: number }) {
   const jacket = tier === 0 ? '#35404d' : tier < 3 ? '#25364a' : tier < 5 ? '#15243a' : tier === 5 ? '#171c30' : '#071927'
   const shirt = tier === 0 ? '#d9d1c1' : tier === 6 ? '#fff4d9' : '#fffaf1'

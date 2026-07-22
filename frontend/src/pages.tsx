@@ -13,7 +13,6 @@ import {
   Coins,
   Crown,
   Flame,
-  Gem,
   Globe2,
   Handshake,
   Lock,
@@ -31,7 +30,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { api } from './api'
 import { Brand, ErrorNotice, formatMoney, LoadingScreen, PauseButton, QuestionFlow } from './components'
-import { MiniAvatar, OfficeScene } from './game-art'
+import { ClientPortrait, MiniAvatar, OfficeScene } from './game-art'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState } from './types'
 
 
@@ -360,7 +359,7 @@ export function CasesLobbyPage() {
         </div>
         <div className="case-brief-card">
           <div className="brief-stamp">{game.active_client.on_hold ? 'EFFECTIVE CLIENT' : 'ACTIVE CLIENT'}</div>
-          <div className="client-monogram">{workingClient.name.slice(0, 1)}</div>
+          <ClientPortrait kind={workingClient.icon} name={workingClient.name} className="lobby-client-portrait" />
           <h2>{workingClient.name}</h2>
           <p>{game.active_client.on_hold
             ? `${game.active_client.name} is on hold until your Reputation recovers. Walk-in matters remain available at the fee below.`
@@ -462,7 +461,9 @@ export function FirmPage() {
   const [tab, setTab] = useState<FirmTab>(firmTabs.some((item) => item.key === initial) ? initial : 'upgrades')
   const queryClient = useQueryClient()
   const gameQuery = useGame()
+  const currentCaseQuery = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession, enabled: tab === 'clients' })
   const [justBought, setJustBought] = useState<string | null>(null)
+  const [justActivated, setJustActivated] = useState<string | null>(null)
   const purchase = useMutation({
     mutationFn: api.purchase,
     onSuccess: ({ game }, key) => {
@@ -472,7 +473,14 @@ export function FirmPage() {
     },
   })
   const advance = useMutation({ mutationFn: api.advanceFirm, onSuccess: ({ game }) => storeGame(queryClient, game) })
-  const client = useMutation({ mutationFn: api.selectClient, onSuccess: ({ game }) => storeGame(queryClient, game) })
+  const client = useMutation({
+    mutationFn: api.selectClient,
+    onSuccess: ({ game }, key) => {
+      storeGame(queryClient, game)
+      setJustActivated(key)
+      window.setTimeout(() => setJustActivated(null), 2200)
+    },
+  })
   const appearance = useMutation({
     mutationFn: (characterGender: CharacterGender) => api.updateGame({ character_gender: characterGender }),
     onSuccess: ({ game }) => storeGame(queryClient, game),
@@ -484,6 +492,9 @@ export function FirmPage() {
   const assets = game.catalog.assets.filter((item) => item.type === typeMap[tab])
   const nextTier = game.catalog.tiers.find((tier) => tier.next)
   const workingClient = effectiveClient(game)
+  const openSession = currentCaseQuery.data?.session
+  const openCaseItem = openSession?.pending_item || openSession?.current_item
+  const openCaseTerms = openCaseItem?.case_terms
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, current: FirmTab) => {
     const currentIndex = firmTabs.findIndex((item) => item.key === current)
     let nextIndex: number | null = null
@@ -530,20 +541,34 @@ export function FirmPage() {
         )}
 
         {tab === 'clients' ? (
-          <div className="management-grid client-grid">
-          {game.catalog.clients.map((item) => (
-            <article key={item.key} className={`management-card client-card ${item.selected ? 'selected' : ''} ${!item.unlocked ? 'locked' : ''}`}>
-              <div className="card-icon"><ClientIcon kind={item.icon} /></div>
-              <div className="card-status">{item.on_hold ? <><Lock size={12} /> ON HOLD</> : item.selected ? 'ACTIVE' : item.unlocked ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
-              <h3>{item.name}</h3><p>{item.description}</p>
-              <div className="client-fee"><span>Base fee per case</span><strong>{formatMoney(item.base_fee)}</strong></div>
-              {item.on_hold && <div className="effective-client-note"><BriefcaseBusiness size={13} />Cases use {workingClient.name} · {formatMoney(workingClient.base_fee)} base fee</div>}
-              {item.contract && <div className="contract-mini"><span>{item.contract.cases_remaining} left</span><span>{item.contract.loyalty} loyalty</span></div>}
-              <ClientRequirementLine client={item} game={game} />
-              <button className={item.selected ? 'secondary-button full' : 'primary-button full'} disabled={!item.unlocked || item.selected || client.isPending} onClick={() => client.mutate(item.key)}>{item.on_hold ? 'Current client · On hold' : item.selected ? 'Current client' : 'Activate contract'}</button>
-            </article>
-          ))}
-        </div>
+          <>
+            <section className="client-roster-status">
+              <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
+              <div><span className="eyebrow">CURRENT WORKING CLIENT</span><h2>{workingClient.name}</h2><p>{game.active_client.on_hold ? `${game.active_client.name} is on hold; new matters use this client instead.` : `${game.active_client.cases_remaining} cases remain in this contract.`}</p></div>
+              <aside className={openCaseTerms ? 'has-open-file' : ''}>
+                <span>{openCaseTerms ? 'OPEN CASE FILE' : 'NEXT CASE FILE'}</span>
+                <strong>{openCaseTerms?.client_name || workingClient.name}</strong>
+                <small>{openCaseTerms
+                  ? openCaseTerms.client_key === workingClient.key ? 'This case matches your current contract.' : `This file stays with ${openCaseTerms.client_name}; the new client starts after it closes.`
+                  : `Your next case will be for ${workingClient.name}.`}</small>
+              </aside>
+            </section>
+            <div className="management-grid client-grid">
+            {game.catalog.clients.map((item) => (
+              <article key={item.key} className={`management-card client-card ${item.selected ? 'selected' : ''} ${!item.unlocked ? 'locked' : ''} ${justActivated === item.key ? 'just-activated' : ''}`}>
+                <ClientPortrait kind={item.icon} name={item.name} mood={item.selected ? 'happy' : 'neutral'} className="client-card-portrait" />
+                <div className="card-status">{item.on_hold ? <><Lock size={12} /> ON HOLD</> : item.selected ? 'WORKING NOW' : item.unlocked ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
+                <h3>{item.name}</h3><p>{item.description}</p>
+                <div className="client-fee"><span>Base fee per case</span><strong>{formatMoney(item.base_fee)}</strong></div>
+                {item.on_hold && <div className="effective-client-note"><BriefcaseBusiness size={13} />Cases use {workingClient.name} · {formatMoney(workingClient.base_fee)} base fee</div>}
+                {item.contract && <div className="contract-mini"><span>{item.contract.cases_remaining} left</span><span>{item.contract.loyalty} loyalty</span></div>}
+                <ClientRequirementLine client={item} game={game} />
+                <button className={item.selected ? 'secondary-button full' : 'primary-button full'} disabled={!item.unlocked || item.selected || client.isPending} onClick={() => client.mutate(item.key)}>{client.isPending && client.variables === item.key ? 'Switching files…' : item.on_hold ? 'Current client · On hold' : item.selected ? 'Working these cases' : `Work for ${item.name}`}</button>
+                {justActivated === item.key && <div className="client-activated-flash"><Check /> NEW CLIENT ACTIVE</div>}
+              </article>
+            ))}
+            </div>
+          </>
       ) : tab === 'achievements' ? (
         <div className="achievement-grid">
           {game.achievements.map((item, index) => (
@@ -577,14 +602,6 @@ function AssetIcon({ type }: { type: GameAsset['type'] }) {
   if (type === 'connection') return <Handshake />
   if (type === 'rival') return <Trophy />
   return <Wrench />
-}
-
-
-function ClientIcon({ kind }: { kind: string }) {
-  if (kind === 'gem') return <Gem />
-  if (kind === 'globe') return <Globe2 />
-  if (kind === 'landmark' || kind === 'building') return <Building2 />
-  return <BriefcaseBusiness />
 }
 
 

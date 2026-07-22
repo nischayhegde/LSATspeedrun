@@ -22,6 +22,7 @@ import {
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from './api'
+import { ClientPortrait, JudgePortrait } from './game-art'
 import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StudySession, User } from './types'
 
 
@@ -138,10 +139,45 @@ function formatTime(milliseconds: number) {
 }
 
 
+function ClientSettlement({
+  reward,
+  clientName,
+  clientKind,
+  satisfied,
+}: {
+  reward: AttemptReward
+  clientName: string
+  clientKind?: string
+  satisfied: boolean
+}) {
+  const repPositive = reward.reputation_change >= 0
+  return (
+    <section className={`client-settlement ${satisfied ? 'happy' : 'unhappy'}`} role="status" aria-live="polite">
+      <div className="settlement-client">
+        <ClientPortrait kind={clientKind} name={clientName} mood={satisfied ? 'happy' : 'unhappy'} />
+        <div className="client-speech">
+          <span>{satisfied ? 'CLIENT IMPRESSED' : 'CLIENT UNCONVINCED'}</span>
+          <strong>{satisfied ? '“That’s the argument I hired you for!”' : '“We need a tighter argument next time.”'}</strong>
+          <small>{clientName} closes the file and settles this matter.</small>
+        </div>
+      </div>
+      <div className="reward-transfer" aria-label={`${formatMoney(reward.payout)} fee and ${reward.reputation_change.toFixed(1)} reputation`}>
+        <div className="flying-coin coin-one">$</div>
+        <div className="flying-coin coin-two">★</div>
+        <div className="reward-packet fee-packet"><Coins /><span>Fee received</span><strong>+{formatMoney(reward.payout)}</strong></div>
+        <div className={`reward-packet rep-packet ${repPositive ? 'positive' : 'negative'}`}>
+          <Star /><span>Reputation</span><strong>{repPositive ? '+' : ''}{reward.reputation_change.toFixed(1)}</strong>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+
 function CaseScore({ reward }: { reward: AttemptReward }) {
   const repPositive = reward.reputation_change >= 0
   return (
-    <section className="case-score-card" role="status" aria-live="polite" aria-label="Case score and payout">
+    <section className="case-score-card" aria-label="Case score and payout details">
       <div className="score-seal">
         <span>CASE SCORE</span>
         <strong>{reward.score}</strong>
@@ -173,6 +209,45 @@ function CaseScore({ reward }: { reward: AttemptReward }) {
 }
 
 
+function JudgeReview({
+  isCorrect,
+  diagnosis,
+  coaching,
+  reward,
+  loading,
+}: {
+  isCorrect: boolean
+  diagnosis: string
+  coaching?: CoachingFeedback
+  reward?: AttemptReward | null
+  loading: boolean
+}) {
+  const strongReasoning = reward?.explanation_grade === 'Good' || reward?.explanation_grade === 'Excellent'
+  const title = coaching
+    ? strongReasoning ? 'The logic holds up under questioning.' : 'Here is where the argument turns.'
+    : isCorrect ? 'The verified answer is sustained.' : 'The verified answer overrules your choice.'
+  const message = coaching?.reasoning_summary || diagnosis
+  return (
+    <section className="judge-review" role="status" aria-live="polite">
+      <div className="judge-bench">
+        <div className="bench-nameplate"><span>AI</span> THE HON. LOGICA</div>
+        <JudgePortrait thinking={loading} pleased={Boolean(coaching && isCorrect && strongReasoning)} />
+      </div>
+      <div className="judge-speech">
+        <div className="judge-status-row">
+          <span className={isCorrect ? 'verified-correct' : 'verified-incorrect'}>{isCorrect ? <Check /> : <X />} VERIFIED ANSWER</span>
+          {reward && <span className={`grade-pill grade-${reward.explanation_grade.toLowerCase()}`}>{reward.explanation_grade} REASONING</span>}
+        </div>
+        <h2>{title}</h2>
+        <p>{message}</p>
+        {loading && <div className="judge-thinking"><i /><i /><i /> Reviewing your case theory…</div>}
+        <small>The answer key decides correctness. The judge coaches your explanation.</small>
+      </div>
+    </section>
+  )
+}
+
+
 function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: CoachingFeedback; reward?: AttemptReward | null; selectedLabel?: string }) {
   const correctLabel = coaching.answer_analysis.choice_explanations.find((choice) => choice.is_correct)?.label
   const selectedIsWrong = Boolean(selectedLabel && correctLabel && selectedLabel !== correctLabel)
@@ -180,27 +255,32 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
     <section className="coaching-panel">
       <div className="coaching-heading">
         <div>
-          <span className="eyebrow">CASE DEBRIEF</span>
-          <h2>Your reasoning, reviewed</h2>
+          <span className="eyebrow">THE JUDGE’S BENCH NOTES</span>
+          <h2>Three things to carry into the next case</h2>
         </div>
         {reward && <span className={`grade-pill grade-${reward.explanation_grade.toLowerCase()}`}>{reward.explanation_grade}</span>}
       </div>
 
-      <div className="debrief-grid">
-        <article className="debrief-note strength">
-          <span><Check size={15} /> What you understood</span>
+      <div className="debrief-roadmap">
+        <article className="debrief-step strength">
+          <b>1</b>
+          <div><span><Check size={15} /> KEEP THIS</span>
           <p>{coaching.understood_correctly || coaching.reasoning_summary}</p>
+          </div>
         </article>
-        <article className="debrief-note repair">
-          <span><Brain size={15} /> Decisive improvement</span>
+        <article className="debrief-step repair">
+          <b>2</b>
+          <div><span><Brain size={15} /> FIX THIS FIRST</span>
           <p>{coaching.first_error ? `${coaching.first_error.description} ${coaching.first_error.repair}` : coaching.next_step_hint}</p>
+          </div>
+        </article>
+        <article className="debrief-step method">
+          <b>3</b>
+          <div><span><Scale size={15} /> CLEAN APPROACH</span>
+          <p>{coaching.solution_method || coaching.debrief}</p>
+          </div>
         </article>
       </div>
-
-      <article className="solution-method">
-        <span className="eyebrow">THE CLEAN APPROACH</span>
-        <p>{coaching.solution_method || coaching.debrief}</p>
-      </article>
 
       <div className="correct-explanation">
         <div><Check size={18} /></div>
@@ -212,6 +292,7 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
           <div><strong>Why your choice {selectedLabel} falls short</strong><p>{coaching.answer_analysis.selected_answer_explanation}</p></div>
         </div>
       )}
+      <div className="choice-audit-heading"><span>FULL ANSWER AUDIT</span><small>Open any choice to see the judge’s reasoning.</small></div>
       <div className="choice-explanations">
         {coaching.answer_analysis.choice_explanations.map((choice) => (
           <details className={choice.is_correct ? 'choice-explanation correct' : 'choice-explanation'} key={choice.label} open={choice.is_correct}>
@@ -220,7 +301,7 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
           </details>
         ))}
       </div>
-      <div className="next-step"><Brain size={18} /><span><b>Next-case cue:</b> {coaching.next_step_hint}</span></div>
+      <div className="next-step"><Brain size={18} /><span><b>Your one-line rule for the next case:</b> {coaching.next_step_hint}</span></div>
     </section>
   )
 }
@@ -229,6 +310,7 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
 export function QuestionFlow({ session }: { session: StudySession }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const gameQuery = useQuery({ queryKey: ['game'], queryFn: api.game })
   const item = session.pending_item || session.current_item
   const result = session.pending_result
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
@@ -302,9 +384,22 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   if (!item) return <ErrorNotice error={new Error('This case file could not be loaded.')} />
   const question = item.question
   const timerRatio = elapsed / Math.max(1, item.target_time_seconds * 1000)
+  const caseClient = gameQuery.data?.game?.catalog.clients.find((client) => client.key === item.case_terms?.client_key)
+  const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
+  const clientKind = caseClient?.icon
+  const clientSatisfied = Boolean(result?.is_correct && reward && ['Good', 'Excellent'].includes(reward.explanation_grade))
 
   return (
     <div className="question-layout">
+      <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
+        <ClientPortrait kind={clientKind} name={clientName} />
+        <div className="active-matter-copy">
+          <span>YOU ARE REPRESENTING</span>
+          <strong>{clientName}</strong>
+          <small>This client is locked to this open case, even if you change contracts later.</small>
+        </div>
+        <div className="active-matter-fee"><span>POTENTIAL BASE FEE</span><strong>{formatMoney(item.case_terms?.base_fee || 0)}</strong><small>Answer + reasoning + speed set the final fee</small></div>
+      </section>
       <div className="case-file-topbar">
         <div className="matter-tag">
           <span>{question.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
@@ -387,18 +482,15 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           )}
 
           {result && (
-            <div ref={verdictRef} tabIndex={-1} role="status" aria-live="polite" className={result.is_correct ? 'result-banner correct' : 'result-banner incorrect'}>
-              <div>{result.is_correct ? <Check /> : <X />}</div>
-              <div>
-                <span className="eyebrow">VERIFIED VERDICT</span>
-                <strong>{result.is_correct ? 'Argument sustained' : 'Argument needs repair'}</strong>
-                <p>{result.feedback.diagnosis}</p>
-              </div>
+            <div ref={verdictRef} tabIndex={-1} className="judge-review-focus">
+              <JudgeReview
+                isCorrect={result.is_correct}
+                diagnosis={result.feedback.diagnosis}
+                coaching={coachingFeedback}
+                reward={reward}
+                loading={coaching.isLoading}
+              />
             </div>
-          )}
-
-          {result && coaching.isLoading && (
-            <div className="coaching-loading"><span className="spinner" /> Counsel is reviewing your reasoning and calculating the fee…</div>
           )}
           {result && coaching.error && (!coachingFeedback || !reward) && (
             <div className="coaching-error">
@@ -406,8 +498,13 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               <button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button>
             </div>
           )}
-          {reward && <CaseScore reward={reward} />}
           {coachingFeedback && <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result?.feedback.selected_label} />}
+          {reward && (
+            <>
+              <ClientSettlement reward={reward} clientName={clientName} clientKind={clientKind} satisfied={clientSatisfied} />
+              <CaseScore reward={reward} />
+            </>
+          )}
 
           {result && (
             <div className="continue-row">
