@@ -665,6 +665,8 @@ Resources:
               DATABASE_HOST=${Database.Endpoint.Address}
               DATABASE_PORT=${Database.Endpoint.Port}
               DATABASE_NAME=${DatabaseName}
+              AWS_DEFAULT_REGION=${AWS::Region}
+              AWS_REGION=${AWS::Region}
               FLASK_ENV=production
               FRONTEND_ORIGIN=http://localhost
               GOOGLE_CLIENT_ID=${GoogleClientId}

@@ -27,7 +27,9 @@ def _database_url() -> str:
 
     import boto3
 
-    response = boto3.client("secretsmanager").get_secret_value(SecretId=secret_arn)
+    arn_parts = secret_arn.split(":")
+    secret_region = arn_parts[3] if len(arn_parts) > 3 and arn_parts[3] else None
+    response = boto3.client("secretsmanager", region_name=secret_region).get_secret_value(SecretId=secret_arn)
     secret = json.loads(response["SecretString"])
     host = os.getenv("DATABASE_HOST") or secret.get("host")
     port = int(os.getenv("DATABASE_PORT") or secret.get("port") or 5432)
