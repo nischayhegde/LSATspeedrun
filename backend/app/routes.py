@@ -10,7 +10,17 @@ from google.oauth2 import id_token
 from .auth import clear_auth_cookies, issue_auth_cookies, require_auth
 from .coaching import CoachingProviderError, provider_ready
 from .extensions import db
-from .models import Attempt, Question, SessionItem, StudySession, User, utcnow
+from .jobs import (
+    JobQueueError,
+    async_jobs_enabled,
+    enqueue_coaching_job,
+    enqueue_hint_job,
+    enqueue_session_plan_job,
+    enqueue_story_job,
+    queue_ready,
+    serialize_job,
+)
+from .models import AiJob, Attempt, Question, SessionItem, StudySession, User, utcnow
 from .services import (
     archive_case_detail,
     archive_cases,
@@ -39,6 +49,29 @@ api = Blueprint("api", __name__)
 
 def error(code: str, message: str, status: int = 400):
     return jsonify({"error": {"code": code, "message": message}}), status
+
+
+def _start_session_async(mode: str):
+    active = (
+        StudySession.query.filter(
+            StudySession.user_id == g.current_user.id,
+            StudySession.mode == mode,
+            StudySession.status.in_(["in_progress", "paused"]),
+        )
+        .order_by(StudySession.started_at.desc())
+        .first()
+    )
+    if active:
+        return jsonify({"session": serialize_session(active)})
+    if not queue_ready():
+        return error("job_queue_not_configured", "The AI job queue is not configured.", 503)
+    try:
+        job = enqueue_session_plan_job(g.current_user, mode)
+    except JobQueueError as exc:
+        return error("job_queue_failed", str(exc), 503)
+    if job.status == "completed":
+        return jsonify({"session": job.result_json}), 201
+    return jsonify({"status": job.status, "job": serialize_job(job)}), 202
 
 
 def _upsert_google_user(claims: dict) -> User:
@@ -75,6 +108,10 @@ def health():
                 "ready": provider_ready(),
                 "model": current_app.config["COACHING_MODEL"],
                 "reasoning_effort": current_app.config["COACHING_REASONING_EFFORT"],
+            },
+            "async_jobs": {
+                "mode": current_app.config["AI_JOBS_MODE"],
+                "ready": queue_ready() if async_jobs_enabled() else True,
             },
         }
     )
@@ -198,6 +235,8 @@ def start_diagnostic():
     completed = StudySession.query.filter_by(user_id=g.current_user.id, mode="diagnostic", status="completed").first()
     if completed:
         return jsonify({"session": serialize_session(completed, False), "results": completed.summary_json})
+    if async_jobs_enabled():
+        return _start_session_async("diagnostic")
     try:
         session = create_study_session(g.current_user, "diagnostic")
     except RuntimeError:
@@ -233,6 +272,8 @@ def start_daily_session():
     )
     if unseen_summary:
         return error("summary_required", f"Review the saved session summary at /session/{unseen_summary.id}/summary.", 409)
+    if async_jobs_enabled():
+        return _start_session_async("daily")
     try:
         session = create_study_session(g.current_user, "daily")
     except RuntimeError:
@@ -259,6 +300,8 @@ def start_review_session():
     if not diagnostic:
         return error("diagnostic_required", "Complete the diagnostic before reopening cold cases.", 409)
     cold_case_dashboard(g.current_user)
+    if async_jobs_enabled():
+        return _start_session_async("review")
     try:
         session = create_study_session(g.current_user, "review")
     except RuntimeError:
@@ -281,6 +324,8 @@ def start_boss_session():
         return jsonify({"session": serialize_session(session)})
     if not status["available"]:
         return error("boss_locked", "Close more daily cases before confronting Professor Quill.", 409)
+    if async_jobs_enabled():
+        return _start_session_async("boss")
     try:
         session = create_study_session(g.current_user, "boss")
     except RuntimeError:
@@ -493,6 +538,16 @@ def coach_attempt(attempt_id: str):
         return error("attempt_not_found", "That filed answer was not found.", 404)
     if not provider_ready():
         return error("coaching_not_configured", "TrueFoundry coaching is not configured.", 503)
+    if async_jobs_enabled():
+        if not queue_ready():
+            return error("job_queue_not_configured", "The AI job queue is not configured.", 503)
+        try:
+            job = enqueue_coaching_job(attempt)
+        except JobQueueError as exc:
+            return error("job_queue_failed", str(exc), 503)
+        if job.status == "completed":
+            return jsonify({"status": "completed", "coaching": job.result_json})
+        return jsonify({"status": job.status, "job": serialize_job(job)}), 202
     try:
         coaching = run_attempt_coaching(attempt)
     except ValueError as exc:
@@ -523,6 +578,20 @@ def create_hint(session_id: str, item_id: str):
         return error("evidence_not_started", "Open the evidence file before requesting a hint.", 409)
     if not provider_ready():
         return error("coaching_not_configured", "TrueFoundry coaching is not configured.", 503)
+    if async_jobs_enabled():
+        if not queue_ready():
+            return error("job_queue_not_configured", "The AI job queue is not configured.", 503)
+        try:
+            job = enqueue_hint_job(g.current_user, item)
+        except ValueError as exc:
+            if str(exc) == "hint_limit_reached":
+                return error("hint_limit_reached", "All three controlled hints have been used.", 409)
+            raise
+        except JobQueueError as exc:
+            return error("job_queue_failed", str(exc), 503)
+        if job.status == "completed":
+            return jsonify({"hint": job.result_json})
+        return jsonify({"status": job.status, "job": serialize_job(job)}), 202
     try:
         hint = request_item_hint(g.current_user, item)
     except ValueError as exc:
@@ -550,8 +619,27 @@ def generate_item_story(session_id: str, item_id: str):
     is_current = item and item.position == session.current_index
     if not item or (pending_item_id and item.id != pending_item_id) or (not pending_item_id and not is_current):
         return error("invalid_session_item", "Story generation is available for the active evidence file.", 409)
+    if async_jobs_enabled():
+        if not queue_ready():
+            return error("job_queue_not_configured", "The AI job queue is not configured.", 503)
+        try:
+            job = enqueue_story_job(g.current_user, item)
+        except JobQueueError as exc:
+            return error("job_queue_failed", str(exc), 503)
+        if job.status == "completed":
+            return jsonify({"story": job.result_json})
+        return jsonify({"status": job.status, "job": serialize_job(job)}), 202
     beat = enrich_item_story(g.current_user, item)
     return jsonify({"story": public_item_story(item, beat)})
+
+
+@api.get("/jobs/<job_id>")
+@require_auth
+def get_ai_job(job_id: str):
+    job = AiJob.query.filter_by(id=job_id, user_id=g.current_user.id).first()
+    if not job:
+        return error("job_not_found", "That AI job was not found.", 404)
+    return jsonify({"job": serialize_job(job)})
 
 
 @api.get("/study-sessions/<session_id>/summary")

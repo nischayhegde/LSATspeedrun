@@ -978,17 +978,9 @@ def run_attempt_coaching(attempt: Attempt) -> dict:
     return coaching
 
 
-def request_item_hint(user: User, item: SessionItem) -> dict:
-    saved = HintEvent.query.filter_by(session_item_id=item.id).order_by(HintEvent.level).all()
-    if len(saved) >= 3:
-        raise ValueError("hint_limit_reached")
-    level = len(saved) + 1
-    existing = HintEvent.query.filter_by(session_item_id=item.id, level=level).first()
-    if existing:
-        return existing.content_json
+def pause_item_timer_for_ai(item: SessionItem) -> bool:
+    """Stop scored time before slow AI work and persist the elapsed slice."""
 
-    # Provider latency is not student work. Stop the active clock while Rowan
-    # prepares a hint, then restart it only if this item is still answerable.
     timer_was_active = bool(item.timer_started_at and item.session.status == "in_progress")
     if timer_was_active:
         started = item.timer_started_at
@@ -999,6 +991,51 @@ def request_item_hint(user: User, item: SessionItem) -> dict:
         )
         item.timer_started_at = None
         db.session.commit()
+    return timer_was_active
+
+
+def resume_item_timer_after_ai(item_id: str) -> None:
+    """Resume a timer only when the same item is still safely answerable."""
+
+    db.session.rollback()
+    current_item = db.session.get(SessionItem, item_id)
+    if not current_item:
+        return
+    db.session.refresh(current_item)
+    current_session = current_item.session
+    db.session.refresh(current_session)
+    if (
+        current_session.status == "in_progress"
+        and not current_session.pending_attempt_id
+        and current_item.position == current_session.current_index
+        and current_item.timer_activated_at
+        and not current_item.completed_at
+        and not current_item.timer_started_at
+    ):
+        current_item.timer_started_at = utcnow()
+        current_item.paused_at = None
+        db.session.commit()
+
+
+def request_item_hint(
+    user: User,
+    item: SessionItem,
+    expected_level: int | None = None,
+    manage_timer: bool = True,
+) -> dict:
+    saved = HintEvent.query.filter_by(session_item_id=item.id).order_by(HintEvent.level).all()
+    if len(saved) >= 3:
+        raise ValueError("hint_limit_reached")
+    level = expected_level or len(saved) + 1
+    existing = HintEvent.query.filter_by(session_item_id=item.id, level=level).first()
+    if existing:
+        return existing.content_json
+    if level != len(saved) + 1:
+        raise ValueError("hint_level_conflict")
+
+    # Provider latency is not student work. Stop the active clock while Rowan
+    # prepares a hint, then restart it only if this item is still answerable.
+    timer_was_active = pause_item_timer_for_ai(item) if manage_timer else False
 
     try:
         hint, _metadata = generate_hint(item, level)
@@ -1021,25 +1058,9 @@ def request_item_hint(user: User, item: SessionItem) -> dict:
         return hint
     finally:
         if timer_was_active:
-            # The request can race a pause or answer from another tab. Refresh
-            # both records and never resurrect a timer after either transition.
-            db.session.rollback()
-            current_item = db.session.get(SessionItem, item.id)
-            if current_item:
-                db.session.refresh(current_item)
-                current_session = current_item.session
-                db.session.refresh(current_session)
-                if (
-                    current_session.status == "in_progress"
-                    and not current_session.pending_attempt_id
-                    and current_item.position == current_session.current_index
-                    and current_item.timer_activated_at
-                    and not current_item.completed_at
-                    and not current_item.timer_started_at
-                ):
-                    current_item.timer_started_at = utcnow()
-                    current_item.paused_at = None
-                    db.session.commit()
+            # The request can race a pause or answer from another tab. Never
+            # resurrect a timer after either transition.
+            resume_item_timer_after_ai(item.id)
 
 
 def enrich_item_story(user: User, item: SessionItem) -> dict:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -8,11 +9,40 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_migrate import Migrate
+from sqlalchemy.engine import URL
 
 from .auth import init_auth
 from .extensions import db
 from .routes import api
 from .seed import seed_questions
+
+
+def _database_url() -> str:
+    configured = os.getenv("DATABASE_URL", "").strip()
+    if configured:
+        return configured
+    secret_arn = os.getenv("DATABASE_SECRET_ARN", "").strip()
+    if not secret_arn:
+        return "sqlite:///lsat_sherlock.db"
+
+    import boto3
+
+    response = boto3.client("secretsmanager").get_secret_value(SecretId=secret_arn)
+    secret = json.loads(response["SecretString"])
+    host = os.getenv("DATABASE_HOST") or secret.get("host")
+    port = int(os.getenv("DATABASE_PORT") or secret.get("port") or 5432)
+    name = os.getenv("DATABASE_NAME") or secret.get("dbname") or "lsatspeedrun"
+    if not host or not secret.get("username") or not secret.get("password"):
+        raise RuntimeError("The configured database secret is incomplete.")
+    return URL.create(
+        "postgresql+psycopg",
+        username=secret["username"],
+        password=secret["password"],
+        host=host,
+        port=port,
+        database=name,
+        query={"sslmode": "require"},
+    ).render_as_string(hide_password=False)
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -23,7 +53,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=True)
     is_production = os.getenv("FLASK_ENV", "development") == "production"
     safe_dev_default = "false" if is_production else "true"
-    database_url = os.getenv("DATABASE_URL", "sqlite:///lsat_sherlock.db")
+    database_url = _database_url()
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
     elif database_url.startswith("postgresql://"):
@@ -47,6 +77,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         TFY_URL=os.getenv("TFY_URL", "").strip().strip('"'),
         COACHING_MODEL="gpt-5.6-luna",
         COACHING_REASONING_EFFORT="xhigh",
+        AI_JOBS_MODE=os.getenv("AI_JOBS_MODE", "sync").strip().lower(),
+        AI_JOB_QUEUE_URL=os.getenv("AI_JOB_QUEUE_URL", "").strip(),
+        AI_JOB_MAX_ATTEMPTS=max(1, int(os.getenv("AI_JOB_MAX_ATTEMPTS", "3"))),
+        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True, "pool_recycle": 300},
     )
     if test_config:
         app.config.update(test_config)

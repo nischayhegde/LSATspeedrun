@@ -1,0 +1,1 @@
+web: python -m flask --app run.py db upgrade --directory migrations && gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --threads 2 --timeout 180 run:app

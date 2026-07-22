@@ -900,3 +900,43 @@ def test_truefoundry_hinting_and_explanation_grading(app, monkeypatch):
     assert story_context["session_plan"]["beat"]["story_role"]
     assert story_context["session_plan"]["beat"]["setup_hook"]
     assert story_context["session_plan"]["beat"]["payoff_hook"]
+
+
+def test_coaching_can_run_through_durable_async_job(app, monkeypatch):
+    from app.jobs import process_ai_job
+
+    monkeypatch.setitem(app.config, "DIAGNOSTIC_SIZE", 1)
+    client = app.test_client()
+    headers = login(client, "async-worker@example.test")
+    client.patch("/v1/me/preferences", json={"target_minutes": 20}, headers=headers)
+    diagnostic = client.post("/v1/diagnostics", headers=headers).json["session"]
+    item = diagnostic["current_item"]
+    start_timer(client, headers, diagnostic["id"], item["id"])
+    attempt_response = client.post(
+        f"/v1/study-sessions/{diagnostic['id']}/attempts",
+        json={"item_id": item["id"], "selected_label": correct_label(app, item["id"]), "elapsed_ms": 1000},
+        headers={**headers, "Idempotency-Key": "async-coaching"},
+    )
+    attempt_id = attempt_response.json["result"]["attempt_id"]
+
+    monkeypatch.setitem(app.config, "TFY_URL", "https://truefoundry.example/v1")
+    monkeypatch.setitem(app.config, "TFY_API_KEY", "test-key")
+    monkeypatch.setitem(app.config, "AI_JOBS_MODE", "sqs")
+    monkeypatch.setitem(app.config, "AI_JOB_QUEUE_URL", "https://sqs.example/jobs")
+    monkeypatch.setattr("app.jobs._send_job_message", lambda job: None)
+    coaching = {"model": "test-model", "reasoning_summary": "Processed outside the request worker."}
+    monkeypatch.setattr("app.services.run_attempt_coaching", lambda _attempt: coaching)
+
+    accepted = client.post(f"/v1/attempts/{attempt_id}/coaching", headers=headers)
+    assert accepted.status_code == 202
+    job_id = accepted.json["job"]["id"]
+    assert accepted.json["job"]["status"] == "queued"
+
+    with app.app_context():
+        processed = process_ai_job(job_id)
+        assert processed.status == "completed"
+
+    status = client.get(f"/v1/jobs/{job_id}", headers=headers)
+    assert status.status_code == 200
+    assert status.json["job"]["status"] == "completed"
+    assert status.json["job"]["result"] == coaching

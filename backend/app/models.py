@@ -247,3 +247,27 @@ class StoryProgress(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
     user = db.relationship("User", back_populates="story_progress")
+
+
+class AiJob(db.Model):
+    """Durable state for AI work handed from Flask to SQS/Lambda."""
+
+    __tablename__ = "ai_jobs"
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = db.Column(db.String(30), nullable=False, index=True)
+    resource_id = db.Column(db.String(36), nullable=False, index=True)
+    dedup_key = db.Column(db.String(120), unique=True, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="queued", index=True)
+    payload_json = db.Column(db.JSON, nullable=False, default=dict)
+    result_json = db.Column(db.JSON, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    attempt_count = db.Column(db.Integer, nullable=False, default=0)
+    queue_message_id = db.Column(db.String(100), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+    started_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    user = db.relationship("User")

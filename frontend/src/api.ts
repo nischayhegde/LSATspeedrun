@@ -54,6 +54,37 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data as T
 }
 
+type AsyncJob<T> = {
+  id: string
+  kind: 'coaching' | 'hint' | 'story' | 'session_plan'
+  status: 'queued' | 'processing' | 'completed' | 'failed'
+  result?: T
+  error?: string
+}
+
+const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+
+async function waitForJob<T>(jobId: string): Promise<T> {
+  const deadline = Date.now() + 8 * 60_000
+  while (Date.now() < deadline) {
+    const { job } = await request<{ job: AsyncJob<T> }>(`/jobs/${jobId}`)
+    if (job.status === 'completed' && job.result !== undefined) return job.result
+    if (job.status === 'failed') throw new ApiError(job.error || 'AI generation failed. Please retry.', 502, 'ai_job_failed')
+    await wait(1200)
+  }
+  throw new ApiError('AI generation is taking longer than expected. Please retry.', 504, 'ai_job_timeout')
+}
+
+function requireJobId<T>(job?: AsyncJob<T>): string {
+  if (job?.id) return job.id
+  throw new ApiError('The server returned an invalid AI job response.', 502, 'invalid_ai_job')
+}
+
+async function startSession(path: string): Promise<{ session: StudySession }> {
+  const response = await request<{ session?: StudySession; job?: AsyncJob<StudySession> }>(path, { method: 'POST' })
+  return { session: response.session ?? await waitForJob<StudySession>(requireJobId(response.job)) }
+}
+
 export const api = {
   authConfig: () => request<{ google_client_id?: string | null; dev_auth_enabled: boolean }>('/auth/config'),
   me: () => request<{ user: User }>('/me'),
@@ -73,13 +104,12 @@ export const api = {
       session: StudySession | null
       results: DiagnosticResults | null
     }>('/diagnostics/current'),
-  startDiagnostic: () =>
-    request<{ session: StudySession; results?: DiagnosticResults }>('/diagnostics', { method: 'POST' }),
-  startDaily: () => request<{ session: StudySession }>('/study-sessions', { method: 'POST' }),
+  startDiagnostic: () => startSession('/diagnostics'),
+  startDaily: () => startSession('/study-sessions'),
   coldCases: () => request<ColdCases>('/cold-cases'),
-  startReview: () => request<{ session: StudySession }>('/review-sessions', { method: 'POST' }),
+  startReview: () => startSession('/review-sessions'),
   bossCase: () => request<BossCaseStatus>('/boss-case'),
-  startBoss: () => request<{ session: StudySession }>('/boss-sessions', { method: 'POST' }),
+  startBoss: () => startSession('/boss-sessions'),
   currentSession: (mode: StudySession['mode'] = 'daily') =>
     request<{ session: StudySession | null }>(`/study-sessions/current?mode=${mode}`),
   session: (id: string) => request<{ session: StudySession; summary?: DailySummary }>(`/study-sessions/${id}`),
@@ -111,12 +141,19 @@ export const api = {
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(body),
     }),
-  coaching: (attemptId: string) =>
-    request<{ status: 'completed'; coaching: CoachingFeedback }>(`/attempts/${attemptId}/coaching`, { method: 'POST' }),
-  requestHint: (sessionId: string, itemId: string) =>
-    request<{ hint: CoachingHint }>(`/study-sessions/${sessionId}/items/${itemId}/hints`, { method: 'POST' }),
-  generateStory: (sessionId: string, itemId: string) =>
-    request<{ story: CinematicStoryPayload }>(`/study-sessions/${sessionId}/items/${itemId}/story`, { method: 'POST' }),
+  coaching: async (attemptId: string) => {
+    const response = await request<{ status: string; coaching?: CoachingFeedback; job?: AsyncJob<CoachingFeedback> }>(`/attempts/${attemptId}/coaching`, { method: 'POST' })
+    const coaching = response.coaching ?? await waitForJob<CoachingFeedback>(requireJobId(response.job))
+    return { status: 'completed' as const, coaching }
+  },
+  requestHint: async (sessionId: string, itemId: string) => {
+    const response = await request<{ hint?: CoachingHint; job?: AsyncJob<CoachingHint> }>(`/study-sessions/${sessionId}/items/${itemId}/hints`, { method: 'POST' })
+    return { hint: response.hint ?? await waitForJob<CoachingHint>(requireJobId(response.job)) }
+  },
+  generateStory: async (sessionId: string, itemId: string) => {
+    const response = await request<{ story?: CinematicStoryPayload; job?: AsyncJob<CinematicStoryPayload> }>(`/study-sessions/${sessionId}/items/${itemId}/story`, { method: 'POST' })
+    return { story: response.story ?? await waitForJob<CinematicStoryPayload>(requireJobId(response.job)) }
+  },
   sessionSummary: (id: string) =>
     request<{ session: StudySession; summary: DailySummary }>(`/study-sessions/${id}/summary`),
   archive: (filters: { correctness?: string; section?: string; question_type?: string; page?: number } = {}) => {
