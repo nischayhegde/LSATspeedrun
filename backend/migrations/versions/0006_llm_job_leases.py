@@ -21,7 +21,9 @@ def upgrade():
     with op.batch_alter_table("attempts") as batch_op:
         batch_op.add_column(sa.Column("coaching_started_at", sa.DateTime(timezone=True), nullable=True))
         batch_op.add_column(sa.Column("explanation_score_applied", sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.execute("UPDATE attempts SET explanation_score_applied = 1 WHERE explanation_score IS NOT NULL")
+    # SQL TRUE works as a native boolean on PostgreSQL and as integer 1 on
+    # SQLite, keeping the same migration portable across local and production.
+    op.execute("UPDATE attempts SET explanation_score_applied = TRUE WHERE explanation_score IS NOT NULL")
 
 
 def downgrade():
