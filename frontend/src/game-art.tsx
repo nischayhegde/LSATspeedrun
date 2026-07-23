@@ -391,21 +391,22 @@ function mapSectionForTier(tier: number): MapSection {
 }
 
 const siteLayouts: Record<MapSection['key'], { tier: Position[]; rival: Position[] }> = {
+  /* keep the bottom-right corner free — the inspector panel lives there */
   city: {
-    tier: [{ x: 14, y: 72 }, { x: 31, y: 55 }, { x: 48, y: 74 }, { x: 66, y: 54 }, { x: 84, y: 71 }],
-    rival: [{ x: 22, y: 30 }, { x: 43, y: 23 }, { x: 63, y: 31 }, { x: 84, y: 24 }],
+    tier: [{ x: 14, y: 72 }, { x: 31, y: 55 }, { x: 48, y: 74 }, { x: 66, y: 54 }, { x: 87, y: 46 }],
+    rival: [{ x: 26, y: 36 }, { x: 43, y: 23 }, { x: 63, y: 31 }, { x: 84, y: 22 }],
   },
   nation: {
     tier: [{ x: 56, y: 68 }, { x: 30, y: 38 }],
     rival: [{ x: 22, y: 72 }, { x: 46, y: 22 }],
   },
   world: {
-    tier: [{ x: 24, y: 54 }, { x: 52, y: 38 }, { x: 78, y: 62 }],
-    rival: [{ x: 36, y: 72 }, { x: 64, y: 22 }, { x: 88, y: 40 }],
+    tier: [{ x: 24, y: 54 }, { x: 52, y: 38 }, { x: 74, y: 36 }],
+    rival: [{ x: 36, y: 72 }, { x: 60, y: 20 }, { x: 88, y: 16 }],
   },
   continent: {
     tier: [{ x: 30, y: 40 }, { x: 67, y: 70 }],
-    rival: [{ x: 16, y: 70 }, { x: 78, y: 50 }],
+    rival: [{ x: 16, y: 70 }, { x: 81, y: 38 }],
   },
   space: {
     tier: [{ x: 26, y: 38 }, { x: 84, y: 26 }, { x: 55, y: 60 }],
@@ -513,7 +514,7 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
             )
           })}
           {activeSection.key === hqSection.key && (
-            <div className="world-person map-player" style={{ left: `${hqPoint.position.x}%`, top: `${Math.min(86, hqPoint.position.y + 10)}%` }}>
+            <div className="world-person map-player" style={{ left: `${Math.min(92, hqPoint.position.x + 7)}%`, top: `${Math.min(86, hqPoint.position.y + 1)}%` }}>
               <Person gender={game.character_gender} tier={game.office_tier} label={`${game.lawyer_name}, at headquarters`} />
             </div>
           )}

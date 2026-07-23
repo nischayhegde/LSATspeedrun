@@ -371,6 +371,52 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .rival-target-strip .av-vignette-owned { display: none; }
 .rival-target-strip .av-vignette-lock span { width: 26px; height: 26px; font-size: 14px; }
 
+/* ---------------------------------------------------- layout fixes */
+
+/* category label stays readable above the locked-card veil; rival cards
+   drop it — the owner chip needs the bottom edge and the card title
+   already says "Acquire" */
+.asset-art-label.av-vignette-label { z-index: 6; }
+.av-vignette.asset-rival .av-vignette-label { display: none; }
+
+/* client cards: the portrait's title pill hangs 9px below the portrait —
+   clear it before the location tag, and stack the pro-bono seal below the
+   status chip instead of on top of it */
+.client-portrait.client-card-portrait { margin-bottom: 15px; }
+.management-card .pro-bono-seal { top: 44px; right: 14px; }
+
+/* keep page content clear of the fixed mobile nav */
+@media (max-width: 900px) {
+  body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+}
+
+/* once the character/office duo stacks, the pinned mission board flows
+   below the scene instead of covering the character plaque */
+@media (max-width: 1100px) {
+  .world-mission-board { position: static; width: auto; max-width: 430px; margin: 14px 0 0 auto; transform: none; }
+}
+
+/* mid/small screens: the map inspector flows below the terrain instead of
+   covering nodes; the office scene sheds its caption and slims the sign */
+@media (max-width: 1020px) {
+  .empire-explorer.game-viewport { height: auto; min-height: 0; display: flex; flex-direction: column; }
+  .av-terrain { position: relative; inset: auto; height: 440px; flex: none; }
+  .empire-inspector.av-inspector { position: static; width: auto; max-height: none; margin: 10px; }
+  .map-area-identity.av-map-identity { max-width: 210px; padding: 8px 12px; }
+  .map-area-identity.av-map-identity span, .map-area-identity.av-map-identity em { display: none; }
+}
+
+@media (max-width: 620px) {
+  .world-person.map-player { display: none; }
+}
+
+@media (max-width: 620px) {
+  .scene-caption.av-scene-caption { display: none; }
+  .av-firm-sign { left: auto; right: 8px; transform: none; max-width: 48%; padding: 5px 12px 6px; }
+  .av-firm-sign strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .av-firm-sign span { display: none; }
+}
+
 /* ------------------------------------------------- reduced motion */
 
 @media (prefers-reduced-motion: reduce) {
