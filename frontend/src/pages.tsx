@@ -32,7 +32,7 @@ import {
   UsersRound,
   Wrench,
 } from 'lucide-react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { api } from './api'
 import { Brand, ErrorNotice, formatMoney, LoadingScreen, PauseButton, QuestionFlow } from './components'
@@ -311,7 +311,7 @@ export function OfficePage() {
       <section className="office-command-bar">
         <div>
           <span className="pixel-kicker">{game.reputation_band.name.toUpperCase()} COUNSEL · HQ LEVEL {game.office_tier}</span>
-          <h1>{new Date().getHours() < 12 ? 'Morning' : 'Evening'}, {game.lawyer_name.split(' ')[0]}. <em>The office is alive.</em></h1>
+          <h1>{new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {game.lawyer_name.split(' ')[0]}. <em>The office is alive.</em></h1>
         </div>
         <div className="command-stats">
           <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><TrendingUp /></span>
@@ -498,9 +498,14 @@ function ClientRequirementLine({ client, game }: { client: GameClient; game: Gam
 
 
 export function FirmPage() {
-  const params = new URLSearchParams(window.location.search)
-  const initial = (params.get('tab') as FirmTab) || 'upgrades'
+  const [searchParams] = useSearchParams()
+  const initial = (searchParams.get('tab') as FirmTab) || 'upgrades'
   const [tab, setTab] = useState<FirmTab>(firmTabs.some((item) => item.key === initial) ? initial : 'upgrades')
+
+  useEffect(() => {
+    const requested = searchParams.get('tab') as FirmTab | null
+    if (requested && firmTabs.some((item) => item.key === requested)) setTab(requested)
+  }, [searchParams])
   const [catalogView, setCatalogView] = useState<'all' | 'ready' | 'owned'>('all')
   const [catalogRegion, setCatalogRegion] = useState('all')
   const queryClient = useQueryClient()
