@@ -30,7 +30,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { api } from './api'
 import { Brand, ErrorNotice, formatMoney, LoadingScreen, PauseButton, QuestionFlow } from './components'
-import { ClientPortrait, MiniAvatar, OfficeScene } from './game-art'
+import { ClientPortrait, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene } from './game-art'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState } from './types'
 
 
@@ -252,83 +252,68 @@ export function OfficePage() {
   const openCase = () => active ? navigate(`/cases/${active.id}`) : start.mutate()
 
   return (
-    <div className="office-page page-wrap">
-      <section className="office-welcome">
-        <div><span className="eyebrow">{game.reputation_band.name.toUpperCase()} COUNSEL</span><h1>Good {new Date().getHours() < 12 ? 'morning' : 'evening'}, {game.lawyer_name.split(' ')[0]}.</h1></div>
-        <div className="valuation-chip"><span>FIRM VALUATION</span><strong>{formatMoney(game.firm_valuation, true)}</strong><TrendingUp size={19} /></div>
+    <div className="office-page office-game-page">
+      <section className="office-command-bar">
+        <div>
+          <span className="pixel-kicker">{game.reputation_band.name.toUpperCase()} COUNSEL · HQ LEVEL {game.office_tier}</span>
+          <h1>{new Date().getHours() < 12 ? 'Morning' : 'Evening'}, {game.lawyer_name.split(' ')[0]}. <em>The office is alive.</em></h1>
+        </div>
+        <div className="command-stats">
+          <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><TrendingUp /></span>
+          <span><small>ACTIVE CLIENT</small><strong>{workingClient.name}</strong><BriefcaseBusiness /></span>
+        </div>
       </section>
 
-      <div className="office-grid">
-        <section className="office-main">
-          <OfficeScene game={game} />
-          <button className="case-hotspot" onClick={openCase} disabled={start.isPending}>
-            <span className="hotspot-pulse"><BriefcaseBusiness /></span>
-            <span><small>{`${active ? 'CASE IN PROGRESS · ' : ''}${workingClient.name.toUpperCase()} · ${formatMoney(workingClient.base_fee)} BASE FEE`}</small><strong>{active ? 'Return to your argument' : 'A client is waiting'}</strong></span>
-            <ArrowRight />
-          </button>
-        </section>
+      <section className="office-world-shell">
+        <ExplorableOffice
+          game={game}
+          activeCase={Boolean(active)}
+          onCase={openCase}
+          onFirm={() => navigate('/firm')}
+          onEmpire={() => navigate('/map')}
+          onCollect={() => {
+            if (game.passive_income.available && !collect.isPending) collect.mutate()
+          }}
+        />
 
-        <aside className="office-sidebar">
-          <section className="milestone-card dark-card">
-            <div className="card-kicker"><Crown size={16} /> NEXT MAJOR MILESTONE</div>
-            {milestone ? (
-              <>
-                <h2>{milestone.name}</h2>
-                <p>{milestone.kind === 'tier' ? 'Transform the office and unlock the next class of clients and hires.' : 'The next visible step in your firm’s growth.'}</p>
-                <div className="milestone-numbers"><span>{formatMoney(game.cash, true)} saved</span><strong>{formatMoney(milestone.cost, true)}</strong></div>
-                <div className="meter"><span style={{ width: `${milestoneProgress}%` }} /></div>
-                <small>{milestone.reputation > game.reputation ? `Requires ${milestone.reputation} Reputation` : `${Math.max(0, milestone.cost - game.cash).toLocaleString()} cash to go`}</small>
-                <button className="text-button" onClick={() => navigate('/firm')}>View path <ArrowRight size={15} /></button>
-              </>
-            ) : <><h2>The empire is yours.</h2><p>Complete the collection and acquire every rival.</p></>}
-          </section>
-
-          <section className="passive-card">
-            <div className="card-kicker"><Clock3 size={16} /> RETAINERS</div>
-            <div><strong>{formatMoney(game.passive_income.available)}</strong><span>ready to collect</span></div>
-            <p>{formatMoney(game.passive_income.hourly_rate)}/hour · stores {game.passive_income.cap_hours} hours</p>
-            <button className="secondary-button full" disabled={!game.passive_income.available || collect.isPending} onClick={() => collect.mutate()}>
-              <Coins size={17} /> {collect.isPending ? 'Depositing…' : 'Collect retainers'}
-            </button>
-          </section>
+        <aside className="world-mission-board">
+          <div className="mission-pin" />
+          <span>NEXT MILESTONE</span>
+          {milestone ? (
+            <>
+              <h2>{milestone.name}</h2>
+              <div className="pixel-meter"><i style={{ width: `${milestoneProgress}%` }} /></div>
+              <p><b>{formatMoney(game.cash, true)}</b> / {formatMoney(milestone.cost, true)}</p>
+              <small>{milestone.reputation > game.reputation ? `LOCKED · NEED ${milestone.reputation} REP` : `${formatMoney(Math.max(0, milestone.cost - game.cash), true)} TO GO`}</small>
+            </>
+          ) : <><h2>Empire complete</h2><p>Every skyline starts here.</p></>}
+          <button onClick={() => navigate('/firm')}>OPEN BUILD MENU <ArrowRight /></button>
         </aside>
-      </div>
+      </section>
 
-      <section className="office-lower-grid">
-        <div className="client-contract-card">
-          <div className="contract-icon"><BriefcaseBusiness /></div>
-          <div>
-            <span className="eyebrow">ACTIVE CLIENT</span>
-            <h3>{game.active_client.name}</h3>
-            <p>{game.active_client.on_hold
-              ? <>On hold until your Reputation recovers.<strong>{workingClient.name} is effective · {formatMoney(workingClient.base_fee)} base fee</strong></>
-              : `${game.active_client.cases_remaining} cases remain · ${formatMoney(game.active_client.base_fee)} base fee`}</p>
-          </div>
-          <button className="text-button" onClick={() => navigate('/firm?tab=clients')}>Client book <ArrowRight size={15} /></button>
-        </div>
+      <section className="office-gamebar">
+        <article className="client-quest-card">
+          <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
+          <div><span>ACTIVE CONTRACT</span><h3>{workingClient.name}</h3><p>{game.active_client.on_hold ? 'Original contract on hold' : `${game.active_client.cases_remaining} files remaining`} · {formatMoney(workingClient.base_fee)} base</p></div>
+          <button onClick={openCase}>{active ? 'RESUME' : 'TAKE CASE'} <ArrowRight /></button>
+        </article>
 
-        <div className="daily-docket-card">
-          <div className="daily-heading"><div><span className="eyebrow">TODAY’S DOCKET</span><h3>{game.daily.cases_completed} cases closed</h3></div><Flame /></div>
+        <article className="daily-quest-card">
+          <div className="daily-heading"><div><span>DAILY QUEST</span><h3>{game.daily.cases_completed} CASES CLOSED</h3></div><Flame /></div>
           <div className="daily-goals">
             {game.daily.goals.map((goal) => (
-              <button
-                key={goal.cases}
-                className={`${goal.complete ? 'complete' : ''} ${goal.claimed ? 'claimed' : ''}`}
-                disabled={!goal.complete || goal.claimed || claim.isPending}
-                onClick={() => claim.mutate(goal.cases)}
-              >
-                <span>{goal.claimed ? <Check /> : goal.cases}</span>
-                <div><strong>{goal.cases} cases</strong><small>{goal.claimed ? 'Collected' : formatMoney(goal.reward)}</small></div>
+              <button key={goal.cases} className={`${goal.complete ? 'complete' : ''} ${goal.claimed ? 'claimed' : ''}`} disabled={!goal.complete || goal.claimed || claim.isPending} onClick={() => claim.mutate(goal.cases)}>
+                <span>{goal.claimed ? <Check /> : goal.cases}</span><div><strong>{goal.cases} FILES</strong><small>{goal.claimed ? 'CLAIMED' : formatMoney(goal.reward)}</small></div>
               </button>
             ))}
           </div>
-        </div>
+        </article>
 
-        <div className="standing-card">
-          <span className="eyebrow">YOUR STANDING</span>
-          <div className="rep-orbit"><strong>{game.reputation.toFixed(1)}</strong><span>{game.reputation_band.name}</span></div>
-          <div className="standing-stats"><span><b>{game.total_cases}</b> cases</span><span><b>{game.best_streak}</b> best streak</span></div>
-        </div>
+        <article className="safe-card">
+          <div className="safe-icon"><i>$</i></div>
+          <div><span>RETAINER SAFE</span><strong>{formatMoney(game.passive_income.available)}</strong><small>{formatMoney(game.passive_income.hourly_rate)}/HR · {game.passive_income.cap_hours}H MAX</small></div>
+          <button disabled={!game.passive_income.available || collect.isPending} onClick={() => collect.mutate()}>{collect.isPending ? '...' : 'COLLECT'}</button>
+        </article>
       </section>
       {(start.error || collect.error || claim.error) && <ErrorNotice error={start.error || collect.error || claim.error} />}
     </div>
@@ -616,36 +601,17 @@ function TierArtIcon({ tier }: { tier: number }) {
 
 
 export function ProgressionMapPage() {
+  const navigate = useNavigate()
   const gameQuery = useGame()
   if (gameQuery.isLoading) return <LoadingScreen />
   const game = gameQuery.data!.game!
-  const rivals = game.catalog.assets.filter((asset) => asset.type === 'rival')
   return (
-    <div className="map-page page-wrap">
-      <section className="map-heading">
-        <div><span className="eyebrow gold">YOUR LEGAL EMPIRE</span><h1>The skyline is a progress bar.</h1><p>Cash builds the offices. Reputation earns the right to enter them.</p></div>
-        <div><span>CURRENT VALUATION</span><strong>{formatMoney(game.firm_valuation, true)}</strong></div>
+    <div className="map-page empire-game-page">
+      <section className="empire-command-bar">
+        <div><span className="pixel-kicker">WORLD MAP · {game.catalog.tiers.length} DISTRICTS</span><h1>Your legal empire</h1><p>Walk the city. Inspect offices. Find the firms that still refuse your name.</p></div>
+        <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
       </section>
-      <section className="career-map">
-        <div className="map-route" />
-        {game.catalog.tiers.map((tier) => {
-          const status = tier.tier < game.office_tier ? 'complete' : tier.tier === game.office_tier ? 'current' : 'future'
-          return (
-            <article key={tier.tier} className={status}>
-              <div className="tier-node">{status === 'complete' ? <Check /> : status === 'current' ? <Crown /> : <Lock />}</div>
-              <div className={`tier-art tier-art-${tier.tier}`}><TierArtIcon tier={tier.tier} /><span>{tier.tier}</span></div>
-              <span className="eyebrow">TIER {tier.tier}</span><h2>{tier.name}</h2><p>{tier.short}</p>
-              <div className="map-requirements"><span><Coins />{tier.cost ? formatMoney(tier.cost, true) : 'Opening day'}</span><span><Star />{tier.reputation} Rep</span></div>
-            </article>
-          )
-        })}
-      </section>
-      <section className="rival-map">
-        <div className="section-heading"><div><span className="eyebrow">ACQUISITION TARGETS</span><h2>Make their name part of yours.</h2></div><Trophy /></div>
-        <div>
-          {rivals.map((rival, index) => <article key={rival.key} className={rival.owned ? 'owned' : ''}><span className="rival-number">0{index + 1}</span><div><h3>{rival.name.replace('Acquire ', '')}</h3><p>{rival.benefit}</p></div><strong>{rival.owned ? 'ACQUIRED' : formatMoney(rival.cost, true)}</strong></article>)}
-        </div>
-      </section>
+      <EmpireWorldMap game={game} onManage={(tab) => navigate(`/firm?tab=${tab}`)} />
     </div>
   )
 }
