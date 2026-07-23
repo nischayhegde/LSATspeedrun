@@ -1,6 +1,8 @@
 // Vector cast: full-body figures and portrait busts with human proportions.
 // Person viewBox: 0 0 72 132 (figure ≈ 7.5 heads tall). Bust viewBox: 0 0 96 96.
 
+import { useId } from 'react'
+
 import type { CharacterGender } from '../types'
 import { eyeFor, hairFor, outfitFor, skinFor, type HairTone, type Outfit, type SkinTone } from './palette'
 
@@ -249,6 +251,7 @@ function FrontFigure({ gender, skin, hair, eye, outfit, tier, variant, accessory
   tier: number; variant: number; accessory: Accessory; mood: Mood; back: boolean
 }) {
   const hairArt = hairArtFor(gender, variant)
+  const male = gender === 'male'
   const skirt = gender === 'female' && femaleWearsSkirt(variant)
   const hero = variant === 0
   const chestProp = !back && CHEST_PROPS.includes(accessory)
@@ -270,13 +273,17 @@ function FrontFigure({ gender, skin, hair, eye, outfit, tier, variant, accessory
   ) : (
     <>
       <g className="av-leg av-leg-l">
-        <path d="M27.6 64 C27.5 76 27.9 87 28.5 97.5 C29 106 29.4 114 29.6 120.6 L34.4 120.6 C34.7 114 34.9 106 34.9 97.5 C34.9 87 34.7 76 34.6 64 Z" fill={outfit.trouser} />
+        <path d={male
+          ? 'M26.8 62.5 C26.7 75 27.2 87 27.9 97.5 C28.4 106 28.9 114 29.1 120.6 L34.7 120.6 C35 114 35.2 106 35.2 97.5 C35.2 87 35 75 34.9 62.5 Z'
+          : 'M27.6 64 C27.5 76 27.9 87 28.5 97.5 C29 106 29.4 114 29.6 120.6 L34.4 120.6 C34.7 114 34.9 106 34.9 97.5 C34.9 87 34.7 76 34.6 64 Z'} fill={outfit.trouser} />
         <path d="M31.4 70 C31.5 86 31.6 103 31.7 118" fill="none" stroke="rgba(0,0,0,.18)" strokeWidth="0.7" />
         <path d="M28.9 120.3 L34.6 120.3 C35.1 121.8 35.2 123.2 35 124.6 C34.9 125.8 34.1 126.4 32.8 126.4 L27.3 126.4 C25.9 126.4 25.3 125.5 25.6 124.2 C25.9 122.7 27 121.4 28.9 120.3 Z" fill={SHOE} />
         <path d="M27.2 124.8 C29.4 124.2 32 124 34.9 124.2" fill="none" stroke={SHOE_SHINE} strokeWidth="0.5" />
       </g>
       <g className="av-leg av-leg-r">
-        <path d="M37.4 64 C37.3 76 37.1 87 37.1 97.5 C37.1 106 37.3 114 37.6 120.6 L42.4 120.6 C42.6 114 43 106 43.5 97.5 C44.1 87 44.5 76 44.4 64 Z" fill={outfit.trouser} />
+        <path d={male
+          ? 'M45.2 62.5 C45.3 75 44.8 87 44.1 97.5 C43.6 106 43.1 114 42.9 120.6 L37.3 120.6 C37 114 36.8 106 36.8 97.5 C36.8 87 37 75 37.1 62.5 Z'
+          : 'M37.4 64 C37.3 76 37.1 87 37.1 97.5 C37.1 106 37.3 114 37.6 120.6 L42.4 120.6 C42.6 114 43 106 43.5 97.5 C44.1 87 44.5 76 44.4 64 Z'} fill={outfit.trouser} />
         <path d="M40.6 70 C40.5 86 40.4 103 40.3 118" fill="none" stroke="rgba(0,0,0,.18)" strokeWidth="0.7" />
         <path d="M37.4 120.3 L43.1 120.3 C45 121.4 46.1 122.7 46.4 124.2 C46.7 125.5 46.1 126.4 44.7 126.4 L39.2 126.4 C37.9 126.4 37.1 125.8 37 124.6 C36.8 123.2 36.9 121.8 37.4 120.3 Z" fill={SHOE} />
         <path d="M44.8 124.8 C42.6 124.2 40 124 37.1 124.2" fill="none" stroke={SHOE_SHINE} strokeWidth="0.5" />
@@ -284,8 +291,8 @@ function FrontFigure({ gender, skin, hair, eye, outfit, tier, variant, accessory
     </>
   )
 
-  const maleTorso = 'M28.7 26.2 L33.5 25.3 C34.4 27.1 37.6 27.1 38.5 25.3 L43.3 26.2 C46.9 26.9 49.3 29.2 49.5 32.6 C49.8 38.2 48.7 43.2 47.9 48 C47.3 52.6 47.5 58 48 62 C44.9 64.7 27.1 64.7 24 62 C24.5 58 24.7 52.6 24.1 48 C23.3 43.2 22.2 38.2 22.5 32.6 C22.7 29.2 25.1 26.9 28.7 26.2 Z'
-  const femaleTorso = 'M29.1 26.1 L33.7 25.2 C34.5 27 37.5 27 38.3 25.2 L42.9 26.1 C46.2 26.8 48.3 29 48.5 32.1 C48.7 37.5 47.4 42.6 46.3 46.4 C45.6 50.8 45.9 55.2 46.7 58.8 C43.7 61.5 28.3 61.5 25.3 58.8 C26.1 55.2 26.4 50.8 25.7 46.4 C24.6 42.6 23.3 37.5 23.5 32.1 C23.7 29 25.8 26.8 29.1 26.1 Z'
+  const maleTorso = 'M28 26.4 L33.5 25.3 C34.4 27.1 37.6 27.1 38.5 25.3 L44 26.4 C48.2 27.1 50.9 29.4 51.1 32.8 C51.3 38.4 50 43.6 48.4 48 C47.5 52.6 47.6 58 48.1 62 C45 64.7 27 64.7 23.9 62 C24.4 58 24.5 52.6 23.6 48 C22 43.6 20.7 38.4 20.9 32.8 C21.1 29.4 23.8 27.1 28 26.4 Z'
+  const femaleTorso = 'M28.8 26.1 L33.7 25.2 C34.5 27 37.5 27 38.3 25.2 L43.2 26.1 C46.6 26.8 48.6 29 48.8 32.1 C49.3 36.4 48.2 41 46 44.6 C44.4 47 44 49.4 44.4 51.6 C44.8 54.4 46.2 56.8 47.4 58.8 C44.3 61.5 27.7 61.5 24.6 58.8 C25.8 56.8 27.2 54.4 27.6 51.6 C28 49.4 27.6 47 26 44.6 C23.8 41 22.7 36.4 23.2 32.1 C23.4 29 25.4 26.8 28.8 26.1 Z'
 
   return (
     <g className={`av-fig av-fig-front ${skirt ? 'has-skirt' : ''}`}>
@@ -294,11 +301,24 @@ function FrontFigure({ gender, skin, hair, eye, outfit, tier, variant, accessory
       {legs}
       {/* hips */}
       {skirt
-        ? <path d="M26 58.2 C26.8 66.4 28 75.5 29.8 84.6 L42.2 84.6 C44 75.5 45.2 66.4 46 58.2 C41 60.9 31 60.9 26 58.2 Z" fill={outfit.trouser} />
-        : <path d="M25.6 57 L46.4 57 C46.7 60.8 46.7 64.4 46.4 67.8 L38.9 67.8 L36 62.9 L33.1 67.8 L25.6 67.8 C25.3 64.4 25.3 60.8 25.6 57 Z" fill={outfit.trouser} />}
+        ? <path d="M25 57.4 C24.3 60.2 24.1 62.9 24.5 65.6 C25.4 71.9 27.1 78.4 29.5 84.6 L42.5 84.6 C44.9 78.4 46.6 71.9 47.5 65.6 C47.9 62.9 47.7 60.2 47 57.4 C40.4 60.8 31.6 60.8 25 57.4 Z" fill={outfit.trouser} />
+        : male
+          ? <path d="M24.9 57 L47.1 57 C47.4 60.8 47.4 64.4 47.1 67.8 L38.9 67.8 L36 62.9 L33.1 67.8 L24.9 67.8 C24.6 64.4 24.6 60.8 24.9 57 Z" fill={outfit.trouser} />
+          : <path d="M25.6 57 L46.4 57 C46.7 60.8 46.7 64.4 46.4 67.8 L38.9 67.8 L36 62.9 L33.1 67.8 L25.6 67.8 C25.3 64.4 25.3 60.8 25.6 57 Z" fill={outfit.trouser} />}
       {skirt && <path d="M36 84.4 L36 78.6" stroke="rgba(0,0,0,.22)" strokeWidth="0.7" />}
       {/* torso */}
       <path d={gender === 'female' ? femaleTorso : maleTorso} fill={outfit.suit} />
+      {gender === 'female' ? (
+        <g stroke="rgba(0,0,0,.16)" strokeWidth="0.9" fill="none">
+          <path d="M29.8 32.6 C30.6 36 32.5 38.2 35 38.8" />
+          <path d="M42.2 32.6 C41.4 36 39.5 38.2 37 38.8" />
+        </g>
+      ) : (
+        <g stroke="rgba(0,0,0,.13)" strokeWidth="0.9" fill="none">
+          <path d="M29.4 34.6 C31.2 36.7 33.5 37.5 35.3 37" />
+          <path d="M42.6 34.6 C40.8 36.7 38.5 37.5 36.7 37" />
+        </g>
+      )}
       {!back && (
         <>
           <path d={gender === 'female'
@@ -339,7 +359,9 @@ function FrontFigure({ gender, skin, hair, eye, outfit, tier, variant, accessory
           <circle cx="37.6" cy="52.8" r="0.7" fill="rgba(0,0,0,.35)" />
           {hero && tier >= 2 && <path d="M41.6 32.8 L44.2 32.8 L42.9 34.8 Z" fill={outfit.accent ?? '#f2ead6'} />}
           {hero && tier >= 5 && <circle cx="31.3" cy="31.8" r="0.9" fill="#e6c26a" />}
-          {!skirt && <path d="M29.5 57.8 L42.5 57.8 L42.5 60.2 L29.5 60.2 Z M34.9 58.3 L37.1 58.3 L37.1 59.7 L34.9 59.7 Z" fill="#241b12" fillRule="evenodd" />}
+          {!skirt && <path d={male
+            ? 'M28.6 57.8 L43.4 57.8 L43.4 60.2 L28.6 60.2 Z M34.9 58.3 L37.1 58.3 L37.1 59.7 L34.9 59.7 Z'
+            : 'M29.5 57.8 L42.5 57.8 L42.5 60.2 L29.5 60.2 Z M34.9 58.3 L37.1 58.3 L37.1 59.7 L34.9 59.7 Z'} fill="#241b12" fillRule="evenodd" />}
           {!skirt && <rect x="34.9" y="58.3" width="2.2" height="1.4" rx="0.3" fill={BRASS} />}
         </>
       )}
@@ -352,16 +374,20 @@ function FrontFigure({ gender, skin, hair, eye, outfit, tier, variant, accessory
       {/* arms */}
       <g className="av-arm av-arm-l">
         {chestProp ? (
-          <path d="M23.1 28.2 C25.3 27 27.6 27.4 28.5 29.2 C29.2 32 29.1 36.4 28.5 40.4 C28.2 42.6 28.9 44.2 30.8 44.6 C32.6 45 34.4 45.2 36 45.2 L36 48.6 C33.8 48.6 31.4 48.4 29.2 48 C25.9 47.4 24.1 45.2 24 42 C23.9 37.4 22.7 32.6 23.1 28.2 Z" fill={outfit.shade} />
+          <path d={male
+            ? 'M21.6 28 C24.4 26.6 27.4 27.2 28.4 29.2 C29.2 32 29.1 36.4 28.5 40.4 C28.2 42.6 28.9 44.2 30.8 44.6 C32.6 45 34.4 45.2 36 45.2 L36 48.6 C33.8 48.6 31.4 48.4 29.2 48 C25.6 47.4 23.7 45.2 23.6 42 C23.5 37.4 21.2 32.6 21.6 28 Z'
+            : 'M23.1 28.2 C25.3 27 27.6 27.4 28.5 29.2 C29.2 32 29.1 36.4 28.5 40.4 C28.2 42.6 28.9 44.2 30.8 44.6 C32.6 45 34.4 45.2 36 45.2 L36 48.6 C33.8 48.6 31.4 48.4 29.2 48 C25.9 47.4 24.1 45.2 24 42 C23.9 37.4 22.7 32.6 23.1 28.2 Z'} fill={outfit.shade} />
         ) : (
           <>
-            <path d="M23.1 28.2 C25.3 27 27.6 27.4 28.5 29.2 C29.3 32.8 29 39.2 28.3 45.2 C27.8 49.6 27.2 53.8 26.5 57 L22.8 56.6 C22.4 53.2 22.4 49 22.6 45 C22.8 39 22.5 32.8 23.1 28.2 Z" fill={outfit.shade} />
-            <path d="M22.8 55.1 L26.7 55.5 L26.5 57 L22.8 56.6 Z" fill={outfit.shirt} />
-            <ellipse cx="24.6" cy="59.6" rx="2.3" ry="2.9" fill={skin.base} />
+            <path d={male
+              ? 'M21.6 28 C24.4 26.6 27.4 27.2 28.4 29.2 C29.4 33 29.1 39.4 28.3 45.4 C27.8 49.8 27.2 54 26.5 57.2 L22 56.7 C21.5 53.2 21.5 49 21.7 45 C21.9 39 21.2 32.8 21.6 28 Z'
+              : 'M23.1 28.2 C25.3 27 27.6 27.4 28.5 29.2 C29.3 32.8 29 39.2 28.3 45.2 C27.8 49.6 27.2 53.8 26.5 57 L22.8 56.6 C22.4 53.2 22.4 49 22.6 45 C22.8 39 22.5 32.8 23.1 28.2 Z'} fill={outfit.shade} />
+            <path d={male ? 'M22 55.2 L26.7 55.7 L26.5 57.2 L22 56.7 Z' : 'M22.8 55.1 L26.7 55.5 L26.5 57 L22.8 56.6 Z'} fill={outfit.shirt} />
+            <ellipse cx={male ? 24.3 : 24.6} cy={male ? 59.9 : 59.6} rx={male ? 2.5 : 2.3} ry={male ? 3 : 2.9} fill={skin.base} />
             {hero && tier >= 3 && !back && (
               <>
-                <rect x="22.9" y="55.9" width="3.6" height="1.7" rx="0.5" fill="#3a3f4c" />
-                <circle cx="24.7" cy="56.75" r="1" fill="#dfe6ee" />
+                <rect x={male ? 22.2 : 22.9} y="55.9" width="3.6" height="1.7" rx="0.5" fill="#3a3f4c" />
+                <circle cx={male ? 24 : 24.7} cy="56.75" r="1" fill="#dfe6ee" />
               </>
             )}
           </>
@@ -369,15 +395,21 @@ function FrontFigure({ gender, skin, hair, eye, outfit, tier, variant, accessory
         {chestProp && <ellipse cx="34.8" cy="46.8" rx="2.1" ry="2.3" fill={skin.base} />}
       </g>
       <g className="av-arm av-arm-r">
-        <path d="M48.9 28.2 C46.7 27 44.4 27.4 43.5 29.2 C42.7 32.8 43 39.2 43.7 45.2 C44.2 49.6 44.8 53.8 45.5 57 L49.2 56.6 C49.6 53.2 49.6 49 49.4 45 C49.2 39 49.5 32.8 48.9 28.2 Z" fill={outfit.shade} />
-        <path d="M49.2 55.1 L45.3 55.5 L45.5 57 L49.2 56.6 Z" fill={outfit.shirt} />
-        <ellipse cx="47.4" cy="59.6" rx="2.3" ry="2.9" fill={skin.base} />
+        <path d={male
+          ? 'M50.4 28 C47.6 26.6 44.6 27.2 43.6 29.2 C42.6 33 42.9 39.4 43.7 45.4 C44.2 49.8 44.8 54 45.5 57.2 L50 56.7 C50.5 53.2 50.5 49 50.3 45 C50.1 39 50.8 32.8 50.4 28 Z'
+          : 'M48.9 28.2 C46.7 27 44.4 27.4 43.5 29.2 C42.7 32.8 43 39.2 43.7 45.2 C44.2 49.6 44.8 53.8 45.5 57 L49.2 56.6 C49.6 53.2 49.6 49 49.4 45 C49.2 39 49.5 32.8 48.9 28.2 Z'} fill={outfit.shade} />
+        <path d={male ? 'M50 55.2 L45.3 55.7 L45.5 57.2 L50 56.7 Z' : 'M49.2 55.1 L45.3 55.5 L45.5 57 L49.2 56.6 Z'} fill={outfit.shirt} />
+        <ellipse cx={male ? 47.7 : 47.4} cy={male ? 59.9 : 59.6} rx={male ? 2.5 : 2.3} ry={male ? 3 : 2.9} fill={skin.base} />
         {handProp && <HandProp accessory={accessory} />}
       </g>
       {chestProp && <ChestProp accessory={accessory} />}
       {/* neck + head */}
-      <path d="M33.1 19.2 L38.9 19.2 L39.2 26 C37.3 27.2 34.7 27.2 32.8 26 Z" fill={skin.base} />
-      <path d="M33.1 19.2 L38.9 19.2 L38.95 21.7 C37 22.8 35 22.8 33.05 21.7 Z" fill={skin.shade} />
+      <path d={male
+        ? 'M32.6 19.2 L39.4 19.2 L39.7 26 C37.5 27.2 34.5 27.2 32.3 26 Z'
+        : 'M33.4 19.2 L38.6 19.2 L38.9 26 C37.1 27.1 34.9 27.1 33.1 26 Z'} fill={skin.base} />
+      <path d={male
+        ? 'M32.6 19.2 L39.4 19.2 L39.45 21.7 C37.2 22.8 34.8 22.8 32.55 21.7 Z'
+        : 'M33.4 19.2 L38.6 19.2 L38.65 21.7 C36.9 22.7 35.1 22.7 33.35 21.7 Z'} fill={skin.shade} />
       <ellipse cx="27.4" cy="12.2" rx="1.7" ry="2.5" fill={skin.base} />
       <ellipse cx="44.6" cy="12.2" rx="1.7" ry="2.5" fill={skin.base} />
       {gender === 'female' && !back && (
@@ -407,6 +439,7 @@ function ProfileFigure({ gender, skin, hair, eye, outfit, variant, accessory }: 
   gender: CharacterGender; skin: SkinTone; hair: HairTone; eye: string; outfit: Outfit
   variant: number; accessory: Accessory
 }) {
+  const male = gender === 'male'
   const skirt = gender === 'female' && femaleWearsSkirt(variant)
   const longHair = gender === 'female' && [0, 2, 4, 6].includes(((variant % 7) + 7) % 7)
   const handProp = HAND_PROPS.includes(accessory)
@@ -444,22 +477,28 @@ function ProfileFigure({ gender, skin, hair, eye, outfit, variant, accessory }: 
       </g>
       {/* hips */}
       {skirt
-        ? <path d="M30.8 57.8 C30.9 66.4 31.9 75.6 33.7 84.6 L42.3 84.6 C43.4 75.6 43.8 66.4 43.6 57.8 C39.4 60.4 35 60.4 30.8 57.8 Z" fill={outfit.trouser} />
-        : <path d="M30.4 57 L43.8 57 C44.1 60.8 44.1 64.4 43.8 67.8 L38.4 67.8 L37 63.4 L35.6 67.8 L30.4 67.8 C30.1 64.4 30.1 60.8 30.4 57 Z" fill={outfit.trouser} />}
+        ? <path d="M30.2 57.4 C29.5 60.4 29.4 63.4 29.8 66.2 C30.6 72.3 32.2 78.5 34.5 84.6 L43 84.6 C44.1 78.5 44.5 72.3 44.3 66.2 C44.2 62.6 44 59.6 43.7 57.4 C39.2 60 34.7 60 30.2 57.4 Z" fill={outfit.trouser} />
+        : male
+          ? <path d="M29.8 57 L44.6 57 C44.9 60.8 44.9 64.4 44.6 67.8 L38.7 67.8 L37.2 63.2 L35.7 67.8 L29.8 67.8 C29.5 64.4 29.5 60.8 29.8 57 Z" fill={outfit.trouser} />
+          : <path d="M30.4 57 L43.8 57 C44.1 60.8 44.1 64.4 43.8 67.8 L38.4 67.8 L37 63.4 L35.6 67.8 L30.4 67.8 C30.1 64.4 30.1 60.8 30.4 57 Z" fill={outfit.trouser} />}
       {/* long hair behind torso */}
       {longHair && (
         <path d="M37.6 8 C41.8 9.6 44.4 13.4 44.6 18.6 C44.8 23.4 44.2 28.6 43 33.4 C42 32.2 41.4 30.6 41.4 28.8 C40.4 30.4 39.8 32.4 39.8 34.6 L37.4 34.6 C36.8 25.6 36.6 16.4 37.6 8 Z" fill={hair.base} />
       )}
       {/* torso */}
-      <path d="M31 26.2 L34.6 25.2 C36.4 26.6 38.2 26.6 39.6 25.6 L41.2 26.2 C43.6 27 44.9 29 45 31.8 C45.2 37 44.6 42.6 43.9 48 C43.4 52.6 43.5 58 43.9 62 C41.5 64.6 32.5 64.6 30.1 62 C30.5 58 30.6 52.6 30.1 48 C29.4 42.6 28.8 37 29 31.8 C29.1 29 30 27 31 26.2 Z" fill={outfit.suit} />
+      <path d={male
+        ? 'M30.6 26.2 L34.6 25.2 C36.4 26.6 38.2 26.6 39.6 25.6 L41.6 26.2 C44.6 27 46.3 29 46.4 31.8 C46.6 37 46 42.6 45.3 48 C44.8 52.6 44.9 58 45.3 62 C42.7 64.7 32.3 64.7 29.7 62 C30.1 58 30.2 52.6 29.7 48 C28.7 42.6 28 37 28.2 31.8 C28.3 29 29.2 27 30.6 26.2 Z'
+        : 'M31 26.2 L34.6 25.2 C36.4 26.6 38.2 26.6 39.6 25.6 L41.2 26.2 C43.6 27 44.9 29 45 31.8 C45.2 37 44.6 42.6 43.9 48 C43.4 52.6 43.5 58 43.9 62 C41.5 64.6 32.5 64.6 30.1 62 C30.6 58.4 30.9 54.6 30.6 50.8 C30.4 48.4 29.9 46.2 29 44.2 C27.5 41 26.9 37.4 27.6 34.4 C28.2 31.4 29.4 28.4 31 26.2 Z'} fill={outfit.suit} />
       <path d="M31.6 26.2 C32.4 28.8 33.2 30.8 34 32.4 L34.9 30 C34.3 28.4 33.7 27 33.1 25.8 Z" fill={outfit.shirt} />
       <path d="M33.4 25.6 C34.2 28.4 35 30.4 35.8 31.8 C34.2 34.6 32.6 36.6 30.8 38 C30.3 34.4 30.3 30.6 30.8 27.8 C31.5 26.8 32.4 26 33.4 25.6 Z" fill={outfit.shade} />
       <path d="M30.6 33 C30.4 42 30.5 52 30.9 60.4" fill="none" stroke="rgba(0,0,0,.16)" strokeWidth="0.7" />
       {/* arm */}
       <g className="av-arm av-arm-l">
-        <path d="M34.5 28.4 C36.7 27.2 39 27.6 39.9 29.4 C40.7 33 40.4 39.4 39.7 45.4 C39.2 49.8 38.6 54 37.9 57.2 L34.2 56.8 C33.8 53.4 33.8 49.2 34 45.2 C34.2 39.2 33.9 33 34.5 28.4 Z" fill={outfit.shade} />
-        <path d="M34.2 55.3 L38.1 55.7 L37.9 57.2 L34.2 56.8 Z" fill={outfit.shirt} />
-        <ellipse cx="36" cy="59.8" rx="2.3" ry="2.9" fill={skin.base} />
+        <path d={male
+          ? 'M33.6 28.2 C36.6 26.8 39.8 27.4 40.8 29.4 C41.7 33 41.4 39.4 40.6 45.4 C40.1 49.8 39.5 54 38.8 57.2 L33.4 56.7 C33 53.2 33 49 33.2 45 C33.4 39 33 32.8 33.6 28.2 Z'
+          : 'M34.5 28.4 C36.7 27.2 39 27.6 39.9 29.4 C40.7 33 40.4 39.4 39.7 45.4 C39.2 49.8 38.6 54 37.9 57.2 L34.2 56.8 C33.8 53.4 33.8 49.2 34 45.2 C34.2 39.2 33.9 33 34.5 28.4 Z'} fill={outfit.shade} />
+        <path d={male ? 'M33.4 55.2 L39 55.7 L38.8 57.2 L33.4 56.7 Z' : 'M34.2 55.3 L38.1 55.7 L37.9 57.2 L34.2 56.8 Z'} fill={outfit.shirt} />
+        <ellipse cx={male ? 36.2 : 36} cy="59.8" rx={male ? 2.5 : 2.3} ry={male ? 3 : 2.9} fill={skin.base} />
         {handProp && <g transform="translate(-11 0)"><HandProp accessory={accessory} /></g>}
       </g>
       {/* neck + head */}
@@ -589,6 +628,9 @@ export type BustProps = {
   label?: string
 }
 
+const F_HEAD = 'M48 10.6 C39.2 10.6 33.6 16.9 33.2 25.4 C32.9 31.9 35 38.2 38.9 42.5 C41.5 45.4 44.5 47.4 48 47.4 C51.5 47.4 54.5 45.4 57.1 42.5 C61 38.2 63.1 31.9 62.8 25.4 C62.4 16.9 56.8 10.6 48 10.6 Z'
+const M_HEAD = 'M48 10.6 C38.9 10.6 33.4 16.7 33.2 25 C33 30.9 34.6 36.7 37.8 40.9 C39.8 43.7 42.2 45.9 44.8 46.7 C46.9 47.35 49.1 47.35 51.2 46.7 C53.8 45.9 56.2 43.7 58.2 40.9 C61.4 36.7 63 30.9 62.8 25 C62.6 16.7 57.1 10.6 48 10.6 Z'
+
 export function Bust({
   gender = 'female',
   variant = 0,
@@ -599,33 +641,47 @@ export function Bust({
   className = '',
   label,
 }: BustProps) {
+  const uid = useId().replace(/:/g, '')
   const outfit = outfitFor(variant, tier)
   const skin = skinFor(variant)
   const hair = hairFor(variant + (gender === 'female' ? 1 : 0))
   const eye = eyeFor(variant)
   const art = (gender === 'female' ? FEMALE_BUST_HAIR : MALE_BUST_HAIR)[((variant % 7) + 7) % 7]
+  const female = gender === 'female' || judge
   const suit = judge ? '#16151d' : outfit.suit
   const suitShade = judge ? '#0d0c13' : outfit.shade
   const glasses = !judge && ((gender === 'male' && variant === 2) || (gender === 'female' && variant === 6))
+  const HEAD = female ? F_HEAD : M_HEAD
 
-  const browL = mood === 'unhappy' ? 'M39.4 23.4 C41.2 23.4 43.6 23.7 45.4 24.6' : 'M39.4 24.2 C41.2 23 43.6 22.8 45.4 23.6'
-  const browR = mood === 'unhappy' ? 'M50.6 24.6 C52.4 23.7 54.8 23.4 56.6 23.4' : 'M50.6 23.6 C52.4 22.8 54.8 23 56.6 24.2'
-  const lips = gender === 'female' || judge
+  const browL = female
+    ? mood === 'unhappy' ? 'M37.6 23 C39.6 23.2 42.8 23.8 44.8 24.8' : 'M37.4 24 C39.2 22.3 42.6 22.1 44.8 23.5'
+    : mood === 'unhappy' ? 'M37.2 23.6 C39.2 23.9 42.9 24.5 45 25.4' : 'M37 24.7 C39.2 23.5 42.8 23.3 45 24.2'
+  const browR = female
+    ? mood === 'unhappy' ? 'M58.4 23 C56.4 23.2 53.2 23.8 51.2 24.8' : 'M58.6 24 C56.8 22.3 53.4 22.1 51.2 23.5'
+    : mood === 'unhappy' ? 'M58.8 23.6 C56.8 23.9 53.1 24.5 51 25.4' : 'M59 24.7 C56.8 23.5 53.2 23.3 51 24.2'
+  const lips = female
     ? mood === 'happy'
-      ? 'M43 38.2 C44.6 37.4 46.3 37.6 48 38.2 C49.7 37.6 51.4 37.4 53 38.2 C52 41.6 50.1 43 48 43 C45.9 43 44 41.6 43 38.2 Z'
+      ? 'M42.6 38.4 C44 37.2 45.6 37 46.9 37.8 C47.3 37.4 47.7 37.2 48 37.2 C48.3 37.2 48.7 37.4 49.1 37.8 C50.4 37 52 37.2 53.4 38.4 C52.6 42.2 50.4 44 48 44 C45.6 44 43.4 42.2 42.6 38.4 Z'
       : mood === 'unhappy'
-        ? 'M43.8 41 C45 40 46.5 39.6 48 39.6 C49.5 39.6 51 40 52.2 41 C51.2 41.9 49.7 42.4 48 42.4 C46.3 42.4 44.8 41.9 43.8 41 Z'
-        : 'M43.4 38.8 C44.9 37.9 46.5 38 48 38.7 C49.5 38 51.1 37.9 52.6 38.8 C51.8 41.4 50 42.5 48 42.5 C46 42.5 44.2 41.4 43.4 38.8 Z'
+        ? 'M43.4 41.2 C44.8 40 46.4 39.6 48 39.6 C49.6 39.6 51.2 40 52.6 41.2 C51.4 42.4 49.8 43 48 43 C46.2 43 44.6 42.4 43.4 41.2 Z'
+        : 'M42.9 38.7 C44.2 37.4 45.7 37.1 46.9 37.9 C47.3 37.5 47.7 37.3 48 37.3 C48.3 37.3 48.7 37.5 49.1 37.9 C50.3 37.1 51.8 37.4 53.1 38.7 C52.3 41.9 50.3 43.4 48 43.4 C45.7 43.4 43.7 41.9 42.9 38.7 Z'
     : mood === 'happy'
-      ? 'M43 38.6 C44.8 41 51.2 41 53 38.6'
+      ? 'M43 38.6 C44.9 41.2 51.1 41.2 53 38.6'
       : mood === 'unhappy'
-        ? 'M43.4 41 C45.2 39.4 50.8 39.4 52.6 41'
-        : 'M43.6 39.6 C45.2 40.6 50.8 40.6 52.4 39.6'
-  const lipsFilled = gender === 'female' || judge
+        ? 'M43.4 41.2 C45.3 39.5 50.7 39.5 52.6 41.2'
+        : 'M43.8 39.6 C45.4 40.5 50.6 40.5 52.2 39.6'
 
   return (
     <span className={`av-bust ${className}`} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
       <svg viewBox="0 0 96 96" className="av-bust-svg">
+        <defs>
+          <linearGradient id={`avfs-${uid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffffff" stopOpacity="0.12" />
+            <stop offset="0.45" stopColor="#ffffff" stopOpacity="0" />
+            <stop offset="0.78" stopColor={skin.shade} stopOpacity="0.14" />
+            <stop offset="1" stopColor={skin.shade} stopOpacity="0.34" />
+          </linearGradient>
+        </defs>
         {backdrop !== 'none' && (
           <path d="M8 96 L8 44 C8 21.9 25.9 4 48 4 C70.1 4 88 21.9 88 44 L88 96 Z" fill={backdrop ?? '#22374a'} className="av-bust-arch" />
         )}
@@ -641,81 +697,141 @@ export function Bust({
         )}
         {!judge && art.back && <path d={art.back} fill={hair.base} />}
         {!judge && art.bun && <circle cx={art.bun[0]} cy={art.bun[1]} r={art.bun[2]} fill={hair.base} stroke={hair.shade} strokeWidth="0.8" />}
-        {/* shoulders */}
-        <path d="M13 96 C15.4 81.4 24 73.2 34.6 70.6 L61.4 70.6 C72 73.2 80.6 81.4 83 96 Z" fill={suit} />
-        <path d="M40 70.6 L48 83.8 L56 70.6 C53.4 68.8 42.6 68.8 40 70.6 Z" fill={judge ? '#f4f5f8' : outfit.shirt} />
+        {/* trapezius + neck, connected to the jaw behind the head */}
+        <path d="M41.7 62 C38.2 66 33.4 68.6 27.8 70.4 C33 71.3 38.6 71.8 42.4 71.8 L41.9 62 Z" fill={skin.base} />
+        <path d="M54.3 62 C57.8 66 62.6 68.6 68.2 70.4 C63 71.3 57.4 71.8 53.6 71.8 L54.1 62 Z" fill={skin.base} />
+        <path d="M42.3 38 L53.7 38 L54.3 68.8 C50.1 71.6 45.9 71.6 41.7 68.8 Z" fill={skin.base} />
+        <path d="M42.3 38 L53.7 38 L54 51 C50 53.6 46 53.6 42 51 Z" fill={skin.shade} opacity="0.85" />
+        {/* shoulders + clothing */}
+        {gender === 'male' && !judge ? (
+          <path d="M9.5 96 C11.5 82.5 18.5 74.5 28.5 71.8 C33.5 70.4 38.5 69.7 42.6 69.4 L53.4 69.4 C57.5 69.7 62.5 70.4 67.5 71.8 C77.5 74.5 84.5 82.5 86.5 96 Z" fill={suit} />
+        ) : (
+          <path d="M14.5 96 C16.5 83.5 23 75.8 32 73 C36 71.6 39.8 70.8 43 70.5 L53 70.5 C56.2 70.8 60 71.6 64 73 C73 75.8 79.5 83.5 81.5 96 Z" fill={suit} />
+        )}
+        <path d={gender === 'male' && !judge
+          ? 'M40 69.6 L48 83 L56 69.6 C53.4 67.8 42.6 67.8 40 69.6 Z'
+          : 'M40.6 70.7 L48 83 L55.4 70.7 C53 69 43 69 40.6 70.7 Z'} fill={judge ? '#f4f5f8' : outfit.shirt} />
         {judge ? (
           <g fill="#f4f5f8" stroke="#d3d7e0" strokeWidth="0.7">
-            <rect x="44.4" y="72" width="7.2" height="9" rx="1.6" />
-            <rect x="44.4" y="80" width="7.2" height="9" rx="1.6" />
+            <rect x="44.4" y="72.5" width="7.2" height="9" rx="1.6" />
+            <rect x="44.4" y="80.5" width="7.2" height="9" rx="1.6" />
           </g>
         ) : gender === 'male' ? (
           <>
-            <path d="M46 71.2 L50 71.2 L49.4 75 L46.6 75 Z" fill={outfit.tie} />
-            <path d="M46.6 75 L49.4 75 L50.8 88 L48 92 L45.2 88 Z" fill={outfit.tie} />
+            <path d="M45.8 70.2 L50.2 70.2 L49.5 74.2 L46.5 74.2 Z" fill={outfit.tie} />
+            <path d="M46.5 74.2 L49.5 74.2 L51 87.5 L48 91.5 L45 87.5 Z" fill={outfit.tie} />
           </>
         ) : (
           <>
-            <path d="M44.2 71.6 C45.4 74.6 46.6 76.8 48 78.4 C49.4 76.8 50.6 74.6 51.8 71.6" fill="none" stroke={BRASS} strokeWidth="0.9" opacity="0.9" />
-            <circle cx="48" cy="78.6" r="1.3" fill={BRASS} />
+            <path d="M43.6 71.4 C45 74.8 46.5 77.2 48 78.8 C49.5 77.2 51 74.8 52.4 71.4" fill="none" stroke={BRASS} strokeWidth="0.9" opacity="0.9" />
+            <circle cx="48" cy="79" r="1.3" fill={BRASS} />
           </>
         )}
-        <path d="M34.6 70.6 C38 74.8 41.4 79.6 44 84.8 C40.2 82.4 36.6 79 33.6 74.6 Z" fill={suitShade} />
-        <path d="M61.4 70.6 C58 74.8 54.6 79.6 52 84.8 C55.8 82.4 59.4 79 62.4 74.6 Z" fill={suitShade} />
-        {/* neck */}
-        <path d="M42 56 L54 56 L54.6 72.4 C50.2 75.4 45.8 75.4 41.4 72.4 Z" fill={skin.base} />
-        <path d="M42 56 L54 56 L54.2 61.4 C50.2 63.6 45.8 63.6 41.8 61.4 Z" fill={skin.shade} />
+        {gender === 'male' && !judge ? (
+          <>
+            <path d="M33 69.9 C36.6 74.4 40.2 79.6 43 85.2 C38.8 82.6 34.8 79 31.6 74.3 Z" fill={suitShade} />
+            <path d="M63 69.9 C59.4 74.4 55.8 79.6 53 85.2 C57.2 82.6 61.2 79 64.4 74.3 Z" fill={suitShade} />
+          </>
+        ) : (
+          <>
+            <path d="M35.4 71.2 C38.5 75.2 41.6 79.8 44 84.9 C40.4 82.5 37 79.2 34.2 75 Z" fill={suitShade} />
+            <path d="M60.6 71.2 C57.5 75.2 54.4 79.8 52 84.9 C55.6 82.5 59 79.2 61.8 75 Z" fill={suitShade} />
+            {!judge && (
+              <g stroke="rgba(0,0,0,.18)" strokeWidth="1.2" fill="none">
+                <path d="M30.5 85 C33.4 88.8 37.2 91.2 41 91.8" />
+                <path d="M65.5 85 C62.6 88.8 58.8 91.2 55 91.8" />
+              </g>
+            )}
+          </>
+        )}
         {/* ears */}
-        <ellipse cx="33.4" cy="29.5" rx="3" ry="4.4" fill={skin.base} />
-        <ellipse cx="62.6" cy="29.5" rx="3" ry="4.4" fill={skin.base} />
+        <ellipse cx="33" cy="29.6" rx="2.7" ry="4.1" fill={skin.base} />
+        <ellipse cx="63" cy="29.6" rx="2.7" ry="4.1" fill={skin.base} />
+        <path d="M32.4 28 C33.1 28.6 33.3 29.8 32.8 30.9" fill="none" stroke={skin.shade} strokeWidth="0.7" />
+        <path d="M63.6 28 C62.9 28.6 62.7 29.8 63.2 30.9" fill="none" stroke={skin.shade} strokeWidth="0.7" />
+        {/* head */}
+        <path d={HEAD} fill={skin.base} />
+        {/* side contours */}
+        <path d="M33.2 25.4 C32.9 31.9 35 38.2 38.9 42.5 C37 37.9 36.1 31.7 36.4 25.7 C36.6 20.3 38.9 15.6 43 12.7 C36.9 14.4 33.6 19.1 33.2 25.4 Z" fill={skin.shade} opacity="0.24" />
+        <path d="M62.8 25.4 C63.1 31.9 61 38.2 57.1 42.5 C59 37.9 59.9 31.7 59.6 25.7 C59.4 20.3 57.1 15.6 53 12.7 C59.1 14.4 62.4 19.1 62.8 25.4 Z" fill={skin.shade} opacity="0.24" />
+        {gender === 'male' && !judge && (
+          <path d="M37.8 40.9 C40.4 44.3 43.4 46.3 48 46.3 C52.6 46.3 55.6 44.3 58.2 40.9 C55.8 45 52.4 47.1 48 47.1 C43.6 47.1 40.2 45 37.8 40.9 Z" fill={skin.shade} opacity="0.4" />
+        )}
+        <path d={HEAD} fill={`url(#avfs-${uid})`} />
+        {/* face */}
+        <path d={browL} fill="none" stroke={judge ? '#9a9eab' : hair.shade} strokeWidth={female ? 1.6 : 2.2} strokeLinecap="round" />
+        <path d={browR} fill="none" stroke={judge ? '#9a9eab' : hair.shade} strokeWidth={female ? 1.6 : 2.2} strokeLinecap="round" />
+        <path d="M38.4 28.5 C39.6 26.5 42.9 26.2 44.6 28.1 C43.6 30.5 39.9 30.7 38.4 28.5 Z" fill="#fefdf8" />
+        <path d="M51.4 28.1 C53.1 26.2 56.4 26.5 57.6 28.5 C56.1 30.7 52.4 30.5 51.4 28.1 Z" fill="#fefdf8" />
+        <circle cx="41.6" cy="28.15" r="2.05" fill={eye} />
+        <circle cx="54.4" cy="28.15" r="2.05" fill={eye} />
+        <circle cx="41.6" cy="28.15" r="0.95" fill={PUPIL} />
+        <circle cx="54.4" cy="28.15" r="0.95" fill={PUPIL} />
+        <circle cx="40.9" cy="27.35" r="0.55" fill="white" />
+        <circle cx="53.7" cy="27.35" r="0.55" fill="white" />
+        <circle cx="42.35" cy="29" r="0.3" fill="white" opacity="0.7" />
+        <circle cx="55.15" cy="29" r="0.3" fill="white" opacity="0.7" />
+        <path d="M38 28.1 C39.3 25.9 43.2 25.6 45 27.7" fill="none" stroke="#241c15" strokeWidth={female ? 1.5 : 1.2} strokeLinecap="round" />
+        <path d="M58 28.1 C56.7 25.9 52.8 25.6 51 27.7" fill="none" stroke="#241c15" strokeWidth={female ? 1.5 : 1.2} strokeLinecap="round" />
+        {female && (
+          <>
+            <path d="M38.1 28.3 C37.3 27.8 36.7 27.3 36.3 26.6" fill="none" stroke="#241c15" strokeWidth="1.1" strokeLinecap="round" />
+            <path d="M57.9 28.3 C58.7 27.8 59.3 27.3 59.7 26.6" fill="none" stroke="#241c15" strokeWidth="1.1" strokeLinecap="round" />
+            <path d="M38.9 26.2 C40.4 24.8 43.2 24.6 44.9 26" fill="none" stroke={skin.shade} strokeWidth="0.8" opacity="0.55" />
+            <path d="M57.1 26.2 C55.6 24.8 52.8 24.6 51.1 26" fill="none" stroke={skin.shade} strokeWidth="0.8" opacity="0.55" />
+            <path d="M39.4 30.6 C40.8 31.4 43 31.5 44.3 30.8" fill="none" stroke="#241c15" strokeWidth="0.7" opacity="0.4" />
+            <path d="M56.6 30.6 C55.2 31.4 53 31.5 51.7 30.8" fill="none" stroke="#241c15" strokeWidth="0.7" opacity="0.4" />
+          </>
+        )}
+        <path d="M47.9 27.5 C48.2 30.3 48.5 32.5 48.2 34.3 C48 35.3 47 35.5 46.4 34.9" fill="none" stroke={skin.shade} strokeWidth={female ? 1.05 : 1.2} strokeLinecap="round" />
+        <path d="M46.3 35.4 C47.3 36.1 48.9 36.1 49.9 35.5" fill="none" stroke={skin.shade} strokeWidth="0.7" opacity="0.5" />
+        {female
+          ? (
+            <>
+              <path d={lips} fill={judge ? '#a2626a' : '#b8574f'} />
+              <path d="M43.6 39.1 C45.2 39.9 50.8 39.9 52.4 39.1" fill="none" stroke="#7c3a34" strokeWidth="0.8" opacity="0.7" />
+              <ellipse cx="48" cy="41.6" rx="1.8" ry="0.7" fill="#fff" opacity="0.25" />
+            </>
+          )
+          : (
+            <>
+              <path d={lips} fill="none" stroke={LIP_M} strokeWidth="1.7" strokeLinecap="round" />
+              <path d="M45 42.6 C46.4 43.3 49.6 43.3 51 42.6" fill="none" stroke={skin.shade} strokeWidth="0.9" opacity="0.6" />
+            </>
+          )}
+        <ellipse cx="38.8" cy="33.2" rx="2.9" ry="1.6" fill={skin.blush} opacity={female && !judge ? 0.32 : 0.14} />
+        <ellipse cx="57.2" cy="33.2" rx="2.9" ry="1.6" fill={skin.blush} opacity={female && !judge ? 0.32 : 0.14} />
+        <ellipse cx="48" cy="18.6" rx="7" ry="3.8" fill="#fff" opacity="0.09" />
         {gender === 'female' && !judge && (
           <>
-            <circle cx="33.2" cy="34.6" r="1.3" fill={BRASS} />
-            <circle cx="62.8" cy="34.6" r="1.3" fill={BRASS} />
+            <circle cx="33" cy="34.6" r="1.25" fill={BRASS} />
+            <circle cx="63" cy="34.6" r="1.25" fill={BRASS} />
           </>
         )}
-        {/* head */}
-        <path d="M48 12 C38.6 12 32.8 18.6 32.6 27 C32.4 33.8 36.2 40.4 41.2 43.8 C43.4 45.3 45.7 46.1 48 46.1 C50.3 46.1 52.6 45.3 54.8 43.8 C59.8 40.4 63.6 33.8 63.4 27 C63.2 18.6 57.4 12 48 12 Z" fill={skin.base} />
-        {/* face */}
-        <path d={browL} fill="none" stroke={judge ? '#8b8f9c' : hair.shade} strokeWidth="1.7" strokeLinecap="round" />
-        <path d={browR} fill="none" stroke={judge ? '#8b8f9c' : hair.shade} strokeWidth="1.7" strokeLinecap="round" />
-        <path d="M39.2 27.8 C40.4 26.2 43.2 26 44.6 27.6 C43.4 29.6 40.4 29.7 39.2 27.8 Z" fill={SCLERA} />
-        <path d="M51.4 27.6 C52.8 26 55.6 26.2 56.8 27.8 C55.6 29.7 52.6 29.6 51.4 27.6 Z" fill={SCLERA} />
-        <circle cx="41.9" cy="27.9" r="1.75" fill={eye} />
-        <circle cx="54.1" cy="27.9" r="1.75" fill={eye} />
-        <circle cx="41.9" cy="27.9" r="0.85" fill={PUPIL} />
-        <circle cx="54.1" cy="27.9" r="0.85" fill={PUPIL} />
-        <circle cx="41.3" cy="27.2" r="0.5" fill="white" />
-        <circle cx="53.5" cy="27.2" r="0.5" fill="white" />
-        <path d="M39 27.4 C40.2 25.8 43.2 25.6 44.8 27.2" fill="none" stroke="#241c15" strokeWidth="1.05" strokeLinecap="round" />
-        <path d="M51.2 27.2 C52.8 25.6 55.8 25.8 57 27.4" fill="none" stroke="#241c15" strokeWidth="1.05" strokeLinecap="round" />
-        <path d="M48.3 29 C48.8 31.2 49.1 33 48.4 34.4 C47.9 35.3 46.7 35.2 46.3 34.5" fill="none" stroke={skin.shade} strokeWidth="1.1" strokeLinecap="round" />
-        {lipsFilled
-          ? <path d={lips} fill={judge ? '#a2626a' : '#b8574f'} />
-          : <path d={lips} fill="none" stroke={LIP_M} strokeWidth="1.5" strokeLinecap="round" />}
-        <ellipse cx="39" cy="33.8" rx="3" ry="1.7" fill={skin.blush} opacity={gender === 'female' ? 0.3 : 0.15} />
-        <ellipse cx="57" cy="33.8" rx="3" ry="1.7" fill={skin.blush} opacity={gender === 'female' ? 0.3 : 0.15} />
         {glasses && (
           <g stroke="#22303c" strokeWidth="1.1" fill="rgba(255,255,255,.14)">
-            <rect x="37.6" y="24.6" width="9" height="6.4" rx="2.8" />
-            <rect x="49.4" y="24.6" width="9" height="6.4" rx="2.8" />
-            <path d="M46.6 27.2 L49.4 27.2" fill="none" />
+            <rect x="37" y="25.2" width="9.4" height="6.6" rx="3" />
+            <rect x="49.6" y="25.2" width="9.4" height="6.6" rx="3" />
+            <path d="M46.4 27.8 L49.6 27.8" fill="none" />
           </g>
         )}
         {/* hair */}
         {judge ? (
           <g>
-            <path d="M32.8 26 C32 15.6 38.4 10 48 10 C57.6 10 64 15.6 63.2 26 C62 21 59.8 18.6 56.8 17.8 L39.2 17.8 C36.2 18.6 34 21 32.8 26 Z" fill="#eceef2" />
-            <path d="M36 17 C39.2 14.6 43.4 13.6 48 13.6 C52.6 13.6 56.8 14.6 60 17" fill="none" stroke="#c6cad6" strokeWidth="1" />
+            <path d="M33.4 24.6 C32.8 15 39 10 48 10 C57 10 63.2 15 62.6 24.6 C61.4 20 59.2 17.6 56.4 16.9 L39.6 16.9 C36.8 17.6 34.6 20 33.4 24.6 Z" fill="#eceef2" />
+            <path d="M36.4 16.4 C39.6 14 43.6 13 48 13 C52.4 13 56.4 14 59.6 16.4" fill="none" stroke="#c6cad6" strokeWidth="1" />
           </g>
         ) : (
           <>
             <path d={art.front} fill={hair.base} />
+            {gender === 'female' && art.back && (
+              <path d="M35 23.5 C34.3 29.5 34.8 35.5 36.5 40.5 C34 36.5 33 29.8 33.6 23.5 Z" fill={hair.base} />
+            )}
             {art.shine && <path d={art.shine} fill="none" stroke={hair.shine} strokeWidth="1.8" strokeLinecap="round" opacity="0.85" />}
           </>
         )}
         {gender === 'male' && variant === 5 && !judge && (
-          <path d="M36.4 31 C38.6 39.6 43.4 44 48 44 C52.6 44 57.4 39.6 59.6 31 C58 38 53.4 42 48 42 C42.6 42 38 38 36.4 31 Z" fill={hair.base} opacity="0.4" />
+          <path d="M36.6 31 C38.8 39.8 43.4 44.6 48 44.6 C52.6 44.6 57.2 39.8 59.4 31 C57.8 38.6 53.4 43 48 43 C42.6 43 38.2 38.6 36.6 31 Z" fill={hair.base} opacity="0.4" />
         )}
       </svg>
     </span>
