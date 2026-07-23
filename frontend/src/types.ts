@@ -74,6 +74,8 @@ export type FirmTier = {
   owned?: boolean
   next?: boolean
   available?: boolean
+  required_assets?: string[]
+  missing_assets?: string[]
 }
 
 export type AttemptReward = {

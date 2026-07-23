@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from app.game import ASSETS, ASSET_BY_KEY, CLIENTS, FIRM_TIERS, _case_target_for_tier, _public_client
+from app.game import (
+    ASSETS,
+    ASSET_BY_KEY,
+    CLIENTS,
+    FIRM_TIERS,
+    TIER_GATED_ASSET_TYPES,
+    _case_target_for_tier,
+    _missing_tier_assets,
+    _public_client,
+)
 from app.models import PlayerClientContract, PlayerProfile
 
 
@@ -8,7 +17,7 @@ def test_empire_catalog_is_large_coherent_and_frontier_scaled():
     assert len(FIRM_TIERS) == 15
     assert len(ASSETS) >= 90
     assert len(CLIENTS) >= 50
-    assert max(tier["cost"] for tier in FIRM_TIERS) >= 80_000_000_000
+    assert max(tier["cost"] for tier in FIRM_TIERS) >= 160_000_000_000
     assert max(asset["cost"] for asset in ASSETS) >= 100_000_000_000
 
     asset_keys = [asset["key"] for asset in ASSETS]
@@ -22,6 +31,37 @@ def test_empire_catalog_is_large_coherent_and_frontier_scaled():
         assert set(definition.get("requires", ())) <= set(ASSET_BY_KEY)
 
 
+def test_each_tier_requires_all_prior_upgrades_staff_and_acquisitions():
+    for target_tier in range(1, len(FIRM_TIERS)):
+        expected = {
+            asset["key"]
+            for asset in ASSETS
+            if asset["type"] in TIER_GATED_ASSET_TYPES and asset["tier"] < target_tier
+        }
+        assert set(_missing_tier_assets(target_tier, set())) == expected
+        assert _missing_tier_assets(target_tier, expected) == []
+
+
+def test_firm_tiers_use_the_more_expensive_price_curve():
+    assert [tier["cost"] for tier in FIRM_TIERS] == [
+        0,
+        6_000,
+        36_000,
+        180_000,
+        800_000,
+        3_600_000,
+        16_000_000,
+        70_000_000,
+        300_000_000,
+        1_200_000_000,
+        4_000_000_000,
+        12_000_000_000,
+        30_000_000_000,
+        70_000_000_000,
+        160_000_000_000,
+    ]
+
+
 def _expected_solid_case_value(client: dict) -> float:
     tier = client["tier"]
     return client["base_fee"] * (
@@ -30,13 +70,13 @@ def _expected_solid_case_value(client: dict) -> float:
     )
 
 
-def test_commercial_clients_fund_the_next_office_in_three_to_five_good_cases():
+def test_commercial_clients_fund_the_more_expensive_next_office_in_six_to_ten_good_cases():
     for client in CLIENTS:
         tier = client["tier"]
         if client.get("matter_type") == "pro_bono" or tier >= len(FIRM_TIERS) - 1:
             continue
         cases = FIRM_TIERS[tier + 1]["cost"] / _expected_solid_case_value(client)
-        assert 3 <= cases <= 5, client["name"]
+        assert 6 <= cases <= 10, client["name"]
 
 
 def test_same_tier_commercial_clients_have_comparable_expected_value():

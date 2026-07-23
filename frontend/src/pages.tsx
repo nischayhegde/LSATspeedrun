@@ -552,6 +552,9 @@ export function FirmPage() {
     && (catalogView === 'all' || (catalogView === 'ready' ? item.unlocked : item.selected)),
   )
   const nextTier = game.catalog.tiers.find((tier) => tier.next)
+  const missingTierAssets = (nextTier?.missing_assets ?? []).map((key) =>
+    game.catalog.assets.find((asset) => asset.key === key)?.name ?? key.replaceAll('_', ' '),
+  )
   const workingClient = effectiveClient(game)
   const openSession = currentCaseQuery.data?.session
   const openCaseItem = openSession?.pending_item || openSession?.current_item
@@ -605,7 +608,12 @@ export function FirmPage() {
         {tab === 'upgrades' && nextTier && (
           <section className="tier-upgrade-banner">
           <div className="tier-preview"><Building2 /><span>TIER {nextTier.tier}</span></div>
-          <div><span className="eyebrow">{nextTier.region} · OFFICE TRANSFORMATION</span><h2>{nextTier.name}</h2><p>{nextTier.short}</p><small>{nextTier.feature} · Requires {nextTier.reputation} Reputation</small></div>
+          <div>
+            <span className="eyebrow">{nextTier.region} · OFFICE TRANSFORMATION</span>
+            <h2>{nextTier.name}</h2><p>{nextTier.short}</p>
+            <small>{nextTier.feature} · Requires {nextTier.reputation} Reputation and every prior upgrade, staff hire, and acquisition</small>
+            {missingTierAssets.length > 0 && <><br /><small className="requirements missing">Still needed: {missingTierAssets.slice(0, 3).join(' · ')}{missingTierAssets.length > 3 ? ` · +${missingTierAssets.length - 3} more` : ''}</small></>}
+          </div>
           <div className="tier-buy"><strong>{formatMoney(nextTier.cost)}</strong><button className="primary-button" disabled={!nextTier.available || game.cash < nextTier.cost || advance.isPending} onClick={() => advance.mutate(nextTier.tier)}>{advance.isPending ? 'Renovating…' : 'Advance firm'}</button></div>
           </section>
         )}

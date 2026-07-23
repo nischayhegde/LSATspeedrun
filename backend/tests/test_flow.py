@@ -8,7 +8,7 @@ from sqlalchemy import update
 
 from app import create_app
 from app.extensions import db
-from app.game import ASSET_BY_KEY, CLIENT_BY_KEY
+from app.game import ASSETS, ASSET_BY_KEY, CLIENT_BY_KEY, FIRM_TIERS, TIER_GATED_ASSET_TYPES
 from app.models import (
     AiJob,
     Attempt,
@@ -145,6 +145,49 @@ def create_game(client, headers, gender: str = "female"):
     )
     assert response.status_code == 201
     return response.json["game"]
+
+
+def test_firm_advance_is_blocked_until_every_prior_upgrade_hire_and_acquisition_is_owned(app):
+    client = app.test_client()
+    headers = login(client, "tier-gate@example.test")
+    created = create_game(client, headers)
+    required = [
+        asset
+        for asset in ASSETS
+        if asset["type"] in TIER_GATED_ASSET_TYPES and asset["tier"] == 0
+    ]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = FIRM_TIERS[1]["cost"]
+        profile.reputation = FIRM_TIERS[1]["reputation"]
+        db.session.commit()
+
+    locked_game = client.get("/v1/game").json["game"]
+    next_tier = next(tier for tier in locked_game["catalog"]["tiers"] if tier["next"])
+    assert set(next_tier["missing_assets"]) == {asset["key"] for asset in required}
+    assert next_tier["available"] is False
+    blocked = client.post("/v1/game/advance", json={"target_tier": 1}, headers=headers)
+    assert blocked.status_code == 409
+    assert blocked.json["error"]["code"] == "requirements_not_met"
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        for asset in required:
+            db.session.add(
+                PlayerAsset(
+                    profile_id=profile.id,
+                    asset_key=asset["key"],
+                    asset_type=asset["type"],
+                    purchase_price=asset["cost"],
+                )
+            )
+        db.session.commit()
+
+    advanced = client.post("/v1/game/advance", json={"target_tier": 1}, headers=headers)
+    assert advanced.status_code == 200
+    assert advanced.json["game"]["office_tier"] == 1
+    assert advanced.json["game"]["cash"] == 0
 
 
 def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
@@ -688,12 +731,16 @@ def test_tycoon_review_cannot_skip_wrong_answer_settlement(app, monkeypatch):
         profile = PlayerProfile.query.filter_by(user_id=attempt.user_id).one()
         contract = PlayerClientContract.query.filter_by(profile_id=profile.id, client_key="walk_in").one()
         assert attempt.settlement is not None
-        assert profile.reputation < 80
+        # A wrong answer with an Excellent explanation is a well-reasoned miss:
+        # standing still drops (accuracy matters) but far less than a careless
+        # guess, and it now earns a modest consultation fee instead of nothing.
+        assert 78 < profile.reputation < 80
         assert profile.current_streak == 0
         assert profile.total_cases == 1
-        assert profile.cash == 250
-        assert attempt.settlement.payout == 0
+        assert attempt.settlement.payout > 0
+        assert profile.cash == 250 + attempt.settlement.payout
         assert profile.story_state.quest_progress == 0
+        # A miss never advances the client's contract, preserving win-based pacing.
         assert contract.cases_remaining == starting_contract_cases
 
     continued = client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
@@ -1005,3 +1052,164 @@ def test_pro_bono_win_and_caseboard_completion_change_the_settlement(app, monkey
         cash_after = profile.cash
         run_attempt_coaching(attempt)
         assert PlayerProfile.query.filter_by(id=created["id"]).one().cash == cash_after
+
+
+def _settle_wrong_answer(app, monkeypatch, email: str, grade: int, *, reputation: float = 80.0) -> dict:
+    """Answer one case incorrectly, coach it with the given grade, settle, and
+
+    report the resulting economy state. The correct answer is always ``C``.
+    """
+    client = app.test_client()
+    headers = login(client, email)
+    create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.join(PlayerProfile.user).filter(User.email == email).one()
+        profile.reputation = reputation
+        db.session.commit()
+
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    submitted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "B",
+            "reasoning": (
+                f"Choice B is tempting for {email}, but it only holds if we assume an "
+                "unstated premise about scope that the stimulus never actually supplies."
+            ),
+        },
+        headers={**headers, "Idempotency-Key": f"{email}-wrong"},
+    ).json["result"]
+
+    coaching = {
+        "explanation_grade": grade,
+        "reasoning_verdict": "mostly_correct",
+        "reasoning_summary": "A specific analysis that isolates the decisive inference and the scope gap.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        attempt = db.session.get(Attempt, submitted["attempt_id"])
+        run_attempt_coaching(attempt)
+        profile = PlayerProfile.query.filter_by(user_id=attempt.user_id).one()
+        daily = DailyProgress.query.filter_by(profile_id=profile.id).one()
+        return {
+            "grade": attempt.settlement.explanation_grade,
+            "payout": attempt.settlement.payout,
+            "cash": profile.cash,
+            "reputation": profile.reputation,
+            "streak": profile.current_streak,
+            "total_cases": profile.total_cases,
+            "daily_cases": daily.cases_completed,
+        }
+
+
+def test_well_reasoned_wrong_answer_earns_consolation_and_protects_reputation(app, monkeypatch):
+    result = _settle_wrong_answer(app, monkeypatch, "excellent-miss@example.test", 88)
+    assert result["grade"] == "Excellent"
+    # A thoughtful miss is no longer a total loss: it earns a modest fee...
+    assert result["payout"] > 0
+    assert result["cash"] == 250 + result["payout"]
+    # ...counts as a completed case toward daily goals...
+    assert result["total_cases"] == 1
+    assert result["daily_cases"] == 1
+    # ...but still breaks the streak and dents reputation only slightly.
+    assert result["streak"] == 0
+    assert 78.0 < result["reputation"] < 80.0
+
+
+def test_only_strong_reasoning_is_rewarded_on_a_wrong_answer(app, monkeypatch):
+    excellent = _settle_wrong_answer(app, monkeypatch, "reward-excellent@example.test", 88)
+    weak = _settle_wrong_answer(app, monkeypatch, "reward-weak@example.test", 40)
+    invalid = _settle_wrong_answer(app, monkeypatch, "reward-invalid@example.test", 0)
+
+    assert weak["grade"] == "Weak"
+    assert invalid["grade"] == "Invalid"
+    # A thin or unsupported rationale on a wrong answer still earns nothing, so
+    # genuine reasoning — not just "showing up" — is what the consolation rewards.
+    assert weak["payout"] == 0 and weak["cash"] == 250 and weak["daily_cases"] == 0
+    assert invalid["payout"] == 0 and invalid["cash"] == 250 and invalid["daily_cases"] == 0
+    # And a well-argued miss protects standing better than a careless one.
+    assert excellent["payout"] > 0
+    assert excellent["reputation"] > weak["reputation"]
+    assert excellent["reputation"] > invalid["reputation"]
+
+
+def test_completed_contract_auto_renews_so_a_client_can_be_replayed(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "renew@example.test")
+    created = create_game(client, headers)
+    walk_in_length = CLIENT_BY_KEY["walk_in"]["length"]
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        contract = PlayerClientContract.query.filter_by(profile_id=profile.id, client_key="walk_in").one()
+        contract.cases_remaining = 1  # one decisive case away from finishing the contract
+        profile.client_cases_remaining = 1
+        db.session.commit()
+
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    submitted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "reasoning": "Choice C follows directly from the final premise without importing an unstated assumption.",
+        },
+        headers={**headers, "Idempotency-Key": "renew-final-case"},
+    ).json["result"]
+    coaching = {
+        "explanation_grade": 88,
+        "reasoning_verdict": "strong",
+        "reasoning_summary": "The decisive inference was identified.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        attempt = db.session.get(Attempt, submitted["attempt_id"])
+        run_attempt_coaching(attempt)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        contract = PlayerClientContract.query.filter_by(profile_id=profile.id, client_key="walk_in").one()
+        # Finishing the contract pays the completion bonus and immediately re-signs
+        # the client, so a full fresh docket is always ready to be worked again.
+        assert contract.completed_contracts == 1
+        assert contract.cases_remaining == walk_in_length
+        assert profile.client_cases_remaining == walk_in_length
+        assert attempt.settlement.contract_bonus > 0
+
+
+def test_player_is_never_stranded_without_an_available_client(app):
+    client = app.test_client()
+    headers = login(client, "stranded@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.reputation = 0  # rock bottom: nothing new can be unlocked
+        profile.office_tier = 0
+        db.session.commit()
+
+    game = client.get("/v1/game").json["game"]
+    walk_in = next(c for c in game["catalog"]["clients"] if c["key"] == "walk_in")
+    assert walk_in["unlocked"] is True
+    # This is exactly the dead-end scenario: no client other than the always-open
+    # walk-in is unlockable here.
+    unlocked_beyond_walk_in = [
+        c["key"] for c in game["catalog"]["clients"] if c["unlocked"] and c["key"] != "walk_in"
+    ]
+    assert unlocked_beyond_walk_in == []
+
+    with app.app_context():
+        from app.game import select_client
+
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        contract = PlayerClientContract.query.filter_by(profile_id=profile.id, client_key="walk_in").one()
+        contract.cases_remaining = 0  # simulate a fully spent contract
+        db.session.commit()
+        # Re-selecting the client refills the docket, guaranteeing there is always
+        # a case to work and progress never halts.
+        select_client(profile, "walk_in")
+        contract = PlayerClientContract.query.filter_by(profile_id=profile.id, client_key="walk_in").one()
+        assert contract.cases_remaining == CLIENT_BY_KEY["walk_in"]["length"]

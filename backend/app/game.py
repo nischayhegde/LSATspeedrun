@@ -34,23 +34,24 @@ RULE_VERSION = "lawyer-tycoon-v3"
 STARTING_CASH = 250
 DAILY_REWARD_MULTIPLIERS = {5: 1, 10: 3, 20: 8}
 TARGET_CASES_PER_MILESTONE = 4
+FIRM_TIER_COST_MULTIPLIER = 2
 
 FIRM_TIERS = [
     {"tier": 0, "name": "Wooden Shack", "cost": 0, "reputation": 0, "region": "Old Quarter", "feature": "Street-level practice", "short": "A one-desk practice with a lot to prove."},
-    {"tier": 1, "name": "Shared Office", "cost": 3_000, "reputation": 20, "region": "Old Quarter", "feature": "Client intake suite", "short": "A real address, a repaired roof, and room for help."},
-    {"tier": 2, "name": "Neighborhood Firm", "cost": 18_000, "reputation": 32, "region": "Market Ward", "feature": "Community courtroom", "short": "A storefront practice trusted by local businesses."},
-    {"tier": 3, "name": "Downtown Firm", "cost": 90_000, "reputation": 42, "region": "Civic Center", "feature": "Trial strategy floor", "short": "A polished suite overlooking the city docket."},
-    {"tier": 4, "name": "City Power Firm", "cost": 400_000, "reputation": 50, "region": "Financial District", "feature": "Predictive jury theater", "short": "A landmark office for high-stakes clients."},
-    {"tier": 5, "name": "Regional Headquarters", "cost": 1_800_000, "reputation": 56, "region": "Harbor Exchange", "feature": "Branch command center", "short": "A waterfront headquarters coordinating offices across the state."},
-    {"tier": 6, "name": "National Firm", "cost": 8_000_000, "reputation": 62, "region": "Midtown Crown", "feature": "National litigation grid", "short": "Coast-to-coast branches and a national client book."},
-    {"tier": 7, "name": "International Practice", "cost": 35_000_000, "reputation": 68, "region": "Embassy Row", "feature": "Live translation cloud", "short": "Diplomatic reach and cross-border teams working around the clock."},
-    {"tier": 8, "name": "Global Legal Empire", "cost": 150_000_000, "reputation": 74, "region": "Skyline Heights", "feature": "Global crisis command", "short": "A worldwide practice whose crest changes skylines."},
-    {"tier": 9, "name": "Sovereign Counsel Tower", "cost": 600_000_000, "reputation": 79, "region": "Sovereign Enclave", "feature": "Treaty negotiation chamber", "short": "Governments and institutions bring their defining disputes here."},
-    {"tier": 10, "name": "Continental Justice Campus", "cost": 2_000_000_000, "reputation": 83, "region": "Innovation Arc", "feature": "Autonomous case campus", "short": "An entire district built around research, advocacy, and legal technology."},
-    {"tier": 11, "name": "Oceanic Law Citadel", "cost": 6_000_000_000, "reputation": 86, "region": "Azure Coast", "feature": "Floating arbitration forum", "short": "A self-sustaining coastal citadel for planet-scale matters."},
-    {"tier": 12, "name": "Orbital Arbitration Ring", "cost": 15_000_000_000, "reputation": 89, "region": "Aerospace Basin", "feature": "Zero-gravity hearing rooms", "short": "The first legal headquarters with a permanent orbital docket."},
-    {"tier": 13, "name": "Lunar Embassy of Law", "cost": 35_000_000_000, "reputation": 92, "region": "Lunar Gate", "feature": "Interworld treaty vault", "short": "A moon-linked embassy settling disputes beyond national borders."},
-    {"tier": 14, "name": "Planetary Justice Nexus", "cost": 80_000_000_000, "reputation": 94, "region": "Celestial Crown", "feature": "Justice constellation", "short": "A legendary network that coordinates law across an entire civilization."},
+    {"tier": 1, "name": "Shared Office", "cost": 6_000, "reputation": 20, "region": "Old Quarter", "feature": "Client intake suite", "short": "A real address, a repaired roof, and room for help."},
+    {"tier": 2, "name": "Neighborhood Firm", "cost": 36_000, "reputation": 32, "region": "Market Ward", "feature": "Community courtroom", "short": "A storefront practice trusted by local businesses."},
+    {"tier": 3, "name": "Downtown Firm", "cost": 180_000, "reputation": 42, "region": "Civic Center", "feature": "Trial strategy floor", "short": "A polished suite overlooking the city docket."},
+    {"tier": 4, "name": "City Power Firm", "cost": 800_000, "reputation": 50, "region": "Financial District", "feature": "Predictive jury theater", "short": "A landmark office for high-stakes clients."},
+    {"tier": 5, "name": "Regional Headquarters", "cost": 3_600_000, "reputation": 56, "region": "Harbor Exchange", "feature": "Branch command center", "short": "A waterfront headquarters coordinating offices across the state."},
+    {"tier": 6, "name": "National Firm", "cost": 16_000_000, "reputation": 62, "region": "Midtown Crown", "feature": "National litigation grid", "short": "Coast-to-coast branches and a national client book."},
+    {"tier": 7, "name": "International Practice", "cost": 70_000_000, "reputation": 68, "region": "Embassy Row", "feature": "Live translation cloud", "short": "Diplomatic reach and cross-border teams working around the clock."},
+    {"tier": 8, "name": "Global Legal Empire", "cost": 300_000_000, "reputation": 74, "region": "Skyline Heights", "feature": "Global crisis command", "short": "A worldwide practice whose crest changes skylines."},
+    {"tier": 9, "name": "Sovereign Counsel Tower", "cost": 1_200_000_000, "reputation": 79, "region": "Sovereign Enclave", "feature": "Treaty negotiation chamber", "short": "Governments and institutions bring their defining disputes here."},
+    {"tier": 10, "name": "Continental Justice Campus", "cost": 4_000_000_000, "reputation": 83, "region": "Innovation Arc", "feature": "Autonomous case campus", "short": "An entire district built around research, advocacy, and legal technology."},
+    {"tier": 11, "name": "Oceanic Law Citadel", "cost": 12_000_000_000, "reputation": 86, "region": "Azure Coast", "feature": "Floating arbitration forum", "short": "A self-sustaining coastal citadel for planet-scale matters."},
+    {"tier": 12, "name": "Orbital Arbitration Ring", "cost": 30_000_000_000, "reputation": 89, "region": "Aerospace Basin", "feature": "Zero-gravity hearing rooms", "short": "The first legal headquarters with a permanent orbital docket."},
+    {"tier": 13, "name": "Lunar Embassy of Law", "cost": 70_000_000_000, "reputation": 92, "region": "Lunar Gate", "feature": "Interworld treaty vault", "short": "A moon-linked embassy settling disputes beyond national borders."},
+    {"tier": 14, "name": "Planetary Justice Nexus", "cost": 160_000_000_000, "reputation": 94, "region": "Celestial Crown", "feature": "Justice constellation", "short": "A legendary network that coordinates law across an entire civilization."},
 ]
 
 def _asset(key, asset_type, name, cost, reputation, tier, benefit, description, *, requires=(), region=None, art=None, **effects):
@@ -253,6 +254,20 @@ RIVALS = [
 ]
 
 ASSETS = UPGRADES + STAFF + CONNECTIONS + RIVALS
+TIER_GATED_ASSET_TYPES = {"upgrade", "staff", "rival"}
+
+
+def _tier_required_asset_keys(target_tier: int) -> list[str]:
+    """Purchases that must be complete before entering ``target_tier``."""
+    return [
+        item["key"]
+        for item in ASSETS
+        if item["type"] in TIER_GATED_ASSET_TYPES and item["tier"] < target_tier
+    ]
+
+
+def _missing_tier_assets(target_tier: int, owned: set[str]) -> list[str]:
+    return [key for key in _tier_required_asset_keys(target_tier) if key not in owned]
 
 CLIENTS = [
     {"key": "walk_in", "name": "Walk-in client", "base_fee": 100, "reputation": 0, "tier": 0, "length": 8, "icon": "briefcase", "region": "Old Quarter", "description": "Everyday people who need a sharp advocate."},
@@ -355,8 +370,12 @@ def _format_game_money(value: int) -> str:
 def _case_target_for_tier(tier: int) -> int:
     """Expected cash from one solid correct case at the current firm tier."""
     if tier < len(FIRM_TIERS) - 1:
-        return round(FIRM_TIERS[tier + 1]["cost"] / TARGET_CASES_PER_MILESTONE)
-    return round(FIRM_TIERS[-1]["cost"] / TARGET_CASES_PER_MILESTONE)
+        tier_cost = FIRM_TIERS[tier + 1]["cost"]
+    else:
+        tier_cost = FIRM_TIERS[-1]["cost"]
+    # Headquarters now cost twice as much without inflating case fees or every
+    # mandatory catalog purchase along with them.
+    return round(tier_cost / (TARGET_CASES_PER_MILESTONE * FIRM_TIER_COST_MULTIPLIER))
 
 
 def _replace_case_payout_benefit(item: dict, percentage: int) -> None:
@@ -622,6 +641,22 @@ def _next_milestone(profile: PlayerProfile, owned: set[str]) -> dict | None:
         item = eligible_assets[0]
         return {"kind": "asset", "name": item["name"], "cost": _asset_cost(profile, item), "reputation": item.get("reputation", 0)}
     tier = FIRM_TIERS[profile.office_tier + 1]
+    missing_tier_assets = set(_missing_tier_assets(tier["tier"], owned))
+    if missing_tier_assets:
+        # Never advertise a locked headquarters as the next goal. Prefer a
+        # currently purchasable required item, then another available purchase
+        # (often a connection needed by an acquisition), and finally the first
+        # locked required item when reputation is the remaining blocker.
+        required_and_eligible = [item for item in eligible_assets if item["key"] in missing_tier_assets]
+        candidates = required_and_eligible or eligible_assets
+        if candidates:
+            item = candidates[0]
+        else:
+            item = min(
+                (ASSET_BY_KEY[key] for key in missing_tier_assets),
+                key=lambda value: _asset_cost(profile, value),
+            )
+        return {"kind": "asset", "name": item["name"], "cost": _asset_cost(profile, item), "reputation": item.get("reputation", 0)}
     if eligible_assets and _asset_cost(profile, eligible_assets[0]) <= tier["cost"]:
         item = eligible_assets[0]
         return {"kind": "asset", "name": item["name"], "cost": _asset_cost(profile, item), "reputation": item.get("reputation", 0)}
@@ -705,7 +740,13 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
                     **tier,
                     "owned": tier["tier"] <= profile.office_tier,
                     "next": tier["tier"] == profile.office_tier + 1,
-                    "available": tier["tier"] == profile.office_tier + 1 and profile.reputation >= tier["reputation"],
+                    "required_assets": _tier_required_asset_keys(tier["tier"]),
+                    "missing_assets": _missing_tier_assets(tier["tier"], owned),
+                    "available": (
+                        tier["tier"] == profile.office_tier + 1
+                        and profile.reputation >= tier["reputation"]
+                        and not _missing_tier_assets(tier["tier"], owned)
+                    ),
                 }
                 for tier in FIRM_TIERS
             ],
@@ -865,6 +906,8 @@ def advance_firm(profile: PlayerProfile, target_tier: int) -> None:
     tier = FIRM_TIERS[next_tier_number]
     if profile.reputation < tier["reputation"]:
         raise ValueError("requirements_not_met")
+    if _missing_tier_assets(next_tier_number, _owned_keys(profile)):
+        raise ValueError("requirements_not_met")
     if profile.cash < tier["cost"]:
         raise ValueError("insufficient_cash")
     profile.cash -= tier["cost"]
@@ -894,6 +937,12 @@ def select_client(profile: PlayerProfile, client_key: str) -> None:
             cases_remaining=client["length"],
         )
         db.session.add(contract)
+    elif contract.cases_remaining == 0:
+        # Re-signing a client whose contract is spent starts a fresh docket. Wins
+        # already auto-renew a contract, so this is a defensive guarantee that a
+        # player can always replay an existing client and never gets stranded
+        # without an available case — even if no new client is unlockable yet.
+        contract.cases_remaining = client["length"]
     profile.active_client_key = client_key
     profile.client_cases_remaining = contract.cases_remaining
     db.session.commit()
@@ -977,13 +1026,28 @@ def explanation_band(score: int, has_reasoning: bool = True, reused: bool = Fals
     return "Excellent"
 
 
+# A wrong answer backed by genuinely strong reasoning still reflects real legal
+# skill, so it is no longer a total loss. A well-argued miss earns a modest
+# consultation fee, keeps a little professional standing, and is shielded from a
+# steep reputation drop. Careless or unsupported misses (Weak / Invalid bands)
+# still earn nothing and take the full hit, so a correct answer stays clearly the
+# most valuable outcome — a thoughtful miss pays only a fraction of a real win.
+EFFORT_MISS_MULTIPLIER = {"Good": 0.15, "Excellent": 0.25}
+EFFORT_MISS_CREDIT = {"Good": 0.20, "Excellent": 0.30}
+EFFORT_MISS_DROP_CAP = {"Good": 2.5, "Excellent": 1.5}
+
+
 def _score_multiplier(score: int) -> float:
+    # Sloppy or rushed correct answers (weak/thin explanations land here) earn a
+    # little less than before, so writing a real argument — not just guessing the
+    # letter — is what pays. The "solid case" anchor (score 14-16 -> 1.20) and the
+    # premium bands above it are unchanged, keeping the catalog pacing intact.
     if score <= 3:
-        return .60
+        return .55
     if score <= 7:
-        return .70
+        return .65
     if score <= 10:
-        return .85
+        return .80
     if score <= 13:
         return 1.00
     if score <= 16:
@@ -1162,16 +1226,25 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
         time_eligible=not locked_attempt.session_item.timer_compromised,
     )
     reward_eligible = locked_attempt.is_correct and band != "Invalid"
-    score_mult = _score_multiplier(total_score) if reward_eligible else 0.0
+    # A wrong answer with a Good/Excellent explanation is a well-reasoned miss:
+    # it earns a small consultation fee instead of nothing (see EFFORT_MISS_*).
+    effort_eligible = (not locked_attempt.is_correct) and band in EFFORT_MISS_MULTIPLIER
+    paid_case = reward_eligible or effort_eligible
     owned = _owned_keys(profile)
     context = locked_attempt.session_item.game_context_json
     if context is None:
         return None
     if reward_eligible:
-        score_mult = max(score_mult, int(context.get("minimum_score_multiplier_bps") or 0) / 10_000)
+        score_mult = max(_score_multiplier(total_score), int(context.get("minimum_score_multiplier_bps") or 0) / 10_000)
+    elif effort_eligible:
+        score_mult = EFFORT_MISS_MULTIPLIER[band]
+    else:
+        score_mult = 0.0
     client = CLIENT_BY_KEY.get(context.get("client_key"), CLIENT_BY_KEY["walk_in"])
     base_fee = int(context.get("base_fee") or client["base_fee"])
     firm_mult = int(context.get("firm_multiplier_bps") or 10_000) / 10_000
+    # Support staff and streaks amplify decisive wins only; a miss pays the base
+    # consultation fee so accuracy stays clearly the more valuable outcome.
     staff_bonus = round(int(context.get("staff_flat") or 0) * score_mult) if reward_eligible else 0
 
     validated = locked_attempt.is_correct and band in {"Good", "Excellent"}
@@ -1180,7 +1253,7 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     elif validated:
         profile.current_streak += 1
         profile.best_streak = max(profile.best_streak, profile.current_streak)
-    core_payout = round(base_fee * score_mult * firm_mult) if reward_eligible else 0
+    core_payout = round(base_fee * score_mult * firm_mult) if paid_case else 0
     streak_cap = int(context.get("streak_cap_bps") or 2_000) / 10_000
     streak_bonus = round(core_payout * min(streak_cap, profile.current_streak * .02)) if validated else 0
     contract_bonus = 0
@@ -1191,20 +1264,29 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
         .first()
     )
     if contract and reward_eligible:
+        # Only decisive wins advance and renew a client's contract, so the
+        # intended "3-5 good cases per office" pacing is preserved and a
+        # thoughtful miss simply keeps you on the same open matter.
         contract.cases_remaining = max(0, contract.cases_remaining - 1)
         contract.loyalty += 1
         if contract.cases_remaining == 0:
             contract_mult = int(context.get("contract_bonus_mult_bps") or 20_000) / 10_000
             contract_bonus = round(base_fee * contract_mult)
             contract.completed_contracts += 1
+            # Re-sign the client automatically: a finished contract rolls into a
+            # fresh docket so the player is never left without a case to work.
             contract.cases_remaining = client["length"]
         if profile.active_client_key == client["key"]:
             profile.client_cases_remaining = contract.cases_remaining
-    standard_payout = max(1, core_payout + streak_bonus + staff_bonus + contract_bonus) if reward_eligible else 0
+    standard_payout = max(1, core_payout + streak_bonus + staff_bonus + contract_bonus) if paid_case else 0
 
     credit = 0.0
     if locked_attempt.is_correct:
         credit = 1.0 if band in {"Good", "Excellent"} else .5 if band == "Weak" else 0.0
+    elif effort_eligible:
+        # Partial standing for a well-argued wrong answer lifts the rolling
+        # average, so a thoughtful miss dents reputation far less than a guess.
+        credit = EFFORT_MISS_CREDIT[band]
     reputation_before = profile.reputation
     reputation_after = _new_reputation(profile.user_id, locked_attempt.id, credit)
     projected_correct = profile.total_correct + int(locked_attempt.is_correct)
@@ -1212,6 +1294,10 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     reputation_guard = int(context.get("client_reputation_guard_bps") or 0) / 10_000
     reputation_guard += sum(float(ASSET_BY_KEY[key].get("reputation_guard", 0)) for key in owned if key in ASSET_BY_KEY)
     maximum_drop = max(.5, 4 - reputation_guard)
+    if effort_eligible:
+        # A genuinely well-reasoned miss should never collapse a reputation the
+        # way a careless one can, regardless of how thin the rolling average is.
+        maximum_drop = min(maximum_drop, EFFORT_MISS_DROP_CAP[band])
     if context.get("client_matter_type") == "pro_bono":
         maximum_drop = min(maximum_drop, int(context.get("client_reputation_loss_cap_bps") or 5_000) / 10_000)
     reputation_after = round(max(reputation_after, reputation_before - maximum_drop), 1)
@@ -1239,7 +1325,7 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     profile.total_correct += int(locked_attempt.is_correct)
     profile.total_validated_correct += int(validated)
     daily = _daily(profile)
-    if reward_eligible:
+    if paid_case:
         daily.cases_completed += 1
 
     settlement = AttemptSettlement(
