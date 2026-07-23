@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CharacterGender, GameAsset, GameState } from './types'
 import { Bust, Person, type Mood } from './art/people'
@@ -6,7 +6,7 @@ import { SiteArt } from './art/structures'
 import { OfficeRoom } from './art/office'
 import { TerrainArt } from './art/terrains'
 import {
-  clientArt, connectionArt, judgeArt, keyHash, ownerArt, playerArt, playerStage, staffArt, upgradeArt, cutsceneArt,
+  clientArt, connectionArt, judgeArt, keyHash, ownerArt, playerArt, playerStage, propArt, staffArt, upgradeArt, cutsceneArt,
 } from './art/assets'
 
 type OfficeSceneProps = {
@@ -248,6 +248,20 @@ export function MiniAvatar({ gender, tier = 0 }: { gender: CharacterGender; tier
 
 /* ------------------------------------------------------- the office */
 
+const staffChatter: Record<string, string[]> = {
+  paralegal: ['Filed. Indexed. Color-coded.', 'These folders won’t sort themselves.'],
+  junior_associate: ['I found a precedent from 1912!', 'Coffee first. Then justice.'],
+  office_manager: ['Billing closes at five, people.', 'Who moved my label maker?'],
+  senior_associate: ['This motion needs one more pass.', 'Cite it or strike it.'],
+  partner: ['Espresso, then the merger brief.', 'We settle from strength.'],
+  rainmaker: ['Table at eight. Bring the retainer.', 'They called us. Remember that.'],
+  private_investigator: ['The ledger doesn’t match the docks.', 'Everyone leaves a paper trail.'],
+  crisis_commander: ['Status check. Every desk. Now.'],
+  data_scientist: ['The pattern is in the appeals data.'],
+  litigation_technologist: ['Discovery servers are humming.'],
+}
+const genericChatter = ['Back to the docket.', 'Another one for the win column.', 'Has anyone seen the stapler?', 'The client files are ready.']
+
 function OfficeBackdrop({ game, previewTier, children }: OfficeSceneProps & { children?: React.ReactNode }) {
   const tier = previewTier ?? game?.office_tier ?? 0
   const owned = useMemo(() => new Set(game?.owned_assets ?? []), [game?.owned_assets])
@@ -260,9 +274,37 @@ function OfficeBackdrop({ game, previewTier, children }: OfficeSceneProps & { ch
   const clientProfile = clientPortraits[clientKind] ?? clientPortraits.briefcase
   const parallax = useParallax<HTMLDivElement>()
 
+  const [catAwake, setCatAwake] = useState(false)
+  const [cozyUntil, setCozyUntil] = useState(0)
+  const cozy = cozyUntil > Date.now()
+  const [chat, setChat] = useState<{ key: string; line: string } | null>(null)
+
+  const petCat = useCallback(() => {
+    setCatAwake(true)
+    window.setTimeout(() => setCatAwake(false), 4200)
+  }, [])
+  const brewCoffee = useCallback(() => {
+    setCozyUntil(Date.now() + 45_000)
+  }, [])
+
+  const staffKeys = staff.map((member) => member.key).join(',')
+  useEffect(() => {
+    if (!staffKeys) return
+    const keys = staffKeys.split(',')
+    const speak = () => {
+      const key = keys[Math.floor(Math.random() * keys.length)]
+      const lines = staffChatter[key] ?? genericChatter
+      setChat({ key, line: lines[Math.floor(Math.random() * lines.length)] })
+      window.setTimeout(() => setChat(null), 5600)
+    }
+    const first = window.setTimeout(speak, 4000)
+    const interval = window.setInterval(speak, 13_000)
+    return () => { window.clearTimeout(first); window.clearInterval(interval) }
+  }, [staffKeys])
+
   return (
     <div
-      className={`av-office office-tier-${tier}`}
+      className={`av-office office-tier-${tier} ${cozy ? 'is-cozy' : ''}`}
       data-tier={tier}
       ref={parallax.ref}
       onPointerMove={parallax.onPointerMove}
@@ -276,10 +318,22 @@ function OfficeBackdrop({ game, previewTier, children }: OfficeSceneProps & { ch
           key={member.key}
           style={{ left: `${member.x}%`, top: `${member.y}%`, ['--enter-delay' as string]: `${index * 90}ms` }}
         >
+          {chat?.key === member.key && <span className="chatter-bubble">{chat.line}</span>}
           <Person src={staffArt(member.key)} label={member.role} />
           <span className="wp-label">{member.role}</span>
         </div>
       ))}
+      <button type="button" className={`office-prop prop-cat ${catAwake ? 'is-awake' : ''}`} style={{ left: '7.5%', top: '92%' }} onClick={petCat} aria-label="The office cat">
+        <img src={propArt(catAwake ? 'cat-awake' : 'cat-sleep')} alt="" draggable={false} />
+        {catAwake
+          ? <span className="prop-hearts" aria-hidden="true"><i>♥</i><i>♥</i><i>♥</i></span>
+          : <span className="cat-zzz" aria-hidden="true">z</span>}
+      </button>
+      <button type="button" className={`office-prop prop-coffee ${cozy ? 'is-brewing' : ''}`} style={{ left: '93.5%', top: '90%' }} onClick={brewCoffee} aria-label="Brew a coffee for the team">
+        <img src={propArt('coffee')} alt="" draggable={false} />
+        <span className="prop-steam" aria-hidden="true"><i /><i /><i /></span>
+      </button>
+      <div className="cozy-glow" aria-hidden="true" />
       <div className={`world-person client-person world-client-${clientKind}`} style={{ left: '74%', top: '82%' }}>
         <div className="quest-bubble">!</div>
         <span className="av-client-token" style={{ ['--token-bg' as string]: clientProfile.bg }}>

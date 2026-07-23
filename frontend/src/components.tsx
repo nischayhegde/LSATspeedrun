@@ -23,7 +23,27 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from './api'
 import { ClientPortrait, JudgePortrait } from './game-art'
-import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StudySession, User } from './types'
+import { Bust } from './art/people'
+import { counselArt, counselFor, eventArt, keyHash } from './art/assets'
+import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StoryQuest, StudySession, User } from './types'
+
+
+function useCountUp(target: number, duration = 950) {
+  const [value, setValue] = useState(0)
+  useEffect(() => {
+    let raf = 0
+    const start = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3)
+      setValue(Math.round(target * eased))
+      if (t < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target, duration])
+  return value
+}
 
 
 export function formatMoney(value: number, compact = false) {
@@ -152,6 +172,7 @@ function ClientSettlement({
   satisfied: boolean
 }) {
   const repPositive = reward.reputation_change >= 0
+  const shownPayout = useCountUp(reward.payout)
   return (
     <section className={`client-settlement ${satisfied ? 'happy' : 'unhappy'}`} role="status" aria-live="polite">
       <div className="settlement-client">
@@ -165,7 +186,14 @@ function ClientSettlement({
       <div className="reward-transfer" aria-label={`${formatMoney(reward.payout)} fee and ${reward.reputation_change.toFixed(1)} reputation`}>
         <div className="flying-coin coin-one">$</div>
         <div className="flying-coin coin-two">★</div>
-        <div className="reward-packet fee-packet"><Coins /><span>Fee received</span><strong>+{formatMoney(reward.payout)}</strong></div>
+        <div className="reward-packet fee-packet">
+          <Coins /><span>Fee received</span><strong>+{formatMoney(shownPayout)}</strong>
+          {reward.payout > 0 && (
+            <span className="coin-burst" aria-hidden="true">
+              {Array.from({ length: 12 }, (_, i) => <i key={i} style={{ ['--i' as string]: i }} />)}
+            </span>
+          )}
+        </div>
         <div className={`reward-packet rep-packet ${repPositive ? 'positive' : 'negative'}`}>
           <Star /><span>Reputation</span><strong>{repPositive ? '+' : ''}{reward.reputation_change.toFixed(1)}</strong>
         </div>
@@ -173,6 +201,20 @@ function ClientSettlement({
     </section>
   )
 }
+
+
+const COUNSEL_LOSS_LINES = [
+  '“Objection sustained.”',
+  '“The record speaks for itself.”',
+  '“Motion to strike that theory — granted.”',
+  '“Is that the whole argument?”',
+]
+const COUNSEL_WIN_LINES = [
+  '“…no further questions.”',
+  '“Objection withdrawn.”',
+  '“We will… review our position.”',
+  '“Noted. Regrettably.”',
+]
 
 
 function CaseScore({ reward }: { reward: AttemptReward }) {
@@ -391,6 +433,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const clientKind = caseClient?.icon
   const clientSatisfied = Boolean(result?.is_correct && reward && ['Good', 'Excellent'].includes(reward.explanation_grade))
 
+  const counsel = counselFor(session.id)
+  const counselRattled = Boolean(result?.is_correct)
+  const counselLine = result
+    ? (result.is_correct ? COUNSEL_WIN_LINES : COUNSEL_LOSS_LINES)[keyHash(result.attempt_id) % COUNSEL_WIN_LINES.length]
+    : null
+
   return (
     <div className="question-layout">
       <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
@@ -401,6 +449,17 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <small>This client is locked to this open case, even if you change contracts later.</small>
         </div>
         <div className="active-matter-fee"><span>POTENTIAL BASE FEE</span><strong>{formatMoney(item.case_terms?.base_fee || 0)}</strong><small>Answer + reasoning + speed set the final fee</small></div>
+        <div className={`opposing-counsel ${result ? (counselRattled ? 'is-rattled' : 'is-smug') : ''}`}>
+          <div className="counsel-portrait">
+            <Bust src={counselArt(counsel.key, counselRattled)} backdrop="#33202b" label={`Opposing counsel ${counsel.name}`} />
+          </div>
+          <div className="counsel-copy">
+            <span>OPPOSING COUNSEL</span>
+            <strong>{counsel.name}</strong>
+            <small>{counsel.firm}</small>
+          </div>
+          {counselLine && <div className="counsel-bubble" key={result?.attempt_id}>{counselLine}</div>}
+        </div>
       </section>
       <div className="case-file-topbar">
         <div className="matter-tag">
@@ -427,7 +486,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           </article>
         )}
 
-        <section className="answer-card">
+        <section className={`answer-card ${result ? (result.is_correct ? 'case-won' : 'case-lost') : ''}`}>
           <div className="paperclip" aria-hidden="true" />
           {question.stimulus && <div className="stimulus">{question.stimulus}</div>}
           <span className="question-label">QUESTION PRESENTED</span>
@@ -485,6 +544,9 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
           {result && (
             <div ref={verdictRef} tabIndex={-1} className="judge-review-focus">
+              <div className={`verdict-stamp ${result.is_correct ? 'stamp-won' : 'stamp-lost'}`} key={result.attempt_id} aria-hidden="true">
+                <span>{result.is_correct ? 'SUSTAINED' : 'OVERRULED'}</span>
+              </div>
               <JudgeReview
                 isCorrect={result.is_correct}
                 diagnosis={result.feedback.diagnosis}
@@ -522,6 +584,87 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           )}
         </section>
       </div>
+    </div>
+  )
+}
+
+
+/* ------------------------------------------------------ office events */
+
+const EVENT_GLOBAL_COOLDOWN_MS = 5 * 60_000
+const EVENT_DECLINE_COOLDOWN_MS = 30 * 60_000
+
+const EVENT_CATEGORY_LABEL: Record<StoryQuest['category'], string> = {
+  pro_bono: 'A CAUSE WORTH TAKING',
+  investigation: 'AN INVESTIGATION OPENS',
+  shadow: 'A SHADOW OFFER',
+  legacy: 'A LEGACY MATTER',
+}
+
+export function OfficeEventPopup({ game }: { game: GameState }) {
+  const queryClient = useQueryClient()
+  const [dismissed, setDismissed] = useState(false)
+  const [visible, setVisible] = useState(false)
+
+  const quest = useMemo(() => {
+    if (game.story.active_quest || game.story.pending_chapter) return null
+    const now = Date.now()
+    if (now - Number(localStorage.getItem('lt-event-last') || 0) < EVENT_GLOBAL_COOLDOWN_MS) return null
+    const options = game.story.quests.filter((entry) =>
+      entry.available && !entry.active && !entry.completed
+      && now - Number(localStorage.getItem(`lt-event-declined-${entry.key}`) || 0) > EVENT_DECLINE_COOLDOWN_MS)
+    if (!options.length) return null
+    return options[keyHash(game.id) % options.length]
+  }, [game])
+
+  useEffect(() => {
+    if (!quest) return
+    const timeout = window.setTimeout(() => setVisible(true), 1400)
+    return () => window.clearTimeout(timeout)
+  }, [quest])
+
+  const accept = useMutation({
+    mutationFn: () => api.startQuest(quest!.key),
+    onSuccess: ({ game: nextGame }) => {
+      localStorage.setItem('lt-event-last', String(Date.now()))
+      queryClient.setQueryData<GameResponse>(['game'], { game: nextGame, pending_reviews: [] })
+      setDismissed(true)
+    },
+  })
+
+  if (!quest || dismissed || !visible) return null
+
+  const decline = () => {
+    localStorage.setItem(`lt-event-declined-${quest.key}`, String(Date.now()))
+    localStorage.setItem('lt-event-last', String(Date.now()))
+    setDismissed(true)
+  }
+
+  return (
+    <div className="office-event-overlay" role="dialog" aria-modal="true" aria-labelledby="office-event-title">
+      <article className={`office-event event-${quest.category}`}>
+        <div className="event-art">
+          <img src={eventArt(quest.scene)} alt="" draggable={false} />
+          <span className="event-category">{EVENT_CATEGORY_LABEL[quest.category]}</span>
+        </div>
+        <div className="event-body">
+          <span className="event-eyebrow">A VISITOR AT THE OFFICE</span>
+          <h2 id="office-event-title">{quest.title}</h2>
+          <small className="event-patron">{quest.patron} · {quest.objective}</small>
+          <p>{quest.description}</p>
+          <div className="event-stakes">
+            {quest.start_label && <span className="stake-cost">{quest.start_label}</span>}
+            <span className="stake-reward">{quest.reward_label}</span>
+          </div>
+          {accept.error && <ErrorNotice error={accept.error} />}
+          <div className="event-actions">
+            <button className="primary-button" onClick={() => accept.mutate()} disabled={accept.isPending}>
+              {accept.isPending ? 'Opening the file…' : <>Take the matter <ArrowRight size={17} /></>}
+            </button>
+            <button className="secondary-button" onClick={decline}>Turn them away</button>
+          </div>
+        </div>
+      </article>
     </div>
   )
 }

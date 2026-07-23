@@ -35,7 +35,7 @@ import {
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { api } from './api'
-import { Brand, ErrorNotice, formatMoney, LoadingScreen, PauseButton, QuestionFlow } from './components'
+import { Brand, ErrorNotice, formatMoney, LoadingScreen, OfficeEventPopup, PauseButton, QuestionFlow } from './components'
 import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork } from './game-art'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest } from './types'
 
@@ -346,6 +346,8 @@ export function OfficePage() {
           <button onClick={() => navigate('/firm')}>OPEN BUILD MENU <ArrowRight /></button>
         </aside>
       </section>
+
+      <OfficeEventPopup game={game} />
 
       <section className="office-gamebar">
         <article className="client-quest-card">

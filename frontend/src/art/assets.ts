@@ -144,3 +144,38 @@ export const playerArt = (gender: CharacterGender, tier: number) =>
   `${BASE}/player/${gender === 'male' ? 'male' : 'female'}-${playerStage(tier)}.webp`
 
 export const judgeArt = (pleased: boolean) => `${BASE}/judge/${pleased ? 'pleased' : 'neutral'}.webp`
+
+/* ---------------------------------------------------- opposing counsel */
+
+export const OPPOSING_COUNSEL = [
+  { key: 'vex', name: 'Sterling Vex', firm: 'Vale Legal' },
+  { key: 'stone', name: 'Octavia Stone', firm: 'Blackstone Chambers' },
+  { key: 'pike', name: 'Dorian Pike', firm: 'Harrow & Finch' },
+  { key: 'frost', name: 'Camille Frost', firm: 'Meridian Atlantic' },
+  { key: 'harrow_gus', name: 'Gus Harrow', firm: 'Northstar Law' },
+] as const
+
+export const counselFor = (seed: string) => OPPOSING_COUNSEL[keyHash(seed) % OPPOSING_COUNSEL.length]
+
+export const counselArt = (key: string, rattled: boolean) =>
+  `${BASE}/counsel/${key}-${rattled ? 'rattled' : 'composed'}.webp`
+
+/* ------------------------------------------------------- office events */
+
+export const EVENT_SCENES = [
+  'legal_aid', 'forged_deed', 'evidence_archive', 'cipher_room', 'market_terminal',
+  'hospital_night', 'black_book', 'safe_corridor', 'jury_shadow', 'embassy_queue',
+  'merger_table', 'ghost_fleet', 'island_forum', 'algorithm_city', 'storm_platform',
+  'orbital_signal', 'lunar_claim', 'lunar_workers', 'constellation',
+] as const
+
+export const eventArt = (scene: string) => {
+  const known = (EVENT_SCENES as readonly string[]).includes(scene)
+    ? scene
+    : EVENT_SCENES[keyHash(scene) % EVENT_SCENES.length]
+  return `${BASE}/event/${known}.webp`
+}
+
+/* -------------------------------------------------------- office props */
+
+export const propArt = (name: 'cat-sleep' | 'cat-awake' | 'coffee') => `${BASE}/prop/${name}.webp`
