@@ -5,6 +5,7 @@ import { Bust, Person, type Mood } from './art/people'
 import { SiteArt } from './art/structures'
 import { OfficeRoom } from './art/office'
 import { TerrainArt } from './art/terrains'
+import { useSound } from './sound'
 import {
   clientArt, connectionArt, judgeArt, keyHash, ownerArt, playerArt, playerStage, propArt, staffArt, upgradeArt, cutsceneArt,
 } from './art/assets'
@@ -263,6 +264,7 @@ const staffChatter: Record<string, string[]> = {
 const genericChatter = ['Back to the docket.', 'Another one for the win column.', 'Has anyone seen the stapler?', 'The client files are ready.']
 
 function OfficeBackdrop({ game, previewTier, children }: OfficeSceneProps & { children?: React.ReactNode }) {
+  const { play } = useSound()
   const tier = previewTier ?? game?.office_tier ?? 0
   const owned = useMemo(() => new Set(game?.owned_assets ?? []), [game?.owned_assets])
   const staff = (game?.catalog.assets ?? [])
@@ -280,12 +282,14 @@ function OfficeBackdrop({ game, previewTier, children }: OfficeSceneProps & { ch
   const [chat, setChat] = useState<{ key: string; line: string } | null>(null)
 
   const petCat = useCallback(() => {
+    void play('cat', { seed: game?.id ?? 'preview-office', intensity: .55 })
     setCatAwake(true)
     window.setTimeout(() => setCatAwake(false), 4200)
-  }, [])
+  }, [game?.id, play])
   const brewCoffee = useCallback(() => {
+    void play('coffee', { seed: game?.id ?? 'preview-office', intensity: .48 })
     setCozyUntil(Date.now() + 45_000)
-  }, [])
+  }, [game?.id, play])
 
   const staffKeys = staff.map((member) => member.key).join(',')
   useEffect(() => {
@@ -392,6 +396,7 @@ export function ExplorableOffice({
   onStory: () => void
   onCollect: () => void
 }) {
+  const { play } = useSound()
   const zones = useMemo(() => [
     { key: 'case', x: 74, y: 76, label: activeCase ? 'Resume the active case' : 'Meet your waiting client', detail: `${game.active_client.name} · ${game.active_client.base_fee.toLocaleString()} base fee`, action: onCase },
     { key: 'firm', x: 15, y: 51, label: 'Manage the firm', detail: 'Upgrades · staff · clients', action: onFirm },
@@ -410,7 +415,13 @@ export function ExplorableOffice({
               key={zone.key}
               className={`world-zone zone-${zone.key}`}
               style={{ left: `${zone.x}%`, top: `${zone.y}%` }}
-              onClick={zone.action}
+              onClick={() => {
+                if (zone.key === 'case' && activeCase) void play('resume', { seed: game.id, intensity: .48 })
+                else if (zone.key === 'empire') void play('map', { seed: zone.key, intensity: .48 })
+                else if (zone.key === 'story') void play('story', { seed: zone.key, intensity: .48 })
+                else if (zone.key === 'firm') void play('ledger', { seed: zone.key, intensity: .48 })
+                zone.action()
+              }}
               aria-label={`${zone.label}. ${zone.detail}`}
             >
               <i />
@@ -475,6 +486,7 @@ function sectionPosition(sectionKey: MapSection['key'], kind: 'tier' | 'rival', 
 }
 
 export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: (tab: 'upgrades' | 'rivals') => void }) {
+  const { play } = useSound()
   const rivals = game.catalog.assets.filter((asset) => asset.type === 'rival')
   const tierPoints = mapSections.flatMap((section) => {
     const tiers = game.catalog.tiers.filter((tier) => tier.tier >= section.minTier && tier.tier <= section.maxTier)
@@ -496,6 +508,7 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
   const parallax = useParallax<HTMLDivElement>()
 
   const jumpToSection = (section: MapSection) => {
+    if (section.key !== activeSectionKey) void play('map', { seed: section.key, intensity: .42 })
     setActiveSectionKey(section.key)
     const sectionPoints = points.filter((point) => point.sectionKey === section.key)
     const currentSelection = sectionPoints.find((point) => point.key === selected)
@@ -544,7 +557,11 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
                 className={`empire-node av-node tier-map-node ${status} ${selected === `tier-${tier.tier}` ? 'is-selected' : ''}`}
                 key={tier.tier}
                 style={{ left: `${position.x}%`, top: `${position.y}%` }}
-                onClick={() => setSelected(`tier-${tier.tier}`)}
+                onClick={() => {
+                  const next = `tier-${tier.tier}`
+                  if (selected !== next) void play('select', { seed: next, intensity: .3 })
+                  setSelected(next)
+                }}
                 aria-label={`${tier.name}, tier ${tier.tier}, ${status}`}
               >
                 <SiteArt kind="tier" tier={tier.tier} />
@@ -559,7 +576,11 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
                 className={`empire-node av-node rival-map-node ${rival.owned ? 'owned' : ''} ${selected === `rival-${rival.key}` ? 'is-selected' : ''}`}
                 key={rival.key}
                 style={{ left: `${position.x}%`, top: `${position.y}%` }}
-                onClick={() => setSelected(`rival-${rival.key}`)}
+                onClick={() => {
+                  const next = `rival-${rival.key}`
+                  if (selected !== next) void play('select', { seed: next, intensity: .3 })
+                  setSelected(next)
+                }}
                 aria-label={`${rival.name.replace('Acquire ', '')}, ${rival.owned ? 'acquired' : 'rival firm'}`}
               >
                 <SiteArt kind="rival" tier={rival.tier} architecture={profile.architecture} mark={profile.mark} owned={rival.owned} />
@@ -589,7 +610,10 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
             <b>${selectedPoint.data.cost.toLocaleString()}</b>
             <b>★ {selectedPoint.data.reputation} REP</b>
           </div>
-          <button className="pixel-action av-inspector-action" onClick={() => onManage(selectedPoint.kind === 'tier' ? 'upgrades' : 'rivals')}>
+          <button className="pixel-action av-inspector-action" onClick={() => {
+            void play('navigate', { seed: selectedPoint.key, intensity: .42 })
+            onManage(selectedPoint.kind === 'tier' ? 'upgrades' : 'rivals')
+          }}>
             {selectedPoint.kind === 'tier' ? 'MANAGE OFFICE' : 'VIEW ACQUISITION'} <i>›</i>
           </button>
         </div>

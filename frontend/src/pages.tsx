@@ -37,6 +37,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import { api } from './api'
 import { Brand, ErrorNotice, formatMoney, LoadingScreen, OfficeEventPopup, PauseButton, QuestionFlow } from './components'
 import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork } from './game-art'
+import { SoundControls, useSound } from './sound'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest } from './types'
 
 
@@ -63,15 +64,28 @@ function effectiveClient(game: GameState): GameClient {
 
 function StoryCutscene({ game, chapter }: { game: GameState; chapter: StoryChapter }) {
   const queryClient = useQueryClient()
+  const { play } = useSound()
   const [resolution, setResolution] = useState<Awaited<ReturnType<typeof api.chooseStory>> | null>(null)
   useEffect(() => setResolution(null), [chapter.key])
   const choose = useMutation({
     mutationFn: (choiceKey: string) => api.chooseStory(chapter.key, choiceKey),
-    onSuccess: setResolution,
+    onSuccess: (nextResolution, choiceKey) => {
+      void play('story', {
+        id: `story-choice:${chapter.key}:${choiceKey}`,
+        seed: choiceKey,
+        intensity: .8,
+        profile: {
+          officeTier: nextResolution.game.office_tier,
+          alignment: nextResolution.game.story.alignment,
+        },
+      })
+      setResolution(nextResolution)
+    },
   })
   const continueStory = () => {
     if (!resolution) return
     const nextGame = resolution.game
+    void play('paper', { seed: chapter.key, intensity: .45 })
     setResolution(null)
     storeGame(queryClient, nextGame)
   }
@@ -113,6 +127,7 @@ function StoryCutscene({ game, chapter }: { game: GameState; chapter: StoryChapt
 export function LoginPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { play } = useSound()
   const buttonRef = useRef<HTMLDivElement>(null)
   const [authError, setAuthError] = useState<unknown>(null)
   const config = useQuery({ queryKey: ['auth-config'], queryFn: api.authConfig })
@@ -128,6 +143,7 @@ export function LoginPage() {
       try {
         const data = await api.googleLogin(credential)
         storeAuthenticatedUser(queryClient, data)
+        void play('navigate', { seed: 'google-login', intensity: .5 })
         navigate(data.user.next_route)
       } catch (error) {
         setAuthError(error)
@@ -153,19 +169,20 @@ export function LoginPage() {
       document.head.appendChild(script)
       return () => script.remove()
     }
-  }, [config.data?.google_client_id, navigate, queryClient])
+  }, [config.data?.google_client_id, navigate, play, queryClient])
 
   const devLogin = useMutation({
     mutationFn: api.devLogin,
     onSuccess: (data) => {
       storeAuthenticatedUser(queryClient, data)
+      void play('navigate', { seed: 'dev-login', intensity: .5 })
       navigate(data.user.next_route)
     },
   })
 
   return (
     <div className="login-page">
-      <header className="login-nav"><Brand light /><span>Serious LSAT practice. An empire you earn.</span></header>
+      <header className="login-nav"><Brand light /><span>Serious LSAT practice. An empire you earn.</span><SoundControls className="login-sound-controls" compact /></header>
       <section className="login-hero">
         <div className="login-copy">
           <div className="eyebrow gold">FROM WOODEN SHACK TO LEGAL EMPIRE</div>
@@ -211,6 +228,7 @@ function BrainIcon() {
 export function OnboardingPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { play } = useSound()
   const me = useQuery({ queryKey: ['me'], queryFn: api.me })
   const gameQuery = useGame()
   const [gender, setGender] = useState<CharacterGender>('female')
@@ -226,6 +244,7 @@ export function OnboardingPage() {
     onSuccess: (data) => {
       queryClient.setQueryData<GameResponse>(['game'], data)
       void queryClient.invalidateQueries({ queryKey: ['me'] })
+      void play('event', { id: `firm-opened:${data.game?.id ?? firmName}`, seed: firmName, intensity: .85 })
       navigate('/office', { replace: true })
     },
   })
@@ -255,7 +274,10 @@ export function OnboardingPage() {
               role="radio"
               aria-checked={gender === value}
               className={gender === value ? 'selected' : ''}
-              onClick={() => setGender(value)}
+              onClick={() => {
+                if (gender !== value) void play('select', { seed: value, intensity: .35 })
+                setGender(value)
+              }}
             >
               <MiniAvatar gender={value} />
               <span>{value === 'female' ? 'Female character' : 'Male character'}</span>
@@ -281,19 +303,29 @@ export function OnboardingPage() {
 export function OfficePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { play } = useSound()
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
   const start = useMutation({
     mutationFn: api.startPractice,
-    onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
+    onSuccess: ({ session }) => {
+      void play('file-open', { id: `office-case-open:${session.id}`, seed: session.id, intensity: .58 })
+      navigate(`/cases/${session.id}`)
+    },
   })
   const collect = useMutation({
     mutationFn: api.collectPassive,
-    onSuccess: ({ game }) => storeGame(queryClient, game),
+    onSuccess: ({ collected, game }) => {
+      storeGame(queryClient, game)
+      void play('collect', { seed: String(collected), intensity: Math.min(1, .45 + Math.log10(Math.max(1, collected)) * .08) })
+    },
   })
   const claim = useMutation({
     mutationFn: api.claimDaily,
-    onSuccess: ({ game }) => storeGame(queryClient, game),
+    onSuccess: ({ claimed, game }, milestone) => {
+      storeGame(queryClient, game)
+      void play('collect', { id: `daily:${game.id}:${game.daily.date}:${milestone}`, seed: String(claimed), intensity: .65 })
+    },
   })
 
   if (gameQuery.isLoading || current.isLoading) return <LoadingScreen />
@@ -343,7 +375,7 @@ export function OfficePage() {
               <small>{milestone.reputation > game.reputation ? `LOCKED · NEED ${milestone.reputation} REP` : `${formatMoney(Math.max(0, milestone.cost - game.cash), true)} TO GO`}</small>
             </>
           ) : <><h2>Empire complete</h2><p>Every skyline starts here.</p></>}
-          <button onClick={() => navigate('/firm')}>OPEN BUILD MENU <ArrowRight /></button>
+          <button onClick={() => { void play('ledger', { seed: 'milestone', intensity: .45 }); navigate('/firm') }}>OPEN BUILD MENU <ArrowRight /></button>
         </aside>
       </section>
 
@@ -353,7 +385,10 @@ export function OfficePage() {
         <article className="client-quest-card">
           <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
           <div><span>ACTIVE CONTRACT</span><h3>{workingClient.name}</h3><p>{game.active_client.on_hold ? 'Original contract on hold' : `${game.active_client.cases_remaining} files remaining`} · {formatMoney(workingClient.base_fee)} base</p></div>
-          <button onClick={openCase}>{active ? 'RESUME' : 'TAKE CASE'} <ArrowRight /></button>
+          <button onClick={() => {
+            if (active) void play('resume', { seed: active.id, intensity: .55 })
+            openCase()
+          }}>{active ? 'RESUME' : 'TAKE CASE'} <ArrowRight /></button>
         </article>
 
         <article className="daily-quest-card">
@@ -382,9 +417,16 @@ export function OfficePage() {
 
 export function CasesLobbyPage() {
   const navigate = useNavigate()
+  const { play } = useSound()
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
-  const start = useMutation({ mutationFn: api.startPractice, onSuccess: ({ session }) => navigate(`/cases/${session.id}`) })
+  const start = useMutation({
+    mutationFn: api.startPractice,
+    onSuccess: ({ session }) => {
+      void play('file-open', { id: `case-open:${session.id}`, seed: session.id, intensity: .62 })
+      navigate(`/cases/${session.id}`)
+    },
+  })
   if (gameQuery.isLoading || current.isLoading) return <LoadingScreen label="Checking the docket…" />
   const game = gameQuery.data!.game!
   const workingClient = effectiveClient(game)
@@ -396,7 +438,12 @@ export function CasesLobbyPage() {
           <span className="eyebrow gold">DO CASES</span>
           <h1>One question.<br />One explanation.<br /><em>One step richer.</em></h1>
           <p>The verified key decides the answer. Your reasoning, time, client, and firm decide the fee.</p>
-          <button className="primary-button jumbo" onClick={() => active ? navigate(`/cases/${active.id}`) : start.mutate()} disabled={start.isPending}>
+          <button className="primary-button jumbo" onClick={() => {
+            if (active) {
+              void play('resume', { seed: active.id, intensity: .5 })
+              navigate(`/cases/${active.id}`)
+            } else start.mutate()
+          }} disabled={start.isPending}>
             <BriefcaseBusiness /> {active ? 'Resume active case' : start.isPending ? 'Opening a file…' : 'Take the next case'} <ArrowRight />
           </button>
           {start.error && <ErrorNotice error={start.error} />}
@@ -428,6 +475,7 @@ export function CasesLobbyPage() {
 export function CaseSessionPage() {
   const { sessionId } = useParams()
   const queryClient = useQueryClient()
+  const { play } = useSound()
   const sessionQuery = useQuery({
     queryKey: ['session', sessionId],
     queryFn: () => api.session(sessionId!),
@@ -435,7 +483,10 @@ export function CaseSessionPage() {
   })
   const resume = useMutation({
     mutationFn: () => api.resumeSession(sessionId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', sessionId] }),
+    onSuccess: () => {
+      void play('resume', { seed: sessionId, intensity: .5 })
+      void queryClient.invalidateQueries({ queryKey: ['session', sessionId] })
+    },
   })
   if (!sessionId) return <Navigate to="/cases" replace />
   if (sessionQuery.isLoading) return <LoadingScreen label="Pulling the case file…" />
@@ -501,6 +552,7 @@ function ClientRequirementLine({ client, game }: { client: GameClient; game: Gam
 
 export function FirmPage() {
   const [searchParams] = useSearchParams()
+  const { play } = useSound()
   const initial = (searchParams.get('tab') as FirmTab) || 'upgrades'
   const [tab, setTab] = useState<FirmTab>(firmTabs.some((item) => item.key === initial) ? initial : 'upgrades')
 
@@ -519,22 +571,38 @@ export function FirmPage() {
     mutationFn: api.purchase,
     onSuccess: ({ game }, key) => {
       storeGame(queryClient, game)
+      void play('purchase', { id: `purchase:${game.id}:${key}`, seed: key, intensity: .75 })
       setJustBought(key)
       window.setTimeout(() => setJustBought(null), 1800)
     },
   })
-  const advance = useMutation({ mutationFn: api.advanceFirm, onSuccess: ({ game }) => storeGame(queryClient, game) })
+  const advance = useMutation({
+    mutationFn: api.advanceFirm,
+    onSuccess: ({ game }, tier) => {
+      storeGame(queryClient, game)
+      void play('promotion', {
+        id: `promotion:${game.id}:${tier}`,
+        seed: String(tier),
+        intensity: .95,
+        profile: { officeTier: game.office_tier, alignment: game.story.alignment },
+      })
+    },
+  })
   const client = useMutation({
     mutationFn: api.selectClient,
     onSuccess: ({ game }, key) => {
       storeGame(queryClient, game)
+      void play('client', { seed: key, intensity: .72 })
       setJustActivated(key)
       window.setTimeout(() => setJustActivated(null), 2200)
     },
   })
   const appearance = useMutation({
     mutationFn: (characterGender: CharacterGender) => api.updateGame({ character_gender: characterGender }),
-    onSuccess: ({ game }) => storeGame(queryClient, game),
+    onSuccess: ({ game }) => {
+      storeGame(queryClient, game)
+      void play('paper', { seed: game.character_gender, intensity: .32 })
+    },
   })
 
   if (gameQuery.isLoading) return <LoadingScreen />
@@ -571,8 +639,19 @@ export function FirmPage() {
     if (nextIndex === null) return
     event.preventDefault()
     const next = firmTabs[nextIndex].key
+    void play('tab', { seed: next, intensity: .32 })
     setTab(next)
     window.requestAnimationFrame(() => document.getElementById(`firm-tab-${next}`)?.focus())
+  }
+  const selectTab = (next: FirmTab) => {
+    if (next === tab) return
+    void play('tab', { seed: next, intensity: .32 })
+    setTab(next)
+  }
+  const selectCatalogView = (next: 'all' | 'ready' | 'owned') => {
+    if (next === catalogView) return
+    void play('select', { seed: next, intensity: .25 })
+    setCatalogView(next)
   }
 
   return (
@@ -593,7 +672,7 @@ export function FirmPage() {
         </div>
       </section>
       <div className="firm-tabs" role="tablist" aria-label="Firm management sections">
-        {firmTabs.map(({ key, label, icon: Icon }, index) => <button key={key} id={`firm-tab-${key}`} type="button" role="tab" aria-selected={tab === key} aria-controls={`firm-panel-${key}`} tabIndex={tab === key ? 0 : -1} className={tab === key ? 'active' : ''} onKeyDown={(event) => moveTab(event, key)} onClick={() => setTab(key)}><span className="firm-tab-icon"><Icon size={17} /></span><span>{label}</span><small>{String(index + 1).padStart(2, '0')}</small></button>)}
+        {firmTabs.map(({ key, label, icon: Icon }, index) => <button key={key} id={`firm-tab-${key}`} type="button" role="tab" aria-selected={tab === key} aria-controls={`firm-panel-${key}`} tabIndex={tab === key ? 0 : -1} className={tab === key ? 'active' : ''} onKeyDown={(event) => moveTab(event, key)} onClick={() => selectTab(key)}><span className="firm-tab-icon"><Icon size={17} /></span><span>{label}</span><small>{String(index + 1).padStart(2, '0')}</small></button>)}
       </div>
 
       {firmTabs.filter(({ key }) => key !== tab).map(({ key }) => <div key={key} id={`firm-panel-${key}`} role="tabpanel" aria-labelledby={`firm-tab-${key}`} hidden />)}
@@ -602,9 +681,13 @@ export function FirmPage() {
           <div className="catalog-toolbar">
             <div><span>CATALOG VIEW</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
             <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">
-              {(['all', 'ready', 'owned'] as const).map((view) => <button key={view} className={catalogView === view ? 'active' : ''} onClick={() => setCatalogView(view)}>{view === 'owned' && tab === 'clients' ? 'Active' : view}</button>)}
+              {(['all', 'ready', 'owned'] as const).map((view) => <button key={view} className={catalogView === view ? 'active' : ''} onClick={() => selectCatalogView(view)}>{view === 'owned' && tab === 'clients' ? 'Active' : view}</button>)}
             </div>
-            <label><span>CITY REGION</span><select value={catalogRegion} onChange={(event) => setCatalogRegion(event.target.value)}><option value="all">All districts</option>{regions.map((region) => <option key={region} value={region}>{region}</option>)}</select></label>
+            <label><span>CITY REGION</span><select value={catalogRegion} onChange={(event) => {
+              const nextRegion = event.target.value
+              if (nextRegion !== catalogRegion) void play('select', { seed: nextRegion, intensity: .25 })
+              setCatalogRegion(nextRegion)
+            }}><option value="all">All districts</option>{regions.map((region) => <option key={region} value={region}>{region}</option>)}</select></label>
           </div>
         )}
         {tab === 'upgrades' && nextTier && (
@@ -717,15 +800,27 @@ const questPresentation: Record<StoryQuest['category'], { label: string; icon: t
 
 export function StoryPage() {
   const queryClient = useQueryClient()
+  const { play } = useSound()
   const gameQuery = useGame()
   const [selectedRival, setSelectedRival] = useState<string | null>(null)
   const startQuestMutation = useMutation({
     mutationFn: api.startQuest,
-    onSuccess: ({ game }) => storeGame(queryClient, game),
+    onSuccess: ({ game }, questKey) => {
+      storeGame(queryClient, game)
+      void play('file-open', { id: `quest:${game.id}:${questKey}`, seed: questKey, intensity: .68 })
+    },
   })
   const operation = useMutation({
     mutationFn: ({ rivalKey, operationKey }: { rivalKey: string; operationKey: string }) => api.rivalOperation(rivalKey, operationKey),
-    onSuccess: ({ game }) => storeGame(queryClient, game),
+    onSuccess: ({ game }, { rivalKey, operationKey }) => {
+      storeGame(queryClient, game)
+      void play('story', {
+        id: `operation:${game.id}:${rivalKey}:${operationKey}`,
+        seed: `${rivalKey}:${operationKey}`,
+        intensity: .76,
+        profile: { officeTier: game.office_tier, alignment: game.story.alignment },
+      })
+    },
   })
   if (gameQuery.isLoading) return <LoadingScreen label="Developing the caseboard…" />
   if (gameQuery.error) return <div className="contained"><ErrorNotice error={gameQuery.error} /></div>
@@ -807,7 +902,10 @@ export function StoryPage() {
         <div className="story-section-heading light"><span>03 · RIVAL OPERATIONS</span><h2>Win clean—or make them cheaper.</h2><p>Each operation can be used once per rival. Discounts stack to 45%; sabotage trades the firm’s name for a lower acquisition price.</p></div>
         {rival ? <>
           <div className="rival-target-strip">
-            {story.rival_targets.map((target) => <button key={target.key} className={target.key === rival.key ? 'active' : ''} onClick={() => setSelectedRival(target.key)}><PixelAssetArtwork asset={target} /><span>{target.name.replace('Acquire ', '')}</span><small>HQ {target.tier}</small></button>)}
+            {story.rival_targets.map((target) => <button key={target.key} className={target.key === rival.key ? 'active' : ''} onClick={() => {
+              if (target.key !== rival.key) void play('select', { seed: target.key, intensity: .3 })
+              setSelectedRival(target.key)
+            }}><PixelAssetArtwork asset={target} /><span>{target.name.replace('Acquire ', '')}</span><small>HQ {target.tier}</small></button>)}
           </div>
           <div className="rival-valuation-card">
             <div><span>ACQUISITION TARGET</span><h3>{rival.name}</h3><p>{rival.description}</p></div>

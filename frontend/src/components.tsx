@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
@@ -25,6 +25,7 @@ import { api } from './api'
 import { ClientPortrait, JudgePortrait } from './game-art'
 import { Bust } from './art/people'
 import { counselArt, counselFor, eventArt, keyHash } from './art/assets'
+import { SoundControls, useSound, useSoundProfile } from './sound'
 import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StoryQuest, StudySession, User } from './types'
 
 
@@ -80,7 +81,7 @@ export function Brand({ light = false, caseFile = false }: { light?: boolean; ca
     </>
   )
   if (caseFile) return <div className="brand case-brand" aria-label="Lawyer Tycoon active case">{contents}</div>
-  return <Link className={`brand ${light ? 'light' : ''}`} to="/office" aria-label="Lawyer Tycoon office">{contents}</Link>
+  return <Link className={`brand ${light ? 'light' : ''}`} to="/office" aria-label="Lawyer Tycoon office" data-sound="navigate" data-sound-seed="office">{contents}</Link>
 }
 
 
@@ -97,7 +98,22 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
+  const { play } = useSound()
+  useSoundProfile({
+    seed: `${user.id}:${game?.id ?? 'profile'}`,
+    officeTier: game?.office_tier ?? 0,
+    alignment: game?.story.alignment ?? 'Pragmatic',
+  })
   const isActiveCase = /^\/cases\/[^/]+/.test(location.pathname)
+  const playDataSound = (event: MouseEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof Element)) return
+    const target = event.target.closest<HTMLElement>('[data-sound="navigate"]')
+    if (!target || !event.currentTarget.contains(target)) return
+    void play('navigate', {
+      seed: target.dataset.soundSeed || target.getAttribute('href') || location.pathname,
+      intensity: .42,
+    })
+  }
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {
@@ -106,19 +122,20 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
     },
   })
   return (
-    <div className={`app-shell ${isActiveCase ? 'active-case' : ''}`}>
+    <div className={`app-shell ${isActiveCase ? 'active-case' : ''}`} onClick={playDataSound}>
       <header className="app-header">
         <Brand caseFile={isActiveCase} />
         {game && !isActiveCase && (
           <nav className="desktop-nav" aria-label="Primary navigation">
             {navItems.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''}>
+              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} data-sound="navigate" data-sound-seed={to}>
                 <Icon size={17} /><span>{label}</span>
               </NavLink>
             ))}
           </nav>
         )}
         <div className="header-right">
+          <SoundControls className="header-sound-controls" compact />
           {game && (
             <div className="header-economy" aria-label="Firm standing">
               <span><Coins size={16} />{formatMoney(game.cash, true)}</span>
@@ -141,7 +158,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
           {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} data-sound="navigate" data-sound-seed={to}>
               <Icon size={20} /><span>{label}</span>
             </NavLink>
           ))}
@@ -354,6 +371,7 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
 export function QuestionFlow({ session }: { session: StudySession }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const { play } = useSound()
   const gameQuery = useQuery({ queryKey: ['game'], queryFn: api.game })
   const item = session.pending_item || session.current_item
   const result = session.pending_result
@@ -398,6 +416,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const continueCases = useMutation({
     mutationFn: () => api.acknowledgeReview(session.id),
     onSuccess: ({ session: nextSession }) => {
+      void play('file-open', {
+        id: `next-file:${nextSession.id}:${nextSession.current_index}`,
+        seed: `${nextSession.id}:${nextSession.current_index}`,
+        intensity: .58,
+      })
       void queryClient.invalidateQueries({ queryKey: ['game'] })
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
       if (nextSession.id !== session.id) navigate(`/cases/${nextSession.id}`, { replace: true })
@@ -414,6 +437,66 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   })
   const coachingFeedback = savedCoaching || coaching.data?.coaching
   const reward = savedReward || coaching.data?.reward
+  const coachingReady = Boolean(coachingFeedback)
+
+  useEffect(() => {
+    if (!result) return
+    void play(result.is_correct ? 'verdict-correct' : 'verdict-repair', {
+      id: `verdict:${result.attempt_id}`,
+      seed: result.attempt_id,
+      intensity: .9,
+    })
+  }, [play, result?.attempt_id, result?.is_correct])
+
+  useEffect(() => {
+    if (!result || !reward || !coachingReady) return
+    const timers: number[] = []
+    const reasoningValidated = result.is_correct && (reward.explanation_grade === 'Good' || reward.explanation_grade === 'Excellent')
+    const hasBonus = reward.streak_bonus > 0 || reward.staff_bonus > 0 || reward.contract_bonus > 0 || reward.quest_bonus > 0
+    const hasPayout = reward.payout > 0
+    const ledgerDelay = reasoningValidated ? 1100 : 620
+
+    if (reasoningValidated) {
+      timers.push(window.setTimeout(() => {
+        void play('reasoning-validated', {
+          id: `reasoning:${reward.id}`,
+          seed: reward.id,
+          intensity: .68,
+        })
+      }, 420))
+    }
+    if (hasPayout) {
+      timers.push(window.setTimeout(() => {
+        void play('ledger', {
+          id: `ledger:${reward.id}`,
+          seed: reward.id,
+          intensity: .48,
+        })
+      }, ledgerDelay))
+      if (hasBonus) {
+        timers.push(window.setTimeout(() => {
+          void play('bonus', {
+            id: `bonus:${reward.id}`,
+            seed: reward.id,
+            intensity: .58,
+          })
+        }, ledgerDelay + 320))
+      }
+    }
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [
+    play,
+    coachingReady,
+    result?.attempt_id,
+    result?.is_correct,
+    reward?.contract_bonus,
+    reward?.explanation_grade,
+    reward?.id,
+    reward?.payout,
+    reward?.quest_bonus,
+    reward?.staff_bonus,
+    reward?.streak_bonus,
+  ])
 
   useEffect(() => {
     if (!coaching.data?.game) return
@@ -504,7 +587,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                   disabled={Boolean(result)}
                   className={`choice ${chosen ? 'selected' : ''} ${correct ? 'correct' : ''} ${wrongSelected ? 'incorrect' : ''}`}
                   key={choice.label}
-                  onClick={() => setSelected(choice.label)}
+                  onClick={() => {
+                    if (selected !== choice.label) void play('select', { seed: `${item.id}:${choice.label}`, intensity: .36 })
+                    setSelected(choice.label)
+                  }}
                 >
                   <span className="choice-label">{choice.label}</span>
                   <span>{choice.text}</span>
@@ -536,7 +622,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           {!result && (
             <div className="answer-actions">
               {submit.error && <ErrorNotice error={submit.error} />}
-              <button className="primary-button verdict-button" disabled={!selected || !reasoning.trim() || submit.isPending} onClick={() => submit.mutate()}>
+              <button className="primary-button verdict-button" disabled={!selected || !reasoning.trim() || submit.isPending} onClick={() => {
+                void play('submit', { seed: item.id, intensity: .68 })
+                submit.mutate()
+              }}>
                 {submit.isPending ? 'Filing your answer…' : <>Submit case <Scale size={18} /></>}
               </button>
             </div>
@@ -603,6 +692,7 @@ const EVENT_CATEGORY_LABEL: Record<StoryQuest['category'], string> = {
 
 export function OfficeEventPopup({ game }: { game: GameState }) {
   const queryClient = useQueryClient()
+  const { play } = useSound()
   const [dismissed, setDismissed] = useState(false)
   const [visible, setVisible] = useState(false)
 
@@ -626,6 +716,11 @@ export function OfficeEventPopup({ game }: { game: GameState }) {
   const accept = useMutation({
     mutationFn: () => api.startQuest(quest!.key),
     onSuccess: ({ game: nextGame }) => {
+      void play('event', {
+        id: `office-event-accepted:${nextGame.id}:${quest!.key}`,
+        seed: quest!.key,
+        intensity: .6,
+      })
       localStorage.setItem('lt-event-last', String(Date.now()))
       queryClient.setQueryData<GameResponse>(['game'], { game: nextGame, pending_reviews: [] })
       setDismissed(true)
@@ -635,6 +730,7 @@ export function OfficeEventPopup({ game }: { game: GameState }) {
   if (!quest || dismissed || !visible) return null
 
   const decline = () => {
+    void play('paper', { seed: `decline:${quest.key}`, intensity: .35 })
     localStorage.setItem(`lt-event-declined-${quest.key}`, String(Date.now()))
     localStorage.setItem('lt-event-last', String(Date.now()))
     setDismissed(true)
@@ -673,9 +769,11 @@ export function OfficeEventPopup({ game }: { game: GameState }) {
 export function PauseButton({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { play } = useSound()
   const pause = useMutation({
     mutationFn: () => api.pauseSession(sessionId),
     onSuccess: () => {
+      void play('pause', { id: `pause:${sessionId}`, seed: sessionId, intensity: .52 })
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
       navigate('/office')
     },
