@@ -23,6 +23,8 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from './api'
 import { ClientPortrait, JudgePortrait } from './game-art'
+import { CasePageTurn } from './pixel-webgl'
+import { caseJourneyStages, type CaseJourneyStageId } from './scene-workflow'
 import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StudySession, User } from './types'
 
 
@@ -76,6 +78,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
+  const mainRef = useRef<HTMLElement>(null)
   const isActiveCase = /^\/cases\/[^/]+/.test(location.pathname)
   const logout = useMutation({
     mutationFn: api.logout,
@@ -84,8 +87,15 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
       navigate('/login', { replace: true })
     },
   })
+  useEffect(() => {
+    const section = location.pathname.startsWith('/office') ? 'Office' : location.pathname.startsWith('/cases') ? 'Cases' : location.pathname.startsWith('/firm') ? 'Firm' : location.pathname.startsWith('/map') || location.pathname.startsWith('/world') ? 'Empire' : 'Lawyer Tycoon'
+    document.title = `${section} · Lawyer Tycoon`
+    window.requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }))
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }, [location.pathname])
   return (
     <div className={`app-shell ${isActiveCase ? 'active-case' : ''}`}>
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <header className="app-header">
         <Brand caseFile={isActiveCase} />
         {game && !isActiveCase && (
@@ -100,9 +110,9 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         <div className="header-right">
           {game && (
             <div className="header-economy" aria-label="Firm standing">
-              <span><Coins size={16} />{formatMoney(game.cash, true)}</span>
-              <span><Star size={16} />{game.reputation.toFixed(1)}</span>
-              {game.current_streak > 0 && <span className="streak"><Flame size={16} />{game.current_streak}</span>}
+              <span><Coins size={16} /><span className="sr-only">Cash: </span>{formatMoney(game.cash, true)}</span>
+              <span><Star size={16} /><span className="sr-only">Reputation: </span>{game.reputation.toFixed(1)}</span>
+              {game.current_streak > 0 && <span className="streak"><Flame size={16} /><span className="sr-only">Validated streak: </span>{game.current_streak}</span>}
             </div>
           )}
           <div className="account-menu">
@@ -116,7 +126,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           </div>
         </div>
       </header>
-      <main>{children}</main>
+      <main id="main-content" ref={mainRef} tabIndex={-1}>{children}</main>
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
           {navItems.map(({ to, label, icon: Icon }) => (
@@ -307,6 +317,25 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
 }
 
 
+export function CaseJourneyRail({ current }: { current: CaseJourneyStageId }) {
+  const currentIndex = caseJourneyStages.findIndex((stage) => stage.id === current)
+  return (
+    <nav className="case-journey-rail" aria-label="Case journey through game rooms">
+      <div><span>REPEATABLE CASE LOOP</span><strong>Every case moves through the firm.</strong></div>
+      <ol>
+        {caseJourneyStages.map((stage, index) => (
+          <li className={index === currentIndex ? 'active' : index < currentIndex ? 'complete' : ''} key={stage.id}>
+            <Link to={`/world/${stage.slug}`} title={stage.detail} aria-current={index === currentIndex ? 'step' : undefined}>
+              <b>{String(index + 1).padStart(2, '0')}</b><span><small>{stage.label}</small><strong>{stage.room}</strong></span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  )
+}
+
+
 export function QuestionFlow({ session }: { session: StudySession }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -315,14 +344,21 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const result = session.pending_result
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
+  const [draftState, setDraftState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [clock, setClock] = useState(Date.now())
   const [openedAt, setOpenedAt] = useState(Date.now())
+  const [casePage, setCasePage] = useState<'evidence' | 'argument' | 'verdict'>(result ? 'verdict' : 'evidence')
+  const [pageTurn, setPageTurn] = useState<{ key: number; direction: 1 | -1 } | null>(null)
+  const pageTurnTimers = useRef<number[]>([])
   const verdictRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setSelected(item?.draft.selected_label || '')
     setReasoning(item?.draft.reasoning || '')
+    setDraftState(item?.draft.updated_at ? 'saved' : 'idle')
     setOpenedAt(Date.now())
+    setCasePage(result ? 'verdict' : 'evidence')
+    setPageTurn(null)
   }, [item?.id])
 
   useEffect(() => {
@@ -332,15 +368,47 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   }, [item?.timer_active, result])
 
   useEffect(() => {
-    if (result) verdictRef.current?.focus()
+    if (result && casePage === 'verdict') verdictRef.current?.focus()
+  }, [casePage, result?.attempt_id])
+
+  useEffect(() => () => pageTurnTimers.current.forEach((timer) => window.clearTimeout(timer)), [])
+
+  const turnToPage = (next: 'evidence' | 'argument' | 'verdict') => {
+    if (next === casePage || (next === 'verdict' && !result)) return
+    pageTurnTimers.current.forEach((timer) => window.clearTimeout(timer))
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setCasePage(next)
+      setPageTurn(null)
+      return
+    }
+    const order = ['evidence', 'argument', 'verdict']
+    const direction = order.indexOf(next) > order.indexOf(casePage) ? 1 : -1
+    setPageTurn({ key: Date.now(), direction })
+    pageTurnTimers.current = [
+      window.setTimeout(() => setCasePage(next), 305),
+      window.setTimeout(() => setPageTurn(null), 660),
+    ]
+  }
+
+  useEffect(() => {
+    if (result && casePage !== 'verdict') turnToPage('verdict')
+    // The attempt id is the authoritative transition into the verdict page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result?.attempt_id])
 
   useEffect(() => {
     if (!item || result) return
-    const timeout = window.setTimeout(() => {
-      void api.saveDraft(session.id, item.id, { selected_label: selected || undefined, reasoning }).catch(() => undefined)
+    let cancelled = false
+    setDraftState('saving')
+    const timeout = window.setTimeout(async () => {
+      try {
+        await api.saveDraft(session.id, item.id, { selected_label: selected || undefined, reasoning })
+        if (!cancelled) setDraftState('saved')
+      } catch {
+        if (!cancelled) setDraftState('error')
+      }
     }, 700)
-    return () => window.clearTimeout(timeout)
+    return () => { cancelled = true; window.clearTimeout(timeout) }
   }, [item?.id, reasoning, result, selected, session.id])
 
   const submit = useMutation({
@@ -360,6 +428,19 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       else void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
     },
   })
+  useEffect(() => {
+    if (result || !item) return
+    const chooseWithKeyboard = (event: globalThis.KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
+      const choice = item.question.choices.find((candidate) => candidate.label === event.key.toUpperCase())
+      if (!choice) return
+      event.preventDefault()
+      setSelected(choice.label)
+    }
+    window.addEventListener('keydown', chooseWithKeyboard)
+    return () => window.removeEventListener('keydown', chooseWithKeyboard)
+  }, [item, result])
   const savedCoaching = result?.feedback.coaching
   const savedReward = result?.game_reward
   const coaching = useQuery({
@@ -388,6 +469,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
   const clientKind = caseClient?.icon
   const clientSatisfied = Boolean(result?.is_correct && reward && ['Good', 'Excellent'].includes(reward.explanation_grade))
+  const addReasoningPrompt = (prompt: string) => {
+    if (reasoning.includes(prompt)) return
+    setReasoning((current) => `${current.trim()}${current.trim() ? '\n' : ''}${prompt} `)
+  }
 
   return (
     <div className="question-layout">
@@ -400,6 +485,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         </div>
         <div className="active-matter-fee"><span>POTENTIAL BASE FEE</span><strong>{formatMoney(item.case_terms?.base_fee || 0)}</strong><small>Answer + reasoning + speed set the final fee</small></div>
       </section>
+      <CaseJourneyRail current={result ? 'counsel' : 'workspace'} />
       <div className="case-file-topbar">
         <div className="matter-tag">
           <span>{question.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
@@ -417,109 +503,79 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       </div>
       <div className="progress-track"><span style={{ width: `${session.progress_percent}%` }} /></div>
 
-      <div className={question.passage ? 'question-content with-passage' : 'question-content'}>
-        {question.passage && (
-          <article className="passage-card">
-            <div className="document-heading"><BookOpen size={16} /><span>EXHIBIT A · READING PASSAGE</span></div>
-            <div className="passage-text">{question.passage.text}</div>
-          </article>
+      <section className="case-file-stage" aria-label="Interactive case file">
+        {pageTurn && <CasePageTurn turnKey={pageTurn.key} direction={pageTurn.direction} />}
+        <nav className="case-page-tabs" aria-label="Case file pages">
+          <button type="button" className={casePage === 'evidence' ? 'active' : ''} aria-pressed={casePage === 'evidence'} onClick={() => turnToPage('evidence')}><b>01</b><span>Evidence<small>Read the record</small></span></button>
+          <button type="button" className={casePage === 'argument' ? 'active' : ''} aria-pressed={casePage === 'argument'} onClick={() => turnToPage('argument')}><b>02</b><span>Argument<small>Choose and explain</small></span></button>
+          <button type="button" disabled={!result} className={casePage === 'verdict' ? 'active' : ''} aria-pressed={casePage === 'verdict'} onClick={() => turnToPage('verdict')}><b>03</b><span>Verdict<small>{result ? 'Review and repair' : 'Filed after submission'}</small></span></button>
+        </nav>
+
+        {casePage === 'evidence' && (
+          <div className={`case-page-sheet question-content ${question.passage ? 'with-passage' : ''}`}>
+            {question.passage && (
+              <article className="passage-card">
+                <div className="document-heading"><BookOpen size={16} /><span>EXHIBIT A · READING PASSAGE</span></div>
+                <div className="passage-text">{question.passage.text}</div>
+              </article>
+            )}
+            <section className="answer-card evidence-page">
+              <div className="paperclip" aria-hidden="true" />
+              {question.stimulus && <><div className="document-heading"><BookOpen size={16} /><span>EXHIBIT A · RECORD</span></div><div className="stimulus">{question.stimulus}</div></>}
+              <span className="question-label">QUESTION PRESENTED</span>
+              <h1>{question.stem}</h1>
+              <div className="evidence-checklist"><span><Check size={15} />Identify the exact task</span><span><Check size={15} />Locate decisive evidence</span><span><Check size={15} />Predict before comparing</span></div>
+              <button type="button" className="primary-button case-page-next" onClick={() => turnToPage(result ? 'verdict' : 'argument')}>{result ? 'Return to verdict' : 'Build your argument'} <ArrowRight size={18} /></button>
+            </section>
+          </div>
         )}
 
-        <section className="answer-card">
-          <div className="paperclip" aria-hidden="true" />
-          {question.stimulus && <div className="stimulus">{question.stimulus}</div>}
-          <span className="question-label">QUESTION PRESENTED</span>
-          <h1>{question.stem}</h1>
-          <div className="choices" role="radiogroup" aria-label="Answer choices">
-            {question.choices.map((choice) => {
-              const chosen = (result?.feedback.selected_label || selected) === choice.label
-              const correct = result?.feedback.correct_label === choice.label
-              const wrongSelected = Boolean(result && chosen && !correct)
-              return (
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={chosen}
-                  disabled={Boolean(result)}
-                  className={`choice ${chosen ? 'selected' : ''} ${correct ? 'correct' : ''} ${wrongSelected ? 'incorrect' : ''}`}
-                  key={choice.label}
-                  onClick={() => setSelected(choice.label)}
-                >
-                  <span className="choice-label">{choice.label}</span>
-                  <span>{choice.text}</span>
-                  {correct && <Check className="choice-status" size={18} />}
-                  {wrongSelected && <X className="choice-status" size={18} />}
-                </button>
-              )
-            })}
-          </div>
-
-          {!result && (
-            <div className="reasoning-box">
-              <div className="reasoning-heading">
-                <label htmlFor="reasoning">Your case theory <b>Required</b></label>
-                <span>{reasoning.trim().length} characters</span>
+        {casePage === 'argument' && (
+          <div className="case-page-sheet argument-sheet">
+            <section className="answer-card argument-page">
+              <div className="argument-reference"><span>QUESTION PRESENTED</span><strong>{question.stem}</strong><button type="button" onClick={() => turnToPage('evidence')}><BookOpen size={15} />REOPEN EVIDENCE</button></div>
+              <div className="choices" role="radiogroup" aria-label="Answer choices">
+                {question.choices.map((choice) => {
+                  const chosen = (result?.feedback.selected_label || selected) === choice.label
+                  const correct = result?.feedback.correct_label === choice.label
+                  const wrongSelected = Boolean(result && chosen && !correct)
+                  return (
+                    <button type="button" role="radio" aria-checked={chosen} disabled={Boolean(result)} className={`choice ${chosen ? 'selected' : ''} ${correct ? 'correct' : ''} ${wrongSelected ? 'incorrect' : ''}`} key={choice.label} onClick={() => setSelected(choice.label)}>
+                      <span className="choice-label">{choice.label}</span><span>{choice.text}</span>
+                      {correct && <Check className="choice-status" size={18} />}{wrongSelected && <X className="choice-status" size={18} />}
+                    </button>
+                  )
+                })}
               </div>
-              <textarea
-                id="reasoning"
-                value={reasoning}
-                onChange={(event) => setReasoning(event.target.value)}
-                placeholder="Identify the conclusion, decisive evidence or logical relationship, and why your choice answers the exact question…"
-                rows={5}
-                maxLength={4000}
-              />
-              <p>Substance beats length. Generic or repeated explanations receive no meaningful payout.</p>
-            </div>
-          )}
 
-          {!result && (
-            <div className="answer-actions">
-              {submit.error && <ErrorNotice error={submit.error} />}
-              <button className="primary-button verdict-button" disabled={!selected || !reasoning.trim() || submit.isPending} onClick={() => submit.mutate()}>
-                {submit.isPending ? 'Filing your answer…' : <>Submit case <Scale size={18} /></>}
-              </button>
-            </div>
-          )}
+              {!result && (
+                <div className="reasoning-box">
+                  <div className="reasoning-heading"><label htmlFor="reasoning">Your case theory <b>Required</b></label><span className={`draft-status ${draftState}`} role="status">{draftState === 'saving' ? 'Saving…' : draftState === 'saved' ? 'Draft saved' : draftState === 'error' ? 'Save failed' : `${reasoning.trim().length} characters`}</span></div>
+                  <div className="reasoning-prompts" aria-label="Reasoning scaffold">
+                    {['Task / conclusion:', 'Decisive evidence:', 'Why the closest rival fails:', 'Therefore:'].map((prompt, index) => <button type="button" onClick={() => addReasoningPrompt(prompt)} key={prompt}><b>{index + 1}</b>{prompt}</button>)}
+                  </div>
+                  <textarea id="reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && selected && reasoning.trim() && !submit.isPending) { event.preventDefault(); submit.mutate() } }} placeholder="Use the scaffold above to identify the task, decisive evidence, and why the closest alternative fails…" rows={7} maxLength={4000} />
+                  <p>Substance beats length. Generic or repeated explanations receive no meaningful payout.</p>
+                </div>
+              )}
+              {!result && <div className="answer-actions">{submit.error && <ErrorNotice error={submit.error} />}<button className="primary-button verdict-button" disabled={!selected || !reasoning.trim() || submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? 'Filing your answer…' : <>File for verdict <Scale size={18} /></>}</button><small className="keyboard-hint">A–E selects · ⌘/Ctrl + Enter files</small></div>}
+              {result && <button type="button" className="primary-button case-page-next" onClick={() => turnToPage('verdict')}>Open filed verdict <ArrowRight size={18} /></button>}
+            </section>
+          </div>
+        )}
 
-          {result && (
-            <div ref={verdictRef} tabIndex={-1} className="judge-review-focus">
-              <JudgeReview
-                isCorrect={result.is_correct}
-                diagnosis={result.feedback.diagnosis}
-                coaching={coachingFeedback}
-                reward={reward}
-                loading={coaching.isLoading}
-              />
-            </div>
-          )}
-          {result && coaching.error && (!coachingFeedback || !reward) && (
-            <div className="coaching-error">
-              <ErrorNotice error={coaching.error} />
-              <button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button>
-            </div>
-          )}
-          {coachingFeedback && <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result?.feedback.selected_label} />}
-          {reward && (
-            <>
-              <ClientSettlement reward={reward} clientName={clientName} clientKind={clientKind} satisfied={clientSatisfied} />
-              <CaseScore reward={reward} />
-            </>
-          )}
-
-          {result && (
-            <div className="continue-row">
-              {continueCases.error && <ErrorNotice error={continueCases.error} />}
-              <button
-                className="primary-button next-case-button"
-                disabled={!reward || continueCases.isPending || coaching.isLoading}
-                onClick={() => continueCases.mutate()}
-              >
-                {!reward ? 'Settling fee…' : continueCases.isPending ? 'Opening file…' : <>Next case <ArrowRight size={18} /></>}
-              </button>
-            </div>
-          )}
-        </section>
-      </div>
+        {casePage === 'verdict' && result && (
+          <div className="case-page-sheet verdict-sheet">
+            <section className="answer-card verdict-page">
+              <div ref={verdictRef} tabIndex={-1} className="judge-review-focus"><JudgeReview isCorrect={result.is_correct} diagnosis={result.feedback.diagnosis} coaching={coachingFeedback} reward={reward} loading={coaching.isLoading} /></div>
+              {coaching.error && (!coachingFeedback || !reward) && <div className="coaching-error"><ErrorNotice error={coaching.error} /><button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button></div>}
+              {coachingFeedback && <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result.feedback.selected_label} />}
+              {reward && <><ClientSettlement reward={reward} clientName={clientName} clientKind={clientKind} satisfied={clientSatisfied} /><CaseScore reward={reward} /></>}
+              <div className="continue-row">{continueCases.error && <ErrorNotice error={continueCases.error} />}<button className="primary-button next-case-button" disabled={!reward || continueCases.isPending || coaching.isLoading} onClick={() => continueCases.mutate()}>{!reward ? 'Settling fee…' : continueCases.isPending ? 'Closing file…' : session.status === 'completed' ? <>Review docket results <ArrowRight size={18} /></> : <>Turn to next case <ArrowRight size={18} /></>}</button></div>
+            </section>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

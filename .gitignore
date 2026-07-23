@@ -9,3 +9,6 @@ frontend/dist/
 *.tsbuildinfo
 .DS_Store
 
+# User-supplied question exports stay outside version control. The application
+# uses only the reviewed Hugging Face snapshot under backend/data/question_bank.
+Qbankparsing/lsat_questions_full.json

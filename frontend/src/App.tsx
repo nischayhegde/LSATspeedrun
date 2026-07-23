@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { api, ApiError } from './api'
 import { AppShell, ErrorNotice, LoadingScreen } from './components'
+import { WorldScenePage } from './scene-world'
 import {
   CasesLobbyPage,
   CaseSessionPage,
@@ -79,6 +80,7 @@ export default function App() {
       <Route path="/cases/:sessionId" element={<Protected><CaseSessionPage /></Protected>} />
       <Route path="/firm" element={<Protected><FirmPage /></Protected>} />
       <Route path="/map" element={<Protected><ProgressionMapPage /></Protected>} />
+      <Route path="/world/:sceneSlug" element={<Protected><WorldScenePage /></Protected>} />
       <Route path="/practice" element={<Navigate to="/cases" replace />} />
       <Route path="/practice/:sessionId" element={<LegacyCaseRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />

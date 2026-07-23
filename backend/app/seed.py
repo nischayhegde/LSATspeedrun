@@ -24,6 +24,72 @@ SOURCE_PREFIX = "https://huggingface.co/datasets/tasksource/lsat-"
 CHOICE_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
+def _snapshot_manifest() -> dict | None:
+    configured = current_app.config.get("QUESTION_BANK_DIR")
+    if not configured:
+        return None
+    path = Path(configured) / "manifest.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Invalid question snapshot manifest at {path}") from error
+    if not isinstance(payload, dict) or payload.get("source") != "Hugging Face Dataset Server":
+        raise RuntimeError(f"Invalid question snapshot manifest at {path}")
+    return payload
+
+
+def question_bank_status() -> dict:
+    manifest = _snapshot_manifest()
+    if not manifest:
+        return {"source": "Hugging Face Dataset Server", "snapshot": False}
+    revisions = {
+        dataset: details.get("revision")
+        for dataset, details in (manifest.get("datasets") or {}).items()
+        if isinstance(details, dict)
+    }
+    return {
+        "source": manifest.get("source"),
+        "snapshot": True,
+        "manifest_total": manifest.get("total_questions"),
+        "generated_at": manifest.get("generated_at"),
+        "revisions": revisions,
+    }
+
+
+def _verify_snapshot_integrity(dataset: str, split: str, path: Path) -> None:
+    manifest = _snapshot_manifest()
+    if not manifest:
+        return
+    details = (manifest.get("datasets") or {}).get(dataset)
+    entry = (details.get("splits") or {}).get(split) if isinstance(details, dict) else None
+    if not isinstance(entry, dict):
+        raise RuntimeError(f"Question snapshot manifest is missing {dataset} ({split})")
+    expected_digest = entry.get("sha256")
+    expected_rows = entry.get("questions")
+    if not isinstance(expected_digest, str) or not isinstance(expected_rows, int):
+        raise RuntimeError(f"Question snapshot manifest is invalid for {dataset} ({split})")
+    stat = path.stat()
+    cache_key = (str(path), stat.st_mtime_ns, stat.st_size, expected_digest, expected_rows)
+    verified = current_app.extensions.setdefault("verified_question_snapshots", set())
+    if cache_key in verified:
+        return
+    digest = hashlib.sha256()
+    row_count = 0
+    with path.open("rb") as snapshot:
+        for line in snapshot:
+            digest.update(line)
+            if line.strip():
+                row_count += 1
+    if digest.hexdigest() != expected_digest or row_count != expected_rows:
+        raise RuntimeError(
+            f"Question snapshot integrity check failed for {dataset} ({split}); "
+            "refresh it from Hugging Face before seeding"
+        )
+    verified.add(cache_key)
+
+
 def _snapshot_path(dataset: str, split: str) -> Path | None:
     configured = current_app.config.get("QUESTION_BANK_DIR")
     if not configured:
@@ -35,6 +101,7 @@ def _iter_snapshot_rows(dataset: str, split: str) -> Iterator[dict] | None:
     path = _snapshot_path(dataset, split)
     if path is None or not path.is_file():
         return None
+    _verify_snapshot_integrity(dataset, split, path)
 
     def read_rows() -> Iterator[dict]:
         with path.open("r", encoding="utf-8") as snapshot:

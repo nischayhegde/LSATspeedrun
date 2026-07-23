@@ -26,12 +26,14 @@ import {
   UsersRound,
   Wrench,
 } from 'lucide-react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { api } from './api'
-import { Brand, ErrorNotice, formatMoney, LoadingScreen, PauseButton, QuestionFlow } from './components'
+import { Brand, CaseJourneyRail, ErrorNotice, formatMoney, LoadingScreen, PauseButton, QuestionFlow } from './components'
 import { ClientPortrait, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene } from './game-art'
-import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState } from './types'
+import { PixelWebGLAtmosphere } from './pixel-webgl'
+import { learnerScenes } from './scene-registry'
+import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, PracticeSummary } from './types'
 
 
 function useGame() {
@@ -247,7 +249,8 @@ export function OfficePage() {
   const workingClient = effectiveClient(game)
   const active = current.data?.session
   const milestone = game.next_milestone
-  const milestoneProgress = milestone ? Math.min(100, Math.round(game.cash / Math.max(1, milestone.cost) * 100)) : 100
+  const milestoneCashProgress = milestone ? Math.min(100, Math.round(game.cash / Math.max(1, milestone.cost) * 100)) : 100
+  const milestoneRepProgress = milestone ? Math.min(100, Math.round(game.reputation / Math.max(1, milestone.reputation) * 100)) : 100
 
   const openCase = () => active ? navigate(`/cases/${active.id}`) : start.mutate()
 
@@ -282,9 +285,11 @@ export function OfficePage() {
           {milestone ? (
             <>
               <h2>{milestone.name}</h2>
-              <div className="pixel-meter"><i style={{ width: `${milestoneProgress}%` }} /></div>
-              <p><b>{formatMoney(game.cash, true)}</b> / {formatMoney(milestone.cost, true)}</p>
-              <small>{milestone.reputation > game.reputation ? `LOCKED · NEED ${milestone.reputation} REP` : `${formatMoney(Math.max(0, milestone.cost - game.cash), true)} TO GO`}</small>
+              <div className="mission-gates">
+                <label><span>CAPITAL <b>{formatMoney(game.cash, true)} / {formatMoney(milestone.cost, true)}</b></span><div className="pixel-meter" role="progressbar" aria-label="Capital requirement" aria-valuemin={0} aria-valuemax={milestone.cost} aria-valuenow={Math.min(game.cash, milestone.cost)}><i style={{ width: `${milestoneCashProgress}%` }} /></div></label>
+                <label><span>REPUTATION <b>{game.reputation.toFixed(1)} / {milestone.reputation}</b></span><div className="pixel-meter reputation" role="progressbar" aria-label="Reputation requirement" aria-valuemin={0} aria-valuemax={milestone.reputation} aria-valuenow={Math.min(game.reputation, milestone.reputation)}><i style={{ width: `${milestoneRepProgress}%` }} /></div></label>
+              </div>
+              <small>{milestone.reputation > game.reputation ? `${(milestone.reputation - game.reputation).toFixed(1)} REP TO GO` : `${formatMoney(Math.max(0, milestone.cost - game.cash), true)} CAPITAL TO GO`}</small>
             </>
           ) : <><h2>Empire complete</h2><p>Every skyline starts here.</p></>}
           <button onClick={() => navigate('/firm')}>OPEN BUILD MENU <ArrowRight /></button>
@@ -324,6 +329,7 @@ export function OfficePage() {
 export function CasesLobbyPage() {
   const navigate = useNavigate()
   const gameQuery = useGame()
+  const contentStatus = useQuery({ queryKey: ['health'], queryFn: api.health })
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
   const start = useMutation({ mutationFn: api.startPractice, onSuccess: ({ session }) => navigate(`/cases/${session.id}`) })
   if (gameQuery.isLoading || current.isLoading) return <LoadingScreen label="Checking the docket…" />
@@ -337,6 +343,7 @@ export function CasesLobbyPage() {
           <span className="eyebrow gold">DO CASES</span>
           <h1>One question.<br />One explanation.<br /><em>One step richer.</em></h1>
           <p>The verified key decides the answer. Your reasoning, time, client, and firm decide the fee.</p>
+          {contentStatus.data && <div className="content-source-status"><CheckCircle2 /><span><strong>{contentStatus.data.questions.total.toLocaleString()} VERIFIED QUESTIONS</strong><small>{contentStatus.data.questions.lr.toLocaleString()} LR · {contentStatus.data.questions.rc.toLocaleString()} RC · INDEPENDENT ANSWER KEYS</small></span></div>}
           <button className="primary-button jumbo" onClick={() => active ? navigate(`/cases/${active.id}`) : start.mutate()} disabled={start.isPending}>
             <BriefcaseBusiness /> {active ? 'Resume active case' : start.isPending ? 'Opening a file…' : 'Take the next case'} <ArrowRight />
           </button>
@@ -352,10 +359,11 @@ export function CasesLobbyPage() {
           <div className="brief-terms"><span><Coins /> Effective base fee<strong>{formatMoney(workingClient.base_fee)}</strong></span><span><BriefcaseBusiness /> Contract<strong>{game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} cases`}</strong></span><span><Flame /> Validated streak<strong>{game.current_streak}</strong></span></div>
         </div>
       </section>
+      <CaseJourneyRail current="intake" />
       <section className="how-scoring-works">
         <span className="eyebrow">HOW THIS FEE IS WON</span>
         <div>
-          <article><span>01</span><Scale /><h3>Choose precisely</h3><p>The repository’s verified answer key—not the AI—determines correctness.</p></article>
+          <article><span>01</span><Scale /><h3>Choose precisely</h3><p>The source bank’s answer key—not the tutoring AI—determines correctness.</p></article>
           <article><span>02</span><BookOpen /><h3>Explain the logic</h3><p>Question-specific Good or Excellent reasoning unlocks speed points and full Reputation credit.</p></article>
           <article><span>03</span><Clock3 /><h3>Build clean speed</h3><p>Work inside the visible target, but never rush: suspiciously fast work is capped.</p></article>
           <article><span>04</span><Building2 /><h3>Grow the firm</h3><p>Every earned fee moves the next office, hire, client, or acquisition closer.</p></article>
@@ -396,11 +404,46 @@ export function CaseSessionPage() {
       </div>
     )
   }
-  if (session.status === 'completed' && !session.pending_result) return <Navigate to="/cases" replace />
+  if (session.status === 'completed' && !session.pending_result && sessionQuery.data!.summary) return <DocketResolution summary={sessionQuery.data!.summary} />
+  if (session.status === 'completed' && !session.pending_result) return <LoadingScreen label="Preparing the docket resolution…" />
   return (
     <div className="session-page">
       {!session.pending_result && <div className="session-controls"><PauseButton sessionId={session.id} /></div>}
       <QuestionFlow session={session} />
+    </div>
+  )
+}
+
+
+function DocketResolution({ summary }: { summary: PracticeSummary }) {
+  const navigate = useNavigate()
+  const start = useMutation({
+    mutationFn: api.startPractice,
+    onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
+  })
+  return (
+    <div className="docket-resolution page-wrap">
+      <CaseJourneyRail current="resolution" />
+      <section className="resolution-hero">
+        <div><span className="pixel-kicker">DOCKET RESOLVED</span><h1>Evidence before rewards.</h1><p>You completed the full matter. Review the learning record, then decide where the firm goes next.</p></div>
+        <div className="resolution-seal"><span>ACCURACY</span><strong>{summary.accuracy}%</strong><small>{summary.correct} / {summary.questions_completed} correct</small></div>
+      </section>
+      <section className="resolution-metrics" aria-label="Docket performance">
+        <article><CheckCircle2 /><span>QUESTIONS CLOSED</span><strong>{summary.questions_completed}</strong><small>Complete case records</small></article>
+        <article><BookOpen /><span>REASONING QUALITY</span><strong>{summary.explanation_accuracy == null ? '—' : `${summary.explanation_accuracy}%`}</strong><small>Validated explanation evidence</small></article>
+        <article><Clock3 /><span>FOCUSED TIME</span><strong>{summary.elapsed_minutes}</strong><small>Minutes across the docket</small></article>
+      </section>
+      <section className="resolution-skills">
+        <div><span className="pixel-kicker">PRACTICE GROUP RECORD</span><h2>What this docket demonstrated</h2></div>
+        <div>{summary.skills.length ? summary.skills.map((skill) => <article key={skill.name}><span>{skill.name}</span><strong>{skill.accuracy}%</strong><small>{skill.attempts} {skill.attempts === 1 ? 'matter' : 'matters'}</small><i><b style={{ width: `${skill.accuracy}%` }} /></i></article>) : <p>Skill evidence will appear after more varied matters.</p>}</div>
+      </section>
+      <section className="resolution-actions">
+        <button className="primary-button" disabled={start.isPending} onClick={() => start.mutate()}><BriefcaseBusiness />{start.isPending ? 'Opening docket…' : 'Open another docket'}</button>
+        <button className="secondary-button" onClick={() => navigate('/world/appeals-chamber')}><Scale />Review and repair</button>
+        <button className="secondary-button" onClick={() => navigate('/world/firm-shop')}><Wrench />Invest the earned fee</button>
+        <button className="secondary-button" onClick={() => navigate('/office')}><Building2 />Return to the office</button>
+        {start.error && <ErrorNotice error={start.error} />}
+      </section>
     </div>
   )
 }
@@ -441,7 +484,8 @@ function ClientRequirementLine({ client, game }: { client: GameClient; game: Gam
 
 
 export function FirmPage() {
-  const params = new URLSearchParams(window.location.search)
+  const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
   const initial = (params.get('tab') as FirmTab) || 'upgrades'
   const [tab, setTab] = useState<FirmTab>(firmTabs.some((item) => item.key === initial) ? initial : 'upgrades')
   const queryClient = useQueryClient()
@@ -477,6 +521,25 @@ export function FirmPage() {
   const assets = game.catalog.assets.filter((item) => item.type === typeMap[tab])
   const nextTier = game.catalog.tiers.find((tier) => tier.next)
   const workingClient = effectiveClient(game)
+  const ownedAssetCount = game.catalog.assets.filter((item) => item.owned).length
+  const mappedScenes = learnerScenes.filter((scene) => scene.id !== 'S25')
+  const unlockedSceneCount = mappedScenes.filter((scene) => scene.minTier <= game.office_tier).length
+  const caseAccuracy = game.total_cases ? Math.round((game.total_correct / game.total_cases) * 100) : 0
+  const currentTierFloor = game.catalog.tiers.find((tier) => tier.tier === game.office_tier)?.reputation ?? 0
+  const nextTierProgress = nextTier ? Math.min(100, Math.max(0, Math.round(((game.reputation - currentTierFloor) / Math.max(1, nextTier.reputation - currentTierFloor)) * 100))) : 100
+  const managementPortals = [
+    { label: 'Design studio', detail: 'Preview upgrades in-world', to: '/world/firm-shop', icon: Building2, tier: 0 },
+    { label: 'Operations', detail: 'Inspect workload and staff', to: '/world/operations-office', icon: BriefcaseBusiness, tier: 2 },
+    { label: 'City directory', detail: 'Plan the full legal empire', to: '/map', icon: Globe2, tier: 0 },
+  ]
+  const selectTab = (next: FirmTab) => {
+    setTab(next)
+    setParams(next === 'upgrades' ? {} : { tab: next })
+  }
+  useEffect(() => {
+    const requested = (params.get('tab') as FirmTab) || 'upgrades'
+    if (firmTabs.some((item) => item.key === requested) && requested !== tab) setTab(requested)
+  }, [params, tab])
   const openSession = currentCaseQuery.data?.session
   const openCaseItem = openSession?.pending_item || openSession?.current_item
   const openCaseTerms = openCaseItem?.case_terms
@@ -490,7 +553,7 @@ export function FirmPage() {
     if (nextIndex === null) return
     event.preventDefault()
     const next = firmTabs[nextIndex].key
-    setTab(next)
+    selectTab(next)
     window.requestAnimationFrame(() => document.getElementById(`firm-tab-${next}`)?.focus())
   }
 
@@ -512,15 +575,42 @@ export function FirmPage() {
         </div>
       </section>
       <div className="firm-tabs" role="tablist" aria-label="Firm management sections">
-        {firmTabs.map(({ key, label, icon: Icon }) => <button key={key} id={`firm-tab-${key}`} type="button" role="tab" aria-selected={tab === key} aria-controls={`firm-panel-${key}`} tabIndex={tab === key ? 0 : -1} className={tab === key ? 'active' : ''} onKeyDown={(event) => moveTab(event, key)} onClick={() => setTab(key)}><Icon size={17} />{label}</button>)}
+        {firmTabs.map(({ key, label, icon: Icon }) => <button key={key} id={`firm-tab-${key}`} type="button" role="tab" aria-selected={tab === key} aria-controls={`firm-panel-${key}`} tabIndex={tab === key ? 0 : -1} className={tab === key ? 'active' : ''} onKeyDown={(event) => moveTab(event, key)} onClick={() => selectTab(key)}><Icon size={17} />{label}</button>)}
       </div>
+
+      <section className="firm-command-center" aria-label="Firm command center">
+        <PixelWebGLAtmosphere accent="#efc55d" className="firm-command-webgl" variant="office" intensity={1.3} />
+        <div className="firm-rank-console">
+          <span className="pixel-kicker">CURRENT COMMAND</span>
+          <div><b>TIER {game.office_tier}</b><h2>{game.office.name}</h2></div>
+          <p>{nextTier ? `${nextTier.name} is the next office transformation.` : 'The firm has reached its final headquarters tier.'}</p>
+          <div className="firm-rank-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={nextTierProgress} aria-label={`${nextTierProgress}% of reputation requirement earned`}>
+            <i><b style={{ width: `${nextTierProgress}%` }} /></i>
+            <span>{nextTier ? `${game.reputation.toFixed(1)} / ${nextTier.reputation} REP` : 'MAXIMUM RANK'}</span>
+          </div>
+        </div>
+        <div className="firm-briefing-grid">
+          <article><span>CASE RECORD</span><strong>{caseAccuracy}%</strong><small>{game.total_correct} of {game.total_cases} correct</small></article>
+          <article><span>SCENE NETWORK</span><strong>{unlockedSceneCount}/{mappedScenes.length}</strong><small>destinations accessible</small></article>
+          <article><span>ASSET LOADOUT</span><strong>{ownedAssetCount}/{game.catalog.assets.length}</strong><small>firm systems acquired</small></article>
+          <article><span>PASSIVE RATE</span><strong>{formatMoney(game.passive_income.hourly_rate)}</strong><small>generated per hour</small></article>
+        </div>
+        <nav className="firm-scene-portals" aria-label="Firm scene shortcuts">
+          <span>QUICK TRAVEL</span>
+          {managementPortals.map(({ label, detail, to, icon: Icon, tier }) => (
+            <button key={to} onClick={() => navigate(to)} className={game.office_tier < tier ? 'locked' : ''}>
+              <Icon /><span><strong>{label}</strong><small>{game.office_tier < tier ? `Preview room · unlocks at tier ${tier}` : detail}</small></span><ArrowRight />
+            </button>
+          ))}
+        </nav>
+      </section>
 
       {firmTabs.filter(({ key }) => key !== tab).map(({ key }) => <div key={key} id={`firm-panel-${key}`} role="tabpanel" aria-labelledby={`firm-tab-${key}`} hidden />)}
       <div id={`firm-panel-${tab}`} role="tabpanel" aria-labelledby={`firm-tab-${tab}`} tabIndex={0}>
         {tab === 'upgrades' && nextTier && (
           <section className="tier-upgrade-banner">
           <div className="tier-preview"><Building2 /><span>TIER {nextTier.tier}</span></div>
-          <div><span className="eyebrow">OFFICE TRANSFORMATION</span><h2>{nextTier.name}</h2><p>{nextTier.short}</p><small>Requires {nextTier.reputation} Reputation</small></div>
+          <div><span className="eyebrow">OFFICE TRANSFORMATION</span><h2>{nextTier.name}</h2><p>{nextTier.short}</p><div className="tier-gates"><span className={game.reputation >= nextTier.reputation ? 'met' : ''}>{game.reputation.toFixed(1)} / {nextTier.reputation} REP</span><span className={game.cash >= nextTier.cost ? 'met' : ''}>{formatMoney(game.cash)} / {formatMoney(nextTier.cost)}</span></div></div>
           <div className="tier-buy"><strong>{formatMoney(nextTier.cost)}</strong><button className="primary-button" disabled={!nextTier.available || game.cash < nextTier.cost || advance.isPending} onClick={() => advance.mutate(nextTier.tier)}>{advance.isPending ? 'Renovating…' : 'Advance firm'}</button></div>
           </section>
         )}
@@ -564,12 +654,14 @@ export function FirmPage() {
         </div>
       ) : (
         <div className="management-grid">
-          {assets.map((item) => (
+          {assets.map((item, index) => (
             <article key={item.key} className={`management-card ${item.owned ? 'owned' : ''} ${justBought === item.key ? 'just-bought' : ''}`}>
+              <span className="management-card-number">{String(index + 1).padStart(2, '0')}</span>
               <div className="card-icon"><AssetIcon type={item.type} /></div>
               <div className="card-status">{item.owned ? <><Check size={13} /> OWNED</> : item.available ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
               <h3>{item.name}</h3><p>{item.description}</p><div className="benefit-pill"><Sparkles size={14} />{item.benefit}</div>
               <RequirementLine asset={item} game={game} />
+              <div className={`asset-readiness ${item.owned ? 'complete' : item.available ? 'ready' : ''}`}><span>{item.owned ? 'INSTALLED' : item.available ? 'READY TO ACQUIRE' : 'DEPENDENCIES PENDING'}</span><i><b /></i></div>
               <div className="purchase-row"><strong>{formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
             </article>
           ))}
@@ -603,15 +695,24 @@ function TierArtIcon({ tier }: { tier: number }) {
 export function ProgressionMapPage() {
   const navigate = useNavigate()
   const gameQuery = useGame()
-  if (gameQuery.isLoading) return <LoadingScreen />
+  const sessionQuery = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
+  if (gameQuery.isLoading || sessionQuery.isLoading) return <LoadingScreen />
+  if (gameQuery.error || sessionQuery.error) return <div className="page-wrap"><ErrorNotice error={gameQuery.error || sessionQuery.error} /></div>
   const game = gameQuery.data!.game!
+  const mappedScenes = learnerScenes.filter((scene) => scene.id !== 'S25')
+  const openScenes = mappedScenes.filter((scene) => scene.minTier <= game.office_tier).length
+  const nextLockedScene = mappedScenes.find((scene) => scene.minTier > game.office_tier)
   return (
     <div className="map-page empire-game-page">
       <section className="empire-command-bar">
-        <div><span className="pixel-kicker">WORLD MAP · {game.catalog.tiers.length} DISTRICTS</span><h1>Your legal empire</h1><p>Walk the city. Inspect offices. Find the firms that still refuse your name.</p></div>
-        <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
+        <div><span className="pixel-kicker">CITY DIRECTORY · 6 CAMPUSES · {mappedScenes.length} INTERIOR ROOMS</span><h1>Your legal empire</h1><p>Choose a district campus, then enter its ordered rooms. Firm growth follows one ascension route; rival firms share Grand Avenue.</p></div>
+        <div className="empire-command-summary">
+          <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
+          <div><small>NETWORK ACCESS</small><strong>{openScenes}/{mappedScenes.length}</strong><span>Destinations currently open</span></div>
+          <div><small>NEXT FRONTIER</small><strong>{nextLockedScene ? `TIER ${nextLockedScene.minTier}` : 'COMPLETE'}</strong><span>{nextLockedScene?.district ?? 'Entire city accessible'}</span></div>
+        </div>
       </section>
-      <EmpireWorldMap game={game} onManage={(tab) => navigate(`/firm?tab=${tab}`)} />
+      <EmpireWorldMap game={game} session={sessionQuery.data?.session} onManage={(tab) => navigate(`/firm?tab=${tab}`)} onScene={(slug) => navigate(`/world/${slug}`)} />
     </div>
   )
 }

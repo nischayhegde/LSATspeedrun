@@ -25,7 +25,7 @@ from app.models import (
     User,
     utcnow,
 )
-from app.seed import SOURCE_PREFIX, seed_questions
+from app.seed import SOURCE_PREFIX, _iter_snapshot_rows, seed_questions
 
 
 def add_question(index: int, section: str) -> None:
@@ -201,6 +201,34 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     assert client.get("/v1/story/progress").status_code == 404
 
 
+def test_completed_docket_returns_resolution_instead_of_silently_starting_another(app):
+    client = app.test_client()
+    headers = login(client, "resolution@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    expected_summary = {
+        "kind": "practice",
+        "accuracy": 67,
+        "correct": 2,
+        "questions_completed": 3,
+        "elapsed_minutes": 4.5,
+        "explanation_accuracy": 80,
+        "skills": [],
+    }
+    with app.app_context():
+        stored = db.session.get(StudySession, session["id"])
+        stored.status = "completed"
+        stored.completed_at = utcnow()
+        stored.summary_json = expected_summary
+        db.session.commit()
+
+    response = client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
+    assert response.status_code == 200
+    assert response.json["session"]["id"] == session["id"]
+    assert response.json["session"]["status"] == "completed"
+    assert response.json["summary"] == expected_summary
+
+
 def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monkeypatch):
     class FakeResponse:
         def raise_for_status(self):
@@ -357,6 +385,44 @@ def test_repository_snapshot_is_used_without_hugging_face(tmp_path, monkeypatch)
     with application.app_context():
         assert seed_questions() == 6
         assert Question.query.count() == 6
+
+
+def test_repository_snapshot_manifest_rejects_tampered_hugging_face_rows(tmp_path):
+    bank_dir = tmp_path / "question_bank"
+    split_dir = bank_dir / "lsat-lr"
+    split_dir.mkdir(parents=True)
+    (split_dir / "train.jsonl").write_text('{"context":"tampered"}\n', encoding="utf-8")
+    (bank_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "source": "Hugging Face Dataset Server",
+                "total_questions": 1,
+                "datasets": {
+                    "tasksource/lsat-lr": {
+                        "revision": "test-revision",
+                        "splits": {
+                            "train": {
+                                "path": "lsat-lr/train.jsonl",
+                                "questions": 1,
+                                "sha256": "0" * 64,
+                            }
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    application = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "AUTO_SEED": False,
+            "QUESTION_BANK_DIR": str(bank_dir),
+        }
+    )
+    with application.app_context(), pytest.raises(RuntimeError, match="integrity check failed"):
+        list(_iter_snapshot_rows("tasksource/lsat-lr", "train"))
 
 
 def test_coaching_can_run_as_a_durable_async_job(app, monkeypatch):

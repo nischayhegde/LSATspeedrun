@@ -30,7 +30,7 @@ from .jobs import (
     serialize_job,
 )
 from .models import AiJob, Attempt, Question, SessionItem, StudySession, User, utcnow
-from .seed import SOURCE_PREFIX
+from .seed import SOURCE_PREFIX, question_bank_status
 from .services import (
     calculate_session_summary,
     create_study_session,
@@ -90,6 +90,7 @@ def health():
             "status": "ok",
             "questions": {"total": lr_count + rc_count, "lr": lr_count, "rc": rc_count},
             "datasets": ["tasksource/lsat-lr", "tasksource/lsat-rc"],
+            "question_bank": question_bank_status(),
             "coaching": {
                 "ready": provider_ready(),
                 "model": current_app.config["COACHING_MODEL"],
@@ -427,19 +428,14 @@ def acknowledge_answer_review(session_id: str):
     session.pending_attempt_id = None
     db.session.commit()
     if completed_batch:
-        if not _game_profile():
-            return jsonify(
-                {
-                    "session": serialize_session(session, False),
-                    "continued_from": session.id,
-                    "onboarding_required": True,
-                }
-            )
-        next_session = create_study_session(g.current_user)
+        summary = session.summary_json or calculate_session_summary(session)
+        if not session.summary_json:
+            session.summary_json = summary
+            db.session.commit()
         return jsonify(
             {
-                "session": serialize_session(next_session),
-                "continued_from": session.id,
+                "session": serialize_session(session, False),
+                "summary": summary,
             }
         )
     return jsonify({"session": serialize_session(session)})

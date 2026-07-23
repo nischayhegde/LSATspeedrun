@@ -68,6 +68,12 @@ async function waitForJob<T>(jobId: string): Promise<T> {
 }
 
 export const api = {
+  health: () => request<{
+    status: string
+    questions: { total: number; lr: number; rc: number }
+    datasets: string[]
+    question_bank: { source: string; snapshot: boolean; manifest_total?: number; revisions?: Record<string, string> }
+  }>('/health'),
   authConfig: () => request<{ google_client_id?: string | null; dev_auth_enabled: boolean }>('/auth/config'),
   me: () => request<{ user: User }>('/me'),
   googleLogin: (credential: string) =>
@@ -100,7 +106,7 @@ export const api = {
   resumeSession: (id: string) =>
     request<{ session: StudySession }>(`/study-sessions/${id}/resume`, { method: 'POST' }),
   acknowledgeReview: (id: string) =>
-    request<{ session: StudySession }>(`/study-sessions/${id}/debrief/acknowledge`, { method: 'POST' }),
+    request<{ session: StudySession; summary?: PracticeSummary }>(`/study-sessions/${id}/debrief/acknowledge`, { method: 'POST' }),
   saveDraft: (sessionId: string, itemId: string, draft: { selected_label?: string; reasoning: string }) =>
     request<{ saved: boolean }>(`/study-sessions/${sessionId}/items/${itemId}/draft`, {
       method: 'PATCH',
