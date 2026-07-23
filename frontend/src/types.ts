@@ -20,10 +20,14 @@ export type GameAsset = {
   type: 'upgrade' | 'staff' | 'connection' | 'rival'
   name: string
   cost: number
+  list_cost?: number
+  discount_bps?: number
   reputation: number
   tier: number
   benefit: string
   description: string
+  region?: string
+  art?: string | null
   requires?: string[]
   owned: boolean
   available: boolean
@@ -45,6 +49,12 @@ export type GameClient = {
   length: number
   icon: string
   description: string
+  region?: string
+  archetype?: string
+  special?: string
+  matter_type?: 'commercial' | 'pro_bono'
+  reputation_win_bonus?: number
+  reputation_loss_cap?: number
   requires?: string[]
   requirements: GameRequirement
   unlocked: boolean
@@ -59,6 +69,8 @@ export type FirmTier = {
   cost: number
   reputation: number
   short: string
+  region: string
+  feature: string
   owned?: boolean
   next?: boolean
   available?: boolean
@@ -79,11 +91,83 @@ export type AttemptReward = {
   streak_bonus: number
   staff_bonus: number
   contract_bonus: number
+  quest_bonus: number
   payout: number
   reputation_before: number
   reputation_after: number
   reputation_change: number
   created_at: string
+}
+
+export type StoryChoice = {
+  key: string
+  label: string
+  stakes: string
+  result: string
+}
+
+export type StoryChapter = {
+  key: string
+  act: string
+  tier: number
+  scene: string
+  title: string
+  location: string
+  speaker: string
+  dialogue: string[]
+  choices: StoryChoice[]
+}
+
+export type StoryQuest = {
+  key: string
+  tier: number
+  category: 'pro_bono' | 'investigation' | 'shadow' | 'legacy'
+  scene: string
+  title: string
+  patron: string
+  description: string
+  objective: string
+  condition: string
+  target: number
+  reward_label: string
+  start_label?: string
+  active: boolean
+  completed: boolean
+  available: boolean
+  progress: number
+}
+
+export type RivalOperation = {
+  key: string
+  name: string
+  category: 'clean' | 'gray' | 'sabotage'
+  description: string
+  discount_bps: number
+  cost: number
+  heat_surcharge_bps?: number
+  intel?: number
+  influence?: number
+  ethics_max?: number
+  completed: boolean
+  available: boolean
+  missing: string[]
+}
+
+export type RivalTarget = GameAsset & { operations: RivalOperation[] }
+
+export type StoryState = {
+  ethics: number
+  heat: number
+  influence: number
+  intel: number
+  alignment: 'Principled' | 'Pragmatic' | 'Ruthless'
+  pending_chapter?: StoryChapter | null
+  active_quest?: StoryQuest | null
+  quests: StoryQuest[]
+  chapters: Array<{ key: string; act: string; tier: number; title: string; scene: string; seen: boolean; choice?: string | null }>
+  completed_quests: string[]
+  rival_discounts: Record<string, number>
+  rival_targets: RivalTarget[]
 }
 
 export type GameState = {
@@ -120,6 +204,7 @@ export type GameState = {
   }
   achievements: Array<{ key: string; name: string; description: string; unlocked: boolean }>
   next_milestone?: { kind: 'tier' | 'asset'; name: string; cost: number; reputation: number } | null
+  story: StoryState
   catalog: { assets: GameAsset[]; clients: GameClient[]; tiers: FirmTier[] }
 }
 

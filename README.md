@@ -10,6 +10,10 @@ Lawyer Tycoon turns a serious LSAT question bank into a persistent law-firm mana
 
 There is one question loop throughout the game—no alternate question modes, energy gates, or paid answer power. The verified answer key always determines correctness; the LLM only grades reasoning and explains choices. Economy settlement, timing, Reputation, streaks, purchases, passive income, and account ownership are enforced server-side.
 
+The empire progression currently spans 15 headquarters tiers across eight illustrated city regions, with 93 purchases, 69 client archetypes, 30 staff roles, and 14 rival acquisitions. Minimum retainers and a career Reputation floor keep difficult questions productive, while strong reasoning accelerates payouts, streaks, loyalty, and contract bonuses.
+
+The Mercer Files campaign connects the entire climb through eight cinematic chapters, 19 optional investigations, persistent ethical decisions, pro-bono matters, hidden shadow files, and five rival operations. Ethics, Heat, Intel, and Influence open different paths without replacing Reputation or the core LSAT loop. Rival operations can reduce a target's real acquisition price by as much as 45%, while pro-bono clients exchange lower fees for large Reputation gains and protected losses.
+
 ## Question data
 
 The repository includes a complete question-only snapshot of every split from these Hugging Face datasets:
@@ -122,6 +126,7 @@ The active API surface includes:
 - `POST /v1/auth/google`, `POST /v1/auth/dev`, `POST /v1/auth/logout`
 - `GET /v1/me`
 - `GET /v1/game`, create/edit profile, purchases, firm advancement, client activation, passive collection, and daily rewards
+- `POST /v1/game/story/choice`, `/v1/game/quests/start`, and `/v1/game/rival-operations`
 - `POST /v1/study-sessions`, `GET /v1/study-sessions/current`
 - `GET /v1/study-sessions/:id`, pause/resume, draft, submit, and answer-review acknowledgement endpoints
 - `POST /v1/attempts/:id/coaching`

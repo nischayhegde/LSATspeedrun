@@ -67,6 +67,7 @@ export function Brand({ light = false, caseFile = false }: { light?: boolean; ca
 const navItems = [
   { to: '/office', label: 'Office', icon: Building2 },
   { to: '/cases', label: 'Do Cases', icon: BriefcaseBusiness },
+  { to: '/story', label: 'Story', icon: BookOpen },
   { to: '/firm', label: 'Firm', icon: LayoutGrid },
   { to: '/map', label: 'Empire', icon: Map },
 ]
@@ -194,13 +195,14 @@ function CaseScore({ reward }: { reward: AttemptReward }) {
           <Star /><span>Reputation</span><strong>{repPositive ? '+' : ''}{reward.reputation_change.toFixed(1)}</strong>
         </div>
       </div>
-      {(reward.streak_bonus > 0 || reward.staff_bonus > 0 || reward.contract_bonus > 0) && (
+      {(reward.streak_bonus > 0 || reward.staff_bonus > 0 || reward.contract_bonus > 0 || reward.quest_bonus > 0) && (
         <div className="bonus-ribbon">
           <Sparkles size={16} />
           {[
             reward.streak_bonus > 0 && `Streak +${formatMoney(reward.streak_bonus)}`,
             reward.staff_bonus > 0 && `Staff +${formatMoney(reward.staff_bonus)}`,
             reward.contract_bonus > 0 && `Contract +${formatMoney(reward.contract_bonus)}`,
+            reward.quest_bonus > 0 && `Caseboard +${formatMoney(reward.quest_bonus)}`,
           ].filter(Boolean).join(' · ')}
         </div>
       )}

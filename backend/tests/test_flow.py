@@ -18,6 +18,7 @@ from app.models import (
     PlayerAsset,
     PlayerClientContract,
     PlayerProfile,
+    PlayerStoryState,
     Question,
     QuestionChoice,
     SessionItem,
@@ -857,3 +858,136 @@ def test_locked_economy_action_refreshes_a_stale_profile(app):
         assert profile.cash == 250
         purchase_asset(profile, "repaired_desk")
         assert profile.cash == 650
+
+
+def test_campaign_choice_is_persistent_and_cannot_be_replayed(app):
+    client = app.test_client()
+    headers = login(client, "campaign@example.test")
+    game = create_game(client, headers)
+    assert game["story"]["alignment"] == "Pragmatic"
+    assert game["story"]["pending_chapter"]["key"] == "one_light_on"
+
+    decided = client.post(
+        "/v1/game/story/choice",
+        json={"chapter_key": "one_light_on", "choice_key": "open_door"},
+        headers=headers,
+    )
+    assert decided.status_code == 200
+    story = decided.json["game"]["story"]
+    assert story["ethics"] == 78
+    assert story["influence"] == 2
+    assert story["pending_chapter"] is None
+    assert story["chapters"][0]["seen"] is True
+    assert story["chapters"][0]["choice"] == "open_door"
+
+    replay = client.post(
+        "/v1/game/story/choice",
+        json={"chapter_key": "one_light_on", "choice_key": "build_fast"},
+        headers=headers,
+    )
+    assert replay.status_code == 409
+    assert replay.json["error"]["code"] == "chapter_not_pending"
+    with app.app_context():
+        state = PlayerStoryState.query.one()
+        assert state.seen_chapters_json == ["one_light_on"]
+
+
+def test_ethics_and_intel_reveal_and_fund_a_hidden_quest(app):
+    client = app.test_client()
+    headers = login(client, "shadow@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 4
+        profile.story_state.ethics = 60
+        profile.story_state.intel = 3
+        db.session.commit()
+
+    game = client.get("/v1/game").json["game"]
+    hidden = next(quest for quest in game["story"]["quests"] if quest["key"] == "market_whisper")
+    assert hidden["available"] is True
+    opened = client.post("/v1/game/quests/start", json={"quest_key": "market_whisper"}, headers=headers)
+    assert opened.status_code == 200
+    assert opened.json["result"]["advance"] == 100_000
+    assert opened.json["game"]["story"]["active_quest"]["key"] == "market_whisper"
+    assert opened.json["game"]["story"]["heat"] == 10
+    assert opened.json["game"]["cash"] == created["cash"] + 100_000
+
+
+def test_rival_operation_reduces_the_real_purchase_price(app):
+    client = app.test_client()
+    headers = login(client, "rival-ops@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = 1_000_000
+        profile.reputation = 80
+        profile.office_tier = 2
+        profile.story_state.influence = 5
+        db.session.add(PlayerAsset(profile_id=profile.id, asset_key="local_bar", asset_type="connection", purchase_price=1))
+        db.session.commit()
+
+    operated = client.post(
+        "/v1/game/rival-operations",
+        json={"rival_key": "neighborhood_practice", "operation_key": "public_case_challenge"},
+        headers=headers,
+    )
+    assert operated.status_code == 200
+    assert operated.json["result"]["cost"] == 1_500
+    target = next(item for item in operated.json["game"]["story"]["rival_targets"] if item["key"] == "neighborhood_practice")
+    assert target["list_cost"] == 75_000
+    assert target["cost"] == 71_250
+    assert target["discount_bps"] == 500
+
+    bought = client.post("/v1/game/purchases", json={"asset_key": "neighborhood_practice"}, headers=headers)
+    assert bought.status_code == 200
+    assert bought.json["game"]["cash"] == 1_000_000 - 1_500 - 71_250
+    with app.app_context():
+        acquired = PlayerAsset.query.filter_by(asset_key="neighborhood_practice").one()
+        assert acquired.purchase_price == 71_250
+
+
+def test_pro_bono_win_and_caseboard_completion_change_the_settlement(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "pro-bono@example.test")
+    created = create_game(client, headers)
+    selected = client.post("/v1/game/client", json={"client_key": "eviction_defense_clinic"}, headers=headers)
+    assert selected.status_code == 200
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.story_state.active_quest_key = "mercer_overflow"
+        profile.story_state.quest_progress = 2
+        db.session.commit()
+
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    submitted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "reasoning": "Choice C follows from the decisive premise while the other choices require facts not supplied.",
+        },
+        headers={**headers, "Idempotency-Key": "pro-bono-completion"},
+    ).json["result"]
+    coaching = {
+        "explanation_grade": 88,
+        "reasoning_verdict": "strong",
+        "reasoning_summary": "The decisive premise and scope were identified.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        attempt = db.session.get(Attempt, submitted["attempt_id"])
+        run_attempt_coaching(attempt)
+        settlement = attempt.settlement
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert settlement.quest_bonus == 650
+        assert settlement.payout >= settlement.quest_bonus
+        assert settlement.reputation_after >= settlement.reputation_before + 2
+        assert profile.story_state.active_quest_key is None
+        assert "mercer_overflow" in profile.story_state.quest_history_json
+        cash_after = profile.cash
+        run_attempt_coaching(attempt)
+        assert PlayerProfile.query.filter_by(id=created["id"]).one().cash == cash_after

@@ -90,28 +90,27 @@ Score-based payout
 Every question has a visible base fee determined by the active client.
 Case payout = Base client fee × score multiplier × firm multiplier + streak bonus
 Question score	Score multiplier
-1–3	0.02×
-4–7	0.05×
-8–10	0.20×
-11–13	0.50×
-14–16	0.90×
-17–18	1.15×
-19	1.30×
-20	1.50×
-A weak or incorrect performance still records progress, but it produces negligible money. Assuming five answer choices, repeatedly guessing immediately with an Invalid explanation has an expected payout of only about 2.6% of the client’s base fee per question. Thoughtful, validated performance is therefore dramatically more profitable than spam.
+1–3	0.60×
+4–7	0.70×
+8–10	0.85×
+11–13	1.00×
+14–16	1.20×
+17–18	1.25×
+19	1.45×
+20	1.70×
+A weak or incorrect performance still earns a meaningful retainer because the LSAT material is difficult and every submitted matter represents work. Strong, validated performance remains substantially more profitable through the score curve, streaks, loyalty, and contract bonuses. The economy is tuned so the best available prior-tier client can fund the next headquarters in no more than five minimum-score cases.
 Anti-gaming rules
 Scoring and payouts are calculated server-side.
 Repeated, generic, copied, or semantically duplicated explanations receive an Invalid grade.
 A correct choice with an Invalid explanation is treated as an unverified guess and cannot earn a meaningful payout, streak credit, or Reputation gain.
 Implausibly fast submissions are capped at 8 even when the answer is correct.
-Repeated low-effort submissions may remain available for practice and feedback while receiving no economy rewards.
-These rules make random-answer farming irrational, although no scoring system can completely prevent a player from using outside answer tools.
+Repeated low-effort submissions remain available for practice and receive the floor retainer, but do not advance validated streaks, daily goals, loyalty, or performance-based Reputation.
 Correct-answer streak
 Each consecutive validated answer—correct choice plus a Good or Excellent explanation—adds a 2% payout bonus, capped at 20%. A correct answer with Weak or Invalid reasoning does not advance the streak. An incorrect answer resets it. Some power-ups can protect the cash streak once, but they never protect Reputation.
 Money is not deducted for wrong answers during normal practice.
 ---
 4. Reputation
-Reputation is a score from 0 to 100 based on recent validated first-attempt accuracy.
+Reputation is a score from 0 to 100 combining recent validated first-attempt accuracy with a slower career floor.
 It uses the player’s last 30 questions.
 The newest 10 questions count twice so improvement is reflected quickly.
 New players begin at 50 with a provisional score for their first 10 questions.
@@ -122,6 +121,8 @@ Incorrect answers lower Reputation regardless of speed.
 Explanation quality validates whether a correct choice receives full, partial, or zero Reputation credit; it can never create Reputation from an incorrect answer.
 Time never affects Reputation.
 Reputation cannot be purchased or directly increased by upgrades.
+Every completed case advances a career floor, with additional credit for correct and validated work. This guarantees that a persistent learner can reach late tiers even through difficult material, while stronger performance gets there faster.
+Reputation shields from certain staff, clients, and command upgrades limit the size of a single-case drop; they never manufacture validated credit.
 Reputation bands
 Reputation	Status	What it permits
 0–39	Unreliable	Basic clients and upgrades only
@@ -129,21 +130,30 @@ Reputation	Status	What it permits
 60–74	Established	Corporate clients, better staff, first acquisitions
 75–89	Prestigious	Major clients, partners, high-end offices, regional acquisitions
 
-90–100	Elite	Global clients, national rivals, endgame upgrades
+90–93	Elite	Orbital clients, frontier rivals, lunar upgrades
+94–100	Legendary	Planetary clients and final nexus progression
 Cash and Reputation are both required for major progression. A rich player with poor recent accuracy cannot purchase prestigious clients, connections, offices, or rival firms.
-If Reputation falls below an existing client or connection requirement, the item is not deleted. Its benefits become inactive until Reputation recovers. Permanent physical upgrades remain owned.
+Once a client signs a contract, that client remains in the book even if Reputation later dips. This prevents one difficult case from collapsing the player's income tier. Unsigned clients and new purchases still enforce their listed gates.
 ---
 5. Firm progression
 The player begins in tattered clothes, working alone from a wooden shack. Each firm tier visibly changes the office, clothing, staff, client quality, and surrounding city.
 The following prices are starting balance targets and can be tuned:
 Tier	Firm stage	Cash requirement	Reputation requirement	Major unlocks
 0	Wooden Shack	—	—	Walk-in clients, basic upgrades
-1	Shared Office	$3,000	40	Paralegals, local connections, better clothing
-2	Neighborhood Firm	$20,000	55	Associates, business clients, passive retainers
-3	Downtown Firm	$100,000	65	Corporate clients, partners, first rival acquisition
-4	City Power Firm	$500,000	75	Premium clients, luxury office, major local rivals
-5	National Firm	$3,000,000	85	Regional branches, national clients and acquisitions
-6	Global Legal Empire	$20,000,000	92	Global clients, international offices, endgame rivals
+1	Shared Office	$3,000	20	Paralegals, local connections, client portal
+2	Neighborhood Firm	$18,000	32	Associates, investigators, private clients
+3	Downtown Firm	$90,000	42	Corporate clients, trial labs, civic rivals
+4	City Power Firm	$400,000	50	Media clients, jury simulator, power boutiques
+5	Regional Headquarters	$1,800,000	56	Branch command, regional infrastructure
+6	National Firm	$8,000,000	62	National litigation grid and enterprise clients
+7	International Practice	$35,000,000	68	Diplomatic clients and translation cloud
+8	Global Legal Empire	$150,000,000	74	Global crisis command and megacap clients
+9	Sovereign Counsel Tower	$600,000,000	79	Treaty chambers, governments, central banks
+10	Continental Justice Campus	$2,000,000,000	83	Autonomous campus and quantum clients
+11	Oceanic Law Citadel	$6,000,000,000	86	Floating arbitration and oceanic consortiums
+12	Orbital Arbitration Ring	$15,000,000,000	89	Zero-gravity hearings and orbital industry
+13	Lunar Embassy of Law	$35,000,000,000	92	Interworld treaties and lunar settlements
+14	Planetary Justice Nexus	$80,000,000,000	94	Justice constellation and planetary assembly
 Every tier should provide:
 A major visual office transformation
 A new clothing tier
@@ -189,7 +199,7 @@ Rainmaker	Unlocks stronger connections and better client offers
 Office Manager	Increases the amount of offline income that can be stored
 Passive-income rules
 Passive income is mainly produced by associates, retainers, and branch offices.
-It accumulates for a maximum of eight hours while the player is away.
+It starts with an eight-hour storage cap; operations, technology, and frontier upgrades can extend it substantially.
 It never changes Reputation.
 It never completes questions, client contracts, or acquisitions.
 Even with strong upgrades, passive income should contribute no more than roughly 20% of an active player’s expected earnings.
@@ -200,19 +210,21 @@ Staff are purchased once and can be promoted through multiple levels. Promotions
 Clients determine the base fee for each question. The question flow never changes; the active client simply changes how valuable each completed case is.
 Client tier	Example base fee	Typical requirement
 Walk-in client	$100	None
-Local individual	$175	Reputation 40
-Small business	$300	Reputation 50 plus local connection
-Wealthy client	$650	Reputation 60 plus upgraded office
-Regional corporation	$1,500	Reputation 70 plus partner
-National corporation	$5,000	Reputation 82 plus national office
-Global conglomerate	$15,000	Reputation 92 plus international connection
+Local individual	$1,100	Reputation 15
+Small business	$4,500	Shared Office plus local connection
+Injury survivor class	$155,000	Downtown Firm plus civic referral council
+Crypto founder under investigation	$640,000	City Power Firm
+Protected cartel accountant	$16,000,000	National Firm plus cybersecurity counsel
+Rogue AI lab board	$220,000,000	Global Legal Empire plus executive exchange
+Accused orbital salvager	$15,000,000,000	Orbital Arbitration Ring
+Planetary assembly	$72,000,000,000	Planetary Justice Nexus and command center
 Client contracts
 The player can hold a limited number of active client contracts.
 Each contract applies its base fee to a fixed number of questions.
 Correct answers build client loyalty.
 Completing a contract awards a renewal bonus and may unlock a better client.
 Incorrect answers still use one question from the contract.
-High-tier clients become inactive if Reputation falls below their requirement.
+Signed clients stay active after a Reputation dip. Client-specific twists include short contracts, payout floors, complexity premiums, Reputation shields, and larger resolution bonuses.
 Client slots are increased through office upgrades, partners, and rival acquisitions.
 ---
 9. Connections
@@ -248,7 +260,11 @@ Rival	Price	Reputation	Main reward
 Neighborhood Practice	$75,000	60	Associates and 5% active payout bonus
 Downtown Boutique	$750,000	75	Premium clients and passive retainers
 Regional Firm	$5,000,000	85	Regional branch and 10% client-fee bonus
-National Competitor	$30,000,000	92	Global clients and endgame office expansion
+National Competitor	$30,000,000	64	National clients and office expansion
+Sovereign Rival	$950,000,000	79	Treaty work and sovereign retainers
+Oceanic Rival	$9,000,000,000	86	Floating branch and major passive retainers
+Orbital Rival	$22,000,000,000	89	Orbital branch and frontier clients
+Planetary Rival	$140,000,000,000	95	Final network and $6B/hour passive income
 Acquired firms appear as part of the player’s empire and continue generating passive revenue. There is no separate acquisition question mode or combat system.
 ---
 11. Temporary power-ups
@@ -279,7 +295,7 @@ Rewards include money, cosmetics, office decorations, and power-ups.
 Firm valuation
 Firm Valuation is a visible summary of cash, offices, upgrades, staff, clients, and acquired rivals. It is primarily a prestige number and leaderboard measure, not another spendable currency.
 Endgame
-After reaching the Global Legal Empire tier, the player continues by:
+After reaching the Global Legal Empire tier, the player continues through sovereign, continental, oceanic, orbital, lunar, and planetary progression by:
 Acquiring every major rival
 Opening international branches
 Collecting elite clients and connections
@@ -315,3 +331,21 @@ The player can always enter Do Cases regardless of money, Reputation, staff, or 
 Wrong answers provide useful feedback and small progress without becoming economically optimal.
 No energy system, forced waiting, loot boxes, or multiple currencies are needed.
 The result should feel like a deep tycoon game surrounding an extremely simple practice loop: answer a question, explain the reasoning, receive feedback, earn money, and grow the firm.
+
+---
+15. The Mercer Files campaign
+
+The progression tells one continuous story across eight headquarters-gated chapters. Retired public defender Ada Mercer is the player's moral anchor, Eleanor Harrow begins as a respected rival and becomes an uneasy ally, the anonymous source Moth reveals the acquisition conspiracy, and Sebastian Sterling connects the forged deed in the Old Quarter to the planetary endgame.
+
+Campaign decisions persist and affect four private resources:
+
+- Ethics determines principled, pragmatic, and ruthless paths.
+- Heat represents public and regulatory scrutiny.
+- Intel funds investigations and covert rival operations.
+- Influence funds clean competitive and civic action.
+
+The caseboard contains 19 optional story files split among public-interest work, investigations, hidden shadow work, and legacy matters. It advances through the normal LSAT case loop. Pro-bono clients pay less but grant substantial Reputation on a win and cap Reputation losses. Hidden files such as confidential merger trades can pay extraordinary bonuses while costing Ethics and Reputation and increasing Heat.
+
+Each unacquired rival supports five one-time operations: public challenges, verified complaints, talent raids, press whispers, and docket sabotage. They have distinct cash, Intel, Influence, Ethics, Reputation, and Heat consequences. Their discounts stack to a 45% cap and change the real server-enforced acquisition price.
+
+Campaign chapters appear as illustrated, non-dismissible decision cutscenes. The dedicated Story screen presents the chapter timeline, evidence board, active dossier, optional files, private resources, rival targets, operation consequences, and list-versus-negotiated acquisition values.

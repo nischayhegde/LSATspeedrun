@@ -92,6 +92,21 @@ export const api = {
   collectPassive: () => request<{ collected: number; game: GameState }>('/game/passive-income/collect', { method: 'POST' }),
   claimDaily: (milestone: number) =>
     request<{ claimed: number; game: GameState }>(`/game/daily-rewards/${milestone}/claim`, { method: 'POST' }),
+  chooseStory: (chapterKey: string, choiceKey: string) =>
+    request<{ result: { chapter: string; choice: string; result: string }; game: GameState }>('/game/story/choice', {
+      method: 'POST',
+      body: JSON.stringify({ chapter_key: chapterKey, choice_key: choiceKey }),
+    }),
+  startQuest: (questKey: string) =>
+    request<{ result: { quest: string; advance: number }; game: GameState }>('/game/quests/start', {
+      method: 'POST',
+      body: JSON.stringify({ quest_key: questKey }),
+    }),
+  rivalOperation: (rivalKey: string, operationKey: string) =>
+    request<{ result: { rival_key: string; operation_key: string; cost: number; discount_bps: number }; game: GameState }>('/game/rival-operations', {
+      method: 'POST',
+      body: JSON.stringify({ rival_key: rivalKey, operation_key: operationKey }),
+    }),
   currentSession: () => request<{ session: StudySession | null }>('/study-sessions/current'),
   startPractice: () => request<{ session: StudySession }>('/study-sessions', { method: 'POST' }),
   session: (id: string) => request<{ session: StudySession; summary?: PracticeSummary }>(`/study-sessions/${id}`),

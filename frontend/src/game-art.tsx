@@ -18,8 +18,8 @@ export type CharacterMood = 'happy' | 'unhappy' | 'neutral'
 const skinTones = ['#d59a72', '#b87555', '#e0ad80', '#8f5b45', '#c98963', '#684333', '#f0c19a']
 const hairTones = ['#30251f', '#5a3728', '#1d2933', '#70492d', '#241e29', '#b59665', '#17191d']
 const staffColors = ['#8d3f64', '#315b70', '#5b4675', '#2d4f55', '#745032', '#5e3038', '#426045']
-const heroJackets = ['#68513e', '#46576b', '#2e6158', '#245070', '#61364f', '#1b3149', '#161b29']
-const heroTies = ['#9b5b45', '#b95749', '#c58a42', '#b9ced5', '#dfad4f', '#e0b960', '#f0cc67']
+const heroJackets = ['#68513e', '#46576b', '#2e6158', '#245070', '#61364f', '#1b3149', '#161b29', '#183d48', '#202c52', '#4a285d', '#173f56', '#135063', '#273464', '#3b286b', '#171f4d']
+const heroTies = ['#9b5b45', '#b95749', '#c58a42', '#b9ced5', '#dfad4f', '#e0b960', '#f0cc67', '#6ee0d0', '#78d7ef', '#e3bd67', '#65e2ff', '#89f0df', '#c5b2ff', '#f2c369', '#fff1a2']
 
 function PixelPerson({
   gender = 'female',
@@ -40,7 +40,7 @@ function PixelPerson({
   className?: string
   label?: string
 }) {
-  const visualTier = Math.max(0, Math.min(6, tier))
+  const visualTier = Math.max(0, Math.min(heroJackets.length - 1, tier))
   const jacket = variant === 0
     ? heroJackets[visualTier]
     : staffColors[(variant - 1) % staffColors.length]
@@ -110,6 +110,40 @@ function PixelPerson({
   )
 }
 
+const cutsceneCast: Record<string, { gender: CharacterGender; variant: number; accessory: PersonAccessory }> = {
+  rainy_shack: { gender: 'female', variant: 5, accessory: 'briefcase' },
+  market_showdown: { gender: 'female', variant: 1, accessory: 'folio' },
+  city_hall_night: { gender: 'female', variant: 6, accessory: 'phone' },
+  sterling_tower: { gender: 'male', variant: 6, accessory: 'portfolio' },
+  midnight_exchange: { gender: 'female', variant: 6, accessory: 'phone' },
+  continental_forum: { gender: 'female', variant: 5, accessory: 'briefcase' },
+  orbital_hearing: { gender: 'female', variant: 2, accessory: 'tablet' },
+  planetary_nexus: { gender: 'female', variant: 1, accessory: 'folio' },
+}
+
+export function CutsceneArtwork({ scene, game }: { scene: string; game: GameState }) {
+  const speaker = cutsceneCast[scene] ?? cutsceneCast.rainy_shack
+  return (
+    <div className={`cutscene-art cutscene-${scene}`} role="img" aria-label={`Illustrated campaign scene: ${scene.replaceAll('_', ' ')}`}>
+      <div className="cinema-sky"><i /><i /><i /><i /><i /><i /></div>
+      <div className="cinema-city">{Array.from({ length: 11 }, (_, index) => <i key={index}><b /><b /><b /></i>)}</div>
+      <div className="cinema-landmark"><i /><b /><span /></div>
+      <div className="cinema-evidence">{Array.from({ length: 7 }, (_, index) => <i key={index} />)}</div>
+      <div className="cinema-orbit"><i /><b /><span /></div>
+      <div className="cinema-floor" />
+      <div className="cinema-cast cinema-speaker">
+        <PixelPerson gender={speaker.gender} tier={Math.min(14, game.office_tier + 1)} variant={speaker.variant} accessory={speaker.accessory} label="Campaign character" />
+      </div>
+      <div className="cinema-cast cinema-player">
+        <PixelPerson gender={game.character_gender} tier={game.office_tier} variant={0} accessory="brief" label={game.lawyer_name} />
+      </div>
+      <div className="cinema-rain">{Array.from({ length: 18 }, (_, index) => <i key={index} />)}</div>
+      <div className="cinema-light" />
+      <div className="cinema-grain" />
+    </div>
+  )
+}
+
 const staffPortraits: Record<string, { gender: CharacterGender; tier: number; variant: number; prop: PersonAccessory; role: string; x: number; y: number }> = {
   paralegal: { gender: 'female', tier: 1, variant: 1, prop: 'files', role: 'MAYA · PARALEGAL', x: 25, y: 50 },
   junior_associate: { gender: 'male', tier: 2, variant: 2, prop: 'brief', role: 'THEO · ASSOCIATE', x: 59, y: 43 },
@@ -117,6 +151,26 @@ const staffPortraits: Record<string, { gender: CharacterGender; tier: number; va
   senior_associate: { gender: 'female', tier: 3, variant: 4, prop: 'folio', role: 'AVERY · SENIOR', x: 65, y: 76 },
   partner: { gender: 'male', tier: 4, variant: 5, prop: 'coffee', role: 'JORDAN · PARTNER', x: 75, y: 51 },
   rainmaker: { gender: 'female', tier: 6, variant: 6, prop: 'phone', role: 'MORGAN · RAINMAKER', x: 51, y: 63 },
+}
+
+const staffProps: PersonAccessory[] = ['files', 'brief', 'clipboard', 'folio', 'coffee', 'phone', 'tablet', 'portfolio', 'briefcase']
+
+function keyHash(key: string) {
+  return [...key].reduce((total, character) => total + character.charCodeAt(0), 0)
+}
+
+function staffProfileFor(asset: GameAsset) {
+  if (staffPortraits[asset.key]) return staffPortraits[asset.key]
+  const hash = keyHash(asset.key)
+  return {
+    gender: (hash % 2 ? 'female' : 'male') as CharacterGender,
+    tier: Math.min(6, asset.tier),
+    variant: (hash % 6) + 1,
+    prop: staffProps[hash % staffProps.length],
+    role: asset.name.toUpperCase(),
+    x: 18 + (hash % 7) * 10,
+    y: 46 + (hash % 3) * 14,
+  }
 }
 
 const clientPortraits: Record<string, { gender: CharacterGender; tier: number; variant: number; accessory: PersonAccessory; title: string }> = {
@@ -127,6 +181,21 @@ const clientPortraits: Record<string, { gender: CharacterGender; tier: number; v
   building: { gender: 'female', tier: 4, variant: 4, accessory: 'tablet', title: 'GENERAL COUNSEL' },
   landmark: { gender: 'male', tier: 5, variant: 5, accessory: 'folio', title: 'NATIONAL BOARD' },
   globe: { gender: 'female', tier: 6, variant: 6, accessory: 'portfolio', title: 'GLOBAL CHAIR' },
+  civic: { gender: 'female', tier: 3, variant: 2, accessory: 'files', title: 'CIVIC DIRECTOR' },
+  hospitality: { gender: 'male', tier: 2, variant: 5, accessory: 'clipboard', title: 'HOSPITALITY GROUP' },
+  property: { gender: 'female', tier: 4, variant: 3, accessory: 'tablet', title: 'CITY BUILDER' },
+  health: { gender: 'male', tier: 4, variant: 1, accessory: 'files', title: 'HEALTH EXECUTIVE' },
+  media: { gender: 'female', tier: 5, variant: 4, accessory: 'phone', title: 'STUDIO CHAIR' },
+  tech: { gender: 'male', tier: 6, variant: 2, accessory: 'tablet', title: 'TECH FOUNDER' },
+  sports: { gender: 'female', tier: 5, variant: 5, accessory: 'briefcase', title: 'LEAGUE COMMISSIONER' },
+  energy: { gender: 'male', tier: 6, variant: 3, accessory: 'portfolio', title: 'GRID OPERATOR' },
+  sovereign: { gender: 'female', tier: 6, variant: 6, accessory: 'folio', title: 'SOVEREIGN DIRECTOR' },
+  bank: { gender: 'male', tier: 6, variant: 4, accessory: 'briefcase', title: 'CENTRAL BANKER' },
+  quantum: { gender: 'female', tier: 6, variant: 2, accessory: 'tablet', title: 'QUANTUM CHAIR' },
+  ocean: { gender: 'male', tier: 6, variant: 5, accessory: 'portfolio', title: 'OCEANIC COUNCIL' },
+  orbit: { gender: 'female', tier: 6, variant: 3, accessory: 'tablet', title: 'ORBITAL DIRECTOR' },
+  lunar: { gender: 'male', tier: 6, variant: 1, accessory: 'folio', title: 'LUNAR ENVOY' },
+  nexus: { gender: 'female', tier: 6, variant: 6, accessory: 'portfolio', title: 'ASSEMBLY SPEAKER' },
 }
 
 const rivalProfiles: Record<string, { owner: string; title: string; gender: CharacterGender; tier: number; variant: number; mark: string; architecture: string }> = {
@@ -134,9 +203,20 @@ const rivalProfiles: Record<string, { owner: string; title: string; gender: Char
   downtown_boutique: { owner: 'Lucien Vale', title: 'Trial strategist', gender: 'male', tier: 4, variant: 2, mark: 'V', architecture: 'art-deco' },
   regional_firm: { owner: 'Priya Nayar', title: 'Managing partner', gender: 'female', tier: 5, variant: 4, mark: '★', architecture: 'northstar' },
   national_competitor: { owner: 'Sebastian Sterling', title: 'Global chair', gender: 'male', tier: 6, variant: 6, mark: 'SG', architecture: 'mega-tower' },
+  appellate_chambers: { owner: 'Inez Blackstone', title: 'Head of chambers', gender: 'female', tier: 3, variant: 3, mark: 'BC', architecture: 'gothic' },
+  media_law_collective: { owner: 'Juno Gold', title: 'Creative partner', gender: 'female', tier: 4, variant: 5, mark: 'N+G', architecture: 'neon' },
+  transatlantic_firm: { owner: 'Arthur Meridian', title: 'Atlantic chair', gender: 'male', tier: 6, variant: 2, mark: 'MA', architecture: 'glass-arc' },
+  global_crisis_firm: { owner: 'Cass Redline', title: 'Crisis commander', gender: 'female', tier: 6, variant: 4, mark: 'R!', architecture: 'command' },
+  sovereign_rival: { owner: 'Mina Crown', title: 'Sovereign counsel', gender: 'female', tier: 6, variant: 6, mark: 'CM', architecture: 'citadel' },
+  continental_rival: { owner: 'Atlas Okafor', title: 'Continental chair', gender: 'male', tier: 6, variant: 3, mark: 'AJ', architecture: 'campus' },
+  oceanic_rival: { owner: 'Kai Pelagic', title: 'Oceanic founder', gender: 'male', tier: 6, variant: 5, mark: 'PP', architecture: 'ocean' },
+  orbital_rival: { owner: 'Yara Zenith', title: 'Orbital managing partner', gender: 'female', tier: 6, variant: 2, mark: 'ZO', architecture: 'orbital' },
+  lunar_rival: { owner: 'Remy Selene', title: 'Lunar accord keeper', gender: 'male', tier: 6, variant: 4, mark: 'SA', architecture: 'lunar' },
+  planetary_rival: { owner: 'Apex Council', title: 'Network stewards', gender: 'female', tier: 6, variant: 6, mark: 'AX', architecture: 'nexus' },
 }
 
-function UpgradeArtwork({ assetKey }: { assetKey: string }) {
+function UpgradeArtwork({ asset }: { asset: GameAsset }) {
+  const assetKey = asset.key
   if (assetKey === 'repaired_desk') return (
     <div className="asset-vignette scene-desk">
       <i className="pixel-window-mini" /><i className="desk-picture" />
@@ -175,6 +255,16 @@ function UpgradeArtwork({ assetKey }: { assetKey: string }) {
       <div className="research-desk"><i /></div><span className="signal-pulse"><i /><i /><i /></span>
     </div>
   )
+  if (assetKey !== 'executive_suite') return (
+    <div className={`asset-vignette scene-mega-upgrade upgrade-visual-${asset.art || 'future'}`}>
+      <div className="mega-upgrade-sky"><i /><i /><i /><b /></div>
+      <div className="mega-upgrade-platform"><i /><i /><i /><i /><span /></div>
+      <div className="mega-upgrade-core"><i /><b /><span>{asset.tier >= 12 ? '✦' : asset.tier >= 8 ? '◇' : '§'}</span></div>
+      <div className="mega-upgrade-console"><i /><i /><i /><b /></div>
+      <div className="mega-upgrade-particles">{Array.from({ length: 7 }, (_, index) => <i key={index} />)}</div>
+      <strong>{asset.art?.replace('-', ' ') || 'FUTURE SYSTEM'}</strong>
+    </div>
+  )
   return (
     <div className="asset-vignette scene-executive">
       <div className="executive-skyline"><i /><i /><i /><i /><i /></div><div className="executive-desk"><i /><b /><span /></div>
@@ -184,7 +274,7 @@ function UpgradeArtwork({ assetKey }: { assetKey: string }) {
 }
 
 function StaffArtwork({ asset }: { asset: GameAsset }) {
-  const portrait = staffPortraits[asset.key] ?? staffPortraits.paralegal
+  const portrait = staffProfileFor(asset)
   return (
     <div className={`asset-vignette scene-staff staff-${portrait.prop}`}>
       <div className="staff-office-window"><i /><i /><i /></div><div className="staff-rug" />
@@ -194,23 +284,24 @@ function StaffArtwork({ asset }: { asset: GameAsset }) {
   )
 }
 
-function ConnectionArtwork({ assetKey }: { assetKey: string }) {
-  const nodes = assetKey === 'local_bar' ? 3 : assetKey === 'business_network' ? 4 : assetKey === 'board_network' ? 5 : 6
+function ConnectionArtwork({ asset }: { asset: GameAsset }) {
+  const assetKey = asset.key
+  const nodes = Math.min(9, 3 + Math.floor(asset.tier / 2))
   return (
     <div className={`asset-vignette scene-network network-${nodes}`}>
       <div className="network-map"><i /><i /><i /></div><div className="network-lines"><i /><i /><i /><i /><i /></div>
-      <div className="network-hub"><span>{assetKey === 'international_network' ? '✦' : assetKey === 'board_network' ? '§' : '⚖'}</span><i /></div>
+      <div className="network-hub"><span>{asset.tier >= 12 ? '☾' : asset.tier >= 7 ? '✦' : assetKey === 'board_network' ? '§' : '⚖'}</span><i /></div>
       <div className="network-nodes">{Array.from({ length: nodes }, (_, index) => <i key={index}><b /></i>)}</div>
       <span className="network-packet"><i /></span>
     </div>
   )
 }
 
-function RivalArtwork({ assetKey, owned }: { assetKey: string; owned: boolean }) {
-  const rank = ['neighborhood_practice', 'downtown_boutique', 'regional_firm', 'national_competitor'].indexOf(assetKey) + 1
-  const profile = rivalProfiles[assetKey] ?? rivalProfiles.neighborhood_practice
+function RivalArtwork({ asset, owned }: { asset: GameAsset; owned: boolean }) {
+  const profile = rivalProfiles[asset.key] ?? rivalProfiles.neighborhood_practice
+  const rank = Math.min(4, Math.max(1, Math.ceil((asset.tier + 1) / 4)))
   return (
-    <div className={`asset-vignette scene-rival rival-rank-${rank} rival-${assetKey} rival-${profile.architecture}`}>
+    <div className={`asset-vignette scene-rival rival-rank-${rank} rival-${asset.key} rival-${profile.architecture}`}>
       <div className="rival-card-sky"><i /><i /><i /></div><div className="rival-card-building"><span>{owned ? '✓' : profile.mark}</span><i /><i /><i /><i /><b /></div>
       <div className="rival-flag"><i /><b /></div><span className="rival-smoke-mini"><i /><i /><i /></span>
       <div className="rival-briefcase"><i /></div>
@@ -224,10 +315,10 @@ export function PixelAssetArtwork({ asset }: { asset: GameAsset }) {
   return (
     <div className={`pixel-asset-art asset-${asset.type} asset-${state} art-${asset.key}`} role="img" aria-label={`${asset.name} illustrated upgrade`}>
       <div className="asset-art-sky"><i /><i /><i /></div>
-      {asset.type === 'upgrade' && <UpgradeArtwork assetKey={asset.key} />}
+      {asset.type === 'upgrade' && <UpgradeArtwork asset={asset} />}
       {asset.type === 'staff' && <StaffArtwork asset={asset} />}
-      {asset.type === 'connection' && <ConnectionArtwork assetKey={asset.key} />}
-      {asset.type === 'rival' && <RivalArtwork assetKey={asset.key} owned={asset.owned} />}
+      {asset.type === 'connection' && <ConnectionArtwork asset={asset} />}
+      {asset.type === 'rival' && <RivalArtwork asset={asset} owned={asset.owned} />}
       <div className="asset-art-floor" /><div className="asset-art-shine" /><div className="asset-art-scanlines" />
       {state === 'locked' && <div className="asset-art-lock"><i /><span>?</span></div>}
       <span className="asset-art-label">{asset.type === 'upgrade' ? 'OFFICE UPGRADE' : asset.type === 'staff' ? 'TEAM MEMBER' : asset.type === 'connection' ? 'NEW CONTACTS' : 'ACQUISITION'}</span>
@@ -251,7 +342,7 @@ export function ClientPortrait({
     <div className={`client-portrait pixel-portrait client-${kind} mood-${mood} ${className}`} aria-label={`${name}, ${profile.title.toLowerCase()}, ${mood}`} role="img">
       <div className="portrait-skyline"><i /><i /><i /></div>
       <PixelPerson gender={profile.gender} tier={profile.tier} variant={profile.variant} accessory={profile.accessory} />
-      <b>{kind === 'globe' ? '✦' : name.slice(0, 1)}</b>
+      <b>{['globe', 'orbit', 'lunar', 'nexus', 'quantum'].includes(kind) ? '✦' : name.slice(0, 1)}</b>
       <small>{profile.title}</small>
     </div>
   )
@@ -336,6 +427,12 @@ function OfficeTierDecor({ tier }: { tier: number }) {
       {tier === 4 && <><div className="power-statue"><i>§</i><b /><span /></div><div className="marble-inlay"><i /><i /></div><div className="press-wall"><span>VERDICTS</span><i>★</i><i>★</i><i>★</i></div></>}
       {tier === 5 && <><div className="national-map-wall"><span>NATIONAL OFFICES</span>{Array.from({ length: 7 }, (_, index) => <i key={index} />)}<b /><b /></div><div className="branch-ticker">NYC · LA · CHI · DC · SEA</div></>}
       {tier >= 6 && <><div className="world-clocks"><span>NEW YORK</span><span>LONDON</span><span>TOKYO</span><i /><i /><i /></div><div className="global-hologram"><i /><b /><span>GLOBAL</span></div><div className="empire-crest">LT<i>✦</i></div></>}
+      {tier >= 7 && <div className="sky-command-ribbon"><i /><i /><i /><span>{tier >= 12 ? 'ORBITAL LINK' : 'LIVE GLOBAL DOCKET'}</span></div>}
+      {tier >= 9 && <div className="treaty-orbit"><i /><i /><i /><b /><span>ACCORD NETWORK</span></div>}
+      {tier >= 10 && <div className="autonomous-office-core"><i /><i /><i /><b>AI</b><span>AUDITED CASE CORE</span></div>}
+      {tier >= 12 && <div className="orbital-window-frame"><i /><i /><i /><b /></div>}
+      {tier >= 13 && <div className="lunar-horizon"><i /><b /><span>LUNAR GATE</span></div>}
+      {tier >= 14 && <div className="justice-constellation">{Array.from({ length: 9 }, (_, index) => <i key={index} />)}<b>PLANETARY NEXUS</b></div>}
     </div>
   )
 }
@@ -365,6 +462,9 @@ function OfficeFurniture({ tier, owned }: { tier: number; owned: Set<string> }) 
       {(owned.has('legal_library') || tier >= 2) && <div className="earned-upgrade earned-library"><span>LEGAL ARCHIVE</span><i /><i /><i /><i /><i /></div>}
       {(owned.has('research_floor') || tier >= 4) && <div className="earned-upgrade earned-research"><span>RESEARCH</span><i /><i /><i /></div>}
       {(owned.has('executive_suite') || tier >= 5) && <div className="earned-upgrade earned-executive"><i>★</i><span>PARTNERS</span></div>}
+      {(owned.has('jury_simulator') || tier >= 6) && <div className="earned-upgrade earned-jury"><i /><i /><i /><span>JURY SIM</span></div>}
+      {(owned.has('global_crisis_center') || tier >= 9) && <div className="earned-upgrade earned-crisis"><i>!</i><span>CRISIS GRID</span></div>}
+      {(owned.has('orbital_hearing_ring') || tier >= 12) && <div className="earned-upgrade earned-orbital"><i /><b /><span>ORBITAL COURT</span></div>}
       <div className="map-elevator"><span>EMPIRE</span><i /><b /></div>
       <div className="office-clock"><i /><b /></div>
       <div className="desk-chair chair-main"><i /><b /></div><div className="desk-chair chair-reception"><i /><b /></div>
@@ -378,7 +478,10 @@ function OfficeFurniture({ tier, owned }: { tier: number; owned: Set<string> }) 
 function OfficeBackdrop({ game, gender = 'female', previewTier, children }: OfficeSceneProps & { children?: React.ReactNode }) {
   const tier = previewTier ?? game?.office_tier ?? 0
   const owned = useMemo(() => new Set(game?.owned_assets ?? []), [game?.owned_assets])
-  const staff = Object.entries(staffPortraits).filter(([key]) => owned.has(key)).map(([key, profile]) => ({ key, ...profile }))
+  const staff = (game?.catalog.assets ?? [])
+    .filter((asset) => asset.type === 'staff' && owned.has(asset.key))
+    .slice(-10)
+    .map((asset) => ({ key: asset.key, ...staffProfileFor(asset) }))
   const activeClient = game?.catalog.clients.find((client) => client.key === game.active_client.effective_key)
   const clientProfile = clientPortraits[activeClient?.icon ?? 'briefcase'] ?? clientPortraits.briefcase
   const upgradeClasses = [
@@ -387,6 +490,8 @@ function OfficeBackdrop({ game, gender = 'female', previewTier, children }: Offi
     owned.has('conference_room') && 'has-conference-room',
     owned.has('research_floor') && 'has-research-floor',
     owned.has('executive_suite') && 'has-executive-suite',
+    tier >= 8 && 'has-global-command',
+    tier >= 12 && 'has-orbital-command',
   ].filter(Boolean).join(' ')
 
   return (
@@ -435,6 +540,7 @@ export function ExplorableOffice({
   onCase,
   onFirm,
   onEmpire,
+  onStory,
   onCollect,
 }: {
   game: GameState
@@ -442,6 +548,7 @@ export function ExplorableOffice({
   onCase: () => void
   onFirm: () => void
   onEmpire: () => void
+  onStory: () => void
   onCollect: () => void
 }) {
   const walker = useWalker({ x: 51, y: 79 }, { left: 5, right: 94, top: 31, bottom: 87 })
@@ -449,8 +556,9 @@ export function ExplorableOffice({
     { key: 'case', x: 79, y: 69, label: activeCase ? 'Resume the active case' : 'Meet your waiting client', detail: `${game.active_client.name} · ${game.active_client.base_fee.toLocaleString()} base fee`, action: onCase },
     { key: 'firm', x: 15, y: 51, label: 'Manage the firm', detail: 'Upgrades · staff · clients', action: onFirm },
     { key: 'empire', x: 90, y: 36, label: 'Enter the empire map', detail: 'Explore offices and rivals', action: onEmpire },
+    { key: 'story', x: 33, y: 33, label: 'Open the caseboard', detail: game.story.active_quest ? game.story.active_quest.title : 'Campaign · quests · rival intelligence', action: onStory },
     { key: 'retainers', x: 49, y: 31, label: 'Open the retainer safe', detail: `${game.passive_income.available.toLocaleString()} ready`, action: onCollect },
-  ], [activeCase, game.active_client.base_fee, game.active_client.name, game.passive_income.available, onCase, onCollect, onEmpire, onFirm])
+  ], [activeCase, game.active_client.base_fee, game.active_client.name, game.passive_income.available, game.story.active_quest, onCase, onCollect, onEmpire, onFirm, onStory])
   const activeZone = zones.find((zone) => Math.hypot((walker.position.x - zone.x) * 1.2, walker.position.y - zone.y) < 12)
 
   useEffect(() => {
@@ -512,22 +620,40 @@ function WorldControls({ nudge }: { nudge: (direction: Direction) => void }) {
 }
 
 const tierPositions: Position[] = [
-  { x: 10, y: 75 }, { x: 24, y: 63 }, { x: 37, y: 74 }, { x: 50, y: 52 },
-  { x: 64, y: 64 }, { x: 76, y: 39 }, { x: 89, y: 24 },
+  { x: 6, y: 83 }, { x: 13, y: 69 }, { x: 21, y: 82 }, { x: 28, y: 58 },
+  { x: 36, y: 73 }, { x: 43, y: 50 }, { x: 51, y: 66 }, { x: 59, y: 43 },
+  { x: 66, y: 70 }, { x: 72, y: 48 }, { x: 80, y: 68 }, { x: 87, y: 49 },
+  { x: 93, y: 69 }, { x: 90, y: 25 }, { x: 78, y: 22 },
 ]
 
-const rivalPositions: Position[] = [{ x: 23, y: 25 }, { x: 43, y: 28 }, { x: 68, y: 23 }, { x: 85, y: 70 }]
+const rivalPositions: Position[] = [
+  { x: 18, y: 34 }, { x: 33, y: 32 }, { x: 46, y: 26 }, { x: 55, y: 81 },
+  { x: 25, y: 20 }, { x: 39, y: 88 }, { x: 62, y: 25 }, { x: 69, y: 86 },
+  { x: 76, y: 34 }, { x: 84, y: 82 }, { x: 94, y: 45 }, { x: 86, y: 13 },
+  { x: 96, y: 14 }, { x: 70, y: 14 },
+]
+
+const cityRegions = [
+  { name: 'OLD QUARTER', detail: 'STREET COURTS', className: 'old-quarter' },
+  { name: 'MARKET WARD', detail: 'FOUNDERS & NEIGHBORS', className: 'market-ward' },
+  { name: 'CIVIC CENTER', detail: 'TRIAL DISTRICT', className: 'civic-center' },
+  { name: 'FINANCIAL CORE', detail: 'TOWERS & MEDIA', className: 'financial-core' },
+  { name: 'HARBOR EXCHANGE', detail: 'NATIONAL GATEWAY', className: 'harbor-exchange' },
+  { name: 'EMBASSY / SKYLINE', detail: 'GLOBAL COUNSEL', className: 'embassy-skyline' },
+  { name: 'INNOVATION ARC', detail: 'AUTONOMOUS CAMPUS', className: 'innovation-arc' },
+  { name: 'CELESTIAL CROWN', detail: 'ORBITAL & LUNAR', className: 'celestial-crown' },
+]
 
 function PixelBuilding({ tier, locked }: { tier: number; locked: boolean }) {
-  const floors = Math.min(7, tier + 2)
+  const floors = Math.min(8, tier + 2)
   return (
-    <div className={`map-building building-${tier} ${locked ? 'locked' : ''}`}>
+    <div className={`map-building building-${tier} building-era-${Math.min(4, Math.floor(tier / 3))} ${locked ? 'locked' : ''}`}>
       <div className="building-antenna"><i /><b /></div>
       <div className="building-roof">{tier >= 4 && <i />}{tier >= 2 && <b />}</div>
       <div className="building-face">
         {Array.from({ length: floors * 3 }, (_, index) => <i key={index} />)}
       </div>
-      <div className="building-sign">{tier >= 5 ? 'LT' : '§'}</div>
+      <div className="building-sign">{tier >= 12 ? '✦' : tier >= 5 ? 'LT' : '§'}</div>
       <div className="building-awning"><i /><i /><i /></div>
       <div className="building-door" />
       <div className="building-flag"><i /></div>
@@ -552,6 +678,7 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
   const initial = tierPositions[game.office_tier] ?? tierPositions[0]
   const walker = useWalker({ x: initial.x, y: Math.min(86, initial.y + 10) }, { left: 4, right: 96, top: 12, bottom: 89 })
   const [selected, setSelected] = useState(`tier-${game.office_tier}`)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   const rivals = game.catalog.assets.filter((asset) => asset.type === 'rival')
   const points = [
     ...game.catalog.tiers.map((tier, index) => ({ key: `tier-${tier.tier}`, kind: 'tier' as const, position: tierPositions[index], data: tier })),
@@ -571,9 +698,21 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
     return () => window.removeEventListener('keydown', interact)
   }, [nearby])
 
+  useEffect(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    const left = (walker.position.x / 100) * scroller.scrollWidth - scroller.clientWidth / 2
+    const top = (walker.position.y / 100) * scroller.scrollHeight - scroller.clientHeight / 2
+    scroller.scrollTo({ left, top, behavior: walker.walking ? 'auto' : 'smooth' })
+  }, [walker.position.x, walker.position.y, walker.walking])
+
   return (
     <div className="empire-explorer game-viewport" aria-label="Explorable legal empire map">
+      <div className="empire-map-scroll" ref={scrollRef}>
       <div className="empire-terrain">
+        <div className="map-region-grid">
+          {cityRegions.map((region) => <div className={`map-region map-region-${region.className}`} key={region.name}><span>{region.name}</span><small>{region.detail}</small></div>)}
+        </div>
         <div className="terrain-speckles">{Array.from({ length: 28 }, (_, index) => <i key={index} />)}</div>
         <div className="map-water"><i /><i /><i /><span className="map-boat">▰</span></div>
         <div className="map-park park-one">{Array.from({ length: 8 }, (_, index) => <i key={index} />)}</div>
@@ -585,6 +724,10 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
         <div className="map-rail"><span /><span /><span /><span /><span /><span /><span /><span /><div className="map-train"><i /><i /><i /></div></div>
         <div className="map-streetlights">{Array.from({ length: 8 }, (_, index) => <i key={index} />)}</div>
         <div className="map-fountain"><i /><b /><span /></div>
+        <div className="map-courthouse"><i /><i /><i /><b>§</b><span>CIVIC COURT</span></div>
+        <div className="map-harbor-cranes"><i /><i /><b /><span /></div>
+        <div className="map-airport"><i /><b /><span>LEGAL AIR</span></div>
+        <div className="map-orbital-pad"><i /><b /><span>ORBITAL GATE</span></div>
         <div className="map-birds"><i /><i /><i /><i /></div>
         <div className="leaf-particles">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>
         {game.office_tier >= 4 && <div className="map-helicopter"><i /><b /><span /></div>}
@@ -623,11 +766,13 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
         </div>
         <div className="scanlines" />
       </div>
+      </div>
       <div className="map-compass"><i>N</i><span>✦</span></div>
       <div className="map-legend"><span><i className="legend-owned" />OWNED</span><span><i className="legend-current" />HQ</span><span><i className="legend-rival" />RIVAL</span></div>
       <div className="empire-inspector">
         <span>{selectedPoint.kind === 'tier' ? 'FIRM DESTINATION' : 'ACQUISITION TARGET'}</span>
         <h2>{selectedPoint.data.name.replace('Acquire ', '')}</h2>
+        <small className="inspector-region">{selectedPoint.data.region}</small>
         {selectedRivalProfile && <div className="rival-owner-inspector"><PixelPerson gender={selectedRivalProfile.gender} tier={selectedRivalProfile.tier} variant={selectedRivalProfile.variant} accessory="briefcase" /><span><small>RIVAL OWNER</small><strong>{selectedRivalProfile.owner}</strong><i>{selectedRivalProfile.title}</i></span></div>}
         <p>{selectedPoint.kind === 'tier' ? selectedPoint.data.short : selectedPoint.data.description}</p>
         <div>

@@ -12,12 +12,18 @@ import {
   Clock3,
   Coins,
   Crown,
+  Eye,
+  FileSearch,
   Flame,
   Globe2,
+  Gavel,
   Handshake,
+  HeartHandshake,
   Lock,
   Play,
   Scale,
+  ScrollText,
+  ShieldAlert,
   Sparkles,
   Star,
   TrendingUp,
@@ -30,8 +36,8 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
 import { api } from './api'
 import { Brand, ErrorNotice, formatMoney, LoadingScreen, PauseButton, QuestionFlow } from './components'
-import { ClientPortrait, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork } from './game-art'
-import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState } from './types'
+import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork } from './game-art'
+import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest } from './types'
 
 
 function useGame() {
@@ -52,6 +58,55 @@ function storeAuthenticatedUser(queryClient: ReturnType<typeof useQueryClient>, 
 
 function effectiveClient(game: GameState): GameClient {
   return game.catalog.clients.find((client) => client.key === game.active_client.effective_key) ?? game.active_client
+}
+
+
+function StoryCutscene({ game, chapter }: { game: GameState; chapter: StoryChapter }) {
+  const queryClient = useQueryClient()
+  const [resolution, setResolution] = useState<Awaited<ReturnType<typeof api.chooseStory>> | null>(null)
+  useEffect(() => setResolution(null), [chapter.key])
+  const choose = useMutation({
+    mutationFn: (choiceKey: string) => api.chooseStory(chapter.key, choiceKey),
+    onSuccess: setResolution,
+  })
+  const continueStory = () => {
+    if (!resolution) return
+    const nextGame = resolution.game
+    setResolution(null)
+    storeGame(queryClient, nextGame)
+  }
+  return (
+    <div className="cutscene-overlay" role="dialog" aria-modal="true" aria-labelledby="cutscene-title">
+      <div className="cutscene-letterbox top" />
+      <div className="cutscene-frame">
+        <CutsceneArtwork scene={chapter.scene} game={game} />
+        <div className="cutscene-act"><span>{chapter.act}</span><small>{chapter.location}</small></div>
+        <section className="cutscene-dialogue">
+          <span>{chapter.speaker}</span>
+          <h2 id="cutscene-title">{chapter.title}</h2>
+          {resolution ? (
+            <div className="cutscene-resolution">
+              <p>{resolution.result.result}</p>
+              <button className="cutscene-continue" onClick={continueStory}>Continue <ArrowRight /></button>
+            </div>
+          ) : (
+            <>
+              <div className="dialogue-beats">{chapter.dialogue.map((line) => <p key={line}>{line}</p>)}</div>
+              <div className="cutscene-choices">
+                {chapter.choices.map((choice) => (
+                  <button key={choice.key} disabled={choose.isPending} onClick={() => choose.mutate(choice.key)}>
+                    <strong>{choice.label}</strong><span>{choice.stakes}</span>
+                  </button>
+                ))}
+              </div>
+              {choose.error && <ErrorNotice error={choose.error} />}
+            </>
+          )}
+        </section>
+      </div>
+      <div className="cutscene-letterbox bottom"><span>YOUR DECISION BECOMES PART OF THE FIRM</span></div>
+    </div>
+  )
 }
 
 
@@ -271,6 +326,7 @@ export function OfficePage() {
           onCase={openCase}
           onFirm={() => navigate('/firm')}
           onEmpire={() => navigate('/map')}
+          onStory={() => navigate('/story')}
           onCollect={() => {
             if (game.passive_income.available && !collect.isPending) collect.mutate()
           }}
@@ -316,6 +372,7 @@ export function OfficePage() {
         </article>
       </section>
       {(start.error || collect.error || claim.error) && <ErrorNotice error={start.error || collect.error || claim.error} />}
+      {game.story.pending_chapter && <StoryCutscene game={game} chapter={game.story.pending_chapter} />}
     </div>
   )
 }
@@ -444,6 +501,8 @@ export function FirmPage() {
   const params = new URLSearchParams(window.location.search)
   const initial = (params.get('tab') as FirmTab) || 'upgrades'
   const [tab, setTab] = useState<FirmTab>(firmTabs.some((item) => item.key === initial) ? initial : 'upgrades')
+  const [catalogView, setCatalogView] = useState<'all' | 'ready' | 'owned'>('all')
+  const [catalogRegion, setCatalogRegion] = useState('all')
   const queryClient = useQueryClient()
   const gameQuery = useGame()
   const currentCaseQuery = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession, enabled: tab === 'clients' })
@@ -475,6 +534,18 @@ export function FirmPage() {
   const game = gameQuery.data!.game!
   const typeMap: Record<FirmTab, GameAsset['type'] | null> = { upgrades: 'upgrade', staff: 'staff', clients: null, connections: 'connection', rivals: 'rival', achievements: null }
   const assets = game.catalog.assets.filter((item) => item.type === typeMap[tab])
+  const regions = Array.from(new Set([
+    ...game.catalog.tiers.map((tier) => tier.region),
+    ...game.catalog.assets.map((asset) => asset.region).filter((region): region is string => Boolean(region)),
+  ]))
+  const visibleAssets = assets.filter((item) =>
+    (catalogRegion === 'all' || item.region === catalogRegion)
+    && (catalogView === 'all' || (catalogView === 'ready' ? item.available : item.owned)),
+  )
+  const visibleClients = game.catalog.clients.filter((item) =>
+    (catalogRegion === 'all' || item.region === catalogRegion)
+    && (catalogView === 'all' || (catalogView === 'ready' ? item.unlocked : item.selected)),
+  )
   const nextTier = game.catalog.tiers.find((tier) => tier.next)
   const workingClient = effectiveClient(game)
   const openSession = currentCaseQuery.data?.session
@@ -517,10 +588,19 @@ export function FirmPage() {
 
       {firmTabs.filter(({ key }) => key !== tab).map(({ key }) => <div key={key} id={`firm-panel-${key}`} role="tabpanel" aria-labelledby={`firm-tab-${key}`} hidden />)}
       <div id={`firm-panel-${tab}`} className={`firm-panel firm-panel-${tab}`} role="tabpanel" aria-labelledby={`firm-tab-${tab}`} tabIndex={0}>
+        {tab !== 'achievements' && (
+          <div className="catalog-toolbar">
+            <div><span>CATALOG VIEW</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
+            <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">
+              {(['all', 'ready', 'owned'] as const).map((view) => <button key={view} className={catalogView === view ? 'active' : ''} onClick={() => setCatalogView(view)}>{view === 'owned' && tab === 'clients' ? 'Active' : view}</button>)}
+            </div>
+            <label><span>CITY REGION</span><select value={catalogRegion} onChange={(event) => setCatalogRegion(event.target.value)}><option value="all">All districts</option>{regions.map((region) => <option key={region} value={region}>{region}</option>)}</select></label>
+          </div>
+        )}
         {tab === 'upgrades' && nextTier && (
           <section className="tier-upgrade-banner">
           <div className="tier-preview"><Building2 /><span>TIER {nextTier.tier}</span></div>
-          <div><span className="eyebrow">OFFICE TRANSFORMATION</span><h2>{nextTier.name}</h2><p>{nextTier.short}</p><small>Requires {nextTier.reputation} Reputation</small></div>
+          <div><span className="eyebrow">{nextTier.region} · OFFICE TRANSFORMATION</span><h2>{nextTier.name}</h2><p>{nextTier.short}</p><small>{nextTier.feature} · Requires {nextTier.reputation} Reputation</small></div>
           <div className="tier-buy"><strong>{formatMoney(nextTier.cost)}</strong><button className="primary-button" disabled={!nextTier.available || game.cash < nextTier.cost || advance.isPending} onClick={() => advance.mutate(nextTier.tier)}>{advance.isPending ? 'Renovating…' : 'Advance firm'}</button></div>
           </section>
         )}
@@ -539,12 +619,15 @@ export function FirmPage() {
               </aside>
             </section>
             <div className="management-grid client-grid">
-            {game.catalog.clients.map((item) => (
-              <article key={item.key} className={`management-card client-card ${item.selected ? 'selected' : ''} ${!item.unlocked ? 'locked' : ''} ${justActivated === item.key ? 'just-activated' : ''}`}>
+            {visibleClients.map((item) => (
+              <article key={item.key} className={`management-card client-card ${item.matter_type === 'pro_bono' ? 'pro-bono-client' : ''} ${item.selected ? 'selected' : ''} ${!item.unlocked ? 'locked' : ''} ${justActivated === item.key ? 'just-activated' : ''}`}>
                 <ClientPortrait kind={item.icon} name={item.name} mood={item.selected ? 'happy' : 'neutral'} className="client-card-portrait" />
+                {item.matter_type === 'pro_bono' && <div className="pro-bono-seal"><HeartHandshake /> PRO BONO</div>}
                 <div className="card-status">{item.on_hold ? <><Lock size={12} /> ON HOLD</> : item.selected ? 'WORKING NOW' : item.unlocked ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
+                <div className="content-location-tag">{item.region || `TIER ${item.tier}`}{item.archetype && <b>{item.archetype}</b>}</div>
                 <h3>{item.name}</h3><p>{item.description}</p>
                 <div className="client-fee"><span>Base fee per case</span><strong>{formatMoney(item.base_fee)}</strong></div>
+                {item.special && <div className="client-special"><Sparkles size={13} /><span><small>CASE TWIST</small>{item.special}</span></div>}
                 {item.on_hold && <div className="effective-client-note"><BriefcaseBusiness size={13} />Cases use {workingClient.name} · {formatMoney(workingClient.base_fee)} base fee</div>}
                 {item.contract && <div className="contract-mini"><span>{item.contract.cases_remaining} left</span><span>{item.contract.loyalty} loyalty</span></div>}
                 <ClientRequirementLine client={item} game={game} />
@@ -564,13 +647,13 @@ export function FirmPage() {
         </div>
       ) : (
         <div className="management-grid asset-management-grid">
-          {assets.map((item) => (
+          {visibleAssets.map((item) => (
             <article key={item.key} className={`management-card asset-card asset-card-${item.type} ${item.owned ? 'owned' : ''} ${!item.available && !item.owned ? 'locked' : ''} ${justBought === item.key ? 'just-bought' : ''}`}>
               <PixelAssetArtwork asset={item} />
               <div className="card-status">{item.owned ? <><Check size={13} /> OWNED</> : item.available ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
-              <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{item.benefit}</span></div>
+              <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{item.benefit}</span></div>
               <RequirementLine asset={item} game={game} />
-              <div className="purchase-row"><strong>{formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
+               <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
             </article>
           ))}
         </div>
@@ -604,6 +687,129 @@ export function ProgressionMapPage() {
         <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
       </section>
       <EmpireWorldMap game={game} onManage={(tab) => navigate(`/firm?tab=${tab}`)} />
+    </div>
+  )
+}
+
+
+const questPresentation: Record<StoryQuest['category'], { label: string; icon: typeof FileSearch; copy: string }> = {
+  pro_bono: { label: 'Public Interest', icon: HeartHandshake, copy: 'Lower fees. Greater standing. A promise kept.' },
+  investigation: { label: 'Investigations', icon: FileSearch, copy: 'Build Intel and uncover Sterling’s hidden network.' },
+  shadow: { label: 'Shadow Files', icon: Eye, copy: 'Lucrative, secret, and dangerous to the firm’s name.' },
+  legacy: { label: 'Legacy Matter', icon: ScrollText, copy: 'Write the rule that survives the empire.' },
+}
+
+
+export function StoryPage() {
+  const queryClient = useQueryClient()
+  const gameQuery = useGame()
+  const [selectedRival, setSelectedRival] = useState<string | null>(null)
+  const startQuestMutation = useMutation({
+    mutationFn: api.startQuest,
+    onSuccess: ({ game }) => storeGame(queryClient, game),
+  })
+  const operation = useMutation({
+    mutationFn: ({ rivalKey, operationKey }: { rivalKey: string; operationKey: string }) => api.rivalOperation(rivalKey, operationKey),
+    onSuccess: ({ game }) => storeGame(queryClient, game),
+  })
+  if (gameQuery.isLoading) return <LoadingScreen label="Developing the caseboard…" />
+  if (gameQuery.error) return <div className="contained"><ErrorNotice error={gameQuery.error} /></div>
+  const game = gameQuery.data!.game!
+  const story = game.story
+  const rival = story.rival_targets.find((item) => item.key === selectedRival) ?? story.rival_targets[0]
+  const grouped = (['pro_bono', 'investigation', 'shadow', 'legacy'] as const)
+    .map((category) => ({ category, quests: story.quests.filter((quest) => quest.category === category) }))
+    .filter((group) => group.quests.length)
+
+  return (
+    <div className={`story-page story-alignment-${story.alignment.toLowerCase()} page-wrap`}>
+      <section className="story-hero">
+        <div className="story-hero-copy">
+          <span className="pixel-kicker">THE MERCER FILES · CAMPAIGN CASEBOARD</span>
+          <h1>What will the name<br />on the door <em>mean?</em></h1>
+          <p>Ada’s key, Harrow’s evidence, Moth’s secrets, and Sterling’s empire are one case. Every choice changes the resources—and the ending—you can reach.</p>
+          <div className="story-alignment-stamp"><Scale /><span>CURRENT PATH</span><strong>{story.alignment}</strong></div>
+        </div>
+        <div className="story-board-art" aria-hidden="true">
+          <div className="board-photo photo-ada">ADA</div><div className="board-photo photo-sterling">STERLING</div><div className="board-photo photo-moth">MOTH?</div>
+          <i className="thread t1" /><i className="thread t2" /><i className="thread t3" />
+          <div className="board-note">FORGED DEED<br />→ CITY HALL<br />→ ACQUISITIONS</div>
+          <span className="board-key">⚿</span>
+        </div>
+      </section>
+
+      <section className="story-resources" aria-label="Campaign resources">
+        <article className="ethics"><Scale /><span>ETHICS<small>Which doors remain open</small></span><strong>{story.ethics.toFixed(1)}</strong><div><i style={{ width: `${story.ethics}%` }} /></div></article>
+        <article className="heat"><ShieldAlert /><span>HEAT<small>Scrutiny and scandal risk</small></span><strong>{story.heat.toFixed(1)}</strong><div><i style={{ width: `${story.heat}%` }} /></div></article>
+        <article><FileSearch /><span>INTEL<small>Evidence for investigations</small></span><strong>{story.intel}</strong></article>
+        <article><Gavel /><span>INFLUENCE<small>Clean competitive leverage</small></span><strong>{story.influence}</strong></article>
+      </section>
+
+      <section className="campaign-timeline">
+        <div className="story-section-heading"><span>01 · THE CAMPAIGN</span><h2>From one light to a constellation</h2><p>Chapters unlock with headquarters tiers. Story decisions are permanent.</p></div>
+        <div className="chapter-track">
+          {story.chapters.map((chapter, index) => (
+            <article key={chapter.key} className={`${chapter.seen ? 'seen' : ''} ${story.pending_chapter?.key === chapter.key ? 'pending' : ''}`}>
+              <i>{chapter.seen ? <Check /> : story.pending_chapter?.key === chapter.key ? '!' : <Lock />}</i>
+              <span>{chapter.act} · HQ {chapter.tier}</span><h3>{chapter.title}</h3>
+              <small>{chapter.choice ? `Decision: ${chapter.choice.replaceAll('_', ' ')}` : chapter.tier <= game.office_tier ? 'Decision waiting' : `Unlocks at headquarters tier ${chapter.tier}`}</small>
+              {index < story.chapters.length - 1 && <b />}
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {story.active_quest && (
+        <section className={`active-caseboard active-${story.active_quest.category}`}>
+          <div className="dossier-tab">ACTIVE FILE</div>
+          <span>{story.active_quest.patron}</span><h2>{story.active_quest.title}</h2><p>{story.active_quest.description}</p>
+          <div className="quest-progress"><div><i style={{ width: `${story.active_quest.progress / story.active_quest.target * 100}%` }} /></div><strong>{story.active_quest.progress} / {story.active_quest.target}</strong></div>
+          <small>{story.active_quest.objective} · Reward: {story.active_quest.reward_label}</small>
+        </section>
+      )}
+
+      <section className="quest-caseboard">
+        <div className="story-section-heading"><span>02 · OPTIONAL FILES</span><h2>Choose the work behind the work</h2><p>Only one operation can occupy the caseboard. Hidden files surface when your Ethics and Intel make the right people trust—or target—you.</p></div>
+        {grouped.map(({ category, quests }) => {
+          const presentation = questPresentation[category]
+          const Icon = presentation.icon
+          return <div className={`quest-shelf quest-shelf-${category}`} key={category}>
+            <header><Icon /><div><span>{presentation.label}</span><small>{presentation.copy}</small></div></header>
+            <div className="quest-grid">{quests.map((quest) => (
+              <article key={quest.key} className={`${quest.active ? 'active' : ''} ${quest.completed ? 'completed' : ''}`}>
+                <div className="dossier-top"><span>HQ {quest.tier} · {quest.patron}</span><i>{quest.completed ? 'CLOSED' : quest.active ? 'ACTIVE' : 'OPEN'}</i></div>
+                <h3>{quest.title}</h3><p>{quest.description}</p><strong>{quest.objective}</strong>
+                {quest.start_label && <small className="quest-cost">Opening cost: {quest.start_label}</small>}
+                <small className="quest-reward">Reward: {quest.reward_label}</small>
+                <button disabled={!quest.available || startQuestMutation.isPending} onClick={() => startQuestMutation.mutate(quest.key)}>{quest.completed ? 'File closed' : quest.active ? `${quest.progress} / ${quest.target}` : story.active_quest ? 'Caseboard occupied' : 'Open this file'}</button>
+              </article>
+            ))}</div>
+          </div>
+        })}
+      </section>
+
+      <section className="rival-war-room">
+        <div className="story-section-heading light"><span>03 · RIVAL OPERATIONS</span><h2>Win clean—or make them cheaper.</h2><p>Each operation can be used once per rival. Discounts stack to 45%; sabotage trades the firm’s name for a lower acquisition price.</p></div>
+        {rival ? <>
+          <div className="rival-target-strip">
+            {story.rival_targets.map((target) => <button key={target.key} className={target.key === rival.key ? 'active' : ''} onClick={() => setSelectedRival(target.key)}><PixelAssetArtwork asset={target} /><span>{target.name.replace('Acquire ', '')}</span><small>HQ {target.tier}</small></button>)}
+          </div>
+          <div className="rival-valuation-card">
+            <div><span>ACQUISITION TARGET</span><h3>{rival.name}</h3><p>{rival.description}</p></div>
+            <div><small>LIST VALUE</small><del>{formatMoney(rival.list_cost ?? rival.cost)}</del><small>NEGOTIATED VALUE</small><strong>{formatMoney(rival.cost)}</strong><b>{(rival.discount_bps ?? 0) / 100}% DISCOUNT</b></div>
+          </div>
+          <div className="operation-grid">{rival.operations.map((item) => (
+            <article key={item.key} className={`operation-${item.category} ${item.completed ? 'completed' : ''}`}>
+              <div><span>{item.category}</span><strong>−{item.discount_bps / 100}%</strong></div><h3>{item.name}</h3><p>{item.description}</p>
+              <small>{formatMoney(item.cost)}{item.intel ? ` · ${item.intel} Intel` : ''}{item.influence ? ` · ${item.influence} Influence` : ''}{item.heat_surcharge_bps ? ` · +${item.heat_surcharge_bps / 100}% Heat surcharge` : ''}</small>
+              {item.missing.length > 0 && <em>Needs {item.missing.join(' · ')}</em>}
+              <button disabled={!item.available || operation.isPending} onClick={() => operation.mutate({ rivalKey: rival.key, operationKey: item.key })}>{item.completed ? 'Operation complete' : item.category === 'sabotage' ? 'Authorize sabotage' : 'Launch operation'}</button>
+            </article>
+          ))}</div>
+        </> : <div className="all-rivals-acquired"><Trophy /><h3>Every rival has joined the network.</h3><p>The war room is quiet. The legacy question remains.</p></div>}
+      </section>
+      {(startQuestMutation.error || operation.error) && <ErrorNotice error={startQuestMutation.error || operation.error} />}
+      {story.pending_chapter && <StoryCutscene game={game} chapter={story.pending_chapter} />}
     </div>
   )
 }

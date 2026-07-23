@@ -184,7 +184,7 @@ class PlayerProfile(db.Model):
         CheckConstraint("character_gender in ('male', 'female')", name="ck_profile_character_gender"),
         CheckConstraint("cash >= 0", name="ck_profile_cash_nonnegative"),
         CheckConstraint("reputation >= 0 and reputation <= 100", name="ck_profile_reputation_range"),
-        CheckConstraint("office_tier >= 0 and office_tier <= 6", name="ck_profile_office_tier_range"),
+        CheckConstraint("office_tier >= 0 and office_tier <= 14", name="ck_profile_office_tier_range"),
         CheckConstraint("current_streak >= 0 and best_streak >= 0", name="ck_profile_streak_nonnegative"),
     )
 
@@ -222,6 +222,48 @@ class PlayerProfile(db.Model):
         back_populates="profile",
         cascade="all, delete-orphan",
     )
+    story_state = db.relationship(
+        "PlayerStoryState",
+        back_populates="profile",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class PlayerStoryState(db.Model):
+    """Persistent campaign choices, investigations, and rival intelligence."""
+
+    __tablename__ = "player_story_states"
+    __table_args__ = (
+        CheckConstraint("ethics >= 0 and ethics <= 100", name="ck_story_ethics_range"),
+        CheckConstraint("heat >= 0 and heat <= 100", name="ck_story_heat_range"),
+        CheckConstraint("influence >= 0 and intel >= 0", name="ck_story_resources_nonnegative"),
+        CheckConstraint("quest_progress >= 0", name="ck_story_quest_progress_nonnegative"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    profile_id = db.Column(
+        db.String(36),
+        db.ForeignKey("player_profiles.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    ethics = db.Column(db.Float, nullable=False, default=70.0)
+    heat = db.Column(db.Float, nullable=False, default=0.0)
+    influence = db.Column(db.Integer, nullable=False, default=0)
+    intel = db.Column(db.Integer, nullable=False, default=0)
+    seen_chapters_json = db.Column(db.JSON, nullable=False, default=list)
+    choices_json = db.Column(db.JSON, nullable=False, default=dict)
+    active_quest_key = db.Column(db.String(80), nullable=True)
+    quest_progress = db.Column(db.Integer, nullable=False, default=0)
+    quest_history_json = db.Column(db.JSON, nullable=False, default=list)
+    rival_discounts_json = db.Column(db.JSON, nullable=False, default=dict)
+    operations_json = db.Column(db.JSON, nullable=False, default=list)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    profile = db.relationship("PlayerProfile", back_populates="story_state")
 
 
 class PlayerAsset(db.Model):
@@ -307,12 +349,13 @@ class AttemptSettlement(db.Model):
     target_time_seconds = db.Column(db.Integer, nullable=False)
     elapsed_seconds = db.Column(db.Integer, nullable=False)
     client_key = db.Column(db.String(60), nullable=False)
-    base_fee = db.Column(db.Integer, nullable=False)
+    base_fee = db.Column(db.BigInteger, nullable=False)
     score_multiplier_bps = db.Column(db.Integer, nullable=False)
     firm_multiplier_bps = db.Column(db.Integer, nullable=False)
-    streak_bonus = db.Column(db.Integer, nullable=False, default=0)
-    staff_bonus = db.Column(db.Integer, nullable=False, default=0)
-    contract_bonus = db.Column(db.Integer, nullable=False, default=0)
+    streak_bonus = db.Column(db.BigInteger, nullable=False, default=0)
+    staff_bonus = db.Column(db.BigInteger, nullable=False, default=0)
+    contract_bonus = db.Column(db.BigInteger, nullable=False, default=0)
+    quest_bonus = db.Column(db.BigInteger, nullable=False, default=0)
     payout = db.Column(db.BigInteger, nullable=False)
     reputation_before = db.Column(db.Float, nullable=False)
     reputation_after = db.Column(db.Float, nullable=False)
