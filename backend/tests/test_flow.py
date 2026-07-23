@@ -8,6 +8,7 @@ from sqlalchemy import update
 
 from app import create_app
 from app.extensions import db
+from app.game import ASSET_BY_KEY, CLIENT_BY_KEY
 from app.models import (
     AiJob,
     Attempt,
@@ -168,7 +169,7 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     assert game["next_milestone"] == {
         "kind": "asset",
         "name": "Repaired oak desk",
-        "cost": 350,
+        "cost": ASSET_BY_KEY["repaired_desk"]["cost"],
         "reputation": 0,
     }
     assert client.get("/v1/me").json["user"]["next_route"] == "/office"
@@ -182,7 +183,7 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     assert session["current_item"]["case_terms"] == {
         "client_key": "walk_in",
         "client_name": "Walk-in client",
-        "base_fee": 100,
+        "base_fee": CLIENT_BY_KEY["walk_in"]["base_fee"],
     }
     duplicate_start = client.post("/v1/study-sessions", headers=headers)
     assert duplicate_start.status_code == 201
@@ -624,6 +625,8 @@ def test_invalid_reasoning_does_not_advance_cash_daily_goals(app, monkeypatch):
         profile = PlayerProfile.query.filter_by(user_id=attempt.user_id).one()
         daily = DailyProgress.query.filter_by(profile_id=profile.id).one()
         assert attempt.settlement.explanation_grade == "Invalid"
+        assert attempt.settlement.payout == 0
+        assert profile.cash == 250
         assert profile.total_cases == 1
         assert daily.cases_completed == 0
 
@@ -637,6 +640,8 @@ def test_tycoon_review_cannot_skip_wrong_answer_settlement(app, monkeypatch):
         profile.reputation = 80
         profile.current_streak = 4
         profile.best_streak = 4
+        profile.story_state.active_quest_key = "market_whisper"
+        profile.story_state.quest_progress = 0
         contract = PlayerClientContract.query.filter_by(
             profile_id=profile.id,
             client_key="walk_in",
@@ -686,7 +691,10 @@ def test_tycoon_review_cannot_skip_wrong_answer_settlement(app, monkeypatch):
         assert profile.reputation < 80
         assert profile.current_streak == 0
         assert profile.total_cases == 1
-        assert contract.cases_remaining == starting_contract_cases - 1
+        assert profile.cash == 250
+        assert attempt.settlement.payout == 0
+        assert profile.story_state.quest_progress == 0
+        assert contract.cases_remaining == starting_contract_cases
 
     continued = client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
     assert continued.status_code == 200
@@ -802,7 +810,8 @@ def test_purchases_and_passive_income_are_account_bound(app):
 
     with app.app_context():
         profile = PlayerProfile.query.join(PlayerProfile.user).filter(User.email == "owner@example.test").one()
-        profile.cash = 1_000
+        desk_cost = ASSET_BY_KEY["repaired_desk"]["cost"]
+        profile.cash = desk_cost + 650
         db.session.commit()
 
     bought = first.post("/v1/game/purchases", json={"asset_key": "repaired_desk"}, headers=first_headers)
@@ -834,12 +843,13 @@ def test_purchases_and_passive_income_are_account_bound(app):
         db.session.commit()
     collected = first.post("/v1/game/passive-income/collect", headers=first_headers)
     assert collected.status_code == 200
-    assert collected.json["collected"] == 240
-    assert collected.json["game"]["passive_income"]["cap_hours"] == 8
+    cap_hours = collected.json["game"]["passive_income"]["cap_hours"]
+    assert cap_hours == 8
+    assert collected.json["collected"] == ASSET_BY_KEY["junior_associate"]["passive_hourly"] * cap_hours
     manager = next(
         asset for asset in collected.json["game"]["catalog"]["assets"] if asset["key"] == "office_manager"
     )
-    assert manager["benefit"] == "+5% active case payout"
+    assert manager["benefit"] == ASSET_BY_KEY["office_manager"]["benefit"]
 
 
 def test_locked_economy_action_refreshes_a_stale_profile(app):
@@ -851,8 +861,9 @@ def test_locked_economy_action_refreshes_a_stale_profile(app):
 
         profile = PlayerProfile.query.join(PlayerProfile.user).filter(User.email == "lock-refresh@example.test").one()
         assert profile.cash == 250
+        desk_cost = ASSET_BY_KEY["repaired_desk"]["cost"]
         db.session.execute(
-            update(PlayerProfile).where(PlayerProfile.id == profile.id).values(cash=1_000),
+            update(PlayerProfile).where(PlayerProfile.id == profile.id).values(cash=desk_cost + 650),
             execution_options={"synchronize_session": False},
         )
         assert profile.cash == 250
@@ -932,19 +943,22 @@ def test_rival_operation_reduces_the_real_purchase_price(app):
         json={"rival_key": "neighborhood_practice", "operation_key": "public_case_challenge"},
         headers=headers,
     )
+    rival = ASSET_BY_KEY["neighborhood_practice"]
+    operation_cost = max(500, round(rival["cost"] * .02))
+    discounted_cost = round(rival["cost"] * .95)
     assert operated.status_code == 200
-    assert operated.json["result"]["cost"] == 1_500
+    assert operated.json["result"]["cost"] == operation_cost
     target = next(item for item in operated.json["game"]["story"]["rival_targets"] if item["key"] == "neighborhood_practice")
-    assert target["list_cost"] == 75_000
-    assert target["cost"] == 71_250
+    assert target["list_cost"] == rival["cost"]
+    assert target["cost"] == discounted_cost
     assert target["discount_bps"] == 500
 
     bought = client.post("/v1/game/purchases", json={"asset_key": "neighborhood_practice"}, headers=headers)
     assert bought.status_code == 200
-    assert bought.json["game"]["cash"] == 1_000_000 - 1_500 - 71_250
+    assert bought.json["game"]["cash"] == 1_000_000 - operation_cost - discounted_cost
     with app.app_context():
         acquired = PlayerAsset.query.filter_by(asset_key="neighborhood_practice").one()
-        assert acquired.purchase_price == 71_250
+        assert acquired.purchase_price == discounted_cost
 
 
 def test_pro_bono_win_and_caseboard_completion_change_the_settlement(app, monkeypatch):

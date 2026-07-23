@@ -683,7 +683,7 @@ export function ProgressionMapPage() {
   return (
     <div className="map-page empire-game-page">
       <section className="empire-command-bar">
-        <div><span className="pixel-kicker">WORLD MAP · {game.catalog.tiers.length} DISTRICTS</span><h1>Your legal empire</h1><p>Walk the city. Inspect offices. Find the firms that still refuse your name.</p></div>
+        <div><span className="pixel-kicker">5 MAPS · {game.catalog.tiers.length} HEADQUARTERS TIERS</span><h1>Your legal empire</h1><p>Travel from city blocks to continents, across the world, and beyond Earth.</p></div>
         <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
       </section>
       <EmpireWorldMap game={game} onManage={(tab) => navigate(`/firm?tab=${tab}`)} />

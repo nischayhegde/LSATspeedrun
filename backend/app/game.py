@@ -30,9 +30,10 @@ from .story import (
 )
 
 
-RULE_VERSION = "lawyer-tycoon-v2"
+RULE_VERSION = "lawyer-tycoon-v3"
 STARTING_CASH = 250
 DAILY_REWARD_MULTIPLIERS = {5: 1, 10: 3, 20: 8}
+TARGET_CASES_PER_MILESTONE = 4
 
 FIRM_TIERS = [
     {"tier": 0, "name": "Wooden Shack", "cost": 0, "reputation": 0, "region": "Old Quarter", "feature": "Street-level practice", "short": "A one-desk practice with a lot to prove."},
@@ -336,6 +337,95 @@ CLIENTS += [
     {"key": "lunar_workers_collective", "name": "Far-Side Workers Collective", "base_fee": 7_500_000_000, "reputation": 91, "tier": 13, "length": 10, "icon": "lunar", "region": "Lunar Gate", "archetype": "Pro bono off-world labor", "matter_type": "pro_bono", "reputation_win_bonus": 8, "reputation_loss_cap": .5, "reputation_guard": 4, "special": "PRO BONO · +8 Reputation on a win · protected loss", "description": "The first off-world union asks which human guarantees survive the distance from Earth."},
 ]
 
+def _round_game_amount(value: float) -> int:
+    """Round economy values to readable two-significant-digit prices."""
+    value = max(1, round(value))
+    magnitude = 10 ** max(0, len(str(value)) - 2)
+    return max(1, round(value / magnitude) * magnitude)
+
+
+def _format_game_money(value: int) -> str:
+    for threshold, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")):
+        if value >= threshold:
+            scaled = value / threshold
+            return f"{scaled:.1f}".rstrip("0").rstrip(".") + suffix
+    return f"{value:,}"
+
+
+def _case_target_for_tier(tier: int) -> int:
+    """Expected cash from one solid correct case at the current firm tier."""
+    if tier < len(FIRM_TIERS) - 1:
+        return round(FIRM_TIERS[tier + 1]["cost"] / TARGET_CASES_PER_MILESTONE)
+    return round(FIRM_TIERS[-1]["cost"] / TARGET_CASES_PER_MILESTONE)
+
+
+def _replace_case_payout_benefit(item: dict, percentage: int) -> None:
+    parts = [part.strip() for part in item["benefit"].split("·")]
+    secondary = [part for part in parts if "payout" not in part.lower()]
+    item["benefit"] = " · ".join([f"+{percentage}% case payout", *secondary])
+
+
+def _rebalance_asset_catalog() -> None:
+    """Give every purchase durable value and price it in successful cases."""
+    for item in ASSETS:
+        tier = item["tier"]
+        original_payout = float(item.get("payout_mult", 0))
+        base_percentage = 2 + tier // 3
+        if original_payout:
+            payout_percentage = min(10, base_percentage + max(1, round(original_payout * 5)))
+        else:
+            # Unlocks, passive specialists, and support hires still improve the
+            # active loop, so none becomes a dead-end purchase after its gate.
+            payout_percentage = min(8, base_percentage)
+        item["payout_mult"] = payout_percentage / 100
+        _replace_case_payout_benefit(item, payout_percentage)
+
+        target = _case_target_for_tier(tier)
+        if "staff_flat" in item:
+            item["staff_flat"] = _round_game_amount(target * .10)
+            parts = [part.strip() for part in item["benefit"].split("·") if "per active case" not in part.lower()]
+            item["benefit"] = " · ".join([*parts, f"+${_format_game_money(item['staff_flat'])} flat case bonus"])
+        if "passive_hourly" in item:
+            passive_rate = .05 if item["type"] == "rival" else .04
+            item["passive_hourly"] = _round_game_amount(target * passive_rate)
+            parts = [
+                part.strip()
+                for part in item["benefit"].split("·")
+                if "/hour" not in part.lower() and "per hour" not in part.lower()
+            ]
+            item["benefit"] = " · ".join([*parts, f"${_format_game_money(item['passive_hourly'])}/hour passive"])
+
+        secondary_effects = sum(
+            bool(item.get(key))
+            for key in ("passive_hourly", "staff_flat", "storage_hours", "streak_bonus_cap", "contract_bonus_mult", "reputation_guard")
+        )
+        if item["type"] == "connection":
+            secondary_effects += 1
+        strength_premium = max(0, payout_percentage - base_percentage) * .18
+        target_questions = min(5.0, 3.0 + strength_premium + secondary_effects * .32)
+        if item["type"] == "rival":
+            target_questions = 5.0
+        item["cost"] = _round_game_amount(target * target_questions)
+
+
+def _rebalance_client_catalog() -> None:
+    """Equalize expected commercial value while preserving client play styles."""
+    solid_score_multiplier = 1.20
+    for client in CLIENTS:
+        if client.get("matter_type") == "pro_bono":
+            continue
+        tier = client["tier"]
+        firm_multiplier = 1 + tier * .06
+        contract_multiplier = 2 + float(client.get("contract_bonus_mult", 0))
+        average_value_factor = (
+            solid_score_multiplier * firm_multiplier * float(client.get("payout_mult", 1))
+            + contract_multiplier / max(1, client["length"])
+        )
+        client["base_fee"] = _round_game_amount(_case_target_for_tier(tier) / average_value_factor)
+
+
+_rebalance_asset_catalog()
+_rebalance_client_catalog()
 CLIENTS.sort(key=lambda client: (client["tier"], client["base_fee"], client["name"]))
 
 ASSET_BY_KEY = {item["key"]: item for item in ASSETS}
@@ -532,7 +622,7 @@ def _next_milestone(profile: PlayerProfile, owned: set[str]) -> dict | None:
         item = eligible_assets[0]
         return {"kind": "asset", "name": item["name"], "cost": _asset_cost(profile, item), "reputation": item.get("reputation", 0)}
     tier = FIRM_TIERS[profile.office_tier + 1]
-    if eligible_assets and _asset_cost(profile, eligible_assets[0]) <= tier["cost"] * .75:
+    if eligible_assets and _asset_cost(profile, eligible_assets[0]) <= tier["cost"]:
         item = eligible_assets[0]
         return {"kind": "asset", "name": item["name"], "cost": _asset_cost(profile, item), "reputation": item.get("reputation", 0)}
     return {"kind": "tier", "name": tier["name"], "cost": tier["cost"], "reputation": tier["reputation"]}
@@ -1071,16 +1161,18 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
         target_seconds,
         time_eligible=not locked_attempt.session_item.timer_compromised,
     )
-    score_mult = _score_multiplier(total_score)
+    reward_eligible = locked_attempt.is_correct and band != "Invalid"
+    score_mult = _score_multiplier(total_score) if reward_eligible else 0.0
     owned = _owned_keys(profile)
     context = locked_attempt.session_item.game_context_json
     if context is None:
         return None
-    score_mult = max(score_mult, int(context.get("minimum_score_multiplier_bps") or 0) / 10_000)
+    if reward_eligible:
+        score_mult = max(score_mult, int(context.get("minimum_score_multiplier_bps") or 0) / 10_000)
     client = CLIENT_BY_KEY.get(context.get("client_key"), CLIENT_BY_KEY["walk_in"])
     base_fee = int(context.get("base_fee") or client["base_fee"])
     firm_mult = int(context.get("firm_multiplier_bps") or 10_000) / 10_000
-    staff_bonus = round(int(context.get("staff_flat") or 0) * score_mult)
+    staff_bonus = round(int(context.get("staff_flat") or 0) * score_mult) if reward_eligible else 0
 
     validated = locked_attempt.is_correct and band in {"Good", "Excellent"}
     if not locked_attempt.is_correct:
@@ -1088,7 +1180,7 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     elif validated:
         profile.current_streak += 1
         profile.best_streak = max(profile.best_streak, profile.current_streak)
-    core_payout = round(base_fee * score_mult * firm_mult)
+    core_payout = round(base_fee * score_mult * firm_mult) if reward_eligible else 0
     streak_cap = int(context.get("streak_cap_bps") or 2_000) / 10_000
     streak_bonus = round(core_payout * min(streak_cap, profile.current_streak * .02)) if validated else 0
     contract_bonus = 0
@@ -1098,10 +1190,9 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
         .with_for_update()
         .first()
     )
-    if contract:
+    if contract and reward_eligible:
         contract.cases_remaining = max(0, contract.cases_remaining - 1)
-        if locked_attempt.is_correct:
-            contract.loyalty += 1
+        contract.loyalty += 1
         if contract.cases_remaining == 0:
             contract_mult = int(context.get("contract_bonus_mult_bps") or 20_000) / 10_000
             contract_bonus = round(base_fee * contract_mult)
@@ -1109,26 +1200,24 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
             contract.cases_remaining = client["length"]
         if profile.active_client_key == client["key"]:
             profile.client_cases_remaining = contract.cases_remaining
-    standard_payout = max(1, core_payout + streak_bonus + staff_bonus + contract_bonus)
+    standard_payout = max(1, core_payout + streak_bonus + staff_bonus + contract_bonus) if reward_eligible else 0
 
     credit = 0.0
     if locked_attempt.is_correct:
         credit = 1.0 if band in {"Good", "Excellent"} else .5 if band == "Weak" else 0.0
     reputation_before = profile.reputation
     reputation_after = _new_reputation(profile.user_id, locked_attempt.id, credit)
-    projected_cases = profile.total_cases + 1
     projected_correct = profile.total_correct + int(locked_attempt.is_correct)
     projected_validated = profile.total_validated_correct + int(validated)
-    # Progress remains possible even through a difficult run: careful participation
-    # builds a career floor, while strong answers still reach elite gates faster.
-    career_floor = min(94.0, 50 + projected_cases * 1.0 + projected_correct * .30 + projected_validated * .45)
     reputation_guard = int(context.get("client_reputation_guard_bps") or 0) / 10_000
     reputation_guard += sum(float(ASSET_BY_KEY[key].get("reputation_guard", 0)) for key in owned if key in ASSET_BY_KEY)
     maximum_drop = max(.5, 4 - reputation_guard)
     if context.get("client_matter_type") == "pro_bono":
         maximum_drop = min(maximum_drop, int(context.get("client_reputation_loss_cap_bps") or 5_000) / 10_000)
-    reputation_after = round(max(reputation_after, career_floor, reputation_before - maximum_drop), 1)
-    if locked_attempt.is_correct:
+    reputation_after = round(max(reputation_after, reputation_before - maximum_drop), 1)
+    if reward_eligible:
+        career_floor = min(94.0, 50 + projected_correct * .55 + projected_validated * .70)
+        reputation_after = round(max(reputation_after, career_floor), 1)
         reputation_after = min(100, round(reputation_after + int(context.get("client_reputation_win_bonus_bps") or 0) / 10_000, 1))
 
     profile.reputation = reputation_after
@@ -1150,7 +1239,7 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     profile.total_correct += int(locked_attempt.is_correct)
     profile.total_validated_correct += int(validated)
     daily = _daily(profile)
-    if band != "Invalid":
+    if reward_eligible:
         daily.cases_completed += 1
 
     settlement = AttemptSettlement(

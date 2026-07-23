@@ -304,7 +304,7 @@ def advance_quest(profile: PlayerProfile, *, validated: bool, correct: bool, ban
     if not quest:
         return {"quest_bonus": 0, "completed": None}
     qualifies = (
-        quest["condition"] == "completed"
+        (quest["condition"] == "completed" and correct)
         or (quest["condition"] == "correct" and correct)
         or (quest["condition"] == "validated" and validated)
     )

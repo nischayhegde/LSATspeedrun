@@ -619,30 +619,36 @@ function WorldControls({ nudge }: { nudge: (direction: Direction) => void }) {
   )
 }
 
-const tierPositions: Position[] = [
-  { x: 6, y: 83 }, { x: 13, y: 69 }, { x: 21, y: 82 }, { x: 28, y: 58 },
-  { x: 36, y: 73 }, { x: 43, y: 50 }, { x: 51, y: 66 }, { x: 59, y: 43 },
-  { x: 66, y: 70 }, { x: 72, y: 48 }, { x: 80, y: 68 }, { x: 87, y: 49 },
-  { x: 93, y: 69 }, { x: 90, y: 25 }, { x: 78, y: 22 },
-]
+const mapSections = [
+  { key: 'city', scale: 'CITY MAP', name: 'THE CITY', districts: 'OLD QUARTER → FINANCIAL DISTRICT', detail: 'Street courts, civic halls and downtown towers', minTier: 0, maxTier: 4 },
+  { key: 'nation', scale: 'NATIONAL MAP', name: 'THE NATION', districts: 'HARBOR EXCHANGE → MIDTOWN CROWN', detail: 'Regional branches and national headquarters', minTier: 5, maxTier: 6 },
+  { key: 'world', scale: 'WORLD MAP', name: 'THE WORLD', districts: 'EMBASSY ROW → SOVEREIGN ENCLAVE', detail: 'International, global and sovereign counsel', minTier: 7, maxTier: 9 },
+  { key: 'continent', scale: 'CONTINENTAL MAP', name: 'THE CONTINENT', districts: 'INNOVATION ARC → AZURE COAST', detail: 'Continental campuses and oceanic cities', minTier: 10, maxTier: 11 },
+  { key: 'space', scale: 'PLANETARY MAP', name: 'BEYOND EARTH', districts: 'EARTH ORBIT → LUNAR GATE → JUSTICE NEXUS', detail: 'Orbital, lunar and planetary law', minTier: 12, maxTier: 14 },
+] as const
 
-const rivalPositions: Position[] = [
-  { x: 18, y: 34 }, { x: 33, y: 32 }, { x: 46, y: 26 }, { x: 55, y: 81 },
-  { x: 25, y: 20 }, { x: 39, y: 88 }, { x: 62, y: 25 }, { x: 69, y: 86 },
-  { x: 76, y: 34 }, { x: 84, y: 82 }, { x: 94, y: 45 }, { x: 86, y: 13 },
-  { x: 96, y: 14 }, { x: 70, y: 14 },
-]
+type MapSection = (typeof mapSections)[number]
 
-const cityRegions = [
-  { name: 'OLD QUARTER', detail: 'STREET COURTS', className: 'old-quarter' },
-  { name: 'MARKET WARD', detail: 'FOUNDERS & NEIGHBORS', className: 'market-ward' },
-  { name: 'CIVIC CENTER', detail: 'TRIAL DISTRICT', className: 'civic-center' },
-  { name: 'FINANCIAL CORE', detail: 'TOWERS & MEDIA', className: 'financial-core' },
-  { name: 'HARBOR EXCHANGE', detail: 'NATIONAL GATEWAY', className: 'harbor-exchange' },
-  { name: 'EMBASSY / SKYLINE', detail: 'GLOBAL COUNSEL', className: 'embassy-skyline' },
-  { name: 'INNOVATION ARC', detail: 'AUTONOMOUS CAMPUS', className: 'innovation-arc' },
-  { name: 'CELESTIAL CROWN', detail: 'ORBITAL & LUNAR', className: 'celestial-crown' },
-]
+function mapSectionForTier(tier: number): MapSection {
+  return mapSections.find((section) => tier >= section.minTier && tier <= section.maxTier) ?? mapSections[0]
+}
+
+const tierSectionLayouts: Record<number, Position[]> = {
+  2: [{ x: 31, y: 70 }, { x: 68, y: 48 }],
+  3: [{ x: 23, y: 72 }, { x: 50, y: 47 }, { x: 77, y: 70 }],
+  5: [{ x: 13, y: 76 }, { x: 31, y: 53 }, { x: 49, y: 76 }, { x: 67, y: 48 }, { x: 84, y: 72 }],
+}
+
+const rivalSectionLayouts: Record<number, Position[]> = {
+  2: [{ x: 29, y: 27 }, { x: 73, y: 25 }],
+  3: [{ x: 20, y: 27 }, { x: 51, y: 23 }, { x: 81, y: 31 }],
+  4: [{ x: 14, y: 28 }, { x: 38, y: 20 }, { x: 63, y: 27 }, { x: 85, y: 21 }],
+}
+
+function sectionPosition(kind: 'tier' | 'rival', index: number, count: number): Position {
+  const layouts = kind === 'tier' ? tierSectionLayouts : rivalSectionLayouts
+  return layouts[count]?.[index] ?? { x: 18 + (index % 4) * 22, y: kind === 'tier' ? 68 : 25 }
+}
 
 function PixelBuilding({ tier, locked }: { tier: number; locked: boolean }) {
   const floors = Math.min(8, tier + 2)
@@ -675,18 +681,40 @@ function RivalHeadquarters({ assetKey, owned }: { assetKey: string; owned: boole
 }
 
 export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: (tab: 'upgrades' | 'rivals') => void }) {
-  const initial = tierPositions[game.office_tier] ?? tierPositions[0]
+  const rivals = game.catalog.assets.filter((asset) => asset.type === 'rival')
+  const tierPoints = mapSections.flatMap((section) => {
+    const tiers = game.catalog.tiers.filter((tier) => tier.tier >= section.minTier && tier.tier <= section.maxTier)
+    return tiers.map((tier, index) => ({ key: `tier-${tier.tier}`, kind: 'tier' as const, sectionKey: section.key, position: sectionPosition('tier', index, tiers.length), data: tier }))
+  })
+  const rivalPoints = mapSections.flatMap((section) => {
+    const sectionRivals = rivals.filter((rival) => rival.tier >= section.minTier && rival.tier <= section.maxTier)
+    return sectionRivals.map((rival, index) => ({ key: `rival-${rival.key}`, kind: 'rival' as const, sectionKey: section.key, position: sectionPosition('rival', index, sectionRivals.length), data: rival }))
+  })
+  const points = [...tierPoints, ...rivalPoints]
+  const initialSection = mapSectionForTier(game.office_tier)
+  const initialPoint = tierPoints.find((point) => point.key === `tier-${game.office_tier}`) ?? tierPoints[0]
+  const initial = initialPoint.position
   const walker = useWalker({ x: initial.x, y: Math.min(86, initial.y + 10) }, { left: 4, right: 96, top: 12, bottom: 89 })
   const [selected, setSelected] = useState(`tier-${game.office_tier}`)
+  const [activeSectionKey, setActiveSectionKey] = useState<MapSection['key']>(initialSection.key)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const rivals = game.catalog.assets.filter((asset) => asset.type === 'rival')
-  const points = [
-    ...game.catalog.tiers.map((tier, index) => ({ key: `tier-${tier.tier}`, kind: 'tier' as const, position: tierPositions[index], data: tier })),
-    ...rivals.map((rival, index) => ({ key: `rival-${rival.key}`, kind: 'rival' as const, position: rivalPositions[index] ?? { x: 82, y: 82 }, data: rival })),
-  ]
-  const nearby = points.find((point) => Math.hypot((walker.position.x - point.position.x) * 1.15, walker.position.y - point.position.y) < 11)
+  const activePoints = points.filter((point) => point.sectionKey === activeSectionKey)
+  const nearby = activePoints.find((point) => Math.hypot((walker.position.x - point.position.x) * 1.15, walker.position.y - point.position.y) < 11)
   const selectedPoint = points.find((point) => point.key === selected) ?? points[0]
   const selectedRivalProfile = selectedPoint.kind === 'rival' ? (rivalProfiles[selectedPoint.data.key] ?? rivalProfiles.neighborhood_practice) : null
+  const activeSection = mapSections.find((section) => section.key === activeSectionKey) ?? mapSections[0]
+  const hqSection = initialSection
+
+  const jumpToSection = (section: MapSection) => {
+    setActiveSectionKey(section.key)
+    const sectionPoints = points.filter((point) => point.sectionKey === section.key)
+    const currentSelection = sectionPoints.find((point) => point.key === selected)
+    const currentHq = sectionPoints.find((point) => point.key === `tier-${game.office_tier}`)
+    const destination = currentSelection ?? currentHq ?? sectionPoints[0]
+    if (!destination) return
+    setSelected(destination.key)
+    walker.setPosition({ x: destination.position.x, y: Math.min(86, destination.position.y + 10) })
+  }
 
   useEffect(() => {
     const interact = (event: globalThis.KeyboardEvent) => {
@@ -700,61 +728,64 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
 
   useEffect(() => {
     const scroller = scrollRef.current
-    if (!scroller) return
-    const left = (walker.position.x / 100) * scroller.scrollWidth - scroller.clientWidth / 2
-    const top = (walker.position.y / 100) * scroller.scrollHeight - scroller.clientHeight / 2
-    scroller.scrollTo({ left, top, behavior: walker.walking ? 'auto' : 'smooth' })
-  }, [walker.position.x, walker.position.y, walker.walking])
+    if (!scroller || scroller.scrollWidth <= scroller.clientWidth) return
+    scroller.scrollTo({ left: (walker.position.x / 100) * scroller.scrollWidth - scroller.clientWidth / 2, behavior: 'auto' })
+  }, [activeSectionKey, walker.position.x])
 
   return (
-    <div className="empire-explorer game-viewport" aria-label="Explorable legal empire map">
+    <div className="empire-map-shell">
+      <nav className="map-section-nav" aria-label="Empire map sections">
+        {mapSections.map((section, index) => {
+          const siteCount = points.filter((point) => point.sectionKey === section.key).length
+          return (
+            <button
+              type="button"
+              className={`${activeSection.key === section.key ? 'active' : ''} ${hqSection.key === section.key ? 'contains-hq' : ''}`}
+              aria-pressed={activeSection.key === section.key}
+              onClick={() => jumpToSection(section)}
+              key={section.key}
+            >
+              <small>{String(index + 1).padStart(2, '0')}</small>
+              <span><strong>{section.name}</strong><em>{section.scale}</em></span>
+              <b>{siteCount} SITES</b>
+            </button>
+          )
+        })}
+      </nav>
+      <div className="empire-explorer game-viewport" aria-label="Explorable legal empire map">
       <div className="empire-map-scroll" ref={scrollRef}>
-      <div className="empire-terrain">
-        <div className="map-region-grid">
-          {cityRegions.map((region) => <div className={`map-region map-region-${region.className}`} key={region.name}><span>{region.name}</span><small>{region.detail}</small></div>)}
+      <div className={`empire-terrain map-world-${activeSection.key}`}>
+        <div className="map-area-identity" aria-hidden="true">
+          <small>{activeSection.scale}</small><strong>{activeSection.name}</strong><span>{activeSection.districts}</span><em>{activeSection.detail}</em>
         </div>
-        <div className="terrain-speckles">{Array.from({ length: 28 }, (_, index) => <i key={index} />)}</div>
-        <div className="map-water"><i /><i /><i /><span className="map-boat">▰</span></div>
-        <div className="map-park park-one">{Array.from({ length: 8 }, (_, index) => <i key={index} />)}</div>
-        <div className="map-park park-two">{Array.from({ length: 6 }, (_, index) => <i key={index} />)}</div>
-        <div className="map-road road-a"><div className="road-traffic traffic-one"><i /><i /><i /></div></div>
-        <div className="map-road road-b"><div className="road-traffic traffic-two"><i /><i /></div></div>
-        <div className="map-road road-c" /><div className="map-road road-d" />
-        <div className="map-bridge"><i /><i /><i /><i /></div>
-        <div className="map-rail"><span /><span /><span /><span /><span /><span /><span /><span /><div className="map-train"><i /><i /><i /></div></div>
-        <div className="map-streetlights">{Array.from({ length: 8 }, (_, index) => <i key={index} />)}</div>
-        <div className="map-fountain"><i /><b /><span /></div>
-        <div className="map-courthouse"><i /><i /><i /><b>§</b><span>CIVIC COURT</span></div>
-        <div className="map-harbor-cranes"><i /><i /><b /><span /></div>
-        <div className="map-airport"><i /><b /><span>LEGAL AIR</span></div>
-        <div className="map-orbital-pad"><i /><b /><span>ORBITAL GATE</span></div>
-        <div className="map-birds"><i /><i /><i /><i /></div>
-        <div className="leaf-particles">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>
-        {game.office_tier >= 4 && <div className="map-helicopter"><i /><b /><span /></div>}
-        <div className="map-cloud map-cloud-a" /><div className="map-cloud map-cloud-b" />
-        {game.catalog.tiers.map((tier, index) => {
-          const position = tierPositions[index]
+        {activeSection.key === 'city' && <><div className="map-park park-one">{Array.from({ length: 5 }, (_, index) => <i key={index} />)}</div><div className="map-road road-a" /><div className="map-road road-c" /><div className="map-streetlights">{Array.from({ length: 4 }, (_, index) => <i key={index} />)}</div><div className="map-fountain"><i /><b /><span /></div><div className="map-courthouse"><i /><i /><i /><b>§</b><span>CIVIC COURT</span></div></>}
+        {activeSection.key === 'nation' && <><div className="map-water"><i /><span className="map-boat">▰</span></div><div className="map-road road-a" /><div className="map-road road-b" /><div className="map-bridge"><i /><i /><i /><i /></div><div className="map-rail"><span /><span /><span /><span /><span /><span /><div className="map-train"><i /><i /></div></div><div className="map-harbor-cranes"><i /><i /><b /><span /></div><div className="map-airport"><i /><b /><span>LEGAL AIR</span></div></>}
+        {activeSection.key === 'world' && <><div className="map-water"><i /><i /><span className="map-boat">▰</span></div><div className="map-bridge"><i /><i /><i /><i /></div><div className="map-airport"><i /><b /><span>GLOBAL AIR</span></div></>}
+        {activeSection.key === 'continent' && <><div className="map-water"><i /><i /></div><div className="map-park park-two">{Array.from({ length: 4 }, (_, index) => <i key={index} />)}</div><div className="map-harbor-cranes"><i /><i /><b /><span /></div></>}
+        {activeSection.key === 'space' && <div className="map-orbital-pad"><i /><b /><span>ORBITAL GATE</span></div>}
+        {tierPoints.filter((point) => point.sectionKey === activeSection.key).map(({ data: tier, position }) => {
           const status = tier.tier < game.office_tier ? 'complete' : tier.tier === game.office_tier ? 'current' : 'future'
           return (
             <button
-              className={`empire-node tier-map-node ${status} ${nearby?.key === `tier-${tier.tier}` ? 'is-near' : ''}`}
+              className={`empire-node tier-map-node ${status} ${selected === `tier-${tier.tier}` ? 'is-selected' : ''} ${nearby?.key === `tier-${tier.tier}` ? 'is-near' : ''}`}
               key={tier.tier}
               style={{ left: `${position.x}%`, top: `${position.y}%` }}
               onClick={() => setSelected(`tier-${tier.tier}`)}
+              aria-label={`${tier.name}, tier ${tier.tier}, ${status}`}
             >
               <PixelBuilding tier={tier.tier} locked={status === 'future'} />
               <span><b>{tier.name}</b><small>TIER {tier.tier} · {status}</small></span>
             </button>
           )
         })}
-        {rivals.map((rival, index) => {
-          const position = rivalPositions[index] ?? { x: 82, y: 82 }
+        {rivalPoints.filter((point) => point.sectionKey === activeSection.key).map(({ data: rival, position }) => {
           return (
             <button
-              className={`empire-node rival-map-node ${rival.owned ? 'owned' : ''} ${nearby?.key === `rival-${rival.key}` ? 'is-near' : ''}`}
+              className={`empire-node rival-map-node ${rival.owned ? 'owned' : ''} ${selected === `rival-${rival.key}` ? 'is-selected' : ''} ${nearby?.key === `rival-${rival.key}` ? 'is-near' : ''}`}
               key={rival.key}
               style={{ left: `${position.x}%`, top: `${position.y}%` }}
               onClick={() => setSelected(`rival-${rival.key}`)}
+              aria-label={`${rival.name.replace('Acquire ', '')}, ${rival.owned ? 'acquired' : 'rival firm'}`}
             >
               <RivalHeadquarters assetKey={rival.key} owned={rival.owned} />
               <span><b>{rival.name.replace('Acquire ', '')}</b><small>{rival.owned ? 'ACQUIRED' : 'RIVAL FIRM'}</small></span>
@@ -785,6 +816,7 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
       </div>
       <div className={`interaction-toast map-interaction ${nearby ? 'visible' : ''}`}><kbd>E</kbd><span><strong>Inspect destination</strong><small>{nearby?.data.name ?? 'Walk near a building'}</small></span></div>
       <WorldControls nudge={walker.nudge} />
+      </div>
     </div>
   )
 }

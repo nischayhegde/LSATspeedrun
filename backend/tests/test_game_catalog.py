@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import math
-
-from app.game import ASSETS, ASSET_BY_KEY, CLIENTS, FIRM_TIERS, _public_client, _score_multiplier
+from app.game import ASSETS, ASSET_BY_KEY, CLIENTS, FIRM_TIERS, _case_target_for_tier, _public_client
 from app.models import PlayerClientContract, PlayerProfile
 
 
@@ -24,23 +22,40 @@ def test_empire_catalog_is_large_coherent_and_frontier_scaled():
         assert set(definition.get("requires", ())) <= set(ASSET_BY_KEY)
 
 
-def test_each_office_is_reachable_in_five_floor_payout_cases():
-    # Even a minimum-score result against the best prior-tier matter funds the
-    # next headquarters within the intended 3–5 case progression window.
-    assert _score_multiplier(1) == .60
-    for tier in FIRM_TIERS[1:]:
-        prior_tier = tier["tier"] - 1
-        best_client = max(
-            (client for client in CLIENTS if client["tier"] <= prior_tier),
-            key=lambda client: client["base_fee"] * client.get("payout_mult", 1),
-        )
-        floor_payout = (
-            best_client["base_fee"]
-            * best_client.get("payout_mult", 1)
-            * _score_multiplier(1)
-            * (1 + prior_tier * .06)
-        )
-        assert math.ceil(tier["cost"] / floor_payout) <= 5, tier["name"]
+def _expected_solid_case_value(client: dict) -> float:
+    tier = client["tier"]
+    return client["base_fee"] * (
+        1.20 * (1 + tier * .06) * client.get("payout_mult", 1)
+        + (2 + client.get("contract_bonus_mult", 0)) / client["length"]
+    )
+
+
+def test_commercial_clients_fund_the_next_office_in_three_to_five_good_cases():
+    for client in CLIENTS:
+        tier = client["tier"]
+        if client.get("matter_type") == "pro_bono" or tier >= len(FIRM_TIERS) - 1:
+            continue
+        cases = FIRM_TIERS[tier + 1]["cost"] / _expected_solid_case_value(client)
+        assert 3 <= cases <= 5, client["name"]
+
+
+def test_same_tier_commercial_clients_have_comparable_expected_value():
+    for tier in range(len(FIRM_TIERS)):
+        values = [
+            _expected_solid_case_value(client)
+            for client in CLIENTS
+            if client["tier"] == tier and client.get("matter_type") != "pro_bono"
+        ]
+        if len(values) > 1:
+            assert max(values) / min(values) <= 1.05, FIRM_TIERS[tier]["name"]
+
+
+def test_assets_are_useful_and_cost_about_three_to_five_good_cases():
+    for asset in ASSETS:
+        case_cost = asset["cost"] / _case_target_for_tier(asset["tier"])
+        assert 3 <= case_cost <= 5.1, asset["name"]
+        assert asset["payout_mult"] > 0, asset["name"]
+        assert "case payout" in asset["benefit"], asset["name"]
 
 
 def test_character_clients_offer_real_contract_variety():
