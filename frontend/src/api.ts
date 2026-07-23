@@ -131,7 +131,7 @@ export const api = {
     }),
   submitAttempt: (
     sessionId: string,
-    body: { item_id: string; selected_label: string; reasoning?: string },
+    body: { item_id: string; selected_label: string; reasoning?: string; confidence?: 1 | 2 | 3 | 4 },
     idempotencyKey: string,
   ) =>
     request<{ result: import('./types').AttemptResult }>(`/study-sessions/${sessionId}/attempts`, {

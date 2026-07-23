@@ -145,6 +145,9 @@ class SessionItem(db.Model):
 
 class Attempt(db.Model):
     __tablename__ = "attempts"
+    __table_args__ = (
+        CheckConstraint("confidence is null or (confidence >= 1 and confidence <= 4)", name="ck_attempt_confidence_range"),
+    )
 
     id = db.Column(db.String(36), primary_key=True, default=new_id)
     user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -153,6 +156,7 @@ class Attempt(db.Model):
     selected_label = db.Column(db.String(1), nullable=False)
     is_correct = db.Column(db.Boolean, nullable=False)
     reasoning_text = db.Column(db.Text, nullable=True)
+    confidence = db.Column(db.Integer, nullable=True)
     explanation_score = db.Column(db.Float, nullable=True)
     server_elapsed_ms = db.Column(db.Integer, nullable=False)
     client_elapsed_ms = db.Column(db.Integer, nullable=True)

@@ -554,9 +554,10 @@ def create_attempt(session_id: str):
             "session_complete": "This practice session is already complete.",
             "invalid_session_item": "This is not the current question. Refresh and try again.",
             "invalid_choice": "Choose one of the available answers.",
+            "invalid_confidence": "Choose a confidence level from 1 to 4.",
             "reasoning_required": "Explain your reasoning before submitting the case.",
         }
-        status = 400 if code in {"invalid_choice", "reasoning_required"} else 409
+        status = 400 if code in {"invalid_choice", "invalid_confidence", "reasoning_required"} else 409
         return error(code, messages.get(code, "The answer could not be saved."), status)
     return jsonify({"result": serialize_attempt_result(attempt, duplicate)})
 

@@ -46,7 +46,6 @@ export function PixelWebGLAtmosphere({
       uniform float time;
       uniform vec3 accent;
       uniform vec2 pointer;
-      uniform vec2 resolution;
       uniform float variant;
       uniform float intensity;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
@@ -56,29 +55,40 @@ export function PixelWebGLAtmosphere({
         f = f * f * (3. - 2. * f);
         return mix(mix(hash(i), hash(i + vec2(1.,0.)), f.x), mix(hash(i + vec2(0.,1.)), hash(i + vec2(1.,1.)), f.x), f.y);
       }
+      float softGlow(vec2 p, vec2 center, vec2 radius) {
+        return 1. - smoothstep(0., 1., length((p - center) / radius));
+      }
       void main() {
-        vec2 pixelScale = max(vec2(96.,54.), resolution / 5.);
-        vec2 p = floor((uv + (pointer - .5) * .012) * pixelScale) / pixelScale;
-        float horizon = smoothstep(.16, .82, p.y);
-        vec2 perspective = vec2((p.x - .5) / max(.17, p.y), 1. / max(.17, p.y));
-        float gridX = step(.965, fract(perspective.x * 5.));
-        float gridY = step(.972, fract(perspective.y * 1.7 - time * .08));
-        float grid = (gridX + gridY) * horizon;
-        float glint = step(.994, hash(floor(p * vec2(80.,45.)) + floor(time * .7)));
-        float sweep = smoothstep(.045, 0., abs(fract(p.x * .42 + p.y * .2 + time * .035) - .5));
-        float contourNoise = noise(p * 8. + vec2(time * .018, 0.));
-        float contour = step(.91, fract(contourNoise * 8. + p.y * 7.));
-        float cityPulse = smoothstep(.04, 0., abs(fract((p.x + p.y * .55) * 3. - time * .045) - .5));
-        float shaft = smoothstep(.19, 0., abs(p.x - mix(.2,.8, pointer.x) + (p.y - .5) * .18));
+        vec2 p = uv + (pointer - .5) * vec2(.008, .006);
         float mapMask = step(1.5, variant);
         float officeMask = 1. - step(.5, variant);
         float sceneMask = step(.5, variant) * (1. - mapMask);
-        float mapFx = (contour * .11 + cityPulse * .1) * mapMask;
-        float roomFx = (shaft * .09 + grid * .1) * (officeMask + sceneMask);
-        float vignette = smoothstep(.76, .2, distance(p, vec2(.5)));
-        vec3 color = accent * (grid * .3 + glint * .8 + sweep * .13 + mapFx + roomFx);
-        color += accent * mapMask * noise(p * 14. + time * .025) * .025;
-        float alpha = min(.42, (grid * .12 + glint * .25 + sweep * .065 + mapFx + roomFx) * intensity) * vignette;
+
+        vec2 keyCenter = vec2(.25, .76);
+        keyCenter = mix(keyCenter, vec2(.73, .78), sceneMask);
+        keyCenter = mix(keyCenter, vec2(.67, .62), mapMask);
+        keyCenter += vec2(sin(time * .11), cos(time * .09)) * .012;
+        vec2 fillCenter = mix(vec2(.78, .28), vec2(.17, .35), sceneMask);
+        fillCenter = mix(fillCenter, vec2(.25, .25), mapMask);
+
+        float keyLight = softGlow(p, keyCenter, mix(vec2(.44, .34), vec2(.54, .46), mapMask));
+        float fillLight = softGlow(p, fillCenter, vec2(.34, .3));
+        float broadHaze = noise(p * 3.1 + vec2(time * .012, -time * .008));
+        broadHaze = mix(broadHaze, noise(p * 6.2 + vec2(-time * .009, time * .011)), .28);
+        broadHaze = smoothstep(.32, .78, broadHaze) * softGlow(p, vec2(.5), vec2(.78, .7));
+
+        vec2 glintA = vec2(.18, .69) + vec2(sin(time * .23), cos(time * .19)) * .012;
+        vec2 glintB = vec2(.82, .42) + vec2(cos(time * .17), sin(time * .21)) * .01;
+        vec2 glintC = mix(vec2(.63, .83), vec2(.42, .22), mapMask);
+        float glint = softGlow(p, glintA, vec2(.012, .016));
+        glint += softGlow(p, glintB, vec2(.009, .013));
+        glint += softGlow(p, glintC, vec2(.008, .011)) * (.55 + .45 * sin(time * .47));
+
+        float depth = smoothstep(.05, .92, p.y) * (1. - smoothstep(.58, 1.05, distance(p, vec2(.5, .46))));
+        float atmosphere = keyLight * (.68 + broadHaze * .24) + fillLight * .22 + broadHaze * (.09 + mapMask * .06) + depth * .035;
+        vec3 lightColor = mix(accent, vec3(1., .82, .48), officeMask * .16 + sceneMask * .08);
+        vec3 color = lightColor * (.45 + atmosphere * .55 + glint * .5);
+        float alpha = min(.16, (atmosphere * .055 + glint * .18) * intensity);
         gl_FragColor = vec4(color, alpha);
       }
     `
@@ -109,7 +119,6 @@ export function PixelWebGLAtmosphere({
     const timeLocation = gl.getUniformLocation(program, 'time')
     const accentLocation = gl.getUniformLocation(program, 'accent')
     const pointerLocation = gl.getUniformLocation(program, 'pointer')
-    const resolutionLocation = gl.getUniformLocation(program, 'resolution')
     const variantLocation = gl.getUniformLocation(program, 'variant')
     const intensityLocation = gl.getUniformLocation(program, 'intensity')
     gl.uniform3fv(accentLocation, rgb(accent))
@@ -121,6 +130,7 @@ export function PixelWebGLAtmosphere({
     let reduced = motion.matches
     let frame = 0
     let start = performance.now()
+    let lastDraw = 0
     let visible = true
     const resize = () => {
       const ratio = Math.min(window.devicePixelRatio || 1, 1.5)
@@ -128,14 +138,18 @@ export function PixelWebGLAtmosphere({
       const height = Math.max(135, Math.round(canvas.clientHeight * ratio / 2))
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height }
       gl.viewport(0, 0, width, height)
-      gl.uniform2f(resolutionLocation, width, height)
     }
     const draw = (now: number) => {
+      if (!reduced && now - lastDraw < 1000 / 30) {
+        if (visible) frame = window.requestAnimationFrame(draw)
+        return
+      }
+      lastDraw = now
       pointer.x += (pointerTarget.x - pointer.x) * .07
       pointer.y += (pointerTarget.y - pointer.y) * .07
       gl.clearColor(0, 0, 0, 0)
       gl.clear(gl.COLOR_BUFFER_BIT)
-      gl.uniform1f(timeLocation, (now - start) / 1000)
+      gl.uniform1f(timeLocation, reduced ? 0 : (now - start) / 1000)
       gl.uniform2f(pointerLocation, pointer.x, pointer.y)
       gl.drawArrays(gl.TRIANGLES, 0, 6)
       if (!reduced && visible) frame = window.requestAnimationFrame(draw)
@@ -209,6 +223,7 @@ export function CasePageTurn({ turnKey, direction = 1 }: { turnKey: number; dire
       uniform float progress;
       uniform float direction;
       uniform vec2 resolution;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       void main() {
         float phase = progress < .5 ? progress * 2. : (1. - progress) * 2.;
         float x = direction > 0. ? uv.x : 1. - uv.x;
@@ -216,10 +231,9 @@ export function CasePageTurn({ turnKey, direction = 1 }: { turnKey: number; dire
         float paper = smoothstep(edge - .015, edge + .015, x);
         float curl = 1. - smoothstep(0., .18, abs(x - edge));
         float fold = 1. - smoothstep(0., .055, abs(x - edge));
-        float ruled = step(.965, fract(uv.y * max(18., resolution.y / 26.)));
-        float fibers = step(.985, fract((uv.x + uv.y * .37) * max(25., resolution.x / 24.)));
+        float paperNoise = hash(floor(uv * resolution / 3.));
         vec3 parchment = mix(vec3(.94,.87,.67), vec3(.58,.43,.25), curl * .62);
-        parchment += ruled * vec3(.035,.055,.06) + fibers * vec3(.04,.025,.01);
+        parchment += (paperNoise - .5) * .028;
         parchment = mix(parchment, vec3(.23,.78,.72), fold * .2);
         float shadow = (1. - smoothstep(0., .24, edge - x)) * (1. - paper) * .34;
         float alpha = min(1., paper * .98 + curl * .52 + shadow);
@@ -267,13 +281,14 @@ export function CasePageTurn({ turnKey, direction = 1 }: { turnKey: number; dire
     observer.observe(canvas)
     const started = performance.now()
     let frame = 0
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const draw = (now: number) => {
-      const progress = Math.min(1, (now - started) / 620)
+      const progress = reduced ? 1 : Math.min(1, (now - started) / 620)
       gl.clearColor(0, 0, 0, 0)
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.uniform1f(progressLocation, progress)
       gl.drawArrays(gl.TRIANGLES, 0, 6)
-      if (progress < 1) frame = window.requestAnimationFrame(draw)
+      if (!reduced && progress < 1) frame = window.requestAnimationFrame(draw)
     }
     frame = window.requestAnimationFrame(draw)
     return () => {

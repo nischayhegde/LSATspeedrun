@@ -1,0 +1,364 @@
+.firm-tutorial-backdrop {
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  display: grid;
+  place-items: center;
+  position: fixed;
+  z-index: 2200;
+  inset: 0;
+  background: rgba(5, 9, 14, .82);
+  backdrop-filter: blur(4px);
+  animation: tutorial-backdrop-in .18s ease-out both;
+}
+
+.firm-tutorial {
+  width: min(920px, 100%);
+  min-height: 570px;
+  max-height: min(720px, calc(100dvh - 48px));
+  display: grid;
+  grid-template-columns: 225px minmax(0, 1fr);
+  overflow: hidden;
+  border: 5px solid #080c13;
+  color: #242d34;
+  background: #e9dfc6;
+  box-shadow: inset 0 0 0 3px #a98950, 12px 14px 0 rgba(0, 0, 0, .38);
+  animation: tutorial-file-in .24s steps(4, end) both;
+}
+
+.firm-tutorial:focus { outline: none; }
+
+.firm-tutorial-rail {
+  min-width: 0;
+  padding: 25px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  color: #d9e2dd;
+  border-right: 4px solid #080c13;
+  background-color: #122737;
+  background-image: linear-gradient(90deg, rgba(101, 201, 194, .05) 2px, transparent 2px), linear-gradient(rgba(101, 201, 194, .05) 2px, transparent 2px);
+  background-size: 16px 16px;
+  box-shadow: inset -3px 0 #355063;
+}
+
+.firm-tutorial-seal {
+  padding-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 2px solid #38515f;
+  color: #f2ce6b;
+}
+
+.firm-tutorial-seal svg {
+  width: 45px;
+  height: 45px;
+  padding: 9px;
+  border: 3px solid #070b11;
+  background: #efc75d;
+  color: #172536;
+  box-shadow: inset -4px -4px #ac742d, 4px 4px #070b11;
+}
+
+.firm-tutorial-seal span {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: .08em;
+}
+
+.firm-tutorial-rail ol {
+  margin: 22px 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  list-style: none;
+}
+
+.firm-tutorial-rail li { margin: 0; }
+
+.firm-tutorial-rail button {
+  width: 100%;
+  min-height: 50px;
+  padding: 7px 8px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 2px solid transparent;
+  color: #8ea7af;
+  background: transparent;
+  text-align: left;
+}
+
+.firm-tutorial-rail button > span {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #4b6570;
+  color: #8fcfc6;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+}
+
+.firm-tutorial-rail button > span svg { width: 14px; }
+
+.firm-tutorial-rail button strong {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: .02em;
+}
+
+.firm-tutorial-rail button:hover { color: #f4dda2; background: #1c3444; }
+
+.firm-tutorial-rail button.active {
+  border-color: #070b11;
+  color: #172536;
+  background: #efc75d;
+  box-shadow: inset -3px -3px #ad742d, 3px 3px #070b11;
+}
+
+.firm-tutorial-rail button.active > span {
+  border-color: #172536;
+  color: #172536;
+}
+
+.firm-tutorial-rail button.complete { color: #b7d8cb; }
+.firm-tutorial-rail button.complete > span { color: #dff4d8; background: #326657; }
+
+.firm-tutorial-rail > small {
+  margin-top: auto;
+  color: #a2bac0;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: .06em;
+}
+
+.firm-tutorial-page {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background-color: #f3ead5;
+  background-image: linear-gradient(90deg, rgba(67, 53, 32, .045) 1px, transparent 1px), linear-gradient(rgba(67, 53, 32, .045) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+.firm-tutorial-page > header {
+  min-height: 62px;
+  padding: 0 20px 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 3px solid #927b54;
+  background: #ded0ad;
+  box-shadow: inset 0 -2px #f8efda;
+}
+
+.firm-tutorial-page > header > div { display: flex; align-items: center; gap: 13px; }
+.firm-tutorial-page > header span,
+.firm-tutorial-page > header strong {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+.firm-tutorial-page > header span { color: #655b4a; }
+.firm-tutorial-page > header strong { padding: 6px 8px; color: #f8e7ae; background: #173040; }
+
+.firm-tutorial-close {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #2a2925;
+  color: #253440;
+  background: #eadfbe;
+  box-shadow: 3px 3px #9f8b60;
+}
+.firm-tutorial-close:hover { color: #fff0bc; background: #294659; }
+.firm-tutorial-close svg { width: 19px; }
+
+.firm-tutorial-step {
+  padding: clamp(30px, 6vh, 54px) clamp(30px, 6vw, 64px) 28px;
+  overflow-y: auto;
+  animation: tutorial-step-in .18s steps(3, end) both;
+}
+
+.firm-tutorial-icon {
+  width: 68px;
+  height: 68px;
+  margin-bottom: 24px;
+  display: grid;
+  place-items: center;
+  border: 4px solid #121820;
+  color: #173142;
+  background: #efc65e;
+  box-shadow: inset -6px -6px #b57a2c, inset 3px 3px #ffeca0, 6px 6px #876f49;
+}
+.firm-tutorial-icon svg { width: 31px; height: 31px; stroke-width: 2.4; }
+
+.firm-tutorial-kicker {
+  color: #75501c;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  letter-spacing: .09em;
+}
+
+.firm-tutorial-step h2 {
+  max-width: 590px;
+  margin: 12px 0 14px;
+  color: #173342;
+  font-family: var(--font-display);
+  font-size: clamp(31px, 4.2vw, 47px);
+  font-weight: 650;
+  line-height: 1.05;
+  letter-spacing: -.035em;
+}
+
+.firm-tutorial-step > p {
+  max-width: 610px;
+  margin: 0;
+  color: #424a47;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.firm-tutorial-step ul {
+  max-width: 620px;
+  margin: 23px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  list-style: none;
+}
+
+.firm-tutorial-step li {
+  min-width: 0;
+  padding: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 2px solid #b8aa88;
+  color: #3f4844;
+  background: rgba(255, 250, 231, .7);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.firm-tutorial-step li svg { width: 16px; min-width: 16px; color: #2c766b; }
+
+.firm-tutorial-page > footer {
+  min-height: 78px;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 3px solid #927b54;
+  background: #ded0ad;
+}
+
+.firm-tutorial-page > footer button {
+  min-height: 42px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 3px solid #14171d;
+  color: #f0e6c9;
+  background: #294759;
+  box-shadow: inset -3px -3px #1b3040, 4px 4px #8e7952;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.firm-tutorial-page > footer button:hover:not(:disabled) { color: #fff0b2; background: #345d70; }
+.firm-tutorial-page > footer button:disabled { opacity: .38; cursor: not-allowed; }
+.firm-tutorial-page > footer button svg { width: 16px; }
+.firm-tutorial-page > footer .firm-tutorial-skip { padding-inline: 4px; border-color: transparent; color: #655d50; background: transparent; box-shadow: none; }
+.firm-tutorial-page > footer .firm-tutorial-skip:hover { color: #243d49; background: transparent; }
+.firm-tutorial-actions { display: flex; gap: 10px; }
+.firm-tutorial-page > footer .firm-tutorial-next {
+  min-width: 112px;
+  color: #172333;
+  background: #efc65d;
+  box-shadow: inset -4px -4px #b47a2d, inset 2px 2px #ffeca0, 4px 4px #8e7952;
+}
+.firm-tutorial-page > footer .firm-tutorial-next:hover { color: #172333; background: #ffda72; }
+
+.tutorial-help-button { gap: 5px; }
+.tutorial-help-button span { font-family: var(--font-pixel); font-size: 11px; }
+
+.firm-tutorial :is(button, [tabindex]):focus-visible {
+  outline: 3px solid #f7d46b;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px #102735;
+}
+
+@keyframes tutorial-backdrop-in { from { opacity: 0; } }
+@keyframes tutorial-file-in { from { opacity: 0; transform: translateY(12px) scale(.99); } }
+@keyframes tutorial-step-in { from { opacity: 0; transform: translateX(8px); } }
+
+@media (max-width: 700px) {
+  .firm-tutorial-backdrop { padding: 0; place-items: stretch; }
+  .firm-tutorial {
+    width: 100%;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    border-width: 0;
+    box-shadow: none;
+  }
+  .firm-tutorial-rail {
+    padding: max(10px, env(safe-area-inset-top)) max(13px, env(safe-area-inset-right)) 10px max(13px, env(safe-area-inset-left));
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 14px;
+    border-right: 0;
+    border-bottom: 4px solid #080c13;
+  }
+  .firm-tutorial-seal { padding: 0; border: 0; }
+  .firm-tutorial-seal svg { width: 38px; height: 38px; padding: 7px; }
+  .firm-tutorial-seal span,
+  .firm-tutorial-rail button strong,
+  .firm-tutorial-rail > small { display: none; }
+  .firm-tutorial-rail ol { margin: 0; display: flex; justify-content: flex-end; gap: 5px; }
+  .firm-tutorial-rail button { min-width: 38px; min-height: 44px; padding: 3px; display: grid; place-items: center; border: 0; }
+  .firm-tutorial-rail button > span { width: 30px; height: 30px; }
+  .firm-tutorial-rail button.active { border: 0; box-shadow: inset -3px -3px #ad742d; }
+  .firm-tutorial-page > header { min-height: 55px; padding-inline: 17px 12px; }
+  .firm-tutorial-step { padding: 24px 20px; }
+  .firm-tutorial-icon { width: 56px; height: 56px; margin-bottom: 20px; }
+  .firm-tutorial-icon svg { width: 26px; }
+  .firm-tutorial-step h2 { font-size: clamp(28px, 9vw, 38px); }
+  .firm-tutorial-step ul { grid-template-columns: 1fr; }
+  .firm-tutorial-page > footer { min-height: 70px; padding: 11px max(14px, env(safe-area-inset-right)) max(11px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+  .firm-tutorial-page > footer button { min-height: 44px; padding-inline: 12px; }
+  .firm-tutorial-page > footer .firm-tutorial-next { min-width: 90px; }
+  .tutorial-help-button span { display: none; }
+}
+
+@media (max-width: 390px) {
+  .firm-tutorial-rail { gap: 8px; }
+  .firm-tutorial-seal svg { width: 34px; height: 34px; padding: 6px; }
+  .firm-tutorial-rail ol { gap: 2px; }
+  .firm-tutorial-rail button { min-width: 34px; padding-inline: 1px; }
+  .firm-tutorial-page > header { padding-inline: 12px 8px; }
+  .firm-tutorial-page > header span { letter-spacing: .04em; }
+  .firm-tutorial-step { padding-inline: 16px; }
+  .firm-tutorial-page > footer { gap: 8px; padding-inline: 9px; }
+  .firm-tutorial-actions { gap: 6px; }
+  .firm-tutorial-page > footer button { padding-inline: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .firm-tutorial-backdrop,
+  .firm-tutorial,
+  .firm-tutorial-step {
+    animation: none;
+  }
+}

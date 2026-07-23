@@ -336,12 +336,14 @@ def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monke
             "item_id": item["id"],
             "selected_label": "B",
             "reasoning": "The premises support B, and C appears to go beyond the evidence provided.",
+            "confidence": 3,
         },
         headers={**headers, "Idempotency-Key": "first-answer"},
     )
     assert response.status_code == 200
     result = response.json["result"]
     assert result["feedback"]["correct_label"] == "C"
+    assert result["confidence"] == 3
 
     coaching_response = client.post(f"/v1/attempts/{result['attempt_id']}/coaching", headers=headers)
     assert coaching_response.status_code == 200

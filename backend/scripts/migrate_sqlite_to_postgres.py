@@ -8,7 +8,7 @@ from sqlalchemy import MetaData, create_engine, func, insert, select
 from sqlalchemy.engine import make_url
 
 
-REQUIRED_TARGET_REVISION = "0014_story_campaign"
+REQUIRED_TARGET_REVISION = "0015_attempt_confidence"
 
 
 def normalize_postgres_url(value: str) -> str:

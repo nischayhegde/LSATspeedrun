@@ -221,6 +221,45 @@ def select_random_questions(count: int) -> list[Question]:
     return random.sample(eligible, k=min(count, len(eligible)))
 
 
+def select_practice_questions(user: User, count: int) -> list[Question]:
+    """Prefer unseen questions, then alternate LR and RC when both are available."""
+    attempted_ids = {
+        question_id
+        for (question_id,) in (
+            db.session.query(SessionItem.question_id)
+            .join(Attempt, Attempt.session_item_id == SessionItem.id)
+            .filter(Attempt.user_id == user.id)
+            .distinct()
+            .all()
+        )
+    }
+    eligible = Question.query.filter(Question.source.like(f"{SOURCE_PREFIX}%")).all()
+    if not eligible:
+        return []
+    unseen = [question for question in eligible if question.id not in attempted_ids]
+    selected = random.sample(unseen, k=min(count, len(unseen)))
+    if len(selected) < count:
+        selected_ids = {question.id for question in selected}
+        fallback = [question for question in eligible if question.id not in selected_ids]
+        selected.extend(random.sample(fallback, k=min(count - len(selected), len(fallback))))
+
+    by_section = {
+        "Logical Reasoning": [question for question in selected if question.section == "Logical Reasoning"],
+        "Reading Comprehension": [question for question in selected if question.section == "Reading Comprehension"],
+    }
+    other = [question for question in selected if question.section not in by_section]
+    interleaved: list[Question] = []
+    next_section = selected[0].section if selected and selected[0].section in by_section else "Logical Reasoning"
+    while by_section["Logical Reasoning"] or by_section["Reading Comprehension"]:
+        bucket = by_section[next_section]
+        if bucket:
+            interleaved.append(bucket.pop(0))
+        next_section = "Reading Comprehension" if next_section == "Logical Reasoning" else "Logical Reasoning"
+        if not by_section[next_section]:
+            next_section = "Reading Comprehension" if by_section["Reading Comprehension"] else "Logical Reasoning"
+    return interleaved + other
+
+
 def review_question_count(user: User) -> int:
     return (
         db.session.query(SessionItem.question_id)
@@ -302,7 +341,7 @@ def create_study_session(user: User) -> StudySession:
         db.session.commit()
         return active
 
-    questions = select_random_questions(int(current_app.config["PRACTICE_SESSION_SIZE"]))
+    questions = select_practice_questions(user, int(current_app.config["PRACTICE_SESSION_SIZE"]))
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
 
@@ -453,6 +492,13 @@ def submit_attempt(
     reasoning = str(payload.get("reasoning") or "").strip()[:4000] or None
     if not reasoning and not is_review:
         raise ValueError("reasoning_required")
+    raw_confidence = payload.get("confidence")
+    try:
+        confidence = int(raw_confidence) if raw_confidence is not None else None
+    except (TypeError, ValueError):
+        raise ValueError("invalid_confidence") from None
+    if confidence is not None and confidence not in {1, 2, 3, 4}:
+        raise ValueError("invalid_confidence")
     elapsed_ms = max(1000, min(_elapsed_ms(item), 15 * 60 * 1000))
     is_correct = selected_label == item.question.correct_answer
     if not is_review:
@@ -465,6 +511,7 @@ def submit_attempt(
         selected_label=selected_label,
         is_correct=is_correct,
         reasoning_text=reasoning,
+        confidence=confidence,
         server_elapsed_ms=elapsed_ms,
         client_elapsed_ms=None,
         capm_points=0,
@@ -509,6 +556,7 @@ def serialize_attempt_result(attempt: Attempt, duplicate: bool = False) -> dict:
         "feedback": attempt.feedback_json,
         "coaching_status": attempt.coaching_status,
         "has_reasoning": bool(attempt.reasoning_text),
+        "confidence": attempt.confidence,
         "game_reward": serialize_settlement(attempt.settlement),
         "session_complete": session.status == "completed",
         "session_id": session.id,

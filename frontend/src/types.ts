@@ -264,6 +264,7 @@ export type AttemptResult = {
   session_id: string
   coaching_status: 'pending' | 'processing' | 'completed' | 'failed'
   has_reasoning: boolean
+  confidence?: 1 | 2 | 3 | 4 | null
   game_reward?: AttemptReward | null
   feedback: {
     is_correct: boolean

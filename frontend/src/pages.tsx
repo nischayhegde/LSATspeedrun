@@ -37,6 +37,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import { api } from './api'
 import { Brand, CaseJourneyRail, ErrorNotice, formatMoney, LoadingScreen, PauseButton, QuestionFlow } from './components'
 import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork } from './game-art'
+import { DailyLearningBrief, StudyFocusPicker } from './learning-ux'
 import { PixelWebGLAtmosphere } from './pixel-webgl'
 import { learnerScenes } from './scene-registry'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, PracticeSummary, StoryChapter, StoryQuest } from './types'
@@ -167,14 +168,14 @@ export function LoginPage() {
 
   return (
     <div className="login-page">
-      <header className="login-nav"><Brand light /><span>Serious LSAT practice. An empire you earn.</span></header>
+      <header className="login-nav"><Brand light /><span>Serious LSAT practice. A firm built through progress.</span></header>
       <section className="login-hero">
         <div className="login-copy">
-          <div className="eyebrow gold">FROM WOODEN SHACK TO LEGAL EMPIRE</div>
-          <h1>Build the firm.<br /><em>Win the reasoning.</em></h1>
-          <p>Every LSAT question is a case. Explain it well, earn your fee, grow your reputation, and watch a one-desk practice become a global firm.</p>
+          <div className="eyebrow gold">BUILD YOUR PRACTICE ONE CASE AT A TIME</div>
+          <h1>Practice the reasoning.<br /><em>Build the firm.</em></h1>
+          <p>Every LSAT question becomes a case. Choose the answer, explain why, and use earned fees to grow your practice.</p>
           <div className="feature-list">
-            <span><Scale /> Verified answers, never AI guesses</span>
+            <span><Scale /> Verified answer keys determine correctness</span>
             <span><BrainIcon /> Reasoning feedback after every case</span>
             <span><Building2 /> A living office that grows with you</span>
           </div>
@@ -184,7 +185,7 @@ export function LoginPage() {
       <aside className="login-panel-wrap">
         <div className="login-panel">
           <div className="crest"><Scale /></div>
-          <span className="eyebrow">THE BAR IS OPEN</span>
+          <span className="eyebrow">YOUR FIRM AWAITS</span>
           <h2>Enter your firm</h2>
           <p>Your cases, cash, reputation, character, office, and every acquisition stay with your account.</p>
           <div ref={buttonRef} className="google-button-slot" />
@@ -197,7 +198,7 @@ export function LoginPage() {
             </button>
           )}
           {(authError || devLogin.error) && <ErrorNotice error={authError || devLogin.error} />}
-          <small>No energy. No loot boxes. No paid answer power.</small>
+          <small>No energy limits, loot boxes, or paid answer advantages.</small>
         </div>
       </aside>
     </div>
@@ -241,14 +242,14 @@ export function OnboardingPage() {
         <OfficeScene gender={gender} previewTier={0} />
         <div className="opening-caption">
           <span>DAY ONE</span>
-          <h2>One flickering lamp.<br />One client at the door.</h2>
-          <p>The rest is yours to build.</p>
+          <h2>Your first desk.<br />Your first client.</h2>
+          <p>Build from here.</p>
         </div>
       </section>
       <section className="onboarding-panel">
-        <span className="step-indicator">YOUR ORIGIN · 01</span>
-        <h1>Name the lawyer<br />who changes this room.</h1>
-        <p>Choose your character presentation. Both have identical progression, outfits, and abilities—and you can change it later.</p>
+        <span className="step-indicator">YOUR FIRM · 01</span>
+        <h1>Choose your lawyer.</h1>
+        <p>Appearance does not affect progression, outfits, or abilities, and you can change it later.</p>
         <div className="character-choice" role="radiogroup" aria-label="Character presentation">
           {(['female', 'male'] as CharacterGender[]).map((value) => (
             <button
@@ -285,6 +286,7 @@ export function OfficePage() {
   const queryClient = useQueryClient()
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
+  const review = useQuery({ queryKey: ['review-availability'], queryFn: api.reviewAvailability })
   const start = useMutation({
     mutationFn: api.startPractice,
     onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
@@ -313,8 +315,8 @@ export function OfficePage() {
     <div className="office-page office-game-page">
       <section className="office-command-bar">
         <div>
-          <span className="pixel-kicker">{game.reputation_band.name.toUpperCase()} COUNSEL · HQ LEVEL {game.office_tier}</span>
-          <h1>{new Date().getHours() < 12 ? 'Morning' : 'Evening'}, {game.lawyer_name.split(' ')[0]}. <em>The office is alive.</em></h1>
+          <span className="pixel-kicker">{game.reputation_band.name.toUpperCase()} COUNSEL · OFFICE TIER {game.office_tier}</span>
+          <h1>{new Date().getHours() < 12 ? 'Morning' : 'Evening'}, {game.lawyer_name.split(' ')[0]}. <em>Here’s today’s work.</em></h1>
         </div>
         <div className="command-stats">
           <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><TrendingUp /></span>
@@ -347,10 +349,12 @@ export function OfficePage() {
               </div>
               <small>{milestone.reputation > game.reputation ? `${(milestone.reputation - game.reputation).toFixed(1)} REP TO GO` : `${formatMoney(Math.max(0, milestone.cost - game.cash), true)} CAPITAL TO GO`}</small>
             </>
-          ) : <><h2>Empire complete</h2><p>Every skyline starts here.</p></>}
-          <button onClick={() => navigate('/firm')}>OPEN BUILD MENU <ArrowRight /></button>
+          ) : <><h2>All milestones reached</h2><p>The firm is fully expanded.</p></>}
+          <button onClick={() => navigate('/firm')}>MANAGE FIRM <ArrowRight /></button>
         </aside>
       </section>
+
+      <DailyLearningBrief reviewCount={review.data?.available_questions ?? 0} />
 
       <section className="office-gamebar">
         <article className="client-quest-card">
@@ -360,7 +364,7 @@ export function OfficePage() {
         </article>
 
         <article className="daily-quest-card">
-          <div className="daily-heading"><div><span>DAILY QUEST</span><h3>{game.daily.cases_completed} CASES CLOSED</h3></div><Flame /></div>
+          <div className="daily-heading"><div><span>DAILY PRACTICE</span><h3>{game.daily.cases_completed} CASES CLOSED</h3></div><Flame /></div>
           <div className="daily-goals">
             {game.daily.goals.map((goal) => (
               <button key={goal.cases} className={`${goal.complete ? 'complete' : ''} ${goal.claimed ? 'claimed' : ''}`} disabled={!goal.complete || goal.claimed || claim.isPending} onClick={() => claim.mutate(goal.cases)}>
@@ -372,7 +376,7 @@ export function OfficePage() {
 
         <article className="safe-card">
           <div className="safe-icon"><i>$</i></div>
-          <div><span>RETAINER SAFE</span><strong>{formatMoney(game.passive_income.available)}</strong><small>{formatMoney(game.passive_income.hourly_rate)}/HR · {game.passive_income.cap_hours}H MAX</small></div>
+          <div><span>RETAINER ACCOUNT</span><strong>{formatMoney(game.passive_income.available)}</strong><small>{formatMoney(game.passive_income.hourly_rate)}/HR · {game.passive_income.cap_hours}H MAX</small></div>
           <button disabled={!game.passive_income.available || collect.isPending} onClick={() => collect.mutate()}>{collect.isPending ? '...' : 'COLLECT'}</button>
         </article>
       </section>
@@ -412,9 +416,10 @@ export function CasesLobbyPage() {
   return (
     <div className="case-lobby page-wrap">
       <section className="docket-hub-heading">
-        <div><span className="eyebrow gold">THE DOCKET · CANONICAL WORK HUB</span><h1>Choose the kind of work.</h1><p>Client Intake sets the contract for future files. Active Work preserves the client terms already frozen to an open file. Rapid Review revisits solved questions without game rewards.</p></div>
+        <div><span className="eyebrow gold">THE DOCKET · CASE INTAKE & PRACTICE</span><h1>Choose the kind of work.</h1><p>Client Intake sets terms for future cases. An open case keeps the terms it began with. Rapid Review revisits solved questions with no game rewards.</p></div>
         <div className="docket-state-card"><span>{active ? 'OPEN FILE' : 'NO OPEN FILE'}</span><strong>{openItem?.case_terms?.client_name || workingClient.name}</strong><small>{active ? `Case ${Math.min(active.current_index + 1, active.total_items)} of ${active.total_items} · terms preserved` : `${game.active_client.cases_remaining} files remain on the active contract`}</small></div>
       </section>
+      <StudyFocusPicker compact />
       <nav className="docket-mode-tabs" aria-label="Docket modes">
         <button className={view === 'work' ? 'active' : ''} aria-pressed={view === 'work'} onClick={() => changeView('work')}><BriefcaseBusiness /><span><strong>Active Work</strong><small>Start or resume rewarded cases</small></span></button>
         <button className={view === 'intake' ? 'active' : ''} aria-pressed={view === 'intake'} onClick={() => changeView('intake')}><UserRound /><span><strong>Client Intake</strong><small>Choose the next contract</small></span></button>
@@ -424,7 +429,7 @@ export function CasesLobbyPage() {
       {view === 'work' && <><section className="docket-hero">
         <div className="docket-copy">
           <span className="eyebrow gold">ACTIVE WORK</span>
-          <h1>One question.<br />One explanation.<br /><em>One step richer.</em></h1>
+          <h1>Read carefully.<br />Choose precisely.<br /><em>Explain your reasoning.</em></h1>
           <p>The verified key decides the answer. Your reasoning, time, client, and firm decide the fee.</p>
           {contentStatus.data && <div className="content-source-status"><CheckCircle2 /><span><strong>{contentStatus.data.questions.total.toLocaleString()} VERIFIED QUESTIONS</strong><small>{contentStatus.data.questions.lr.toLocaleString()} LR · {contentStatus.data.questions.rc.toLocaleString()} RC · INDEPENDENT ANSWER KEYS</small></span></div>}
           <button className="primary-button jumbo" onClick={() => active ? navigate(`/cases/${active.id}`) : start.mutate()} disabled={start.isPending}>
@@ -439,23 +444,23 @@ export function CasesLobbyPage() {
           <p>{game.active_client.on_hold
             ? `${game.active_client.name} is on hold until your Reputation recovers. Walk-in matters remain available at the fee below.`
             : workingClient.description}</p>
-          <div className="brief-terms"><span><Coins /> Effective base fee<strong>{formatMoney(workingClient.base_fee)}</strong></span><span><BriefcaseBusiness /> Contract<strong>{game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} cases`}</strong></span><span><Flame /> Validated streak<strong>{game.current_streak}</strong></span></div>
+          <div className="brief-terms"><span><Coins /> Effective base fee<strong>{formatMoney(workingClient.base_fee)}</strong></span><span><BriefcaseBusiness /> Contract<strong>{game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} cases`}</strong></span><span><Flame /> Strong-answer streak<strong>{game.current_streak}</strong></span></div>
         </div>
       </section>
       <CaseJourneyRail current="docket" />
       <section className="how-scoring-works">
         <span className="eyebrow">HOW THIS FEE IS WON</span>
         <div>
-          <article><span>01</span><Scale /><h3>Choose precisely</h3><p>The source bank’s answer key—not the tutoring AI—determines correctness.</p></article>
-          <article><span>02</span><BookOpen /><h3>Explain the logic</h3><p>Question-specific Good or Excellent reasoning unlocks speed points and full Reputation credit.</p></article>
-          <article><span>03</span><Clock3 /><h3>Build clean speed</h3><p>Work inside the visible target, but never rush: suspiciously fast work is capped.</p></article>
+          <article><span>01</span><Scale /><h3>Choose precisely</h3><p>The verified answer key determines correctness. Your coach helps with the reasoning.</p></article>
+          <article><span>02</span><BookOpen /><h3>Explain the logic</h3><p>Strong, question-specific reasoning earns full Reputation credit and makes speed points available.</p></article>
+          <article><span>03</span><Clock3 /><h3>Work toward the target</h3><p>Use the visible target as a guide. Accuracy and sound reasoning come first.</p></article>
           <article><span>04</span><Building2 /><h3>Grow the firm</h3><p>Every earned fee moves the next office, hire, client, or acquisition closer.</p></article>
         </div>
       </section></>}
 
       {view === 'intake' && <section className="docket-intake-panel">
         <CaseJourneyRail current="intake" />
-        <header><div><span className="eyebrow">CLIENT INTAKE · FUTURE FILES</span><h2>Select the firm’s active contract.</h2><p>{active ? `Your open file remains with ${openItem?.case_terms?.client_name || 'its original client'}. A new selection applies only after that file closes.` : 'The selected contract supplies the client and frozen fee terms when the next case opens.'}</p></div><div className="intake-rule"><ShieldAlert /><span><strong>Terms never change mid-file.</strong><small>Switching clients cannot alter an answer already in progress.</small></span></div></header>
+        <header><div><span className="eyebrow">CLIENT INTAKE · FUTURE FILES</span><h2>Select the firm’s active contract.</h2><p>{active ? `Your open file remains with ${openItem?.case_terms?.client_name || 'its original client'}. A new selection applies only after that file closes.` : 'The selected contract supplies the client and fee terms when the next case opens.'}</p></div><div className="intake-rule"><ShieldAlert /><span><strong>Terms never change mid-file.</strong><small>Changing clients affects future cases only.</small></span></div></header>
         <div className="docket-client-grid">
           {availableClients.map((client) => <article key={client.key} className={client.selected ? 'selected' : ''}>
             <ClientPortrait kind={client.icon} name={client.name} mood={client.selected ? 'happy' : 'neutral'} />
@@ -471,7 +476,7 @@ export function CasesLobbyPage() {
       {view === 'review' && <section className="rapid-review-panel">
         <PixelWebGLAtmosphere accent="#6fd0c2" className="review-panel-webgl" variant="scene" intensity={1.3} />
         <div className="review-archive-art"><BookOpen /><i /><i /><i /></div>
-        <div><span className="eyebrow">APPEALS ARCHIVE · ZERO-REWARD MODE</span><h2>Rapid-fire files you have already solved.</h2><p>Answer immediately, see the verified key, and optionally open the tutor’s deeper analysis. Review attempts are intentionally isolated from the tycoon economy and mastery record.</p><div className="review-guardrails"><span><Check />Previously attempted questions only</span><span><Check />Distinct questions per review docket</span><span><Check />No cash, Reputation, streak, daily, loyalty, or quest progress</span></div></div>
+        <div><span className="eyebrow">RAPID REVIEW · NO REWARDS</span><h2>Revisit questions you have already answered.</h2><p>See the verified key immediately, then open the coach’s notes if you want a deeper review. These attempts do not change rewards or recorded mastery.</p><div className="review-guardrails"><span><Check />Previously attempted questions only</span><span><Check />No repeats within a review docket</span><span><Check />No cash, Reputation, streak, daily, loyalty, or quest progress</span></div></div>
         <aside><span>REVIEWABLE ARCHIVE</span><strong>{review.data?.available_questions ?? 0}</strong><small>distinct solved questions</small><button className="primary-button" disabled={!review.data?.available_questions || startReview.isPending} onClick={() => activeReview ? navigate(`/cases/${activeReview.id}`) : startReview.mutate()}>{activeReview ? 'Resume Rapid Review' : startReview.isPending ? 'Opening archive…' : 'Start Rapid Review'} <ArrowRight /></button>{startReview.error && <ErrorNotice error={startReview.error} />}</aside>
       </section>}
     </div>
@@ -526,12 +531,12 @@ function DocketResolution({ summary }: { summary: PracticeSummary }) {
     <div className="docket-resolution page-wrap">
       {summary.kind === 'practice' && <CaseJourneyRail current="resolution" />}
       <section className="resolution-hero">
-        <div><span className="pixel-kicker">{summary.kind === 'review' ? 'RAPID REVIEW COMPLETE' : 'DOCKET RESOLVED'}</span><h1>{summary.kind === 'review' ? 'Old files, sharper instincts.' : 'Evidence before rewards.'}</h1><p>{summary.kind === 'review' ? 'This archive session changed no game progression. Return to the Docket when you are ready for new rewarded work.' : 'You completed the full matter. Review the learning record, then decide where the firm goes next.'}</p></div>
+        <div><span className="pixel-kicker">{summary.kind === 'review' ? 'RAPID REVIEW COMPLETE' : 'DOCKET RESOLVED'}</span><h1>{summary.kind === 'review' ? 'Review complete.' : 'Matter closed.'}</h1><p>{summary.kind === 'review' ? 'No rewards or recorded mastery changed. Return to the Docket when you are ready for new work.' : 'Review the answer record and your reasoning, then choose the firm’s next step.'}</p></div>
         <div className="resolution-seal"><span>ACCURACY</span><strong>{summary.accuracy}%</strong><small>{summary.correct} / {summary.questions_completed} correct</small></div>
       </section>
       <section className="resolution-metrics" aria-label="Docket performance">
         <article><CheckCircle2 /><span>QUESTIONS CLOSED</span><strong>{summary.questions_completed}</strong><small>Complete case records</small></article>
-        <article><BookOpen /><span>REASONING QUALITY</span><strong>{summary.explanation_accuracy == null ? '—' : `${summary.explanation_accuracy}%`}</strong><small>Validated explanation evidence</small></article>
+        <article><BookOpen /><span>REASONING QUALITY</span><strong>{summary.explanation_accuracy == null ? '—' : `${summary.explanation_accuracy}%`}</strong><small>Average coach score</small></article>
         <article><Clock3 /><span>FOCUSED TIME</span><strong>{summary.elapsed_minutes}</strong><small>Minutes across the docket</small></article>
       </section>
       <section className="resolution-skills">
@@ -667,7 +672,7 @@ export function FirmPage() {
   return (
     <div className="firm-page page-wrap">
       <section className="page-heading firm-ledger-heading">
-        <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Build a legendary practice.</h1><p>Spend case fees on a living, growing office. Every improvement appears in your firm and makes the next case worth more.</p><div className="ledger-rule"><i /><span>§</span><i /></div></div>
+        <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Invest in the practice.</h1><p>Use earned case fees for offices, staff, clients, connections, and acquisitions. Each investment becomes part of the firm.</p><div className="ledger-rule"><i /><span>§</span><i /></div></div>
         <div className="firm-wallet">
           <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(game.cash)}</strong><span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
           <button
@@ -685,10 +690,10 @@ export function FirmPage() {
         {firmTabs.map(({ key, label, icon: Icon }, index) => <button key={key} id={`firm-tab-${key}`} type="button" role="tab" aria-selected={tab === key} aria-controls={`firm-panel-${key}`} tabIndex={tab === key ? 0 : -1} className={tab === key ? 'active' : ''} onKeyDown={(event) => moveTab(event, key)} onClick={() => selectTab(key)}><span className="firm-tab-icon"><Icon size={17} /></span><span>{label}</span><small>{String(index + 1).padStart(2, '0')}</small></button>)}
       </div>
 
-      <section className="firm-command-center" aria-label="Firm command center">
+      <section className="firm-command-center" aria-label="Firm overview">
         <PixelWebGLAtmosphere accent="#efc55d" className="firm-command-webgl" variant="office" intensity={1.3} />
         <div className="firm-rank-console">
-          <span className="pixel-kicker">CURRENT COMMAND</span>
+          <span className="pixel-kicker">CURRENT OFFICE</span>
           <div><b>TIER {game.office_tier}</b><h2>{game.office.name}</h2></div>
           <p>{nextTier ? `${nextTier.name} is the next office transformation.` : 'The firm has reached its final headquarters tier.'}</p>
           <div className="firm-rank-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={nextTierProgress} aria-label={`${nextTierProgress}% of reputation requirement earned`}>
@@ -698,15 +703,15 @@ export function FirmPage() {
         </div>
         <div className="firm-briefing-grid">
           <article><span>CASE RECORD</span><strong>{caseAccuracy}%</strong><small>{game.total_correct} of {game.total_cases} correct</small></article>
-          <article><span>SCENE NETWORK</span><strong>{unlockedSceneCount}/{mappedScenes.length}</strong><small>destinations accessible</small></article>
-          <article><span>ASSET LOADOUT</span><strong>{ownedAssetCount}/{game.catalog.assets.length}</strong><small>firm systems acquired</small></article>
+          <article><span>OPEN LOCATIONS</span><strong>{unlockedSceneCount}/{mappedScenes.length}</strong><small>destinations available</small></article>
+          <article><span>FIRM ASSETS</span><strong>{ownedAssetCount}/{game.catalog.assets.length}</strong><small>investments acquired</small></article>
           <article><span>PASSIVE RATE</span><strong>{formatMoney(game.passive_income.hourly_rate)}</strong><small>generated per hour</small></article>
         </div>
         <nav className="firm-scene-portals" aria-label="Firm scene shortcuts">
-          <span>QUICK TRAVEL</span>
+          <span>VISIT</span>
           {managementPortals.map(({ label, detail, to, icon: Icon, tier }) => (
             <button key={to} onClick={() => navigate(to)} className={game.office_tier < tier ? 'locked' : ''}>
-              <Icon /><span><strong>{label}</strong><small>{game.office_tier < tier ? `Preview room · unlocks at tier ${tier}` : detail}</small></span><ArrowRight />
+              <Icon /><span><strong>{label}</strong><small>{game.office_tier < tier ? `Opens at firm tier ${tier}` : detail}</small></span><ArrowRight />
             </button>
           ))}
         </nav>
@@ -735,7 +740,7 @@ export function FirmPage() {
           <>
             <section className="client-roster-status">
               <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
-              <div><span className="eyebrow">CONTRACT ADMINISTRATION · VIEW ONLY</span><h2>{workingClient.name}</h2><p>{game.active_client.on_hold ? `${game.active_client.name} is on hold; new matters use this client instead.` : `${game.active_client.cases_remaining} cases remain in this contract.`} New clients are selected only in Docket Intake.</p><button className="primary-button compact" onClick={() => navigate('/cases?view=intake')}>Open Client Intake <ArrowRight /></button></div>
+              <div><span className="eyebrow">CLIENT ROSTER · CONTRACTS SET IN THE DOCKET</span><h2>{workingClient.name}</h2><p>{game.active_client.on_hold ? `${game.active_client.name} is on hold; new matters use this client instead.` : `${game.active_client.cases_remaining} cases remain in this contract.`} Choose a new client in Docket Intake.</p><button className="primary-button compact" onClick={() => navigate('/cases?view=intake')}>Open Client Intake <ArrowRight /></button></div>
               <aside className={openCaseTerms ? 'has-open-file' : ''}>
                 <span>{openCaseTerms ? 'OPEN CASE FILE' : 'NEXT CASE FILE'}</span>
                 <strong>{openCaseTerms?.client_name || workingClient.name}</strong>
@@ -776,9 +781,9 @@ export function FirmPage() {
             <article key={item.key} className={`management-card asset-card asset-card-${item.type} ${item.owned ? 'owned' : ''} ${!item.available && !item.owned ? 'locked' : ''} ${justBought === item.key ? 'just-bought' : ''}`}>
               <PixelAssetArtwork asset={item} />
               <div className="card-status">{item.owned ? <><Check size={13} /> OWNED</> : item.available ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
-              <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{item.benefit}</span></div>
+              <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>FIRM BENEFIT</small>{item.benefit}</span></div>
               <RequirementLine asset={item} game={game} />
-              <div className={`asset-readiness ${item.owned ? 'complete' : item.available ? 'ready' : ''}`}><span>{item.owned ? 'INSTALLED' : item.available ? 'READY TO ACQUIRE' : 'DEPENDENCIES PENDING'}</span><i><b /></i></div>
+              <div className={`asset-readiness ${item.owned ? 'complete' : item.available ? 'ready' : ''}`}><span>{item.owned ? 'INSTALLED' : item.available ? 'READY TO ACQUIRE' : 'REQUIREMENTS NOT MET'}</span><i><b /></i></div>
               <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
             </article>
           ))}
@@ -814,11 +819,11 @@ export function ProgressionMapPage() {
   return (
     <div className="map-page empire-game-page">
       <section className="empire-command-bar">
-        <div><span className="pixel-kicker">CITY DIRECTORY · 6 CAMPUSES · {mappedScenes.length} INTERIOR ROOMS</span><h1>Your legal empire</h1><p>Choose a district campus, then enter its ordered rooms. Firm growth follows one ascension route; rival firms share Grand Avenue.</p></div>
+        <div><span className="pixel-kicker">CITY DIRECTORY · {mappedScenes.length} DESTINATIONS</span><h1>Explore the firm’s city.</h1><p>Choose a district, visit its offices, or review the rival firms along Grand Avenue.</p></div>
         <div className="empire-command-summary">
           <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
-          <div><small>NETWORK ACCESS</small><strong>{openScenes}/{mappedScenes.length}</strong><span>Destinations currently open</span></div>
-          <div><small>NEXT FRONTIER</small><strong>{nextLockedScene ? `TIER ${nextLockedScene.minTier}` : 'COMPLETE'}</strong><span>{nextLockedScene?.district ?? 'Entire city accessible'}</span></div>
+          <div><small>OPEN LOCATIONS</small><strong>{openScenes}/{mappedScenes.length}</strong><span>Destinations currently available</span></div>
+          <div><small>NEXT EXPANSION</small><strong>{nextLockedScene ? `TIER ${nextLockedScene.minTier}` : 'COMPLETE'}</strong><span>{nextLockedScene?.district ?? 'Entire city accessible'}</span></div>
         </div>
       </section>
       <EmpireWorldMap game={game} session={sessionQuery.data?.session} onManage={(tab) => navigate(`/firm?tab=${tab}`)} onScene={(slug) => navigate(`/world/${slug}`)} />
@@ -904,7 +909,7 @@ export function StoryPage() {
       )}
 
       <section className="quest-caseboard">
-        <div className="story-section-heading"><span>02 · OPTIONAL FILES</span><h2>Choose the work behind the work</h2><p>Only one operation can occupy the caseboard. Hidden files surface when your Ethics and Intel make the right people trust—or target—you.</p></div>
+        <div className="story-section-heading"><span>02 · OPTIONAL FILES</span><h2>Choose a special matter</h2><p>Only one special matter can be active at a time. Additional files appear as your Ethics and Intel change.</p></div>
         {grouped.map(({ category, quests }) => {
           const presentation = questPresentation[category]
           const Icon = presentation.icon
@@ -924,7 +929,7 @@ export function StoryPage() {
       </section>
 
       <section className="rival-war-room">
-        <div className="story-section-heading light"><span>03 · RIVAL OPERATIONS</span><h2>Win clean—or make them cheaper.</h2><p>Each operation can be used once per rival. Discounts stack to 45%; sabotage trades the firm’s name for a lower acquisition price.</p></div>
+        <div className="story-section-heading light"><span>03 · RIVAL STRATEGY</span><h2>Choose your approach.</h2><p>Each strategy can be used once per rival. Discounts stack to 45%; sabotage lowers the price at a cost to the firm’s reputation.</p></div>
         {rival ? <>
           <div className="rival-target-strip">
             {story.rival_targets.map((target) => <button key={target.key} className={target.key === rival.key ? 'active' : ''} onClick={() => setSelectedRival(target.key)}><PixelAssetArtwork asset={target} /><span>{target.name.replace('Acquire ', '')}</span><small>HQ {target.tier}</small></button>)}
@@ -938,7 +943,7 @@ export function StoryPage() {
               <div><span>{item.category}</span><strong>−{item.discount_bps / 100}%</strong></div><h3>{item.name}</h3><p>{item.description}</p>
               <small>{formatMoney(item.cost)}{item.intel ? ` · ${item.intel} Intel` : ''}{item.influence ? ` · ${item.influence} Influence` : ''}{item.heat_surcharge_bps ? ` · +${item.heat_surcharge_bps / 100}% Heat surcharge` : ''}</small>
               {item.missing.length > 0 && <em>Needs {item.missing.join(' · ')}</em>}
-              <button disabled={!item.available || operation.isPending} onClick={() => operation.mutate({ rivalKey: rival.key, operationKey: item.key })}>{item.completed ? 'Operation complete' : item.category === 'sabotage' ? 'Authorize sabotage' : 'Launch operation'}</button>
+              <button disabled={!item.available || operation.isPending} onClick={() => operation.mutate({ rivalKey: rival.key, operationKey: item.key })}>{item.completed ? 'Strategy complete' : item.category === 'sabotage' ? 'Proceed with sabotage' : 'Use this strategy'}</button>
             </article>
           ))}</div>
         </> : <div className="all-rivals-acquired"><Trophy /><h3>Every rival has joined the network.</h3><p>The war room is quiet. The legacy question remains.</p></div>}

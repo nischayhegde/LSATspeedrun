@@ -9,6 +9,7 @@ import {
   Check,
   Clock3,
   Coins,
+  CircleHelp,
   Flame,
   LayoutGrid,
   LogOut,
@@ -23,8 +24,10 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from './api'
 import { ClientPortrait, JudgePortrait } from './game-art'
+import { CalibrationNote, ConfidenceCheck, useStoredConfidence } from './learning-ux'
 import { CasePageTurn } from './pixel-webgl'
 import { caseJourneyStages, type CaseJourneyStageId } from './scene-workflow'
+import { FirmTutorial, useFirmTutorial } from './tutorial'
 import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StudySession, User } from './types'
 
 
@@ -69,7 +72,7 @@ export function Brand({ light = false, caseFile = false }: { light?: boolean; ca
 const navItems = [
   { to: '/office', label: 'Office', icon: Building2 },
   { to: '/cases', label: 'Docket', icon: BriefcaseBusiness },
-  { to: '/story', label: 'Special Matters', icon: BookOpen },
+  { to: '/learning', label: 'Learning', icon: Brain },
   { to: '/firm', label: 'Firm', icon: LayoutGrid },
   { to: '/map', label: 'Empire', icon: Map },
 ]
@@ -81,11 +84,10 @@ function CounselCommandDeck({ game }: { game: GameState }) {
   const workingClient = game.catalog.clients.find((client) => client.key === game.active_client.effective_key) ?? game.active_client
   const guidance = game.progression_guidance
   return (
-    <aside className="counsel-command-deck" aria-label="Counsel command deck">
-      <div className="command-deck-title"><span>COUNSEL COMMAND</span><strong>One clear next move</strong></div>
+    <aside className="counsel-command-deck" aria-label="Firm brief">
       <div className="command-deck-client"><ClientPortrait kind={workingClient.icon} name={workingClient.name} /><span><small>ACTIVE CONTRACT</small><strong>{workingClient.name}</strong><b>{game.active_client.cases_remaining} files remain</b></span></div>
       <div className="command-deck-file"><BriefcaseBusiness /><span><small>{active ? 'OPEN FILE' : 'DOCKET STATUS'}</small><strong>{active ? `Case ${Math.min(active.current_index + 1, active.total_items)} of ${active.total_items}` : 'Ready for intake'}</strong><b>{active ? 'Draft and client terms preserved' : 'Choose work or Rapid Review'}</b></span></div>
-      {guidance && <div className="command-deck-goal"><Star /><span><small>RECOMMENDED INVESTMENT</small><strong>{guidance.name}</strong><b>{guidance.cases_to_afford ? `About ${guidance.cases_to_afford} rewarded ${guidance.cases_to_afford === 1 ? 'case' : 'cases'} away` : 'Affordable now'}</b></span></div>}
+      {guidance && <div className="command-deck-goal"><Star /><span><small>NEXT INVESTMENT</small><strong>{guidance.name}</strong><b>{guidance.cases_to_afford ? `About ${guidance.cases_to_afford} rewarded ${guidance.cases_to_afford === 1 ? 'case' : 'cases'} away` : 'Affordable now'}</b></span></div>}
       <Link className="command-deck-action" to={active ? `/cases/${active.id}` : '/cases'}>{active ? 'Resume file' : 'Open docket'}<ArrowRight /></Link>
     </aside>
   )
@@ -98,6 +100,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
   const queryClient = useQueryClient()
   const mainRef = useRef<HTMLElement>(null)
   const isActiveCase = /^\/cases\/[^/]+/.test(location.pathname)
+  const tutorial = useFirmTutorial(user.id, Boolean(game))
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {
@@ -106,7 +109,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
     },
   })
   useEffect(() => {
-    const section = location.pathname.startsWith('/office') ? 'Office' : location.pathname.startsWith('/cases') ? 'Docket' : location.pathname.startsWith('/firm') ? 'Firm' : location.pathname.startsWith('/story') ? 'Special Matters' : location.pathname.startsWith('/map') || location.pathname.startsWith('/world') ? 'Empire' : 'Lawyer Tycoon'
+    const section = location.pathname.startsWith('/office') ? 'Office' : location.pathname.startsWith('/cases') ? 'Docket' : location.pathname.startsWith('/learning') ? 'Learning' : location.pathname.startsWith('/firm') ? 'Firm' : location.pathname.startsWith('/story') ? 'Special Matters' : location.pathname.startsWith('/map') || location.pathname.startsWith('/world') ? 'Empire' : 'Lawyer Tycoon'
     document.title = `${section} · Lawyer Tycoon`
     window.requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }))
     window.scrollTo({ top: 0, behavior: 'auto' })
@@ -127,10 +130,15 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         )}
         <div className="header-right">
           {game && (
+            <button className="icon-button tutorial-help-button" onClick={tutorial.reopen} aria-label="Open firm guide" title="Firm guide">
+              <CircleHelp size={17} /><span>Help</span>
+            </button>
+          )}
+          {game && (
             <div className="header-economy" aria-label="Firm standing">
               <span><Coins size={16} /><span className="sr-only">Cash: </span>{formatMoney(game.cash, true)}</span>
               <span><Star size={16} /><span className="sr-only">Reputation: </span>{game.reputation.toFixed(1)}</span>
-              {game.current_streak > 0 && <span className="streak"><Flame size={16} /><span className="sr-only">Validated streak: </span>{game.current_streak}</span>}
+              {game.current_streak > 0 && <span className="streak"><Flame size={16} /><span className="sr-only">Strong-answer streak: </span>{game.current_streak}</span>}
             </div>
           )}
           <div className="account-menu">
@@ -155,6 +163,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           ))}
         </nav>
       )}
+      <FirmTutorial open={tutorial.open} onClose={tutorial.close} />
     </div>
   )
 }
@@ -254,24 +263,24 @@ function JudgeReview({
 }) {
   const strongReasoning = reward?.explanation_grade === 'Good' || reward?.explanation_grade === 'Excellent'
   const title = coaching
-    ? strongReasoning ? 'The logic holds up under questioning.' : 'Here is where the argument turns.'
-    : isCorrect ? 'The verified answer is sustained.' : 'The verified answer overrules your choice.'
+    ? strongReasoning ? 'Your reasoning holds up.' : 'Focus on the turning point.'
+    : isCorrect ? 'Your answer matches the verified key.' : 'The verified key points elsewhere.'
   const message = coaching?.reasoning_summary || diagnosis
   return (
     <section className="judge-review" role="status" aria-live="polite">
       <div className="judge-bench">
-        <div className="bench-nameplate"><span>AI</span> THE HON. LOGICA</div>
+        <div className="bench-nameplate"><span>CASE REVIEW</span> COACH’S NOTES</div>
         <JudgePortrait thinking={loading} pleased={Boolean(coaching && isCorrect && strongReasoning)} />
       </div>
       <div className="judge-speech">
         <div className="judge-status-row">
-          <span className={isCorrect ? 'verified-correct' : 'verified-incorrect'}>{isCorrect ? <Check /> : <X />} VERIFIED ANSWER</span>
+          <span className={isCorrect ? 'verified-correct' : 'verified-incorrect'}>{isCorrect ? <Check /> : <X />} {isCorrect ? 'MATCHES KEY' : 'DIFFERS FROM KEY'}</span>
           {reward && <span className={`grade-pill grade-${reward.explanation_grade.toLowerCase()}`}>{reward.explanation_grade} REASONING</span>}
         </div>
         <h2>{title}</h2>
         <p>{message}</p>
-        {loading && <div className="judge-thinking"><i /><i /><i /> Reviewing your case theory…</div>}
-        <small>The answer key decides correctness. The judge coaches your explanation.</small>
+        {loading && <div className="judge-thinking"><i /><i /><i /> Preparing feedback…</div>}
+        <small>The verified answer key determines correctness. Your coach helps refine the reasoning.</small>
       </div>
     </section>
   )
@@ -285,8 +294,8 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
     <section className="coaching-panel">
       <div className="coaching-heading">
         <div>
-          <span className="eyebrow">THE JUDGE’S BENCH NOTES</span>
-          <h2>Three things to carry into the next case</h2>
+          <span className="eyebrow">COACH’S NOTES</span>
+          <h2>Three points for the next question</h2>
         </div>
         {reward && <span className={`grade-pill grade-${reward.explanation_grade.toLowerCase()}`}>{reward.explanation_grade}</span>}
       </div>
@@ -300,13 +309,13 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
         </article>
         <article className="debrief-step repair">
           <b>2</b>
-          <div><span><Brain size={15} /> FIX THIS FIRST</span>
+          <div><span><Brain size={15} /> REVISIT THIS</span>
           <p>{coaching.first_error ? `${coaching.first_error.description} ${coaching.first_error.repair}` : coaching.next_step_hint}</p>
           </div>
         </article>
         <article className="debrief-step method">
           <b>3</b>
-          <div><span><Scale size={15} /> CLEAN APPROACH</span>
+          <div><span><Scale size={15} /> TRY THIS</span>
           <p>{coaching.solution_method || coaching.debrief}</p>
           </div>
         </article>
@@ -322,7 +331,7 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
           <div><strong>Why your choice {selectedLabel} falls short</strong><p>{coaching.answer_analysis.selected_answer_explanation}</p></div>
         </div>
       )}
-      <div className="choice-audit-heading"><span>FULL ANSWER AUDIT</span><small>Open any choice to see the judge’s reasoning.</small></div>
+      <div className="choice-audit-heading"><span>ANSWER CHOICES</span><small>Open any choice to review the reasoning.</small></div>
       <div className="choice-explanations">
         {coaching.answer_analysis.choice_explanations.map((choice) => (
           <details className={choice.is_correct ? 'choice-explanation correct' : 'choice-explanation'} key={choice.label} open={choice.is_correct}>
@@ -340,8 +349,8 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
 export function CaseJourneyRail({ current }: { current: CaseJourneyStageId }) {
   const currentIndex = caseJourneyStages.findIndex((stage) => stage.id === current)
   return (
-    <nav className="case-journey-rail" aria-label="Case journey through game rooms">
-      <div><span>REPEATABLE CASE LOOP</span><strong>Every case moves through the firm.</strong></div>
+    <nav className="case-journey-rail" aria-label="Case workflow">
+      <div><span>HOW EACH CASE WORKS</span><strong>From intake through review and investment.</strong></div>
       <ol>
         {caseJourneyStages.map((stage, index) => (
           <li className={index === currentIndex ? 'active' : index < currentIndex ? 'complete' : ''} key={stage.id}>
@@ -362,6 +371,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const gameQuery = useQuery({ queryKey: ['game'], queryFn: api.game })
   const item = session.pending_item || session.current_item
   const result = session.pending_result
+  const [confidence, setConfidence] = useStoredConfidence(item?.id)
   const isReview = session.mode === 'review'
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
@@ -437,7 +447,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const submit = useMutation({
     mutationFn: () => api.submitAttempt(
       session.id,
-      { item_id: item!.id, selected_label: selected, reasoning },
+      { item_id: item!.id, selected_label: selected, reasoning, confidence: confidence ?? undefined },
       crypto.randomUUID(),
     ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
@@ -502,14 +512,14 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       {isReview ? (
         <section className="active-matter-banner review-matter-banner" aria-label="Rapid Review file">
           <div className="review-file-seal"><BookOpen /></div>
-          <div className="active-matter-copy"><span>RAPID REVIEW</span><strong>Previously solved file</strong><small>Immediate verified feedback. No cash, Reputation, streak, daily, loyalty, or quest rewards.</small></div>
-          <div className="active-matter-fee"><span>LEARNING MODE</span><strong>ZERO REWARDS</strong><small>Optional tutor review is available after answering</small></div>
+          <div className="active-matter-copy"><span>RAPID REVIEW</span><strong>Previously solved file</strong><small>Immediate answer-key feedback. No cash, Reputation, streak, daily, loyalty, or quest rewards.</small></div>
+          <div className="active-matter-fee"><span>REVIEW ONLY</span><strong>NO REWARDS</strong><small>Coach’s notes are optional after you answer</small></div>
         </section>
       ) : (
         <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
           <ClientPortrait kind={clientKind} name={clientName} />
-          <div className="active-matter-copy"><span>YOU ARE REPRESENTING</span><strong>{clientName}</strong><small>This client is locked to this open case, even if you change contracts later.</small></div>
-          <div className="active-matter-fee"><span>POTENTIAL BASE FEE</span><strong>{formatMoney(item.case_terms?.base_fee || 0)}</strong><small>Answer + reasoning + speed set the final fee</small></div>
+          <div className="active-matter-copy"><span>YOU ARE REPRESENTING</span><strong>{clientName}</strong><small>This case keeps the same client and terms, even if you choose a new contract later.</small></div>
+          <div className="active-matter-fee"><span>POTENTIAL BASE FEE</span><strong>{formatMoney(item.case_terms?.base_fee || 0)}</strong><small>Correctness, reasoning, and time determine the final fee</small></div>
         </section>
       )}
       {!isReview && <CaseJourneyRail current={result ? 'counsel' : 'workspace'} />}
@@ -581,11 +591,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                   <div className="reasoning-prompts" aria-label="Reasoning scaffold">
                     {['Task / conclusion:', 'Decisive evidence:', 'Why the closest rival fails:', 'Therefore:'].map((prompt, index) => <button type="button" onClick={() => addReasoningPrompt(prompt)} key={prompt}><b>{index + 1}</b>{prompt}</button>)}
                   </div>
-                  <textarea id="reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && selected && (isReview || reasoning.trim()) && !submit.isPending) { event.preventDefault(); submit.mutate() } }} placeholder={isReview ? 'Optionally restate the rule or mistake you want to remember…' : 'Use the scaffold above to identify the task, decisive evidence, and why the closest alternative fails…'} rows={isReview ? 4 : 7} maxLength={4000} />
-                  <p>{isReview ? 'Your answer is checked immediately. Add reasoning only if you want the tutor to analyze it.' : 'Substance beats length. Generic or repeated explanations receive no meaningful payout.'}</p>
+                  <textarea id="reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && selected && confidence && (isReview || reasoning.trim()) && !submit.isPending) { event.preventDefault(); submit.mutate() } }} placeholder={isReview ? 'Optionally restate the rule or mistake you want to remember…' : 'Use the scaffold above to identify the task, decisive evidence, and why the closest alternative fails…'} rows={isReview ? 4 : 7} maxLength={4000} />
+                  <p>{isReview ? 'Your answer is checked immediately. Add reasoning only if you want the coach to review it.' : 'Clear, question-specific reasoning earns the strongest fee.'}</p>
                 </div>
               )}
-              {!result && <div className="answer-actions">{submit.error && <ErrorNotice error={submit.error} />}<button className="primary-button verdict-button" disabled={!selected || (!isReview && !reasoning.trim()) || submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? 'Filing your answer…' : <>{isReview ? 'Check answer' : 'File for verdict'} <Scale size={18} /></>}</button><small className="keyboard-hint">A–E selects · ⌘/Ctrl + Enter files</small></div>}
+              {!result && <ConfidenceCheck value={confidence} onChange={setConfidence} />}
+              {!result && <div className="answer-actions">{submit.error && <ErrorNotice error={submit.error} />}<button className="primary-button verdict-button" disabled={!selected || !confidence || (!isReview && !reasoning.trim()) || submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? 'Filing your answer…' : <>{isReview ? 'Check answer' : 'File for verdict'} <Scale size={18} /></>}</button><small className="keyboard-hint">Choose A–E, rate confidence, then file · ⌘/Ctrl + Enter</small></div>}
               {result && <button type="button" className="primary-button case-page-next" onClick={() => turnToPage('verdict')}>Open filed verdict <ArrowRight size={18} /></button>}
             </section>
           </div>
@@ -595,8 +606,9 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <div className="case-page-sheet verdict-sheet">
             <section className="answer-card verdict-page">
               <div ref={verdictRef} tabIndex={-1} className="judge-review-focus"><JudgeReview isCorrect={result.is_correct} diagnosis={result.feedback.diagnosis} coaching={coachingFeedback} reward={reward} loading={coaching.isLoading} /></div>
-              {isReview && !coachingFeedback && !tutorRequested && <section className="review-zero-reward"><BookOpen /><div><strong>Verified feedback is complete.</strong><p>Continue immediately, or ask the tutor for a deeper answer-choice and reasoning audit. This review never affects game progression.</p></div><button className="secondary-button" onClick={() => setTutorRequested(true)}><Brain />Open tutor review</button></section>}
-              {coaching.error && (!coachingFeedback || !reward) && <div className="coaching-error"><ErrorNotice error={coaching.error} /><button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button></div>}
+              <CalibrationNote confidence={confidence ?? result.confidence ?? null} correct={result.is_correct} />
+              {isReview && !coachingFeedback && !tutorRequested && <section className="review-zero-reward"><BookOpen /><div><strong>Answer check complete.</strong><p>Continue now, or ask the coach to review your reasoning and each answer choice. Rapid Review never affects game progress.</p></div><button className="secondary-button" onClick={() => setTutorRequested(true)}><Brain />Open coach’s notes</button></section>}
+              {coaching.error && (!coachingFeedback || !reward) && <div className="coaching-error"><ErrorNotice error={coaching.error} /><button className="secondary-button" onClick={() => coaching.refetch()}>Retry feedback</button></div>}
               {coachingFeedback && <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result.feedback.selected_label} />}
               {reward && <><ClientSettlement reward={reward} clientName={clientName} clientKind={clientKind} satisfied={clientSatisfied} /><CaseScore reward={reward} /></>}
               <div className="continue-row">{continueCases.error && <ErrorNotice error={continueCases.error} />}<button className="primary-button next-case-button" disabled={(!isReview && !reward) || continueCases.isPending || coaching.isLoading} onClick={() => continueCases.mutate()}>{continueCases.isPending ? 'Closing file…' : !isReview && !reward ? 'Settling fee…' : session.status === 'completed' ? <>{isReview ? 'Review session results' : 'Review docket results'} <ArrowRight size={18} /></> : <>{isReview ? 'Next review' : 'Turn to next case'} <ArrowRight size={18} /></>}</button></div>
