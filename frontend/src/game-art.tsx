@@ -43,29 +43,49 @@ function PixelPerson({
   return (
     <div
       className={`pixel-person facing-${direction} ${walking ? 'is-walking' : ''} ${className}`}
+      data-gender={gender}
+      data-tier={tier}
+      data-variant={variant % 5}
       aria-label={label}
       role={label ? 'img' : undefined}
     >
       <i className="pp-shadow" />
       <i className="pp-leg pp-leg-left" />
       <i className="pp-leg pp-leg-right" />
+      <i className="pp-trouser-light pp-trouser-light-left" />
+      <i className="pp-trouser-light pp-trouser-light-right" />
+      <i className="pp-shoes" />
       <i className="pp-body" style={{ backgroundColor: jacket }} />
       <i className="pp-shirt" />
+      <i className="pp-collar pp-collar-left" />
+      <i className="pp-collar pp-collar-right" />
       <i className="pp-tie" style={{ backgroundColor: tier >= 5 ? '#e0b960' : '#b95749' }} />
       <i className="pp-lapel pp-lapel-left" />
       <i className="pp-lapel pp-lapel-right" />
       <i className="pp-belt" />
+      <i className="pp-buttons" />
+      <i className="pp-pocket" />
       <i className="pp-arm pp-arm-left" style={{ backgroundColor: jacket }} />
       <i className="pp-arm pp-arm-right" style={{ backgroundColor: jacket }} />
+      <i className="pp-cuff pp-cuff-left" />
+      <i className="pp-cuff pp-cuff-right" />
       <i className="pp-hand pp-hand-left" style={{ backgroundColor: skin }} />
       <i className="pp-hand pp-hand-right" style={{ backgroundColor: skin }} />
+      <i className="pp-neck" style={{ backgroundColor: skin }} />
+      <i className={`pp-hair-back ${gender === 'female' ? 'long' : ''}`} style={{ backgroundColor: hair }} />
+      <i className="pp-ear pp-ear-left" style={{ backgroundColor: skin }} />
+      <i className="pp-ear pp-ear-right" style={{ backgroundColor: skin }} />
       <i className="pp-head" style={{ backgroundColor: skin }} />
+      <i className="pp-face-light" />
       <i className={`pp-hair ${gender === 'female' ? 'long' : ''}`} style={{ backgroundColor: hair }} />
+      <i className="pp-fringe" style={{ backgroundColor: hair }} />
+      <i className="pp-hair-shine" />
       <i className="pp-eyes" />
+      <i className="pp-pupils" />
       <i className="pp-brows" />
       <i className="pp-nose" />
       <i className="pp-mouth" />
-      <i className="pp-shoes" />
+      <i className="pp-cheeks" />
       {variant > 0 && <i className="pp-folder" />}
       {tier >= 3 && variant === 0 && <i className="pp-watch" />}
       {tier >= 5 && variant === 0 && <i className="pp-pin" />}

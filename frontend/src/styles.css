@@ -1259,3 +1259,111 @@ h1, h2, h3 { letter-spacing: -.035em; }
   .plant-one { left: 24%; top: 73%; }
   .map-rail { width: 83%; bottom: 6%; }
 }
+
+/* ================================================================
+   PORTRAIT SPRITES — larger, tailored, human pixel characters
+   ================================================================ */
+
+.pixel-person {
+  width: 46px;
+  height: 74px;
+  filter: drop-shadow(3px 4px 0 rgba(6,8,12,.34));
+}
+.pp-shadow { width: 44px; height: 10px; left: 1px; bottom: -4px; background: rgba(5,8,12,.32); }
+.pp-leg { width: 12px; height: 23px; bottom: 4px; border: 2px solid #0d1219; background: #222d3c; box-shadow: inset -3px 0 rgba(0,0,0,.25), inset 2px 0 rgba(255,255,255,.07); }
+.pp-leg-left { left: 7px; }.pp-leg-right { right: 7px; }
+.pp-trouser-light { z-index: 2; width: 3px; height: 15px; bottom: 8px; background: rgba(114,137,153,.34); }
+.pp-trouser-light-left { left: 11px; }.pp-trouser-light-right { right: 15px; }
+.pp-shoes { z-index: 5; width: 16px; height: 6px; left: 2px; bottom: 0; border: 1px solid #080b10; background: #11151c; box-shadow: 26px 0 #11151c, inset 4px 0 #4d5158, 30px 0 #4d5158; }
+.pp-body { width: 36px; height: 31px; left: 5px; bottom: 24px; border: 2px solid #0d1219; clip-path: polygon(6% 0,94% 0,100% 100%,0 100%); box-shadow: inset -5px -4px rgba(0,0,0,.23), inset 4px 0 rgba(255,255,255,.1), inset 0 3px rgba(255,255,255,.08); }
+.pp-shirt { z-index: 2; width: 15px; height: 21px; left: 16px; bottom: 34px; background: #fff0d1; clip-path: polygon(0 0,100% 0,82% 100%,18% 100%); box-shadow: inset -3px 0 #d8c5a4; }
+.pp-collar { z-index: 4; width: 9px; height: 8px; bottom: 47px; background: #fff7df; }
+.pp-collar-left { left: 14px; clip-path: polygon(0 0,100% 0,70% 100%); transform: rotate(9deg); }.pp-collar-right { right: 14px; clip-path: polygon(0 0,100% 0,30% 100%); transform: rotate(-9deg); }
+.pp-tie { z-index: 5; width: 5px; height: 19px; left: 21px; bottom: 29px; clip-path: polygon(20% 0,80% 0,100% 68%,50% 100%,0 68%); box-shadow: inset -2px 0 rgba(76,26,24,.3); }
+.pp-lapel { z-index: 4; width: 11px; height: 17px; bottom: 37px; opacity: .82; }
+.pp-lapel-left { left: 7px; border-top: 3px solid rgba(255,255,255,.48); border-right: 3px solid rgba(8,12,18,.58); transform: skewY(31deg); }.pp-lapel-right { right: 7px; border-top: 3px solid rgba(255,255,255,.25); border-left: 3px solid rgba(8,12,18,.68); transform: skewY(-31deg); }
+.pp-belt { z-index: 5; width: 32px; height: 4px; left: 7px; bottom: 26px; background: #11161e; box-shadow: inset 12px 0 #c89d49, inset 16px 0 #11161e; }
+.pp-buttons { z-index: 6; width: 2px; height: 2px; left: 23px; bottom: 39px; background: #e5c874; box-shadow: 0 6px #e5c874, 0 12px #e5c874; }
+.pp-pocket { z-index: 6; width: 9px; height: 5px; right: 8px; bottom: 41px; border-bottom: 2px solid rgba(245,227,186,.65); transform: rotate(-2deg); }
+.pp-body::after { content: ""; width: 4px; height: 17px; position: absolute; right: 5px; top: 7px; background: rgba(255,255,255,.08); }
+.pp-arm { width: 10px; height: 30px; bottom: 23px; border: 2px solid #0d1219; box-shadow: inset -3px -3px rgba(0,0,0,.22), inset 2px 0 rgba(255,255,255,.08); }
+.pp-arm-left { left: 0; transform: rotate(2deg); }.pp-arm-right { right: 0; transform: rotate(-2deg); }
+.pp-cuff { z-index: 6; width: 8px; height: 4px; bottom: 22px; background: #f7e7c8; box-shadow: inset -2px 0 #c8b38f; }
+.pp-cuff-left { left: 1px; }.pp-cuff-right { right: 1px; }
+.pp-hand { z-index: 7; width: 8px; height: 9px; bottom: 15px; border: 2px solid #3e2924; box-shadow: inset -2px -2px rgba(92,43,33,.18); }
+.pp-hand-left { left: 1px; }.pp-hand-right { right: 1px; }
+.pp-neck { z-index: 2; width: 13px; height: 11px; left: 17px; top: 23px; border: 2px solid #3e2924; box-shadow: inset -3px -2px rgba(94,44,34,.18); }
+.pp-hair-back { z-index: 1; width: 35px; height: 29px; left: 6px; top: 0; border: 2px solid #0c1016; box-shadow: inset -5px -3px rgba(0,0,0,.2); }
+.pp-hair-back.long { width: 37px; height: 43px; left: 5px; clip-path: polygon(8% 0,92% 0,100% 100%,72% 92%,50% 100%,28% 92%,0 100%); }
+.pp-ear { z-index: 4; width: 7px; height: 10px; top: 12px; border: 2px solid #3e2924; box-shadow: inset -2px -2px rgba(92,43,33,.2); }
+.pp-ear-left { left: 5px; }.pp-ear-right { right: 5px; }
+.pp-head { z-index: 5; width: 30px; height: 29px; left: 8px; top: 2px; border: 2px solid #241a1a; clip-path: polygon(3% 0,97% 0,100% 70%,77% 100%,23% 100%,0 70%); box-shadow: inset -4px -3px rgba(88,38,30,.18), inset 3px 2px rgba(255,220,183,.18); }
+.pp-face-light { z-index: 6; width: 5px; height: 14px; left: 13px; top: 8px; background: rgba(255,226,194,.22); clip-path: polygon(0 0,100% 25%,70% 100%,0 75%); }
+.pp-hair { z-index: 8; width: 32px; height: 12px; left: 7px; top: 0; border: 2px solid #0c1016; border-bottom: 0; clip-path: polygon(0 15%,15% 0,100% 0,100% 75%,75% 65%,56% 100%,34% 67%,0 95%); box-shadow: inset -4px -2px rgba(0,0,0,.23); }
+.pp-hair::after, .pp-hair.long::before { display: none; }
+.pp-fringe { z-index: 9; width: 13px; height: 7px; left: 8px; top: 6px; clip-path: polygon(0 0,100% 0,75% 100%,48% 45%,25% 100%); box-shadow: 10px -2px rgba(0,0,0,.12); }
+.pp-hair-shine { z-index: 10; width: 9px; height: 2px; left: 13px; top: 3px; background: rgba(255,255,255,.18); box-shadow: 8px 2px rgba(255,255,255,.08); }
+.pp-brows { z-index: 11; width: 7px; height: 2px; left: 13px; top: 11px; background: #4b3029; box-shadow: 14px 0 #4b3029; }
+.pp-eyes { z-index: 11; width: 7px; height: 4px; left: 13px; top: 14px; background: #fff4d7; box-shadow: 14px 0 #fff4d7; animation: character-blink 5.2s steps(1) infinite; transform-origin: center; }
+.pp-pupils { z-index: 12; width: 2px; height: 3px; left: 16px; top: 14px; background: #15202a; box-shadow: 14px 0 #15202a; animation: character-blink 5.2s steps(1) infinite; transform-origin: center; }
+@keyframes character-blink { 0%,94%,100% { transform: scaleY(1); } 95%,97% { transform: scaleY(.25); } }
+.pp-nose { z-index: 11; width: 3px; height: 5px; left: 23px; top: 17px; background: rgba(111,54,43,.55); box-shadow: 2px 3px rgba(255,219,181,.18); }
+.pp-mouth { z-index: 11; width: 8px; height: 2px; left: 19px; top: 24px; background: #7e4543; box-shadow: 2px 2px rgba(117,52,49,.25); }
+.pp-cheeks { z-index: 10; width: 4px; height: 2px; left: 11px; top: 22px; background: rgba(184,91,78,.23); box-shadow: 20px 0 rgba(184,91,78,.23); }
+.pp-pin { z-index: 8; width: 5px; height: 5px; right: 8px; bottom: 42px; border: 1px solid #6d4d21; background: #f2c75b; box-shadow: 0 0 3px rgba(242,199,91,.45); }
+.pp-folder { width: 18px; height: 13px; right: -7px; bottom: 17px; border: 2px solid #4e2f1c; background: #d39c48; box-shadow: inset 0 3px #f0c96f, 2px 2px rgba(31,19,14,.25); }
+.pp-folder::before { width: 8px; height: 4px; left: 1px; top: -4px; }
+.pp-folder::after { content: "§"; position: absolute; right: 3px; bottom: 1px; color: #765027; font-family: var(--font-pixel); font-size: 5px; }
+.pp-watch { width: 5px; height: 5px; right: 1px; bottom: 20px; }
+
+/* distinctive, polished hairstyles */
+.pixel-person[data-variant="1"] .pp-fringe { width: 20px; left: 17px; transform: skewX(-18deg); }
+.pixel-person[data-variant="1"] .pp-hair-shine { left: 20px; }
+.pixel-person[data-variant="2"] .pp-hair { height: 15px; clip-path: polygon(0 40%,10% 5%,27% 25%,43% 0,59% 22%,78% 2%,100% 36%,94% 100%,72% 67%,52% 100%,30% 68%,7% 100%); }
+.pixel-person[data-variant="2"] .pp-fringe { left: 15px; width: 18px; }
+.pixel-person[data-variant="3"] .pp-hair-back::after { content: ""; width: 15px; height: 13px; position: absolute; left: 9px; top: -10px; border: 2px solid #0c1016; border-radius: 50%; background: inherit; box-shadow: inset -3px -2px rgba(0,0,0,.2); }
+.pixel-person[data-variant="3"] .pp-hair { clip-path: polygon(0 0,100% 0,93% 100%,76% 62%,60% 100%,40% 64%,24% 100%,5% 62%); }
+.pixel-person[data-variant="4"] .pp-hair-back { border-radius: 42% 42% 16% 16%; box-shadow: -3px 3px 0 #0c1016,3px 3px 0 #0c1016,inset -5px -3px rgba(0,0,0,.18); }
+.pixel-person[data-variant="4"] .pp-fringe { width: 25px; left: 10px; top: 4px; clip-path: polygon(0 40%,12% 0,28% 35%,43% 0,58% 35%,74% 0,100% 42%,90% 100%,0 100%); }
+.pixel-person[data-tier="0"] .pp-body { filter: saturate(.72); }.pixel-person[data-tier="0"] .pp-pocket { border-color: #a98252; }
+.pixel-person[data-tier="5"] .pp-shirt, .pixel-person[data-tier="6"] .pp-shirt { background: #fff8df; box-shadow: inset -3px 0 #e5d3ad; }
+
+.pixel-person.facing-up .pp-face-light, .pixel-person.facing-up .pp-eyes, .pixel-person.facing-up .pp-pupils, .pixel-person.facing-up .pp-brows, .pixel-person.facing-up .pp-nose, .pixel-person.facing-up .pp-mouth, .pixel-person.facing-up .pp-cheeks, .pixel-person.facing-up .pp-shirt, .pixel-person.facing-up .pp-collar, .pixel-person.facing-up .pp-tie { opacity: 0; }
+.pixel-person.facing-left { transform: scaleX(.98); }.pixel-person.facing-right { transform: scaleX(-.98); }
+.pixel-person.is-walking .pp-leg-left { animation: portrait-step-left .2s steps(2) infinite; }.pixel-person.is-walking .pp-leg-right { animation: portrait-step-right .2s steps(2) infinite; }
+.pixel-person.is-walking .pp-arm-left { animation: portrait-arm-left .2s steps(2) infinite; }.pixel-person.is-walking .pp-arm-right { animation: portrait-arm-right .2s steps(2) infinite; }
+@keyframes portrait-step-left { 50% { transform: translateY(4px) rotate(2deg); } }
+@keyframes portrait-step-right { 50% { transform: translateY(-3px) rotate(-2deg); } }
+@keyframes portrait-arm-left { 50% { transform: translateY(-3px) rotate(3deg); } }
+@keyframes portrait-arm-right { 50% { transform: translateY(3px) rotate(-3deg); } }
+
+/* scale and composition across all character contexts */
+.world-person { transform: translate(-50%, -84%); }
+.world-person > span { top: 76px; min-width: 55px; padding: 4px 6px; font-size: 6px; }
+.npc-status { left: 14px; top: -38px; }
+.quest-bubble { left: 9px; top: -48px; }
+.player-person .pixel-person { transform: scale(1.12); transform-origin: center bottom; filter: drop-shadow(0 0 3px #fff1a9) drop-shadow(3px 4px 0 rgba(6,8,12,.42)); }
+.player-person .pixel-person:not(.is-walking) { animation: hero-breathe 3s steps(3) infinite; }
+@keyframes hero-breathe { 50% { translate: 0 -2px; } }
+.player-person .pixel-person.facing-left { transform: scale(1.12) scaleX(.98); }.player-person .pixel-person.facing-right { transform: scale(1.12) scaleX(-.98); }
+.client-person .pixel-person { transform-origin: center bottom; }
+
+.client-portrait.pixel-portrait { width: 90px; height: 100px; }
+.pixel-portrait .pixel-person { left: 22px; bottom: -16px; transform: scale(1.02); transform-origin: bottom; }
+.lobby-client-portrait { width: 104px; height: 114px; }.lobby-client-portrait .pixel-person { left: 28px; transform: scale(1.12); }
+.client-quest-card .client-portrait { width: 76px; height: 84px; }.client-quest-card .client-portrait .pixel-person { left: 17px; bottom: -17px; transform: scale(.92); }
+.client-card-portrait { width: 96px; height: 106px; }.client-card-portrait .pixel-person { left: 25px; transform: scale(1.07); }
+.settlement-client .client-portrait { width: 112px; height: 122px; }.settlement-client .client-portrait .pixel-person { left: 31px; transform: scale(1.2); }
+.pixel-mini-avatar { width: 114px; height: 174px; }.pixel-mini-avatar .pixel-person { transform: scale(2.05); transform-origin: bottom; }
+.pixel-judge .pixel-person { left: 24px; bottom: 2px; transform: scale(1.48); transform-origin: bottom; }
+.judge-wig { left: 18px; top: -1px; transform: scale(1.05); transform-origin: top; }
+.map-player .pixel-person { transform: scale(.98); transform-origin: bottom; filter: drop-shadow(0 0 3px #fff3a9) drop-shadow(3px 4px 0 rgba(20,30,27,.42)); }
+.map-player .pixel-person.facing-left { transform: scale(.98) scaleX(.98); }.map-player .pixel-person.facing-right { transform: scale(.98) scaleX(-.98); }
+
+@media (max-width: 620px) {
+  .world-person > span { top: 72px; }
+  .player-person .pixel-person { transform: scale(1.02); }.player-person .pixel-person.facing-left { transform: scale(1.02) scaleX(.98); }.player-person .pixel-person.facing-right { transform: scale(1.02) scaleX(-.98); }
+  .npc-person .pixel-person, .client-person .pixel-person { transform: scale(.92); transform-origin: bottom; }
+  .map-player .pixel-person { transform: scale(.86); }.map-player .pixel-person.facing-left { transform: scale(.86) scaleX(.98); }.map-player .pixel-person.facing-right { transform: scale(.86) scaleX(-.98); }
+  .pixel-mini-avatar { height: 165px; }.pixel-mini-avatar .pixel-person { transform: scale(1.85); }
+}
