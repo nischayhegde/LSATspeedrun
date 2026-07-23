@@ -84,7 +84,7 @@ function CounselCommandDeck({ game }: { game: GameState }) {
   const workingClient = game.catalog.clients.find((client) => client.key === game.active_client.effective_key) ?? game.active_client
   const guidance = game.progression_guidance
   return (
-    <aside className="counsel-command-deck" aria-label="Firm brief">
+    <aside className="counsel-command-deck" aria-label="Firm brief" data-tour="firm-brief">
       <div className="command-deck-client"><ClientPortrait kind={workingClient.icon} name={workingClient.name} /><span><small>ACTIVE CONTRACT</small><strong>{workingClient.name}</strong><b>{game.active_client.cases_remaining} files remain</b></span></div>
       <div className="command-deck-file"><BriefcaseBusiness /><span><small>{active ? 'OPEN FILE' : 'DOCKET STATUS'}</small><strong>{active ? `Case ${Math.min(active.current_index + 1, active.total_items)} of ${active.total_items}` : 'Ready for intake'}</strong><b>{active ? 'Draft and client terms preserved' : 'Choose work or Rapid Review'}</b></span></div>
       {guidance && <div className="command-deck-goal"><Star /><span><small>NEXT INVESTMENT</small><strong>{guidance.name}</strong><b>{guidance.cases_to_afford ? `About ${guidance.cases_to_afford} rewarded ${guidance.cases_to_afford === 1 ? 'case' : 'cases'} away` : 'Affordable now'}</b></span></div>}
@@ -122,7 +122,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         {game && !isActiveCase && (
           <nav className="desktop-nav" aria-label="Primary navigation">
             {navItems.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''}>
+              <NavLink key={to} to={to} data-tour={`nav-${label.toLowerCase()}`} className={({ isActive }) => isActive ? 'active' : ''}>
                 <Icon size={17} /><span>{label}</span>
               </NavLink>
             ))}
@@ -130,7 +130,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         )}
         <div className="header-right">
           {game && (
-            <button className="icon-button tutorial-help-button" onClick={tutorial.reopen} aria-label="Open firm guide" title="Firm guide">
+            <button className="icon-button tutorial-help-button" data-tour="help" onClick={tutorial.reopen} aria-label="Open firm guide" title="Firm guide">
               <CircleHelp size={17} /><span>Help</span>
             </button>
           )}
@@ -157,13 +157,13 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
           {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink key={to} to={to} data-tour={`nav-${label.toLowerCase()}`} className={({ isActive }) => isActive ? 'active' : ''}>
               <Icon size={20} /><span>{label}</span>
             </NavLink>
           ))}
         </nav>
       )}
-      <FirmTutorial open={tutorial.open} onClose={tutorial.close} />
+      <FirmTutorial open={tutorial.open} onClose={tutorial.close} game={game} />
     </div>
   )
 }

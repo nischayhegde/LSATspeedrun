@@ -24,7 +24,7 @@ export function LearningPage() {
 
   return (
     <div className="learning-page page-wrap">
-      <section className="learning-hero">
+      <section className="learning-hero" data-tour="learning">
         <div>
           <span className="eyebrow gold">LEARNING RECORD · PRACTICE EVIDENCE</span>
           <h1>Build judgment you can use again.</h1>

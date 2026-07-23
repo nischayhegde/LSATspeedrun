@@ -324,7 +324,7 @@ export function OfficePage() {
         </div>
       </section>
 
-      <section className="office-world-shell">
+      <section className="office-world-shell" data-tour="office">
         <ExplorableOffice
           game={game}
           activeCase={Boolean(active)}
@@ -415,7 +415,7 @@ export function CasesLobbyPage() {
   const changeView = (next: 'work' | 'intake' | 'review') => setParams(next === 'work' ? {} : { view: next })
   return (
     <div className="case-lobby page-wrap">
-      <section className="docket-hub-heading">
+      <section className="docket-hub-heading" data-tour="docket">
         <div><span className="eyebrow gold">THE DOCKET · CASE INTAKE & PRACTICE</span><h1>Choose the kind of work.</h1><p>Client Intake sets terms for future cases. An open case keeps the terms it began with. Rapid Review revisits solved questions with no game rewards.</p></div>
         <div className="docket-state-card"><span>{active ? 'OPEN FILE' : 'NO OPEN FILE'}</span><strong>{openItem?.case_terms?.client_name || workingClient.name}</strong><small>{active ? `Case ${Math.min(active.current_index + 1, active.total_items)} of ${active.total_items} · terms preserved` : `${game.active_client.cases_remaining} files remain on the active contract`}</small></div>
       </section>
@@ -671,7 +671,7 @@ export function FirmPage() {
 
   return (
     <div className="firm-page page-wrap">
-      <section className="page-heading firm-ledger-heading">
+      <section className="page-heading firm-ledger-heading" data-tour="firm">
         <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Invest in the practice.</h1><p>Use earned case fees for offices, staff, clients, connections, and acquisitions. Each investment becomes part of the firm.</p><div className="ledger-rule"><i /><span>§</span><i /></div></div>
         <div className="firm-wallet">
           <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(game.cash)}</strong><span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
@@ -818,7 +818,7 @@ export function ProgressionMapPage() {
   const nextLockedScene = mappedScenes.find((scene) => scene.minTier > game.office_tier)
   return (
     <div className="map-page empire-game-page">
-      <section className="empire-command-bar">
+      <section className="empire-command-bar" data-tour="empire">
         <div><span className="pixel-kicker">CITY DIRECTORY · {mappedScenes.length} DESTINATIONS</span><h1>Explore the firm’s city.</h1><p>Choose a district, visit its offices, or review the rival firms along Grand Avenue.</p></div>
         <div className="empire-command-summary">
           <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
