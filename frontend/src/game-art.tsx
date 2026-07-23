@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { CharacterGender, GameState } from './types'
+import type { CharacterGender, GameAsset, GameState } from './types'
 
 type OfficeSceneProps = {
   game?: GameState | null
@@ -11,12 +11,15 @@ type OfficeSceneProps = {
 
 type Direction = 'up' | 'down' | 'left' | 'right'
 type Position = { x: number; y: number }
+type PersonAccessory = 'none' | 'files' | 'brief' | 'clipboard' | 'folio' | 'coffee' | 'phone' | 'briefcase' | 'shopping-bag' | 'tablet' | 'portfolio'
 
 export type CharacterMood = 'happy' | 'unhappy' | 'neutral'
 
-const skinTones = ['#d59a72', '#b87555', '#e0ad80', '#8f5b45', '#c98963']
-const hairTones = ['#30251f', '#5a3728', '#1d2933', '#70492d', '#241e29']
-const staffColors = ['#8d3f64', '#315b70', '#5b4675', '#2d4f55', '#745032']
+const skinTones = ['#d59a72', '#b87555', '#e0ad80', '#8f5b45', '#c98963', '#684333', '#f0c19a']
+const hairTones = ['#30251f', '#5a3728', '#1d2933', '#70492d', '#241e29', '#b59665', '#17191d']
+const staffColors = ['#8d3f64', '#315b70', '#5b4675', '#2d4f55', '#745032', '#5e3038', '#426045']
+const heroJackets = ['#68513e', '#46576b', '#2e6158', '#245070', '#61364f', '#1b3149', '#161b29']
+const heroTies = ['#9b5b45', '#b95749', '#c58a42', '#b9ced5', '#dfad4f', '#e0b960', '#f0cc67']
 
 function PixelPerson({
   gender = 'female',
@@ -24,6 +27,7 @@ function PixelPerson({
   variant = 0,
   direction = 'down',
   walking = false,
+  accessory = 'none',
   className = '',
   label,
 }: {
@@ -32,11 +36,13 @@ function PixelPerson({
   variant?: number
   direction?: Direction
   walking?: boolean
+  accessory?: PersonAccessory
   className?: string
   label?: string
 }) {
+  const visualTier = Math.max(0, Math.min(6, tier))
   const jacket = variant === 0
-    ? (tier === 0 ? '#62513f' : tier >= 5 ? '#152d43' : '#244459')
+    ? heroJackets[visualTier]
     : staffColors[(variant - 1) % staffColors.length]
   const skin = skinTones[variant % skinTones.length]
   const hair = hairTones[variant % hairTones.length]
@@ -45,7 +51,8 @@ function PixelPerson({
       className={`pixel-person facing-${direction} ${walking ? 'is-walking' : ''} ${className}`}
       data-gender={gender}
       data-tier={tier}
-      data-variant={variant % 5}
+      data-variant={variant % 7}
+      data-hero={variant === 0 ? 'true' : undefined}
       aria-label={label}
       role={label ? 'img' : undefined}
     >
@@ -55,11 +62,15 @@ function PixelPerson({
       <i className="pp-trouser-light pp-trouser-light-left" />
       <i className="pp-trouser-light pp-trouser-light-right" />
       <i className="pp-shoes" />
+      <i className="pp-shoulders" style={{ backgroundColor: jacket }} />
       <i className="pp-body" style={{ backgroundColor: jacket }} />
+      <i className="pp-hips" style={{ backgroundColor: jacket }} />
+      <i className="pp-chest-contour" />
+      {variant === 0 && tier >= 3 && <i className="pp-waistcoat" />}
       <i className="pp-shirt" />
       <i className="pp-collar pp-collar-left" />
       <i className="pp-collar pp-collar-right" />
-      <i className="pp-tie" style={{ backgroundColor: tier >= 5 ? '#e0b960' : '#b95749' }} />
+      <i className="pp-tie" style={{ backgroundColor: variant === 0 ? heroTies[visualTier] : '#b95749' }} />
       <i className="pp-lapel pp-lapel-left" />
       <i className="pp-lapel pp-lapel-right" />
       <i className="pp-belt" />
@@ -77,18 +88,149 @@ function PixelPerson({
       <i className="pp-ear pp-ear-right" style={{ backgroundColor: skin }} />
       <i className="pp-head" style={{ backgroundColor: skin }} />
       <i className="pp-face-light" />
+      <i className="pp-jawline" />
       <i className={`pp-hair ${gender === 'female' ? 'long' : ''}`} style={{ backgroundColor: hair }} />
       <i className="pp-fringe" style={{ backgroundColor: hair }} />
       <i className="pp-hair-shine" />
       <i className="pp-eyes" />
       <i className="pp-pupils" />
+      <i className="pp-lashes" />
       <i className="pp-brows" />
       <i className="pp-nose" />
       <i className="pp-mouth" />
+      <i className="pp-lip-highlight" />
       <i className="pp-cheeks" />
-      {variant > 0 && <i className="pp-folder" />}
+      <i className="pp-earrings" />
+      {accessory !== 'none' && <i className={`pp-accessory pp-accessory-${accessory}`}><b /><span /></i>}
       {tier >= 3 && variant === 0 && <i className="pp-watch" />}
       {tier >= 5 && variant === 0 && <i className="pp-pin" />}
+      {tier >= 4 && variant === 0 && <i className="pp-pocket-square" />}
+      {tier >= 6 && variant === 0 && <i className="pp-cufflinks" />}
+    </div>
+  )
+}
+
+const staffPortraits: Record<string, { gender: CharacterGender; tier: number; variant: number; prop: PersonAccessory; role: string; x: number; y: number }> = {
+  paralegal: { gender: 'female', tier: 1, variant: 1, prop: 'files', role: 'MAYA · PARALEGAL', x: 25, y: 50 },
+  junior_associate: { gender: 'male', tier: 2, variant: 2, prop: 'brief', role: 'THEO · ASSOCIATE', x: 59, y: 43 },
+  office_manager: { gender: 'female', tier: 2, variant: 3, prop: 'clipboard', role: 'NINA · MANAGER', x: 34, y: 76 },
+  senior_associate: { gender: 'female', tier: 3, variant: 4, prop: 'folio', role: 'AVERY · SENIOR', x: 65, y: 76 },
+  partner: { gender: 'male', tier: 4, variant: 5, prop: 'coffee', role: 'JORDAN · PARTNER', x: 75, y: 51 },
+  rainmaker: { gender: 'female', tier: 6, variant: 6, prop: 'phone', role: 'MORGAN · RAINMAKER', x: 51, y: 63 },
+}
+
+const clientPortraits: Record<string, { gender: CharacterGender; tier: number; variant: number; accessory: PersonAccessory; title: string }> = {
+  briefcase: { gender: 'female', tier: 0, variant: 7, accessory: 'briefcase', title: 'WALK-IN' },
+  home: { gender: 'male', tier: 1, variant: 1, accessory: 'portfolio', title: 'LOCAL REFERRAL' },
+  store: { gender: 'female', tier: 2, variant: 2, accessory: 'shopping-bag', title: 'FOUNDER' },
+  gem: { gender: 'male', tier: 3, variant: 3, accessory: 'phone', title: 'PRIVATE CLIENT' },
+  building: { gender: 'female', tier: 4, variant: 4, accessory: 'tablet', title: 'GENERAL COUNSEL' },
+  landmark: { gender: 'male', tier: 5, variant: 5, accessory: 'folio', title: 'NATIONAL BOARD' },
+  globe: { gender: 'female', tier: 6, variant: 6, accessory: 'portfolio', title: 'GLOBAL CHAIR' },
+}
+
+const rivalProfiles: Record<string, { owner: string; title: string; gender: CharacterGender; tier: number; variant: number; mark: string; architecture: string }> = {
+  neighborhood_practice: { owner: 'Eleanor Harrow', title: 'Founding partner', gender: 'female', tier: 2, variant: 1, mark: 'H&F', architecture: 'brick-house' },
+  downtown_boutique: { owner: 'Lucien Vale', title: 'Trial strategist', gender: 'male', tier: 4, variant: 2, mark: 'V', architecture: 'art-deco' },
+  regional_firm: { owner: 'Priya Nayar', title: 'Managing partner', gender: 'female', tier: 5, variant: 4, mark: '★', architecture: 'northstar' },
+  national_competitor: { owner: 'Sebastian Sterling', title: 'Global chair', gender: 'male', tier: 6, variant: 6, mark: 'SG', architecture: 'mega-tower' },
+}
+
+function UpgradeArtwork({ assetKey }: { assetKey: string }) {
+  if (assetKey === 'repaired_desk') return (
+    <div className="asset-vignette scene-desk">
+      <i className="pixel-window-mini" /><i className="desk-picture" />
+      <div className="oak-desk"><i /><i /><i /><b /></div>
+      <div className="desk-hammer"><i /><b /></div><span className="sawdust"><i /><i /><i /><i /></span>
+    </div>
+  )
+  if (assetKey === 'proper_lighting') return (
+    <div className="asset-vignette scene-lighting">
+      <div className="light-rays"><i /><i /><i /></div><div className="floor-lamp"><i /><b /><span /></div>
+      <div className="reading-chair"><i /><b /></div><span className="light-motes"><i /><i /><i /></span>
+    </div>
+  )
+  if (assetKey === 'case_management') return (
+    <div className="asset-vignette scene-cases">
+      <div className="case-monitor"><span><i /><i /><i /></span><b /></div>
+      <div className="file-stack"><i /><i /><i /><i /></div><div className="case-keyboard"><i /><i /><i /><i /><i /></div>
+      <span className="data-pips"><i /><i /><i /></span>
+    </div>
+  )
+  if (assetKey === 'legal_library') return (
+    <div className="asset-vignette scene-library">
+      <div className="library-case"><span><i /><i /><i /><i /><i /></span><span><i /><i /><i /><i /><i /></span><b /></div>
+      <div className="library-ladder"><i /><i /><i /></div><div className="flying-page"><i /></div>
+    </div>
+  )
+  if (assetKey === 'conference_room') return (
+    <div className="asset-vignette scene-conference">
+      <div className="conference-window"><i /><i /><i /></div><div className="conference-mini-table"><i /><b /><b /><span /><span /></div>
+      <div className="conference-chairs"><i /><i /><i /><i /></div><div className="coffee-steam"><i /><i /></div>
+    </div>
+  )
+  if (assetKey === 'research_floor') return (
+    <div className="asset-vignette scene-research">
+      <div className="research-server"><i /><i /><i /><i /><i /></div><div className="research-screen"><span /><b /><i /><i /></div>
+      <div className="research-desk"><i /></div><span className="signal-pulse"><i /><i /><i /></span>
+    </div>
+  )
+  return (
+    <div className="asset-vignette scene-executive">
+      <div className="executive-skyline"><i /><i /><i /><i /><i /></div><div className="executive-desk"><i /><b /><span /></div>
+      <div className="executive-chair"><i /><b /></div><div className="executive-globe"><i /><b /></div>
+    </div>
+  )
+}
+
+function StaffArtwork({ asset }: { asset: GameAsset }) {
+  const portrait = staffPortraits[asset.key] ?? staffPortraits.paralegal
+  return (
+    <div className={`asset-vignette scene-staff staff-${portrait.prop}`}>
+      <div className="staff-office-window"><i /><i /><i /></div><div className="staff-rug" />
+      <PixelPerson gender={portrait.gender} tier={portrait.tier} variant={portrait.variant} accessory={portrait.prop} walking label={asset.name} />
+      <div className="staff-prop"><i /><b /><span /></div><span className="staff-sparkles"><i /><i /><i /></span>
+    </div>
+  )
+}
+
+function ConnectionArtwork({ assetKey }: { assetKey: string }) {
+  const nodes = assetKey === 'local_bar' ? 3 : assetKey === 'business_network' ? 4 : assetKey === 'board_network' ? 5 : 6
+  return (
+    <div className={`asset-vignette scene-network network-${nodes}`}>
+      <div className="network-map"><i /><i /><i /></div><div className="network-lines"><i /><i /><i /><i /><i /></div>
+      <div className="network-hub"><span>{assetKey === 'international_network' ? '✦' : assetKey === 'board_network' ? '§' : '⚖'}</span><i /></div>
+      <div className="network-nodes">{Array.from({ length: nodes }, (_, index) => <i key={index}><b /></i>)}</div>
+      <span className="network-packet"><i /></span>
+    </div>
+  )
+}
+
+function RivalArtwork({ assetKey, owned }: { assetKey: string; owned: boolean }) {
+  const rank = ['neighborhood_practice', 'downtown_boutique', 'regional_firm', 'national_competitor'].indexOf(assetKey) + 1
+  const profile = rivalProfiles[assetKey] ?? rivalProfiles.neighborhood_practice
+  return (
+    <div className={`asset-vignette scene-rival rival-rank-${rank} rival-${assetKey} rival-${profile.architecture}`}>
+      <div className="rival-card-sky"><i /><i /><i /></div><div className="rival-card-building"><span>{owned ? '✓' : profile.mark}</span><i /><i /><i /><i /><b /></div>
+      <div className="rival-flag"><i /><b /></div><span className="rival-smoke-mini"><i /><i /><i /></span>
+      <div className="rival-briefcase"><i /></div>
+      <div className="rival-card-owner"><PixelPerson gender={profile.gender} tier={profile.tier} variant={profile.variant} accessory="briefcase" /><span>{profile.owner}<small>{profile.title}</small></span></div>
+    </div>
+  )
+}
+
+export function PixelAssetArtwork({ asset }: { asset: GameAsset }) {
+  const state = asset.owned ? 'owned' : asset.available ? 'available' : 'locked'
+  return (
+    <div className={`pixel-asset-art asset-${asset.type} asset-${state} art-${asset.key}`} role="img" aria-label={`${asset.name} illustrated upgrade`}>
+      <div className="asset-art-sky"><i /><i /><i /></div>
+      {asset.type === 'upgrade' && <UpgradeArtwork assetKey={asset.key} />}
+      {asset.type === 'staff' && <StaffArtwork asset={asset} />}
+      {asset.type === 'connection' && <ConnectionArtwork assetKey={asset.key} />}
+      {asset.type === 'rival' && <RivalArtwork assetKey={asset.key} owned={asset.owned} />}
+      <div className="asset-art-floor" /><div className="asset-art-shine" /><div className="asset-art-scanlines" />
+      {state === 'locked' && <div className="asset-art-lock"><i /><span>?</span></div>}
+      <span className="asset-art-label">{asset.type === 'upgrade' ? 'OFFICE UPGRADE' : asset.type === 'staff' ? 'TEAM MEMBER' : asset.type === 'connection' ? 'NEW CONTACTS' : 'ACQUISITION'}</span>
     </div>
   )
 }
@@ -104,12 +246,13 @@ export function ClientPortrait({
   mood?: CharacterMood
   className?: string
 }) {
-  const variant = kind === 'gem' ? 3 : kind === 'globe' ? 4 : kind === 'building' ? 2 : kind === 'landmark' ? 1 : 0
+  const profile = clientPortraits[kind] ?? clientPortraits.briefcase
   return (
-    <div className={`client-portrait pixel-portrait mood-${mood} ${className}`} aria-label={`${name}, ${mood}`} role="img">
+    <div className={`client-portrait pixel-portrait client-${kind} mood-${mood} ${className}`} aria-label={`${name}, ${profile.title.toLowerCase()}, ${mood}`} role="img">
       <div className="portrait-skyline"><i /><i /><i /></div>
-      <PixelPerson gender={variant % 2 ? 'male' : 'female'} tier={Math.max(1, variant)} variant={variant + 1} />
-      <b>{name.slice(0, 1)}</b>
+      <PixelPerson gender={profile.gender} tier={profile.tier} variant={profile.variant} accessory={profile.accessory} />
+      <b>{kind === 'globe' ? '✦' : name.slice(0, 1)}</b>
+      <small>{profile.title}</small>
     </div>
   )
 }
@@ -169,8 +312,9 @@ function useWalker(initial: Position, bounds: { left: number; right: number; top
 
 function PixelWindow({ tier }: { tier: number }) {
   return (
-    <div className="pixel-window">
+    <div className={`pixel-window skyline-tier-${tier}`}>
       <div className="pixel-moon" />
+      <div className="pixel-sun" />
       <div className="pixel-cloud cloud-one" /><div className="pixel-cloud cloud-two" />
       <div className="window-buildings">
         {[2, 4, 3, 6, 4, 5, 3].map((height, index) => (
@@ -178,6 +322,20 @@ function PixelWindow({ tier }: { tier: number }) {
         ))}
       </div>
       {tier === 0 && <div className="pixel-rain">{Array.from({ length: 8 }, (_, index) => <i key={index} />)}</div>}
+    </div>
+  )
+}
+
+function OfficeTierDecor({ tier }: { tier: number }) {
+  return (
+    <div className={`office-tier-decor office-tier-decor-${tier}`} aria-hidden="true">
+      {tier === 0 && <><div className="shack-rafters"><i /><i /><i /></div><div className="roof-leak"><i /><b /></div><div className="moving-boxes"><i /><i /><span>FILES</span></div></>}
+      {tier === 1 && <><div className="shared-divider"><i /><i /><i /></div><div className="coat-rack"><i /><b /><span /></div><div className="first-nameplate">YOUR NAME, ESQ.</div></>}
+      {tier === 2 && <><div className="storefront-awning"><i /><i /><i /><i /><i /></div><div className="neighborhood-board"><span>COMMUNITY</span><i /><i /><i /></div></>}
+      {tier === 3 && <><div className="downtown-columns"><i /><i /></div><div className="downtown-art"><i /><b /><span /></div><div className="city-directory">SUITE 1800</div></>}
+      {tier === 4 && <><div className="power-statue"><i>§</i><b /><span /></div><div className="marble-inlay"><i /><i /></div><div className="press-wall"><span>VERDICTS</span><i>★</i><i>★</i><i>★</i></div></>}
+      {tier === 5 && <><div className="national-map-wall"><span>NATIONAL OFFICES</span>{Array.from({ length: 7 }, (_, index) => <i key={index} />)}<b /><b /></div><div className="branch-ticker">NYC · LA · CHI · DC · SEA</div></>}
+      {tier >= 6 && <><div className="world-clocks"><span>NEW YORK</span><span>LONDON</span><span>TOKYO</span><i /><i /><i /></div><div className="global-hologram"><i /><b /><span>GLOBAL</span></div><div className="empire-crest">LT<i>✦</i></div></>}
     </div>
   )
 }
@@ -195,7 +353,7 @@ function OfficeFurniture({ tier, owned }: { tier: number; owned: Set<string> }) 
         <span>LAW</span>
         <div>{Array.from({ length: 24 }, (_, index) => <i key={index} />)}</div>
       </div>
-      <div className="pixel-desk main-desk"><div className="desk-lamp"><i /></div><div className="paper-stack"><i /><i /><i /></div><div className="desk-screen">LT</div><div className="pixel-keyboard">······</div><div className="desk-phone"><i /><b /></div><div className="coffee-mug"><i /></div><div className="open-case-file"><i /><b /></div></div>
+      <div className={`pixel-desk main-desk ${owned.has('repaired_desk') || tier >= 1 ? 'desk-restored' : 'desk-battered'}`}><div className="desk-lamp"><i /></div><div className="paper-stack"><i /><i /><i /></div><div className="desk-screen">LT</div><div className="pixel-keyboard">······</div><div className="desk-phone"><i /><b /></div><div className="coffee-mug"><i /></div><div className="open-case-file"><i /><b /></div></div>
       <div className="pixel-desk reception-desk"><span>RECEPTION</span><i /><b className="desk-bell" /></div>
       <div className="filing-cabinets"><i /><i /><i /></div>
       <div className="pixel-safe"><i>$</i></div>
@@ -204,6 +362,9 @@ function OfficeFurniture({ tier, owned }: { tier: number; owned: Set<string> }) 
       {tier >= 2 && <div className="conference-table"><i /><i /><i /><i /><span /></div>}
       {(owned.has('case_management') || tier >= 2) && <div className="printer"><i /><b /></div>}
       {tier >= 4 && <div className="trophy-case">{Array.from({ length: 3 }, (_, index) => <i key={index}>★</i>)}</div>}
+      {(owned.has('legal_library') || tier >= 2) && <div className="earned-upgrade earned-library"><span>LEGAL ARCHIVE</span><i /><i /><i /><i /><i /></div>}
+      {(owned.has('research_floor') || tier >= 4) && <div className="earned-upgrade earned-research"><span>RESEARCH</span><i /><i /><i /></div>}
+      {(owned.has('executive_suite') || tier >= 5) && <div className="earned-upgrade earned-executive"><i>★</i><span>PARTNERS</span></div>}
       <div className="map-elevator"><span>EMPIRE</span><i /><b /></div>
       <div className="office-clock"><i /><b /></div>
       <div className="desk-chair chair-main"><i /><b /></div><div className="desk-chair chair-reception"><i /><b /></div>
@@ -217,30 +378,35 @@ function OfficeFurniture({ tier, owned }: { tier: number; owned: Set<string> }) 
 function OfficeBackdrop({ game, gender = 'female', previewTier, children }: OfficeSceneProps & { children?: React.ReactNode }) {
   const tier = previewTier ?? game?.office_tier ?? 0
   const owned = useMemo(() => new Set(game?.owned_assets ?? []), [game?.owned_assets])
-  const staff = [
-    owned.has('paralegal') && { role: 'PARALEGAL', x: 27, y: 49, variant: 1 },
-    owned.has('junior_associate') && { role: 'ASSOCIATE', x: 60, y: 42, variant: 2 },
-    owned.has('senior_associate') && { role: 'SENIOR', x: 35, y: 74, variant: 3 },
-    owned.has('partner') && { role: 'PARTNER', x: 69, y: 73, variant: 4 },
-  ].filter(Boolean) as Array<{ role: string; x: number; y: number; variant: number }>
+  const staff = Object.entries(staffPortraits).filter(([key]) => owned.has(key)).map(([key, profile]) => ({ key, ...profile }))
+  const activeClient = game?.catalog.clients.find((client) => client.key === game.active_client.effective_key)
+  const clientProfile = clientPortraits[activeClient?.icon ?? 'briefcase'] ?? clientPortraits.briefcase
+  const upgradeClasses = [
+    owned.has('proper_lighting') && 'has-proper-lighting',
+    owned.has('case_management') && 'has-case-management',
+    owned.has('conference_room') && 'has-conference-room',
+    owned.has('research_floor') && 'has-research-floor',
+    owned.has('executive_suite') && 'has-executive-suite',
+  ].filter(Boolean).join(' ')
 
   return (
-    <div className="pixel-office-world" data-tier={tier}>
+    <div className={`pixel-office-world office-tier-${tier} ${upgradeClasses}`} data-tier={tier}>
       <div className="office-back-wall" />
       <PixelWindow tier={tier} />
+      <OfficeTierDecor tier={tier} />
       <div className="firm-wall-sign"><strong>{game?.firm_name ?? 'COUNSEL & CO.'}</strong><span>ATTORNEYS AT LAW</span></div>
       <OfficeFurniture tier={tier} owned={owned} />
       {staff.map((member) => (
-        <div className="world-person npc-person" key={member.role} style={{ left: `${member.x}%`, top: `${member.y}%` }}>
+        <div className={`world-person npc-person npc-${member.key}`} key={member.key} style={{ left: `${member.x}%`, top: `${member.y}%` }}>
           <i className={`npc-status npc-status-${member.variant}`}>{member.variant === 1 ? '⌕' : member.variant === 2 ? '⌨' : member.variant === 3 ? '§' : '★'}</i>
-          <PixelPerson gender={member.variant % 2 ? 'female' : 'male'} tier={tier} variant={member.variant} label={member.role} />
+          <PixelPerson gender={member.gender} tier={member.tier} variant={member.variant} accessory={member.prop} label={member.role} />
           <span>{member.role}</span>
         </div>
       ))}
-      <div className="world-person client-person" style={{ left: '79%', top: '69%' }}>
+      <div className={`world-person client-person world-client-${activeClient?.icon ?? 'briefcase'}`} style={{ left: '81%', top: '72%' }}>
         <div className="quest-bubble">!</div>
-        <PixelPerson gender="male" tier={2} variant={5} label="Waiting client" />
-        <span>CLIENT</span>
+        <PixelPerson gender={clientProfile.gender} tier={clientProfile.tier} variant={clientProfile.variant} accessory={clientProfile.accessory} label={activeClient?.name ?? 'Waiting client'} />
+        <span>{clientProfile.title}</span>
       </div>
       {!children && (
         <div className="world-person preview-lawyer" style={{ left: '51%', top: '70%' }}>
@@ -369,6 +535,19 @@ function PixelBuilding({ tier, locked }: { tier: number; locked: boolean }) {
   )
 }
 
+function RivalHeadquarters({ assetKey, owned }: { assetKey: string; owned: boolean }) {
+  const profile = rivalProfiles[assetKey] ?? rivalProfiles.neighborhood_practice
+  return (
+    <div className={`rival-hq rival-hq-${profile.architecture} ${owned ? 'is-acquired' : ''}`} aria-hidden="true">
+      <div className="rhq-smoke"><i /><i /></div>
+      <div className="rhq-roof"><i /><b /></div>
+      <div className="rhq-body">{Array.from({ length: 8 }, (_, index) => <i key={index} />)}<b /></div>
+      <div className="rhq-sign">{owned ? '✓' : profile.mark}</div>
+      <div className="rhq-landmark"><i /><b /><span /></div>
+    </div>
+  )
+}
+
 export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: (tab: 'upgrades' | 'rivals') => void }) {
   const initial = tierPositions[game.office_tier] ?? tierPositions[0]
   const walker = useWalker({ x: initial.x, y: Math.min(86, initial.y + 10) }, { left: 4, right: 96, top: 12, bottom: 89 })
@@ -380,6 +559,7 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
   ]
   const nearby = points.find((point) => Math.hypot((walker.position.x - point.position.x) * 1.15, walker.position.y - point.position.y) < 11)
   const selectedPoint = points.find((point) => point.key === selected) ?? points[0]
+  const selectedRivalProfile = selectedPoint.kind === 'rival' ? (rivalProfiles[selectedPoint.data.key] ?? rivalProfiles.neighborhood_practice) : null
 
   useEffect(() => {
     const interact = (event: globalThis.KeyboardEvent) => {
@@ -433,7 +613,7 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
               style={{ left: `${position.x}%`, top: `${position.y}%` }}
               onClick={() => setSelected(`rival-${rival.key}`)}
             >
-              <div className="rival-building"><div className="rival-smoke"><i /><i /><i /></div><i>R</i><b /><b /><b /><span /></div>
+              <RivalHeadquarters assetKey={rival.key} owned={rival.owned} />
               <span><b>{rival.name.replace('Acquire ', '')}</b><small>{rival.owned ? 'ACQUIRED' : 'RIVAL FIRM'}</small></span>
             </button>
           )
@@ -448,6 +628,7 @@ export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: 
       <div className="empire-inspector">
         <span>{selectedPoint.kind === 'tier' ? 'FIRM DESTINATION' : 'ACQUISITION TARGET'}</span>
         <h2>{selectedPoint.data.name.replace('Acquire ', '')}</h2>
+        {selectedRivalProfile && <div className="rival-owner-inspector"><PixelPerson gender={selectedRivalProfile.gender} tier={selectedRivalProfile.tier} variant={selectedRivalProfile.variant} accessory="briefcase" /><span><small>RIVAL OWNER</small><strong>{selectedRivalProfile.owner}</strong><i>{selectedRivalProfile.title}</i></span></div>}
         <p>{selectedPoint.kind === 'tier' ? selectedPoint.data.short : selectedPoint.data.description}</p>
         <div>
           <b>${selectedPoint.data.cost.toLocaleString()}</b>
