@@ -22,11 +22,11 @@ def _iso_utc(value) -> str | None:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def find_resumable_session(user: User) -> StudySession | None:
+def find_resumable_session(user: User, mode: str = "practice") -> StudySession | None:
     return (
         StudySession.query.filter(
             StudySession.user_id == user.id,
-            StudySession.mode == "practice",
+            StudySession.mode == mode,
             or_(
                 StudySession.status.in_(["in_progress", "paused"]),
                 StudySession.pending_attempt_id.isnot(None),
@@ -121,6 +121,8 @@ def _is_unfinished_current_item(item: SessionItem) -> bool:
 def _freeze_current_case(item: SessionItem, user: User) -> bool:
     """Adopt only the visible unfinished case into the tycoon economy."""
     if (
+        item.session.mode != "practice"
+        or
         item.game_context_json is not None
         or not user.game_profile
         or not _is_unfinished_current_item(item)
@@ -185,7 +187,7 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
 def serialize_session(session: StudySession, include_item: bool = True) -> dict:
     payload = {
         "id": session.id,
-        "mode": "practice",
+        "mode": session.mode,
         "status": session.status,
         "total_items": session.total_items,
         "current_index": session.current_index,
@@ -219,24 +221,51 @@ def select_random_questions(count: int) -> list[Question]:
     return random.sample(eligible, k=min(count, len(eligible)))
 
 
-def create_study_session(user: User) -> StudySession:
-    # The account row is the cross-request mutex for the single active case
-    # batch. Both POST /study-sessions and final acknowledgement use this path.
-    profile = lock_user_profile(user.id)
-    if not profile:
-        raise ValueError("onboarding_required")
-    active = find_resumable_session(user)
-    if active:
-        db.session.commit()
-        return active
+def review_question_count(user: User) -> int:
+    return (
+        db.session.query(SessionItem.question_id)
+        .join(Attempt, Attempt.session_item_id == SessionItem.id)
+        .join(StudySession, StudySession.id == SessionItem.session_id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .filter(
+            Attempt.user_id == user.id,
+            StudySession.user_id == user.id,
+            Question.source.like(f"{SOURCE_PREFIX}%"),
+        )
+        .distinct()
+        .count()
+    )
 
-    questions = select_random_questions(int(current_app.config["PRACTICE_SESSION_SIZE"]))
-    if not questions:
-        raise RuntimeError("No Hugging Face LSAT questions are available")
 
+def select_review_questions(user: User, count: int) -> list[Question]:
+    """Return distinct, previously attempted Hugging Face questions only."""
+    attempted_ids = (
+        db.session.query(SessionItem.question_id)
+        .join(Attempt, Attempt.session_item_id == SessionItem.id)
+        .join(StudySession, StudySession.id == SessionItem.session_id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .filter(
+            Attempt.user_id == user.id,
+            StudySession.user_id == user.id,
+            Question.source.like(f"{SOURCE_PREFIX}%"),
+        )
+        .distinct()
+        .all()
+    )
+    question_ids = [question_id for (question_id,) in attempted_ids]
+    if not question_ids:
+        return []
+    questions = Question.query.filter(
+        Question.id.in_(question_ids),
+        Question.source.like(f"{SOURCE_PREFIX}%"),
+    ).all()
+    return random.sample(questions, k=min(count, len(questions)))
+
+
+def _create_session(user: User, questions: list[Question], *, mode: str, requires_reasoning: bool) -> StudySession:
     session = StudySession(
         user_id=user.id,
-        mode="practice",
+        mode=mode,
         target_minutes=user.target_minutes,
         total_items=len(questions),
     )
@@ -253,13 +282,48 @@ def create_study_session(user: User) -> StudySession:
                 session_id=session.id,
                 question_id=question.id,
                 position=position,
-                requires_reasoning=True,
+                requires_reasoning=requires_reasoning,
                 target_time_seconds=target_time_seconds,
             )
         )
         previous_passage_id = question.passage_id
     db.session.commit()
     return session
+
+
+def create_study_session(user: User) -> StudySession:
+    # The account row is the cross-request mutex for the single active case
+    # batch. Both POST /study-sessions and final acknowledgement use this path.
+    profile = lock_user_profile(user.id)
+    if not profile:
+        raise ValueError("onboarding_required")
+    active = find_resumable_session(user)
+    if active:
+        db.session.commit()
+        return active
+
+    questions = select_random_questions(int(current_app.config["PRACTICE_SESSION_SIZE"]))
+    if not questions:
+        raise RuntimeError("No Hugging Face LSAT questions are available")
+
+    return _create_session(user, questions, mode="practice", requires_reasoning=True)
+
+
+def create_review_session(user: User) -> StudySession:
+    # Serialize starts against the account-bound profile so two rapid clicks
+    # cannot create two active review batches for the same player.
+    profile = lock_user_profile(user.id)
+    if not profile:
+        raise ValueError("onboarding_required")
+    active = find_resumable_session(user, "review")
+    if active:
+        db.session.commit()
+        return active
+    questions = select_review_questions(user, int(current_app.config["PRACTICE_SESSION_SIZE"]))
+    if not questions:
+        db.session.rollback()
+        raise ValueError("review_unavailable")
+    return _create_session(user, questions, mode="review", requires_reasoning=False)
 
 
 def pause_study_session(session: StudySession) -> StudySession:
@@ -295,7 +359,14 @@ def resume_study_session(session: StudySession) -> StudySession:
     return session
 
 
-def _feedback(question: Question, selected_label: str, is_correct: bool, reasoning: str | None) -> dict:
+def _feedback(
+    question: Question,
+    selected_label: str,
+    is_correct: bool,
+    reasoning: str | None,
+    *,
+    is_review: bool,
+) -> dict:
     return {
         "is_correct": is_correct,
         "selected_label": selected_label,
@@ -307,7 +378,11 @@ def _feedback(question: Question, selected_label: str, is_correct: bool, reasoni
             else f"The verified answer is {question.correct_answer}."
         ),
         "coaching_notice": (
-            "Your reasoning will be graded, and every answer choice will be explained."
+            (
+                "The verified key is shown immediately. Optional reasoning can receive a deeper tutor review."
+                if is_review
+                else "Your reasoning will be graded, and every answer choice will be explained."
+            )
         ),
     }
 
@@ -341,6 +416,11 @@ def submit_attempt(
     payload: dict,
     idempotency_key: str,
 ) -> tuple[Attempt, bool]:
+    if session.user_id != user.id:
+        raise ValueError("session_not_found")
+    if session.mode not in {"practice", "review"}:
+        raise ValueError("invalid_session_mode")
+    is_review = session.mode == "review"
     if not user.game_profile:
         raise ValueError("onboarding_required")
     requested_item_id = payload.get("item_id")
@@ -364,18 +444,19 @@ def submit_attempt(
     if item.attempt:
         return item.attempt, True
     _freeze_current_case(item, user)
-    if item.game_context_json is None:
+    if not is_review and item.game_context_json is None:
         raise ValueError("game_context_required")
 
     selected_label = str(payload.get("selected_label", "")).strip().upper()
     if selected_label not in {choice.label for choice in item.question.choices}:
         raise ValueError("invalid_choice")
     reasoning = str(payload.get("reasoning") or "").strip()[:4000] or None
-    if not reasoning:
+    if not reasoning and not is_review:
         raise ValueError("reasoning_required")
     elapsed_ms = max(1000, min(_elapsed_ms(item), 15 * 60 * 1000))
     is_correct = selected_label == item.question.correct_answer
-    _update_skill(user.id, item.question, is_correct, elapsed_ms)
+    if not is_review:
+        _update_skill(user.id, item.question, is_correct, elapsed_ms)
 
     attempt = Attempt(
         user_id=user.id,
@@ -389,7 +470,13 @@ def submit_attempt(
         capm_points=0,
         pace_scored=False,
         xp_earned=0,
-        feedback_json=_feedback(item.question, selected_label, is_correct, reasoning),
+        feedback_json=_feedback(
+            item.question,
+            selected_label,
+            is_correct,
+            reasoning,
+            is_review=is_review,
+        ),
         coaching_status="pending",
     )
     db.session.add(attempt)
@@ -429,9 +516,10 @@ def serialize_attempt_result(attempt: Attempt, duplicate: bool = False) -> dict:
 
 
 def run_attempt_coaching(attempt: Attempt) -> dict:
+    is_practice_case = attempt.session_item.session.mode == "practice"
     existing_feedback = (attempt.feedback_json or {}).get("coaching")
     if attempt.coaching_status == "completed" and existing_feedback:
-        if not attempt.settlement:
+        if is_practice_case and not attempt.settlement:
             settle_attempt(attempt, existing_feedback)
             db.session.commit()
         return existing_feedback
@@ -453,9 +541,17 @@ def run_attempt_coaching(attempt: Attempt) -> dict:
         db.session.commit()
         raise
 
-    settle_attempt(attempt, coaching)
+    # Rapid Review is deliberately outside every game/progression economy.
+    # The mode check is the security boundary; absence of game context alone
+    # is not strong enough because legacy or malformed rows may contain it.
+    if is_practice_case:
+        settle_attempt(attempt, coaching)
 
-    if coaching["explanation_grade"] is not None and not attempt.explanation_score_applied:
+    if (
+        is_practice_case
+        and coaching["explanation_grade"] is not None
+        and not attempt.explanation_score_applied
+    ):
         normalized_score = coaching["explanation_grade"] / 100
         stat = SkillProgress.query.filter_by(
             user_id=attempt.user_id,
@@ -508,7 +604,7 @@ def calculate_session_summary(session: StudySession) -> dict:
         if attempt.explanation_score is not None
     ]
     return {
-        "kind": "practice",
+        "kind": session.mode,
         "accuracy": round(sum(attempt.is_correct for attempt in attempts) / max(1, len(attempts)) * 100),
         "correct": sum(attempt.is_correct for attempt in attempts),
         "questions_completed": len(attempts),

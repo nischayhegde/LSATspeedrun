@@ -6,11 +6,18 @@ export const cityPlan = {
   width: 100,
   height: 100,
   tierPositions: [
-    { x: 11, y: 80 }, { x: 25, y: 80 }, { x: 58, y: 74 }, { x: 73, y: 74 },
-    { x: 73, y: 41 }, { x: 73, y: 28 }, { x: 80, y: 17 },
+    { x: 11, y: 80 }, { x: 25, y: 80 }, { x: 42, y: 80 }, { x: 58, y: 74 },
+    { x: 73, y: 74 }, { x: 80, y: 66 }, { x: 80, y: 55 }, { x: 73, y: 47 },
+    { x: 64, y: 41 }, { x: 73, y: 35 }, { x: 80, y: 28 }, { x: 73, y: 23 },
+    { x: 68, y: 17 }, { x: 75, y: 12 }, { x: 82, y: 9 },
   ] as CityPosition[],
   // Rival firms share Grand Avenue instead of floating in unrelated districts.
-  rivalPositions: [{ x: 14, y: 44 }, { x: 34, y: 44 }, { x: 56, y: 44 }, { x: 78, y: 44 }] as CityPosition[],
+  rivalPositions: [
+    { x: 8, y: 43 }, { x: 14, y: 52 }, { x: 20, y: 43 }, { x: 26, y: 52 },
+    { x: 32, y: 43 }, { x: 38, y: 52 }, { x: 44, y: 43 }, { x: 50, y: 52 },
+    { x: 56, y: 43 }, { x: 62, y: 52 }, { x: 68, y: 43 }, { x: 74, y: 52 },
+    { x: 80, y: 43 }, { x: 84, y: 52 },
+  ] as CityPosition[],
   scenePositions: {
     'starter-office': { x: 11, y: 80 }, 'reception-docket': { x: 18, y: 70 }, 'client-intake': { x: 25, y: 80 },
     'case-workspace': { x: 29, y: 66 }, 'mentor-conference': { x: 38, y: 60 }, 'case-resolution': { x: 38, y: 74 },

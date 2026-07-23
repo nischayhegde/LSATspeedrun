@@ -33,12 +33,13 @@ const characterPositions = [
 type Inspection = { kind: 'ACTION' | 'PERSON' | 'ROOM OBJECT'; label: string; detail: string }
 
 function actionTarget(action: SceneAction, session?: StudySession | null) {
-  return action.to === '/cases' && session ? `/cases/${session.id}` : action.to
+  if (action.to !== '/cases?view=active') return action.to
+  return session ? `/cases/${session.id}` : '/cases'
 }
 
 function actionDetail(action: SceneAction, session?: StudySession | null) {
-  if (action.to !== '/cases') return action.detail
-  return session ? `Resume docket ${session.current_index + 1} of ${session.total_items}. Your draft and timer state are preserved.` : action.detail
+  if (action.to !== '/cases?view=active') return action.detail
+  return session ? `Resume docket ${session.current_index + 1} of ${session.total_items}. Your draft and timer state are preserved.` : 'No file is open. Return to the Docket to choose new rewarded work.'
 }
 
 function roomBrief(scene: SceneDefinition, game: GameState, session?: StudySession | null) {
@@ -238,7 +239,7 @@ export function WorldScenePage() {
             ))}
           </div>
           {locked ? <Link className="scene-launch-action locked" to="/map"><Lock />RETURN TO THE CITY DIRECTORY</Link> : (
-            <Link className="scene-launch-action" to={actionTarget(selected, session)}><Play />{selected.to === '/cases' && session ? 'RESUME ACTIVE FILE' : selected.label.toUpperCase()}<ArrowRight /></Link>
+            <Link className="scene-launch-action" to={actionTarget(selected, session)}><Play />{selected.to === '/cases?view=active' && session ? 'RESUME ACTIVE FILE' : selected.label.toUpperCase()}<ArrowRight /></Link>
           )}
           <div className="scene-console-footer"><span><DoorOpen />Click room markers to select</span><span><BookOpen />Enter launches selected action</span></div>
         </aside>

@@ -12,6 +12,7 @@ import {
   OfficePage,
   OnboardingPage,
   ProgressionMapPage,
+  StoryPage,
 } from './pages'
 
 
@@ -79,6 +80,7 @@ export default function App() {
       <Route path="/cases" element={<Protected><CasesLobbyPage /></Protected>} />
       <Route path="/cases/:sessionId" element={<Protected><CaseSessionPage /></Protected>} />
       <Route path="/firm" element={<Protected><FirmPage /></Protected>} />
+      <Route path="/story" element={<Protected><StoryPage /></Protected>} />
       <Route path="/map" element={<Protected><ProgressionMapPage /></Protected>} />
       <Route path="/world/:sceneSlug" element={<Protected><WorldScenePage /></Protected>} />
       <Route path="/practice" element={<Navigate to="/cases" replace />} />

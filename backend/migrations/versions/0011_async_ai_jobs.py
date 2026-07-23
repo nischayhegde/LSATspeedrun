@@ -15,6 +15,35 @@ depends_on = None
 
 
 def upgrade():
+    # Older development builds called ``db.create_all()`` before Alembic owned
+    # this table. Accept that exact pre-created schema so those workspaces can
+    # advance from 0010 instead of failing with "table already exists".
+    inspector = sa.inspect(op.get_bind())
+    if "ai_jobs" in inspector.get_table_names():
+        expected_columns = {
+            "id", "user_id", "kind", "resource_id", "dedup_key", "status",
+            "payload_json", "result_json", "error_message", "attempt_count",
+            "queue_message_id", "created_at", "updated_at", "started_at",
+            "completed_at",
+        }
+        existing_columns = {column["name"] for column in inspector.get_columns("ai_jobs")}
+        missing_columns = expected_columns - existing_columns
+        if missing_columns:
+            raise RuntimeError(
+                "The pre-existing ai_jobs table is incomplete; missing: "
+                + ", ".join(sorted(missing_columns))
+            )
+        existing_indexes = {index["name"] for index in inspector.get_indexes("ai_jobs")}
+        for name, column in (
+            ("ix_ai_jobs_user_id", "user_id"),
+            ("ix_ai_jobs_kind", "kind"),
+            ("ix_ai_jobs_resource_id", "resource_id"),
+            ("ix_ai_jobs_status", "status"),
+        ):
+            if name not in existing_indexes:
+                op.create_index(name, "ai_jobs", [column])
+        return
+
     op.create_table(
         "ai_jobs",
         sa.Column("id", sa.String(36), primary_key=True),

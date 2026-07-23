@@ -68,10 +68,28 @@ export function Brand({ light = false, caseFile = false }: { light?: boolean; ca
 
 const navItems = [
   { to: '/office', label: 'Office', icon: Building2 },
-  { to: '/cases', label: 'Do Cases', icon: BriefcaseBusiness },
+  { to: '/cases', label: 'Docket', icon: BriefcaseBusiness },
+  { to: '/story', label: 'Special Matters', icon: BookOpen },
   { to: '/firm', label: 'Firm', icon: LayoutGrid },
   { to: '/map', label: 'Empire', icon: Map },
 ]
+
+
+function CounselCommandDeck({ game }: { game: GameState }) {
+  const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
+  const active = current.data?.session
+  const workingClient = game.catalog.clients.find((client) => client.key === game.active_client.effective_key) ?? game.active_client
+  const guidance = game.progression_guidance
+  return (
+    <aside className="counsel-command-deck" aria-label="Counsel command deck">
+      <div className="command-deck-title"><span>COUNSEL COMMAND</span><strong>One clear next move</strong></div>
+      <div className="command-deck-client"><ClientPortrait kind={workingClient.icon} name={workingClient.name} /><span><small>ACTIVE CONTRACT</small><strong>{workingClient.name}</strong><b>{game.active_client.cases_remaining} files remain</b></span></div>
+      <div className="command-deck-file"><BriefcaseBusiness /><span><small>{active ? 'OPEN FILE' : 'DOCKET STATUS'}</small><strong>{active ? `Case ${Math.min(active.current_index + 1, active.total_items)} of ${active.total_items}` : 'Ready for intake'}</strong><b>{active ? 'Draft and client terms preserved' : 'Choose work or Rapid Review'}</b></span></div>
+      {guidance && <div className="command-deck-goal"><Star /><span><small>RECOMMENDED INVESTMENT</small><strong>{guidance.name}</strong><b>{guidance.cases_to_afford ? `About ${guidance.cases_to_afford} rewarded ${guidance.cases_to_afford === 1 ? 'case' : 'cases'} away` : 'Affordable now'}</b></span></div>}
+      <Link className="command-deck-action" to={active ? `/cases/${active.id}` : '/cases'}>{active ? 'Resume file' : 'Open docket'}<ArrowRight /></Link>
+    </aside>
+  )
+}
 
 
 export function AppShell({ user, game, children }: { user: User; game?: GameState | null; children: React.ReactNode }) {
@@ -88,7 +106,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
     },
   })
   useEffect(() => {
-    const section = location.pathname.startsWith('/office') ? 'Office' : location.pathname.startsWith('/cases') ? 'Cases' : location.pathname.startsWith('/firm') ? 'Firm' : location.pathname.startsWith('/map') || location.pathname.startsWith('/world') ? 'Empire' : 'Lawyer Tycoon'
+    const section = location.pathname.startsWith('/office') ? 'Office' : location.pathname.startsWith('/cases') ? 'Docket' : location.pathname.startsWith('/firm') ? 'Firm' : location.pathname.startsWith('/story') ? 'Special Matters' : location.pathname.startsWith('/map') || location.pathname.startsWith('/world') ? 'Empire' : 'Lawyer Tycoon'
     document.title = `${section} · Lawyer Tycoon`
     window.requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }))
     window.scrollTo({ top: 0, behavior: 'auto' })
@@ -126,6 +144,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           </div>
         </div>
       </header>
+      {game && !isActiveCase && <CounselCommandDeck game={game} />}
       <main id="main-content" ref={mainRef} tabIndex={-1}>{children}</main>
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
@@ -204,13 +223,14 @@ function CaseScore({ reward }: { reward: AttemptReward }) {
           <Star /><span>Reputation</span><strong>{repPositive ? '+' : ''}{reward.reputation_change.toFixed(1)}</strong>
         </div>
       </div>
-      {(reward.streak_bonus > 0 || reward.staff_bonus > 0 || reward.contract_bonus > 0) && (
+      {(reward.streak_bonus > 0 || reward.staff_bonus > 0 || reward.contract_bonus > 0 || reward.quest_bonus > 0) && (
         <div className="bonus-ribbon">
           <Sparkles size={16} />
           {[
             reward.streak_bonus > 0 && `Streak +${formatMoney(reward.streak_bonus)}`,
             reward.staff_bonus > 0 && `Staff +${formatMoney(reward.staff_bonus)}`,
             reward.contract_bonus > 0 && `Contract +${formatMoney(reward.contract_bonus)}`,
+            reward.quest_bonus > 0 && `Caseboard +${formatMoney(reward.quest_bonus)}`,
           ].filter(Boolean).join(' · ')}
         </div>
       )}
@@ -342,6 +362,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const gameQuery = useQuery({ queryKey: ['game'], queryFn: api.game })
   const item = session.pending_item || session.current_item
   const result = session.pending_result
+  const isReview = session.mode === 'review'
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
   const [draftState, setDraftState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -349,6 +370,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [openedAt, setOpenedAt] = useState(Date.now())
   const [casePage, setCasePage] = useState<'evidence' | 'argument' | 'verdict'>(result ? 'verdict' : 'evidence')
   const [pageTurn, setPageTurn] = useState<{ key: number; direction: 1 | -1 } | null>(null)
+  const [tutorRequested, setTutorRequested] = useState(false)
   const pageTurnTimers = useRef<number[]>([])
   const verdictRef = useRef<HTMLDivElement>(null)
 
@@ -359,6 +381,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     setOpenedAt(Date.now())
     setCasePage(result ? 'verdict' : 'evidence')
     setPageTurn(null)
+    setTutorRequested(false)
   }, [item?.id])
 
   useEffect(() => {
@@ -446,7 +469,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const coaching = useQuery({
     queryKey: ['coaching', result?.attempt_id],
     queryFn: () => api.coaching(result!.attempt_id),
-    enabled: Boolean(result && (!savedCoaching || !savedReward)),
+    enabled: Boolean(result && (!isReview || tutorRequested) && (!savedCoaching || (!isReview && !savedReward))),
     retry: false,
   })
   const coachingFeedback = savedCoaching || coaching.data?.coaching
@@ -476,23 +499,27 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
   return (
     <div className="question-layout">
-      <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
-        <ClientPortrait kind={clientKind} name={clientName} />
-        <div className="active-matter-copy">
-          <span>YOU ARE REPRESENTING</span>
-          <strong>{clientName}</strong>
-          <small>This client is locked to this open case, even if you change contracts later.</small>
-        </div>
-        <div className="active-matter-fee"><span>POTENTIAL BASE FEE</span><strong>{formatMoney(item.case_terms?.base_fee || 0)}</strong><small>Answer + reasoning + speed set the final fee</small></div>
-      </section>
-      <CaseJourneyRail current={result ? 'counsel' : 'workspace'} />
+      {isReview ? (
+        <section className="active-matter-banner review-matter-banner" aria-label="Rapid Review file">
+          <div className="review-file-seal"><BookOpen /></div>
+          <div className="active-matter-copy"><span>RAPID REVIEW</span><strong>Previously solved file</strong><small>Immediate verified feedback. No cash, Reputation, streak, daily, loyalty, or quest rewards.</small></div>
+          <div className="active-matter-fee"><span>LEARNING MODE</span><strong>ZERO REWARDS</strong><small>Optional tutor review is available after answering</small></div>
+        </section>
+      ) : (
+        <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
+          <ClientPortrait kind={clientKind} name={clientName} />
+          <div className="active-matter-copy"><span>YOU ARE REPRESENTING</span><strong>{clientName}</strong><small>This client is locked to this open case, even if you change contracts later.</small></div>
+          <div className="active-matter-fee"><span>POTENTIAL BASE FEE</span><strong>{formatMoney(item.case_terms?.base_fee || 0)}</strong><small>Answer + reasoning + speed set the final fee</small></div>
+        </section>
+      )}
+      {!isReview && <CaseJourneyRail current={result ? 'counsel' : 'workspace'} />}
       <div className="case-file-topbar">
         <div className="matter-tag">
           <span>{question.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
-          <div><small>ACTIVE MATTER</small><strong>{question.question_type}</strong></div>
+          <div><small>{isReview ? 'REVIEW FILE' : 'ACTIVE MATTER'}</small><strong>{question.question_type}</strong></div>
         </div>
         <div className="question-progress">
-          <strong>Docket {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
+          <strong>{isReview ? 'Review' : 'Docket'} {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
           {item.case_terms && <span>{item.case_terms.client_name} · {formatMoney(item.case_terms.base_fee)} base fee</span>}
         </div>
         <div className={`case-timer ${timerRatio > 1 ? 'over' : ''}`}>
@@ -550,15 +577,15 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
               {!result && (
                 <div className="reasoning-box">
-                  <div className="reasoning-heading"><label htmlFor="reasoning">Your case theory <b>Required</b></label><span className={`draft-status ${draftState}`} role="status">{draftState === 'saving' ? 'Saving…' : draftState === 'saved' ? 'Draft saved' : draftState === 'error' ? 'Save failed' : `${reasoning.trim().length} characters`}</span></div>
+                  <div className="reasoning-heading"><label htmlFor="reasoning">Your case theory <b>{isReview ? 'Optional' : 'Required'}</b></label><span className={`draft-status ${draftState}`} role="status">{draftState === 'saving' ? 'Saving…' : draftState === 'saved' ? 'Draft saved' : draftState === 'error' ? 'Save failed' : `${reasoning.trim().length} characters`}</span></div>
                   <div className="reasoning-prompts" aria-label="Reasoning scaffold">
                     {['Task / conclusion:', 'Decisive evidence:', 'Why the closest rival fails:', 'Therefore:'].map((prompt, index) => <button type="button" onClick={() => addReasoningPrompt(prompt)} key={prompt}><b>{index + 1}</b>{prompt}</button>)}
                   </div>
-                  <textarea id="reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && selected && reasoning.trim() && !submit.isPending) { event.preventDefault(); submit.mutate() } }} placeholder="Use the scaffold above to identify the task, decisive evidence, and why the closest alternative fails…" rows={7} maxLength={4000} />
-                  <p>Substance beats length. Generic or repeated explanations receive no meaningful payout.</p>
+                  <textarea id="reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && selected && (isReview || reasoning.trim()) && !submit.isPending) { event.preventDefault(); submit.mutate() } }} placeholder={isReview ? 'Optionally restate the rule or mistake you want to remember…' : 'Use the scaffold above to identify the task, decisive evidence, and why the closest alternative fails…'} rows={isReview ? 4 : 7} maxLength={4000} />
+                  <p>{isReview ? 'Your answer is checked immediately. Add reasoning only if you want the tutor to analyze it.' : 'Substance beats length. Generic or repeated explanations receive no meaningful payout.'}</p>
                 </div>
               )}
-              {!result && <div className="answer-actions">{submit.error && <ErrorNotice error={submit.error} />}<button className="primary-button verdict-button" disabled={!selected || !reasoning.trim() || submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? 'Filing your answer…' : <>File for verdict <Scale size={18} /></>}</button><small className="keyboard-hint">A–E selects · ⌘/Ctrl + Enter files</small></div>}
+              {!result && <div className="answer-actions">{submit.error && <ErrorNotice error={submit.error} />}<button className="primary-button verdict-button" disabled={!selected || (!isReview && !reasoning.trim()) || submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? 'Filing your answer…' : <>{isReview ? 'Check answer' : 'File for verdict'} <Scale size={18} /></>}</button><small className="keyboard-hint">A–E selects · ⌘/Ctrl + Enter files</small></div>}
               {result && <button type="button" className="primary-button case-page-next" onClick={() => turnToPage('verdict')}>Open filed verdict <ArrowRight size={18} /></button>}
             </section>
           </div>
@@ -568,10 +595,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <div className="case-page-sheet verdict-sheet">
             <section className="answer-card verdict-page">
               <div ref={verdictRef} tabIndex={-1} className="judge-review-focus"><JudgeReview isCorrect={result.is_correct} diagnosis={result.feedback.diagnosis} coaching={coachingFeedback} reward={reward} loading={coaching.isLoading} /></div>
+              {isReview && !coachingFeedback && !tutorRequested && <section className="review-zero-reward"><BookOpen /><div><strong>Verified feedback is complete.</strong><p>Continue immediately, or ask the tutor for a deeper answer-choice and reasoning audit. This review never affects game progression.</p></div><button className="secondary-button" onClick={() => setTutorRequested(true)}><Brain />Open tutor review</button></section>}
               {coaching.error && (!coachingFeedback || !reward) && <div className="coaching-error"><ErrorNotice error={coaching.error} /><button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button></div>}
               {coachingFeedback && <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result.feedback.selected_label} />}
               {reward && <><ClientSettlement reward={reward} clientName={clientName} clientKind={clientKind} satisfied={clientSatisfied} /><CaseScore reward={reward} /></>}
-              <div className="continue-row">{continueCases.error && <ErrorNotice error={continueCases.error} />}<button className="primary-button next-case-button" disabled={!reward || continueCases.isPending || coaching.isLoading} onClick={() => continueCases.mutate()}>{!reward ? 'Settling fee…' : continueCases.isPending ? 'Closing file…' : session.status === 'completed' ? <>Review docket results <ArrowRight size={18} /></> : <>Turn to next case <ArrowRight size={18} /></>}</button></div>
+              <div className="continue-row">{continueCases.error && <ErrorNotice error={continueCases.error} />}<button className="primary-button next-case-button" disabled={(!isReview && !reward) || continueCases.isPending || coaching.isLoading} onClick={() => continueCases.mutate()}>{continueCases.isPending ? 'Closing file…' : !isReview && !reward ? 'Settling fee…' : session.status === 'completed' ? <>{isReview ? 'Review session results' : 'Review docket results'} <ArrowRight size={18} /></> : <>{isReview ? 'Next review' : 'Turn to next case'} <ArrowRight size={18} /></>}</button></div>
             </section>
           </div>
         )}

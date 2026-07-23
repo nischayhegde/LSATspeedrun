@@ -18,9 +18,11 @@ from app.models import (
     PlayerAsset,
     PlayerClientContract,
     PlayerProfile,
+    PlayerStoryState,
     Question,
     QuestionChoice,
     SessionItem,
+    SkillProgress,
     StudySession,
     User,
     utcnow,
@@ -143,6 +145,50 @@ def create_game(client, headers, gender: str = "female"):
     )
     assert response.status_code == 201
     return response.json["game"]
+
+
+def add_historical_attempt(user_id: str, question_id: str, suffix: str) -> str:
+    """Create an already-attempted question without invoking game settlement."""
+    user = db.session.get(User, user_id)
+    session = StudySession(
+        user_id=user_id,
+        mode="practice",
+        status="completed",
+        target_minutes=user.target_minutes,
+        total_items=1,
+        current_index=1,
+        completed_at=utcnow(),
+    )
+    db.session.add(session)
+    db.session.flush()
+    item = SessionItem(
+        session_id=session.id,
+        question_id=question_id,
+        position=0,
+        requires_reasoning=True,
+        target_time_seconds=150,
+        completed_at=utcnow(),
+    )
+    db.session.add(item)
+    db.session.flush()
+    question = db.session.get(Question, question_id)
+    attempt = Attempt(
+        user_id=user_id,
+        session_item_id=item.id,
+        idempotency_key=f"history-{suffix}",
+        selected_label=question.correct_answer,
+        is_correct=True,
+        reasoning_text="Historical reasoning.",
+        server_elapsed_ms=60_000,
+        capm_points=0,
+        pace_scored=False,
+        xp_earned=0,
+        feedback_json={"is_correct": True, "correct_label": question.correct_answer},
+        coaching_status="pending",
+    )
+    db.session.add(attempt)
+    db.session.flush()
+    return attempt.id
 
 
 def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
@@ -923,3 +969,436 @@ def test_locked_economy_action_refreshes_a_stale_profile(app):
         assert profile.cash == 250
         purchase_asset(profile, "repaired_desk")
         assert profile.cash == 650
+
+
+def test_campaign_choice_is_persistent_and_cannot_be_replayed(app):
+    client = app.test_client()
+    headers = login(client, "campaign@example.test")
+    game = create_game(client, headers)
+    assert game["story"]["alignment"] == "Pragmatic"
+    assert game["story"]["pending_chapter"]["key"] == "one_light_on"
+
+    decided = client.post(
+        "/v1/game/story/choice",
+        json={"chapter_key": "one_light_on", "choice_key": "open_door"},
+        headers=headers,
+    )
+    assert decided.status_code == 200
+    story = decided.json["game"]["story"]
+    assert story["ethics"] == 78
+    assert story["influence"] == 2
+    assert story["pending_chapter"] is None
+    assert story["chapters"][0]["seen"] is True
+    assert story["chapters"][0]["choice"] == "open_door"
+
+    replay = client.post(
+        "/v1/game/story/choice",
+        json={"chapter_key": "one_light_on", "choice_key": "build_fast"},
+        headers=headers,
+    )
+    assert replay.status_code == 409
+    assert replay.json["error"]["code"] == "chapter_not_pending"
+    with app.app_context():
+        state = PlayerStoryState.query.one()
+        assert state.seen_chapters_json == ["one_light_on"]
+
+
+def test_ethics_and_intel_reveal_and_fund_a_hidden_quest(app):
+    client = app.test_client()
+    headers = login(client, "shadow@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 4
+        profile.story_state.ethics = 60
+        profile.story_state.intel = 3
+        db.session.commit()
+
+    game = client.get("/v1/game").json["game"]
+    hidden = next(quest for quest in game["story"]["quests"] if quest["key"] == "market_whisper")
+    assert hidden["available"] is True
+    opened = client.post("/v1/game/quests/start", json={"quest_key": "market_whisper"}, headers=headers)
+    assert opened.status_code == 200
+    assert opened.json["result"]["advance"] == 100_000
+    assert opened.json["game"]["story"]["active_quest"]["key"] == "market_whisper"
+    assert opened.json["game"]["story"]["heat"] == 10
+    assert opened.json["game"]["cash"] == created["cash"] + 100_000
+
+
+def test_rival_operation_reduces_the_real_purchase_price(app):
+    from app.game import ASSET_BY_KEY
+
+    list_cost = ASSET_BY_KEY["neighborhood_practice"]["cost"]
+    operation_cost = round(list_cost * .02)
+    discounted_cost = round(list_cost * .95)
+    client = app.test_client()
+    headers = login(client, "rival-ops@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = 1_000_000
+        profile.reputation = 80
+        profile.office_tier = 2
+        profile.story_state.influence = 5
+        db.session.add(PlayerAsset(profile_id=profile.id, asset_key="local_bar", asset_type="connection", purchase_price=1))
+        db.session.commit()
+
+    operated = client.post(
+        "/v1/game/rival-operations",
+        json={"rival_key": "neighborhood_practice", "operation_key": "public_case_challenge"},
+        headers=headers,
+    )
+    assert operated.status_code == 200
+    assert operated.json["result"]["cost"] == operation_cost
+    target = next(item for item in operated.json["game"]["story"]["rival_targets"] if item["key"] == "neighborhood_practice")
+    assert target["list_cost"] == list_cost
+    assert target["cost"] == discounted_cost
+    assert target["discount_bps"] == 500
+
+    bought = client.post("/v1/game/purchases", json={"asset_key": "neighborhood_practice"}, headers=headers)
+    assert bought.status_code == 200
+    assert bought.json["game"]["cash"] == 1_000_000 - operation_cost - discounted_cost
+    with app.app_context():
+        acquired = PlayerAsset.query.filter_by(asset_key="neighborhood_practice").one()
+        assert acquired.purchase_price == discounted_cost
+
+
+def test_pro_bono_win_and_caseboard_completion_change_the_settlement(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "pro-bono@example.test")
+    created = create_game(client, headers)
+    selected = client.post("/v1/game/client", json={"client_key": "eviction_defense_clinic"}, headers=headers)
+    assert selected.status_code == 200
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.story_state.active_quest_key = "mercer_overflow"
+        profile.story_state.quest_progress = 2
+        db.session.commit()
+
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    submitted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "reasoning": "Choice C follows from the decisive premise while the other choices require facts not supplied.",
+        },
+        headers={**headers, "Idempotency-Key": "pro-bono-completion"},
+    ).json["result"]
+    coaching = {
+        "explanation_grade": 88,
+        "reasoning_verdict": "strong",
+        "reasoning_summary": "The decisive premise and scope were identified.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        attempt = db.session.get(Attempt, submitted["attempt_id"])
+        run_attempt_coaching(attempt)
+        settlement = attempt.settlement
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert settlement.quest_bonus == 650
+        assert settlement.payout >= settlement.quest_bonus
+        assert settlement.reputation_after >= settlement.reputation_before + 2
+        assert profile.story_state.active_quest_key is None
+        assert "mercer_overflow" in profile.story_state.quest_history_json
+        cash_after = profile.cash
+        run_attempt_coaching(attempt)
+        assert PlayerProfile.query.filter_by(id=created["id"]).one().cash == cash_after
+
+
+def test_rapid_review_uses_distinct_owned_hf_history_and_allows_optional_reasoning(app):
+    owner = app.test_client()
+    owner_headers = login(owner, "review-owner@example.test")
+    owner_game = create_game(owner, owner_headers)
+    intruder = app.test_client()
+    intruder_headers = login(intruder, "review-intruder@example.test")
+    intruder_game = create_game(intruder, intruder_headers)
+
+    with app.app_context():
+        owner_profile = db.session.get(PlayerProfile, owner_game["id"])
+        intruder_profile = db.session.get(PlayerProfile, intruder_game["id"])
+        questions = Question.query.order_by(Question.id).limit(3).all()
+        owner_question_ids = {questions[0].id, questions[1].id}
+        add_historical_attempt(owner_profile.user_id, questions[0].id, "owner-first")
+        add_historical_attempt(owner_profile.user_id, questions[0].id, "owner-duplicate")
+        add_historical_attempt(owner_profile.user_id, questions[1].id, "owner-second")
+        mismatched_attempt_id = add_historical_attempt(
+            intruder_profile.user_id,
+            questions[2].id,
+            "intruder-only",
+        )
+        # A malformed row cannot leak a question from somebody else's session
+        # merely because its denormalized attempt owner is wrong.
+        db.session.get(Attempt, mismatched_attempt_id).user_id = owner_profile.user_id
+        rogue = StudySession(
+            user_id=owner_profile.user_id,
+            mode="diagnostic",
+            target_minutes=owner_profile.user.target_minutes,
+            total_items=0,
+        )
+        db.session.add(rogue)
+        db.session.commit()
+        rogue_id = rogue.id
+
+    available = owner.get("/v1/study-sessions/review/available")
+    assert available.status_code == 200
+    assert available.json == {"available_questions": 2, "session": None}
+
+    started = owner.post("/v1/study-sessions/review", headers=owner_headers)
+    assert started.status_code == 201
+    session = started.json["session"]
+    assert session["mode"] == "review"
+    assert session["total_items"] == 2
+    assert session["current_item"]["case_terms"] is None
+    assert session["current_item"]["question"]["id"] in owner_question_ids
+    assert owner.post("/v1/study-sessions/review", headers=owner_headers).json["session"]["id"] == session["id"]
+
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        assert {item.question_id for item in items} == owner_question_ids
+        assert len(items) == len({item.question_id for item in items})
+        assert all(item.question.source.startswith(SOURCE_PREFIX) for item in items)
+        assert all(item.requires_reasoning is False for item in items)
+        assert all(item.game_context_json is None for item in items)
+
+    assert intruder.get(f"/v1/study-sessions/{session['id']}").status_code == 404
+    rejected = intruder.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": session["current_item"]["id"], "selected_label": "A"},
+        headers=intruder_headers,
+    )
+    assert rejected.status_code == 404
+    assert owner.get(f"/v1/study-sessions/{rogue_id}").status_code == 404
+
+    first = owner.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": session["current_item"]["id"], "selected_label": "A"},
+        headers={**owner_headers, "Idempotency-Key": "review-without-reasoning"},
+    )
+    assert first.status_code == 200
+    first_result = first.json["result"]
+    assert first_result["has_reasoning"] is False
+    assert first_result["game_reward"] is None
+    assert first_result["feedback"]["correct_label"] == "C"
+    assert first_result["feedback"]["diagnosis"] == "The verified answer is C."
+    assert "immediately" in first_result["feedback"]["coaching_notice"]
+
+    next_response = owner.post(
+        f"/v1/study-sessions/{session['id']}/debrief/acknowledge",
+        headers=owner_headers,
+    )
+    assert next_response.status_code == 200
+    next_item = next_response.json["session"]["current_item"]
+    second = owner.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": next_item["id"],
+            "selected_label": "C",
+            "reasoning": "The credited choice follows directly from the stated rule.",
+        },
+        headers={**owner_headers, "Idempotency-Key": "review-with-reasoning"},
+    )
+    assert second.status_code == 200
+    assert second.json["result"]["has_reasoning"] is True
+    assert second.json["result"]["feedback"]["correct_label"] == "C"
+
+
+def test_rapid_review_never_changes_progression_or_economy(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "review-safety@example.test")
+    created = create_game(client, headers)
+
+    with app.app_context():
+        profile = db.session.get(PlayerProfile, created["id"])
+        question = Question.query.order_by(Question.id).first()
+        add_historical_attempt(profile.user_id, question.id, "safety-source")
+        profile.cash = 9_000
+        profile.reputation = 72
+        profile.current_streak = 3
+        profile.best_streak = 5
+        profile.total_cases = 11
+        profile.total_correct = 7
+        profile.total_validated_correct = 6
+        profile.lifetime_earnings = 12_000
+        profile.lifetime_spending = 3_250
+        profile.client_cases_remaining = 7
+        contract = PlayerClientContract.query.filter_by(
+            profile_id=profile.id,
+            client_key="walk_in",
+        ).one()
+        contract.cases_remaining = 7
+        contract.completed_contracts = 2
+        contract.loyalty = 4
+        daily = DailyProgress.query.filter_by(profile_id=profile.id).one()
+        daily.cases_completed = 4
+        daily.claimed_json = [1, 3]
+        story = profile.story_state
+        story.ethics = 61
+        story.heat = 12
+        story.influence = 5
+        story.intel = 6
+        story.seen_chapters_json = ["one_light_on"]
+        story.choices_json = {"one_light_on": "open_door"}
+        story.active_quest_key = "mercer_overflow"
+        story.quest_progress = 2
+        story.quest_history_json = ["first_brief"]
+        story.rival_discounts_json = {"neighborhood_practice": 500}
+        story.operations_json = ["neighborhood_practice:public_case_challenge"]
+        db.session.add(
+            SkillProgress(
+                user_id=profile.user_id,
+                skill_name=question.question_type,
+                attempts=9,
+                correct=6,
+                explanation_total=4.5,
+                explanation_count=5,
+                total_time_ms=420_000,
+                recent_mistakes=2,
+            )
+        )
+        db.session.commit()
+        user_id = profile.user_id
+
+        def progression_snapshot():
+            current = db.session.get(PlayerProfile, created["id"])
+            current_story = current.story_state
+            return {
+                "profile": (
+                    current.cash,
+                    current.reputation,
+                    current.office_tier,
+                    current.current_streak,
+                    current.best_streak,
+                    current.total_cases,
+                    current.total_correct,
+                    current.total_validated_correct,
+                    current.lifetime_earnings,
+                    current.lifetime_spending,
+                    current.active_client_key,
+                    current.client_cases_remaining,
+                    current.updated_at.isoformat(),
+                ),
+                "daily": [
+                    (
+                        row.id,
+                        row.activity_date.isoformat(),
+                        row.cases_completed,
+                        json.dumps(row.claimed_json, sort_keys=True),
+                        row.updated_at.isoformat(),
+                    )
+                    for row in DailyProgress.query.filter_by(profile_id=current.id).order_by(DailyProgress.id)
+                ],
+                "contracts": [
+                    (
+                        row.id,
+                        row.client_key,
+                        row.cases_remaining,
+                        row.completed_contracts,
+                        row.loyalty,
+                        row.updated_at.isoformat(),
+                    )
+                    for row in PlayerClientContract.query.filter_by(profile_id=current.id).order_by(PlayerClientContract.id)
+                ],
+                "story": (
+                    current_story.ethics,
+                    current_story.heat,
+                    current_story.influence,
+                    current_story.intel,
+                    json.dumps(current_story.seen_chapters_json, sort_keys=True),
+                    json.dumps(current_story.choices_json, sort_keys=True),
+                    current_story.active_quest_key,
+                    current_story.quest_progress,
+                    json.dumps(current_story.quest_history_json, sort_keys=True),
+                    json.dumps(current_story.rival_discounts_json, sort_keys=True),
+                    json.dumps(current_story.operations_json, sort_keys=True),
+                    current_story.updated_at.isoformat(),
+                ),
+                "settlements": [
+                    (row.id, row.attempt_id, row.payout, row.created_at.isoformat())
+                    for row in AttemptSettlement.query.filter_by(user_id=user_id).order_by(AttemptSettlement.id)
+                ],
+                "ledger": [
+                    (
+                        row.id,
+                        row.kind,
+                        row.source_id,
+                        row.amount,
+                        row.balance_after,
+                        json.dumps(row.detail_json, sort_keys=True),
+                        row.created_at.isoformat(),
+                    )
+                    for row in LedgerEntry.query.filter_by(user_id=user_id).order_by(LedgerEntry.id)
+                ],
+                "skills": [
+                    (
+                        row.id,
+                        row.skill_name,
+                        row.attempts,
+                        row.correct,
+                        row.explanation_total,
+                        row.explanation_count,
+                        row.total_time_ms,
+                        row.recent_mistakes,
+                        row.updated_at.isoformat(),
+                    )
+                    for row in SkillProgress.query.filter_by(user_id=user_id).order_by(SkillProgress.id)
+                ],
+            }
+
+        before = progression_snapshot()
+
+    started = client.post("/v1/study-sessions/review", headers=headers)
+    assert started.status_code == 201
+    session = started.json["session"]
+    assert session["mode"] == "review"
+    # Mode, not the incidental absence of game context, is the safety
+    # boundary. Simulate a malformed legacy row that carries frozen terms.
+    with app.app_context():
+        review_item = db.session.get(SessionItem, session["current_item"]["id"])
+        review_item.game_context_json = {"client_key": "walk_in", "base_fee": 100}
+        db.session.commit()
+    submitted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": session["current_item"]["id"], "selected_label": "A"},
+        headers={**headers, "Idempotency-Key": "review-safety-submit"},
+    )
+    assert submitted.status_code == 200
+    result = submitted.json["result"]
+    assert result["feedback"]["correct_label"] == "C"
+    assert result["game_reward"] is None
+    assert result["has_reasoning"] is False
+
+    coaching = {
+        "explanation_grade": None,
+        "reasoning_verdict": "not_provided",
+        "reasoning_summary": "No written explanation was submitted.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.routes.provider_ready", lambda: True)
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+    coached = client.post(f"/v1/attempts/{result['attempt_id']}/coaching", headers=headers)
+    assert coached.status_code == 200
+    assert coached.json["status"] == "completed"
+    assert coached.json["reward"] is None
+    coached_again = client.post(f"/v1/attempts/{result['attempt_id']}/coaching", headers=headers)
+    assert coached_again.status_code == 200
+    assert coached_again.json["reward"] is None
+    reward = client.get(f"/v1/attempts/{result['attempt_id']}/reward")
+    assert reward.status_code == 200
+    assert reward.json["reward"] is None
+    acknowledged = client.post(
+        f"/v1/study-sessions/{session['id']}/debrief/acknowledge",
+        headers=headers,
+    )
+    assert acknowledged.status_code == 200
+    assert acknowledged.json["summary"]["kind"] == "review"
+
+    with app.app_context():
+        attempt = db.session.get(Attempt, result["attempt_id"])
+        assert attempt.settlement is None
+        assert attempt.explanation_score_applied is False
+        after = progression_snapshot()
+        assert after == before

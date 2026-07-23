@@ -11,12 +11,15 @@ from .auth import clear_auth_cookies, issue_auth_cookies, require_auth
 from .coaching import CoachingProviderError, provider_ready
 from .extensions import db
 from .game import (
+    activate_quest,
     advance_firm,
     claim_daily_reward,
+    choose_story,
     collect_passive_income,
     create_profile,
     pending_review_attempts,
     purchase_asset,
+    run_rival_operation,
     select_client,
     serialize_game,
     serialize_settlement,
@@ -33,11 +36,13 @@ from .models import AiJob, Attempt, Question, SessionItem, StudySession, User, u
 from .seed import SOURCE_PREFIX, question_bank_status
 from .services import (
     calculate_session_summary,
+    create_review_session,
     create_study_session,
     eligible_question_count,
     find_resumable_session,
     pause_study_session,
     resume_study_session,
+    review_question_count,
     run_attempt_coaching,
     serialize_attempt_result,
     serialize_session,
@@ -238,8 +243,20 @@ def _game_error(code: str):
         "invalid_milestone": "That daily goal does not exist.",
         "already_claimed": "That daily reward has already been claimed.",
         "goal_incomplete": "Complete the daily goal before claiming its reward.",
+        "chapter_not_pending": "That chapter is not the firm's current story decision.",
+        "choice_not_found": "Choose one of the available responses.",
+        "quest_not_found": "That caseboard file does not exist.",
+        "quest_already_active": "Finish the active caseboard file before opening another.",
+        "quest_already_completed": "That caseboard file has already been closed.",
+        "quest_locked": "The firm has not discovered that caseboard file yet.",
+        "insufficient_intel": "The firm needs more Intel to open that shadow file.",
+        "operation_not_found": "That rival operation does not exist.",
+        "operation_already_completed": "That operation has already been used against this rival.",
+        "operation_requirements_not_met": "The firm does not meet this operation's cash or intelligence requirements.",
+        "rival_not_found": "That rival firm does not exist.",
+        "rival_already_owned": "That rival has already joined your firm.",
     }
-    status = 404 if code in {"asset_not_found", "client_not_found"} else 409
+    status = 404 if code in {"asset_not_found", "client_not_found", "quest_not_found", "rival_not_found", "operation_not_found"} else 409
     return error(code, messages.get(code, "That game action could not be completed."), status)
 
 
@@ -312,8 +329,58 @@ def claim_game_daily_reward(milestone: int):
     return jsonify({"claimed": amount, "game": serialize_game(profile)})
 
 
+@api.post("/game/story/choice")
+@require_auth
+def choose_game_story():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before entering the campaign.", 409)
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = choose_story(profile, str(payload.get("chapter_key") or ""), str(payload.get("choice_key") or ""))
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"result": result, "game": serialize_game(profile)})
+
+
+@api.post("/game/quests/start")
+@require_auth
+def start_game_quest():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before opening the caseboard.", 409)
+    quest_key = str((request.get_json(silent=True) or {}).get("quest_key") or "")
+    try:
+        result = activate_quest(profile, quest_key)
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"result": result, "game": serialize_game(profile)})
+
+
+@api.post("/game/rival-operations")
+@require_auth
+def launch_game_rival_operation():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before planning rival operations.", 409)
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = run_rival_operation(
+            profile,
+            str(payload.get("rival_key") or ""),
+            str(payload.get("operation_key") or ""),
+        )
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"result": result, "game": serialize_game(profile)})
+
+
 def _owned_session(session_id: str) -> StudySession | None:
-    return StudySession.query.filter_by(id=session_id, user_id=g.current_user.id, mode="practice").first()
+    return StudySession.query.filter(
+        StudySession.id == session_id,
+        StudySession.user_id == g.current_user.id,
+        StudySession.mode.in_(["practice", "review"]),
+    ).first()
 
 
 @api.post("/study-sessions")
@@ -336,6 +403,29 @@ def start_practice_session():
 def current_study_session():
     session = find_resumable_session(g.current_user)
     return jsonify({"session": serialize_session(session) if session else None})
+
+
+@api.get("/study-sessions/review/available")
+@require_auth
+def review_session_availability():
+    session = find_resumable_session(g.current_user, "review")
+    return jsonify({
+        "available_questions": review_question_count(g.current_user),
+        "session": serialize_session(session) if session else None,
+    })
+
+
+@api.post("/study-sessions/review")
+@require_auth
+def start_review_session():
+    try:
+        session = create_review_session(g.current_user)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "review_unavailable":
+            return error("review_unavailable", "Close at least one new case before opening Rapid Review.", 409)
+        return error(code, "Create your lawyer before reviewing cases.", 409)
+    return jsonify({"session": serialize_session(session)}), 201
 
 
 @api.patch("/study-sessions/<session_id>/items/<item_id>/draft")
@@ -415,7 +505,8 @@ def acknowledge_answer_review(session_id: str):
         return error("session_not_found", "That practice session was not found.", 404)
     pending_attempt = db.session.get(Attempt, session.pending_attempt_id) if session.pending_attempt_id else None
     if (
-        pending_attempt
+        session.mode == "practice"
+        and pending_attempt
         and pending_attempt.session_item.game_context_json is not None
         and not pending_attempt.settlement
     ):
@@ -478,7 +569,7 @@ def coach_attempt(attempt_id: str):
         return error("attempt_not_found", "That answer was not found.", 404)
     saved = (attempt.feedback_json or {}).get("coaching")
     if attempt.coaching_status == "completed" and saved:
-        if not attempt.settlement:
+        if attempt.session_item.session.mode == "practice" and not attempt.settlement:
             run_attempt_coaching(attempt)
         return jsonify(
             {
