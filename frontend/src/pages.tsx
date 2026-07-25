@@ -1,9 +1,12 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Activity,
   ArrowRight,
   Award,
+  BarChart3,
   BookOpen,
+  Brain,
   BriefcaseBusiness,
   Building2,
   Check,
@@ -16,6 +19,7 @@ import {
   FileSearch,
   Flame,
   Globe2,
+  Gauge,
   Gavel,
   Handshake,
   HeartHandshake,
@@ -26,6 +30,8 @@ import {
   ShieldAlert,
   Sparkles,
   Star,
+  Target,
+  TimerReset,
   TrendingUp,
   Trophy,
   UserRound,
@@ -37,12 +43,145 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import { api } from './api'
 import { Brand, ErrorNotice, formatMoney, LoadingScreen, OfficeEventPopup, PauseButton, QuestionFlow } from './components'
 import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork } from './game-art'
+import { PixelStudyScenery } from './art/pixel-scenery'
 import { SoundControls, useSound } from './sound'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest } from './types'
+import './performance.css'
 
 
 function useGame() {
   return useQuery({ queryKey: ['game'], queryFn: api.game })
+}
+
+
+export function PerformancePage() {
+  const navigate = useNavigate()
+  const { play } = useSound()
+  const performanceQuery = useQuery({ queryKey: ['performance'], queryFn: api.performance })
+  const diagnosticQuery = useQuery({ queryKey: ['diagnostic'], queryFn: api.currentDiagnostic })
+  const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
+  const startDiagnostic = useMutation({
+    mutationFn: () => api.startDiagnostic(1),
+    onSuccess: ({ session }) => {
+      void play('file-open', { seed: `diagnostic:${session.id}`, intensity: .64 })
+      navigate(`/cases/${session.id}`)
+    },
+  })
+  const startSpeedrun = useMutation({
+    mutationFn: () => api.startPractice({ size: 10, practice_style: 'speedrun', feedback_policy: 'delayed' }),
+    onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
+  })
+  const startFocus = useMutation({
+    mutationFn: (questionType: string) => api.startPractice({ size: 3, question_type: questionType, practice_style: 'speedrun', feedback_policy: 'delayed' }),
+    onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
+  })
+  if (performanceQuery.isLoading || diagnosticQuery.isLoading || current.isLoading) return <LoadingScreen label="Measuring your training line…" />
+  if (performanceQuery.error || diagnosticQuery.error) return <div className="contained"><ErrorNotice error={performanceQuery.error || diagnosticQuery.error} /></div>
+  const performance = performanceQuery.data!.performance
+  const diagnostic = diagnosticQuery.data!
+  const metrics = performance.overall
+  const testMetrics = performance.test_performance ?? metrics
+  const reviewMetrics = performance.review ?? { due: 0, scheduled: 0, mastered: 0, items: [], recovery_rate: null }
+  const confidenceMetrics = performance.confidence ?? { average: null, high_confidence_error_rate: null, sample: 0 }
+  const readiness = performance.readiness ?? { status: 'forming' as const, lr_samples: 0, rc_samples: 0, completed_diagnostics: 0 }
+  const trend = performance.trend
+  const chartPoints = trend.length > 1
+    ? trend.map((entry, index) => `${20 + index * (560 / Math.max(1, trend.length - 1))},${160 - entry.accuracy * 1.25}`).join(' ')
+    : ''
+  const diagnosticSession = diagnostic.session
+  const diagnosticSize = diagnosticSession?.total_items || performance.diagnostic?.raw_total || performance.diagnostic?.summary.questions_completed || 75
+  const diagnosticMinutes = diagnosticSession?.target_minutes || 105
+  const activePractice = current.data?.session
+  const evidenceCopy = {
+    baseline: 'Fewer than 10 questions. Treat every signal as provisional.',
+    emerging: 'Enough work to identify early patterns, but not stable mastery.',
+    directional: 'The trend is useful for training decisions.',
+    stable: 'Your sample is large enough for a stable performance signal.',
+  }[metrics.evidence]
+
+  return (
+    <div className="performance-page page-wrap">
+      <section className="performance-hero">
+        <div>
+          <span className="eyebrow">EXPERIMENTAL · LSAT SPEEDRUN LAB</span>
+          <h1>Build speed that survives a new question.</h1>
+          <p>Timed unseen accuracy is the headline. Review recovery, confidence, and pacing explain what to train next.</p>
+          <div className="performance-actions">
+            <button className="primary-button" onClick={() => {
+              if (activePractice) navigate(`/cases/${activePractice.id}`)
+              else startSpeedrun.mutate()
+            }} disabled={startSpeedrun.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10-question Sprint'} <ArrowRight /></button>
+            <button className="secondary-button" onClick={() => diagnosticSession ? navigate(`/cases/${diagnosticSession.id}`) : startDiagnostic.mutate()} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume diagnostic' : performance.diagnostic ? 'Retake diagnostic' : 'Take baseline diagnostic'}</button>
+          </div>
+        </div>
+        <div className="speedrun-index" aria-label={`${testMetrics.accuracy} percent timed unseen accuracy`}>
+          <div className="index-ring" style={{ '--index': `${testMetrics.accuracy * 3.6}deg` } as React.CSSProperties}><span><strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><small>{testMetrics.attempts ? '%' : 'NO DATA'}</small></span></div>
+          <small>TIMED UNSEEN ACCURACY</small>
+          <p>{testMetrics.attempts} independent question{testMetrics.attempts === 1 ? '' : 's'} · {readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}</p>
+        </div>
+        <PixelStudyScenery variant="training" className="performance-hero-scenery" />
+      </section>
+
+      <section className="evidence-strip">
+        <span><Activity /> EVIDENCE: {metrics.evidence.toUpperCase()}</span><p>{evidenceCopy}</p><strong>{metrics.attempts} questions observed</strong>
+      </section>
+
+      <section className="performance-metrics" aria-label="Core LSAT performance measures">
+        <article><div><Target /><span>TEST PERFORMANCE</span></div><strong>{testMetrics.attempts ? `${testMetrics.accuracy}%` : '—'}</strong><small>{testMetrics.attempts} timed unseen attempts · {testMetrics.pace_adherence}% inside target</small></article>
+        <article><div><TimerReset /><span>AVERAGE SPLIT</span></div><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong><small>Comparable Sprint and Diagnostic work only</small></article>
+        <article><div><Brain /><span>REVIEW RECOVERY</span></div><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong><small>{reviewMetrics.due} due · {reviewMetrics.scheduled} scheduled · {reviewMetrics.mastered} mastered</small></article>
+        <article><div><Gauge /><span>CONFIDENCE ERRORS</span></div><strong>{confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`}</strong><small>High-confidence misses across {confidenceMetrics.sample} rated answers</small></article>
+      </section>
+
+      <section className="diagnostic-lab">
+        <div className="diagnostic-copy">
+          <span className="eyebrow">BASELINE DIAGNOSTIC</span>
+          <h2>{performance.diagnostic ? 'Your first performance anchor is set.' : 'Measure before you optimize.'}</h2>
+          <p>A sectioned {diagnosticSize}-question LR/RC baseline with delayed results. It changes no currency, reputation, streak, or firm progress.</p>
+          <ul><li>Raw verified accuracy</li><li>Section pacing</li><li>Omissions</li><li>Confidence calibration</li></ul>
+          <button className="primary-button" onClick={() => diagnosticSession ? navigate(`/cases/${diagnosticSession.id}`) : startDiagnostic.mutate()} disabled={startDiagnostic.isPending}>{diagnosticSession ? 'Continue baseline' : performance.diagnostic ? 'Run a new baseline' : 'Start diagnostic'} <ArrowRight /></button>
+        </div>
+        <div className="diagnostic-score">
+          {performance.diagnostic ? <><small>RAW DIAGNOSTIC RESULT</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.raw_total ?? performance.diagnostic.summary.questions_completed}</strong><span>{performance.diagnostic.summary.accuracy}% verified accuracy</span><p>{performance.diagnostic.projection_note ?? 'A scaled score is withheld until the form has a validated conversion.'}</p></> : <><small>{diagnosticSession ? 'BASELINE IN PROGRESS' : 'NO BASELINE YET'}</small><strong>—</strong><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>Scaled-score projections remain withheld until a form has a validated conversion.</p></>}
+        </div>
+      </section>
+
+      <section className="evidence-class-panel" aria-label="Evidence coverage">
+        <div className="panel-heading"><div><span>COMPARISON READINESS</span><h2>{readiness.status === 'ready' ? 'Enough independent evidence to compare periods' : 'Still building a defensible sample'}</h2></div><ShieldAlert /></div>
+        <div className="readiness-grid">
+          <div><strong>{readiness.lr_samples}</strong><span>Timed LR</span><small>40 recommended</small></div>
+          <div><strong>{readiness.rc_samples}</strong><span>Timed RC</span><small>20 recommended</small></div>
+          <div><strong>{readiness.completed_diagnostics}</strong><span>Diagnostics</span><small>1 required</small></div>
+        </div>
+        <details><summary>How evidence is separated</summary><p>Sprint and Diagnostic estimate test performance. Deep Practice measures coached learning. Infinite measures fluency. Review measures recovery. Repeated questions never inflate the timed-unseen headline.</p></details>
+      </section>
+
+      <section className="performance-grid">
+        <article className="trend-panel">
+          <div className="panel-heading"><div><span>PERFORMANCE LINE</span><h2>Accuracy by completed run</h2></div><BarChart3 /></div>
+          {trend.length > 1 ? (
+            <svg viewBox="0 0 600 180" role="img" aria-label="Accuracy trend across recent sessions">
+              {[35,70,105,140].map((y) => <line key={y} x1="20" x2="580" y1={y} y2={y} />)}
+              <polyline points={chartPoints} />
+              {trend.map((entry, index) => <circle key={entry.id} cx={20 + index * (560 / Math.max(1, trend.length - 1))} cy={160 - entry.accuracy * 1.25} r="5"><title>{entry.accuracy}% · {entry.kind}</title></circle>)}
+            </svg>
+          ) : <div className="empty-trend"><Activity /><strong>Complete two runs to reveal a trend.</strong><p>One result is a baseline, not improvement.</p></div>}
+        </article>
+
+        <article className="priority-panel">
+          <div className="panel-heading"><div><span>WEAKEST-LINK SIGNAL</span><h2>{performance.recommendation?.skill ?? 'Still collecting evidence'}</h2></div><Target /></div>
+          {performance.recommendation ? <><strong>{performance.recommendation.accuracy}% accuracy</strong><p>Recommended because it currently has the {performance.recommendation.reason}.</p><button className="focus-sprint-button" disabled={startFocus.isPending || Boolean(activePractice)} onClick={() => startFocus.mutate(performance.recommendation!.skill)}>{activePractice ? 'Finish current run first' : startFocus.isPending ? 'Building focus sprint…' : 'Run 3 focused questions'} <ArrowRight size={15} /></button><small>Experimental: this signal updates after every reviewed answer.</small></> : <><p>Complete the diagnostic or a speedrun to identify the first training priority.</p><small>No weakness is inferred without evidence.</small></>}
+        </article>
+      </section>
+
+      <section className="skill-table-panel">
+        <div className="panel-heading"><div><span>SKILL MATRIX</span><h2>Where the points are actually moving</h2></div><Brain /></div>
+        {performance.skills.length ? <div className="skill-table"><div className="skill-row header"><span>Question type</span><span>Sample</span><span>Accuracy</span><span>Pace</span><span>Reasoning</span></div>{performance.skills.map((skill) => <div className="skill-row" key={skill.name}><strong>{skill.name}</strong><span>{skill.attempts}</span><span><i style={{ width: `${skill.accuracy}%` }} />{skill.accuracy}%</span><span>{skill.pace_adherence}%</span><span>{skill.reasoning === null ? '—' : `${skill.reasoning}%`}</span></div>)}</div> : <div className="empty-skills"><p>No skill claims yet. The diagnostic creates the first evidence-backed matrix.</p></div>}
+      </section>
+
+      {(startDiagnostic.error || startSpeedrun.error || startFocus.error) && <ErrorNotice error={startDiagnostic.error || startSpeedrun.error || startFocus.error} />}
+    </div>
+  )
 }
 
 
@@ -182,15 +321,16 @@ export function LoginPage() {
 
   return (
     <div className="login-page">
-      <header className="login-nav"><Brand light /><span>Serious LSAT practice. An empire you earn.</span><SoundControls className="login-sound-controls" compact /></header>
+      <header className="login-nav"><Brand light /><span>Serious LSAT practice. Speed you can prove.</span><SoundControls className="login-sound-controls" compact /></header>
       <section className="login-hero">
         <div className="login-copy">
-          <div className="eyebrow gold">FROM WOODEN SHACK TO LEGAL EMPIRE</div>
-          <h1>Build the firm.<br /><em>Win the reasoning.</em></h1>
-          <p>Every LSAT question is a case. Explain it well, earn your fee, grow your reputation, and watch a one-desk practice become a global firm.</p>
+          <div className="eyebrow gold">DIAGNOSE · SPEEDRUN · REVIEW · IMPROVE</div>
+          <h1>Beat your baseline.<br /><em>Keep the reasoning.</em></h1>
+          <p>Every LSAT question is measured for accuracy, explanation quality, and clean pace. The firm is the wrapper; improvement is the game.</p>
           <div className="feature-list">
             <span><Scale /> Verified answers, never AI guesses</span>
             <span><BrainIcon /> Reasoning feedback after every case</span>
+            <span><TrendingUp /> Evidence-backed progress, not vanity streaks</span>
             <span><Building2 /> A living office that grows with you</span>
           </div>
         </div>
@@ -245,12 +385,12 @@ export function OnboardingPage() {
       queryClient.setQueryData<GameResponse>(['game'], data)
       void queryClient.invalidateQueries({ queryKey: ['me'] })
       void play('event', { id: `firm-opened:${data.game?.id ?? firmName}`, seed: firmName, intensity: .85 })
-      navigate('/office', { replace: true })
+      navigate('/progress', { replace: true })
     },
   })
 
   if (me.isLoading || gameQuery.isLoading) return <LoadingScreen />
-  if (gameQuery.data?.game) return <Navigate to="/office" replace />
+  if (gameQuery.data?.game) return <Navigate to="/progress" replace />
 
   return (
     <div className="onboarding-page">
@@ -302,32 +442,16 @@ export function OnboardingPage() {
 
 export function OfficePage() {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { play } = useSound()
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
   const start = useMutation({
-    mutationFn: api.startPractice,
+    mutationFn: () => api.startPractice({ size: 3 }),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `office-case-open:${session.id}`, seed: session.id, intensity: .58 })
       navigate(`/cases/${session.id}`)
     },
   })
-  const collect = useMutation({
-    mutationFn: api.collectPassive,
-    onSuccess: ({ collected, game }) => {
-      storeGame(queryClient, game)
-      void play('collect', { seed: String(collected), intensity: Math.min(1, .45 + Math.log10(Math.max(1, collected)) * .08) })
-    },
-  })
-  const claim = useMutation({
-    mutationFn: api.claimDaily,
-    onSuccess: ({ claimed, game }, milestone) => {
-      storeGame(queryClient, game)
-      void play('collect', { id: `daily:${game.id}:${game.daily.date}:${milestone}`, seed: String(claimed), intensity: .65 })
-    },
-  })
-
   if (gameQuery.isLoading || current.isLoading) return <LoadingScreen />
   if (gameQuery.error) return <div className="contained"><ErrorNotice error={gameQuery.error} /></div>
   const game = gameQuery.data!.game!
@@ -359,9 +483,6 @@ export function OfficePage() {
           onFirm={() => navigate('/firm')}
           onEmpire={() => navigate('/map')}
           onStory={() => navigate('/story')}
-          onCollect={() => {
-            if (game.passive_income.available && !collect.isPending) collect.mutate()
-          }}
         />
 
         <aside className="world-mission-board">
@@ -391,24 +512,17 @@ export function OfficePage() {
           }}>{active ? 'RESUME' : 'TAKE CASE'} <ArrowRight /></button>
         </article>
 
-        <article className="daily-quest-card">
-          <div className="daily-heading"><div><span>DAILY QUEST</span><h3>{game.daily.cases_completed} CASES CLOSED</h3></div><Flame /></div>
-          <div className="daily-goals">
-            {game.daily.goals.map((goal) => (
-              <button key={goal.cases} className={`${goal.complete ? 'complete' : ''} ${goal.claimed ? 'claimed' : ''}`} disabled={!goal.complete || goal.claimed || claim.isPending} onClick={() => claim.mutate(goal.cases)}>
-                <span>{goal.claimed ? <Check /> : goal.cases}</span><div><strong>{goal.cases} FILES</strong><small>{goal.claimed ? 'CLAIMED' : formatMoney(goal.reward)}</small></div>
-              </button>
-            ))}
-          </div>
+        <article className="training-focus-card">
+          <div><span>TODAY’S TRAINING BLOCK</span><h3>{game.daily.cases_completed} / 10 QUESTIONS</h3><p>Volume builds recognition. Reviewed reasoning makes the volume count.</p></div>
+          <button onClick={openCase}>{active ? 'RESUME' : 'START'} <ArrowRight /></button>
         </article>
 
-        <article className="safe-card">
-          <div className="safe-icon"><i>$</i></div>
-          <div><span>RETAINER SAFE</span><strong>{formatMoney(game.passive_income.available)}</strong><small>{formatMoney(game.passive_income.hourly_rate)}/HR · {game.passive_income.cap_hours}H MAX</small></div>
-          <button disabled={!game.passive_income.available || collect.isPending} onClick={() => collect.mutate()}>{collect.isPending ? '...' : 'COLLECT'}</button>
+        <article className="training-evidence-card">
+          <div><span>LEARNING EVIDENCE</span><strong>{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</strong><small>{game.total_correct} correct across {game.total_cases} questions</small></div>
+          <button onClick={() => navigate('/progress')}>VIEW PROGRESS</button>
         </article>
       </section>
-      {(start.error || collect.error || claim.error) && <ErrorNotice error={start.error || collect.error || claim.error} />}
+      {start.error && <ErrorNotice error={start.error} />}
       {game.story.pending_chapter && <StoryCutscene game={game} chapter={game.story.pending_chapter} />}
     </div>
   )
@@ -418,33 +532,54 @@ export function OfficePage() {
 export function CasesLobbyPage() {
   const navigate = useNavigate()
   const { play } = useSound()
+  const queryClient = useQueryClient()
+  const [practiceStyle, setPracticeStyle] = useState<'speedrun' | 'deep' | 'infinite' | 'review'>('speedrun')
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
+  const reviews = useQuery({ queryKey: ['review-queue'], queryFn: api.reviewQueue })
+  const docketQuery = useQuery({ queryKey: ['daily-docket'], queryFn: api.dailyDocket })
   const start = useMutation({
-    mutationFn: api.startPractice,
+    mutationFn: (plan?: { style?: 'speedrun' | 'deep' | 'infinite' | 'review'; size?: number }) => api.startPractice({
+      size: plan?.size ?? (plan?.style === 'speedrun' || (!plan?.style && practiceStyle === 'speedrun') ? 10 : 5),
+      practice_style: plan?.style ?? practiceStyle,
+      feedback_policy: (plan?.style ?? practiceStyle) === 'speedrun' ? 'delayed' : 'immediate',
+    }),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `case-open:${session.id}`, seed: session.id, intensity: .62 })
+      void queryClient.invalidateQueries({ queryKey: ['daily-docket'] })
       navigate(`/cases/${session.id}`)
     },
   })
-  if (gameQuery.isLoading || current.isLoading) return <LoadingScreen label="Checking the docket…" />
+  if (gameQuery.isLoading || current.isLoading || reviews.isLoading || docketQuery.isLoading) return <LoadingScreen label="Checking the docket…" />
   const game = gameQuery.data!.game!
   const workingClient = effectiveClient(game)
   const active = current.data?.session
+  const dueReviews = reviews.data?.review_queue.due ?? 0
+  const daily = docketQuery.data?.daily_docket
+  const runNextDocketStep = () => {
+    if (!daily) return
+    if (daily.next_action.kind === 'resume' || daily.next_action.kind === 'open_brief') {
+      if (daily.next_action.session_id) navigate(`/cases/${daily.next_action.session_id}`)
+      return
+    }
+    if (daily.next_action.kind === 'start_review') start.mutate({ style: 'review', size: Math.max(1, daily.review.target) })
+    else if (daily.next_action.kind === 'start_speedrun') start.mutate({ style: 'speedrun', size: 10 })
+  }
   return (
     <div className="case-lobby page-wrap">
       <section className="docket-hero">
+        <PixelStudyScenery variant="docket" className="docket-scenery" />
         <div className="docket-copy">
-          <span className="eyebrow gold">DO CASES</span>
-          <h1>One question.<br />One explanation.<br /><em>One step richer.</em></h1>
-          <p>The verified key decides the answer. Your reasoning, time, client, and firm decide the fee.</p>
+          <span className="eyebrow gold">LSAT SPEEDRUN</span>
+          <h1>More questions.<br />Cleaner review.<br /><em>Measured improvement.</em></h1>
+          <p>Choose the amount of friction you need. Answer-only modes build volume; Method Lab is there when the reasoning itself needs work.</p>
           <button className="primary-button jumbo" onClick={() => {
             if (active) {
               void play('resume', { seed: active.id, intensity: .5 })
               navigate(`/cases/${active.id}`)
-            } else start.mutate()
-          }} disabled={start.isPending}>
-            <BriefcaseBusiness /> {active ? 'Resume active case' : start.isPending ? 'Opening a file…' : 'Take the next case'} <ArrowRight />
+            } else start.mutate(undefined)
+          }} disabled={start.isPending || (!active && practiceStyle === 'review' && !dueReviews)}>
+            <BriefcaseBusiness /> {active ? 'Resume active run' : start.isPending ? 'Building your run…' : practiceStyle === 'speedrun' ? 'Start 10-question Sprint' : practiceStyle === 'infinite' ? 'Start Infinite mode' : practiceStyle === 'review' ? `Review ${dueReviews} due` : 'Start Deep Practice'} <ArrowRight />
           </button>
           {start.error && <ErrorNotice error={start.error} />}
         </div>
@@ -458,14 +593,164 @@ export function CasesLobbyPage() {
           <div className="brief-terms"><span><Coins /> Effective base fee<strong>{formatMoney(workingClient.base_fee)}</strong></span><span><BriefcaseBusiness /> Contract<strong>{game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} cases`}</strong></span><span><Flame /> Validated streak<strong>{game.current_streak}</strong></span></div>
         </div>
       </section>
-      <section className="how-scoring-works">
-        <span className="eyebrow">HOW THIS FEE IS WON</span>
-        <div>
-          <article><span>01</span><Scale /><h3>Choose precisely</h3><p>The repository’s verified answer key—not the AI—determines correctness.</p></article>
-          <article><span>02</span><BookOpen /><h3>Explain the logic</h3><p>Question-specific Good or Excellent reasoning unlocks speed points and full Reputation credit.</p></article>
-          <article><span>03</span><Clock3 /><h3>Build clean speed</h3><p>Work inside the visible target, but never rush: suspiciously fast work is capped.</p></article>
-          <article><span>04</span><Building2 /><h3>Grow the firm</h3><p>Every earned fee moves the next office, hire, client, or acquisition closer.</p></article>
+      {daily && <section className="daily-docket" aria-labelledby="daily-docket-title">
+        <header>
+          <div><span className="eyebrow">TODAY'S DOCKET · {daily.date}</span><h2 id="daily-docket-title">One measured loop. No busywork.</h2><p>Repair what is due, produce fresh timed evidence, then brief only the decisions worth revisiting.</p></div>
+          <button className="daily-docket-action" onClick={runNextDocketStep} disabled={start.isPending || daily.next_action.kind === 'done'}>{daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}<span><small>NEXT ACTION</small><strong>{start.isPending ? 'Preparing docket…' : daily.next_action.label}</strong></span></button>
+        </header>
+        <div className="daily-docket-track">
+          <article className={`state-${daily.review.state}`}><b>01</b><div><span><TimerReset /> DUE REVIEW</span><strong>{daily.review.state === 'clear' ? 'Queue clear' : `${daily.review.target || daily.review.due} priority repair${(daily.review.target || daily.review.due) === 1 ? '' : 's'}`}</strong><small>Spaced retrieval · reasoning only where needed</small></div><i>{daily.review.state === 'complete' || daily.review.state === 'clear' ? <Check /> : daily.review.state === 'locked' ? <Lock /> : 'NOW'}</i></article>
+          <article className={`state-${daily.speedrun.state}`}><b>02</b><div><span><TimerReset /> SPEEDRUN</span><strong>10 timed unseen questions</strong><small>Answer only · confidence captured · results held to the end</small></div><i>{daily.speedrun.state === 'complete' ? <Check /> : daily.speedrun.state === 'locked' ? <Lock /> : daily.speedrun.state === 'active' ? 'LIVE' : 'NEXT'}</i></article>
+          <article className={`state-${daily.deep_brief.state}`}><b>03</b><div><span><Brain /> DEEP BRIEF</span><strong>{daily.deep_brief.priority_count ? `${daily.deep_brief.priority_count} decision${daily.deep_brief.priority_count === 1 ? '' : 's'} to audit` : 'Confirm what held'}</strong><small>Correct rule · selected trap · transfer cue</small></div><i>{daily.deep_brief.state === 'complete' ? <Check /> : daily.deep_brief.state === 'locked' ? <Lock /> : 'OPEN'}</i></article>
         </div>
+      </section>}
+      <div className="practice-mode-heading"><span className="eyebrow">CHOOSE ANOTHER MODE</span><p>The Daily Docket is the default. Use these when you need a specific kind of practice.</p></div>
+      <section className="practice-mode-picker" aria-label="Choose a study mode">
+        <button className={practiceStyle === 'speedrun' ? 'active' : ''} onClick={() => setPracticeStyle('speedrun')}><TimerReset /><span><strong>Sprint</strong><small>10 timed answers · review at end</small></span></button>
+        <button className={practiceStyle === 'infinite' ? 'active' : ''} onClick={() => setPracticeStyle('infinite')}><Activity /><span><strong>Infinite</strong><small>Answer · concise reasoning · repeat</small></span></button>
+        <button className={practiceStyle === 'deep' ? 'active' : ''} onClick={() => setPracticeStyle('deep')}><Brain /><span><strong>Method Lab</strong><small>Write every rule · immediate coaching</small></span></button>
+        <button className={practiceStyle === 'review' ? 'active' : ''} onClick={() => setPracticeStyle('review')} disabled={!dueReviews}><TimerReset /><span><strong>Review</strong><small>{dueReviews ? `${dueReviews} repair item${dueReviews === 1 ? '' : 's'} due` : 'Queue clear'}</small></span></button>
+      </section>
+      <section className="how-scoring-works">
+        <span className="eyebrow">THE LEARNING LOOP</span>
+        <div>
+          <article><span>01</span><Scale /><h3>Answer</h3><p>The verified key—not AI—determines correctness.</p></article>
+          <article><span>02</span><BookOpen /><h3>Understand</h3><p>Every checked answer receives concise reasoning.</p></article>
+          <article><span>03</span><Brain /><h3>Repair</h3><p>Only uncertain, slow, or missed work enters review.</p></article>
+          <article><span>04</span><TrendingUp /><h3>Transfer</h3><p>Unseen questions prove that the method held.</p></article>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+
+function formatReviewTime(milliseconds: number) {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000))
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+
+function CompletedSessionReview({ sessionId }: { sessionId: string }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [selectedPosition, setSelectedPosition] = useState(0)
+  const [priorityOnly, setPriorityOnly] = useState(true)
+  const reviewQuery = useQuery({ queryKey: ['session-review', sessionId], queryFn: () => api.sessionReview(sessionId) })
+  const queueQuery = useQuery({ queryKey: ['review-queue'], queryFn: api.reviewQueue })
+  const review = reviewQuery.data?.review
+  const priorityRank = { high_confidence_miss: 0, miss: 1, low_confidence_correct: 2, slow_correct: 3 } as const
+  const priorityItems = (review?.items ?? [])
+    .filter((item) => item.priority_reason)
+    .sort((a, b) => priorityRank[a.priority_reason!] - priorityRank[b.priority_reason!])
+  const visibleItems = priorityOnly && priorityItems.length ? priorityItems : review?.items ?? []
+  const selected = visibleItems.find((item) => item.position === selectedPosition) ?? visibleItems[0]
+  const coaching = useQuery({
+    queryKey: ['coaching', selected?.attempt_id],
+    queryFn: () => api.coaching(selected!.attempt_id),
+    enabled: Boolean(selected?.attempt_id),
+    retry: false,
+  })
+  const dueReviews = queueQuery.data?.review_queue.due ?? 0
+  const startRepair = useMutation({
+    mutationFn: () => api.startPractice({ size: Math.min(5, Math.max(1, dueReviews)), practice_style: 'review', feedback_policy: 'immediate' }),
+    onSuccess: ({ session }) => {
+      void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+      navigate(`/cases/${session.id}`)
+    },
+  })
+  const finishBrief = useMutation({
+    mutationFn: () => api.acknowledgeSessionReview(sessionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['daily-docket'] })
+      navigate('/cases')
+    },
+  })
+
+  useEffect(() => {
+    if (!review?.items.length) return
+    const priority = [...review.items]
+      .filter((item) => item.priority_reason)
+      .sort((a, b) => priorityRank[a.priority_reason!] - priorityRank[b.priority_reason!])[0]
+    setSelectedPosition(priority?.position ?? review.items[0].position)
+  }, [review?.session.id])
+
+  if (reviewQuery.isLoading) return <LoadingScreen label="Preparing your answer audit…" />
+  if (reviewQuery.error || !review) return <div className="contained"><ErrorNotice error={reviewQuery.error || new Error('This completed run could not be reviewed.')} /></div>
+
+  const summary = review.summary
+  const isDiagnostic = review.session.mode === 'diagnostic'
+  const highConfidenceErrors = review.items.filter((item) => !item.is_correct && (item.confidence ?? 0) >= 4).length
+  const isSpeedrun = review.session.practice_style === 'speedrun'
+  const correctChoice = selected?.question.choices.find((choice) => choice.label === selected.correct_label)
+  const selectedChoice = selected?.question.choices.find((choice) => choice.label === selected.selected_label)
+  const rationale = coaching.data?.coaching
+
+  return (
+    <div className="session-review-page page-wrap">
+      <section className="review-summary-hero">
+        <div>
+          <span className="eyebrow">{isDiagnostic ? 'DIAGNOSTIC COMPLETE' : isSpeedrun ? 'DEEP BRIEF' : `${review.session.practice_style.toUpperCase()} COMPLETE`}</span>
+          <h1>{priorityItems.length ? 'Brief the decisions that can change your next run.' : 'Clean run. Confirm what held.'}</h1>
+          <p>Results are separated from firm currency and rank. Open any question for a concise rationale; only mistakes and uncertainty enter repair.</p>
+        </div>
+        <div className="review-score"><strong>{summary.accuracy}%</strong><span>{summary.correct} of {summary.questions_completed} correct</span><small>{summary.elapsed_minutes} minutes</small></div>
+      </section>
+
+      <section className="review-signal-row" aria-label="Run signals">
+        <article><Target /><span>Accuracy</span><strong>{summary.accuracy}%</strong></article>
+        <article><Clock3 /><span>Elapsed</span><strong>{summary.elapsed_minutes}m</strong></article>
+        <article><ShieldAlert /><span>Confident misses</span><strong>{highConfidenceErrors}</strong></article>
+        <article><Brain /><span>Priority repairs</span><strong>{priorityItems.length}</strong></article>
+      </section>
+
+      <section className="answer-audit-shell">
+        <aside className="answer-audit-index" aria-label="Questions in this run">
+          <div><span>{isSpeedrun ? 'DEEP BRIEF' : 'ANSWER AUDIT'}</span><small>{priorityOnly && priorityItems.length ? `${priorityItems.length} priority decisions` : `All ${review.items.length} questions`}</small></div>
+          {priorityItems.length > 0 && <div className="brief-filter" role="group" aria-label="Brief scope"><button className={priorityOnly ? 'active' : ''} onClick={() => setPriorityOnly(true)}>Priority</button><button className={!priorityOnly ? 'active' : ''} onClick={() => setPriorityOnly(false)}>All {review.items.length}</button></div>}
+          <div className="answer-audit-list">
+            {visibleItems.map((item) => (
+              <button key={item.attempt_id} className={`${item.position === selected?.position ? 'active' : ''} ${item.is_correct ? 'correct' : 'repair'}`} onClick={() => setSelectedPosition(item.position)}>
+                <span>{item.is_correct ? <Check size={15} /> : <ShieldAlert size={15} />} Q{item.position + 1}</span>
+                <small>{item.question.section === 'Logical Reasoning' ? 'LR' : 'RC'} · {formatReviewTime(item.elapsed_ms)}</small>
+                <b>{item.priority_reason === 'high_confidence_miss' ? 'CONFIDENT MISS' : item.priority_reason === 'low_confidence_correct' ? 'UNCERTAIN' : item.priority_reason === 'slow_correct' ? 'SLOW' : item.priority_reason === 'miss' ? 'MISS' : item.confidence ? `C${item.confidence}` : '—'}</b>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        {selected && <article className="answer-audit-detail">
+          <div className="audit-detail-heading"><div><span>{selected.question.section} · {selected.question.question_type}</span><h2>Question {selected.position + 1}</h2></div><strong className={selected.is_correct ? 'correct' : 'repair'}>{selected.is_correct ? 'CORRECT' : 'REPAIR'}</strong></div>
+          {selected.question.passage && <details className="audit-source"><summary>Read passage</summary><p>{selected.question.passage.text}</p></details>}
+          {selected.question.stimulus && <p className="audit-stimulus">{selected.question.stimulus}</p>}
+          <h3>{selected.question.stem}</h3>
+          <div className="audit-choices">
+            {selected.question.choices.map((choice) => <div key={choice.label} className={`${choice.label === selected.correct_label ? 'correct' : ''} ${choice.label === selected.selected_label && !selected.is_correct ? 'selected-wrong' : ''}`}><b>{choice.label}</b><span>{choice.text}</span>{choice.label === selected.correct_label && <small>credited</small>}{choice.label === selected.selected_label && <small>your answer</small>}</div>)}
+          </div>
+          <section className="concise-rationale" aria-live="polite">
+            <div><Brain size={18} /><span>CONCISE REASONING</span></div>
+            {coaching.isLoading ? <p>Preparing the shortest useful explanation…</p> : rationale ? <>
+              <h4>Why {selected.correct_label} wins</h4><p>{rationale.answer_analysis.correct_answer_explanation}</p>
+              {!selected.is_correct && <><h4>Why {selected.selected_label} falls short</h4><p>{rationale.answer_analysis.selected_answer_explanation}</p></>}
+              <blockquote>{rationale.next_step_hint}</blockquote>
+            </> : <>
+              <h4>Verified outcome</h4><p>{selected.feedback?.diagnosis || `The verified answer is ${selected.correct_label}.`} {correctChoice ? `${selected.correct_label}: ${correctChoice.text}` : ''}</p>
+              {!selected.is_correct && selectedChoice && <p>Your answer was {selected.selected_label}: {selectedChoice.text}</p>}
+              <small>{coaching.error ? 'Detailed coaching is unavailable right now; the verified key remains authoritative.' : 'Opening a question prepares its concise rationale.'}</small>
+            </>}
+          </section>
+        </article>}
+      </section>
+
+      <section className="review-next-actions">
+        <div><span className="eyebrow">NEXT BEST ACTION</span><h2>{dueReviews ? `Repair ${Math.min(5, dueReviews)} due item${dueReviews === 1 ? '' : 's'}` : 'Return to unseen questions'}</h2><p>{dueReviews ? 'Write reasoning only where the evidence says it is needed.' : 'Your repair queue is clear; another Sprint provides fresh transfer evidence.'}</p></div>
+        <div>
+          {isSpeedrun && <button className="primary-button" onClick={() => finishBrief.mutate()} disabled={finishBrief.isPending}>{finishBrief.isPending ? 'Closing brief…' : 'Finish Deep Brief'} <CheckCircle2 /></button>}
+          {dueReviews > 0 && <button className="primary-button" onClick={() => startRepair.mutate()} disabled={startRepair.isPending}>{startRepair.isPending ? 'Building review…' : 'Start priority review'} <ArrowRight /></button>}
+          <button className="secondary-button" onClick={() => navigate('/cases')}>Practice modes</button>
+          <button className="secondary-button" onClick={() => navigate('/progress')}>View progress</button>
+        </div>
+        {(startRepair.error || finishBrief.error) && <ErrorNotice error={startRepair.error || finishBrief.error} />}
       </section>
     </div>
   )
@@ -506,10 +791,10 @@ export function CaseSessionPage() {
       </div>
     )
   }
-  if (session.status === 'completed' && !session.pending_result) return <Navigate to="/cases" replace />
+  if (session.status === 'completed' && !session.pending_result) return <CompletedSessionReview sessionId={session.id} />
   return (
     <div className="session-page">
-      {!session.pending_result && <div className="session-controls"><PauseButton sessionId={session.id} /></div>}
+      {!session.pending_result && <div className="session-controls"><PauseButton sessionId={session.id} returnTo={session.mode === 'diagnostic' ? '/progress' : '/office'} /></div>}
       <QuestionFlow session={session} />
     </div>
   )
@@ -657,6 +942,7 @@ export function FirmPage() {
   return (
     <div className="firm-page page-wrap">
       <section className="page-heading firm-ledger-heading">
+        <PixelStudyScenery variant="ledger" className="firm-ledger-scenery" />
         <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Build a legendary practice.</h1><p>Spend case fees on a living, growing office. Every improvement appears in your firm and makes the next case worth more.</p><div className="ledger-rule"><i /><span>§</span><i /></div></div>
         <div className="firm-wallet">
           <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(game.cash)}</strong><span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
@@ -781,7 +1067,7 @@ export function ProgressionMapPage() {
   return (
     <div className="map-page empire-game-page">
       <section className="empire-command-bar">
-        <div><span className="pixel-kicker">5 MAPS · {game.catalog.tiers.length} HEADQUARTERS TIERS</span><h1>Your legal empire</h1><p>Travel from city blocks to continents, across the world, and beyond Earth.</p></div>
+        <div><span className="pixel-kicker">FIVE LIVING ENVIRONMENTS · {game.catalog.tiers.length} HEADQUARTERS LEVELS</span><h1>Your legal empire</h1><p>Enter each career arc as a complete district, with every headquarters built directly into its streets.</p></div>
         <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
       </section>
       <EmpireWorldMap game={game} onManage={(tab) => navigate(`/firm?tab=${tab}`)} />

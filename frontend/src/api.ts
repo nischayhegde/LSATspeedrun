@@ -2,9 +2,13 @@ import type {
   AttemptReward,
   CharacterGender,
   CoachingFeedback,
+  DailyDocket,
   GameResponse,
   GameState,
+  PerformanceSnapshot,
   PracticeSummary,
+  ReviewQueue,
+  SessionReview,
   StudySession,
   User,
 } from './types'
@@ -108,12 +112,36 @@ export const api = {
       body: JSON.stringify({ rival_key: rivalKey, operation_key: operationKey }),
     }),
   currentSession: () => request<{ session: StudySession | null }>('/study-sessions/current'),
-  startPractice: () => request<{ session: StudySession }>('/study-sessions', { method: 'POST' }),
+  dailyDocket: () => request<{ daily_docket: DailyDocket }>(`/daily-docket?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`),
+  performance: () => request<{ performance: PerformanceSnapshot }>('/performance'),
+  currentDiagnostic: () => request<{
+    session: StudySession | null
+    latest: { session: StudySession; summary: PracticeSummary } | null
+  }>('/diagnostics/current'),
+  startDiagnostic: (accommodationMultiplier = 1) => request<{ session: StudySession }>('/diagnostics', {
+    method: 'POST',
+    body: JSON.stringify({ accommodation_multiplier: accommodationMultiplier }),
+  }),
+  startPractice: (options?: {
+    size?: number
+    question_type?: string
+    practice_style?: 'deep' | 'speedrun' | 'infinite' | 'review'
+    feedback_policy?: 'immediate' | 'delayed'
+  }) => request<{ session: StudySession }>('/study-sessions', {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
+  }),
   session: (id: string) => request<{ session: StudySession; summary?: PracticeSummary }>(`/study-sessions/${id}`),
   pauseSession: (id: string) =>
     request<{ session: StudySession }>(`/study-sessions/${id}/pause`, { method: 'POST' }),
   resumeSession: (id: string) =>
     request<{ session: StudySession }>(`/study-sessions/${id}/resume`, { method: 'POST' }),
+  finishSession: (id: string) =>
+    request<{ session: StudySession; run_complete: boolean }>(`/study-sessions/${id}/finish`, { method: 'POST' }),
+  sessionReview: (id: string) => request<{ review: SessionReview }>(`/study-sessions/${id}/review`),
+  acknowledgeSessionReview: (id: string) =>
+    request<{ session: StudySession; brief_complete: boolean }>(`/study-sessions/${id}/review/acknowledge`, { method: 'POST' }),
+  reviewQueue: () => request<{ review_queue: ReviewQueue }>('/reviews'),
   acknowledgeReview: (id: string) =>
     request<{ session: StudySession }>(`/study-sessions/${id}/debrief/acknowledge`, { method: 'POST' }),
   saveDraft: (sessionId: string, itemId: string, draft: { selected_label?: string; reasoning: string }) =>
@@ -123,7 +151,7 @@ export const api = {
     }),
   submitAttempt: (
     sessionId: string,
-    body: { item_id: string; selected_label: string; reasoning?: string },
+    body: { item_id: string; selected_label: string; reasoning?: string; confidence?: number; answer_changed?: boolean },
     idempotencyKey: string,
   ) =>
     request<{ result: import('./types').AttemptResult }>(`/study-sessions/${sessionId}/attempts`, {

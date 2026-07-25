@@ -299,7 +299,11 @@ class ProceduralSoundEngine {
       this.noise(bus, start, duration, gain, cutoff)
 
     if (reduced) {
-      if (cue === 'paper' || cue === 'map' || cue === 'story' || cue === 'coffee') {
+      if (cue === 'map') {
+        tone(at, pitch(root, -7), 0.2, 0.15, 'sine', pitch(root, -2))
+        return
+      }
+      if (cue === 'paper' || cue === 'story' || cue === 'coffee') {
         paper(at, cue === 'coffee' ? 0.14 : 0.11, cue === 'coffee' ? 0.055 : 0.09, cue === 'coffee' ? 2400 : 1250)
         return
       }
@@ -585,6 +589,12 @@ export function SoundProvider({ children, profile: suppliedProfile }: SoundProvi
   const play = useCallback(async (cue: SoundCue, options: SoundPlayOptions = {}) => {
     const currentPreferences = preferencesRef.current
     if (currentPreferences.muted || currentPreferences.volume <= 0) return false
+    if (!sharedEngine || sharedEngine.context.state !== 'running') {
+      const didUnlock = await unlockSharedEngine()
+      if (!didUnlock) return false
+      sharedEngine?.setVolume(currentPreferences.volume)
+      setUnlocked(true)
+    }
     const currentProfile = normalizeProfile(options.profile, profileRef.current)
     return playShared(cue, currentProfile, currentPreferences, options)
   }, [])
@@ -661,6 +671,7 @@ export function useSoundProfile(syncProfile?: Partial<SoundProfile>): SoundProfi
 export function SoundControls({ className, compact = true, showReducedAudio = true }: SoundControlsProps) {
   const {
     supported,
+    unlocked,
     muted,
     volume,
     reducedAudio,
@@ -695,7 +706,8 @@ export function SoundControls({ className, compact = true, showReducedAudio = tr
 
   return (
     <div
-      className={`sound-controls ${compact ? 'sound-controls-compact' : ''} ${className ?? ''}`.trim()}
+      className={`sound-controls ${unlocked ? 'sound-unlocked' : 'sound-locked'} ${compact ? 'sound-controls-compact' : ''} ${className ?? ''}`.trim()}
+      data-audio-state={unlocked ? 'ready' : 'locked'}
       role="group"
       aria-label="Sound effects"
     >
@@ -729,12 +741,12 @@ export function SoundControls({ className, compact = true, showReducedAudio = tr
           type="button"
           className={`sound-control-button sound-reduced-button ${reducedAudio ? 'active' : ''}`}
           data-sound-control="reduced-audio"
-          aria-label={`${reducedAudio ? 'Disable' : 'Enable'} reduced audio`}
+          aria-label={`${reducedAudio ? 'Disable' : 'Enable'} lite sound`}
           aria-pressed={reducedAudio}
-          title="Reduced audio uses shorter, single-layer cues"
+          title="Lite sound uses shorter, single-layer cues"
           onClick={toggleReduced}
         >
-          <span aria-hidden="true">1×</span>
+          <span aria-hidden="true">LITE</span>
         </button>
       )}
     </div>

@@ -79,6 +79,7 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         DEV_AUTH_ENABLED=dev_auth_requested and not is_production,
         AUTO_SEED=os.getenv("AUTO_SEED", auto_seed_default).lower() == "true",
         PRACTICE_SESSION_SIZE=max(1, int(os.getenv("PRACTICE_SESSION_SIZE", "10"))),
+        DIAGNOSTIC_SESSION_SIZE=max(6, int(os.getenv("DIAGNOSTIC_SESSION_SIZE", "75"))),
         HUGGINGFACE_REQUEST_INTERVAL_SECONDS=max(
             0.0,
             float(os.getenv("HUGGINGFACE_REQUEST_INTERVAL_SECONDS", "1.1")),

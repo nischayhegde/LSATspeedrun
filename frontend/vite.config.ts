@@ -8,7 +8,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/v1': {
-        target: 'http://127.0.0.1:5000',
+        // Port 5000 is reserved by macOS Control Center on many developer
+        // machines; keep the local API on 5001 so the proxy is predictable.
+        target: 'http://127.0.0.1:5001',
         changeOrigin: true,
       },
     },

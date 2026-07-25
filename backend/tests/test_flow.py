@@ -22,6 +22,7 @@ from app.models import (
     PlayerStoryState,
     Question,
     QuestionChoice,
+    ReviewQueueItem,
     SessionItem,
     StudySession,
     User,
@@ -205,7 +206,7 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     me = client.get("/v1/me")
     assert me.status_code == 200
     assert me.json["user"]["next_route"] == "/onboarding"
-    assert "diagnostic_complete" not in me.json["user"]
+    assert me.json["user"]["diagnostic_complete"] is False
     game = create_game(client, headers)
     assert game["character_gender"] == "female"
     assert game["cash"] == 250
@@ -215,7 +216,7 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
         "cost": ASSET_BY_KEY["repaired_desk"]["cost"],
         "reputation": 0,
     }
-    assert client.get("/v1/me").json["user"]["next_route"] == "/office"
+    assert client.get("/v1/me").json["user"]["next_route"] == "/progress"
 
     response = client.post("/v1/study-sessions", headers=headers)
     assert response.status_code == 201
@@ -242,8 +243,350 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
         assert items[0].game_context_json
         assert all(item.game_context_json is None for item in items[1:])
 
-    assert client.get("/v1/diagnostics/current").status_code == 404
+    diagnostics = client.get("/v1/diagnostics/current", headers=headers)
+    assert diagnostics.status_code == 200
+    assert diagnostics.json == {"session": None, "latest": None}
     assert client.get("/v1/story/progress").status_code == 404
+
+
+def test_diagnostic_is_neutral_and_feeds_performance(app):
+    client = app.test_client()
+    headers = login(client, "diagnostic@example.test")
+    create_game(client, headers)
+
+    started = client.post("/v1/diagnostics", headers=headers)
+    assert started.status_code == 201
+    session = started.json["session"]
+    assert session["mode"] == "diagnostic"
+    assert session["current_item"]["case_terms"] is None
+    assert session["total_items"] >= 1
+
+    item = session["current_item"]
+    answered = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": item["id"],
+            "selected_label": "A",
+            "reasoning": "I identified the conclusion and tested A against the exact logical requirement.",
+        },
+        headers={**headers, "Idempotency-Key": "diagnostic-answer-one"},
+    )
+    assert answered.status_code == 200
+    assert answered.json["result"]["game_reward"] is None
+
+    performance = client.get("/v1/performance", headers=headers)
+    assert performance.status_code == 200
+    snapshot = performance.json["performance"]
+    assert snapshot["overall"]["attempts"] == 1
+    assert snapshot["overall"]["evidence"] == "baseline"
+    assert snapshot["overall"]["accuracy_delta"] is None
+    assert snapshot["overall"]["pace_delta"] is None
+    assert snapshot["overall"]["average_seconds_delta"] is None
+    assert snapshot["overall"]["reasoning_delta"] is None
+    assert snapshot["skills"][0]["attempts"] == 1
+
+
+def test_speedrun_size_and_focus_are_bounded(app):
+    client = app.test_client()
+    headers = login(client, "focused-speedrun@example.test")
+    create_game(client, headers)
+
+    started = client.post(
+        "/v1/study-sessions",
+        json={"size": 2, "question_type": "Inference"},
+        headers=headers,
+    )
+    assert started.status_code == 201
+    assert started.json["session"]["total_items"] == 2
+
+    other_client = app.test_client()
+    other_headers = login(other_client, "invalid-speedrun@example.test")
+    create_game(other_client, other_headers)
+    invalid = other_client.post("/v1/study-sessions", json={"size": 51}, headers=other_headers)
+    assert invalid.status_code == 400
+    assert invalid.json["error"]["code"] == "invalid_session_size"
+
+
+def test_answer_only_speedrun_redacts_feedback_stays_neutral_and_seeds_review(app):
+    client = app.test_client()
+    headers = login(client, "answer-only-speedrun@example.test")
+    created = create_game(client, headers)
+
+    started = client.post(
+        "/v1/study-sessions",
+        json={"size": 2, "practice_style": "speedrun", "feedback_policy": "delayed"},
+        headers=headers,
+    )
+    assert started.status_code == 201
+    session = started.json["session"]
+    assert session["practice_style"] == "speedrun"
+    assert session["feedback_policy"] == "delayed"
+    assert session["current_item"]["requires_reasoning"] is False
+    assert session["current_item"]["case_terms"] is None
+
+    first = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "A",
+            "confidence": 5,
+        },
+        headers={**headers, "Idempotency-Key": "speedrun-delayed-one"},
+    )
+    assert first.status_code == 200
+    first_result = first.json["result"]
+    assert first_result["feedback_released"] is False
+    assert "is_correct" not in first_result
+    assert "feedback" not in first_result
+    assert first_result["game_reward"] is None
+
+    resumed = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
+    second = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": resumed["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 5,
+        },
+        headers={**headers, "Idempotency-Key": "speedrun-delayed-two"},
+    )
+    assert second.status_code == 200
+    assert second.json["result"]["feedback_released"] is False
+    assert second.json["result"]["session_complete"] is True
+
+    review = client.get(f"/v1/study-sessions/{session['id']}/review", headers=headers)
+    assert review.status_code == 200
+    assert review.json["review"]["summary"]["correct"] == 1
+    assert len(review.json["review"]["items"]) == 2
+    assert review.json["review"]["items"][0]["selected_label"] == "A"
+    assert review.json["review"]["items"][0]["correct_label"] == "C"
+    assert review.json["review"]["items"][0]["evidence_class"] == "timed_unseen"
+
+    queue = client.get("/v1/reviews", headers=headers)
+    assert queue.status_code == 200
+    assert queue.json["review_queue"]["due"] == 1
+    assert queue.json["review_queue"]["items"][0]["reason_code"] == "high_confidence_error"
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        attempts = (
+            Attempt.query.join(SessionItem)
+            .filter(SessionItem.session_id == session["id"])
+            .order_by(Attempt.created_at)
+            .all()
+        )
+        assert profile.cash == 250
+        assert profile.total_cases == 0
+        assert all(attempt.evidence_class == "timed_unseen" for attempt in attempts)
+        assert all(attempt.settlement is None for attempt in attempts)
+
+
+def test_daily_docket_drives_speedrun_into_priority_deep_brief(app):
+    client = app.test_client()
+    headers = login(client, "daily-docket@example.test")
+    create_game(client, headers)
+
+    fresh = client.get("/v1/daily-docket?timezone=America/Chicago", headers=headers)
+    assert fresh.status_code == 200
+    docket = fresh.json["daily_docket"]
+    assert docket["timezone"] == "America/Chicago"
+    assert docket["review"]["state"] == "clear"
+    assert docket["speedrun"]["state"] == "ready"
+    assert docket["deep_brief"]["state"] == "locked"
+    assert docket["next_action"]["kind"] == "start_speedrun"
+
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 5, "practice_style": "speedrun", "feedback_policy": "delayed"},
+        headers=headers,
+    ).json["session"]
+    for index in range(5):
+        current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
+        answer = "A" if index == 0 else "C"
+        response = client.post(
+            f"/v1/study-sessions/{session['id']}/attempts",
+            json={"item_id": current["current_item"]["id"], "selected_label": answer, "confidence": 5},
+            headers={**headers, "Idempotency-Key": f"daily-docket-{index}"},
+        )
+        assert response.status_code == 200
+
+    review = client.get(f"/v1/study-sessions/{session['id']}/review", headers=headers)
+    assert review.status_code == 200
+    first_item = review.json["review"]["items"][0]
+    assert first_item["priority_reason"] == "high_confidence_miss"
+    assert first_item["target_time_seconds"] in {135, 150, 330}
+
+    briefing = client.get("/v1/daily-docket?timezone=America/Chicago", headers=headers).json["daily_docket"]
+    assert briefing["speedrun"]["state"] == "complete"
+    assert briefing["deep_brief"]["state"] == "ready"
+    assert briefing["deep_brief"]["priority_count"] == 1
+    assert briefing["next_action"] == {
+        "kind": "open_brief",
+        "label": "Open Deep Brief",
+        "session_id": session["id"],
+    }
+
+    closed = client.post(f"/v1/study-sessions/{session['id']}/review/acknowledge", headers=headers)
+    assert closed.status_code == 200
+    assert closed.json["brief_complete"] is True
+    completed = client.get("/v1/daily-docket?timezone=America/Chicago", headers=headers).json["daily_docket"]
+    assert completed["deep_brief"]["state"] == "complete"
+    assert completed["next_action"]["kind"] == "done"
+
+
+def test_infinite_and_review_are_immediate_neutral_and_timezone_safe(app):
+    client = app.test_client()
+    headers = login(client, "infinite-review@example.test")
+    created = create_game(client, headers)
+
+    # Seed one due review with a neutral Sprint miss.
+    sprint = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    client.post(
+        f"/v1/study-sessions/{sprint['id']}/attempts",
+        json={"item_id": sprint["current_item"]["id"], "selected_label": "A", "confidence": 4},
+        headers={**headers, "Idempotency-Key": "review-seed-miss"},
+    )
+
+    review_session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "review"},
+        headers=headers,
+    )
+    assert review_session.status_code == 201
+    review_session = review_session.json["session"]
+    assert review_session["feedback_policy"] == "immediate"
+    assert review_session["current_item"]["requires_reasoning"] is True
+    reviewed = client.post(
+        f"/v1/study-sessions/{review_session['id']}/attempts",
+        json={
+            "item_id": review_session["current_item"]["id"],
+            "selected_label": "C",
+            "reasoning": "C is the only choice directly supported by the stated relationship.",
+            "confidence": 4,
+        },
+        headers={**headers, "Idempotency-Key": "spaced-review-correct"},
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.json["result"]["feedback_released"] is True
+    assert reviewed.json["result"]["is_correct"] is True
+    assert reviewed.json["result"]["game_reward"] is None
+    client.post(f"/v1/study-sessions/{review_session['id']}/debrief/acknowledge", headers=headers)
+
+    # Reading the future-due row exercises SQLite's naive timestamp behavior.
+    queue = client.get("/v1/reviews", headers=headers)
+    assert queue.status_code == 200
+    assert queue.json["review_queue"]["due"] == 0
+    assert queue.json["review_queue"]["scheduled"] == 1
+    performance = client.get("/v1/performance", headers=headers)
+    assert performance.status_code == 200
+    assert performance.json["performance"]["review"]["scheduled"] == 1
+
+    infinite = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "infinite"},
+        headers=headers,
+    )
+    assert infinite.status_code == 201
+    infinite = infinite.json["session"]
+    assert infinite["feedback_policy"] == "immediate"
+    assert infinite["current_item"]["requires_reasoning"] is False
+    answered = client.post(
+        f"/v1/study-sessions/{infinite['id']}/attempts",
+        json={"item_id": infinite["current_item"]["id"], "selected_label": "C", "confidence": 5},
+        headers={**headers, "Idempotency-Key": "infinite-answer"},
+    )
+    assert answered.status_code == 200
+    assert answered.json["result"]["feedback_released"] is True
+    assert answered.json["result"]["game_reward"] is None
+    client.post(f"/v1/study-sessions/{infinite['id']}/debrief/acknowledge", headers=headers)
+    finished = client.post(f"/v1/study-sessions/{infinite['id']}/finish", headers=headers)
+    assert finished.status_code == 200
+    assert finished.json["session"]["ended_by_user"] is True
+    assert finished.json["session"]["total_items"] == 1
+    summary = client.get(f"/v1/study-sessions/{infinite['id']}", headers=headers).json["summary"]
+    assert summary["questions_completed"] == 1
+    assert summary["omitted"] == 0
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert profile.cash == 250
+        assert profile.total_cases == 0
+        evidence = {
+            attempt.evidence_class
+            for attempt in Attempt.query.filter_by(user_id=profile.user_id).all()
+        }
+        assert {"timed_unseen", "spaced_review", "fluency"}.issubset(evidence)
+        assert AttemptSettlement.query.filter_by(user_id=profile.user_id).count() == 0
+        review_item = ReviewQueueItem.query.filter_by(user_id=profile.user_id).one()
+        assert review_item.interval_index == 1
+
+
+@pytest.mark.parametrize(
+    ("practice_style", "feedback_policy"),
+    [
+        ("speedrun", "immediate"),
+        ("deep", "delayed"),
+        ("infinite", "delayed"),
+        ("review", "delayed"),
+    ],
+)
+def test_learning_mode_feedback_policies_are_server_bound(app, practice_style, feedback_policy):
+    client = app.test_client()
+    headers = login(client, f"policy-{practice_style}@example.test")
+    create_game(client, headers)
+    response = client.post(
+        "/v1/study-sessions",
+        json={
+            "size": 1,
+            "practice_style": practice_style,
+            "feedback_policy": feedback_policy,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 400
+    assert response.json["error"]["code"] == "invalid_feedback_policy"
+
+
+def test_completed_speedrun_stops_at_training_lab_boundary(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "completed-speedrun@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    answered = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "reasoning": "C follows from the stated relationship; the alternatives add claims the stimulus does not support.",
+        },
+        headers={**headers, "Idempotency-Key": "one-question-speedrun"},
+    ).json["result"]
+    monkeypatch.setattr(
+        "app.services.generate_attempt_coaching",
+        lambda _attempt: (
+            {
+                "explanation_grade": 82,
+                "reasoning_verdict": "mostly_correct",
+                "reasoning_summary": "The controlling relationship was identified.",
+                "model": "test-model",
+            },
+            {},
+        ),
+    )
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        run_attempt_coaching(db.session.get(Attempt, answered["attempt_id"]))
+
+    completed = client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
+    assert completed.status_code == 200
+    assert completed.json["run_complete"] is True
+    assert completed.json["session"]["status"] == "completed"
+    assert client.get("/v1/study-sessions/current", headers=headers).json == {"session": None}
 
 
 def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monkeypatch):
