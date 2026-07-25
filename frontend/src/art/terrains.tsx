@@ -5,7 +5,8 @@ import { terrainArt, type TerrainSection } from './assets'
 
 export type { TerrainSection }
 
-export function TerrainArt({ section }: { section: TerrainSection }) {
+export function TerrainArt({ section, activity = 1 }: { section: TerrainSection; activity?: number }) {
+  const activityClass = `activity-${Math.max(1, Math.min(5, Math.round(activity)))}`
   return (
     <div className={`av-terrain-scene av-tsc-${section}`} aria-hidden="true">
       <div className="av-layer av-layer-far">
@@ -28,6 +29,46 @@ export function TerrainArt({ section }: { section: TerrainSection }) {
           <i className="av-shooting-star" />
         </div>
       )}
+      <div className={`av-map-life av-map-life-${section} ${activityClass}`}>
+        {section === 'city' && (
+          <>
+            <div className="av-transit-corridor av-city-corridor"><i /><i /></div>
+            <div className="av-city-tram"><i /><i /><i /></div>
+            <div className="av-crosswalk-flow"><i /><i /><i /><i /></div>
+            <div className="av-city-river-traffic"><i><b /></i><i><b /></i></div>
+          </>
+        )}
+        {section === 'nation' && (
+          <>
+            <div className="av-transit-corridor av-national-corridor"><i /><i /></div>
+            <div className="av-national-train"><i /><i /><i /><i /></div>
+            <div className="av-map-flight"><i /></div>
+          </>
+        )}
+        {section === 'world' && (
+          <>
+            <div className="av-sea-lane lane-one"><i /></div>
+            <div className="av-sea-lane lane-two"><i /></div>
+            <div className="av-trade-ship ship-one"><i /><b /></div>
+            <div className="av-trade-ship ship-two"><i /><b /></div>
+          </>
+        )}
+        {section === 'continent' && (
+          <>
+            <div className="av-transit-corridor av-continental-corridor"><i /><i /></div>
+            <div className="av-continental-express"><i /><i /><i /></div>
+            <div className="av-map-flight continental-flight"><i /></div>
+          </>
+        )}
+        {section === 'space' && (
+          <>
+            <div className="av-orbit-ring ring-one"><i /></div>
+            <div className="av-orbit-ring ring-two"><i /></div>
+            <div className="av-orbit-shuttle"><i /><b /></div>
+            <div className="av-satellite-sweep"><i /><i /><i /></div>
+          </>
+        )}
+      </div>
       <div className="av-terrain-grade" />
     </div>
   )

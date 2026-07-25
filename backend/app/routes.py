@@ -36,14 +36,21 @@ from .models import AiJob, Attempt, Question, SessionItem, StudySession, User, u
 from .seed import SOURCE_PREFIX
 from .services import (
     calculate_session_summary,
+    create_diagnostic_session,
     create_study_session,
+    daily_docket_snapshot,
     eligible_question_count,
+    find_active_diagnostic,
     find_resumable_session,
+    finish_infinite_session,
     pause_study_session,
+    performance_snapshot,
     resume_study_session,
+    review_queue_snapshot,
     run_attempt_coaching,
     serialize_attempt_result,
     serialize_session,
+    session_review,
     serialize_user,
     submit_attempt,
 )
@@ -373,7 +380,60 @@ def launch_game_rival_operation():
 
 
 def _owned_session(session_id: str) -> StudySession | None:
-    return StudySession.query.filter_by(id=session_id, user_id=g.current_user.id, mode="practice").first()
+    return StudySession.query.filter(
+        StudySession.id == session_id,
+        StudySession.user_id == g.current_user.id,
+        StudySession.mode.in_(["practice", "diagnostic"]),
+    ).first()
+
+
+@api.get("/performance")
+@require_auth
+def get_performance():
+    return jsonify({"performance": performance_snapshot(g.current_user)})
+
+
+@api.get("/diagnostics/current")
+@require_auth
+def current_diagnostic():
+    active = find_active_diagnostic(g.current_user)
+    latest = (
+        StudySession.query.filter_by(user_id=g.current_user.id, mode="diagnostic", status="completed")
+        .order_by(StudySession.completed_at.desc())
+        .first()
+    )
+    return jsonify(
+        {
+            "session": serialize_session(active) if active else None,
+            "latest": (
+                {"session": serialize_session(latest, False), "summary": latest.summary_json or calculate_session_summary(latest)}
+                if latest
+                else None
+            ),
+        }
+    )
+
+
+@api.post("/diagnostics")
+@require_auth
+def start_diagnostic():
+    if not _game_profile():
+        return error("onboarding_required", "Create your profile before starting the diagnostic.", 409)
+    if not eligible_question_count():
+        return error(
+            "content_unavailable",
+            "No Hugging Face LSAT questions are loaded. Run `flask seed` first.",
+            503,
+        )
+    payload = request.get_json(silent=True) or {}
+    try:
+        accommodation = float(payload.get("accommodation_multiplier", 1))
+        session = create_diagnostic_session(g.current_user, accommodation_multiplier=accommodation)
+    except ValueError as exc:
+        if str(exc) == "invalid_accommodation":
+            return error("invalid_accommodation", "Choose standard, 1.5×, or 2× diagnostic timing.")
+        raise
+    return jsonify({"session": serialize_session(session)}), 201
 
 
 @api.post("/study-sessions")
@@ -387,7 +447,34 @@ def start_practice_session():
             "No Hugging Face LSAT questions are loaded. Run `flask seed` first.",
             503,
         )
-    session = create_study_session(g.current_user)
+    payload = request.get_json(silent=True) or {}
+    practice_style = str(payload.get("practice_style") or "deep").strip().lower()
+    feedback_policy = str(payload.get("feedback_policy") or "").strip().lower() or None
+    try:
+        requested_size = int(payload.get("size", current_app.config["PRACTICE_SESSION_SIZE"]))
+    except (TypeError, ValueError):
+        return error("invalid_session_size", "Choose a run between 1 and 50 questions.")
+    if requested_size < 1 or requested_size > 50:
+        return error("invalid_session_size", "Choose a run between 1 and 50 questions.")
+    question_type = str(payload.get("question_type") or "").strip()[:100] or None
+    try:
+        session = create_study_session(
+            g.current_user,
+            count=requested_size,
+            question_type=question_type,
+            practice_style=practice_style,
+            feedback_policy=feedback_policy,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        messages = {
+            "invalid_practice_style": "Choose Sprint, Deep Practice, Infinite, or Review.",
+            "invalid_feedback_policy": "Choose immediate or delayed feedback.",
+            "no_reviews_due": "Your review queue is clear. Complete a Sprint to generate new repair work.",
+        }
+        if code in messages:
+            return error(code, messages[code], 409 if code == "no_reviews_due" else 400)
+        raise
     return jsonify({"session": serialize_session(session)}), 201
 
 
@@ -467,6 +554,67 @@ def resume_session(session_id: str):
     return jsonify({"session": serialize_session(session)})
 
 
+@api.post("/study-sessions/<session_id>/finish")
+@require_auth
+def finish_session(session_id: str):
+    session = _owned_session(session_id)
+    if not session:
+        return error("session_not_found", "That practice session was not found.", 404)
+    try:
+        finish_infinite_session(session)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "debrief_required":
+            return error(code, "Finish the current explanation before ending the run.", 409)
+        if code == "not_infinite":
+            return error(code, "Only Infinite runs can be ended manually.", 409)
+        raise
+    return jsonify({"session": serialize_session(session, False), "run_complete": True})
+
+
+@api.get("/study-sessions/<session_id>/review")
+@require_auth
+def get_session_review(session_id: str):
+    session = _owned_session(session_id)
+    if not session:
+        return error("session_not_found", "That practice session was not found.", 404)
+    try:
+        review = session_review(session)
+        if session.results_seen_at is None:
+            session.results_seen_at = utcnow()
+            db.session.commit()
+        return jsonify({"review": review})
+    except ValueError:
+        return error("session_in_progress", "Finish the run before opening its review.", 409)
+
+
+@api.post("/study-sessions/<session_id>/review/acknowledge")
+@require_auth
+def acknowledge_session_review(session_id: str):
+    session = _owned_session(session_id)
+    if not session:
+        return error("session_not_found", "That practice session was not found.", 404)
+    if session.status != "completed":
+        return error("session_in_progress", "Finish the run before closing its brief.", 409)
+    session.results_seen_at = session.results_seen_at or utcnow()
+    session.summary_seen_at = session.summary_seen_at or utcnow()
+    db.session.commit()
+    return jsonify({"session": serialize_session(session, False), "brief_complete": True})
+
+
+@api.get("/reviews")
+@require_auth
+def get_review_queue():
+    return jsonify({"review_queue": review_queue_snapshot(g.current_user)})
+
+
+@api.get("/daily-docket")
+@require_auth
+def get_daily_docket():
+    timezone_name = str(request.args.get("timezone") or "UTC")[:80]
+    return jsonify({"daily_docket": daily_docket_snapshot(g.current_user, timezone_name)})
+
+
 @api.post("/study-sessions/<session_id>/debrief/acknowledge")
 @require_auth
 def acknowledge_answer_review(session_id: str):
@@ -488,21 +636,9 @@ def acknowledge_answer_review(session_id: str):
     session.pending_attempt_id = None
     db.session.commit()
     if completed_batch:
-        if not _game_profile():
-            return jsonify(
-                {
-                    "session": serialize_session(session, False),
-                    "continued_from": session.id,
-                    "onboarding_required": True,
-                }
-            )
-        next_session = create_study_session(g.current_user)
-        return jsonify(
-            {
-                "session": serialize_session(next_session),
-                "continued_from": session.id,
-            }
-        )
+        if session.mode == "diagnostic":
+            return jsonify({"session": serialize_session(session, False), "diagnostic_complete": True})
+        return jsonify({"session": serialize_session(session, False), "run_complete": True})
     return jsonify({"session": serialize_session(session)})
 
 
@@ -529,8 +665,9 @@ def create_attempt(session_id: str):
             "invalid_session_item": "This is not the current question. Refresh and try again.",
             "invalid_choice": "Choose one of the available answers.",
             "reasoning_required": "Explain your reasoning before submitting the case.",
+            "invalid_confidence": "Choose a confidence level from 1 to 5.",
         }
-        status = 400 if code in {"invalid_choice", "reasoning_required"} else 409
+        status = 400 if code in {"invalid_choice", "reasoning_required", "invalid_confidence"} else 409
         return error(code, messages.get(code, "The answer could not be saved."), status)
     return jsonify({"result": serialize_attempt_result(attempt, duplicate)})
 

@@ -10,6 +10,7 @@ import {
   Clock3,
   Coins,
   Flame,
+  HelpCircle,
   LayoutGrid,
   LogOut,
   Map,
@@ -17,6 +18,7 @@ import {
   Scale,
   Sparkles,
   Star,
+  Target,
   X,
 } from 'lucide-react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
@@ -26,6 +28,7 @@ import { ClientPortrait, JudgePortrait } from './game-art'
 import { Bust } from './art/people'
 import { counselArt, counselFor, eventArt, keyHash } from './art/assets'
 import { SoundControls, useSound, useSoundProfile } from './sound'
+import { GuidedTour, replayGuidedTour } from './guided-tour'
 import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StoryQuest, StudySession, User } from './types'
 
 
@@ -77,20 +80,20 @@ export function Brand({ light = false, caseFile = false }: { light?: boolean; ca
   const contents = (
     <>
       <span className="brand-mark"><Scale size={19} /></span>
-      <span className="brand-word"><strong>LAWYER</strong><small>{caseFile ? 'CASE FILE' : 'TYCOON'}</small></span>
+      <span className="brand-word"><strong>LAWYER</strong><small>{caseFile ? 'CASE FILE' : 'SPEEDRUN'}</small></span>
     </>
   )
   if (caseFile) return <div className="brand case-brand" aria-label="Lawyer Tycoon active case">{contents}</div>
-  return <Link className={`brand ${light ? 'light' : ''}`} to="/office" aria-label="Lawyer Tycoon office" data-sound="navigate" data-sound-seed="office">{contents}</Link>
+  return <Link className={`brand ${light ? 'light' : ''}`} to="/progress" aria-label="LSAT Speedrun training lab" data-sound="navigate" data-sound-seed="progress">{contents}</Link>
 }
 
 
 const navItems = [
+  { to: '/progress', label: 'Training', icon: Brain },
+  { to: '/cases', label: 'Practice', icon: BriefcaseBusiness },
   { to: '/office', label: 'Office', icon: Building2 },
-  { to: '/cases', label: 'Do Cases', icon: BriefcaseBusiness },
-  { to: '/story', label: 'Story', icon: BookOpen },
   { to: '/firm', label: 'Firm', icon: LayoutGrid },
-  { to: '/map', label: 'Empire', icon: Map },
+  { to: '/map', label: 'World', icon: Map },
 ]
 
 
@@ -128,20 +131,24 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         {game && !isActiveCase && (
           <nav className="desktop-nav" aria-label="Primary navigation">
             {navItems.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} data-sound="navigate" data-sound-seed={to}>
+              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
                 <Icon size={17} /><span>{label}</span>
               </NavLink>
             ))}
           </nav>
         )}
         <div className="header-right">
-          <SoundControls className="header-sound-controls" compact />
+          <div data-tour="sound"><SoundControls className="header-sound-controls" compact /></div>
           {game && (
-            <div className="header-economy" aria-label="Firm standing">
-              <span><Coins size={16} />{formatMoney(game.cash, true)}</span>
-              <span><Star size={16} />{game.reputation.toFixed(1)}</span>
-              {game.current_streak > 0 && <span className="streak"><Flame size={16} />{game.current_streak}</span>}
+            <div className="header-economy training-standing" aria-label="Training standing" data-tour="standing">
+              <span><Check size={16} />{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</span>
+              <span><Brain size={16} />{game.total_cases} Q</span>
             </div>
+          )}
+          {game && !isActiveCase && (
+            <button className="icon-button tour-replay-button" type="button" onClick={replayGuidedTour} aria-label="Replay guided tour" title="Replay guided tour">
+              <HelpCircle size={18} />
+            </button>
           )}
           <div className="account-menu">
             {user.avatar_url
@@ -158,12 +165,13 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
           {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} data-sound="navigate" data-sound-seed={to}>
+            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
               <Icon size={20} /><span>{label}</span>
             </NavLink>
           ))}
         </nav>
       )}
+      {game && !isActiveCase && <GuidedTour />}
     </div>
   )
 }
@@ -367,6 +375,20 @@ function CoachingPanel({ coaching, reward, selectedLabel }: { coaching: Coaching
   )
 }
 
+function CompactReasoningPanel({ coaching, selectedLabel }: { coaching: CoachingFeedback; selectedLabel?: string }) {
+  const selectedIsWrong = coaching.answer_analysis.choice_explanations.some(
+    (choice) => choice.label === selectedLabel && !choice.is_correct,
+  )
+  return (
+    <section className="compact-reasoning" aria-label="Concise answer reasoning">
+      <div className="compact-reasoning-head"><Brain size={17} /><div><span>WHY THE CREDITED ANSWER WINS</span><strong>{coaching.answer_analysis.correct_answer_explanation}</strong></div></div>
+      {selectedIsWrong && <p><b>Why your choice falls short:</b> {coaching.answer_analysis.selected_answer_explanation}</p>}
+      <div className="compact-reasoning-rule"><Scale size={15} /><span>{coaching.next_step_hint}</span></div>
+      <details><summary>Audit all five choices</summary><div>{coaching.answer_analysis.choice_explanations.map((choice) => <p key={choice.label}><b>{choice.label}</b> {choice.explanation}</p>)}</div></details>
+    </section>
+  )
+}
+
 
 export function QuestionFlow({ session }: { session: StudySession }) {
   const queryClient = useQueryClient()
@@ -375,8 +397,15 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const gameQuery = useQuery({ queryKey: ['game'], queryFn: api.game })
   const item = session.pending_item || session.current_item
   const result = session.pending_result
+  const isDiagnostic = session.mode === 'diagnostic'
+  const requiresReasoning = Boolean(item?.requires_reasoning)
+  const isInfinite = session.practice_style === 'infinite'
+  const compactReview = session.practice_style !== 'deep'
+  const learningOnly = session.practice_style !== 'deep'
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
+  const [confidence, setConfidence] = useState(3)
+  const [answerChanged, setAnswerChanged] = useState(false)
   const [clock, setClock] = useState(Date.now())
   const [openedAt, setOpenedAt] = useState(Date.now())
   const verdictRef = useRef<HTMLDivElement>(null)
@@ -384,6 +413,8 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   useEffect(() => {
     setSelected(item?.draft.selected_label || '')
     setReasoning(item?.draft.reasoning || '')
+    setConfidence(3)
+    setAnswerChanged(false)
     setOpenedAt(Date.now())
   }, [item?.id])
 
@@ -408,14 +439,37 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const submit = useMutation({
     mutationFn: () => api.submitAttempt(
       session.id,
-      { item_id: item!.id, selected_label: selected, reasoning },
+      { item_id: item!.id, selected_label: selected, reasoning, confidence, answer_changed: answerChanged },
       crypto.randomUUID(),
     ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
   })
+  const finishInfinite = useMutation({
+    mutationFn: () => api.finishSession(session.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['performance'] })
+      void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+      void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
+      navigate(`/cases/${session.id}`, { replace: true })
+    },
+  })
   const continueCases = useMutation({
     mutationFn: () => api.acknowledgeReview(session.id),
     onSuccess: ({ session: nextSession }) => {
+      if (isDiagnostic && nextSession.status === 'completed') {
+        void queryClient.invalidateQueries({ queryKey: ['performance'] })
+        void queryClient.invalidateQueries({ queryKey: ['diagnostic'] })
+        void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
+        navigate(`/cases/${session.id}`, { replace: true })
+        return
+      }
+      if (nextSession.status === 'completed') {
+        void queryClient.invalidateQueries({ queryKey: ['performance'] })
+        void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+        void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
+        navigate(`/cases/${session.id}`, { replace: true })
+        return
+      }
       void play('file-open', {
         id: `next-file:${nextSession.id}:${nextSession.current_index}`,
         seed: `${nextSession.id}:${nextSession.current_index}`,
@@ -427,12 +481,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       else void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
     },
   })
-  const savedCoaching = result?.feedback.coaching
+  const savedCoaching = result?.feedback?.coaching
   const savedReward = result?.game_reward
   const coaching = useQuery({
     queryKey: ['coaching', result?.attempt_id],
     queryFn: () => api.coaching(result!.attempt_id),
-    enabled: Boolean(result && (!savedCoaching || !savedReward)),
+    enabled: Boolean(result?.feedback_released && (!savedCoaching || (session.practice_style === 'deep' && !savedReward))),
     retry: false,
   })
   const coachingFeedback = savedCoaching || coaching.data?.coaching
@@ -524,7 +578,20 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
   return (
     <div className="question-layout">
-      <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
+      {isDiagnostic ? (
+        <section className="diagnostic-session-banner" aria-label="Baseline diagnostic in progress">
+          <div><Target size={22} /><span>BASELINE DIAGNOSTIC</span></div>
+          <strong>Neutral measurement mode</strong>
+          <p>No currency, reputation, streak, or firm progress changes during this run.</p>
+          <small>{session.total_items} balanced LR/RC questions</small>
+        </section>
+      ) : learningOnly ? (
+        <section className="learning-mode-banner" aria-label={`${session.practice_style} learning mode`}>
+          <div><Brain size={20} /><span>{isInfinite ? 'INFINITE PRACTICE' : session.practice_style === 'review' ? 'REPAIR REVIEW' : 'TIMED SPRINT'}</span></div>
+          <strong>{isInfinite ? 'Answer → concise reasoning → continue' : session.practice_style === 'review' ? 'Explain only the questions that need repair' : 'Answer-only · explanations unlock when the run ends'}</strong>
+          {isInfinite && <button type="button" onClick={() => finishInfinite.mutate()} disabled={finishInfinite.isPending || Boolean(result)}>{finishInfinite.isPending ? 'Ending…' : 'End run'}</button>}
+        </section>
+      ) : <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
         <ClientPortrait kind={clientKind} name={clientName} />
         <div className="active-matter-copy">
           <span>YOU ARE REPRESENTING</span>
@@ -543,14 +610,14 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           </div>
           {counselLine && <div className="counsel-bubble" key={result?.attempt_id}>{counselLine}</div>}
         </div>
-      </section>
+      </section>}
       <div className="case-file-topbar">
         <div className="matter-tag">
           <span>{question.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
-          <div><small>ACTIVE MATTER</small><strong>{question.question_type}</strong></div>
+          <div><small>{learningOnly ? 'QUESTION TYPE' : 'ACTIVE MATTER'}</small><strong>{question.question_type}</strong></div>
         </div>
         <div className="question-progress">
-          <strong>Docket {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
+          <strong>{isDiagnostic ? 'Diagnostic' : isInfinite ? 'Infinite' : session.practice_style === 'review' ? 'Review' : 'Sprint'} {Math.min(item.position + 1, session.total_items)}{isInfinite ? '' : ` / ${session.total_items}`}</strong>
           {item.case_terms && <span>{item.case_terms.client_name} · {formatMoney(item.case_terms.base_fee)} base fee</span>}
         </div>
         <div className={`case-timer ${timerRatio > 1 ? 'over' : ''}`}>
@@ -576,8 +643,8 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <h1>{question.stem}</h1>
           <div className="choices" role="radiogroup" aria-label="Answer choices">
             {question.choices.map((choice) => {
-              const chosen = (result?.feedback.selected_label || selected) === choice.label
-              const correct = result?.feedback.correct_label === choice.label
+              const chosen = (result?.feedback?.selected_label || selected) === choice.label
+              const correct = result?.feedback?.correct_label === choice.label
               const wrongSelected = Boolean(result && chosen && !correct)
               return (
                 <button
@@ -589,6 +656,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                   key={choice.label}
                   onClick={() => {
                     if (selected !== choice.label) void play('select', { seed: `${item.id}:${choice.label}`, intensity: .36 })
+                    if (selected && selected !== choice.label) setAnswerChanged(true)
                     setSelected(choice.label)
                   }}
                 >
@@ -601,7 +669,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
             })}
           </div>
 
-          {!result && (
+          {!result && requiresReasoning && (
             <div className="reasoning-box">
               <div className="reasoning-heading">
                 <label htmlFor="reasoning">Your case theory <b>Required</b></label>
@@ -620,24 +688,32 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           )}
 
           {!result && (
+            <div className="confidence-check" aria-label="Answer confidence">
+              <span>Confidence</span>
+              <div>{[1, 2, 3, 4, 5].map((value) => <button type="button" key={value} className={confidence === value ? 'active' : ''} onClick={() => setConfidence(value)} aria-pressed={confidence === value}>{value}</button>)}</div>
+              <small>{confidence <= 2 ? 'Unsure' : confidence >= 4 ? 'Confident' : 'Moderate'}</small>
+            </div>
+          )}
+
+          {!result && (
             <div className="answer-actions">
               {submit.error && <ErrorNotice error={submit.error} />}
-              <button className="primary-button verdict-button" disabled={!selected || !reasoning.trim() || submit.isPending} onClick={() => {
+              <button className="primary-button verdict-button" disabled={!selected || (requiresReasoning && !reasoning.trim()) || submit.isPending} onClick={() => {
                 void play('submit', { seed: item.id, intensity: .68 })
                 submit.mutate()
               }}>
-                {submit.isPending ? 'Filing your answer…' : <>Submit case <Scale size={18} /></>}
+                {submit.isPending ? 'Recording answer…' : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
               </button>
             </div>
           )}
 
-          {result && (
+          {result?.feedback && (
             <div ref={verdictRef} tabIndex={-1} className="judge-review-focus">
               <div className={`verdict-stamp ${result.is_correct ? 'stamp-won' : 'stamp-lost'}`} key={result.attempt_id} aria-hidden="true">
                 <span>{result.is_correct ? 'SUSTAINED' : 'OVERRULED'}</span>
               </div>
               <JudgeReview
-                isCorrect={result.is_correct}
+                isCorrect={Boolean(result.is_correct)}
                 diagnosis={result.feedback.diagnosis}
                 coaching={coachingFeedback}
                 reward={reward}
@@ -651,7 +727,9 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               <button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button>
             </div>
           )}
-          {coachingFeedback && <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result?.feedback.selected_label} />}
+          {coachingFeedback && (compactReview
+            ? <CompactReasoningPanel coaching={coachingFeedback} selectedLabel={result?.feedback?.selected_label} />
+            : <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result?.feedback?.selected_label} />)}
           {reward && (
             <>
               <ClientSettlement reward={reward} clientName={clientName} clientKind={clientKind} satisfied={clientSatisfied} />
@@ -664,10 +742,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               {continueCases.error && <ErrorNotice error={continueCases.error} />}
               <button
                 className="primary-button next-case-button"
-                disabled={!reward || continueCases.isPending || coaching.isLoading}
+                disabled={!coachingReady || (session.practice_style === 'deep' && !reward) || continueCases.isPending || coaching.isLoading}
                 onClick={() => continueCases.mutate()}
               >
-                {!reward ? 'Settling fee…' : continueCases.isPending ? 'Opening file…' : <>Next case <ArrowRight size={18} /></>}
+                {!coachingReady ? 'Preparing concise reasoning…' : continueCases.isPending ? 'Opening next item…' : isInfinite ? <>Next question <ArrowRight size={18} /></> : session.practice_style === 'review' ? <>Continue review <ArrowRight size={18} /></> : <>Next case <ArrowRight size={18} /></>}
               </button>
             </div>
           )}
@@ -766,7 +844,7 @@ export function OfficeEventPopup({ game }: { game: GameState }) {
 }
 
 
-export function PauseButton({ sessionId }: { sessionId: string }) {
+export function PauseButton({ sessionId, returnTo = '/office' }: { sessionId: string; returnTo?: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { play } = useSound()
@@ -775,12 +853,12 @@ export function PauseButton({ sessionId }: { sessionId: string }) {
     onSuccess: () => {
       void play('pause', { id: `pause:${sessionId}`, seed: sessionId, intensity: .52 })
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
-      navigate('/office')
+      navigate(returnTo)
     },
   })
   return (
     <button className="secondary-button compact" onClick={() => pause.mutate()} disabled={pause.isPending}>
-      <Pause size={15} /> Save & return to office
+      <Pause size={15} /> Save & return
     </button>
   )
 }

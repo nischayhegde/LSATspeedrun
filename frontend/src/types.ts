@@ -5,6 +5,7 @@ export type User = {
   avatar_url?: string | null
   next_route: string
   game_ready: boolean
+  diagnostic_complete: boolean
 }
 
 export type CharacterGender = 'male' | 'female'
@@ -247,6 +248,8 @@ export type CoachingFeedback = {
 export type SessionItem = {
   id: string
   position: number
+  section_index: number
+  requires_reasoning: boolean
   served_at: string
   elapsed_ms: number
   target_time_seconds: number
@@ -259,14 +262,16 @@ export type SessionItem = {
 export type AttemptResult = {
   attempt_id: string
   duplicate: boolean
-  is_correct: boolean
+  recorded: boolean
+  feedback_released: boolean
+  is_correct?: boolean
   elapsed_ms: number
   session_complete: boolean
   session_id: string
-  coaching_status: 'pending' | 'processing' | 'completed' | 'failed'
-  has_reasoning: boolean
+  coaching_status?: 'pending' | 'processing' | 'completed' | 'failed'
+  has_reasoning?: boolean
   game_reward?: AttemptReward | null
-  feedback: {
+  feedback?: {
     is_correct: boolean
     selected_label: string
     correct_label: string
@@ -279,8 +284,14 @@ export type AttemptResult = {
 
 export type StudySession = {
   id: string
-  mode: 'practice'
+  mode: 'practice' | 'diagnostic'
+  practice_style: 'deep' | 'speedrun' | 'infinite' | 'review' | 'diagnostic'
+  feedback_policy: 'immediate' | 'delayed'
   status: 'in_progress' | 'paused' | 'completed'
+  target_minutes: number
+  accommodation_multiplier: number
+  section_plan: Array<{ index: number; label: string; start: number; end: number; questions: number; minutes: number }>
+  ended_by_user: boolean
   total_items: number
   current_index: number
   progress_percent: number
@@ -292,11 +303,106 @@ export type StudySession = {
 }
 
 export type PracticeSummary = {
-  kind: 'practice'
+  kind: 'practice' | 'diagnostic'
+  practice_style?: StudySession['practice_style']
+  feedback_policy?: StudySession['feedback_policy']
   accuracy: number
   correct: number
   questions_completed: number
   elapsed_minutes: number
   explanation_accuracy?: number | null
   skills: Array<{ name: string; attempts: number; accuracy: number }>
+  sections?: Array<{ index: number; label: string; correct: number; questions: number; accuracy: number; elapsed_minutes: number; timing_compromised: boolean }>
+  omitted?: number
+  confidence?: { average: number | null; high_confidence_errors: number; high_confidence_attempts: number }
+  timing_compromised?: boolean
+}
+
+export type PerformanceMetric = {
+  attempts: number
+  accuracy: number
+  average_seconds: number
+  pace_adherence: number
+  reasoning: number | null
+}
+
+export type PerformanceSnapshot = {
+  overall: PerformanceMetric & {
+  speedrun_index: number
+  accuracy_delta: number | null
+  pace_delta: number | null
+  average_seconds_delta: number | null
+  reasoning_delta: number | null
+  evidence: 'baseline' | 'emerging' | 'directional' | 'stable'
+}
+  recent: PerformanceMetric
+  skills: Array<PerformanceMetric & { name: string; priority: number }>
+  trend: Array<{
+    id: string
+    kind: 'practice' | 'diagnostic'
+    date: string | null
+    accuracy: number
+    reasoning: number | null
+    questions: number
+    minutes: number
+  }>
+  diagnostic: {
+    session_id: string
+    completed_at: string | null
+    summary: PracticeSummary
+    raw_correct: number
+    raw_total: number
+    sections: NonNullable<PracticeSummary['sections']>
+    projection_available: false
+    projection_note: string
+  } | null
+  test_performance: PerformanceMetric
+  evidence_classes: Record<string, PerformanceMetric>
+  readiness: { status: 'forming' | 'ready'; lr_samples: number; rc_samples: number; completed_diagnostics: number }
+  review: ReviewQueue & { recovery_rate: number | null }
+  confidence: { average: number | null; high_confidence_error_rate: number | null; sample: number }
+  recommendation: { skill: string; accuracy: number; reason: string } | null
+}
+
+export type ReviewQueue = {
+  due: number
+  scheduled: number
+  mastered: number
+  items: Array<{ id: string; question_id: string; question_type: string; section: Question['section']; reason_code: string; interval_index: number; due_at: string }>
+}
+
+export type DailyDocketState = 'locked' | 'clear' | 'ready' | 'active' | 'complete'
+
+export type DailyDocket = {
+  date: string
+  timezone: string
+  active_session: StudySession | null
+  review: { state: DailyDocketState; due: number; target: number; session_id?: string | null }
+  speedrun: { state: DailyDocketState; target: number; session_id?: string | null; summary?: PracticeSummary | null }
+  deep_brief: { state: DailyDocketState; session_id?: string | null; priority_count: number }
+  next_action: {
+    kind: 'resume' | 'start_review' | 'start_speedrun' | 'open_brief' | 'done'
+    session_id?: string | null
+    label: string
+  }
+}
+
+export type SessionReview = {
+  session: StudySession
+  summary: PracticeSummary
+  items: Array<{
+    position: number
+    question: Question
+    attempt_id: string
+    selected_label: string
+    correct_label: string
+    is_correct: boolean
+    confidence: number | null
+    elapsed_ms: number
+    target_time_seconds: number
+    priority_reason: 'high_confidence_miss' | 'miss' | 'low_confidence_correct' | 'slow_correct' | null
+    evidence_class: string
+    feedback: AttemptResult['feedback']
+    coaching_status: string
+  }>
 }

@@ -101,10 +101,15 @@ class StudySession(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=new_id)
     user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     mode = db.Column(db.String(20), nullable=False, index=True)
+    practice_style = db.Column(db.String(24), nullable=False, default="deep", index=True)
+    feedback_policy = db.Column(db.String(20), nullable=False, default="immediate")
     status = db.Column(db.String(20), nullable=False, default="in_progress", index=True)
     target_minutes = db.Column(db.Integer, nullable=False)
+    accommodation_multiplier = db.Column(db.Float, nullable=False, default=1.0)
     total_items = db.Column(db.Integer, nullable=False, default=0)
     current_index = db.Column(db.Integer, nullable=False, default=0)
+    section_plan_json = db.Column(db.JSON, nullable=True)
+    ended_by_user = db.Column(db.Boolean, nullable=False, default=False)
     summary_json = db.Column(db.JSON, nullable=True)
     pending_attempt_id = db.Column(db.String(36), nullable=True, index=True)
     results_seen_at = db.Column(db.DateTime(timezone=True), nullable=True)
@@ -124,6 +129,7 @@ class SessionItem(db.Model):
     session_id = db.Column(db.String(36), db.ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     question_id = db.Column(db.String(80), db.ForeignKey("questions.id"), nullable=False, index=True)
     position = db.Column(db.Integer, nullable=False)
+    section_index = db.Column(db.Integer, nullable=False, default=0)
     requires_reasoning = db.Column(db.Boolean, nullable=False, default=False)
     target_time_seconds = db.Column(db.Integer, nullable=False, default=150)
     game_context_json = db.Column(db.JSON, nullable=True)
@@ -145,6 +151,12 @@ class SessionItem(db.Model):
 
 class Attempt(db.Model):
     __tablename__ = "attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "confidence is null or (confidence >= 1 and confidence <= 5)",
+            name="ck_attempt_confidence_range",
+        ),
+    )
 
     id = db.Column(db.String(36), primary_key=True, default=new_id)
     user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -153,6 +165,9 @@ class Attempt(db.Model):
     selected_label = db.Column(db.String(1), nullable=False)
     is_correct = db.Column(db.Boolean, nullable=False)
     reasoning_text = db.Column(db.Text, nullable=True)
+    confidence = db.Column(db.Integer, nullable=True)
+    answer_changed = db.Column(db.Boolean, nullable=False, default=False)
+    evidence_class = db.Column(db.String(32), nullable=False, default="coached_practice", index=True)
     explanation_score = db.Column(db.Float, nullable=True)
     server_elapsed_ms = db.Column(db.Integer, nullable=False)
     client_elapsed_ms = db.Column(db.Integer, nullable=True)
@@ -415,6 +430,26 @@ class SkillProgress(db.Model):
     total_time_ms = db.Column(db.BigInteger, nullable=False, default=0)
     recent_mistakes = db.Column(db.Integer, nullable=False, default=0)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class ReviewQueueItem(db.Model):
+    __tablename__ = "review_queue_items"
+    __table_args__ = (UniqueConstraint("user_id", "question_id", name="uq_review_user_question"),)
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = db.Column(db.String(80), db.ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_attempt_id = db.Column(db.String(36), db.ForeignKey("attempts.id", ondelete="SET NULL"), nullable=True)
+    last_attempt_id = db.Column(db.String(36), db.ForeignKey("attempts.id", ondelete="SET NULL"), nullable=True)
+    status = db.Column(db.String(20), nullable=False, default="due", index=True)
+    reason_code = db.Column(db.String(40), nullable=False, default="incorrect")
+    learner_rule = db.Column(db.Text, nullable=True)
+    interval_index = db.Column(db.Integer, nullable=False, default=0)
+    due_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    question = db.relationship("Question")
 
 
 class AiJob(db.Model):

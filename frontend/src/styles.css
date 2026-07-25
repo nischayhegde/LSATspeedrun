@@ -230,6 +230,8 @@ h1, h2, h3, p { text-wrap: pretty; }
 .brief-terms svg { width: 16px; color: var(--gold-dark); }
 .brief-terms strong { color: var(--navy); font-size: 12px; }
 .how-scoring-works { padding: 65px 15px 0; }
+.practice-mode-picker { margin: 18px 0 0; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; }
+.practice-mode-picker > button { min-height: 86px; padding: 14px; display: flex; align-items: center; gap: 11px; border: 1px solid rgba(24,48,58,.25); color: #33434a; background: #f5efe1; text-align: left; transition: border-color .18s ease,background .18s ease,transform .18s ease; }.practice-mode-picker > button:hover:not(:disabled) { transform: translateY(-2px); border-color: #8c7038; }.practice-mode-picker > button.active { border-color: #d2aa55; color: #f5ecd5; background: linear-gradient(135deg,#17313b,#203d47); box-shadow: inset 0 0 0 2px rgba(213,173,89,.28); }.practice-mode-picker > button:disabled { opacity: .48; }.practice-mode-picker svg { flex: none; color: #a17935; }.practice-mode-picker span,.practice-mode-picker strong,.practice-mode-picker small { display: block; }.practice-mode-picker strong { font: 900 12px var(--font-pixel); letter-spacing: .04em; text-transform: uppercase; }.practice-mode-picker small { margin-top: 4px; color: #747975; font-size: 11px; line-height: 1.35; }.practice-mode-picker .active small { color: #acbdb7; }
 .how-scoring-works > div { margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .how-scoring-works article { min-height: 205px; padding: 22px; position: relative; border: 1px solid #d8cfc0; border-radius: 13px; background: #fffdf8; }
 .how-scoring-works article > span { position: absolute; top: 15px; right: 17px; color: #ded4c2; font-family: Georgia, serif; font-size: 26px; }
@@ -287,6 +289,11 @@ h1, h2, h3, p { text-wrap: pretty; }
 .reasoning-box textarea { width: 100%; resize: vertical; padding: 12px 13px; border: 1px solid #d1c7b8; border-radius: 7px; color: #263039; background: #fffefb; line-height: 1.55; }
 .reasoning-box textarea:focus { outline: 3px solid rgba(200,155,75,.15); border-color: var(--gold-dark); }
 .reasoning-box > p { margin: 7px 0 0; color: #85867f; font-size: 11px; }
+.confidence-check { margin-top: 16px; padding: 10px 12px; display: flex; align-items: center; gap: 11px; border: 1px solid #cbb98e; background: rgba(246,239,220,.66); }
+.confidence-check > span { color: #263742; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.confidence-check > div { display: flex; gap: 5px; }.confidence-check button { width: 31px; height: 29px; padding: 0; border: 1px solid #756951; color: #3a403f; background: #fffaf0; font: 800 11px var(--font-pixel); }.confidence-check button.active { border-color: #1c3038; color: #fff4ca; background: #23424b; box-shadow: inset 0 0 0 2px #d5ad59; }.confidence-check small { color: #75766f; font-size: 11px; }
+.compact-reasoning { margin-top: 16px; padding: 15px 16px; border: 1px solid rgba(81,128,126,.55); color: #e9e6d9; background: linear-gradient(135deg,#172a31,#1d3038); box-shadow: 0 12px 28px rgba(8,15,20,.18); }
+.compact-reasoning-head { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; }.compact-reasoning-head > svg { margin-top: 2px; color: #76c9bb; }.compact-reasoning-head span { display: block; color: #d6b967; font: 900 9px var(--font-pixel); letter-spacing: .11em; }.compact-reasoning-head strong { display: block; margin-top: 5px; color: #f3edda; font-size: 14px; line-height: 1.45; }.compact-reasoning > p { margin: 10px 0 0; color: #c3c5ba; font-size: 13px; line-height: 1.45; }.compact-reasoning-rule { margin-top: 11px; padding-top: 10px; display: flex; gap: 8px; border-top: 1px solid rgba(255,255,255,.11); color: #efd27e; font-size: 12px; line-height: 1.4; }.compact-reasoning details { margin-top: 10px; color: #9fc9c2; font-size: 11px; }.compact-reasoning summary { cursor: pointer; font-family: var(--font-pixel); font-weight: 900; letter-spacing: .06em; }.compact-reasoning details div { margin-top: 8px; padding: 5px 10px; border-left: 2px solid rgba(118,201,187,.35); }.compact-reasoning details p { margin: 5px 0; color: #c7c6ba; line-height: 1.4; }.compact-reasoning details b { color: #efd27e; }
 .answer-actions, .continue-row { margin-top: 20px; display: flex; align-items: center; justify-content: flex-end; gap: 13px; }
 .verdict-button { min-width: 174px; }
 .coaching-error { margin-top: 17px; display: grid; gap: 10px; justify-items: start; }
@@ -611,6 +618,7 @@ h1, h2, h3, p { text-wrap: pretty; }
   .docket-hero { grid-template-columns: 1fr; padding: 50px 35px; gap: 40px; }
   .case-brief-card { width: min(440px, 100%); justify-self: center; }
   .how-scoring-works > div { grid-template-columns: repeat(2, 1fr); }
+  .practice-mode-picker { grid-template-columns: 1fr 1fr; }
   .question-content.with-passage { grid-template-columns: 1fr; }
   .passage-card { position: static; max-height: 50vh; }
   .client-roster-status { grid-template-columns: 80px 1fr; }
@@ -645,6 +653,7 @@ h1, h2, h3, p { text-wrap: pretty; }
   .docket-copy h1 { font-size: 43px; }
   .how-scoring-works { padding-inline: 0; }
   .how-scoring-works > div { grid-template-columns: 1fr; }
+  .practice-mode-picker { grid-template-columns: 1fr; }
   .case-file-topbar { grid-template-columns: 1fr auto; }
   .question-progress { grid-column: 1 / -1; grid-row: 2; padding-top: 2px; }
   .question-layout { width: min(100% - 20px, 600px); }
@@ -1029,6 +1038,16 @@ h1, h2, h3 { letter-spacing: -.035em; }
 
 .office-gamebar { max-width: 1660px; margin: 19px auto 0; display: grid; grid-template-columns: 1fr 1.12fr .82fr; gap: 13px; }
 .office-gamebar > article { min-height: 116px; border: 3px solid #090d15; background: #f0ddb0; box-shadow: inset 0 0 0 2px #c19b5f, 5px 5px #090d15; }
+.office-gamebar .training-focus-card,
+.office-gamebar .training-evidence-card { color: #172331; }
+.office-gamebar .training-focus-card span,
+.office-gamebar .training-evidence-card span { color: #176965; font-size: 10px; letter-spacing: .11em; }
+.office-gamebar .training-focus-card h3 { color: #172331; font-size: 25px; text-shadow: 0 1px rgba(255,255,255,.3); }
+.office-gamebar .training-focus-card p { color: #545b57; font-size: 12px; font-weight: 650; line-height: 1.35; }
+.office-gamebar .training-evidence-card strong { color: #213746; font-size: 34px; text-shadow: 0 1px rgba(255,255,255,.28); }
+.office-gamebar .training-evidence-card small { color: #565e59; font-size: 11px; font-weight: 700; }
+.office-gamebar .training-focus-card button,
+.office-gamebar .training-evidence-card button { min-height: 44px; padding: 9px 13px; border: 2px solid #b88935; font-size: 10px; box-shadow: 3px 3px #9a712b; }
 .client-quest-card { padding: 12px; display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 12px; }
 .client-quest-card .client-portrait { width: 70px; height: 76px; }.client-quest-card span, .daily-quest-card span, .safe-card span { color: #945b30; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.client-quest-card h3 { margin: 5px 0; color: #1d2935; font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.client-quest-card p { margin: 0; color: #6d5e4b; font-size: 11px; }.client-quest-card button, .safe-card button { min-height: 34px; padding: 0 10px; border: 2px solid #121720; color: #f8e6b5; background: #263f50; box-shadow: 3px 3px #121720; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; }.client-quest-card button { display: flex; align-items: center; gap: 5px; }.client-quest-card button svg { width: 12px; }
 .daily-quest-card { padding: 14px; }.daily-quest-card .daily-heading h3 { margin: 4px 0 0; color: #24313d; font-family: var(--font-pixel); font-size: 11px; }.daily-quest-card .daily-heading svg { color: #a84d35; }.daily-quest-card .daily-goals { margin-top: 10px; }.daily-quest-card .daily-goals button { border: 2px solid #5e4d3b; border-radius: 0; background: #e4c98e; box-shadow: inset -2px -2px #bd9758; }.daily-quest-card .daily-goals button > span { border: 2px solid #372b22; border-radius: 0; color: #f4e3b4; background: #6a6255; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }.daily-quest-card .daily-goals button strong { font-family: var(--font-pixel); font-size: 10px; }.daily-quest-card .daily-goals button small { font-size: 10px; }
@@ -2275,24 +2294,14 @@ h1, h2, h3 { letter-spacing: -.035em; }
   font-size: 9.5px;
 }
 
-/* Reserve animation work for the controllable character. */
-.empire-map-shell .empire-terrain > :not(.map-player),
-.empire-map-shell .empire-terrain > :not(.map-player) * {
-  animation: none !important;
-}
-
 .empire-map-shell .scanlines {
   display: none;
 }
 
-.empire-map-shell .empire-node,
 .empire-map-shell .map-courthouse,
 .empire-map-shell .map-harbor-cranes,
 .empire-map-shell .map-airport,
-.empire-map-shell .map-orbital-pad {
-  transition: none;
-  filter: none;
-}
+.empire-map-shell .map-orbital-pad { filter: none; }
 
 @media (max-width: 1100px) {
   .map-section-nav {
@@ -2312,6 +2321,183 @@ h1, h2, h3 { letter-spacing: -.035em; }
     width: min(380px, calc(100% - 230px));
     left: 47%;
   }
+}
+
+/* ================================================================
+   VISUAL SWEEP — quieter texture, deeper set dressing, clearer focus
+   ================================================================ */
+
+body {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255,255,255,.78), transparent 30%),
+    radial-gradient(circle at 92% 16%, rgba(199,171,117,.13), transparent 27%),
+    #eee8dc;
+}
+
+body::before {
+  opacity: .18;
+  background-image: radial-gradient(rgba(45,38,28,.12) .55px, transparent .7px);
+  background-size: 7px 7px;
+}
+
+.scanlines,
+.asset-art-scanlines { display: none !important; }
+
+/* The case lobby reads as a small office at dusk instead of a glowing grid. */
+.docket-hero {
+  isolation: isolate;
+  perspective: 1300px;
+  background-color: #162a39;
+  background-image:
+    radial-gradient(ellipse at 75% 18%, rgba(81,151,151,.25), transparent 34%),
+    radial-gradient(circle at 8% 100%, rgba(210,159,79,.14), transparent 31%),
+    linear-gradient(135deg, #193545 0%, #112735 59%, #0c1c29 100%);
+  background-size: auto;
+}
+
+.docket-hero::before {
+  z-index: 0;
+  color: rgba(241,205,119,.055);
+}
+
+.docket-scenery {
+  width: min(390px, 38%);
+  position: absolute;
+  z-index: 0;
+  right: 32%;
+  bottom: -4%;
+  opacity: .53;
+}
+
+.docket-copy,
+.case-brief-card { z-index: 1; }
+
+.case-brief-card {
+  transform: rotate(1.3deg) translateZ(0);
+  transform-style: preserve-3d;
+  transition: transform .32s cubic-bezier(.2,.8,.2,1), box-shadow .32s ease;
+}
+
+.case-brief-card:hover {
+  transform: rotate(.35deg) translateY(-6px) rotateX(1deg) rotateY(-1deg);
+  box-shadow: inset 0 0 0 3px #c49c5b, 13px 18px #10151e, 0 25px 38px rgba(5,11,16,.26);
+}
+
+.how-scoring-works article {
+  overflow: hidden;
+  isolation: isolate;
+  transition: translate .2s steps(2), box-shadow .2s ease;
+}
+
+.how-scoring-works article::after {
+  content: "";
+  width: 76px;
+  height: 76px;
+  position: absolute;
+  z-index: -1;
+  right: -28px;
+  bottom: -33px;
+  border: 14px solid rgba(180,132,65,.12);
+  border-radius: 50%;
+}
+
+.how-scoring-works article:nth-child(2)::after { border-color: rgba(56,123,116,.15); }
+.how-scoring-works article:nth-child(3)::after { border-color: rgba(154,76,60,.15); }
+.how-scoring-works article:nth-child(4)::after { border-color: rgba(73,105,149,.15); }
+.how-scoring-works article:hover { translate: 0 -4px; box-shadow: inset 0 0 0 2px #c39d61, 8px 10px #171923; }
+
+/* The focused question surface stays calm—no decorative scanlines behind text. */
+.session-page {
+  background-color: #142534;
+  background-image:
+    radial-gradient(ellipse at 79% -15%, rgba(91,151,143,.27), transparent 38%),
+    radial-gradient(ellipse at 8% 90%, rgba(178,124,65,.17), transparent 34%),
+    linear-gradient(135deg, #192d3a, #101e2b 72%);
+  background-size: auto;
+}
+
+.session-page::before {
+  opacity: .54;
+  background:
+    radial-gradient(ellipse at 50% 31%, transparent 36%, rgba(5,9,14,.46) 100%),
+    linear-gradient(120deg, transparent 43%, rgba(231,201,139,.035) 51%, transparent 59%);
+}
+
+.active-matter-banner {
+  background-image:
+    radial-gradient(circle at 86% 13%, rgba(104,205,185,.23), transparent 24%),
+    linear-gradient(120deg, #102e3a, #173f4c);
+}
+
+.passage-card,
+.answer-card { box-shadow: inset 0 0 0 3px #c59e5e, 8px 8px #17130f, 0 17px 31px rgba(4,8,12,.2); }
+
+/* Ledger paper retains warmth while losing the arbitrary pixel-grid pattern. */
+.firm-page {
+  background-image:
+    radial-gradient(circle at 12% 8%, rgba(255,244,200,.82), transparent 26%),
+    radial-gradient(circle at 90% 88%, rgba(121,72,37,.14), transparent 30%),
+    repeating-linear-gradient(19deg, rgba(92,59,30,.025) 0 1px, transparent 1px 9px);
+  background-size: auto;
+}
+
+.firm-ledger-heading {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.firm-ledger-heading > :not(.firm-ledger-scenery) { position: relative; z-index: 1; }
+
+.firm-ledger-scenery {
+  width: 255px;
+  position: absolute;
+  z-index: 0;
+  right: 25%;
+  bottom: -47px;
+  opacity: .3;
+}
+
+.firm-wallet,
+.tier-upgrade-banner,
+.client-roster-status {
+  background-image:
+    radial-gradient(circle at 13% 13%, rgba(255,255,255,.08), transparent 24%),
+    linear-gradient(145deg, rgba(60,104,112,.16), transparent 55%);
+  background-size: auto;
+}
+
+.management-card.asset-card,
+.firm-panel-clients .client-card,
+.firm-panel-achievements .achievement-grid article {
+  background-image:
+    radial-gradient(circle at 16% 18%, rgba(99,72,34,.1) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 77% 64%, rgba(99,72,34,.065) 0 1px, transparent 1.5px),
+    linear-gradient(100deg, rgba(255,255,255,.24), transparent 35%, rgba(126,88,37,.05));
+  background-size: 19px 23px, 29px 31px, auto;
+}
+
+
+/* More dimensional, but restrained, header treatment. */
+.app-header {
+  border-bottom-color: rgba(44,39,29,.15);
+  box-shadow: 0 5px 20px rgba(48,39,27,.045);
+}
+
+@media (max-width: 900px) {
+  .docket-scenery { right: 38%; opacity: .26; }
+  .firm-ledger-scenery { right: 10%; opacity: .18; }
+}
+
+@media (max-width: 620px) {
+  .docket-scenery,
+  .firm-ledger-scenery { display: none; }
+  .case-brief-card:hover { transform: rotate(1.3deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .case-brief-card,
+  .how-scoring-works article { transition: none; }
 }
 
 @media (max-width: 620px) {
