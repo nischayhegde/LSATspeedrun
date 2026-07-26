@@ -45,6 +45,7 @@ import { Brand, ErrorNotice, formatMoney, LoadingScreen, OfficeEventPopup, Pause
 import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork, StaffRoster } from './game-art'
 import { PixelStudyScenery } from './art/pixel-scenery'
 import { SoundControls, useSound } from './sound'
+import { MOTION_TIMING } from './motion'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest } from './types'
 import './performance.css'
 
@@ -957,7 +958,7 @@ export function FirmPage() {
       storeGame(queryClient, game)
       void play('purchase', { id: `purchase:${game.id}:${key}`, seed: key, intensity: .75 })
       setJustBought(key)
-      window.setTimeout(() => setJustBought(null), 1800)
+      window.setTimeout(() => setJustBought(null), MOTION_TIMING.toastMs)
     },
   })
   const advance = useMutation({
@@ -978,7 +979,7 @@ export function FirmPage() {
       storeGame(queryClient, game)
       void play('client', { seed: key, intensity: .72 })
       setJustActivated(key)
-      window.setTimeout(() => setJustActivated(null), 2200)
+      window.setTimeout(() => setJustActivated(null), MOTION_TIMING.toastMs)
     },
   })
   const appearance = useMutation({

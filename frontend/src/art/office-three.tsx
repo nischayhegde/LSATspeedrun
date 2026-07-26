@@ -283,12 +283,14 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const roomHalf = roomWidth / 2
     const detailLevel = Math.min(9, 1 + Math.floor(level / 2) + Math.floor(visualAssets.length / 7))
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' })
-    const targetPixelRatio = Math.min(1.25, window.devicePixelRatio || 1)
-    // Paint the first interactive frame at 1x, then sharpen opportunistically.
-    // This avoids making the user wait on a high-density offscreen buffer.
-    renderer.setPixelRatio(1)
+    const targetPixelRatio = Math.min(1.15, window.devicePixelRatio || 1)
+    // Keep one resolution for the lifetime of the scene. Resizing the WebGL
+    // drawing buffer after the office appears creates a visible hitch.
+    renderer.setPixelRatio(targetPixelRatio)
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.autoUpdate = false
+    renderer.shadowMap.needsUpdate = true
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = rustic ? 1.06 : 1.18 + Math.min(.12, level * .008)
@@ -1591,6 +1593,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     let lookStartY = 0
     let lookStartYaw = 0
     let lookStartPitch = 0
+    let lastChairHoverRaycast = -Infinity
     canvas.tabIndex = 0
 
     const nearestYaw = (target: number, current: number) => current + Math.atan2(Math.sin(target - current), Math.cos(target - current))
@@ -1620,6 +1623,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     }
     const onFurniturePointerMove = (event: PointerEvent) => {
       if (!draggingChair) {
+        if (lookingAround || event.timeStamp - lastChairHoverRaycast < 40) return
+        lastChairHoverRaycast = event.timeStamp
         canvas.style.cursor = chairUnderPointer(event) ? 'grab' : 'default'
         return
       }
@@ -1760,15 +1765,19 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const startedAt = performance.now()
     let frame = 0
-    let refinement = 0
+    let disposed = false
+    let surfaceVisible = true
+    let previousFrame = startedAt
+    let elapsed = 0
     let lastAnchorDispatch = -Infinity
 
     const anchorWorld = new THREE.Vector3()
     const anchorView = new THREE.Vector3()
+    const anchorProjected = new THREE.Vector3()
     const anchorPosition = (object: THREE.Object3D, minimum = 5, maximum = 95) => {
       object.getWorldPosition(anchorWorld)
       anchorView.copy(anchorWorld).applyMatrix4(camera.matrixWorldInverse)
-      const projected = anchorWorld.clone().project(camera)
+      const projected = anchorProjected.copy(anchorWorld).project(camera)
       const visible = anchorView.z < -.2 && Math.abs(projected.x) < 1.06 && Math.abs(projected.y) < 1.08
       return {
         x: THREE.MathUtils.clamp((projected.x * .5 + .5) * 100, minimum, maximum),
@@ -1779,9 +1788,14 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
 
     const focusedWorldPosition = new THREE.Vector3()
     const catCameraDirection = new THREE.Vector3()
+    const catMoveDirection = new THREE.Vector3()
 
     const draw = (now = performance.now()) => {
-      const elapsed = (now - startedAt) / 1000
+      frame = 0
+      if (disposed || !surfaceVisible || document.hidden) return
+      const delta = Math.min(.05, Math.max(0, (now - previousFrame) / 1000))
+      previousFrame = now
+      elapsed += delta
       if (focusedTarget && now >= focusedUntil) {
         focusedTarget.halo.visible = false
         focusedTarget = null
@@ -1791,14 +1805,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         focusedTarget.object.getWorldPosition(focusedWorldPosition)
         focusedTarget.halo.visible = true
         focusedTarget.halo.scale.setScalar(1 + Math.sin(elapsed * 4.2) * .075)
-        focusedTarget.halo.rotation.z += .0035
+        focusedTarget.halo.rotation.z += delta * .21
         focusLight.position.copy(focusedWorldPosition)
         focusLight.position.y += .55
         focusLight.intensity = 1.15 + Math.sin(elapsed * 4.2) * .18
       }
       const yawDelta = Math.atan2(Math.sin(cameraYawTarget - cameraYaw), Math.cos(cameraYawTarget - cameraYaw))
-      cameraYaw += yawDelta * (reduced ? 1 : .13)
-      cameraPitch += (cameraPitchTarget - cameraPitch) * (reduced ? 1 : .13)
+      const cameraFollow = reduced ? 1 : 1 - Math.exp(-8.35 * delta)
+      cameraYaw += yawDelta * cameraFollow
+      cameraPitch += (cameraPitchTarget - cameraPitch) * cameraFollow
       positionCamera()
 
       if (activeClientActor) {
@@ -1861,7 +1876,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         rig.eyes.forEach((eye) => { eye.scale.y = blink })
       }
 
-      if (now - lastAnchorDispatch > 80) {
+      const cameraMoving = Math.abs(yawDelta) > .0005 || Math.abs(cameraPitchTarget - cameraPitch) > .0005
+      const detailsVisible = surface?.classList.contains('show-office-details') ?? false
+      if ((lastAnchorDispatch === -Infinity || cameraMoving || detailsVisible) && now - lastAnchorDispatch > 80) {
         lastAnchorDispatch = now
         canvas.dispatchEvent(new CustomEvent('office-anchor-update', {
           bubbles: true,
@@ -1884,8 +1901,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       const focus = office?.classList.contains('room-focus') ?? false
       const cozy = office?.classList.contains('is-cozy') ?? false
       const awake = office?.classList.contains('cat-awake') ?? false
-      deskLight.intensity += ((focus ? (rustic ? 3.15 : 3.7) : (rustic ? 1.72 : 2.05)) - deskLight.intensity) * .08
-      windowLight.intensity += ((storm ? (rustic ? 1.8 : 2.7) : (rustic ? .82 : 1.42)) - windowLight.intensity) * .06
+      deskLight.intensity = THREE.MathUtils.damp(deskLight.intensity, focus ? (rustic ? 3.15 : 3.7) : (rustic ? 1.72 : 2.05), 5, delta)
+      windowLight.intensity = THREE.MathUtils.damp(windowLight.intensity, storm ? (rustic ? 1.8 : 2.7) : (rustic ? .82 : 1.42), 3.7, delta)
       ;(screen as THREE.MeshStandardMaterial).emissiveIntensity = .52 + Math.sin(elapsed * 1.1) * .07
       if (lanternFlame) {
         lanternFlame.scale.y = .84 + Math.sin(elapsed * 8.2) * .11 + Math.sin(elapsed * 13.7) * .05
@@ -1897,14 +1914,14 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         hearthLight.intensity = .48 * emberPulse
       }
       minuteHand.rotation.z = -elapsed * .11
-      const catDelta = Math.min(.04, Math.max(0, elapsed - catActor.lastElapsed))
+      const catDelta = delta
       catActor.lastElapsed = elapsed
       let catWalking = false
       if (catActor.pauseRemaining > 0) {
         catActor.pauseRemaining = Math.max(0, catActor.pauseRemaining - catDelta)
       } else {
         const target = catActor.waypoints[catActor.waypointIndex]
-        const direction = target.clone().sub(catActor.root.position)
+        const direction = catMoveDirection.copy(target).sub(catActor.root.position)
         const distance = direction.length()
         if (distance < .08) {
           const arrivedIndex = catActor.waypointIndex
@@ -2093,7 +2110,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
           rig.leftElbow.rotation.x = Math.max(0, stride) * .1
           rig.rightElbow.rotation.x = Math.max(0, -stride) * .1
           rig.spine.rotation.z = -stride * .018
-          rig.head.rotation.y = THREE.MathUtils.damp(rig.head.rotation.y, 0, 8, 1 / 60)
+          rig.head.rotation.y = THREE.MathUtils.damp(rig.head.rotation.y, 0, 8, delta)
         }
         const blink = Math.sin(elapsed * .58 + phase * 2.1) > .996 ? .14 : 1
         rig.eyes.forEach((eye) => { eye.scale.y = blink })
@@ -2105,8 +2122,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       const rainSpeed = storm ? .038 : .018
       for (let index = 0; index < rainCount; index += 1) {
         const base = index * 6
-        rainArray[base + 1] -= rainSpeed
-        rainArray[base + 4] -= rainSpeed
+        rainArray[base + 1] -= rainSpeed * delta * 60
+        rainArray[base + 4] -= rainSpeed * delta * 60
         if (rainArray[base + 4] < -windowHeight / 2 - .1) {
           rainArray[base + 1] = windowHeight / 2 + .08
           rainArray[base + 4] = windowHeight / 2 - (rustic ? .07 : .12)
@@ -2117,8 +2134,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       const steamAttribute = steamGeometry.getAttribute('position') as THREE.BufferAttribute
       const steamArray = steamAttribute.array as Float32Array
       for (let index = 0; index < 24; index += 1) {
-        steamArray[index * 3 + 1] += cozy ? .006 : .002
-        steamArray[index * 3] += Math.sin(elapsed + index) * .00035
+        steamArray[index * 3 + 1] += (cozy ? .006 : .002) * delta * 60
+        steamArray[index * 3] += Math.sin(elapsed + index) * .00035 * delta * 60
         if (steamArray[index * 3 + 1] > 2.52) steamArray[index * 3 + 1] = 1.82
       }
       steamAttribute.needsUpdate = true
@@ -2126,20 +2143,37 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
 
       renderer.render(scene, camera)
       canvas.classList.add('is-ready')
-      if (!reduced) frame = window.requestAnimationFrame(draw)
+      if (!reduced && !disposed && surfaceVisible && !document.hidden) frame = window.requestAnimationFrame(draw)
     }
     draw()
-    if (targetPixelRatio > 1) {
-      refinement = window.requestIdleCallback(() => {
-        renderer.setPixelRatio(targetPixelRatio)
-        resize()
-      }, { timeout: 900 })
+    const surfaceObserver = new IntersectionObserver(([entry]) => {
+      surfaceVisible = Boolean(entry?.isIntersecting)
+      if (!surfaceVisible && frame) {
+        window.cancelAnimationFrame(frame)
+        frame = 0
+      } else if (surfaceVisible && !document.hidden && !reduced && !frame) {
+        previousFrame = performance.now()
+        frame = window.requestAnimationFrame(draw)
+      }
+    }, { rootMargin: '80px' })
+    surfaceObserver.observe(canvas)
+    const onVisibilityChange = () => {
+      if (document.hidden && frame) {
+        window.cancelAnimationFrame(frame)
+        frame = 0
+      } else if (!document.hidden && surfaceVisible && !reduced && !frame) {
+        previousFrame = performance.now()
+        frame = window.requestAnimationFrame(draw)
+      }
     }
+    document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
+      disposed = true
       if (frame) window.cancelAnimationFrame(frame)
-      if (refinement) window.cancelIdleCallback(refinement)
       observer.disconnect()
+      surfaceObserver.disconnect()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       surface?.removeEventListener('office-focus-asset', onFocusAsset)
       surface?.removeEventListener('office-camera-rotate', onCameraRotate)
       canvas.removeEventListener('pointerdown', onFurniturePointerDown)

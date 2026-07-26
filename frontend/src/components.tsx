@@ -29,10 +29,11 @@ import { counselFor, eventArt, keyHash } from './art/assets'
 import { SoundControls, useSound, useSoundProfile } from './sound'
 import { GuidedTour, replayGuidedTour } from './guided-tour'
 import { preloadArtForRoute } from './art/scene-loaders'
+import { MOTION_TIMING } from './motion'
 import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StoryQuest, StudySession, User } from './types'
 
 
-function useCountUp(target: number, duration = 950) {
+function useCountUp(target: number, duration = MOTION_TIMING.countUpMs) {
   const [value, setValue] = useState(0)
   useEffect(() => {
     let raf = 0
@@ -468,7 +469,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     const startedAt = Date.now()
     setPageTurning(true)
     void play('paper', { seed: `page-turn:${session.id}:${item?.position ?? 0}`, intensity: .54 })
-    await new Promise((resolve) => window.setTimeout(resolve, 430))
+    await new Promise((resolve) => window.setTimeout(resolve, MOTION_TIMING.pageTurnCurlMs))
     if (pageTurnRunRef.current !== run) return
     try {
       await afterCurl()
@@ -476,7 +477,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       if (pageTurnRunRef.current === run) setPageTurning(false)
       return
     }
-    const remaining = Math.max(0, 940 - (Date.now() - startedAt))
+    const remaining = Math.max(0, MOTION_TIMING.pageTurnTotalMs - (Date.now() - startedAt))
     if (remaining) await new Promise((resolve) => window.setTimeout(resolve, remaining))
     if (pageTurnRunRef.current === run) setPageTurning(false)
   }
@@ -568,7 +569,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     const reasoningValidated = result.is_correct && (reward.explanation_grade === 'Good' || reward.explanation_grade === 'Excellent')
     const hasBonus = reward.streak_bonus > 0 || reward.staff_bonus > 0 || reward.contract_bonus > 0 || reward.quest_bonus > 0
     const hasPayout = reward.payout > 0
-    const ledgerDelay = reasoningValidated ? 1100 : 620
+    const ledgerDelay = reasoningValidated ? 220 : 140
 
     if (reasoningValidated) {
       timers.push(window.setTimeout(() => {
@@ -577,7 +578,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           seed: reward.id,
           intensity: .68,
         })
-      }, 420))
+      }, 105))
     }
     if (hasPayout) {
       timers.push(window.setTimeout(() => {
@@ -594,7 +595,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
             seed: reward.id,
             intensity: .58,
           })
-        }, ledgerDelay + 320))
+        }, ledgerDelay + 70))
       }
     }
     return () => timers.forEach((timer) => window.clearTimeout(timer))
@@ -879,7 +880,7 @@ export function OfficeEventPopup({ game }: { game: GameState }) {
 
   useEffect(() => {
     if (!quest) return
-    const timeout = window.setTimeout(() => setVisible(true), 1400)
+    const timeout = window.setTimeout(() => setVisible(true), MOTION_TIMING.popupDelayMs)
     return () => window.clearTimeout(timeout)
   }, [quest])
 

@@ -2958,7 +2958,7 @@ export function MapThreeScene({
       points.forEach((point) => { point.y = .12 })
       return new THREE.CatmullRomCurve3(points, false, 'centripetal', .42)
     }
-    type WalkState = { curve: THREE.CatmullRomCurve3; started: number; duration: number; lastProgress: number }
+    type WalkState = { curve: THREE.CatmullRomCurve3; delayMs: number; duration: number; elapsedMs: number; lastProgress: number }
     const initialDestination = destination.clone().setY(.12)
     const overviewTarget = new THREE.Vector3(...definition.target)
     cameraTarget.copy(overviewTarget)
@@ -2979,8 +2979,9 @@ export function MapThreeScene({
     const initialWalkCurve = hasActiveTier ? walkingCurve(lawyer.position.clone(), initialDestination) : null
     let walking: WalkState | null = initialWalkCurve ? {
         curve: initialWalkCurve,
-        started: performance.now() + 420,
+        delayMs: 420,
         duration: THREE.MathUtils.clamp(initialWalkCurve.getLength() * 285, 2400, region === 'city' ? 7800 : 6200),
+        elapsedMs: 0,
         lastProgress: 0,
       } : null
 
@@ -3222,8 +3223,9 @@ export function MapThreeScene({
         const curve = walkingCurve(lawyer.position.clone(), target)
         walking = {
           curve,
-          started: performance.now(),
+          delayMs: 0,
           duration: THREE.MathUtils.clamp(curve.getLength() * 260, 1200, 6200),
+          elapsedMs: 0,
           lastProgress: 0,
         }
         cameraMode = 'counsel'
@@ -3286,7 +3288,7 @@ export function MapThreeScene({
         if (selectedAnchor && !locked) {
           const target = selectedAnchor.clone().setY(.12)
           const curve = walkingCurve(lawyer.position.clone(), target)
-          walking = { curve, started: performance.now(), duration: THREE.MathUtils.clamp(curve.getLength() * 260, 1200, 6200), lastProgress: 0 }
+          walking = { curve, delayMs: 0, duration: THREE.MathUtils.clamp(curve.getLength() * 260, 1200, 6200), elapsedMs: 0, lastProgress: 0 }
           cameraMode = 'counsel'
           zoom = 1
         }
@@ -3294,12 +3296,13 @@ export function MapThreeScene({
       const desiredTarget = cameraMode === 'counsel'
         ? frameTarget.set(lawyer.position.x, region === 'orbit' ? 1.35 : 1.15, lawyer.position.z)
         : overviewTarget
-      cameraTarget.lerp(desiredTarget, cameraMode === 'counsel' ? (walking ? .055 : .035) : .08)
+      const targetFollow = 1 - Math.exp(-(cameraMode === 'counsel' ? (walking ? 3.4 : 2.15) : 5) * delta)
+      cameraTarget.lerp(desiredTarget, targetFollow)
       const desiredCamera = frameCamera.copy(cameraMode === 'counsel' ? counselOffset : cameraOffset).multiplyScalar(zoom * frameScale)
       desiredCamera.applyAxisAngle(frameAxisY, targetYaw)
       desiredCamera.y += targetPitch * 18
       desiredCamera.add(cameraTarget)
-      camera.position.lerp(desiredCamera, .055)
+      camera.position.lerp(desiredCamera, 1 - Math.exp(-3.4 * delta))
       camera.lookAt(cameraTarget)
       occlusionTimer += delta
       const occlusionMoved = camera.position.distanceToSquared(lastOcclusionCamera) > .0025 || lawyer.position.distanceToSquared(lastOcclusionPlayer) > .0016
@@ -3330,7 +3333,8 @@ export function MapThreeScene({
       let locomotion = 0
       let arrival = 1
       if (walking) {
-        const progress = THREE.MathUtils.clamp((performance.now() - walking.started) / walking.duration, 0, 1)
+        walking.elapsedMs += delta * 1000
+        const progress = THREE.MathUtils.clamp((walking.elapsedMs - walking.delayMs) / walking.duration, 0, 1)
         const eased = progress < .5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2
         walking.curve.getPointAt(eased, walkPosition)
         walking.curve.getTangentAt(Math.min(.999, Math.max(.001, eased)), walkTangent).normalize()

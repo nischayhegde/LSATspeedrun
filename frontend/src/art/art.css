@@ -155,21 +155,23 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .av-office-duo { display: flex; gap: 18px; align-items: stretch; }
 .av-office-duo .office-explorer { flex: 1; min-width: 0; }
 .av-character-panel {
-  position: relative; flex: 0 0 262px; display: flex; flex-direction: column; overflow: hidden; isolation: isolate;
-  border: 1px solid #0a111c; border-radius: 20px;
-  background: radial-gradient(115% 78% at 50% 8%, #d7c29c, #786759 51%, #1b2833 100%);
-  box-shadow: 0 26px 64px rgba(6, 10, 18, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  position: relative; flex: 0 0 262px; display: flex; flex-direction: column; overflow: visible; isolation: isolate;
+  border: 0; border-radius: 20px; background: transparent; box-shadow: none;
   animation: av-scene-reveal 0.9s ease both;
 }
-.av-character-panel::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(180deg,rgba(255,240,205,.07),transparent 36%,rgba(5,10,16,.24)), radial-gradient(120% 105% at 50% 35%, transparent 61%, rgba(4,9,14,.2) 100%); }
-.av-hero-stage { position: relative; z-index: 1; flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; padding: 12px 10px 0; overflow: hidden; }
-.av-hero-stage::before { content: ""; position: absolute; inset: 8% 6% 0; opacity: .7; background: radial-gradient(ellipse at calc(50% + var(--px,0) * 7%) calc(19% + var(--py,0) * 4%), rgba(255,248,223,.58), transparent 35%), linear-gradient(120deg, transparent 30%, rgba(255,237,190,.18) 49%, transparent 67%); mix-blend-mode: soft-light; pointer-events: none; animation: av-portrait-light 8.5s ease-in-out infinite alternate; transition: background-position .28s ease; }
+.av-character-panel::before { content: ""; position: absolute; inset: 0; z-index: 0; border: 1px solid #0a111c; border-radius: inherit; pointer-events: none; background: radial-gradient(115% 78% at 50% 8%,#d7c29c,#786759 51%,#1b2833 100%); box-shadow: 0 26px 64px rgba(6,10,18,.45),inset 0 0 0 1px rgba(255,255,255,.3); }
+.av-character-panel::after { content: ""; position: absolute; inset: 1px; z-index: 1; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg,rgba(255,240,205,.07),transparent 36%,rgba(5,10,16,.24)),radial-gradient(120% 105% at 50% 35%,transparent 61%,rgba(4,9,14,.2) 100%); }
+.av-hero-stage { position: relative; z-index: 2; flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; padding: 12px 10px 0; overflow: visible; }
+/* The former inset lighting rectangle created a visible box behind the
+   transparent character canvas. The panel's halo and color grade already
+   provide depth without imposing a hard crop. */
+.av-hero-stage::before { content: none; }
 .av-hero-halo { position: absolute; left: 50%; top: 39%; width: 88%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle, rgba(255,239,201,.42), rgba(48,68,80,.08) 47%, transparent 68%); animation: av-halo 6s ease-in-out infinite; }
 @keyframes av-halo { 50% { opacity: 0.55; transform: translate(-50%, -50%) scale(1.07); } }
-.av-hero-figure { position: relative; z-index: 2; width: 100%; height: 99%; display: flex; align-items: flex-end; justify-content: center; transform-origin: 50% 100%; }
+.av-hero-figure { position: relative; z-index: 2; width: 116%; height: 106%; margin: 0 -8% -2%; display: flex; align-items: flex-end; justify-content: center; overflow: visible; transform-origin: 50% 100%; }
 .av-hero-img { position: relative; z-index: 2; display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; object-position: center bottom; filter: saturate(.88) contrast(1.035) drop-shadow(0 2px 1px rgba(255,242,204,.18)) drop-shadow(0 18px 22px rgba(7,13,20,.46)); transform-origin: 50% 100%; }
 .av-hero-light-pass { position: absolute; z-index: 3; left: 50%; bottom: 0; translate: -50% 0; opacity: 0; pointer-events: none; filter: saturate(.82) brightness(1.24) contrast(1.04); mix-blend-mode: soft-light; -webkit-mask-image: linear-gradient(103deg,transparent 22%,#000 42%,#000 49%,transparent 67%); mask-image: linear-gradient(103deg,transparent 22%,#000 42%,#000 49%,transparent 67%); -webkit-mask-size: 230% 100%; mask-size: 230% 100%; animation: av-hero-light-pass 12.5s ease-in-out infinite; }
-.av-rigged-character { width: 100%; height: 100%; position: relative; display: flex; align-items: flex-end; justify-content: center; isolation: isolate; contain: layout paint; }
+.av-rigged-character { width: 100%; height: 100%; position: relative; display: flex; align-items: flex-end; justify-content: center; overflow: visible; isolation: isolate; contain: layout style; }
 .av-rigged-character-fallback,
 .av-rigged-character-canvas { position: absolute; left: 50%; bottom: 0; display: block; translate: -50% 0; transition: opacity .42s ease; }
 .av-rigged-character-fallback { z-index: 1; width: 68%; height: 82%; bottom: 5%; display: grid; place-items: center; border: 1px solid rgba(206,174,100,.22); border-radius: 46% 46% 14px 14px; color: rgba(231,215,172,.62); background: linear-gradient(180deg,rgba(78,99,99,.12),rgba(8,16,23,.3)); font-family: var(--font-pixel); font-size: 8px; letter-spacing: .13em; text-transform: uppercase; opacity: 1; }
@@ -187,16 +189,11 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 @keyframes av-portrait-sheen { 0%,62% { background-position: 110% 0; opacity: 0; } 70% { opacity: .8; } 100% { background-position: -80% 0; opacity: 0; } }
 @keyframes av-portrait-light { to { opacity: .95; transform: translateX(6%); } }
 .av-hero-floor { position: absolute; z-index: 1; left: 50%; bottom: 3.5%; width: 58%; height: 5%; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(closest-side, rgba(88, 58, 20, 0.42), transparent 74%); }
-.av-hero-plaque { position: relative; z-index: 3; margin: 0 12px 12px; padding: 10px 14px 11px; border-radius: 12px; border: 1px solid var(--av-panel-line); background: var(--av-panel); text-align: center; box-shadow: 0 10px 24px rgba(6, 10, 18, 0.35); }
+.av-hero-plaque { position: relative; z-index: 4; margin: 0 12px 12px; padding: 10px 14px 11px; border-radius: 12px; border: 1px solid var(--av-panel-line); background: var(--av-panel); text-align: center; box-shadow: 0 10px 24px rgba(6, 10, 18, 0.35); }
 .av-hero-plaque small { display: block; color: var(--av-brass-bright); font-family: var(--font-pixel); font-size: 9px; font-weight: 800; letter-spacing: 0.24em; }
 .av-hero-plaque strong { display: block; margin-top: 2px; color: #f6f1e2; font-family: var(--font-display); font-size: 19px; font-weight: 640; line-height: 1.1; }
 .av-hero-plaque span { display: block; margin-top: 2px; color: #d9c9a2; font-family: var(--font-pixel); font-size: 10.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 .av-hero-plaque em { display: block; margin-top: 5px; color: #ffe9a6; font-style: normal; font-family: var(--font-pixel); font-size: 10px; font-weight: 800; letter-spacing: 0.1em; }
-.av-character-emotes { margin-top: 9px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.av-character-emotes button { min-height: 28px; padding: 5px 4px; border: 1px solid rgba(224,195,123,.28); border-radius: 6px; color: #d8cfb8; background: rgba(26,45,55,.78); font: 800 7px/1.15 var(--font-pixel); letter-spacing: .045em; transition: color .15s ease,background .15s ease,transform .15s ease; }
-.av-character-emotes button:last-child { grid-column: 1 / -1; }
-.av-character-emotes button:hover,.av-character-emotes button:focus-visible { outline: 0; color: #fff0bd; background: #315963; transform: translateY(-1px); }
-
 .av-office { position: absolute; inset: 0; overflow: hidden; }
 .av-office-vignette { position: absolute; inset: 0; z-index: 14; pointer-events: none; background: radial-gradient(120% 100% at 50% 30%, transparent 67%, rgba(6, 10, 16, 0.17) 100%); }
 

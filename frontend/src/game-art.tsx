@@ -6,6 +6,7 @@ import { SiteArt } from './art/structures'
 import { OfficeRoom } from './art/office'
 import { UnifiedEmpireMap } from './art/unified-empire-map'
 import { useSound } from './sound'
+import { MOTION_TIMING } from './motion'
 import {
   connectionArt, keyHash, playerStage, upgradeArt, cutsceneArt,
 } from './art/assets'
@@ -393,7 +394,7 @@ function OfficeBackdrop({ game, previewTier, activeCase, children }: OfficeScene
   const petCat = useCallback(() => {
     void play('cat', { seed: game?.id ?? 'preview-office', intensity: .55 })
     setCatAwake(true)
-    window.setTimeout(() => setCatAwake(false), 4200)
+    window.setTimeout(() => setCatAwake(false), 1400)
   }, [game?.id, play])
   const brewCoffee = useCallback(() => {
     void play('coffee', { seed: game?.id ?? 'preview-office', intensity: .48 })
@@ -440,24 +441,31 @@ export function OfficeScene(props: OfficeSceneProps) {
 /* ---------------------------------------------------- character panel */
 
 const stageTitles = ['Street Counsel', 'Rising Associate', 'Downtown Advocate', 'Power Partner', 'Global Magnate', 'Celestial Counsel']
+// Automatic entrances favor restrained professional gestures. The grounded
+// heel-click remains available to the shared character system, but does not
+// interrupt every Office visit with a theatrical movement.
+const officeEntranceActivities = ['professional-wave', 'courtroom-bow'] as const
+type OfficeEntranceActivity = (typeof officeEntranceActivities)[number]
 
 export function CharacterPanel({ game }: { game: GameState }) {
   const stage = playerStage(game.office_tier)
   const motion = useParallax<HTMLElement>()
-  const { play } = useSound()
-  const [characterActivity, setCharacterActivity] = useState<'briefing' | 'heel-click' | 'thumbs-up' | 'courtroom-bow'>('briefing')
-  const [emoteKey, setEmoteKey] = useState(0)
-  const emoteTimer = useRef<number | null>(null)
-  useEffect(() => () => {
-    if (emoteTimer.current !== null) window.clearTimeout(emoteTimer.current)
+  const [characterActivity, setCharacterActivity] = useState<'idle' | OfficeEntranceActivity>(() => (
+    officeEntranceActivities[Math.floor(Math.random() * officeEntranceActivities.length)]
+  ))
+  const entranceTimer = useRef<number | null>(null)
+  const entranceStarted = useRef(false)
+  // Opening the Office always earns one short character beat. It resolves to
+  // a neutral idle automatically; there are no controls asking
+  // the learner to repeatedly trigger decorative animation.
+  const beginEntranceTimer = useCallback(() => {
+    if (entranceStarted.current) return
+    entranceStarted.current = true
+    entranceTimer.current = window.setTimeout(() => setCharacterActivity('idle'), MOTION_TIMING.characterEntranceMs)
   }, [])
-  const playCharacterEmote = useCallback((activity: 'heel-click' | 'thumbs-up' | 'courtroom-bow') => {
-    if (emoteTimer.current !== null) window.clearTimeout(emoteTimer.current)
-    setCharacterActivity(activity)
-    setEmoteKey((key) => key + 1)
-    void play(activity === 'heel-click' ? 'bonus' : activity === 'thumbs-up' ? 'select' : 'story', { seed: `lawyer-emote:${activity}:${game.id}`, intensity: .3 })
-    emoteTimer.current = window.setTimeout(() => setCharacterActivity('briefing'), 2_650)
-  }, [game.id, play])
+  useEffect(() => () => {
+    if (entranceTimer.current !== null) window.clearTimeout(entranceTimer.current)
+  }, [])
   return (
     <aside
       className="av-character-panel"
@@ -472,12 +480,12 @@ export function CharacterPanel({ game }: { game: GameState }) {
         <div className="av-hero-figure">
           <Suspense fallback={<div className="av-rigged-character-loading" aria-label={`Preparing ${game.lawyer_name}`}><span>Rendering counsel</span></div>}>
             <StylizedCharacter
-              key={emoteKey}
               label={`${game.lawyer_name}, ${stageTitles[stage]}`}
               gender={game.character_gender}
               tier={game.office_tier}
               mode="full"
               activity={characterActivity}
+              onReady={beginEntranceTimer}
             />
           </Suspense>
           <i className="av-hero-breath-light" aria-hidden="true" />
@@ -490,11 +498,6 @@ export function CharacterPanel({ game }: { game: GameState }) {
         <strong>{game.lawyer_name}</strong>
         <span>{stageTitles[stage]}</span>
         <em>★ {game.reputation} REPUTATION</em>
-        <div className="av-character-emotes" aria-label="Character animations">
-          <button type="button" onClick={() => playCharacterEmote('heel-click')} aria-label="Play heel click animation">HEEL CLICK</button>
-          <button type="button" onClick={() => playCharacterEmote('thumbs-up')} aria-label="Play thumbs up animation">THUMBS UP</button>
-          <button type="button" onClick={() => playCharacterEmote('courtroom-bow')} aria-label="Play courtroom bow animation">BOW</button>
-        </div>
       </div>
     </aside>
   )
