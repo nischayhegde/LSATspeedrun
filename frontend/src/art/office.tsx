@@ -1,6 +1,8 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
+import type { ActiveOfficeCase, GameAsset } from '../types'
+import { loadOfficeScene } from './scene-loaders'
 
-const OfficeThreeScene = lazy(() => import('./office-three').then((module) => ({ default: module.OfficeThreeScene })))
+const OfficeThreeScene = lazy(() => loadOfficeScene().then((module) => ({ default: module.OfficeThreeScene })))
 
 function roomTheme(tier: number) {
   if (tier >= 10) return 'summit'
@@ -9,15 +11,25 @@ function roomTheme(tier: number) {
   return 'humble'
 }
 
-export function OfficeRoom({ tier, owned, staffCount = 0 }: { tier: number; owned?: Set<string>; staffCount?: number }) {
-  const upgrades = owned?.size ?? 0
+export function OfficeRoom({
+  tier,
+  assets = [],
+  layoutKey,
+  activeCase,
+}: {
+  tier: number
+  assets?: GameAsset[]
+  layoutKey?: string
+  activeCase?: ActiveOfficeCase | null
+}) {
+  const ownedAssets = useMemo(() => assets.filter((asset) => asset.owned), [assets])
   return (
     <div
       className={`av-room av-room-three theme-${roomTheme(tier)} tier-${tier}`}
-      style={{ ['--amb' as string]: Math.min(1, upgrades / 24) }}
+      style={{ ['--amb' as string]: Math.min(1, ownedAssets.length / 24) }}
     >
       <Suspense fallback={<div className="office-three-loading" aria-hidden="true" />}>
-        <OfficeThreeScene tier={tier} upgrades={upgrades} staffCount={staffCount} />
+        <OfficeThreeScene tier={tier} ownedAssets={ownedAssets} layoutKey={layoutKey} activeCase={activeCase} />
       </Suspense>
       <div className="av-room-glass-grade" aria-hidden="true" />
     </div>

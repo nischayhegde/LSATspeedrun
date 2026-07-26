@@ -42,7 +42,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 
 import { api } from './api'
 import { Brand, ErrorNotice, formatMoney, LoadingScreen, OfficeEventPopup, PauseButton, QuestionFlow } from './components'
-import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork } from './game-art'
+import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork, StaffRoster } from './game-art'
 import { PixelStudyScenery } from './art/pixel-scenery'
 import { SoundControls, useSound } from './sound'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest } from './types'
@@ -85,6 +85,17 @@ export function PerformancePage() {
   const confidenceMetrics = performance.confidence ?? { average: null, high_confidence_error_rate: null, sample: 0 }
   const readiness = performance.readiness ?? { status: 'forming' as const, lr_samples: 0, rc_samples: 0, completed_diagnostics: 0 }
   const trend = performance.trend
+  const strategyLab = performance.strategy_lab ?? {
+    catalog: [],
+    results: [],
+    trials_completed: 0,
+    strategies_tested: 0,
+    strongest: null,
+    evidence_note: 'Method evidence begins after eligible Deep Practice or Infinite questions.',
+  }
+  const leadingStrategy = strategyLab.strongest
+    ?? strategyLab.results.find((strategy) => strategy.status === 'directional')
+    ?? strategyLab.results.find((strategy) => strategy.sample > 0)
   const chartPoints = trend.length > 1
     ? trend.map((entry, index) => `${20 + index * (560 / Math.max(1, trend.length - 1))},${160 - entry.accuracy * 1.25}`).join(' ')
     : ''
@@ -131,6 +142,65 @@ export function PerformancePage() {
         <article><div><TimerReset /><span>AVERAGE SPLIT</span></div><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong><small>Comparable Sprint and Diagnostic work only</small></article>
         <article><div><Brain /><span>REVIEW RECOVERY</span></div><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong><small>{reviewMetrics.due} due · {reviewMetrics.scheduled} scheduled · {reviewMetrics.mastered} mastered</small></article>
         <article><div><Gauge /><span>CONFIDENCE ERRORS</span></div><strong>{confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`}</strong><small>High-confidence misses across {confidenceMetrics.sample} rated answers</small></article>
+      </section>
+
+      <section className="strategy-lab-panel" aria-labelledby="strategy-lab-title">
+        <div className="panel-heading strategy-lab-heading">
+          <div><span>PERSONAL METHOD LAB</span><h2 id="strategy-lab-title">Find the process that actually helps you.</h2></div>
+          <Brain />
+        </div>
+        <p className="strategy-lab-intro">Every fourth eligible Deep Practice or Infinite question may carry one short method brief. A hidden control group compares similar unprompted questions; Diagnostics, Sprints, and Review stay clean.</p>
+
+        {leadingStrategy ? (
+          <div className="strategy-leader-grid">
+            <div className="strategy-leader-copy">
+              <span className={`strategy-evidence-badge ${leadingStrategy.status}`}>{leadingStrategy.status} signal</span>
+              <h3>{leadingStrategy.title}</h3>
+              <p>{leadingStrategy.best_for}</p>
+              <small>{leadingStrategy.status === 'supported' ? 'This is your strongest currently supported method.' : 'Promising, but more prompted and control observations are required before calling it supported.'}</small>
+            </div>
+            <div className="strategy-comparison" aria-label={`${leadingStrategy.title} trial comparison`}>
+              <div><span>WITH METHOD</span><strong>{leadingStrategy.accuracy}%</strong><small>{leadingStrategy.sample} questions</small></div>
+              <div><span>MATCHED CONTROL</span><strong>{leadingStrategy.control_sample ? `${leadingStrategy.control_accuracy}%` : '—'}</strong><small>{leadingStrategy.control_sample} questions</small></div>
+              <div className={leadingStrategy.lift !== null && leadingStrategy.lift > 0 ? 'positive' : ''}><span>ACCURACY LIFT</span><strong>{leadingStrategy.lift === null ? '—' : `${leadingStrategy.lift > 0 ? '+' : ''}${leadingStrategy.lift} pts`}</strong><small>{leadingStrategy.average_seconds}s adjusted split</small></div>
+            </div>
+          </div>
+        ) : (
+          <div className="strategy-empty-state"><Activity /><div><strong>No method winner yet.</strong><p>Complete Deep Practice or Infinite questions. The first brief is eligible on question 3, then no more than once every four questions.</p></div></div>
+        )}
+
+        <div className="strategy-evidence-key" aria-label="Strategy evidence thresholds">
+          <div className="active"><b>1</b><span>FORMING<small>under 4 method or 2 control samples</small></span></div>
+          <div><b>2</b><span>DIRECTIONAL<small>at least 4 method and 2 control samples</small></span></div>
+          <div><b>3</b><span>SUPPORTED<small>at least 8 method and 4 control samples</small></span></div>
+        </div>
+
+        {strategyLab.results.length > 0 && (
+          <details className="strategy-results-detail">
+            <summary>Compare all tested methods <span>{strategyLab.strategies_tested} tested · {strategyLab.trials_completed} measured observations</span></summary>
+            <div className="strategy-results-table">
+              <div className="header"><span>Method</span><span>Evidence</span><span>Method / control</span><span>Lift</span><span>Adjusted pace</span></div>
+              {strategyLab.results.map((strategy) => (
+                <div key={strategy.key}>
+                  <strong>{strategy.title}<small>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</small></strong>
+                  <span className={`strategy-evidence-badge ${strategy.status}`}>{strategy.status}</span>
+                  <span>{strategy.sample ? `${strategy.accuracy}%` : '—'} / {strategy.control_sample ? `${strategy.control_accuracy}%` : '—'}<small>n={strategy.sample} / {strategy.control_sample}</small></span>
+                  <span>{strategy.lift === null ? '—' : `${strategy.lift > 0 ? '+' : ''}${strategy.lift} pts`}</span>
+                  <span>{strategy.sample ? `${strategy.average_seconds}s` : '—'}<small>{strategy.pace_adherence === null ? 'pace forming' : `${strategy.pace_adherence}% in target`}</small></span>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+
+        <details className="strategy-catalog-detail">
+          <summary>See the complete 14-method playbook and sources</summary>
+          <p>No source guarantees a 170+. Official LSAC guidance is the primary authority; prep-provider methods are hypotheses the app tests against your own performance.</p>
+          <div className="strategy-catalog-grid">
+            {strategyLab.catalog.map((strategy) => <article key={strategy.key}><span>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span><h3>{strategy.title}</h3><p>{strategy.prompt}</p><ol>{strategy.steps.map((step) => <li key={step}>{step}</li>)}</ol><small>Best for: {strategy.best_for}</small><div>{strategy.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>{source.label}</a>)}</div></article>)}
+          </div>
+        </details>
+        <p className="strategy-lab-caveat"><ShieldAlert /> {strategyLab.evidence_note} This is an individualized training signal, not a guaranteed score outcome.</p>
       </section>
 
       <section className="diagnostic-lab">
@@ -457,6 +527,13 @@ export function OfficePage() {
   const game = gameQuery.data!.game!
   const workingClient = effectiveClient(game)
   const active = current.data?.session
+  const activeItem = active?.pending_item ?? active?.current_item
+  const activeCase = active ? {
+    sessionId: active.id,
+    clientKey: activeItem?.case_terms?.client_key ?? game.active_client.effective_key,
+    clientName: activeItem?.case_terms?.client_name ?? workingClient.name,
+    baseFee: activeItem?.case_terms?.base_fee ?? workingClient.base_fee,
+  } : null
   const milestone = game.next_milestone
   const milestoneProgress = milestone ? Math.min(100, Math.round(game.cash / Math.max(1, milestone.cost) * 100)) : 100
 
@@ -472,30 +549,52 @@ export function OfficePage() {
         <div className="command-stats">
           <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><TrendingUp /></span>
           <span><small>ACTIVE CLIENT</small><strong>{workingClient.name}</strong><BriefcaseBusiness /></span>
+          <span className={game.upkeep.rent_arrears ? 'has-arrears' : ''}><small>{game.upkeep.completed ? 'LEASE RETIRED' : 'DAILY LEASE'}</small><strong>{game.upkeep.completed ? 'Charter complete' : `${formatMoney(game.upkeep.daily_rent, true)} / day`}</strong><CircleDollarSign /></span>
         </div>
       </section>
 
       <section className="office-world-shell">
         <ExplorableOffice
           game={game}
-          activeCase={Boolean(active)}
+          activeCase={activeCase}
           onCase={openCase}
           onFirm={() => navigate('/firm')}
           onEmpire={() => navigate('/map')}
           onStory={() => navigate('/story')}
         />
 
-        <aside className="world-mission-board">
-          <div className="mission-pin" />
-          <span>NEXT MILESTONE</span>
+        <aside className={`office-upkeep-strip ${game.upkeep.completed ? 'is-complete' : ''} ${game.upkeep.rent_arrears ? 'has-arrears' : ''}`}>
+          <div className="office-upkeep-heading">
+            <CircleDollarSign />
+            <span><small>OFFICE LEASE</small><strong>{game.upkeep.completed ? 'Obligation retired' : 'Operating account'}</strong></span>
+          </div>
+          {game.upkeep.completed ? (
+            <p>The final charter is closed. Rent and inactivity loss no longer accrue.</p>
+          ) : (
+            <div className="office-upkeep-terms">
+              <span><small>ACTIVE RATE</small><strong>{formatMoney(game.upkeep.daily_rent)} / day</strong></span>
+              <span><small>AWAY AFTER 24H</small><strong>{formatMoney(game.upkeep.offline_daily_rent)} / day</strong></span>
+              <span><small>AFTER 48H AWAY</small><strong>−{game.upkeep.reputation_decay_daily} Rep / day</strong></span>
+              <span className={game.upkeep.rent_arrears ? 'is-due' : ''}><small>OUTSTANDING</small><strong>{game.upkeep.rent_arrears ? formatMoney(game.upkeep.rent_arrears) : 'Current'}</strong></span>
+            </div>
+          )}
+          <small className="office-upkeep-note">{game.upkeep.completed ? game.upkeep.completion_requirement.label : `Settles on activity · unpaid balance capped at ${formatMoney(game.upkeep.arrears_cap)}`}</small>
+        </aside>
+
+        <aside className="office-milestone-strip">
+          <div className="office-milestone-copy">
+            <span>NEXT OFFICE</span>
+            <h2>{milestone?.name ?? 'Empire complete'}</h2>
+          </div>
           {milestone ? (
             <>
-              <h2>{milestone.name}</h2>
-              <div className="pixel-meter"><i style={{ width: `${milestoneProgress}%` }} /></div>
-              <p><b>{formatMoney(game.cash, true)}</b> / {formatMoney(milestone.cost, true)}</p>
-              <small>{milestone.reputation > game.reputation ? `LOCKED · NEED ${milestone.reputation} REP` : `${formatMoney(Math.max(0, milestone.cost - game.cash), true)} TO GO`}</small>
+              <div className="office-milestone-progress">
+                <div className="pixel-meter"><i style={{ width: `${milestoneProgress}%` }} /></div>
+                <p><b>{formatMoney(game.cash, true)}</b> / {formatMoney(milestone.cost, true)}</p>
+                <small>{milestone.reputation > game.reputation ? `LOCKED · NEED ${milestone.reputation} REP` : `${formatMoney(Math.max(0, milestone.cost - game.cash), true)} TO GO`}</small>
+              </div>
             </>
-          ) : <><h2>Empire complete</h2><p>Every skyline starts here.</p></>}
+          ) : <p>Every skyline starts here.</p>}
           <button onClick={() => { void play('ledger', { seed: 'milestone', intensity: .45 }); navigate('/firm') }}>OPEN BUILD MENU <ArrowRight /></button>
         </aside>
       </section>
@@ -902,6 +1001,7 @@ export function FirmPage() {
     (catalogRegion === 'all' || item.region === catalogRegion)
     && (catalogView === 'all' || (catalogView === 'ready' ? item.available : item.owned)),
   )
+  const unlockedStaff = game.catalog.assets.filter((item) => item.type === 'staff' && (item.owned || item.available))
   const visibleClients = game.catalog.clients.filter((item) =>
     (catalogRegion === 'all' || item.region === catalogRegion)
     && (catalogView === 'all' || (catalogView === 'ready' ? item.unlocked : item.selected)),
@@ -946,6 +1046,7 @@ export function FirmPage() {
         <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Build a legendary practice.</h1><p>Spend case fees on a living, growing office. Every improvement appears in your firm and makes the next case worth more.</p><div className="ledger-rule"><i /><span>§</span><i /></div></div>
         <div className="firm-wallet">
           <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(game.cash)}</strong><span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
+          <span className={`wallet-lease ${game.upkeep.rent_arrears ? 'has-arrears' : ''}`}><CircleDollarSign size={15} /> {game.upkeep.completed ? 'Lease retired' : `${formatMoney(game.upkeep.daily_rent)} daily rent${game.upkeep.rent_arrears ? ` · ${formatMoney(game.upkeep.rent_arrears)} due` : ''}`}</span>
           <button
             className="appearance-button"
             disabled={appearance.isPending}
@@ -963,6 +1064,7 @@ export function FirmPage() {
 
       {firmTabs.filter(({ key }) => key !== tab).map(({ key }) => <div key={key} id={`firm-panel-${key}`} role="tabpanel" aria-labelledby={`firm-tab-${key}`} hidden />)}
       <div id={`firm-panel-${tab}`} className={`firm-panel firm-panel-${tab}`} role="tabpanel" aria-labelledby={`firm-tab-${tab}`} tabIndex={0}>
+        {tab === 'staff' && <StaffRoster staff={unlockedStaff} />}
         {tab !== 'achievements' && (
           <div className="catalog-toolbar">
             <div><span>CATALOG VIEW</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
@@ -983,6 +1085,7 @@ export function FirmPage() {
             <span className="eyebrow">{nextTier.region} · OFFICE TRANSFORMATION</span>
             <h2>{nextTier.name}</h2><p>{nextTier.short}</p>
             <small>{nextTier.feature} · Requires {nextTier.reputation} Reputation and every prior upgrade, staff hire, and acquisition</small>
+            <span className="next-tier-rent"><CircleDollarSign size={14} /> New lease: {formatMoney(nextTier.rent_daily)} per day</span>
             {missingTierAssets.length > 0 && <><br /><small className="requirements missing">Still needed: {missingTierAssets.slice(0, 3).join(' · ')}{missingTierAssets.length > 3 ? ` · +${missingTierAssets.length - 3} more` : ''}</small></>}
           </div>
           <div className="tier-buy"><strong>{formatMoney(nextTier.cost)}</strong><button className="primary-button" disabled={!nextTier.available || game.cash < nextTier.cost || advance.isPending} onClick={() => advance.mutate(nextTier.tier)}>{advance.isPending ? 'Renovating…' : 'Advance firm'}</button></div>

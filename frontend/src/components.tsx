@@ -24,11 +24,11 @@ import {
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from './api'
-import { ClientPortrait, JudgePortrait } from './game-art'
-import { Bust } from './art/people'
-import { counselArt, counselFor, eventArt, keyHash } from './art/assets'
+import { ClientPortrait, CounselPortrait3D, EventVisitor3D, JudgePortrait } from './game-art'
+import { counselFor, eventArt, keyHash } from './art/assets'
 import { SoundControls, useSound, useSoundProfile } from './sound'
 import { GuidedTour, replayGuidedTour } from './guided-tour'
+import { preloadArtForRoute } from './art/scene-loaders'
 import type { AttemptReward, CoachingFeedback, GameResponse, GameState, StoryQuest, StudySession, User } from './types'
 
 
@@ -131,7 +131,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         {game && !isActiveCase && (
           <nav className="desktop-nav" aria-label="Primary navigation">
             {navItems.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
+              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForRoute(to)} onFocus={() => preloadArtForRoute(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
                 <Icon size={17} /><span>{label}</span>
               </NavLink>
             ))}
@@ -165,7 +165,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
           {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
+            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForRoute(to)} onFocus={() => preloadArtForRoute(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
               <Icon size={20} /><span>{label}</span>
             </NavLink>
           ))}
@@ -390,6 +390,22 @@ function CompactReasoningPanel({ coaching, selectedLabel }: { coaching: Coaching
 }
 
 
+function CasePageTurn({ active, spread }: { active: boolean; spread: boolean }) {
+  return (
+    <div className={`case-page-turn ${active ? 'is-turning' : ''} ${spread ? 'is-spread' : 'is-single'}`} aria-hidden="true">
+      <div className="case-page-turn-underlay"><i /><i /><i /></div>
+      <div className="case-page-turn-shadow" />
+      <div className="case-page-turn-sheet">
+        <div className="case-page-turn-front"><span>CASE ANALYSIS</span><b>COUNSEL WORK PRODUCT</b><i /><i /><i /><i /><em /></div>
+        <div className="case-page-turn-back"><span>CONTINUED</span><b>CONFIDENTIAL</b><i /><i /><i /><em /></div>
+        <div className="case-page-turn-curl" />
+        <div className="case-page-turn-edge" />
+      </div>
+    </div>
+  )
+}
+
+
 export function QuestionFlow({ session }: { session: StudySession }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -406,17 +422,27 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
   const [confidence, setConfidence] = useState(3)
   const [answerChanged, setAnswerChanged] = useState(false)
+  const [strategyApplied, setStrategyApplied] = useState<boolean | null>(null)
+  const [strategyPromptMs, setStrategyPromptMs] = useState(0)
+  const [pageTurning, setPageTurning] = useState(false)
   const [clock, setClock] = useState(Date.now())
   const [openedAt, setOpenedAt] = useState(Date.now())
   const verdictRef = useRef<HTMLDivElement>(null)
+  const pageTurnRunRef = useRef(0)
 
   useEffect(() => {
     setSelected(item?.draft.selected_label || '')
     setReasoning(item?.draft.reasoning || '')
     setConfidence(3)
     setAnswerChanged(false)
+    setStrategyApplied(null)
+    setStrategyPromptMs(0)
     setOpenedAt(Date.now())
   }, [item?.id])
+
+  useEffect(() => () => {
+    pageTurnRunRef.current += 1
+  }, [])
 
   useEffect(() => {
     if (!item?.timer_active || result) return
@@ -436,13 +462,46 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     return () => window.clearTimeout(timeout)
   }, [item?.id, reasoning, result, selected, session.id])
 
+  const beginPageTurn = async (afterCurl: () => unknown | Promise<unknown>) => {
+    if (pageTurning) return
+    const run = ++pageTurnRunRef.current
+    const startedAt = Date.now()
+    setPageTurning(true)
+    void play('paper', { seed: `page-turn:${session.id}:${item?.position ?? 0}`, intensity: .54 })
+    await new Promise((resolve) => window.setTimeout(resolve, 430))
+    if (pageTurnRunRef.current !== run) return
+    try {
+      await afterCurl()
+    } catch {
+      if (pageTurnRunRef.current === run) setPageTurning(false)
+      return
+    }
+    const remaining = Math.max(0, 940 - (Date.now() - startedAt))
+    if (remaining) await new Promise((resolve) => window.setTimeout(resolve, remaining))
+    if (pageTurnRunRef.current === run) setPageTurning(false)
+  }
+
   const submit = useMutation({
     mutationFn: () => api.submitAttempt(
       session.id,
-      { item_id: item!.id, selected_label: selected, reasoning, confidence, answer_changed: answerChanged },
+      {
+        item_id: item!.id,
+        selected_label: selected,
+        reasoning,
+        confidence,
+        answer_changed: answerChanged,
+        ...(item?.strategy_trial ? { strategy_applied: strategyApplied ?? undefined, strategy_prompt_ms: strategyPromptMs } : {}),
+      },
       crypto.randomUUID(),
     ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
+    onSuccess: ({ result: submittedResult }) => {
+      if (!submittedResult.feedback_released && !submittedResult.session_complete) {
+        void beginPageTurn(() => queryClient.invalidateQueries({ queryKey: ['session', session.id] }))
+        return
+      }
+      void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
+    },
+    onError: () => setPageTurning(false),
   })
   const finishInfinite = useMutation({
     mutationFn: () => api.finishSession(session.id),
@@ -480,6 +539,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       if (nextSession.id !== session.id) navigate(`/cases/${nextSession.id}`, { replace: true })
       else void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
     },
+    onError: () => setPageTurning(false),
   })
   const savedCoaching = result?.feedback?.coaching
   const savedReward = result?.game_reward
@@ -564,6 +624,8 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
   if (!item) return <ErrorNotice error={new Error('This case file could not be loaded.')} />
   const question = item.question
+  const strategyTrial = item.strategy_trial
+  const strategyDecisionRequired = Boolean(strategyTrial && strategyApplied === null && !result)
   const timerRatio = elapsed / Math.max(1, item.target_time_seconds * 1000)
   const caseClient = gameQuery.data?.game?.catalog.clients.find((client) => client.key === item.case_terms?.client_key)
   const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
@@ -578,6 +640,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
   return (
     <div className="question-layout">
+      <CasePageTurn active={pageTurning} spread={Boolean(question.passage)} />
       {isDiagnostic ? (
         <section className="diagnostic-session-banner" aria-label="Baseline diagnostic in progress">
           <div><Target size={22} /><span>BASELINE DIAGNOSTIC</span></div>
@@ -601,7 +664,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         <div className="active-matter-fee"><span>POTENTIAL BASE FEE</span><strong>{formatMoney(item.case_terms?.base_fee || 0)}</strong><small>Answer + reasoning + speed set the final fee</small></div>
         <div className={`opposing-counsel ${result ? (counselRattled ? 'is-rattled' : 'is-smug') : ''}`}>
           <div className="counsel-portrait">
-            <Bust src={counselArt(counsel.key, counselRattled)} backdrop="#33202b" label={`Opposing counsel ${counsel.name}`} />
+            <CounselPortrait3D seed={counsel.key} rattled={counselRattled} label={`Opposing counsel ${counsel.name}`} />
           </div>
           <div className="counsel-copy">
             <span>OPPOSING COUNSEL</span>
@@ -628,7 +691,35 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       </div>
       <div className="progress-track"><span style={{ width: `${session.progress_percent}%` }} /></div>
 
-      <div className={question.passage ? 'question-content with-passage' : 'question-content'}>
+      {strategyTrial && (
+        <section className={`strategy-trial ${strategyApplied === true ? 'is-applied' : strategyApplied === false ? 'is-skipped' : ''}`} aria-label={`Strategy trial: ${strategyTrial.title}`}>
+          <div className="strategy-trial-seal"><Brain size={21} /><small>{session.practice_style === 'deep' ? 'PARTNER BRIEF' : 'METHOD TRIAL'}</small></div>
+          <div className="strategy-trial-copy">
+            <span>PERSONALIZED STRATEGY EXPERIMENT · {strategyTrial.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
+            <h2>{strategyTrial.title}</h2>
+            <p>{strategyTrial.prompt}</p>
+            <ol>{strategyTrial.steps.map((step, index) => <li key={step}><b>{index + 1}</b>{step}</li>)}</ol>
+            <details><summary>Why this method is being tested</summary><p>It is appropriate for {strategyTrial.best_for.toLowerCase()}. Your accuracy is compared with matched, unprompted cases; prompt-reading time is removed from pace analysis.</p><div>{strategyTrial.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>{source.label}</a>)}</div></details>
+          </div>
+          <div className="strategy-trial-decision">
+            {!result ? <>
+              <small>Choose before answering</small>
+              <button type="button" className={strategyApplied === true ? 'active' : ''} aria-pressed={strategyApplied === true} onClick={() => {
+                if (strategyApplied === null) setStrategyPromptMs(Math.min(60_000, Date.now() - openedAt))
+                setStrategyApplied(true)
+                void play('select', { seed: `${item.id}:strategy-use`, intensity: .36 })
+              }}><Check size={15} /> Use this brief</button>
+              <button type="button" className={strategyApplied === false ? 'active' : ''} aria-pressed={strategyApplied === false} onClick={() => {
+                if (strategyApplied === null) setStrategyPromptMs(Math.min(60_000, Date.now() - openedAt))
+                setStrategyApplied(false)
+                void play('paper', { seed: `${item.id}:strategy-skip`, intensity: .25 })
+              }}>Solve normally</button>
+            </> : <div className="strategy-trial-recorded"><Check size={17} /><span>{strategyApplied ? 'Method trial recorded' : 'Unprompted solve recorded'}</span></div>}
+          </div>
+        </section>
+      )}
+
+      <div className={`${question.passage ? 'question-content with-passage' : 'question-content'} ${strategyDecisionRequired ? 'strategy-decision-pending' : ''}`}>
         {question.passage && (
           <article className="passage-card">
             <div className="document-heading"><BookOpen size={16} /><span>EXHIBIT A · READING PASSAGE</span></div>
@@ -651,7 +742,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                   type="button"
                   role="radio"
                   aria-checked={chosen}
-                  disabled={Boolean(result)}
+                  disabled={Boolean(result) || strategyDecisionRequired}
                   className={`choice ${chosen ? 'selected' : ''} ${correct ? 'correct' : ''} ${wrongSelected ? 'incorrect' : ''}`}
                   key={choice.label}
                   onClick={() => {
@@ -678,6 +769,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               <textarea
                 id="reasoning"
                 value={reasoning}
+                disabled={strategyDecisionRequired}
                 onChange={(event) => setReasoning(event.target.value)}
                 placeholder="Identify the conclusion, decisive evidence or logical relationship, and why your choice answers the exact question…"
                 rows={5}
@@ -690,7 +782,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           {!result && (
             <div className="confidence-check" aria-label="Answer confidence">
               <span>Confidence</span>
-              <div>{[1, 2, 3, 4, 5].map((value) => <button type="button" key={value} className={confidence === value ? 'active' : ''} onClick={() => setConfidence(value)} aria-pressed={confidence === value}>{value}</button>)}</div>
+              <div>{[1, 2, 3, 4, 5].map((value) => <button type="button" key={value} disabled={strategyDecisionRequired} className={confidence === value ? 'active' : ''} onClick={() => setConfidence(value)} aria-pressed={confidence === value}>{value}</button>)}</div>
               <small>{confidence <= 2 ? 'Unsure' : confidence >= 4 ? 'Confident' : 'Moderate'}</small>
             </div>
           )}
@@ -698,11 +790,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           {!result && (
             <div className="answer-actions">
               {submit.error && <ErrorNotice error={submit.error} />}
-              <button className="primary-button verdict-button" disabled={!selected || (requiresReasoning && !reasoning.trim()) || submit.isPending} onClick={() => {
+              <button className="primary-button verdict-button" disabled={!selected || (requiresReasoning && !reasoning.trim()) || strategyDecisionRequired || submit.isPending || pageTurning} onClick={() => {
                 void play('submit', { seed: item.id, intensity: .68 })
                 submit.mutate()
               }}>
-                {submit.isPending ? 'Recording answer…' : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
+                {strategyDecisionRequired ? 'Choose a method above' : submit.isPending || pageTurning ? 'Recording answer…' : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
               </button>
             </div>
           )}
@@ -742,10 +834,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               {continueCases.error && <ErrorNotice error={continueCases.error} />}
               <button
                 className="primary-button next-case-button"
-                disabled={!coachingReady || (session.practice_style === 'deep' && !reward) || continueCases.isPending || coaching.isLoading}
-                onClick={() => continueCases.mutate()}
+                disabled={!coachingReady || (session.practice_style === 'deep' && !reward) || continueCases.isPending || coaching.isLoading || pageTurning}
+                onClick={() => void beginPageTurn(() => continueCases.mutateAsync())}
               >
-                {!coachingReady ? 'Preparing concise reasoning…' : continueCases.isPending ? 'Opening next item…' : isInfinite ? <>Next question <ArrowRight size={18} /></> : session.practice_style === 'review' ? <>Continue review <ArrowRight size={18} /></> : <>Next case <ArrowRight size={18} /></>}
+                {!coachingReady ? 'Preparing concise reasoning…' : continueCases.isPending || pageTurning ? 'Turning the page…' : isInfinite ? <>Next question <ArrowRight size={18} /></> : session.practice_style === 'review' ? <>Continue review <ArrowRight size={18} /></> : <>Next case <ArrowRight size={18} /></>}
               </button>
             </div>
           )}
@@ -819,6 +911,7 @@ export function OfficeEventPopup({ game }: { game: GameState }) {
       <article className={`office-event event-${quest.category}`}>
         <div className="event-art">
           <img src={eventArt(quest.scene)} alt="" draggable={false} />
+          <div className="event-visitor-3d"><EventVisitor3D seed={quest.key} label={quest.patron} /></div>
           <span className="event-category">{EVENT_CATEGORY_LABEL[quest.category]}</span>
         </div>
         <div className="event-body">

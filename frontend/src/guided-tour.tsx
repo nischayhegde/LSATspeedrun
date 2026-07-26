@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, BookOpen, BriefcaseBusiness, Building2, Check, Clock3, Map, Scale, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useSound } from './sound'
+import { loadStylizedCharacter } from './art/scene-loaders'
 import './guided-tour.css'
 
+const StylizedCharacter = lazy(() => loadStylizedCharacter().then((module) => ({ default: module.StylizedCharacter })))
 
 const TOUR_STORAGE_KEY = 'lawyer-speedrun:guided-tour:v3'
 const TOUR_REPLAY_EVENT = 'lawyer-speedrun:replay-tour'
@@ -224,7 +226,11 @@ export function GuidedTour() {
           <div className="tour-skyline"><i /><i /><i /><i /><i /></div>
           <div className="tour-office-window" />
           <div className="tour-desk"><span /><b /><em /></div>
-          <div className="tour-counsel-silhouette"><i /><b /><span /></div>
+          <div className="tour-counsel-character">
+            <Suspense fallback={null}>
+              <StylizedCharacter gender="male" tier={1} role="guide" mode="scene" direction="right" activity="briefing" label="Your orientation guide" />
+            </Suspense>
+          </div>
           <div className="tour-case-stream"><i>LR</i><i>RC</i><i>LR</i></div>
         </div>
       )}
@@ -240,6 +246,13 @@ export function GuidedTour() {
       )}
       <section className={`guided-tour-card place-${placement}`}>
         <div className="tour-card-progress"><i style={{ width: `${progress}%` }} /></div>
+        {step.kind !== 'premise' && (
+          <div className="tour-guide-avatar" aria-hidden="true">
+            <Suspense fallback={null}>
+              <StylizedCharacter gender="male" tier={1} role="guide" mode="portrait" mood={step.kind === 'practice' ? 'thinking' : 'happy'} activity={step.kind === 'practice' ? 'working' : 'briefing'} />
+            </Suspense>
+          </div>
+        )}
         <div className="tour-card-heading">
           <span>{step.eyebrow}</span>
           <small>{String(index + 1).padStart(2, '0')} / {String(steps.length).padStart(2, '0')}</small>

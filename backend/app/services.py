@@ -13,6 +13,7 @@ from .extensions import db
 from .game import CLIENT_BY_KEY, lock_user_profile, serialize_settlement, settle_attempt, snapshot_case_context
 from .models import Attempt, Question, ReviewQueueItem, SessionItem, SkillProgress, StudySession, User, utcnow
 from .seed import SOURCE_PREFIX
+from .strategies import assign_strategy_trial, serialize_strategy, strategy_performance
 
 
 PRACTICE_STYLES = {"deep", "speedrun", "infinite", "review"}
@@ -212,11 +213,17 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
     context = item.game_context_json or {}
     client_key = str(context.get("client_key") or "walk_in")
     client = CLIENT_BY_KEY.get(client_key, CLIENT_BY_KEY["walk_in"])
+    strategy_trial = (
+        serialize_strategy(item.strategy_key)
+        if item.strategy_key and item.strategy_variant == "prompt"
+        else None
+    )
     return {
         "id": item.id,
         "position": item.position,
         "section_index": item.section_index,
         "requires_reasoning": item.requires_reasoning,
+        "strategy_trial": ({**strategy_trial, "variant": "prompt"} if strategy_trial else None),
         "served_at": _iso_utc(item.served_at),
         "elapsed_ms": _elapsed_ms(item),
         "target_time_seconds": item.target_time_seconds,
@@ -425,12 +432,15 @@ def create_study_session(
             target_time_seconds = 150
         else:
             target_time_seconds = 135 if question.passage_id and question.passage_id == previous_passage_id else 330
+        strategy_trial = assign_strategy_trial(user.id, question, practice_style, position)
         db.session.add(
             SessionItem(
                 session_id=session.id,
                 question_id=question.id,
                 position=position,
                 requires_reasoning=practice_style in {"deep", "review"},
+                strategy_key=strategy_trial["key"] if strategy_trial else None,
+                strategy_variant=strategy_trial["variant"] if strategy_trial else None,
                 target_time_seconds=target_time_seconds,
             )
         )
@@ -751,12 +761,15 @@ def _append_infinite_item(session: StudySession, user: User) -> None:
     target_time_seconds = 150
     if question.section == "Reading Comprehension":
         target_time_seconds = 135 if previous and previous.question.passage_id == question.passage_id else 330
+    strategy_trial = assign_strategy_trial(user.id, question, session.practice_style, session.total_items)
     db.session.add(
         SessionItem(
             session_id=session.id,
             question_id=question.id,
             position=session.total_items,
             requires_reasoning=False,
+            strategy_key=strategy_trial["key"] if strategy_trial else None,
+            strategy_variant=strategy_trial["variant"] if strategy_trial else None,
             target_time_seconds=target_time_seconds,
         )
     )
@@ -870,6 +883,17 @@ def submit_attempt(
         raise ValueError("invalid_confidence")
     if confidence < 1 or confidence > 5:
         raise ValueError("invalid_confidence")
+    strategy_applied = None
+    strategy_prompt_ms = 0
+    if item.strategy_key and item.strategy_variant == "prompt":
+        raw_strategy_applied = payload.get("strategy_applied")
+        if not isinstance(raw_strategy_applied, bool):
+            raise ValueError("strategy_decision_required")
+        strategy_applied = raw_strategy_applied
+        try:
+            strategy_prompt_ms = max(0, min(int(payload.get("strategy_prompt_ms") or 0), 60_000))
+        except (TypeError, ValueError):
+            raise ValueError("invalid_strategy_prompt_time")
     elapsed_ms = max(1000, min(_elapsed_ms(item), 15 * 60 * 1000))
     is_correct = selected_label == item.question.correct_answer
     _update_skill(user.id, item.question, is_correct, elapsed_ms)
@@ -883,6 +907,10 @@ def submit_attempt(
         reasoning_text=reasoning,
         confidence=confidence,
         answer_changed=bool(payload.get("answer_changed", False)),
+        strategy_key=item.strategy_key,
+        strategy_variant=item.strategy_variant,
+        strategy_applied=strategy_applied,
+        strategy_prompt_ms=strategy_prompt_ms,
         evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "coached_practice")),
         server_elapsed_ms=elapsed_ms,
         client_elapsed_ms=None,
@@ -1192,6 +1220,7 @@ def performance_snapshot(user: User) -> dict:
         "sample": len(confidence_values),
     }
     recommendation_skill = next((skill for skill in skills if skill["attempts"] >= 3), None)
+    strategy_lab = strategy_performance(user.id)
 
     return {
         "overall": overall,
@@ -1209,6 +1238,7 @@ def performance_snapshot(user: User) -> dict:
         },
         "review": {**queue, "recovery_rate": review_recovery},
         "confidence": confidence,
+        "strategy_lab": strategy_lab,
         "recommendation": (
             {
                 "skill": recommendation_skill["name"],

@@ -8,7 +8,15 @@ from sqlalchemy import update
 
 from app import create_app
 from app.extensions import db
-from app.game import ASSETS, ASSET_BY_KEY, CLIENT_BY_KEY, FIRM_TIERS, TIER_GATED_ASSET_TYPES
+from app.game import (
+    ASSETS,
+    ASSET_BY_KEY,
+    CLIENT_BY_KEY,
+    FINAL_CASE_KEY,
+    FIRM_TIERS,
+    TIER_GATED_ASSET_TYPES,
+    settle_upkeep,
+)
 from app.models import (
     AiJob,
     Attempt,
@@ -146,6 +154,185 @@ def create_game(client, headers, gender: str = "female"):
     )
     assert response.status_code == 201
     return response.json["game"]
+
+
+def test_office_rent_rates_are_systematic_and_one_active_day_settles_once(app):
+    client = app.test_client()
+    headers = login(client, "rent-active@example.test")
+    created = create_game(client, headers)
+    now = utcnow().replace(microsecond=0)
+
+    assert [tier["rent_daily"] for tier in FIRM_TIERS] == [
+        max(15, tier["cost"] // 50) for tier in FIRM_TIERS
+    ]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = 1_000
+        profile.upkeep_settled_at = now - timedelta(days=1)
+        profile.last_active_at = now - timedelta(days=1)
+        db.session.commit()
+
+        state = settle_upkeep(profile, now)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert state["settlement"] == {"new_rent": 15, "paid": 15, "reputation_change": 0.0}
+        assert profile.cash == 985
+        assert profile.lifetime_rent_paid == 15
+        assert profile.rent_arrears == 0
+        assert LedgerEntry.query.filter_by(user_id=profile.user_id, kind="office_rent").count() == 1
+
+        settle_upkeep(profile, now)
+        assert LedgerEntry.query.filter_by(user_id=profile.user_id, kind="office_rent").count() == 1
+
+
+def test_mixed_active_and_offline_rent_and_inactivity_reputation_decay(app):
+    client = app.test_client()
+    headers = login(client, "rent-offline@example.test")
+    created = create_game(client, headers)
+    now = utcnow().replace(microsecond=0)
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = 1_000
+        profile.reputation = 50
+        profile.upkeep_settled_at = now - timedelta(days=3)
+        profile.last_active_at = now - timedelta(days=3)
+        db.session.commit()
+
+        state = settle_upkeep(profile, now)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        # $15 for the first active day + two days at the 20% away rate.
+        assert state["settlement"]["new_rent"] == 21
+        assert profile.cash == 979
+        assert profile.reputation == 49.8
+        assert state["offline_daily_rent"] == 3
+        assert state["reputation_grace_hours"] == 48
+
+
+def test_reputation_guard_reduces_inactivity_loss(app):
+    client = app.test_client()
+    headers = login(client, "rent-guard@example.test")
+    created = create_game(client, headers)
+    now = utcnow().replace(microsecond=0)
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = 1_000
+        profile.reputation = 50
+        profile.upkeep_settled_at = now - timedelta(days=4)
+        profile.last_active_at = now - timedelta(days=4)
+        db.session.add(PlayerAsset(
+            profile_id=profile.id,
+            asset_key="media_response_room",
+            asset_type="upgrade",
+            purchase_price=ASSET_BY_KEY["media_response_room"]["cost"],
+        ))
+        db.session.commit()
+
+        state = settle_upkeep(profile, now)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert state["base_reputation_decay_daily"] == .25
+        assert state["reputation_decay_daily"] == .2
+        assert state["reputation_guard"] == 1
+        assert profile.reputation == 49.6
+
+
+def test_rent_arrears_are_capped_repaid_and_fractional_accrual_is_preserved(app):
+    client = app.test_client()
+    headers = login(client, "rent-arrears@example.test")
+    created = create_game(client, headers)
+    now = utcnow().replace(microsecond=0)
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 1
+        profile.cash = 0
+        profile.upkeep_settled_at = now - timedelta(days=30)
+        profile.last_active_at = now - timedelta(days=30)
+        db.session.commit()
+
+        state = settle_upkeep(profile, now)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert state["arrears_cap"] == FIRM_TIERS[1]["rent_daily"] * 3
+        assert profile.rent_arrears == state["arrears_cap"]
+
+        profile.cash = 500
+        db.session.commit()
+        settle_upkeep(profile, now)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert profile.rent_arrears == 0
+        assert profile.cash == 500 - state["arrears_cap"]
+        assert LedgerEntry.query.filter_by(user_id=profile.user_id, kind="office_rent").count() == 1
+
+    fractional_client = app.test_client()
+    fractional_headers = login(fractional_client, "rent-fractional@example.test")
+    fractional = create_game(fractional_client, fractional_headers)
+    start = now + timedelta(days=1)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=fractional["id"]).one()
+        profile.cash = 1_000
+        profile.upkeep_settled_at = start
+        profile.last_active_at = start
+        db.session.commit()
+        for hour in range(1, 25):
+            settle_upkeep(profile, start + timedelta(hours=hour))
+        profile = PlayerProfile.query.filter_by(id=fractional["id"]).one()
+        assert profile.cash == 985
+        assert profile.lifetime_rent_paid == 15
+        assert profile.rent_accrual_micros == 0
+
+
+def test_final_case_completion_stops_future_rent_and_reputation_decay(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "rent-complete@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 14
+        profile.reputation = 94
+        profile.story_state.active_quest_key = FINAL_CASE_KEY
+        profile.story_state.quest_progress = 7
+        db.session.commit()
+
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    submitted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "reasoning": "Choice C follows from the controlling premise while each alternative adds an unsupported condition.",
+        },
+        headers={**headers, "Idempotency-Key": "complete-final-charter"},
+    ).json["result"]
+    coaching = {
+        "explanation_grade": 90,
+        "reasoning_verdict": "strong",
+        "reasoning_summary": "The controlling premise and unsupported alternatives were identified.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        attempt = db.session.get(Attempt, submitted["attempt_id"])
+        run_attempt_coaching(attempt)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert FINAL_CASE_KEY in profile.story_state.quest_history_json
+        assert profile.game_completed_at is not None
+        cash_after = profile.cash
+        reputation_after = profile.reputation
+
+        future = utcnow().replace(microsecond=0) + timedelta(days=60)
+        profile.upkeep_settled_at = future - timedelta(days=60)
+        profile.last_active_at = future - timedelta(days=60)
+        db.session.commit()
+        state = settle_upkeep(profile, future)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert state["completed"] is True
+        assert state["accruing"] is False
+        assert profile.cash == cash_after
+        assert profile.reputation == reputation_after
 
 
 def test_firm_advance_is_blocked_until_every_prior_upgrade_hire_and_acquisition_is_owned(app):
@@ -1556,3 +1743,212 @@ def test_player_is_never_stranded_without_an_available_client(app):
         select_client(profile, "walk_in")
         contract = PlayerClientContract.query.filter_by(profile_id=profile.id, client_key="walk_in").one()
         assert contract.cases_remaining == CLIENT_BY_KEY["walk_in"]["length"]
+
+
+def test_strategy_trials_are_sparse_and_never_contaminate_measurement_modes(app):
+    client = app.test_client()
+    headers = login(client, "strategy-cadence@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 7, "practice_style": "deep"},
+        headers=headers,
+    ).json["session"]
+
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        assert [item.position for item in items if item.strategy_key] == [2, 6]
+        assert all(item.strategy_variant in {"prompt", "control"} for item in items if item.strategy_key)
+
+        from app.strategies import assign_strategy_trial
+
+        user = User.query.filter_by(email="strategy-cadence@example.test").one()
+        question = Question.query.order_by(Question.id).first()
+        assert assign_strategy_trial(user.id, question, "speedrun", 2) is None
+        assert assign_strategy_trial(user.id, question, "review", 2) is None
+        assert assign_strategy_trial(user.id, question, "deep", 1) is None
+        assert assign_strategy_trial(user.id, question, "infinite", 2) is not None
+
+
+def test_strategy_control_assignment_is_stable_and_hidden(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "strategy-control@example.test")
+    create_game(client, headers)
+    with app.app_context():
+        from app.services import serialize_item
+        from app.strategies import assign_strategy_trial
+
+        user = User.query.filter_by(email="strategy-control@example.test").one()
+        question = Question.query.order_by(Question.id).first()
+        monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.0)
+        assigned = assign_strategy_trial(user.id, question, "deep", 2)
+        assert assigned["variant"] == "control"
+        assert assigned["key"] in {"argument_core", "prephrase", "scope_precision", "conditional_chain"}
+
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            target_minutes=35,
+            total_items=1,
+        )
+        db.session.add(session)
+        db.session.flush()
+        item = SessionItem(
+            session_id=session.id,
+            question_id=question.id,
+            position=0,
+            requires_reasoning=True,
+            strategy_key=assigned["key"],
+            strategy_variant=assigned["variant"],
+        )
+        db.session.add(item)
+        db.session.flush()
+        assert serialize_item(item)["strategy_trial"] is None
+
+
+def test_strategy_candidates_respect_causal_and_assumption_boundaries(app):
+    with app.app_context():
+        from app.strategies import _candidate_keys
+
+        question = Question.query.filter_by(section="Logical Reasoning").first()
+        question.question_type = "Strengthen"
+        question.stimulus = "A committee adopted the proposal after reviewing three reports."
+        question.stem = "Which choice, if true, most strengthens the argument?"
+        assert "causal_audit" not in _candidate_keys(question)
+
+        question.stimulus = "The committee claims that the proposal caused the reported decline."
+        assert "causal_audit" in _candidate_keys(question)
+
+        question.question_type = "Assumption"
+        question.stem = "Which assumption, if made, enables the conclusion to be properly drawn?"
+        assert "negation_test" not in _candidate_keys(question)
+        question.stem = "Which assumption is required by the argument?"
+        assert "negation_test" in _candidate_keys(question)
+
+
+def test_prompted_strategy_requires_a_decision_and_valid_prompt_time(app):
+    client = app.test_client()
+    headers = login(client, "strategy-submit@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "deep"},
+        headers=headers,
+    ).json["session"]
+    item_id = session["current_item"]["id"]
+    payload = {
+        "item_id": item_id,
+        "selected_label": "C",
+        "reasoning": "The credited answer follows from the stated relationship without adding a new assumption.",
+        "confidence": 4,
+    }
+    with app.app_context():
+        item = db.session.get(SessionItem, item_id)
+        item.strategy_key = "argument_core"
+        item.strategy_variant = "prompt"
+        db.session.commit()
+
+    missing = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json=payload,
+        headers={**headers, "Idempotency-Key": "strategy-missing-decision"},
+    )
+    assert missing.status_code == 400
+    assert missing.json["error"]["code"] == "strategy_decision_required"
+
+    invalid_time = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={**payload, "strategy_applied": True, "strategy_prompt_ms": "not-a-duration"},
+        headers={**headers, "Idempotency-Key": "strategy-invalid-time"},
+    )
+    assert invalid_time.status_code == 400
+    assert invalid_time.json["error"]["code"] == "invalid_strategy_prompt_time"
+
+    accepted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={**payload, "strategy_applied": True, "strategy_prompt_ms": 2_400},
+        headers={**headers, "Idempotency-Key": "strategy-accepted"},
+    )
+    assert accepted.status_code == 200
+    with app.app_context():
+        attempt = Attempt.query.filter_by(idempotency_key="strategy-accepted").one()
+        assert attempt.strategy_key == "argument_core"
+        assert attempt.strategy_variant == "prompt"
+        assert attempt.strategy_applied is True
+        assert attempt.strategy_prompt_ms == 2_400
+
+
+def test_strategy_dashboard_waits_for_supported_evidence_and_excludes_skips(app):
+    client = app.test_client()
+    headers = login(client, "strategy-dashboard@example.test")
+    create_game(client, headers)
+    with app.app_context():
+        from app.strategies import strategy_performance
+
+        user = User.query.filter_by(email="strategy-dashboard@example.test").one()
+        question = Question.query.order_by(Question.id).first()
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            status="completed",
+            target_minutes=35,
+            total_items=13,
+            current_index=13,
+        )
+        db.session.add(session)
+        db.session.flush()
+        for position in range(13):
+            variant = "prompt" if position < 9 else "control"
+            applied = position < 8 if variant == "prompt" else None
+            item = SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=position,
+                requires_reasoning=True,
+                strategy_key="argument_core",
+                strategy_variant=variant,
+                target_time_seconds=150,
+                completed_at=utcnow(),
+            )
+            db.session.add(item)
+            db.session.flush()
+            is_correct = position in {0, 1, 2, 3, 4, 5, 9, 10}
+            db.session.add(
+                Attempt(
+                    user_id=user.id,
+                    session_item_id=item.id,
+                    idempotency_key=f"strategy-dashboard-{position}",
+                    selected_label="C" if is_correct else "A",
+                    is_correct=is_correct,
+                    reasoning_text="A concrete argument analysis.",
+                    confidence=4,
+                    strategy_key="argument_core",
+                    strategy_variant=variant,
+                    strategy_applied=applied,
+                    strategy_prompt_ms=5_000 if applied else 0,
+                    evidence_class="coached_practice",
+                    server_elapsed_ms=100_000,
+                )
+            )
+        db.session.commit()
+
+        snapshot = strategy_performance(user.id)
+        result = snapshot["results"][0]
+        assert result["sample"] == 8
+        assert result["control_sample"] == 4
+        assert result["skipped"] == 1
+        assert result["accuracy"] == 75
+        assert result["control_accuracy"] == 50
+        assert result["lift"] == 25
+        assert result["average_seconds"] == 95
+        assert result["status"] == "supported"
+        assert snapshot["strongest"]["key"] == "argument_core"
+        assert snapshot["trials_completed"] == 12
+
+    response = client.get("/v1/performance", headers=headers)
+    assert response.status_code == 200
+    assert response.json["performance"]["strategy_lab"]["strongest"]["key"] == "argument_core"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import timezone
+from datetime import timedelta, timezone
 
 from sqlalchemy import or_
 
@@ -30,11 +30,19 @@ from .story import (
 )
 
 
-RULE_VERSION = "lawyer-tycoon-v3"
+RULE_VERSION = "lawyer-tycoon-v4"
 STARTING_CASH = 250
 DAILY_REWARD_MULTIPLIERS = {5: 1, 10: 3, 20: 8}
 TARGET_CASES_PER_MILESTONE = 4
 FIRM_TIER_COST_MULTIPLIER = 2
+FINAL_CASE_KEY = "constellation_charter"
+ACTIVE_RENT_WINDOW = timedelta(hours=24)
+REPUTATION_GRACE_PERIOD = timedelta(hours=48)
+OFFLINE_RENT_NUMERATOR = 1
+OFFLINE_RENT_DENOMINATOR = 5
+RENT_ARREARS_DAYS = 3
+RENT_ACCRUAL_MICROS_PER_CENT = 1_000_000
+SECONDS_PER_DAY = 24 * 60 * 60
 
 FIRM_TIERS = [
     {"tier": 0, "name": "Wooden Shack", "cost": 0, "reputation": 0, "region": "Old Quarter", "feature": "Street-level practice", "short": "A one-desk practice with a lot to prove."},
@@ -53,6 +61,12 @@ FIRM_TIERS = [
     {"tier": 13, "name": "Lunar Embassy of Law", "cost": 70_000_000_000, "reputation": 92, "region": "Lunar Gate", "feature": "Interworld treaty vault", "short": "A moon-linked embassy settling disputes beyond national borders."},
     {"tier": 14, "name": "Planetary Justice Nexus", "cost": 160_000_000_000, "reputation": 94, "region": "Celestial Crown", "feature": "Justice constellation", "short": "A legendary network that coordinates law across an entire civilization."},
 ]
+
+# Office rent scales predictably with the headquarters investment. The starter
+# practice still has a modest ground lease, while every later office costs 2%
+# of its purchase price per day to operate.
+for _firm_tier in FIRM_TIERS:
+    _firm_tier["rent_daily"] = max(15, int(_firm_tier["cost"]) // 50)
 
 def _asset(key, asset_type, name, cost, reputation, tier, benefit, description, *, requires=(), region=None, art=None, **effects):
     return {
@@ -488,6 +502,190 @@ def lock_user_profile(user_id: str) -> PlayerProfile | None:
     )
 
 
+def _as_utc(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _game_complete(profile: PlayerProfile) -> bool:
+    if profile.game_completed_at is not None:
+        return True
+    state = profile.story_state
+    return bool(state and FINAL_CASE_KEY in (state.quest_history_json or []))
+
+
+def _reputation_decay_state(profile: PlayerProfile, owned: set[str] | None = None) -> dict:
+    owned = owned if owned is not None else _owned_keys(profile)
+    base_rate = .25 + .025 * profile.office_tier
+    guard = sum(
+        float(ASSET_BY_KEY[key].get("reputation_guard", 0))
+        for key in owned
+        if key in ASSET_BY_KEY
+    )
+    # Reputation safeguards can absorb at most 80% of neglect. Even the most
+    # sophisticated firm still needs its lawyer to return and work cases.
+    reduction = min(base_rate * .8, guard * .05)
+    return {
+        "base_rate": round(base_rate, 3),
+        "guard": round(guard, 2),
+        "effective_rate": round(max(.05, base_rate - reduction), 3),
+    }
+
+
+def _upkeep_state(profile: PlayerProfile, owned: set[str] | None = None) -> dict:
+    tier = FIRM_TIERS[profile.office_tier]
+    daily_rent = int(tier["rent_daily"])
+    decay = _reputation_decay_state(profile, owned)
+    completed = _game_complete(profile)
+    return {
+        "daily_rent": daily_rent,
+        "offline_daily_rent": round(daily_rent * OFFLINE_RENT_NUMERATOR / OFFLINE_RENT_DENOMINATOR),
+        "offline_multiplier": OFFLINE_RENT_NUMERATOR / OFFLINE_RENT_DENOMINATOR,
+        "active_window_hours": round(ACTIVE_RENT_WINDOW.total_seconds() / 3600),
+        "reputation_grace_hours": round(REPUTATION_GRACE_PERIOD.total_seconds() / 3600),
+        "rent_arrears": int(profile.rent_arrears or 0),
+        "arrears_cap": daily_rent * RENT_ARREARS_DAYS,
+        "lifetime_rent_paid": int(profile.lifetime_rent_paid or 0),
+        "last_settled_at": _iso_utc(profile.upkeep_settled_at),
+        "last_active_at": _iso_utc(profile.last_active_at),
+        "base_reputation_decay_daily": decay["base_rate"],
+        "reputation_guard": decay["guard"],
+        "reputation_decay_daily": 0 if completed else decay["effective_rate"],
+        "accruing": not completed,
+        "completed": completed,
+        "completed_at": _iso_utc(profile.game_completed_at),
+        "completion_requirement": {
+            "key": FINAL_CASE_KEY,
+            "label": "Complete The Constellation Charter, the final map case",
+        },
+    }
+
+
+def _rent_segment_micros(daily_rent: int, start, end, *, numerator: int = 1, denominator: int = 1) -> int:
+    """Return millionths of a cent without losing short settlement intervals."""
+    if end <= start:
+        return 0
+    elapsed = end - start
+    elapsed_micros = (
+        elapsed.days * SECONDS_PER_DAY * 1_000_000
+        + elapsed.seconds * 1_000_000
+        + elapsed.microseconds
+    )
+    rent_micros_per_day = daily_rent * 100 * RENT_ACCRUAL_MICROS_PER_CENT
+    return (
+        rent_micros_per_day * elapsed_micros * numerator
+        // (SECONDS_PER_DAY * 1_000_000 * denominator)
+    )
+
+
+def _pay_rent_arrears(
+    profile: PlayerProfile,
+    *,
+    source_id: str,
+    detail: dict | None = None,
+) -> int:
+    arrears = max(0, int(profile.rent_arrears or 0))
+    paid = min(max(0, int(profile.cash)), arrears)
+    if paid <= 0:
+        return 0
+    profile.cash -= paid
+    profile.rent_arrears = arrears - paid
+    profile.lifetime_rent_paid = int(profile.lifetime_rent_paid or 0) + paid
+    profile.lifetime_spending += paid
+    _ledger(
+        profile,
+        "office_rent",
+        source_id[:100],
+        -paid,
+        {
+            "office": FIRM_TIERS[profile.office_tier]["name"],
+            "daily_rent": FIRM_TIERS[profile.office_tier]["rent_daily"],
+            "arrears_remaining": profile.rent_arrears,
+            **(detail or {}),
+        },
+    )
+    return paid
+
+
+def _settle_upkeep_locked(profile: PlayerProfile, now=None) -> dict:
+    """Accrue rent and inactivity loss through ``now`` on an already locked profile."""
+    now = _as_utc(now or utcnow())
+    settled_at = _as_utc(profile.upkeep_settled_at) or now
+    last_active_at = _as_utc(profile.last_active_at) or settled_at
+
+    if _game_complete(profile):
+        profile.game_completed_at = profile.game_completed_at or now
+        _pay_rent_arrears(
+            profile,
+            source_id=f"completion:{now.isoformat()}",
+            detail={"income_source": "campaign_completion"},
+        )
+        profile.upkeep_settled_at = now
+        profile.last_active_at = now
+        return _upkeep_state(profile)
+
+    daily_rent = int(FIRM_TIERS[profile.office_tier]["rent_daily"])
+    active_until = last_active_at + ACTIVE_RENT_WINDOW
+    active_end = min(now, active_until)
+    active_micros = _rent_segment_micros(daily_rent, settled_at, active_end)
+    offline_start = max(settled_at, active_until)
+    offline_micros = _rent_segment_micros(
+        daily_rent,
+        offline_start,
+        now,
+        numerator=OFFLINE_RENT_NUMERATOR,
+        denominator=OFFLINE_RENT_DENOMINATOR,
+    )
+
+    accrued_micros = max(0, int(profile.rent_accrual_micros or 0)) + active_micros + offline_micros
+    micros_per_dollar = 100 * RENT_ACCRUAL_MICROS_PER_CENT
+    newly_due, profile.rent_accrual_micros = divmod(accrued_micros, micros_per_dollar)
+    arrears_before = max(0, int(profile.rent_arrears or 0))
+    arrears_cap = daily_rent * RENT_ARREARS_DAYS
+    uncapped_arrears = arrears_before + newly_due
+    profile.rent_arrears = min(arrears_cap, uncapped_arrears)
+
+    decay = _reputation_decay_state(profile)
+    decay_start = max(settled_at, last_active_at + REPUTATION_GRACE_PERIOD)
+    inactive_decay_seconds = max(0.0, (now - decay_start).total_seconds())
+    reputation_before = profile.reputation
+    if inactive_decay_seconds > 0:
+        loss = decay["effective_rate"] * inactive_decay_seconds / SECONDS_PER_DAY
+        profile.reputation = round(max(0, profile.reputation - loss), 1)
+
+    paid = _pay_rent_arrears(
+        profile,
+        source_id=f"settle:{now.isoformat()}",
+        detail={
+            "new_rent": int(newly_due),
+            "arrears_before": arrears_before,
+            "arrears_waived": max(0, uncapped_arrears - arrears_cap),
+            "offline_hours": round(max(0.0, (now - offline_start).total_seconds()) / 3600, 2),
+            "reputation_change": round(profile.reputation - reputation_before, 1),
+        },
+    )
+    profile.upkeep_settled_at = now
+    profile.last_active_at = now
+    state = _upkeep_state(profile)
+    state["settlement"] = {
+        "new_rent": int(newly_due),
+        "paid": paid,
+        "reputation_change": round(profile.reputation - reputation_before, 1),
+    }
+    return state
+
+
+def settle_upkeep(profile: PlayerProfile, now=None) -> dict:
+    """Settle elapsed office upkeep exactly once and record the visit as activity."""
+    profile = _lock_profile(profile)
+    state = _settle_upkeep_locked(profile, now)
+    db.session.commit()
+    return state
+
+
 def _requirements_met(definition: dict, profile: PlayerProfile, owned: set[str]) -> bool:
     return (
         profile.reputation >= definition.get("reputation", 0)
@@ -712,6 +910,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
             "cases_remaining": active_contract.cases_remaining if active_contract else profile.client_cases_remaining,
             "effective_key": active_client["key"] if active_client_public["unlocked"] else "walk_in",
         },
+        "upkeep": _upkeep_state(profile, owned),
         "passive_income": _passive_state(profile, owned),
         "daily": {
             "date": daily.activity_date.isoformat(),
@@ -767,6 +966,7 @@ def create_profile(user, payload: dict) -> PlayerProfile:
     gender = str(payload.get("character_gender") or "").lower()
     if gender not in {"male", "female"}:
         raise ValueError("invalid_character")
+    opened_at = utcnow()
     profile = PlayerProfile(
         user_id=user.id,
         lawyer_name=_clean_name(payload.get("lawyer_name") or user.display_name, 50),
@@ -774,7 +974,9 @@ def create_profile(user, payload: dict) -> PlayerProfile:
         character_gender=gender,
         cash=STARTING_CASH,
         lifetime_earnings=STARTING_CASH,
-        last_passive_collected_at=utcnow(),
+        last_passive_collected_at=opened_at,
+        upkeep_settled_at=opened_at,
+        last_active_at=opened_at,
     )
     db.session.add(profile)
     db.session.flush()
@@ -833,6 +1035,7 @@ def purchase_asset(profile: PlayerProfile, asset_key: str) -> PlayerAsset:
     if not item:
         raise ValueError("asset_not_found")
     profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
     owned = _owned_keys(profile)
     if asset_key in owned:
         raise ValueError("already_owned")
@@ -858,17 +1061,21 @@ def purchase_asset(profile: PlayerProfile, asset_key: str) -> PlayerAsset:
 
 def choose_story(profile: PlayerProfile, chapter_key: str, choice_key: str) -> dict:
     profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
     cash_before = profile.cash
     result = resolve_story_choice(profile, chapter_key, choice_key)
     cash_change = profile.cash - cash_before
     if cash_change:
         _ledger(profile, "story_choice", chapter_key, cash_change, {"choice": choice_key})
+        if cash_change > 0:
+            _pay_rent_arrears(profile, source_id=f"income:story:{chapter_key}", detail={"income_source": "story_choice"})
     db.session.commit()
     return result
 
 
 def activate_quest(profile: PlayerProfile, quest_key: str) -> dict:
     profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
     owned = _owned_keys(profile)
     selected = CLIENT_BY_KEY.get(profile.active_client_key, CLIENT_BY_KEY["walk_in"])
     client = selected if _client_is_unlocked(selected, profile, owned) else CLIENT_BY_KEY["walk_in"]
@@ -877,6 +1084,8 @@ def activate_quest(profile: PlayerProfile, quest_key: str) -> dict:
     cash_change = profile.cash - cash_before
     if cash_change:
         _ledger(profile, "quest_advance", quest_key, cash_change, {"client": client["key"]})
+        if cash_change > 0:
+            _pay_rent_arrears(profile, source_id=f"income:quest:{quest_key}", detail={"income_source": "quest_advance"})
     db.session.commit()
     return result
 
@@ -886,6 +1095,7 @@ def run_rival_operation(profile: PlayerProfile, rival_key: str, operation_key: s
     if not rival or rival["type"] != "rival":
         raise ValueError("rival_not_found")
     profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
     if rival_key in _owned_keys(profile):
         raise ValueError("rival_already_owned")
     result = execute_rival_operation(profile, rival, operation_key)
@@ -896,6 +1106,7 @@ def run_rival_operation(profile: PlayerProfile, rival_key: str, operation_key: s
 
 def advance_firm(profile: PlayerProfile, target_tier: int) -> None:
     profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
     if profile.office_tier == target_tier:
         return
     next_tier_number = profile.office_tier + 1
@@ -922,6 +1133,7 @@ def select_client(profile: PlayerProfile, client_key: str) -> None:
     if not client:
         raise ValueError("client_not_found")
     profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
     if not _client_is_unlocked(client, profile, _owned_keys(profile)):
         raise ValueError("requirements_not_met")
     contract = (
@@ -965,11 +1177,17 @@ def _collect_passive_locked(profile: PlayerProfile) -> int:
         amount,
         {"stored_hours": state["stored_hours"], "hourly_rate": state["hourly_rate"]},
     )
+    _pay_rent_arrears(
+        profile,
+        source_id=f"income:passive:{collected_at.isoformat()}",
+        detail={"income_source": "passive_collection"},
+    )
     return amount
 
 
 def collect_passive_income(profile: PlayerProfile) -> int:
     profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
     amount = _collect_passive_locked(profile)
     db.session.commit()
     return amount
@@ -979,6 +1197,7 @@ def claim_daily_reward(profile: PlayerProfile, milestone: int) -> int:
     if milestone not in DAILY_REWARD_MULTIPLIERS:
         raise ValueError("invalid_milestone")
     profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
     progress = _daily(profile)
     claimed = list(progress.claimed_json or [])
     if milestone in claimed:
@@ -991,6 +1210,11 @@ def claim_daily_reward(profile: PlayerProfile, milestone: int) -> int:
     profile.cash += amount
     profile.lifetime_earnings += amount
     _ledger(profile, "daily_reward", f"{progress.activity_date}:{milestone}", amount, {"cases": milestone})
+    _pay_rent_arrears(
+        profile,
+        source_id=f"income:daily:{progress.activity_date}:{milestone}",
+        detail={"income_source": "daily_reward"},
+    )
     db.session.commit()
     return amount
 
@@ -1197,6 +1421,8 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     profile = lock_user_profile(attempt.user_id)
     if not profile:
         return None
+    settled_at = utcnow()
+    _settle_upkeep_locked(profile, settled_at)
     locked_attempt = (
         Attempt.query.populate_existing()
         .filter_by(id=attempt.id)
@@ -1314,6 +1540,10 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
         band=band,
         base_fee=base_fee,
     )
+    if quest_result.get("completed") == FINAL_CASE_KEY:
+        profile.game_completed_at = settled_at
+        profile.upkeep_settled_at = settled_at
+        profile.last_active_at = settled_at
     quest_bonus = int(quest_result["quest_bonus"])
     payout = standard_payout + quest_bonus
     # Quest cash rewards are applied by the story engine with their other
@@ -1362,6 +1592,11 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
         locked_attempt.id,
         payout,
         {"score": total_score, "grade": band, "client": client["key"], "rule_version": RULE_VERSION},
+    )
+    _pay_rent_arrears(
+        profile,
+        source_id=f"income:case:{locked_attempt.id}",
+        detail={"income_source": "case_payout"},
     )
     return settlement
 

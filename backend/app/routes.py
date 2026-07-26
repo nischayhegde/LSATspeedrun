@@ -21,6 +21,7 @@ from .game import (
     purchase_asset,
     run_rival_operation,
     select_client,
+    settle_upkeep,
     serialize_game,
     serialize_settlement,
     update_profile,
@@ -190,7 +191,10 @@ def me():
 
 
 def _game_profile():
-    return g.current_user.game_profile
+    profile = g.current_user.game_profile
+    if profile:
+        settle_upkeep(profile)
+    return profile
 
 
 @api.get("/game")
@@ -666,8 +670,10 @@ def create_attempt(session_id: str):
             "invalid_choice": "Choose one of the available answers.",
             "reasoning_required": "Explain your reasoning before submitting the case.",
             "invalid_confidence": "Choose a confidence level from 1 to 5.",
+            "strategy_decision_required": "Choose whether to use the assigned method before submitting.",
+            "invalid_strategy_prompt_time": "The strategy decision time could not be recorded.",
         }
-        status = 400 if code in {"invalid_choice", "reasoning_required", "invalid_confidence"} else 409
+        status = 400 if code in {"invalid_choice", "reasoning_required", "invalid_confidence", "strategy_decision_required", "invalid_strategy_prompt_time"} else 409
         return error(code, messages.get(code, "The answer could not be saved."), status)
     return jsonify({"result": serialize_attempt_result(attempt, duplicate)})
 

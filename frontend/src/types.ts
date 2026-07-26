@@ -72,6 +72,7 @@ export type FirmTier = {
   short: string
   region: string
   feature: string
+  rent_daily: number
   owned?: boolean
   next?: boolean
   available?: boolean
@@ -192,6 +193,25 @@ export type GameState = {
   firm_valuation: number
   owned_assets: string[]
   active_client: GameClient & { cases_remaining: number; effective_key: string }
+  upkeep: {
+    daily_rent: number
+    offline_daily_rent: number
+    offline_multiplier: number
+    active_window_hours: number
+    reputation_grace_hours: number
+    rent_arrears: number
+    arrears_cap: number
+    lifetime_rent_paid: number
+    last_settled_at: string
+    last_active_at: string
+    base_reputation_decay_daily: number
+    reputation_guard: number
+    reputation_decay_daily: number
+    accruing: boolean
+    completed: boolean
+    completed_at?: string | null
+    completion_requirement: { key: string; label: string }
+  }
   passive_income: {
     hourly_rate: number
     stored_hours: number
@@ -214,6 +234,18 @@ export type GameState = {
 export type GameResponse = { game: GameState | null; pending_reviews?: string[] }
 
 export type Choice = { label: string; text: string }
+
+export type StrategyDefinition = {
+  key: string
+  title: string
+  section: 'Logical Reasoning' | 'Reading Comprehension'
+  prompt: string
+  steps: string[]
+  best_for: string
+  sources: Array<{ label: string; url: string }>
+}
+
+export type StrategyTrial = StrategyDefinition & { variant: 'prompt' }
 
 export type Question = {
   id: string
@@ -250,6 +282,7 @@ export type SessionItem = {
   position: number
   section_index: number
   requires_reasoning: boolean
+  strategy_trial?: StrategyTrial | null
   served_at: string
   elapsed_ms: number
   target_time_seconds: number
@@ -257,6 +290,13 @@ export type SessionItem = {
   timer_active: boolean
   draft: { selected_label?: string | null; reasoning: string; updated_at?: string | null }
   question: Question
+}
+
+export type ActiveOfficeCase = {
+  sessionId: string
+  clientKey: string
+  clientName: string
+  baseFee: number
 }
 
 export type AttemptResult = {
@@ -326,6 +366,24 @@ export type PerformanceMetric = {
   reasoning: number | null
 }
 
+export type StrategyResult = {
+  key: string
+  title: string
+  section: StrategyDefinition['section']
+  best_for: string
+  sample: number
+  accuracy: number
+  average_seconds: number
+  pace_adherence: number | null
+  control_sample: number
+  control_accuracy: number
+  control_seconds: number
+  lift: number | null
+  skipped: number
+  status: 'forming' | 'directional' | 'supported'
+  ranking_score: number
+}
+
 export type PerformanceSnapshot = {
   overall: PerformanceMetric & {
   speedrun_index: number
@@ -361,6 +419,14 @@ export type PerformanceSnapshot = {
   readiness: { status: 'forming' | 'ready'; lr_samples: number; rc_samples: number; completed_diagnostics: number }
   review: ReviewQueue & { recovery_rate: number | null }
   confidence: { average: number | null; high_confidence_error_rate: number | null; sample: number }
+  strategy_lab?: {
+    catalog: StrategyDefinition[]
+    results: StrategyResult[]
+    trials_completed: number
+    strategies_tested: number
+    strongest: StrategyResult | null
+    evidence_note: string
+  }
   recommendation: { skill: string; accuracy: number; reason: string } | null
 }
 
