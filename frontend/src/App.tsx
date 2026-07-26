@@ -1,8 +1,10 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { api, ApiError } from './api'
 import { AppShell, ErrorNotice, LoadingScreen } from './components'
+import { loadStylizedCharacter, preloadArtForRoute } from './art/scene-loaders'
 import {
   CasesLobbyPage,
   CaseSessionPage,
@@ -71,6 +73,14 @@ function HomeRedirect() {
 
 
 export default function App() {
+  const location = useLocation()
+  useEffect(() => {
+    preloadArtForRoute(location.pathname)
+    const idle = window.requestIdleCallback?.(() => { void loadStylizedCharacter() }, { timeout: 1800 })
+    return () => {
+      if (idle !== undefined) window.cancelIdleCallback?.(idle)
+    }
+  }, [location.pathname])
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />

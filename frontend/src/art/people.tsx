@@ -1,10 +1,36 @@
-/* Image-based character system. Sprites are AI-painted full-body figures and
-   busts with transparent backgrounds (see /public/art). The exported API is
-   unchanged from the old vector system so scene code keeps working; `src`
-   lets call sites pin a specific cast member. */
+/* Shared cast API. Every human role resolves to the same procedural,
+   animated 3D counsel rig; identity only varies the cast styling. */
+
+import { lazy, Suspense } from 'react'
 
 import type { CharacterGender } from '../types'
-import { castArt, clientArt, judgeArt, keyHash, playerArt, CLIENT_KINDS } from './assets'
+import { loadStylizedCharacter } from './scene-loaders'
+import type { StylizedCharacterActivity } from './stylized-character'
+const StylizedCharacter = lazy(() => loadStylizedCharacter().then((module) => ({ default: module.StylizedCharacter })))
+
+const castGenders: Record<string, CharacterGender> = {
+  paralegal: 'female',
+  junior_associate: 'male',
+  office_manager: 'female',
+  senior_associate: 'female',
+  partner: 'male',
+  rainmaker: 'female',
+  neighborhood_practice: 'female',
+  downtown_boutique: 'male',
+  regional_firm: 'female',
+  national_competitor: 'male',
+  appellate_chambers: 'female',
+  transatlantic_firm: 'male',
+  sovereign_rival: 'female',
+  continental_rival: 'male',
+  orbital_rival: 'female',
+}
+
+function castHash(value: string) {
+  let hash = 2166136261
+  for (const character of value) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
+  return hash >>> 0
+}
 
 export type Direction = 'up' | 'down' | 'left' | 'right'
 export type Mood = 'happy' | 'unhappy' | 'neutral'
@@ -22,12 +48,13 @@ export type PersonProps = {
   mood?: Mood
   className?: string
   label?: string
-  /** Explicit sprite URL; overrides the gender/tier/variant lookup. */
-  src?: string
+  activity?: StylizedCharacterActivity
+  /** Stable cast identity used to vary appearance without loading a 2D sprite. */
+  identity?: string
 }
 
 export function Person({
-  gender = 'female',
+  gender,
   tier = 0,
   variant = 0,
   direction = 'down',
@@ -35,18 +62,27 @@ export function Person({
   mood = 'neutral',
   className = '',
   label,
-  src,
+  identity,
+  activity = 'idle',
 }: PersonProps) {
-  const sprite = src ?? (variant === 0 ? playerArt(gender, tier) : castArt(gender, variant))
+  const seed = castHash(identity ?? `cast-${variant}`)
+  const identityGender = identity ? castGenders[identity] : undefined
+  const resolvedGender = gender ?? identityGender ?? (seed % 2 ? 'female' : 'male')
   return (
-    <span
-      className={`av-person facing-${direction} mood-${mood} ${walking ? 'is-walking' : ''} ${className}`}
-      role={label ? 'img' : undefined}
-      aria-label={label}
-      aria-hidden={label ? undefined : true}
-    >
-      <i className="av-person-shadow" aria-hidden="true" />
-      <img className="av-person-img" src={sprite} alt="" draggable={false} loading="lazy" />
+    <span className={`av-person av-person-three facing-${direction} mood-${mood} ${walking ? 'is-walking' : ''} ${className}`}>
+      <Suspense fallback={null}>
+        <StylizedCharacter
+          gender={resolvedGender}
+          tier={tier}
+          walking={walking}
+          direction={direction === 'left' ? 'left' : direction === 'right' ? 'right' : 'front'}
+          mood={mood}
+          activity={activity}
+          paletteSeed={seed}
+          role={identity ? 'visitor' : 'counsel'}
+          label={label}
+        />
+      </Suspense>
     </span>
   )
 }
@@ -60,24 +96,24 @@ export type BustProps = {
   backdrop?: string
   className?: string
   label?: string
-  /** Explicit bust URL; overrides the generic ensemble lookup. */
-  src?: string
+  /** Stable cast identity used to vary the shared 3D portrait. */
+  identity?: string
 }
 
 export function Bust({
-  gender = 'female',
+  gender,
   variant = 0,
+  tier = 2,
   mood = 'neutral',
   judge = false,
   backdrop,
   className = '',
   label,
-  src,
+  identity,
 }: BustProps) {
-  const sprite = src
-    ?? (judge
-      ? judgeArt(mood === 'happy')
-      : clientArt(CLIENT_KINDS[(keyHash(gender) + variant * 5) % CLIENT_KINDS.length]))
+  const seed = castHash(identity ?? `portrait-${variant}`)
+  const identityGender = identity ? castGenders[identity] : undefined
+  const resolvedGender = gender ?? identityGender ?? (seed % 2 ? 'female' : 'male')
   const style = backdrop && backdrop !== 'none'
     ? { ['--bust-bg' as string]: backdrop }
     : undefined
@@ -89,7 +125,16 @@ export function Bust({
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      <img className="av-bust-img" src={sprite} alt="" draggable={false} loading="lazy" />
+      <Suspense fallback={null}>
+        <StylizedCharacter
+          gender={resolvedGender}
+          tier={tier}
+          role={judge ? 'judge' : 'visitor'}
+          mode="portrait"
+          mood={mood}
+          paletteSeed={seed}
+        />
+      </Suspense>
       <i className="av-bust-sheen" aria-hidden="true" />
     </span>
   )

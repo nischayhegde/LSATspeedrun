@@ -2,7 +2,7 @@ import { useEffect, useRef, type CSSProperties } from 'react'
 import * as THREE from 'three'
 
 import type { CharacterGender, FirmTier, GameAsset } from '../types'
-import { buildCharacter, type CharacterRig } from './articulated-character'
+import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
 
 export type MapRegionKey = 'city' | 'nation' | 'ocean' | 'continent' | 'orbit'
 export type MapSceneKind = 'tier' | 'rival' | 'event'
@@ -62,7 +62,7 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     title: 'Old Quarter', subtitle: 'Municipal practice · courthouse district',
     skyTop: 0x6e91a0, skyBottom: 0xddc59d, fog: 0xa3aca2, ground: 0x667661,
     stone: 0x968c7b, accent: 0xa66d45, road: 0x30383a,
-    route: [[-14, 2], [-10, .4], [-6, 1.5], [-2, -.8], [3, .8], [8, -1.3], [14, .2]],
+    route: [[-14, 1.2], [-11, .55], [-8, .9], [-5, .25], [-2, -.2], [2, .28], [5, -.2], [8, .4], [11, -.3], [14, .1]],
     rail: [[-16, 8], [-8, 7.1], [0, 8.2], [8, 7.2], [16, 8]],
     fov: 32, exposure: 1.34, fogDensity: .0062,
     camera: [23, 28, 36], target: [0, .7, 0],
@@ -131,6 +131,17 @@ const sharedGeometry = {
   sphere: new THREE.SphereGeometry(1, 18, 12),
   cone: new THREE.ConeGeometry(1, 1, 4),
 }
+Object.values(sharedGeometry).forEach((geometry) => { geometry.userData.mapShared = true })
+const sharedCylinderGeometry = new Map<number, THREE.CylinderGeometry>([[20, sharedGeometry.cylinder]])
+
+function cylinderGeometry(sides: number) {
+  const cached = sharedCylinderGeometry.get(sides)
+  if (cached) return cached
+  const geometry = new THREE.CylinderGeometry(1, 1, 1, sides)
+  geometry.userData.mapShared = true
+  sharedCylinderGeometry.set(sides, geometry)
+  return geometry
+}
 
 function hashUnit(seed: number) {
   const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453123
@@ -189,8 +200,7 @@ function box(size: [number, number, number], mat: THREE.Material, position?: [nu
 }
 
 function cylinder(radius: number, height: number, mat: THREE.Material, position?: [number, number, number], sides = 20) {
-  const geometry = sides === 20 ? sharedGeometry.cylinder : new THREE.CylinderGeometry(1, 1, 1, sides)
-  const item = mesh(geometry, mat, position)
+  const item = mesh(cylinderGeometry(sides), mat, position)
   item.scale.set(radius, height, radius)
   return item
 }
@@ -718,6 +728,7 @@ function createBlockBuilding(width: number, height: number, depth: number, color
   const group = new THREE.Group()
   group.userData.playerOccluder = true
   group.userData.footprintRadius = Math.max(width, depth) * .54
+  group.userData.performanceCullRadius = Math.hypot(width, height, depth) * .62
   const facade = material(color, modern ? .46 : .88, modern ? .16 : .02)
   const trim = material(modern ? 0x9fa7a3 : 0xa99c82, .84)
   group.add(box([width, height, depth], facade, [0, height / 2, 0]))
@@ -745,6 +756,145 @@ function createBlockBuilding(width: number, height: number, depth: number, color
     const awning = box([Math.min(1.05, width * .54), .08, .42], material(new THREE.Color(color).offsetHSL(0, -.05, -.12).getHex(), .8), [0, .82, depth / 2 + .2])
     awning.rotation.x = -.12
     group.add(awning)
+  }
+  return group
+}
+
+/**
+ * The rear Old Quarter is deliberately instanced. A detailed building made by
+ * createBlockBuilding can contain dozens of individual meshes; repeating that
+ * on the horizon used to add hundreds of draw calls before the playable block
+ * was even considered. This skyline keeps the same masonry rhythm, roofline,
+ * and lit windows in three draw calls, while the near buildings retain detail.
+ */
+function createOldQuarterRearSkyline() {
+  const group = new THREE.Group()
+  const records: Array<{ x: number; z: number; width: number; height: number; depth: number; color: number; lit: boolean }> = []
+  const palette = [0x514a44, 0x5d5349, 0x4c5554, 0x675749, 0x56524d]
+  const rows = [-13.4, -17.8, -22.2, -26.6]
+  rows.forEach((z, row) => {
+    for (let column = 0; column < 23; column += 1) {
+      const seed = 1100 + row * 101 + column * 17
+      const width = 2.38 + hashUnit(seed) * .52
+      const depth = 2.05 + hashUnit(seed + 9) * .58
+      const height = 2.8 + hashUnit(seed + 19) * 3.35 + row * .18
+      records.push({
+        x: -35.2 + column * 3.2 + (hashUnit(seed + 27) - .5) * .34,
+        z: z + (hashUnit(seed + 31) - .5) * .28,
+        width,
+        height,
+        depth,
+        color: palette[(row * 3 + column) % palette.length],
+        lit: (row + column) % 4 === 0,
+      })
+    }
+  })
+
+  const dummy = new THREE.Object3D()
+  const facadeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .92, metalness: .015, vertexColors: true })
+  const facades = new THREE.InstancedMesh(sharedGeometry.box, facadeMaterial, records.length)
+  const roofMaterial = new THREE.MeshStandardMaterial({ color: 0x887c69, roughness: .9, metalness: .02, vertexColors: true })
+  const roofs = new THREE.InstancedMesh(sharedGeometry.box, roofMaterial, records.length)
+  const windowMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0x53482f,
+    emissiveIntensity: .32,
+    roughness: .42,
+    metalness: .12,
+    vertexColors: true,
+  })
+  const windowsPerBuilding = 6
+  const windows = new THREE.InstancedMesh(sharedGeometry.box, windowMaterial, records.length * windowsPerBuilding)
+  const windowColor = new THREE.Color()
+  let windowIndex = 0
+
+  records.forEach((record, index) => {
+    dummy.position.set(record.x, record.height / 2 - .08, record.z)
+    dummy.scale.set(record.width, record.height, record.depth)
+    dummy.rotation.set(0, 0, 0)
+    dummy.updateMatrix()
+    facades.setMatrixAt(index, dummy.matrix)
+    facades.setColorAt(index, new THREE.Color(record.color))
+
+    dummy.position.set(record.x, record.height - .025, record.z)
+    dummy.scale.set(record.width + .16, .13, record.depth + .14)
+    dummy.updateMatrix()
+    roofs.setMatrixAt(index, dummy.matrix)
+    roofs.setColorAt(index, new THREE.Color(record.color).offsetHSL(0, -.04, .09))
+
+    for (let floor = 0; floor < 2; floor += 1) for (let column = 0; column < 3; column += 1) {
+      dummy.position.set(
+        record.x + (column - 1) * record.width * .245,
+        record.height * (.38 + floor * .29),
+        record.z + record.depth / 2 + .02,
+      )
+      dummy.scale.set(record.width * .135, .2, .035)
+      dummy.updateMatrix()
+      windows.setMatrixAt(windowIndex, dummy.matrix)
+      windowColor.setHex(record.lit && (floor + column) % 2 === 0 ? 0xc8b981 : 0x304143)
+      windows.setColorAt(windowIndex, windowColor)
+      windowIndex += 1
+    }
+  })
+
+  for (const item of [facades, roofs, windows]) {
+    item.instanceMatrix.setUsage(THREE.StaticDrawUsage)
+    item.castShadow = false
+    item.receiveShadow = true
+    item.frustumCulled = true
+    item.computeBoundingSphere()
+  }
+  if (facades.instanceColor) facades.instanceColor.needsUpdate = true
+  if (roofs.instanceColor) roofs.instanceColor.needsUpdate = true
+  if (windows.instanceColor) windows.instanceColor.needsUpdate = true
+  group.add(facades, roofs, windows)
+  group.userData.performanceCullRadius = 53
+  return group
+}
+
+/**
+ * A complete Old Quarter block rather than a single decorative building.
+ * Parcels share a stone apron, close-set masonry frontage, a service court,
+ * and rooftop infrastructure so the city continues naturally at every zoom.
+ */
+function createOldQuarterParcel(seed: number, scale = 1, foreground = false) {
+  const group = new THREE.Group()
+  group.userData.playerOccluder = true
+  group.userData.footprintRadius = 2.25 * scale
+  const facades = [0x62584f, 0x716052, 0x59615e, 0x786958, 0x5d5751]
+  const apron = box([4.15 * scale, .075, 3.15 * scale], material(seed % 2 ? 0x858073 : 0x7b786f, .98), [0, .025, 0])
+  group.add(apron)
+
+  const buildingCount = seed % 3 === 0 ? 3 : 2
+  for (let index = 0; index < buildingCount; index += 1) {
+    const width = (buildingCount === 3 ? 1.08 : 1.55) * scale
+    const depth = (1.75 + hashUnit(seed * 29 + index * 7) * .42) * scale
+    const baseHeight = foreground ? 1.18 : 1.72
+    const height = (baseHeight + hashUnit(seed * 41 + index * 17) * (foreground ? 1.22 : 2.05)) * scale
+    const spacing = buildingCount === 3 ? 1.28 : 1.82
+    const frontage = createBlockBuilding(width, height, depth, facades[(seed + index) % facades.length], seed % 7 === 0 && index === buildingCount - 1)
+    frontage.position.set((index - (buildingCount - 1) / 2) * spacing * scale, .055, -.34 * scale)
+    frontage.rotation.y = (hashUnit(seed * 13 + index) - .5) * .018
+    group.add(frontage)
+  }
+
+  const yard = box([3.35 * scale, .035, .62 * scale], material(0x4b504b, .98), [0, .068, 1.05 * scale])
+  group.add(yard)
+  for (const side of [-1, 1]) {
+    const tree = createTree((.34 + hashUnit(seed * 11 + side * 3) * .11) * scale, side < 0 ? 0x4e6250 : 0x59684f)
+    tree.position.set(side * 1.55 * scale, .07, 1.02 * scale)
+    group.add(tree)
+  }
+  if (seed % 2 === 0) {
+    const shed = createServiceShed(.34 * scale, seed % 4 ? 0x62574d : 0x58615e)
+    shed.position.set(.58 * scale, .07, 1.03 * scale)
+    shed.rotation.y = Math.PI
+    group.add(shed)
+  } else {
+    const bench = createBench(.38 * scale)
+    bench.position.set(.45 * scale, .07, 1.12 * scale)
+    bench.rotation.y = Math.PI
+    group.add(bench)
   }
   return group
 }
@@ -909,6 +1059,31 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
   })
   for (const [x, z, rotation] of [[-10.7, 3.9, .05], [-4.2, 4.1, -.08], [6.4, 4.2, Math.PI], [10.8, 3.8, Math.PI]] as Array<[number, number, number]>) {
     const bench = createBench(.82); bench.position.set(x, .02, z); bench.rotation.y = rotation; root.add(bench)
+  }
+
+  // Complete the starting ward on both banks of the municipal canal. The
+  // waterfront uses a continuous warehouse frontage while the playable east
+  // bank gets smaller mixed-use parcels framing (rather than covering) the
+  // market and first career destinations.
+  ;[-10.8, -7.2, -3.6, 0, 3.6, 7.2, 10.8].forEach((z, index) => {
+    const warehouse = createBlockBuilding(2.3, 1.5 + (index % 3) * .34, 2.05, [0x5b554e, 0x66615a, 0x545d5b][index % 3], false)
+    warehouse.position.set(-19.15, -.04, z)
+    warehouse.rotation.y = Math.PI / 2
+    root.add(warehouse)
+    if (index % 2 === 0) {
+      const quayLamp = createLamp(); quayLamp.position.set(-17.75, .02, z + .7); quayLamp.scale.setScalar(.78); root.add(quayLamp)
+    }
+  })
+  ;[[-13.2, 4.25], [-6.55, 4.45], [-3.2, 4.35]].forEach(([x, z], index) => {
+    const parcel = createOldQuarterParcel(540 + index * 17, .64, true)
+    parcel.position.set(x, -.02, z)
+    parcel.rotation.y = Math.PI
+    root.add(parcel)
+  })
+  for (const x of [-14.2, -12.6, -8.2, -6.8, -4.2, -2.8]) {
+    const tree = createTree(.43 + hashUnit(x * 17) * .07, 0x50634e)
+    tree.position.set(x, 0, 2.95 + (Math.abs(Math.round(x * 10)) % 2) * .22)
+    root.add(tree)
   }
 }
 
@@ -1232,18 +1407,12 @@ function addPerimeterEnvironment(root: THREE.Group, region: MapRegionKey, defini
   if (region === 'orbit') return
   const urban = region === 'city'
   if (urban) {
+    // One instanced rear district replaces four rows of fully articulated
+    // buildings. It fills the horizon behind the courts without taxing the
+    // foreground scene or becoming interactive clutter.
+    root.add(createOldQuarterRearSkyline())
     const facadeColors = [0x554f49, 0x5c5650, 0x4e5757]
     let index = 0
-    for (const z of [-13.5, -17.5, -22]) {
-      for (let x = -26; x <= 26; x += 3.2) {
-        const height = 2.5 + ((index * 17) % 8) * .52
-        const building = createBlockBuilding(2.35, height, 2.1, facadeColors[index % facadeColors.length], index % 4 === 0)
-        building.position.set(x + Math.sin(index * 1.7) * .35, -.08, z)
-        building.scale.setScalar(.92)
-        root.add(building)
-        index += 1
-      }
-    }
     for (const x of [-22, 22]) {
       for (let z = -10; z <= 10; z += 3.5) {
         const building = createBlockBuilding(2.1, 2.7 + ((Math.abs(Math.round(z)) + index) % 5) * .45, 2, facadeColors[index % facadeColors.length], true)
@@ -1251,6 +1420,50 @@ function addPerimeterEnvironment(root: THREE.Group, region: MapRegionKey, defini
         root.add(building)
         index += 1
       }
+    }
+
+    // The earlier composition stopped at the playable route, leaving the
+    // camera-facing half of the map as exposed ground. This foreground ward
+    // completes the same street grid with whole parcels between real roads.
+    const foregroundStreetZ = [11.9, 16.3, 20.7, 25.1, 29.5]
+    foregroundStreetZ.forEach((z) => {
+      const street = new THREE.LineCurve3(new THREE.Vector3(-36, .055, z), new THREE.Vector3(36, .055, z))
+      root.add(roadMesh(street, .72, 0x343b3c))
+    })
+    for (const x of [-28, -21, -14, -7, 0, 7, 14, 21, 28]) {
+      const street = new THREE.LineCurve3(new THREE.Vector3(x, .057, 10.8), new THREE.Vector3(x, .057, 31))
+      root.add(roadMesh(street, .64, 0x343b3c))
+    }
+    const parcelX = [-31.5, -24.5, -17.5, -10.5, -3.5, 3.5, 10.5, 17.5, 24.5, 31.5]
+    const parcelZ = [14.1, 18.5, 22.9, 27.3]
+    parcelZ.forEach((z, row) => parcelX.forEach((x, column) => {
+      const parcel = createOldQuarterParcel(700 + row * 31 + column, row < 2 ? .91 : .84, row >= 2)
+      parcel.position.set(x, -.02, z)
+      parcel.rotation.y = row % 2 ? Math.PI : 0
+      root.add(parcel)
+    }))
+
+    // A planted civic boulevard preserves a deliberate sightline into the
+    // career district while ensuring the central foreground is not blank.
+    for (let z = 13.3; z <= 28.3; z += 2.15) for (const side of [-1, 1]) {
+      const tree = createTree(.52 + hashUnit(z * 19 + side) * .08, side < 0 ? 0x50634f : 0x596950)
+      tree.position.set(side * 1.18, 0, z)
+      root.add(tree)
+      if (Math.round(z * 10) % 4 === 1) {
+        const lamp = createLamp()
+        lamp.position.set(side * 1.72, .02, z + .62)
+        lamp.scale.setScalar(.82)
+        root.add(lamp)
+      }
+    }
+
+    // Continue the quarter laterally so camera rotation never reveals an
+    // isolated strip of buildings floating on an empty ground plane.
+    for (const side of [-1, 1]) for (let z = -10.4; z <= 9.8; z += 3.45) {
+      const parcel = createOldQuarterParcel(980 + Math.round(z * 13) + (side > 0 ? 80 : 0), .72, false)
+      parcel.position.set(side * 27.2, -.06, z)
+      parcel.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2
+      root.add(parcel)
     }
     return
   }
@@ -2013,10 +2226,10 @@ function createOrbitalCraft() {
 
 function createLawyer(gender: CharacterGender, tier: number, playerName: string) {
   const root = new THREE.Group()
-  const rig = buildCharacter(gender, tier)
+  const rig = buildStylizedCounsel(gender, tier)
   // Architectural scale: counsel should read as a person in the district,
   // not as a figure nearly as tall as a multi-storey headquarters.
-  rig.root.scale.setScalar(.36)
+  rig.root.scale.setScalar(.278)
   rig.root.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.castShadow = true
@@ -2024,11 +2237,11 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
     }
   })
   root.add(rig.root)
-  const presenceLight = new THREE.PointLight(0xffd189, 2.4, 8, 2)
-  presenceLight.position.set(0, 2.05, 1.05)
+  const presenceLight = new THREE.PointLight(0xffd189, 2.05, 6.5, 2)
+  presenceLight.position.set(0, 1.55, .86)
   root.add(presenceLight)
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(.52, 40),
+    new THREE.CircleGeometry(.45, 40),
     new THREE.MeshBasicMaterial({ color: 0x071015, transparent: true, opacity: .32, depthWrite: false }),
   )
   shadow.rotation.x = -Math.PI / 2
@@ -2036,7 +2249,7 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   shadow.position.y = .028
   root.add(shadow)
   const beacon = new THREE.Mesh(
-    new THREE.RingGeometry(.56, .64, 56),
+    new THREE.RingGeometry(.48, .55, 56),
     new THREE.MeshBasicMaterial({ color: 0xe1bd67, transparent: true, opacity: .72, side: THREE.DoubleSide, depthWrite: false }),
   )
   beacon.rotation.x = -Math.PI / 2
@@ -2046,12 +2259,13 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   beacon.userData.lawyerBeacon = true
   root.add(beacon)
   const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xf3d082, transparent: true, opacity: .96, depthTest: false, depthWrite: false })
-  const marker = mesh(new THREE.OctahedronGeometry(.14, 0), markerMaterial, [0, 2.35, 0])
+  const marker = mesh(new THREE.OctahedronGeometry(.11, 0), markerMaterial, [0, 1.82, 0])
   marker.renderOrder = 52
   marker.userData.playerMarker = true
+  marker.userData.playerMarkerBaseY = 1.82
   root.add(marker)
-  const playerLabel = labelSprite(['YOU', playerName], 1.48, '#f0cf7c')
-  playerLabel.position.set(0, 2.78, 0)
+  const playerLabel = labelSprite(['YOU', playerName], 1.28, '#f0cf7c')
+  playerLabel.position.set(0, 2.12, 0)
   playerLabel.userData.mapLabelAlways = true
   root.add(playerLabel)
   root.userData.lawyer = true
@@ -2059,7 +2273,7 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   return { root, rig, beacon, marker }
 }
 
-function animateLawyerRig(rig: CharacterRig, elapsed: number, locomotion: number, arrival: number, gaitPhase: number) {
+function animateLawyerRig(rig: StylizedCounselRig, elapsed: number, locomotion: number, arrival: number, gaitPhase: number) {
   const stridePhase = gaitPhase
   const stride = Math.sin(stridePhase) * locomotion
   const doubleStep = Math.abs(Math.sin(stridePhase * 2)) * locomotion
@@ -2068,7 +2282,7 @@ function animateLawyerRig(rig: CharacterRig, elapsed: number, locomotion: number
   const breath = Math.sin(elapsed * 1.15)
   const settle = Math.sin(elapsed * 2.1) * arrival
 
-  rig.hips.position.y = 3.05 + doubleStep * .026 + breath * .008 * (1 - locomotion)
+  rig.hips.position.y = rig.base.hipsY + doubleStep * .026 + breath * .008 * (1 - locomotion)
   rig.hips.rotation.z = stride * .018
   rig.hips.rotation.y = -stride * .016
   rig.spine.rotation.z = -stride * .022 + settle * .007
@@ -2089,12 +2303,12 @@ function animateLawyerRig(rig: CharacterRig, elapsed: number, locomotion: number
   rig.rightFoot.rotation.x = -rightLift * .28 + Math.max(0, stride) * .11
   rig.leftShoulder.rotation.x = -stride * .24
   rig.rightShoulder.rotation.x = stride * .24
-  rig.leftShoulder.rotation.z = .09 + stride * .01
-  rig.rightShoulder.rotation.z = -.12 + stride * .01
+  rig.leftShoulder.rotation.z = rig.base.leftShoulderZ + stride * .01
+  rig.rightShoulder.rotation.z = rig.base.rightShoulderZ + stride * .01
   rig.leftElbow.rotation.x = Math.max(0, stride) * .08
   rig.rightElbow.rotation.x = Math.max(0, -stride) * .08
-  rig.leftElbow.rotation.z = .12
-  rig.rightElbow.rotation.z = -.93
+  rig.leftElbow.rotation.z = rig.base.leftElbowZ
+  rig.rightElbow.rotation.z = rig.base.rightElbowZ
   rig.satchel.rotation.z = -stride * .035
   rig.satchel.rotation.x = doubleStep * .018
   rig.satchel.position.y = .28 + doubleStep * .012
@@ -2331,18 +2545,32 @@ function createSky(definition: ArcDefinition) {
   return sky
 }
 
-function createCloud(index: number) {
+function createCloud(index: number, region: MapRegionKey) {
   const group = new THREE.Group()
-  const cloudMaterial = new THREE.MeshStandardMaterial({ color: 0xe7e6dc, transparent: true, opacity: .44, roughness: 1, depthWrite: false })
-  for (let i = 0; i < 5; i += 1) {
-    const part = mesh(sharedGeometry.sphere, cloudMaterial, [(i - 2) * .9, Math.abs(i - 2) * -.08, (i % 2) * .32])
-    part.scale.set(1.25 - Math.abs(i - 2) * .12, .38 + (i % 2) * .12, .7)
+  const opacity = region === 'city' ? .3 + hashUnit(index * 31 + 4) * .2 : .28 + hashUnit(index * 31 + 4) * .15
+  const cloudMaterial = new THREE.MeshStandardMaterial({ color: index % 3 === 0 ? 0xf0eee4 : 0xe3e5df, transparent: true, opacity, roughness: 1, depthWrite: false })
+  const parts = 5 + index % 3
+  for (let i = 0; i < parts; i += 1) {
+    const center = (parts - 1) / 2
+    const distance = Math.abs(i - center)
+    const part = mesh(sharedGeometry.sphere, cloudMaterial, [(i - center) * .78, distance * -.07, (i % 2) * .28])
+    part.scale.set(1.18 - distance * .09, .34 + (i % 3) * .08, .64 + hashUnit(index * 17 + i) * .12)
     part.castShadow = false
     group.add(part)
   }
-  group.position.set(-20 + index * 8, 9 + (index % 2) * 2, -15 + index * 3)
+  const cloudScale = .72 + hashUnit(index * 23 + 9) * .68
+  group.scale.setScalar(cloudScale)
+  const x = -31 + hashUnit(index * 43 + 3) * 62
+  const y = 8.2 + hashUnit(index * 59 + 7) * 6.2
+  const z = -25 + hashUnit(index * 71 + 13) * 48
+  group.position.set(x, y, z)
   group.userData.cloud = true
-  group.userData.speed = .22 + index * .035
+  group.userData.speed = .12 + hashUnit(index * 37 + 5) * .19
+  group.userData.cloudBaseY = y
+  group.userData.cloudBaseZ = z
+  group.userData.cloudPhase = hashUnit(index * 83 + 11) * Math.PI * 2
+  group.userData.cloudWrapMin = -34
+  group.userData.cloudWrapMax = 34
   return group
 }
 
@@ -2364,9 +2592,10 @@ function createAtmosphericPoints(region: MapRegionKey) {
 function disposeScene(scene: THREE.Scene) {
   scene.traverse((object) => {
     if (object instanceof THREE.Mesh || object instanceof THREE.Sprite || object instanceof THREE.Points) {
-      object.geometry?.dispose?.()
+      if (!object.geometry?.userData.characterShared && !object.geometry?.userData.mapShared) object.geometry?.dispose?.()
       const materials = Array.isArray(object.material) ? object.material : [object.material]
       materials.forEach((entry) => {
+        if (entry.userData.characterShared) return
         const spriteMap = (entry as THREE.SpriteMaterial).map
         spriteMap?.dispose()
         entry.dispose()
@@ -2413,13 +2642,19 @@ export function MapThreeScene({
     if (!host) return
     const definition = ARC[region]
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
+    const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4
+    const renderPixelRatio = Math.min(window.devicePixelRatio || 1, constrainedDevice ? 1 : 1.15)
+    renderer.setPixelRatio(renderPixelRatio)
     renderer.setSize(host.clientWidth, host.clientHeight, false)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = definition.exposure
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.type = THREE.PCFShadowMap
+    // The environment is static. Rebuilding a 1024px shadow map for every
+    // cloud, label, and camera frame was the largest avoidable GPU cost.
+    renderer.shadowMap.autoUpdate = false
+    renderer.shadowMap.needsUpdate = true
     renderer.domElement.className = 'uw-three-canvas'
     renderer.domElement.setAttribute('aria-label', `${definition.title} interactive three-dimensional career map`)
     host.replaceChildren(renderer.domElement)
@@ -2440,7 +2675,7 @@ export function MapThreeScene({
     const sun = new THREE.DirectionalLight(definition.sun.color, definition.sun.intensity)
     sun.position.set(...definition.sun.position)
     sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.mapSize.set(1024, 1024)
     sun.shadow.camera.left = -25; sun.shadow.camera.right = 25; sun.shadow.camera.top = 20; sun.shadow.camera.bottom = -20
     sun.shadow.bias = -.00035
     scene.add(sun)
@@ -2673,6 +2908,9 @@ export function MapThreeScene({
       world.add(riverLaunch)
       transports.push({ object: riverLaunch, curve: waterTransportCurve, offset: .42, speed: .0055 })
     }
+    transports.forEach(({ object }) => object.traverse((child) => {
+      if (child instanceof THREE.Mesh) child.castShadow = false
+    }))
 
     const lawyerModel = createLawyer(playerGender, playerTier, playerName)
     const lawyer = lawyerModel.root
@@ -2682,11 +2920,16 @@ export function MapThreeScene({
     const activeTier = tiers[activeTierIndex] ?? tiers[0]
     if (activeTier) setSelectable(lawyer, { key: activeTier.key, kind: 'tier', locked: activeTier.state === 'locked' })
     const destination = activeTier ? travelAnchors.get(activeTier.key) ?? routeCurve.getPointAt(.11) : routeCurve.getPointAt(.11)
-    const departure = hasActiveTier && activeTierIndex > 0
-      ? (travelAnchors.get(tiers[activeTierIndex - 1].key) ?? routeCurve.getPointAt(.08))
-      : hasActiveTier ? routeCurve.getPointAt(.035) : destination
+    const departure = region === 'city' && hasActiveTier
+      ? routeCurve.getPointAt(.018)
+      : hasActiveTier && activeTierIndex > 0
+        ? (travelAnchors.get(tiers[activeTierIndex - 1].key) ?? routeCurve.getPointAt(.08))
+        : hasActiveTier ? routeCurve.getPointAt(.035) : destination
     lawyer.position.copy(departure).setY(.12)
     lawyer.visible = true
+    // The rig includes its own contact shadow, so a second dynamic sun shadow
+    // only duplicates work and leaves stale silhouettes in a cached map.
+    lawyer.traverse((child) => { if (child instanceof THREE.Mesh) child.castShadow = false })
     world.add(lawyer)
     const transitCarrier = region === 'ocean' ? createFerry() : region === 'orbit' ? createOrbitalCraft() : null
     if (transitCarrier) {
@@ -2733,10 +2976,11 @@ export function MapThreeScene({
     homePosition.copy(overviewTarget).add(cameraOffset.clone().multiplyScalar(frameScale))
     camera.position.copy(homePosition)
     camera.lookAt(cameraTarget)
-    let walking: WalkState | null = hasActiveTier ? {
-        curve: walkingCurve(lawyer.position.clone(), initialDestination),
+    const initialWalkCurve = hasActiveTier ? walkingCurve(lawyer.position.clone(), initialDestination) : null
+    let walking: WalkState | null = initialWalkCurve ? {
+        curve: initialWalkCurve,
         started: performance.now() + 420,
-        duration: 5200,
+        duration: THREE.MathUtils.clamp(initialWalkCurve.getLength() * 285, 2400, region === 'city' ? 7800 : 6200),
         lastProgress: 0,
       } : null
 
@@ -2750,8 +2994,79 @@ export function MapThreeScene({
     selectionRing.visible = false
     world.add(selectionRing)
 
-    if (region !== 'orbit') for (let i = 0; i < 5; i += 1) world.add(createCloud(i))
+    const cloudCount = region === 'city' ? 14 : region === 'ocean' ? 10 : region === 'orbit' ? 0 : 8
+    for (let i = 0; i < cloudCount; i += 1) {
+      const cloud = createCloud(i, region)
+      cloud.traverse((child) => { if (child instanceof THREE.Mesh) child.castShadow = false })
+      world.add(cloud)
+    }
     world.add(createAtmosphericPoints(region))
+
+    // Index only the objects that actually animate. The former per-frame
+    // world.traverse visited every window, cornice, tree cluster, and prop—
+    // thousands of objects—to update a comparatively small moving set.
+    const animatedObjects: THREE.Object3D[] = []
+    scene.traverse((object) => {
+      const data = object.userData
+      if (
+        data.cloud || data.tree || data.fountainSpray || data.crane || data.lighthouse || data.lighthouseBeam
+        || data.turbine || data.orbitalRing || data.radarDish || data.planet || data.signal || data.atmosphere
+        || data.waterUniforms || data.skyUniforms || data.auroraUniforms || data.flagUniforms || data.mapLabelKind
+        || data.mapObjectKind || data.mapEmphasisKind || data.lawyerBeacon || data.playerMarker || data.destinationMarker
+        || data.buoy || data.marshBlade || data.ambientActor || data.ambientWing
+      ) animatedObjects.push(object)
+    })
+
+    const selectableRoots: THREE.Object3D[] = []
+    world.traverse((object) => { if (object.userData.mapSelection) selectableRoots.push(object) })
+    const playerOccluders = world.children.filter((object) => object.userData.playerOccluder)
+
+    // Top-level scenery cells are removed from both rendering and traversal
+    // when their complete bounds leave the camera frustum. Bounds are padded
+    // to avoid visible popping during small camera rotations.
+    world.updateMatrixWorld(true)
+    const performanceCullables = world.children.flatMap((object) => {
+      if (
+        object.userData.mapSelection || object.userData.careerInfrastructure || object.userData.cloud
+        || object.userData.ambientActor || (!object.userData.performanceCullRadius && !object.userData.playerOccluder
+          && !object.userData.tree && !object.userData.authoredProp)
+      ) return []
+      const bounds = new THREE.Box3().setFromObject(object)
+      if (bounds.isEmpty()) return []
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere())
+      sphere.radius *= 1.28
+      return [{ object, sphere }]
+    })
+    const viewProjection = new THREE.Matrix4()
+    const cameraFrustum = new THREE.Frustum()
+    const updatePerformanceCulling = () => {
+      camera.updateMatrixWorld()
+      viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      cameraFrustum.setFromProjectionMatrix(viewProjection)
+      performanceCullables.forEach(({ object, sphere }) => {
+        const visible = cameraFrustum.intersectsSphere(sphere)
+        if (object.visible !== visible) object.visible = visible
+      })
+    }
+
+    // Most of the district never moves. Freezing its local matrices avoids
+    // recomposing thousands of windows, walls, roofs, and props every frame.
+    // Animated roots remain live; their descendants still inherit the moving
+    // parent matrix, so this does not alter any visible motion.
+    scene.updateMatrixWorld(true)
+    scene.traverse((object) => { object.matrixAutoUpdate = false })
+    const enableLiveTransform = (object: THREE.Object3D) => { object.matrixAutoUpdate = true }
+    animatedObjects.forEach(enableLiveTransform)
+    selectableRoots.forEach(enableLiveTransform)
+    transports.forEach(({ object }) => enableLiveTransform(object))
+    lawyer.traverse(enableLiveTransform)
+    if (transitCarrier) enableLiveTransform(transitCarrier)
+    enableLiveTransform(selectionRing)
+
+    // Capture one complete, static world shadow map before camera-dependent
+    // render culling begins. Camera rotation should never regenerate it.
+    renderer.render(scene, camera)
+    renderer.shadowMap.needsUpdate = false
 
     let targetYaw = 0
     let targetPitch = 0
@@ -2774,9 +3089,24 @@ export function MapThreeScene({
     let elapsed = 0
     let gaitPhase = 0
     let occlusionTimer = 0
+    let cullingTimer = 0
     let previousFrame = performance.now()
     let animationFrame = 0
     let disposed = false
+    let surfaceVisible = true
+    let lastHoverRaycast = 0
+    const lastOcclusionCamera = new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0)
+    const lastOcclusionPlayer = new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0)
+    const lastCullingCamera = new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0)
+    const frameTarget = new THREE.Vector3()
+    const frameCamera = new THREE.Vector3()
+    const frameAxisY = new THREE.Vector3(0, 1, 0)
+    const transportPosition = new THREE.Vector3()
+    const transportTangent = new THREE.Vector3()
+    const walkPosition = new THREE.Vector3()
+    const walkTangent = new THREE.Vector3()
+    const occlusionFocus = new THREE.Vector3()
+    const occlusionDirection = new THREE.Vector3()
 
     const setOccluderFade = (root: THREE.Object3D, faded: boolean) => {
       root.traverse((object) => {
@@ -2801,13 +3131,13 @@ export function MapThreeScene({
     }
 
     const updatePlayerOcclusion = () => {
-      const playerFocus = lawyer.position.clone().add(new THREE.Vector3(0, 1.25, 0))
-      const direction = playerFocus.clone().sub(camera.position)
-      const distance = direction.length()
-      occlusionRaycaster.set(camera.position, direction.normalize())
+      occlusionFocus.copy(lawyer.position).y += 1.05
+      occlusionDirection.copy(occlusionFocus).sub(camera.position)
+      const distance = occlusionDirection.length()
+      occlusionRaycaster.set(camera.position, occlusionDirection.normalize())
       occlusionRaycaster.far = Math.max(.1, distance - .32)
       const next = new Set<THREE.Object3D>()
-      const hits = occlusionRaycaster.intersectObjects(world.children, true)
+      const hits = occlusionRaycaster.intersectObjects(playerOccluders.filter((root) => root.visible), true)
       for (const hit of hits) {
         let root: THREE.Object3D | null = hit.object
         while (root && root.parent !== world) root = root.parent
@@ -2828,7 +3158,7 @@ export function MapThreeScene({
     const hitSelection = (event: PointerEvent) => {
       pointerNdc(event)
       raycaster.setFromCamera(pointer, camera)
-      const hits = raycaster.intersectObjects(world.children, true)
+      const hits = raycaster.intersectObjects(selectableRoots.filter((root) => root.visible), true)
       for (const hit of hits) {
         let current: THREE.Object3D | null = hit.object
         while (current) {
@@ -2846,6 +3176,22 @@ export function MapThreeScene({
       renderer.domElement.classList.add('is-grabbing')
     }
     const onPointerMove = (event: PointerEvent) => {
+      if (dragging) {
+        // Never raycast while surveying the map. Pointermove may fire faster
+        // than the display refresh rate, and selection cannot occur mid-drag.
+        renderer.domElement.style.cursor = 'grabbing'
+        const dx = event.clientX - pointerStart.x
+        const dy = event.clientY - pointerStart.y
+        if (Math.hypot(dx, dy) > 4) moved = true
+        targetYaw = THREE.MathUtils.clamp(targetYaw + dx * .0015, -.34, .34)
+        targetPitch = THREE.MathUtils.clamp(targetPitch + dy * .0009, -.08, .11)
+        pointerStart.set(event.clientX, event.clientY)
+        return
+      }
+      // Hover feedback does not need a 120 Hz raycast. A 30 Hz sample is
+      // visually immediate and leaves the main thread available for WebGL.
+      if (event.timeStamp - lastHoverRaycast < 32) return
+      lastHoverRaycast = event.timeStamp
       const root = hitSelection(event)
       if (root !== hoveredRoot) {
         if (hoveredRoot) {
@@ -2858,14 +3204,7 @@ export function MapThreeScene({
           hoveredRoot.traverse((object) => { if (object.userData.destinationMarker) object.userData.destinationHover = true })
         }
       }
-      renderer.domElement.style.cursor = root ? 'pointer' : dragging ? 'grabbing' : 'grab'
-      if (!dragging) return
-      const dx = event.clientX - pointerStart.x
-      const dy = event.clientY - pointerStart.y
-      if (Math.hypot(dx, dy) > 4) moved = true
-      targetYaw = THREE.MathUtils.clamp(targetYaw + dx * .0015, -.34, .34)
-      targetPitch = THREE.MathUtils.clamp(targetPitch + dy * .0009, -.08, .11)
-      pointerStart.set(event.clientX, event.clientY)
+      renderer.domElement.style.cursor = root ? 'pointer' : 'grab'
     }
     const onPointerUp = (event: PointerEvent) => {
       dragging = false
@@ -2916,11 +3255,12 @@ export function MapThreeScene({
       frameScale = camera.aspect < 1.35 ? 1.35 / Math.max(.62, camera.aspect) : 1
       camera.updateProjectionMatrix()
     }
-    const observer = new ResizeObserver(resize)
-    observer.observe(host)
+    const resizeObserver = new ResizeObserver(resize)
+    resizeObserver.observe(host)
 
     const animate = (frameNow = performance.now()) => {
-      if (disposed) return
+      animationFrame = 0
+      if (disposed || !surfaceVisible || document.hidden) return
       const delta = Math.min(.035, Math.max(0, (frameNow - previousFrame) / 1000))
       previousFrame = frameNow
       elapsed += delta
@@ -2952,40 +3292,52 @@ export function MapThreeScene({
         }
       }
       const desiredTarget = cameraMode === 'counsel'
-        ? new THREE.Vector3(lawyer.position.x, region === 'orbit' ? 1.35 : 1.15, lawyer.position.z)
+        ? frameTarget.set(lawyer.position.x, region === 'orbit' ? 1.35 : 1.15, lawyer.position.z)
         : overviewTarget
       cameraTarget.lerp(desiredTarget, cameraMode === 'counsel' ? (walking ? .055 : .035) : .08)
-      const desiredCamera = (cameraMode === 'counsel' ? counselOffset : cameraOffset).clone().multiplyScalar(zoom * frameScale)
-      desiredCamera.applyAxisAngle(new THREE.Vector3(0, 1, 0), targetYaw)
+      const desiredCamera = frameCamera.copy(cameraMode === 'counsel' ? counselOffset : cameraOffset).multiplyScalar(zoom * frameScale)
+      desiredCamera.applyAxisAngle(frameAxisY, targetYaw)
       desiredCamera.y += targetPitch * 18
       desiredCamera.add(cameraTarget)
       camera.position.lerp(desiredCamera, .055)
       camera.lookAt(cameraTarget)
       occlusionTimer += delta
-      if (occlusionTimer >= .1) { occlusionTimer = 0; updatePlayerOcclusion() }
+      const occlusionMoved = camera.position.distanceToSquared(lastOcclusionCamera) > .0025 || lawyer.position.distanceToSquared(lastOcclusionPlayer) > .0016
+      if (occlusionTimer >= .12 && occlusionMoved) {
+        occlusionTimer = 0
+        updatePlayerOcclusion()
+        lastOcclusionCamera.copy(camera.position)
+        lastOcclusionPlayer.copy(lawyer.position)
+      }
+      cullingTimer += delta
+      if (cullingTimer >= .16 && camera.position.distanceToSquared(lastCullingCamera) > .0064) {
+        cullingTimer = 0
+        updatePerformanceCulling()
+        lastCullingCamera.copy(camera.position)
+      }
       civicGlow.intensity = (region === 'orbit' ? 7.5 : 5.2) + Math.sin(elapsed * .65) * .22
 
       transports.forEach((transport) => {
         const t = (elapsed * transport.speed + transport.offset) % 1
-        const position = transport.curve.getPointAt(t)
-        const tangent = transport.curve.getTangentAt(t)
-        transport.object.position.copy(position)
+        transport.curve.getPointAt(t, transportPosition)
+        transport.curve.getTangentAt(t, transportTangent)
+        transport.object.position.copy(transportPosition)
         transport.object.position.y += region === 'ocean' && transport.object === regionalTransport ? .25 : .12
         // Vehicles, trains, ferries, and craft are modeled on local +X.
         // Aligning them as if they faced +Z made traffic slide sideways.
-        transport.object.rotation.y = -Math.atan2(tangent.z, tangent.x)
+        transport.object.rotation.y = -Math.atan2(transportTangent.z, transportTangent.x)
       })
       let locomotion = 0
       let arrival = 1
       if (walking) {
         const progress = THREE.MathUtils.clamp((performance.now() - walking.started) / walking.duration, 0, 1)
         const eased = progress < .5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2
-        const next = walking.curve.getPointAt(eased)
-        const tangent = walking.curve.getTangentAt(Math.min(.999, Math.max(.001, eased))).normalize()
-        const travelDelta = Math.hypot(next.x - lawyer.position.x, next.z - lawyer.position.z)
+        walking.curve.getPointAt(eased, walkPosition)
+        walking.curve.getTangentAt(Math.min(.999, Math.max(.001, eased)), walkTangent).normalize()
+        const travelDelta = Math.hypot(walkPosition.x - lawyer.position.x, walkPosition.z - lawyer.position.z)
         gaitPhase += travelDelta * 5.4
-        lawyer.position.copy(next)
-        const desiredHeading = Math.atan2(tangent.x, tangent.z)
+        lawyer.position.copy(walkPosition)
+        const desiredHeading = Math.atan2(walkTangent.x, walkTangent.z)
         lawyer.rotation.y = THREE.MathUtils.damp(lawyer.rotation.y, desiredHeading, progress < .08 ? 5.2 : 10.5, delta)
         const rampIn = THREE.MathUtils.smoothstep(progress, 0, .1)
         const rampOut = 1 - THREE.MathUtils.smoothstep(progress, .82, 1)
@@ -3007,10 +3359,12 @@ export function MapThreeScene({
       }
       const articulatedLocomotion = transitCarrier ? 0 : locomotion
       animateLawyerRig(lawyerModel.rig, elapsed, articulatedLocomotion, transitCarrier ? 1 : arrival, gaitPhase)
-      world.traverse((object) => {
+      animatedObjects.forEach((object) => {
         if (object.userData.cloud) {
           object.position.x += object.userData.speed * delta
-          if (object.position.x > 23) object.position.x = -23
+          if (object.position.x > object.userData.cloudWrapMax) object.position.x = object.userData.cloudWrapMin
+          object.position.y = object.userData.cloudBaseY + Math.sin(elapsed * .09 + object.userData.cloudPhase) * .18
+          object.position.z = object.userData.cloudBaseZ + Math.sin(elapsed * .055 + object.userData.cloudPhase) * .55
         }
         if (object.userData.tree) object.rotation.z = Math.sin(elapsed * .7 + object.userData.phase) * .012
         if (object.userData.fountainSpray && object instanceof THREE.Mesh) (object.material as THREE.MeshBasicMaterial).opacity = .35 + Math.sin(elapsed * 2.2 + object.userData.phase) * .11
@@ -3046,7 +3400,7 @@ export function MapThreeScene({
           ;(object.material as THREE.MeshBasicMaterial).opacity = .62 + Math.sin(elapsed * 2) * .2
         }
         if (object.userData.playerMarker) {
-          object.position.y = 2.35 + Math.sin(elapsed * 2.3) * .07
+          object.position.y = Number(object.userData.playerMarkerBaseY ?? 2.02) + Math.sin(elapsed * 2.3) * .06
           object.rotation.y += delta * 1.2
         }
         if (object.userData.destinationMarker) {
@@ -3088,15 +3442,39 @@ export function MapThreeScene({
         ;(selectionRing.material as THREE.MeshBasicMaterial).opacity = .58 + Math.sin(elapsed * 2.2) * .18
       }
       renderer.render(scene, camera)
-      animationFrame = requestAnimationFrame(animate)
+      if (!disposed && surfaceVisible && !document.hidden) animationFrame = requestAnimationFrame(animate)
     }
-    animate()
+    updatePerformanceCulling()
+    const surfaceObserver = new IntersectionObserver(([entry]) => {
+      surfaceVisible = Boolean(entry?.isIntersecting)
+      if (!surfaceVisible && animationFrame) {
+        cancelAnimationFrame(animationFrame)
+        animationFrame = 0
+      } else if (surfaceVisible && !document.hidden && !animationFrame) {
+        previousFrame = performance.now()
+        animationFrame = requestAnimationFrame(animate)
+      }
+    }, { rootMargin: '80px' })
+    surfaceObserver.observe(host)
+    const onVisibilityChange = () => {
+      if (document.hidden && animationFrame) {
+        cancelAnimationFrame(animationFrame)
+        animationFrame = 0
+      } else if (!document.hidden && surfaceVisible && !animationFrame) {
+        previousFrame = performance.now()
+        animationFrame = requestAnimationFrame(animate)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    animationFrame = requestAnimationFrame(animate)
 
     return () => {
       disposed = true
       cancelAnimationFrame(animationFrame)
       fadedOccluders.forEach((root) => setOccluderFade(root, false))
-      observer.disconnect()
+      resizeObserver.disconnect()
+      surfaceObserver.disconnect()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       renderer.domElement.removeEventListener('pointerdown', onPointerDown)
       renderer.domElement.removeEventListener('pointermove', onPointerMove)
       renderer.domElement.removeEventListener('pointerup', onPointerUp)

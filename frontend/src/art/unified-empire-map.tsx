@@ -11,9 +11,10 @@ import type {
   MapSceneTier,
   MapViewMode,
 } from './map-three-scene'
+import { loadMapScene } from './scene-loaders'
 import './unified-empire-map.css'
 
-const MapThreeScene = lazy(() => import('./map-three-scene').then((module) => ({ default: module.MapThreeScene })))
+const MapThreeScene = lazy(() => loadMapScene().then((module) => ({ default: module.MapThreeScene })))
 
 const regions: Array<{
   key: MapRegionKey
@@ -260,7 +261,7 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
             </small>
             <strong>{selected.data.name.replace('Acquire ', '')}</strong>
             <p>{selected.kind === 'tier' ? selected.data.short : selected.kind === 'rival' ? selected.data.description : selected.data.detail}</p>
-            {selected.kind !== 'event' && <div className="uw-card-cost"><span>${selected.data.cost.toLocaleString()}</span><span>★ {selected.data.reputation}</span></div>}
+            {selected.kind !== 'event' && <div className="uw-card-cost"><span>${selected.data.cost.toLocaleString()}</span><span>★ {selected.data.reputation}</span>{selected.kind === 'tier' && <span>LEASE ${selected.data.rent_daily.toLocaleString()}/DAY</span>}</div>}
             {selected.kind !== 'event' && (
               <button type="button" className="uw-card-action" disabled={pointLocked(selected)} onClick={() => onManage(selected.kind === 'tier' ? 'upgrades' : 'rivals')}>
                 {pointLocked(selected) ? 'Route not yet earned' : selected.kind === 'tier' ? 'Manage headquarters' : 'Open acquisition file'} <i>{pointLocked(selected) ? '×' : '›'}</i>
@@ -270,8 +271,6 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
             {selected.kind === 'event' && !selected.locked && <button type="button" className="uw-card-action" onClick={() => navigate('/cases')}>Open Daily Docket <i>›</i></button>}
           </aside>
         )}
-
-        <div className="uw-environment-note"><small>ENVIRONMENT</small><span>{activeRegion.character}</span></div>
       </section>
     </div>
   )

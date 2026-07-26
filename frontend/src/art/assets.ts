@@ -2,8 +2,6 @@
    stable URL for a key and falls back deterministically for unknown keys, so
    new backend catalog entries always render something sensible. */
 
-import type { CharacterGender } from '../types'
-
 const BASE = `${import.meta.env.BASE_URL}art`
 
 const pad2 = (n: number) => String(Math.trunc(n)).padStart(2, '0')
@@ -14,11 +12,6 @@ export function keyHash(key: string) {
 }
 
 /* ------------------------------------------------------------ scenes */
-
-export const officeArt = (tier: number) => `${BASE}/office/tier-${pad2(clampTier(tier))}.webp`
-
-export type TerrainSection = 'city' | 'nation' | 'world' | 'continent' | 'space'
-export const terrainArt = (section: TerrainSection) => `${BASE}/terrain/${section}.webp`
 
 export const CUTSCENE_KEYS = [
   'rainy_shack', 'market_showdown', 'city_hall_night', 'sterling_tower',
@@ -77,58 +70,6 @@ export const connectionArt = (key: string) => {
   return `${BASE}/connection/${known}.webp`
 }
 
-/* ------------------------------------------------------------ people */
-
-export const STAFF_KEYS = [
-  'paralegal', 'junior_associate', 'office_manager', 'senior_associate', 'partner',
-  'rainmaker', 'intake_specialist', 'private_investigator', 'litigation_technologist',
-  'legal_nurse', 'trial_consultant', 'communications_director', 'appellate_counsel',
-  'chief_operating_officer', 'cybersecurity_counsel', 'branch_director', 'economist',
-  'international_arbitrator', 'diplomatic_liaison', 'crisis_commander', 'data_scientist',
-  'sovereign_envoy', 'treaty_architect', 'automation_director', 'quantum_analyst',
-  'oceanic_counsel', 'systems_advocate', 'orbital_counsel', 'lunar_envoy',
-  'chief_justice_strategist',
-] as const
-
-export const staffArt = (key: string) => {
-  const known = (STAFF_KEYS as readonly string[]).includes(key)
-    ? key
-    : STAFF_KEYS[keyHash(key) % STAFF_KEYS.length]
-  return `${BASE}/staff/${known}.webp`
-}
-
-/** Deterministic full-body sprite for generic cast members (cutscene speakers,
-    unknown people) drawn from the staff ensemble. */
-export const castArt = (gender: CharacterGender, variant: number) =>
-  `${BASE}/staff/${STAFF_KEYS[(keyHash(gender) + variant * 7) % STAFF_KEYS.length]}.webp`
-
-export const CLIENT_KINDS = [
-  'briefcase', 'home', 'store', 'gem', 'building', 'landmark', 'globe', 'civic',
-  'hospitality', 'property', 'health', 'media', 'tech', 'sports', 'energy', 'sovereign',
-  'bank', 'quantum', 'ocean', 'orbit', 'lunar', 'nexus',
-] as const
-
-export const clientArt = (kind: string) => {
-  const known = (CLIENT_KINDS as readonly string[]).includes(kind)
-    ? kind
-    : CLIENT_KINDS[keyHash(kind) % CLIENT_KINDS.length]
-  return `${BASE}/client/${known}.webp`
-}
-
-export const OWNER_KEYS = [
-  'neighborhood_practice', 'downtown_boutique', 'regional_firm', 'national_competitor',
-  'appellate_chambers', 'media_law_collective', 'transatlantic_firm', 'global_crisis_firm',
-  'sovereign_rival', 'continental_rival', 'oceanic_rival', 'orbital_rival', 'lunar_rival',
-  'planetary_rival',
-] as const
-
-export const ownerArt = (rivalKey: string) => {
-  const known = (OWNER_KEYS as readonly string[]).includes(rivalKey)
-    ? rivalKey
-    : OWNER_KEYS[keyHash(rivalKey) % OWNER_KEYS.length]
-  return `${BASE}/owner/${known}.webp`
-}
-
 /** Wardrobe stages: the player's look levels up with the firm. */
 export const playerStage = (tier: number) => {
   const t = clampTier(tier)
@@ -139,11 +80,6 @@ export const playerStage = (tier: number) => {
   if (t >= 1) return 1
   return 0
 }
-
-export const playerArt = (gender: CharacterGender, tier: number) =>
-  `${BASE}/player/${gender === 'male' ? 'male' : 'female'}-${playerStage(tier)}.webp`
-
-export const judgeArt = (pleased: boolean) => `${BASE}/judge/${pleased ? 'pleased' : 'neutral'}.webp`
 
 /* ---------------------------------------------------- opposing counsel */
 
@@ -156,9 +92,6 @@ export const OPPOSING_COUNSEL = [
 ] as const
 
 export const counselFor = (seed: string) => OPPOSING_COUNSEL[keyHash(seed) % OPPOSING_COUNSEL.length]
-
-export const counselArt = (key: string, rattled: boolean) =>
-  `${BASE}/counsel/${key}-${rattled ? 'rattled' : 'composed'}.webp`
 
 /* ------------------------------------------------------- office events */
 
@@ -175,7 +108,3 @@ export const eventArt = (scene: string) => {
     : EVENT_SCENES[keyHash(scene) % EVENT_SCENES.length]
   return `${BASE}/event/${known}.webp`
 }
-
-/* -------------------------------------------------------- office props */
-
-export const propArt = (name: 'cat-sleep' | 'cat-awake' | 'coffee') => `${BASE}/prop/${name}.webp`
