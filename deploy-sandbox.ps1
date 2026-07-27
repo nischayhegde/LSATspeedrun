@@ -567,7 +567,12 @@ try {
         }
     }
 
-    $venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
+    $venvPython = if ($IsWindows) {
+        Join-Path $repoRoot ".venv\Scripts\python.exe"
+    }
+    else {
+        Join-Path $repoRoot ".venv/bin/python"
+    }
     if (-not (Test-Path -LiteralPath $venvPython)) {
         $bootstrapPython = Resolve-Executable -Names @("python.exe", "python")
         Invoke-External -FilePath $bootstrapPython -ArgumentList @("-m", "venv", (Join-Path $repoRoot ".venv"))
