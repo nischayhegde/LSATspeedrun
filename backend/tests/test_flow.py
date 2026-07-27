@@ -1983,6 +1983,36 @@ def test_strategy_dashboard_waits_for_supported_evidence_and_excludes_skips(app)
         assert snapshot["strongest"]["key"] == "argument_core"
         assert snapshot["trials_completed"] == 12
 
+        assert snapshot["leader"]["key"] == "argument_core"
+        assert result["verdict"] == "confirmed"
+        assert result["verdict_label"] == "confirmed"
+        assert result["plain_title"] == "Split the argument"
+        assert result["summary"] == "Splitting the argument is helping you."
+        assert result["detail"] == "You get 75% right with it and 50% right without it on similar questions."
+        assert result["with_headline"] == "75%"
+        assert result["with_note"] == "8 questions with it"
+        assert result["without_note"] == "4 questions without it"
+        assert result["difference_headline"] == "+25 points"
+        assert result["difference_note"] == "95s average with it"
+
     response = client.get("/v1/performance", headers=headers)
     assert response.status_code == 200
     assert response.json["performance"]["strategy_lab"]["strongest"]["key"] == "argument_core"
+
+
+def test_every_strategy_carries_student_facing_copy(app):
+    with app.app_context():
+        from app.strategies import STRATEGIES, serialize_strategy, strategy_catalog
+
+        catalog = strategy_catalog()
+        assert len(catalog) == len(STRATEGIES)
+        for strategy in catalog:
+            for field in ("plain_title", "plain_subject", "plain_line"):
+                assert strategy[field].strip(), f"{strategy['key']} is missing {field}"
+            assert strategy["plain_title"] != strategy["title"]
+            assert len(strategy["steps"]) == 3
+
+        served = serialize_strategy("negation_test")
+        assert served["plain_title"] == "Negate the answer"
+        assert served["plain_subject"] == "Negating the answer"
+        assert served["title"] == "Necessary-Assumption Negation"

@@ -237,9 +237,15 @@ export type Choice = { label: string; text: string }
 
 export type StrategyDefinition = {
   key: string
+  /** Published name in LSAC and prep materials. Catalog subtitle only. */
   title: string
+  /** Student-facing name, used on the question card and dashboard. */
+  plain_title: string
+  /** Gerund form, for sentences the backend assembles. */
+  plain_subject: string
   section: 'Logical Reasoning' | 'Reading Comprehension'
   prompt: string
+  plain_line: string
   steps: string[]
   best_for: string
   sources: Array<{ label: string; url: string }>
@@ -369,6 +375,8 @@ export type PerformanceMetric = {
 export type StrategyResult = {
   key: string
   title: string
+  plain_title: string
+  plain_subject: string
   section: StrategyDefinition['section']
   best_for: string
   sample: number
@@ -380,8 +388,20 @@ export type StrategyResult = {
   control_seconds: number
   lift: number | null
   skipped: number
+  /** Internal three-tier evidence state. Prefer `verdict` for display. */
   status: 'forming' | 'directional' | 'supported'
   ranking_score: number
+  verdict: 'checking' | 'confirmed'
+  verdict_label: string
+  summary: string
+  detail: string
+  next_step: string
+  with_headline: string
+  with_note: string
+  without_headline: string
+  without_note: string
+  difference_headline: string
+  difference_note: string
 }
 
 export type PerformanceSnapshot = {
@@ -422,9 +442,13 @@ export type PerformanceSnapshot = {
   strategy_lab?: {
     catalog: StrategyDefinition[]
     results: StrategyResult[]
+    leader: StrategyResult | null
     trials_completed: number
     strategies_tested: number
     strongest: StrategyResult | null
+    intro: string
+    empty_state: { title: string; body: string }
+    catalog_note: string
     evidence_note: string
   }
   recommendation: { skill: string; accuracy: number; reason: string } | null

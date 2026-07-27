@@ -800,29 +800,27 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       </div>
 
       {strategyTrial && (
-        <section className={`strategy-trial ${strategyApplied === true ? 'is-applied' : strategyApplied === false ? 'is-skipped' : ''}`} aria-label={`Strategy trial: ${strategyTrial.title}`}>
-          <div className="strategy-trial-seal"><Brain size={21} /><small>{session.practice_style === 'deep' ? 'PARTNER BRIEF' : 'METHOD TRIAL'}</small></div>
-          <div className="strategy-trial-copy">
-            <span>PERSONALIZED STRATEGY EXPERIMENT · {strategyTrial.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
-            <h2>{strategyTrial.title}</h2>
-            <p>{strategyTrial.prompt}</p>
-            <ol>{strategyTrial.steps.map((step, index) => <li key={step}><b>{index + 1}</b>{step}</li>)}</ol>
-            <details><summary>Why this method is being tested</summary><p>It is appropriate for {strategyTrial.best_for.toLowerCase()}. Your accuracy is compared with matched, unprompted cases; prompt-reading time is removed from pace analysis.</p><div>{strategyTrial.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>{source.label}</a>)}</div></details>
+        <section className={`strategy-tip ${strategyApplied === true ? 'is-applied' : strategyApplied === false ? 'is-skipped' : ''}`} aria-label={`Suggested approach: ${strategyTrial.plain_title}`}>
+          <div className="strategy-tip-head">
+            <span><Brain size={15} /> {session.practice_style === 'deep' ? 'PARTNER TIP' : 'TRY THIS'}</span>
+            {!result && <small>Pick one before you answer</small>}
           </div>
-          <div className="strategy-trial-decision">
+          <h2>{strategyTrial.plain_title}</h2>
+          <p>{strategyTrial.plain_line}</p>
+          <ol>{strategyTrial.steps.map((step, index) => <li key={step}><b>{index + 1}</b>{step}</li>)}</ol>
+          <div className="strategy-tip-actions">
             {!result ? <>
-              <small>Choose before answering</small>
-              <button type="button" className={strategyApplied === true ? 'active' : ''} aria-pressed={strategyApplied === true} onClick={() => {
+              <button type="button" className={`strategy-tip-use ${strategyApplied === true ? 'active' : ''}`} aria-pressed={strategyApplied === true} onClick={() => {
                 if (strategyApplied === null) setStrategyPromptMs(Math.min(60_000, Date.now() - openedAt))
                 setStrategyApplied(true)
                 void play('select', { seed: `${item.id}:strategy-use`, intensity: .36 })
-              }}><Check size={15} /> Use this brief</button>
-              <button type="button" className={strategyApplied === false ? 'active' : ''} aria-pressed={strategyApplied === false} onClick={() => {
+              }}><Check size={15} /> Use it</button>
+              <button type="button" className={`strategy-tip-skip ${strategyApplied === false ? 'active' : ''}`} aria-pressed={strategyApplied === false} onClick={() => {
                 if (strategyApplied === null) setStrategyPromptMs(Math.min(60_000, Date.now() - openedAt))
                 setStrategyApplied(false)
                 void play('paper', { seed: `${item.id}:strategy-skip`, intensity: .25 })
-              }}>Solve normally</button>
-            </> : <div className="strategy-trial-recorded"><Check size={17} /><span>{strategyApplied ? 'Method trial recorded' : 'Unprompted solve recorded'}</span></div>}
+              }}>Skip this one</button>
+            </> : <div className="strategy-tip-recorded"><Check size={17} /><span>{strategyApplied ? 'Used this approach' : 'Answered without it'}</span></div>}
           </div>
         </section>
       )}
@@ -903,7 +901,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                 void play('submit', { seed: item.id, intensity: .68 })
                 submit.mutate()
               }}>
-                {strategyDecisionRequired ? 'Choose a method above' : submit.isPending || pageTurning ? 'Recording answer…' : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
+                {strategyDecisionRequired ? 'Pick Use it or Skip first' : submit.isPending || pageTurning ? 'Recording answer…' : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
               </button>
             </div>
           )}

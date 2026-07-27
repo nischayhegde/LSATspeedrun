@@ -87,14 +87,16 @@ export function PerformancePage() {
   const strategyLab = performance.strategy_lab ?? {
     catalog: [],
     results: [],
+    leader: null,
     trials_completed: 0,
     strategies_tested: 0,
     strongest: null,
-    evidence_note: 'Method evidence begins after eligible Deep Practice or Infinite questions.',
+    intro: 'Some questions come with a suggested approach, then we compare how you did against similar questions without one.',
+    empty_state: { title: 'Nothing to compare yet.', body: 'Answer questions in Method Lab or Infinite to get started.' },
+    catalog_note: 'Official LSAC guidance comes first; the rest are approaches this app tests against your own results.',
+    evidence_note: 'This measures your own practice, not your score.',
   }
-  const leadingStrategy = strategyLab.strongest
-    ?? strategyLab.results.find((strategy) => strategy.status === 'directional')
-    ?? strategyLab.results.find((strategy) => strategy.sample > 0)
+  const leadingStrategy = strategyLab.leader
   const chartPoints = trend.length > 1
     ? trend.map((entry, index) => `${20 + index * (560 / Math.max(1, trend.length - 1))},${160 - entry.accuracy * 1.25}`).join(' ')
     : ''
@@ -179,47 +181,40 @@ export function PerformancePage() {
         <div className="mobile-performance-deck-track" aria-label="Training analysis panels">
       <section className="strategy-lab-panel" aria-labelledby="strategy-lab-title">
         <div className="panel-heading strategy-lab-heading">
-          <div><span>PERSONAL METHOD LAB</span><h2 id="strategy-lab-title">Find the process that actually helps you.</h2></div>
+          <div><span>WHAT'S WORKING FOR YOU</span><h2 id="strategy-lab-title">The approaches that actually help you.</h2></div>
           <Brain />
         </div>
-        <p className="strategy-lab-intro">Every fourth eligible Deep Practice or Infinite question may carry one short method brief. A hidden control group compares similar unprompted questions; Diagnostics, Sprints, and Review stay clean.</p>
+        <p className="strategy-lab-intro">{strategyLab.intro}</p>
 
         {leadingStrategy ? (
           <div className="strategy-leader-grid">
             <div className="strategy-leader-copy">
-              <span className={`strategy-evidence-badge ${leadingStrategy.status}`}>{leadingStrategy.status} signal</span>
-              <h3>{leadingStrategy.title}</h3>
-              <p>{leadingStrategy.best_for}</p>
-              <small>{leadingStrategy.status === 'supported' ? 'This is your strongest currently supported method.' : 'Promising, but more prompted and control observations are required before calling it supported.'}</small>
+              <span className={`strategy-evidence-badge ${leadingStrategy.verdict}`}>{leadingStrategy.verdict_label}</span>
+              <h3>{leadingStrategy.plain_title}</h3>
+              <p>{leadingStrategy.summary}</p>
+              <small>{leadingStrategy.detail} {leadingStrategy.next_step}</small>
             </div>
-            <div className="strategy-comparison" aria-label={`${leadingStrategy.title} trial comparison`}>
-              <div><span>WITH METHOD</span><strong>{leadingStrategy.accuracy}%</strong><small>{leadingStrategy.sample} questions</small></div>
-              <div><span>MATCHED CONTROL</span><strong>{leadingStrategy.control_sample ? `${leadingStrategy.control_accuracy}%` : '—'}</strong><small>{leadingStrategy.control_sample} questions</small></div>
-              <div className={leadingStrategy.lift !== null && leadingStrategy.lift > 0 ? 'positive' : ''}><span>ACCURACY LIFT</span><strong>{leadingStrategy.lift === null ? '—' : `${leadingStrategy.lift > 0 ? '+' : ''}${leadingStrategy.lift} pts`}</strong><small>{leadingStrategy.average_seconds}s adjusted split</small></div>
+            <div className="strategy-comparison" aria-label={`${leadingStrategy.plain_title}: with it compared with without it`}>
+              <div><span>WITH IT</span><strong>{leadingStrategy.with_headline}</strong><small>{leadingStrategy.with_note}</small></div>
+              <div><span>WITHOUT IT</span><strong>{leadingStrategy.without_headline}</strong><small>{leadingStrategy.without_note}</small></div>
+              <div className={leadingStrategy.lift !== null && leadingStrategy.lift > 0 ? 'positive' : ''}><span>DIFFERENCE</span><strong>{leadingStrategy.difference_headline}</strong><small>{leadingStrategy.difference_note}</small></div>
             </div>
           </div>
         ) : (
-          <div className="strategy-empty-state"><Activity /><div><strong>No method winner yet.</strong><p>Complete Deep Practice or Infinite questions. The first brief is eligible on question 3, then no more than once every four questions.</p></div></div>
+          <div className="strategy-empty-state"><Activity /><div><strong>{strategyLab.empty_state.title}</strong><p>{strategyLab.empty_state.body}</p></div></div>
         )}
-
-        <div className="strategy-evidence-key" aria-label="Strategy evidence thresholds">
-          <div className="active"><b>1</b><span>FORMING<small>under 4 method or 2 control samples</small></span></div>
-          <div><b>2</b><span>DIRECTIONAL<small>at least 4 method and 2 control samples</small></span></div>
-          <div><b>3</b><span>SUPPORTED<small>at least 8 method and 4 control samples</small></span></div>
-        </div>
 
         {strategyLab.results.length > 0 && (
           <details className="strategy-results-detail">
-            <summary>Compare all tested methods <span>{strategyLab.strategies_tested} tested · {strategyLab.trials_completed} measured observations</span></summary>
+            <summary>Every approach you've tried <span>{strategyLab.strategies_tested} tried · {strategyLab.trials_completed} questions measured</span></summary>
             <div className="strategy-results-table">
-              <div className="header"><span>Method</span><span>Evidence</span><span>Method / control</span><span>Lift</span><span>Adjusted pace</span></div>
+              <div className="header"><span>Approach</span><span>With it / without it</span><span>Difference</span><span>Where it stands</span></div>
               {strategyLab.results.map((strategy) => (
                 <div key={strategy.key}>
-                  <strong>{strategy.title}<small>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</small></strong>
-                  <span className={`strategy-evidence-badge ${strategy.status}`}>{strategy.status}</span>
-                  <span>{strategy.sample ? `${strategy.accuracy}%` : '—'} / {strategy.control_sample ? `${strategy.control_accuracy}%` : '—'}<small>n={strategy.sample} / {strategy.control_sample}</small></span>
-                  <span>{strategy.lift === null ? '—' : `${strategy.lift > 0 ? '+' : ''}${strategy.lift} pts`}</span>
-                  <span>{strategy.sample ? `${strategy.average_seconds}s` : '—'}<small>{strategy.pace_adherence === null ? 'pace forming' : `${strategy.pace_adherence}% in target`}</small></span>
+                  <strong>{strategy.plain_title}<small>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</small></strong>
+                  <span>{strategy.with_headline} / {strategy.without_headline}<small>{strategy.sample} with · {strategy.control_sample} without</small></span>
+                  <span>{strategy.difference_headline}</span>
+                  <span className={`strategy-evidence-badge ${strategy.verdict}`}>{strategy.verdict_label}</span>
                 </div>
               ))}
             </div>
@@ -227,13 +222,13 @@ export function PerformancePage() {
         )}
 
         <details className="strategy-catalog-detail">
-          <summary>See the complete 14-method playbook and sources</summary>
-          <p>No source guarantees a 170+. Official LSAC guidance is the primary authority; prep-provider methods are hypotheses the app tests against your own performance.</p>
+          <summary>All 14 approaches and where they come from</summary>
+          <p>{strategyLab.catalog_note}</p>
           <div className="strategy-catalog-grid">
-            {strategyLab.catalog.map((strategy) => <article key={strategy.key}><span>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span><h3>{strategy.title}</h3><p>{strategy.prompt}</p><ol>{strategy.steps.map((step) => <li key={step}>{step}</li>)}</ol><small>Best for: {strategy.best_for}</small><div>{strategy.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>{source.label}</a>)}</div></article>)}
+            {strategyLab.catalog.map((strategy) => <article key={strategy.key}><span>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span><h3>{strategy.plain_title}</h3><em>{strategy.title}</em><p>{strategy.plain_line}</p><ol>{strategy.steps.map((step) => <li key={step}>{step}</li>)}</ol><small>Best for: {strategy.best_for}</small><div>{strategy.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>{source.label}</a>)}</div></article>)}
           </div>
         </details>
-        <p className="strategy-lab-caveat"><ShieldAlert /> {strategyLab.evidence_note} This is an individualized training signal, not a guaranteed score outcome.</p>
+        <p className="strategy-lab-caveat"><ShieldAlert /> {strategyLab.evidence_note}</p>
       </section>
 
       <section className="diagnostic-lab">
