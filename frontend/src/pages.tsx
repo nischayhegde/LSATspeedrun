@@ -145,6 +145,9 @@ export function PerformancePage() {
         <article><div><Gauge /><span>CONFIDENCE ERRORS</span></div><strong>{confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`}</strong><small>High-confidence misses across {confidenceMetrics.sample} rated answers</small></article>
       </section>
 
+      <div className="mobile-performance-deck">
+        <header className="mobile-performance-deck-heading" aria-hidden="true"><span>YOUR TRAINING FILE</span><strong>Swipe between method, baseline, evidence, trends, and skills.</strong></header>
+        <div className="mobile-performance-deck-track" aria-label="Training analysis panels">
       <section className="strategy-lab-panel" aria-labelledby="strategy-lab-title">
         <div className="panel-heading strategy-lab-heading">
           <div><span>PERSONAL METHOD LAB</span><h2 id="strategy-lab-title">Find the process that actually helps you.</h2></div>
@@ -249,6 +252,8 @@ export function PerformancePage() {
         <div className="panel-heading"><div><span>SKILL MATRIX</span><h2>Where the points are actually moving</h2></div><Brain /></div>
         {performance.skills.length ? <div className="skill-table"><div className="skill-row header"><span>Question type</span><span>Sample</span><span>Accuracy</span><span>Pace</span><span>Reasoning</span></div>{performance.skills.map((skill) => <div className="skill-row" key={skill.name}><strong>{skill.name}</strong><span>{skill.attempts}</span><span><i style={{ width: `${skill.accuracy}%` }} />{skill.accuracy}%</span><span>{skill.pace_adherence}%</span><span>{skill.reasoning === null ? '—' : `${skill.reasoning}%`}</span></div>)}</div> : <div className="empty-skills"><p>No skill claims yet. The diagnostic creates the first evidence-backed matrix.</p></div>}
       </section>
+        </div>
+      </div>
 
       {(startDiagnostic.error || startSpeedrun.error || startFocus.error) && <ErrorNotice error={startDiagnostic.error || startSpeedrun.error || startFocus.error} />}
     </div>

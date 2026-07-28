@@ -2643,7 +2643,8 @@ export function MapThreeScene({
     const definition = ARC[region]
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4
-    const renderPixelRatio = Math.min(window.devicePixelRatio || 1, constrainedDevice ? 1 : 1.15)
+    const mobileViewport = window.matchMedia('(max-width: 760px)').matches
+    const renderPixelRatio = Math.min(window.devicePixelRatio || 1, constrainedDevice || mobileViewport ? 1 : 1.15)
     renderer.setPixelRatio(renderPixelRatio)
     renderer.setSize(host.clientWidth, host.clientHeight, false)
     renderer.outputColorSpace = THREE.SRGBColorSpace

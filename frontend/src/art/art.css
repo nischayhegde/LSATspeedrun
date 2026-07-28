@@ -105,6 +105,9 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
   border-radius: 42% 42% 18px 18px;
   background:
     radial-gradient(120% 90% at 50% 8%, rgba(255, 236, 190, 0.22), transparent 55%),
+    linear-gradient(180deg, #3a4d59, var(--bust-bg, #22374a) 64%, #101721);
+  background:
+    radial-gradient(120% 90% at 50% 8%, rgba(255, 236, 190, 0.22), transparent 55%),
     linear-gradient(180deg, color-mix(in srgb, var(--bust-bg, #22374a) 88%, #ffe9b6 12%), var(--bust-bg, #22374a) 64%, color-mix(in srgb, var(--bust-bg, #22374a) 72%, #05070c 28%));
   box-shadow: inset 0 0 0 1.5px rgba(232, 200, 124, 0.35), inset 0 -14px 24px rgba(5, 8, 13, 0.35);
 }
@@ -392,7 +395,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
    styles.css .world-person > span rule) */
 .world-person > span.av-client-token,
 .av-client-token { position: relative; left: auto; top: auto; transform: none; min-width: 0; border: 0; background: none; box-shadow: none; padding: 0; display: block; width: 76px; height: 82px; filter: drop-shadow(0 10px 16px rgba(6, 10, 16, 0.45)); }
-.av-client-token .av-bust { position: absolute; inset: 0; overflow: hidden; border-radius: 46% 46% 22px 22px; background: radial-gradient(120% 90% at 50% 8%, rgba(255, 236, 190, 0.25), transparent 55%), linear-gradient(180deg, color-mix(in srgb, var(--token-bg, #22374a) 86%, #ffe9b6 14%), var(--token-bg, #22374a) 62%, color-mix(in srgb, var(--token-bg, #22374a) 70%, #05070c 30%)); box-shadow: inset 0 0 0 2px rgba(232, 200, 124, 0.55), inset 0 -12px 20px rgba(5, 8, 13, 0.35); }
+.av-client-token .av-bust { position: absolute; inset: 0; overflow: hidden; border-radius: 46% 46% 22px 22px; background: radial-gradient(120% 90% at 50% 8%, rgba(255, 236, 190, 0.25), transparent 55%), linear-gradient(180deg, #3a4d59, var(--token-bg, #22374a) 62%, #101721); background: radial-gradient(120% 90% at 50% 8%, rgba(255, 236, 190, 0.25), transparent 55%), linear-gradient(180deg, color-mix(in srgb, var(--token-bg, #22374a) 86%, #ffe9b6 14%), var(--token-bg, #22374a) 62%, color-mix(in srgb, var(--token-bg, #22374a) 70%, #05070c 30%)); box-shadow: inset 0 0 0 2px rgba(232, 200, 124, 0.55), inset 0 -12px 20px rgba(5, 8, 13, 0.35); }
 
 /* interactive zones */
 .world-zone > i { width: 8px; height: 8px; left: 12px; top: 12px; border: 1.5px solid #ffe7a5; border-radius: 50%; background: #d9b664; box-shadow: 0 0 0 4px rgba(255,217,138,.12),0 0 12px rgba(255,217,138,.42); animation: av-zone-pulse 2.4s ease-in-out infinite; }

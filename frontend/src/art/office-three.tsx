@@ -283,7 +283,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const roomHalf = roomWidth / 2
     const detailLevel = Math.min(9, 1 + Math.floor(level / 2) + Math.floor(visualAssets.length / 7))
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' })
-    const targetPixelRatio = Math.min(1.15, window.devicePixelRatio || 1)
+    const mobileViewport = window.matchMedia('(max-width: 760px)').matches
+    const targetPixelRatio = Math.min(mobileViewport ? 1 : 1.15, window.devicePixelRatio || 1)
     // Keep one resolution for the lifetime of the scene. Resizing the WebGL
     // drawing buffer after the office appears creates a visible hitch.
     renderer.setPixelRatio(targetPixelRatio)
@@ -2196,7 +2197,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       })
       floorMap.dispose(); wallMap?.dispose(); screenMap.dispose(); renderer.dispose()
     }
-  }, [activeCaseSignature, assetSignature, layoutKey, ownedAssets, tier])
+  // assetSignature intentionally captures the visual inputs. Depending on the
+  // array identity caused the scene to be recreated whenever React produced an
+  // equivalent assets array (especially in previews).
+  }, [activeCaseSignature, assetSignature, layoutKey, tier])
 
   return <canvas className="office-three-canvas" ref={canvasRef} aria-label={`Interactive three-dimensional ${environmentName} law office${activeCase ? ` with ${activeCase.clientName} waiting` : ''}`} role="img" />
 }

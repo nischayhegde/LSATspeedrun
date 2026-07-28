@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "LSAT Speedrun",
+    "slug": "lsat-speedrun",
+    "scheme": "lsatspeedrun",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#09111e"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lsatspeedrun.app",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.lsatspeedrun.app",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

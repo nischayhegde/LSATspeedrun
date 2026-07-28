@@ -79,6 +79,18 @@ npm run dev
 Open http://localhost:5173. To use the local-development sign-in button, explicitly set
 `DEV_AUTH_ENABLED=true`; it defaults off and is rejected when `FLASK_ENV=production`.
 
+## Native iOS and Android app
+
+`mobile/` is a lightweight Expo / React Native shell around the production React application.
+It deliberately renders the same responsive routes as desktop so the Three.js office, WebGL
+career map, typography, tutorial, sounds, case runner, progress evidence, and account state do
+not drift into a second mobile interpretation. React Native supplies safe-area handling,
+hardware back navigation, shared cookies, pull-to-refresh, and native connection recovery.
+
+The web application retains its cookie + CSRF security model inside the shell. See
+[mobile/README.md](mobile/README.md) for local device URLs, Expo commands, production HTTPS
+configuration, and the authentication check required before App Store or Play Store submission.
+
 ## Configuration
 
 The backend reads `backend/.env`, followed by a root `.env` for values not already set.

@@ -3,6 +3,7 @@ import type { ActiveOfficeCase, GameAsset } from '../types'
 import { loadOfficeScene } from './scene-loaders'
 
 const OfficeThreeScene = lazy(() => loadOfficeScene().then((module) => ({ default: module.OfficeThreeScene })))
+const EMPTY_ASSETS: GameAsset[] = []
 
 function roomTheme(tier: number) {
   if (tier >= 10) return 'summit'
@@ -13,7 +14,7 @@ function roomTheme(tier: number) {
 
 export function OfficeRoom({
   tier,
-  assets = [],
+  assets = EMPTY_ASSETS,
   layoutKey,
   activeCase,
 }: {

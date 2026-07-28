@@ -80,7 +80,11 @@ function Assert-StagedContentSafe {
     }
     $blocked = @(
         $stagedPaths | Where-Object {
-            $_ -match '(?i)(^|/)(\.env(?:\.|$)|credentials?(?:\.|$)|secrets?(?:\.|$))' -or
+            (
+                $_ -match '(?i)(^|/)\.env(?:\.|$)' -and
+                $_ -notmatch '(?i)(^|/)\.env(?:\.[^/]+)*\.(example|sample)$'
+            ) -or
+            $_ -match '(?i)(^|/)(credentials?(?:\.|$)|secrets?(?:\.|$))' -or
             $_ -match '(?i)\.(pem|key|p12|pfx)$'
         }
     )

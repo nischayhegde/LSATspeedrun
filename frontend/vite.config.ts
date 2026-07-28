@@ -3,8 +3,15 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    target: ['es2020', 'safari15'],
+    cssTarget: 'safari15',
+  },
   server: {
-    host: '127.0.0.1',
+    // Expo Go on a physical phone must be able to reach the exact same Vite
+    // application over the local network. The API remains private behind the
+    // Vite proxy, while the web UI is reachable from the development LAN.
+    host: '0.0.0.0',
     port: 5173,
     proxy: {
       '/v1': {

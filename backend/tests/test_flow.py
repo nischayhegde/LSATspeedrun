@@ -19,6 +19,7 @@ from app.game import (
 )
 from app.models import (
     AiJob,
+    AuthSession,
     Attempt,
     AttemptSettlement,
     DailyProgress,
@@ -113,6 +114,14 @@ def login(client, email: str = "student@example.test") -> dict[str, str]:
     return {"X-CSRF-Token": csrf.value}
 
 
+def mobile_login(client, email: str = "student@example.test") -> dict[str, str]:
+    response = client.post("/v1/auth/mobile/dev", json={"email": email, "display_name": "Mobile Student"})
+    assert response.status_code == 200
+    assert response.json["access_token"]
+    assert response.json["expires_at"]
+    return {"Authorization": f"Bearer {response.json['access_token']}"}
+
+
 def test_development_auth_fails_closed(monkeypatch):
     monkeypatch.setenv("FLASK_ENV", "development")
     monkeypatch.setenv("DEV_AUTH_ENABLED", "false")
@@ -129,6 +138,31 @@ def test_development_auth_fails_closed(monkeypatch):
     monkeypatch.setenv("DEV_AUTH_ENABLED", "true")
     with pytest.raises(RuntimeError, match="DEV_AUTH_ENABLED"):
         create_app({"TESTING": True, "AUTO_SEED": False})
+
+
+def test_mobile_bearer_sessions_are_revocable_and_do_not_require_csrf(app):
+    client = app.test_client()
+    headers = mobile_login(client, "native@example.test")
+
+    me = client.get("/v1/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json["user"]["email"] == "native@example.test"
+
+    # Cookie sessions still protect state-changing endpoints with CSRF. Device
+    # bearer sessions use the Authorization header instead and are exempt from
+    # that browser-only check.
+    created = client.post(
+        "/v1/game/profile",
+        json={"lawyer_name": "Native Counsel", "firm_name": "Native Legal", "character_gender": "female"},
+        headers=headers,
+    )
+    assert created.status_code == 201
+
+    logged_out = client.post("/v1/auth/logout", headers=headers)
+    assert logged_out.status_code == 200
+    assert client.get("/v1/me", headers=headers).status_code == 401
+    with app.app_context():
+        assert AuthSession.query.filter(AuthSession.revoked_at.isnot(None)).count() == 1
 
 
 def test_custom_instance_path_supports_read_only_deployment_layout(tmp_path):

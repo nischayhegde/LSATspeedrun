@@ -7,7 +7,7 @@ from google.auth.exceptions import GoogleAuthError
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
-from .auth import clear_auth_cookies, issue_auth_cookies, require_auth
+from .auth import clear_auth_cookies, issue_auth_cookies, issue_mobile_token, require_auth
 from .coaching import CoachingProviderError, provider_ready
 from .extensions import db
 from .game import (
@@ -86,6 +86,48 @@ def _upsert_google_user(claims: dict) -> User:
     return user
 
 
+def _verified_google_claims(credential: str, *, allow_mobile_audiences: bool = False):
+    client_id = current_app.config["GOOGLE_CLIENT_ID"]
+    if not client_id:
+        return None, error("google_not_configured", "Set GOOGLE_CLIENT_ID in backend/.env.", 503)
+    if not credential:
+        return None, error("missing_credential", "Google did not return a credential.")
+    accepted_audiences = {client_id}
+    if allow_mobile_audiences:
+        accepted_audiences.update(current_app.config["GOOGLE_MOBILE_CLIENT_IDS"])
+    try:
+        # Verify Google's signature and issuer first. Audience is checked below
+        # so the native endpoint can accept explicitly configured iOS/Android
+        # OAuth client IDs without weakening the browser endpoint.
+        claims = id_token.verify_oauth2_token(credential, google_requests.Request(), audience=None)
+    except ValueError:
+        return None, error("invalid_google_credential", "Google sign-in could not be verified.", 401)
+    except GoogleAuthError:
+        return None, error("google_unavailable", "Google sign-in could not be reached. Please try again.", 503)
+    if claims.get("aud") not in accepted_audiences:
+        return None, error("invalid_google_credential", "Google sign-in was issued for a different application.", 401)
+    subject = claims.get("sub")
+    email_address = claims.get("email")
+    if not isinstance(subject, str) or not subject or len(subject) > 255:
+        return None, error("invalid_google_credential", "Google did not provide a valid account identifier.", 401)
+    if not isinstance(email_address, str) or not email_address or len(email_address) > 320:
+        return None, error("invalid_google_credential", "Google did not provide a valid email address.", 401)
+    if claims.get("email_verified") not in {True, "true"}:
+        return None, error("unverified_email", "A verified Google email is required.", 401)
+    return claims, None
+
+
+def _mobile_auth_response(user: User):
+    token, expires_at = issue_mobile_token(user)
+    return jsonify(
+        {
+            "user": serialize_user(user),
+            "access_token": token,
+            "expires_at": expires_at.isoformat(),
+        }
+    )
+
+
 @api.get("/health")
 def health():
     lr_count = Question.query.filter(
@@ -127,25 +169,9 @@ def auth_config():
 @api.post("/auth/google")
 def google_login():
     credential = (request.get_json(silent=True) or {}).get("credential")
-    client_id = current_app.config["GOOGLE_CLIENT_ID"]
-    if not client_id:
-        return error("google_not_configured", "Set GOOGLE_CLIENT_ID in backend/.env.", 503)
-    if not credential:
-        return error("missing_credential", "Google did not return a credential.")
-    try:
-        claims = id_token.verify_oauth2_token(credential, google_requests.Request(), client_id)
-    except ValueError:
-        return error("invalid_google_credential", "Google sign-in could not be verified.", 401)
-    except GoogleAuthError:
-        return error("google_unavailable", "Google sign-in could not be reached. Please try again.", 503)
-    subject = claims.get("sub")
-    email_address = claims.get("email")
-    if not isinstance(subject, str) or not subject or len(subject) > 255:
-        return error("invalid_google_credential", "Google did not provide a valid account identifier.", 401)
-    if not isinstance(email_address, str) or not email_address or len(email_address) > 320:
-        return error("invalid_google_credential", "Google did not provide a valid email address.", 401)
-    if claims.get("email_verified") not in {True, "true"}:
-        return error("unverified_email", "A verified Google email is required.", 401)
+    claims, failure = _verified_google_claims(credential)
+    if failure:
+        return failure
     try:
         user = _upsert_google_user(claims)
     except ValueError as exc:
@@ -158,6 +184,27 @@ def google_login():
         raise
     response = make_response(jsonify({"user": serialize_user(user)}))
     return issue_auth_cookies(response, user)
+
+
+@api.post("/auth/mobile/google")
+def mobile_google_login():
+    """Exchange a verified Google credential for a revocable device token."""
+
+    credential = (request.get_json(silent=True) or {}).get("credential")
+    claims, failure = _verified_google_claims(credential, allow_mobile_audiences=True)
+    if failure:
+        return failure
+    try:
+        user = _upsert_google_user(claims)
+    except ValueError as exc:
+        if str(exc) == "google_identity_conflict":
+            return error(
+                "google_identity_conflict",
+                "That email is already linked to a different Google account.",
+                409,
+            )
+        raise
+    return _mobile_auth_response(user)
 
 
 @api.post("/auth/dev")
@@ -174,6 +221,23 @@ def dev_login():
         db.session.commit()
     response = make_response(jsonify({"user": serialize_user(user)}))
     return issue_auth_cookies(response, user)
+
+
+@api.post("/auth/mobile/dev")
+def mobile_dev_login():
+    """Local-only mobile bootstrap. This endpoint is unavailable in production."""
+
+    if not current_app.config["DEV_AUTH_ENABLED"]:
+        return error("not_found", "Development sign-in is disabled.", 404)
+    payload = request.get_json(silent=True) or {}
+    email = (payload.get("email") or "student@localhost.test").strip().lower()
+    display_name = (payload.get("display_name") or "Local Student").strip()[:120]
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        user = User(email=email, display_name=display_name)
+        db.session.add(user)
+        db.session.commit()
+    return _mobile_auth_response(user)
 
 
 @api.post("/auth/logout")

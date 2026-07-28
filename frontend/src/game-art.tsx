@@ -28,6 +28,22 @@ type Position = { x: number; y: number; visible?: boolean }
 type OfficeAnchorKey = 'lamp' | 'window' | 'coffee' | 'cat' | 'chair' | 'case' | 'firm' | 'empire' | 'story'
 type OfficeAnchorMap = Partial<Record<OfficeAnchorKey, Position>>
 
+// Preview scenes do not have a game catalog. Keep this reference stable so a
+// first anchor measurement cannot cause the WebGL office to tear itself down
+// and rebuild on every React render.
+const EMPTY_GAME_ASSETS: GameAsset[] = []
+
+function sameOfficeAnchors(left: OfficeAnchorMap, right: OfficeAnchorMap) {
+  const leftKeys = Object.keys(left) as OfficeAnchorKey[]
+  const rightKeys = Object.keys(right) as OfficeAnchorKey[]
+  if (leftKeys.length !== rightKeys.length) return false
+  return leftKeys.every((key) => {
+    const current = left[key]
+    const next = right[key]
+    return current?.x === next?.x && current?.y === next?.y && current?.visible === next?.visible
+  })
+}
+
 export type CharacterMood = Mood
 
 /* --------------------------------------------------------- parallax */
@@ -360,7 +376,7 @@ export function MiniAvatar({ gender, tier = 0 }: { gender: CharacterGender; tier
 function OfficeBackdrop({ game, previewTier, activeCase, children }: OfficeSceneProps & { children?: React.ReactNode | ((anchors: OfficeAnchorMap) => React.ReactNode) }) {
   const { play } = useSound()
   const tier = previewTier ?? game?.office_tier ?? 0
-  const assets = game?.catalog.assets ?? []
+  const assets = game?.catalog.assets ?? EMPTY_GAME_ASSETS
   const officeRef = useRef<HTMLDivElement | null>(null)
 
   const [catAwake, setCatAwake] = useState(false)
@@ -373,7 +389,10 @@ function OfficeBackdrop({ game, previewTier, activeCase, children }: OfficeScene
   useEffect(() => {
     const office = officeRef.current
     if (!office) return
-    const updateAnchors = (event: Event) => setOfficeAnchors((event as CustomEvent<OfficeAnchorMap>).detail)
+    const updateAnchors = (event: Event) => {
+      const nextAnchors = (event as CustomEvent<OfficeAnchorMap>).detail
+      setOfficeAnchors((current) => sameOfficeAnchors(current, nextAnchors) ? current : nextAnchors)
+    }
     const furnitureMoved = (event: Event) => {
       const detail = (event as CustomEvent<{ item: string; reset: boolean }>).detail
       void play('select', { seed: `${game?.id ?? 'preview-office'}:${detail.item}:${detail.reset ? 'reset' : 'move'}`, intensity: .28 })

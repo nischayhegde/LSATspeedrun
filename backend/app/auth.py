@@ -14,6 +14,8 @@ from .models import AuthSession, utcnow
 AUTH_EXEMPT_PATHS = {
     "/v1/auth/google",
     "/v1/auth/dev",
+    "/v1/auth/mobile/google",
+    "/v1/auth/mobile/dev",
 }
 
 
@@ -26,7 +28,21 @@ def init_auth(app):
     def load_identity_and_check_csrf():
         g.current_user = None
         g.auth_session = None
-        raw_token = request.cookies.get(app.config["AUTH_COOKIE"])
+        g.auth_via_bearer = False
+
+        # Native clients cannot rely on browser cookies (nor should they put a
+        # cookie-derived CSRF token in device storage). A device token is an
+        # opaque random secret: only its SHA-256 hash is persisted, exactly as
+        # for the web session cookie. Prefer an explicitly supplied bearer
+        # token, falling back to the established cookie session for the web.
+        authorization = request.headers.get("Authorization", "")
+        bearer_prefix = "Bearer "
+        raw_token = ""
+        if authorization.startswith(bearer_prefix):
+            raw_token = authorization[len(bearer_prefix) :].strip()
+            g.auth_via_bearer = bool(raw_token)
+        if not raw_token:
+            raw_token = request.cookies.get(app.config["AUTH_COOKIE"])
         if raw_token:
             session = AuthSession.query.filter_by(token_hash=_hash(raw_token), revoked_at=None).first()
             if session:
@@ -37,7 +53,11 @@ def init_auth(app):
                     g.current_user = session.user
                     g.auth_session = session
 
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.path not in AUTH_EXEMPT_PATHS:
+        if (
+            request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and request.path not in AUTH_EXEMPT_PATHS
+            and not g.auth_via_bearer
+        ):
             cookie_token = request.cookies.get(app.config["CSRF_COOKIE"])
             header_token = request.headers.get("X-CSRF-Token")
             if not cookie_token or not header_token or not secrets.compare_digest(cookie_token, header_token):
@@ -86,8 +106,28 @@ def issue_auth_cookies(response, user):
     return response
 
 
+def issue_mobile_token(user):
+    """Issue an opaque bearer token for an iOS/Android installation.
+
+    The raw token is returned exactly once to the device. Its server-side
+    representation uses the same hashed, revocable AuthSession table as the
+    browser cookie flow, so account deletion, expiry, and logout behave
+    consistently across platforms.
+    """
+
+    raw_token = secrets.token_urlsafe(48)
+    expires_at = utcnow() + timedelta(days=current_app.config["MOBILE_AUTH_DAYS"])
+    auth_session = AuthSession(
+        user_id=user.id,
+        token_hash=_hash(raw_token),
+        expires_at=expires_at,
+    )
+    db.session.add(auth_session)
+    db.session.commit()
+    return raw_token, expires_at
+
+
 def clear_auth_cookies(response):
     response.delete_cookie(current_app.config["AUTH_COOKIE"], path="/")
     response.delete_cookie(current_app.config["CSRF_COOKIE"], path="/")
     return response
-

@@ -1,0 +1,1339 @@
+/*
+  MOBILE FOUNDATION
+  --------------------------------------------------------------------------
+  This file is deliberately loaded after the presentation layers. It does not
+  introduce a separate "mobile look"; it protects the same navy, brass, paper,
+  and scene language from intrinsic-width overflow and then adjusts density for
+  touch-sized screens.
+*/
+
+html,
+body,
+#root {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+@supports (overflow: clip) {
+  html,
+  body,
+  #root { overflow-x: clip; }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+:where(img, svg, canvas, video) { max-width: 100%; }
+:where(button, input, textarea, select) { max-width: 100%; }
+:where(button, a, input, textarea, select, [role="button"]) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The wrapper is layout-neutral on desktop; its track becomes a swipe deck
+   only inside the mobile breakpoint below. */
+.mobile-performance-deck,
+.mobile-performance-deck-track { display: contents; }
+.mobile-performance-deck-heading { display: none; }
+
+.app-shell,
+.app-shell > main,
+.app-header,
+.header-right,
+.account-menu,
+.page-wrap,
+.contained,
+.login-page,
+.login-page > *,
+.login-nav,
+.login-hero,
+.login-copy,
+.login-panel-wrap,
+.login-panel,
+.onboarding-page,
+.onboarding-page > *,
+.case-lobby,
+.docket-hero,
+.docket-hero > *,
+.performance-page,
+.performance-page > *,
+.session-page,
+.session-page > *,
+.question-layout,
+.office-game-page,
+.office-game-page > *,
+.empire-game-page,
+.empire-game-page > *,
+.firm-page,
+.firm-page > *,
+.story-page,
+.story-page > *,
+.story-hero,
+.story-hero > *,
+.strategy-leader-grid > *,
+.daily-docket > *,
+.office-upkeep-strip > *,
+.office-milestone-strip > * {
+  min-width: 0;
+}
+
+/* Data-dense areas may pan inside their own surface, never across the page. */
+.skill-table,
+.strategy-results-table,
+.chapter-track,
+.uw-arc-navigation,
+.uw-scene-view-tabs,
+.uw-level-navigator-track,
+.office-upkeep-terms,
+.command-stats,
+.answer-audit-list {
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 900px) {
+  /* The fixed navigation owns the bottom safe area. A body-level padding
+     created a second blank footer on a number of route surfaces. */
+  body { padding-bottom: 0; }
+
+  .app-shell { padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .app-shell.active-case { padding-bottom: 0; }
+  .app-shell > main { width: 100%; }
+
+  .mobile-nav {
+    height: calc(70px + env(safe-area-inset-bottom));
+    padding: 5px max(6px, env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+  .mobile-nav a { min-width: 0; font-size: 9.5px; line-height: 1.05; }
+  .mobile-nav a svg { width: 19px; height: 19px; }
+
+  .app-header {
+    gap: 10px;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+    -webkit-backdrop-filter: blur(18px);
+  }
+  .brand,
+  .header-right { min-width: 0; }
+  .header-right { gap: 6px; }
+  .header-economy { min-width: 0; }
+  .header-economy > span { min-width: 0; }
+  .icon-button { min-width: 40px; min-height: 40px; }
+
+  .header-sound-controls.sound-controls {
+    width: 44px;
+    height: 44px;
+    padding: 2px;
+  }
+  .header-sound-controls .sound-mute-button { width: 38px; height: 38px; }
+  .header-sound-controls .sound-volume-control,
+  .header-sound-controls .sound-reduced-button { top: 44px; min-height: 42px; }
+  .sound-controls .sound-reduced-button { min-width: 38px; min-height: 38px; }
+  .header-sound-controls .sound-volume-control input { height: 32px; }
+
+  .catalog-view-buttons button,
+  .catalog-toolbar label select { min-height: 40px; }
+
+  .uw-scene-view-tabs button { min-height: 40px; }
+  .uw-map-toolbar { grid-template-columns: repeat(4, 38px); }
+  .uw-map-toolbar button { width: 38px; height: 38px; }
+
+  .appearance-button { min-height: 40px; }
+  .catalog-view-buttons button { min-width: 40px; min-height: 40px; }
+  .office-view-rail button { min-width: 40px; min-height: 40px; }
+
+  .uw-arc-navigation,
+  .uw-level-navigator-track { scroll-snap-type: x proximity; scrollbar-width: none; }
+  .uw-arc-navigation::-webkit-scrollbar,
+  .uw-level-navigator-track::-webkit-scrollbar { display: none; }
+  .uw-arc-navigation > *,
+  .uw-level-navigator-track > * { scroll-snap-align: start; }
+
+  .page-wrap,
+  .case-lobby { width: min(100% - 28px, 760px); }
+  .contained { width: min(100% - 28px, 760px); }
+  .session-controls,
+  .question-layout { width: min(100% - 24px, 760px); }
+
+  .login-page {
+    min-height: 100dvh;
+    grid-template: 66px auto auto / minmax(0, 1fr);
+  }
+  .login-nav { min-width: 0; padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right)); }
+  .login-hero { padding: 42px clamp(20px, 6vw, 38px) 34px; gap: 28px; }
+  .login-copy h1 { font-size: clamp(34px, 11vw, 52px); line-height: 1.02; }
+  .login-copy > p { font-size: 16px; line-height: 1.58; }
+  .feature-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+  .feature-list span { min-width: 0; align-items: flex-start; line-height: 1.42; }
+  .feature-list svg { flex: 0 0 auto; margin-top: 1px; }
+  .login-scene { width: 100%; max-height: none; aspect-ratio: 16 / 9.5; }
+  .login-panel-wrap { width: 100%; min-width: 0; padding: 52px clamp(16px, 6vw, 30px) 34px; }
+  .login-panel { width: min(100%, 390px); min-width: 0; }
+
+  .onboarding-page { min-height: calc(100dvh - 62px); }
+  .onboarding-scene-wrap { padding: clamp(20px, 5vw, 32px); }
+  .onboarding-scene-wrap .office-scene { aspect-ratio: 16 / 9.5; }
+  .opening-caption { margin-top: 18px; }
+  .onboarding-panel { padding: 34px clamp(18px, 6vw, 32px) 42px; }
+
+  .docket-hero { min-height: 0; padding: clamp(28px, 7vw, 44px); gap: 30px; }
+  .case-brief-card { width: min(100%, 440px); min-height: 0; }
+  .practice-mode-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .office-game-page,
+  .empire-game-page { min-height: calc(100dvh - 62px); }
+  .office-command-bar,
+  .empire-command-bar { gap: 14px; }
+  .command-stats { display: flex; max-width: 100%; padding-bottom: 4px; }
+  .command-stats > span { min-width: 148px; }
+  .office-explorer { min-height: 470px; }
+  .office-upkeep-terms { padding-bottom: 4px; }
+
+  .firm-page { max-width: 760px; }
+  .story-page { max-width: 760px; }
+  .cutscene-overlay { min-height: 100dvh; }
+
+  /* The tour remains a focused foreground layer and does not collide with the
+     persistent navigation beneath it. */
+  .guided-tour-card,
+  .guided-tour-card.place-left,
+  .guided-tour-card.place-right,
+  .guided-tour-mode-premise .guided-tour-card,
+  .guided-tour-mode-practice .guided-tour-card,
+  .guided-tour-mode-finish .guided-tour-card {
+    max-height: min(620px, calc(100dvh - 24px));
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-wrap,
+  .case-lobby,
+  .contained { width: min(100% - 20px, 560px); }
+  .session-controls,
+  .question-layout { width: min(100% - 20px, 560px); }
+
+  .app-header { height: 62px; padding-inline: 10px; }
+  .header-right { gap: 3px; }
+  .header-economy > span { min-height: 32px; padding-inline: 7px; font-size: 10px; }
+  .account-menu { gap: 0; }
+  .account-menu img,
+  .avatar-fallback { width: 30px; height: 30px; }
+  .icon-button { min-width: 32px; min-height: 32px; padding: 6px; }
+
+  .mobile-nav { height: calc(68px + env(safe-area-inset-bottom)); }
+  .mobile-nav a { gap: 2px; font-size: 10px; letter-spacing: 0; }
+  .mobile-nav a svg { width: 18px; height: 18px; }
+
+  /* This is the desktop login composition compressed into one phone
+     viewport: the copy, live Three.js office, and account controls remain
+     present without turning the entry screen into a separate mobile design. */
+  .login-page {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 100vh;
+    min-height: 100dvh;
+    grid-template: 54px minmax(0, 1fr) auto / minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .login-nav {
+    min-height: 0;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  .login-nav .brand-mark { width: 36px; height: 36px; }
+  .login-hero {
+    min-height: 0;
+    padding: 12px 14px 10px;
+    display: grid;
+    grid-template-rows: auto minmax(92px, 1fr);
+    align-content: stretch;
+    gap: 9px;
+  }
+  .login-copy { min-height: 0; }
+  .login-copy .eyebrow { font-size: 7.5px; line-height: 1.3; }
+  .login-copy h1 {
+    margin: 6px 0 7px;
+    font-size: clamp(25px, 7.8vw, 31px);
+    line-height: 1.02;
+    text-shadow: 3px 3px #0a111d;
+  }
+  .login-copy > p { max-width: none; font-size: 11.5px; line-height: 1.4; }
+  .feature-list {
+    margin-top: 8px;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 9px;
+    font-size: 7.5px;
+    line-height: 1.25;
+  }
+  .feature-list span { gap: 5px; line-height: 1.25; }
+  .feature-list svg { width: 12px; height: 12px; margin-top: 0; }
+  .login-scene {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+    aspect-ratio: auto;
+    box-shadow: 5px 5px #080c13;
+  }
+  .login-panel-wrap {
+    min-height: 0;
+    padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  }
+  .login-panel { width: min(100%, 390px); padding: 14px 15px 11px; box-shadow: inset 0 0 0 3px #c59b58, 5px 5px #141721; }
+  .login-panel .eyebrow { font-size: 7.5px; }
+  .login-panel h2 { margin: 4px 0; font-size: 18px; }
+  .login-panel > p { margin: 0 0 7px; font-size: 10px; line-height: 1.35; }
+  .login-panel > small { margin-top: 7px; font-size: 8.5px; }
+  .crest {
+    width: 34px;
+    height: 34px;
+    margin: -28px auto 4px;
+    border-width: 3px;
+    box-shadow: inset 0 0 0 1px #dbad4e, 3px 3px #141721;
+  }
+  .crest svg { width: 17px; height: 17px; }
+  .google-button-slot { min-height: 38px; margin: 5px 0 6px; overflow: hidden; }
+  .google-button-slot > div,
+  .google-button-slot iframe { max-width: 100% !important; }
+  .login-panel .secondary-button.full { min-height: 38px; margin-top: 4px; padding-block: 7px; font-size: 8.5px; }
+  .login-panel .config-note { margin: 5px 0 7px; padding: 6px 8px; font-size: 9px; }
+
+  .onboarding-scene-wrap { padding: 16px; }
+  .opening-caption h2 { font-size: 27px; }
+  .onboarding-panel { padding: 29px 18px 34px; }
+  .onboarding-panel h1 { font-size: clamp(30px, 9.6vw, 39px); }
+  .character-choice { gap: 9px; }
+  .character-choice button { min-height: 174px; padding-inline: 5px; font-size: 9.5px; }
+  .mini-avatar.av-mini-avatar { width: 80px; height: 132px; }
+  .mini-avatar.av-mini-avatar .av-person { width: 74px; height: 128px; }
+  .name-fields { gap: 10px; }
+  .name-fields input { min-height: 46px; font-size: 16px; }
+
+  .docket-hero { padding: 27px 19px 29px; }
+  .docket-copy h1 { font-size: clamp(33px, 10vw, 41px); line-height: 1; }
+  .docket-copy > p { font-size: 14px; }
+  .primary-button.jumbo { width: 100%; min-height: 52px; padding-inline: 13px; font-size: 10px; }
+  .case-brief-card { padding: 22px 18px; transform: none; }
+  .case-brief-card h2 { font-size: 18px; }
+  .practice-mode-picker { grid-template-columns: 1fr; }
+  .practice-mode-picker > button { min-height: 68px; }
+  .how-scoring-works { padding-top: 42px; }
+
+  /* Active case: the passage and response file are independently scrollable
+     panes. A reader never has to shuttle up and down the whole document just
+     to compare an RC passage with its question. */
+  .session-page {
+    height: calc(100vh - 62px);
+    height: calc(100dvh - 62px);
+    min-height: 0;
+    overflow: hidden;
+  }
+  .session-controls { padding-top: 11px; }
+  .question-layout { height: calc(100% - 45px); margin-top: 8px; margin-bottom: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .case-file-topbar { gap: 9px; }
+  .matter-tag { min-width: 0; }
+  .matter-tag strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .case-timer { min-width: 0; }
+  .case-timer small { display: none; }
+  .progress-track { flex: 0 0 auto; margin: 8px 0 10px; }
+  .strategy-trial {
+    flex: 0 0 auto;
+    max-height: min(36vh, 280px);
+    max-height: min(36dvh, 280px);
+    overflow-y: auto;
+  }
+  .question-content { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+  .question-content.with-passage {
+    min-height: 0;
+    display: grid;
+    grid-template: minmax(142px, .72fr) minmax(0, 1.28fr) / minmax(0, 1fr);
+    align-items: stretch;
+    gap: 10px;
+    overflow: hidden;
+  }
+  .passage-card,
+  .answer-card { min-height: 0; padding: 16px 14px; }
+  .question-content.with-passage .passage-card,
+  .question-content.with-passage .answer-card {
+    height: 100%;
+    position: relative;
+    top: auto;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .question-content.with-passage .passage-text { margin-top: 12px; font-size: 14.5px; line-height: 1.58; }
+  .question-content.with-passage .answer-card h1 { margin-bottom: 16px; }
+  .choice { min-height: 48px; }
+  .reasoning-box textarea { min-height: 132px; font-size: 16px; }
+  .case-page-turn {
+    inset: 76px 0 auto;
+    height: min(660px, calc(100vh - 88px));
+    height: min(660px, calc(100dvh - 88px));
+  }
+
+  .performance-page { padding-inline: 0; }
+  .performance-hero { padding: 22px 17px; }
+  .performance-hero h1 { font-size: clamp(31px, 9.5vw, 38px); }
+  .performance-metrics { grid-template-columns: 1fr 1fr; }
+  .performance-metrics article { min-width: 0; }
+  .strategy-results-detail { overflow: hidden; }
+  .strategy-results-table { overflow-x: auto; padding-bottom: 5px; }
+
+  /* Office stays interactive; only supporting controls become more compact.
+     The office itself is still a true scene rather than a static replacement. */
+  .office-game-page,
+  .empire-game-page {
+    padding: 16px max(10px, env(safe-area-inset-right)) 27px max(10px, env(safe-area-inset-left));
+  }
+  .office-command-bar h1,
+  .empire-command-bar h1 { font-size: clamp(18px, 5.5vw, 22px); line-height: 1.25; }
+  .office-command-bar .pixel-kicker,
+  .empire-command-bar .pixel-kicker { font-size: 8px; line-height: 1.5; }
+  .office-explorer {
+    min-height: 430px;
+    height: min(67vh, 510px);
+    height: min(67svh, 510px);
+  }
+  .av-character-panel { height: 178px; }
+  .av-hero-stage { flex-basis: 43%; }
+  .av-hero-plaque { margin: 10px; }
+  .office-view-rail { width: calc(100% - 16px); grid-template-columns: 40px minmax(0, 1fr) 40px 40px; }
+  .office-view-rail button { min-height: 40px; }
+  .office-view-rail .office-look-home { padding-inline: 6px; }
+  .office-view-rail .office-detail-toggle { padding: 0; }
+  .office-view-rail .office-detail-toggle span { font-size: 0; }
+  .office-view-rail .office-detail-toggle span::before { content: "+"; font-family: system-ui, sans-serif; font-size: 19px; line-height: 1; }
+  .office-inventory { width: calc(100% - 16px); right: 8px; bottom: 8px; }
+  .office-inventory-panel { max-height: min(310px, calc(100% - 52px)); }
+  .office-upkeep-strip,
+  .office-milestone-strip { margin-top: 10px; }
+  .office-upkeep-terms { grid-template-columns: repeat(4, minmax(118px, 1fr)); }
+  .office-gamebar { margin-top: 14px; }
+
+  .empire-command-bar > div:last-child { width: 100%; }
+  .map-page .empire-command-bar { align-items: flex-start; }
+  .uw-map-frame { min-height: 480px; }
+  .uw-location-card { max-height: min(340px, calc(100% - 146px)); overflow: auto; overscroll-behavior: contain; }
+
+  .firm-page { width: calc(100% - 14px); padding-inline: 11px; }
+  .firm-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .firm-tabs button { min-width: 0; font-size: 8.5px; }
+  .story-page { padding-inline: 0; }
+  .story-hero-copy { padding: 27px 18px; }
+  .story-hero h1 { font-size: clamp(36px, 12vw, 46px); }
+  .story-resources { grid-template-columns: 1fr 1fr; }
+  .active-caseboard { padding: 24px 17px; }
+
+  .guided-tour-card,
+  .guided-tour-card.place-left,
+  .guided-tour-card.place-right,
+  .guided-tour-mode-premise .guided-tour-card,
+  .guided-tour-mode-practice .guided-tour-card,
+  .guided-tour-mode-finish .guided-tour-card {
+    width: auto;
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: 8px;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    padding: 20px 16px 16px;
+  }
+  .tour-card-progress { margin: -20px -16px 17px; }
+  .guided-tour-card h2 { font-size: 27px; }
+  .guided-tour-card > p { font-size: 14px; line-height: 1.52; }
+  .tour-card-actions { margin-top: 18px; }
+}
+
+@media (max-width: 360px) {
+  .login-copy h1 { font-size: 24px; }
+  .header-economy > span { padding-inline: 5px; }
+  .header-economy > span svg { width: 14px; }
+  .office-explorer { min-height: 410px; }
+  .performance-metrics { grid-template-columns: 1fr; }
+  .story-resources { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) and (max-height: 720px) {
+  .login-page { grid-template-rows: 48px minmax(0, 1fr) auto; }
+  .login-nav .brand-mark { width: 32px; height: 32px; }
+  .login-hero { padding: 8px 12px 7px; grid-template-rows: auto minmax(76px, 1fr); gap: 6px; }
+  .login-copy h1 { margin: 4px 0 5px; font-size: clamp(22px, 7vw, 27px); }
+  .login-copy > p { font-size: 10px; line-height: 1.32; }
+  .feature-list { margin-top: 5px; gap: 2px 7px; font-size: 6.8px; }
+  .feature-list svg { width: 10px; height: 10px; }
+  .login-panel-wrap { padding: 7px 12px max(7px, env(safe-area-inset-bottom)); }
+  .login-panel { padding: 10px 12px 8px; }
+  .crest { width: 30px; height: 30px; margin: -22px auto 2px; }
+  .login-panel h2 { font-size: 16px; }
+  .login-panel > p { margin-bottom: 4px; font-size: 8.8px; }
+  .google-button-slot { min-height: 34px; margin-block: 3px; }
+  .login-panel .secondary-button.full { min-height: 34px; padding-block: 5px; }
+  .login-panel > small { margin-top: 4px; font-size: 7.5px; }
+
+  .question-content.with-passage { grid-template-rows: minmax(118px, .68fr) minmax(0, 1.32fr); }
+}
+
+/* Mobile Safari still benefits from the prefixed compositor path on glass
+   surfaces. Other browsers ignore the duplicate declaration. */
+@supports (-webkit-backdrop-filter: blur(1px)) {
+  .app-header { -webkit-backdrop-filter: blur(18px); }
+  .office-view-rail,
+  .uw-scene-view-tabs { -webkit-backdrop-filter: blur(10px); }
+  .office-inventory-panel { -webkit-backdrop-filter: blur(18px); }
+  .uw-map-toolbar button { -webkit-backdrop-filter: blur(8px); }
+  .uw-level-navigator,
+  .uw-location-card { -webkit-backdrop-filter: blur(12px); }
+}
+
+@media (pointer: coarse) {
+  .office-view-rail button,
+  .world-zone,
+  .uw-map-toolbar button,
+  .uw-card-close { touch-action: manipulation; }
+}
+
+/* -------------------------------------------------------------------------
+   MOBILE COMPOSITION PASS
+
+   These rules deliberately live after every desktop presentation layer. The
+   phone experience keeps the same materials and real WebGL scenes, but treats
+   the viewport as a sequence of focused surfaces instead of a squeezed
+   desktop document.
+*/
+@media (max-width: 640px) {
+  :root {
+    --mobile-page-gutter: 12px;
+    --mobile-title: clamp(29px, 8.6vw, 36px);
+    --mobile-section-title: clamp(22px, 6.4vw, 28px);
+    --mobile-body: 15px;
+    --mobile-meta: 11px;
+  }
+
+  body { font-size: var(--mobile-body); }
+  p { line-height: 1.52; }
+  .eyebrow,
+  .pixel-kicker { font-size: var(--mobile-meta); line-height: 1.4; }
+
+  /* Controls remain compact without falling below a comfortable phone hit
+     area. This also removes the last narrow-Safari exceptions found in the
+     interaction audit. */
+  .app-header .brand,
+  .app-header .brand-mark,
+  .app-header .icon-button,
+  .header-sound-controls.sound-controls,
+  .header-sound-controls .sound-mute-button,
+  .header-sound-controls .sound-reduced-button {
+    min-width: 38px;
+    min-height: 38px;
+  }
+  .header-sound-controls.sound-controls { width: 42px; height: 42px; }
+  .header-sound-controls .sound-mute-button { width: 38px; height: 38px; }
+  .header-sound-controls .sound-volume-control input { min-height: 38px; }
+  .firm-wallet .appearance-button,
+  .catalog-view-buttons button,
+  .catalog-toolbar label select,
+  .firm-tabs button,
+  .uw-scene-view-tabs button,
+  .uw-level-navigator-track button { min-height: 42px; }
+
+  .mobile-nav a {
+    min-height: 54px;
+    font-size: 10.5px;
+    line-height: 1.1;
+  }
+
+  /* Sign-in is one cinematic composition: a live office fills the viewport,
+     the premise sits on readable glass, and authentication is a calm bottom
+     sheet. Expo and mobile Safari therefore render the same entry screen. */
+  .login-page {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    display: block;
+    position: relative;
+    overflow: hidden;
+    background: #0b1520;
+  }
+  .login-nav {
+    height: calc(58px + env(safe-area-inset-top));
+    min-height: 58px;
+    padding: env(safe-area-inset-top) 12px 0;
+    position: absolute;
+    z-index: 20;
+    inset: 0 0 auto;
+    border-bottom: 1px solid rgba(221, 190, 113, .3);
+    background: linear-gradient(180deg, rgba(10, 19, 30, .98), rgba(12, 24, 36, .9));
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+  .login-nav > span { display: none; }
+  .login-nav .brand,
+  .login-nav .brand-mark { width: 40px; height: 40px; }
+  .login-hero {
+    min-height: 0;
+    padding: 0;
+    display: block;
+    position: absolute;
+    z-index: 1;
+    inset: calc(58px + env(safe-area-inset-top)) 0 0;
+    overflow: hidden;
+    background: #102332;
+  }
+  .login-scene {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    position: absolute;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+    opacity: .88;
+    box-shadow: none;
+    transform: none;
+  }
+  .login-scene::after {
+    content: "";
+    position: absolute;
+    z-index: 15;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(7, 16, 25, .22), rgba(7, 16, 25, .08) 37%, rgba(7, 16, 25, .72) 72%, #0b1520 100%),
+      linear-gradient(90deg, rgba(7, 16, 25, .4), transparent 72%);
+  }
+  .login-copy {
+    width: calc(100% - 24px);
+    padding: 16px 16px 15px;
+    position: absolute;
+    z-index: 8;
+    top: 14px;
+    left: 12px;
+    border: 1px solid rgba(225, 199, 134, .34);
+    border-radius: 16px;
+    color: #f6ead0;
+    background: linear-gradient(130deg, rgba(10, 27, 39, .9), rgba(12, 27, 38, .65));
+    box-shadow: 0 18px 42px rgba(3, 8, 13, .25), inset 0 1px rgba(255,255,255,.08);
+    -webkit-backdrop-filter: blur(13px);
+    backdrop-filter: blur(13px);
+  }
+  .login-copy .eyebrow { font-size: 9.5px; }
+  .login-copy h1 {
+    margin: 7px 0 8px;
+    font-size: clamp(28px, 8.3vw, 35px);
+    line-height: 1.02;
+    text-shadow: 3px 3px rgba(5, 11, 18, .78);
+  }
+  .login-copy > p {
+    max-width: 35rem;
+    margin: 0;
+    color: #d1dedc;
+    font-size: 13.5px;
+    line-height: 1.45;
+  }
+  .feature-list {
+    margin-top: 11px;
+    padding-bottom: 2px;
+    display: flex;
+    flex-flow: row nowrap;
+    gap: 7px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    font-size: 10px;
+  }
+  .feature-list::-webkit-scrollbar { display: none; }
+  .feature-list span {
+    min-width: min(71vw, 255px);
+    min-height: 38px;
+    padding: 7px 9px;
+    flex: 0 0 auto;
+    align-items: center;
+    scroll-snap-align: start;
+    border: 1px solid rgba(229, 202, 139, .2);
+    border-radius: 9px;
+    background: rgba(255,255,255,.055);
+    line-height: 1.3;
+  }
+  .feature-list svg { width: 15px; height: 15px; }
+  .login-panel-wrap {
+    min-height: 0;
+    padding: 0 12px max(10px, env(safe-area-inset-bottom));
+    display: block;
+    position: absolute;
+    z-index: 12;
+    inset: auto 0 0;
+    color: #2e2a25;
+    background: linear-gradient(180deg, transparent, rgba(7, 15, 24, .78) 22%, rgba(7, 15, 24, .96));
+  }
+  .login-panel {
+    width: min(100%, 430px);
+    margin: 0 auto;
+    padding: 17px 17px 13px;
+    border: 1px solid #d2ad63;
+    border-radius: 18px 18px 10px 10px;
+    background: linear-gradient(155deg, rgba(249, 235, 197, .98), rgba(224, 201, 151, .98));
+    box-shadow: 0 18px 48px rgba(2, 7, 12, .45), inset 0 0 0 2px rgba(110, 76, 35, .18);
+  }
+  .login-panel .crest {
+    width: 40px;
+    height: 40px;
+    margin: -38px auto 5px;
+    border-width: 2px;
+    border-radius: 11px;
+    box-shadow: 0 6px 18px rgba(5, 10, 16, .28), inset 0 0 0 1px #dbad4e;
+  }
+  .login-panel .eyebrow { font-size: 9px; }
+  .login-panel h2 { margin: 4px 0; font-size: 22px; }
+  .login-panel > p { margin: 0 0 9px; font-size: 12px; line-height: 1.4; }
+  .google-button-slot { min-height: 42px; margin: 5px 0 7px; border-radius: 999px; overflow: hidden; }
+  .google-button-slot > div > div > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  .login-panel .secondary-button.full { min-height: 44px; margin-top: 5px; font-size: 10px; }
+  .login-panel > small { margin-top: 8px; font-size: 9.5px; }
+
+  /* Practice is arranged as swipeable briefs rather than a very tall hero.
+     Both the learning premise and the active client remain present. */
+  .docket-hero {
+    min-height: 0;
+    padding: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .docket-hero::-webkit-scrollbar { display: none; }
+  .docket-copy,
+  .case-brief-card {
+    width: 100%;
+    min-width: 100%;
+    min-height: min(500px, calc(100dvh - 180px));
+    padding: 28px 21px;
+    flex: 0 0 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    scroll-snap-align: start;
+  }
+  .docket-copy h1 {
+    margin: 11px 0 16px;
+    font-size: var(--mobile-title);
+    line-height: 1.02;
+    word-spacing: .12em;
+  }
+  .docket-copy > p { margin-bottom: 20px; font-size: var(--mobile-body); }
+  .primary-button.jumbo { min-height: 50px; font-size: 10.5px; }
+  .case-brief-card {
+    width: 100%;
+    transform: none;
+    border: 0;
+    box-shadow: inset 0 0 0 3px #c49c5b;
+  }
+  .case-brief-card h2 { font-size: 20px; }
+
+  /* Reusable horizontal dossiers preserve information without forcing a long
+     vertical document. A small portion of the next card remains visible as a
+     natural swipe affordance. */
+  .daily-docket-track,
+  .practice-mode-picker,
+  .how-scoring-works > div,
+  .performance-metrics,
+  .strategy-leader-grid,
+  .office-gamebar,
+  .achievement-grid,
+  .client-roster-grid,
+  .asset-management-grid {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: visible;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .daily-docket-track::-webkit-scrollbar,
+  .practice-mode-picker::-webkit-scrollbar,
+  .how-scoring-works > div::-webkit-scrollbar,
+  .performance-metrics::-webkit-scrollbar,
+  .strategy-leader-grid::-webkit-scrollbar,
+  .office-gamebar::-webkit-scrollbar,
+  .achievement-grid::-webkit-scrollbar,
+  .client-roster-grid::-webkit-scrollbar,
+  .asset-management-grid::-webkit-scrollbar { display: none; }
+  .daily-docket-track > *,
+  .practice-mode-picker > *,
+  .how-scoring-works > div > *,
+  .performance-metrics > *,
+  .strategy-leader-grid > *,
+  .office-gamebar > *,
+  .achievement-grid > *,
+  .client-roster-grid > *,
+  .asset-management-grid > * {
+    scroll-snap-align: start;
+  }
+  .daily-docket-track > *,
+  .practice-mode-picker > *,
+  .how-scoring-works > div > *,
+  .performance-metrics > *,
+  .strategy-leader-grid > * { flex: 0 0 min(82vw, 330px); }
+  .office-gamebar > *,
+  .achievement-grid > *,
+  .client-roster-grid > *,
+  .asset-management-grid > * { flex: 0 0 min(84vw, 350px); }
+  .client-grid {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .client-grid::-webkit-scrollbar { display: none; }
+  .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }
+  .practice-mode-picker > button { min-height: 82px; }
+  .how-scoring-works > div > article { min-height: 190px; }
+  .performance-metrics { grid-template-columns: none; }
+
+  .performance-hero { padding: 21px 17px; }
+  .performance-hero h1,
+  .review-summary-hero h1 { font-size: var(--mobile-title); line-height: 1.04; }
+  .performance-hero p,
+  .review-summary-hero p { font-size: var(--mobile-body); }
+  .performance-hero-actions { gap: 9px; }
+  .performance-hero-actions button { min-height: 46px; }
+
+  .mobile-performance-deck { display: block; margin-top: 18px; }
+  .mobile-performance-deck-heading {
+    margin: 0 3px 9px;
+    padding: 11px 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 1px solid rgba(26, 49, 58, .2);
+    border-radius: 12px;
+    color: #d8e6df;
+    background: linear-gradient(115deg, #17303c, #213e43);
+  }
+  .mobile-performance-deck-heading span {
+    flex: 0 0 auto;
+    color: #e8c776;
+    font-family: var(--font-pixel);
+    font-size: 9px;
+    letter-spacing: .1em;
+  }
+  .mobile-performance-deck-heading strong {
+    font-size: 11.5px;
+    font-weight: 650;
+    line-height: 1.35;
+    text-align: right;
+  }
+  .mobile-performance-deck-track {
+    padding: 2px 3px 10px;
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mobile-performance-deck-track::-webkit-scrollbar { display: none; }
+  .mobile-performance-deck-track > * {
+    width: calc(100vw - 34px);
+    max-height: min(680px, calc(100dvh - 165px));
+    margin: 0;
+    flex: 0 0 calc(100vw - 34px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-snap-align: center;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-performance-deck-track > .performance-grid { display: grid; }
+
+  /* The office's real Three.js room becomes the hero. The lawyer remains in
+     the same scene as a compact picture-in-picture identity card instead of
+     consuming a separate full-width row. */
+  .office-game-page {
+    padding: 13px var(--mobile-page-gutter) 28px;
+  }
+  .office-command-bar { margin-bottom: 10px; }
+  .office-command-bar h1 {
+    margin-top: 4px;
+    font-size: clamp(20px, 5.8vw, 24px);
+    line-height: 1.15;
+  }
+  .office-command-bar .pixel-kicker { font-size: 9.5px; }
+  .command-stats {
+    width: 100%;
+    padding-bottom: 3px;
+    gap: 7px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .command-stats::-webkit-scrollbar { display: none; }
+  .command-stats > span {
+    min-width: min(67vw, 230px);
+    min-height: 48px;
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+  .command-stats small { font-size: 9.5px; }
+  .command-stats strong { font-size: 11px; }
+  .av-office-duo { display: block; position: relative; }
+  .office-explorer {
+    width: 100%;
+    height: clamp(360px, calc(100dvh - 260px), 650px);
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+  .av-character-panel {
+    width: 118px;
+    height: 156px;
+    display: block;
+    position: absolute;
+    z-index: 18;
+    left: 10px;
+    top: 10px;
+    overflow: visible;
+    border-radius: 14px;
+    pointer-events: none;
+  }
+  .av-character-panel::before { border-radius: 14px; background: radial-gradient(115% 78% at 50% 8%,rgba(215,194,156,.94),rgba(56,66,70,.92) 58%,rgba(12,25,35,.96)); }
+  .av-hero-stage { width: 100%; height: 111px; padding: 4px 4px 0; }
+  .av-hero-plaque {
+    width: calc(100% - 10px);
+    margin: -1px 5px 5px;
+    padding: 6px 5px 7px;
+    border-radius: 8px;
+  }
+  .av-hero-plaque small { display: none; }
+  .av-hero-plaque strong { margin: 0; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+  .av-hero-plaque span { margin-top: 2px; font-size: 7.5px; letter-spacing: .08em; }
+  .av-hero-plaque em { margin-top: 3px; font-size: 7.5px; }
+  .office-view-rail {
+    width: calc(100% - 150px);
+    min-width: 214px;
+    max-width: 252px;
+    left: auto;
+    right: 9px;
+    top: 9px;
+    grid-template-columns: 40px minmax(70px, 1fr) 40px 40px;
+    transform: none;
+  }
+  .office-inventory { bottom: 9px; }
+  .office-upkeep-strip,
+  .office-milestone-strip { padding: 13px; }
+  .office-upkeep-terms { scroll-snap-type: x mandatory; }
+  .office-upkeep-terms > span { scroll-snap-align: start; }
+
+  /* The living map fills the usable screen; its environment picker is a true
+     swipeable slide rail rather than five compressed labels. */
+  .empire-game-page {
+    padding: 10px var(--mobile-page-gutter) 20px;
+  }
+  .map-page .empire-command-bar { min-height: 66px; margin-bottom: 8px; }
+  .empire-command-bar h1 { font-size: clamp(21px, 6vw, 25px); }
+  .empire-command-bar .pixel-kicker { font-size: 9px; }
+  .map-page .empire-command-bar > div:last-child { min-width: 116px; padding: 7px 8px; }
+  .uw-arc-navigation {
+    margin: 0;
+    padding: 4px;
+    width: calc(100% - 16px);
+    position: absolute;
+    z-index: 12;
+    left: 8px;
+    top: 8px;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(250px, 78vw));
+    gap: 5px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .uw-arc-navigation::-webkit-scrollbar { display: none; }
+  .uw-arc-navigation button {
+    min-height: 58px;
+    border: 1px solid rgba(191, 164, 99, .16);
+    border-radius: 8px;
+    scroll-snap-align: start;
+  }
+  .uw-arc-navigation button strong { font-size: 15px; }
+  .uw-arc-navigation button em { font-size: 11px; }
+  .uw-map-frame {
+    height: clamp(430px, calc(100dvh - 245px), 720px);
+    min-height: 0;
+    border-radius: 14px;
+  }
+  .unified-empire { position: relative; }
+  .uw-scene-title { max-width: calc(100% - 184px); top: 78px; }
+  .uw-scene-title small { font-size: 8.5px; }
+  .uw-scene-title strong { overflow: hidden; font-size: 25px; text-overflow: ellipsis; white-space: nowrap; }
+  .uw-scene-view-tabs {
+    width: calc(100% - 18px);
+    top: 132px;
+  }
+  .uw-scene-view-tabs button {
+    min-width: max-content;
+    padding-inline: 10px;
+    font-size: 11px;
+  }
+  .uw-map-toolbar { top: 78px; grid-template-columns: repeat(4, 40px); gap: 4px; }
+  .uw-map-toolbar button { width: 40px; height: 40px; }
+  .uw-level-navigator-track button strong { font-size: 11px; }
+  .uw-level-navigator-track button small { font-size: 9.5px; }
+
+  /* The partner ledger keeps every tab and card but presents catalogs as
+     horizontal dossiers, preventing a 15-card catalog from becoming a very
+     long phone page. */
+  .firm-page { padding-bottom: 30px; }
+  .firm-ledger-heading { min-height: 0; padding: 21px 14px 15px; }
+  .firm-heading-copy h1 { font-size: var(--mobile-title); }
+  .firm-heading-copy p { font-size: 13px; }
+  .firm-tabs {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .firm-tabs::-webkit-scrollbar { display: none; }
+  .firm-tabs button,
+  .firm-tabs button.active {
+    min-width: 104px;
+    flex: 0 0 104px;
+    scroll-snap-align: start;
+    font-size: 10px;
+  }
+  .management-card.asset-card { min-height: 490px; }
+  .asset-card .asset-card-copy p { font-size: 13.5px; }
+
+  /* Reading surfaces use normal-sized text even when the surrounding chrome
+     uses the compact pixel face. */
+  .question-content,
+  .answer-card,
+  .passage-card,
+  .audit-stimulus,
+  .audit-choices,
+  .concise-rationale { font-size: 15px; }
+  .choice { font-size: 14px; line-height: 1.42; }
+  .matter-tag strong { font-size: 10px; }
+  .case-timer strong { font-size: 15px; }
+}
+
+@media (max-width: 640px) and (max-height: 720px) {
+  .login-copy { top: 9px; padding: 12px 13px 11px; }
+  .login-copy h1 { margin: 5px 0 6px; font-size: clamp(25px, 7.5vw, 30px); }
+  .login-copy > p { font-size: 11.5px; line-height: 1.36; }
+  .feature-list { display: none; }
+  .login-panel { padding: 13px 14px 10px; }
+  .login-panel .crest { width: 34px; height: 34px; margin-top: -31px; }
+  .login-panel h2 { font-size: 18px; }
+  .login-panel > p { margin-bottom: 6px; font-size: 10.5px; }
+  .google-button-slot { min-height: 38px; margin-block: 4px; }
+  .login-panel .secondary-button.full { min-height: 40px; }
+  .login-panel > small { margin-top: 5px; font-size: 8.5px; }
+  .office-explorer { height: 390px; }
+  .uw-map-frame { height: 440px; }
+}
+
+@media (max-width: 360px) {
+  .av-character-panel { width: 102px; height: 146px; }
+  .av-hero-stage { height: 104px; }
+  .office-view-rail {
+    width: calc(100% - 124px);
+    min-width: 0;
+    grid-template-columns: 36px minmax(60px, 1fr) 36px 36px;
+  }
+  .office-view-rail button { min-height: 38px; }
+}
+
+@media (min-width: 641px) and (max-width: 900px) and (min-height: 501px) {
+  .av-office-duo { display: block; position: relative; }
+  .office-explorer {
+    width: 100%;
+    height: clamp(520px, calc(100dvh - 290px), 760px);
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+  .av-character-panel {
+    width: 150px;
+    height: 198px;
+    display: block;
+    position: absolute;
+    z-index: 18;
+    left: 12px;
+    top: 12px;
+    border-radius: 16px;
+    pointer-events: none;
+  }
+  .av-hero-stage { width: 100%; height: 142px; padding: 5px 5px 0; }
+  .av-hero-plaque { width: calc(100% - 12px); margin: -1px 6px 6px; padding: 6px; border-radius: 9px; }
+  .av-hero-plaque small { display: none; }
+  .av-hero-plaque strong { margin: 0; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+  .av-hero-plaque span { margin-top: 2px; font-size: 8px; }
+  .av-hero-plaque em { margin-top: 3px; font-size: 8px; }
+  .office-view-rail { left: auto; right: 12px; top: 12px; transform: none; }
+  .office-view-rail button { min-height: 40px; }
+
+  .appearance-button { min-height: 42px; }
+  .catalog-view-buttons button { min-width: 42px; min-height: 42px; }
+  .asset-management-grid,
+  .client-grid,
+  .achievement-grid {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .asset-management-grid::-webkit-scrollbar,
+  .client-grid::-webkit-scrollbar,
+  .achievement-grid::-webkit-scrollbar { display: none; }
+  .asset-management-grid > *,
+  .client-grid > *,
+  .achievement-grid > * {
+    flex: 0 0 min(390px, 72vw);
+    scroll-snap-align: start;
+  }
+
+  .uw-world-ledger { display: none; }
+  .uw-map-frame {
+    height: clamp(540px, calc(100dvh - 420px), 720px);
+    min-height: 0;
+  }
+}
+
+/* Short landscape phones need a reading workspace, not a vertically stacked
+   desktop document. RC keeps passage and answers visible side by side, with
+   each pane scrolling independently. */
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  .asset-management-grid,
+  .client-grid,
+  .achievement-grid {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .asset-management-grid::-webkit-scrollbar,
+  .client-grid::-webkit-scrollbar,
+  .achievement-grid::-webkit-scrollbar { display: none; }
+  .asset-management-grid > *,
+  .client-grid > *,
+  .achievement-grid > * { flex: 0 0 min(360px, 48vw); scroll-snap-align: start; }
+
+  .office-game-page,
+  .empire-game-page {
+    height: calc(100vh - 68px);
+    height: calc(100dvh - 68px);
+    min-height: 0;
+    padding: 0 10px;
+    position: relative;
+    overflow-y: auto;
+  }
+  .office-command-bar {
+    margin: 0;
+    position: absolute;
+    z-index: 96;
+    left: 20px;
+    right: 20px;
+    top: 8px;
+    pointer-events: none;
+  }
+  .office-command-bar > div:first-child { display: none; }
+  .office-command-bar .command-stats {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    pointer-events: auto;
+  }
+  .office-command-bar .command-stats > span {
+    min-width: 0;
+    min-height: 43px;
+    padding-block: 5px;
+  }
+  .office-world-shell { width: 100%; margin: 0; }
+  .av-office-duo { display: block; position: relative; }
+  .office-explorer {
+    width: 100%;
+    height: calc(100vh - 134px);
+    height: calc(100dvh - 134px);
+    min-height: 256px;
+    aspect-ratio: auto;
+    border-radius: 0;
+  }
+  .av-character-panel {
+    width: 96px;
+    height: 136px;
+    display: block;
+    position: absolute;
+    z-index: 98;
+    left: 10px;
+    top: 56px;
+    border-radius: 12px;
+    pointer-events: none;
+  }
+  .av-hero-stage { width: 100%; height: 98px; padding: 3px 3px 0; }
+  .av-hero-plaque { width: calc(100% - 8px); margin: -1px 4px 4px; padding: 4px; border-radius: 7px; }
+  .av-hero-plaque small { display: none; }
+  .av-hero-plaque strong { margin: 0; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .av-hero-plaque span,
+  .av-hero-plaque em { margin-top: 2px; font-size: 6.5px; }
+  .office-view-rail {
+    width: 224px;
+    left: auto;
+    right: 10px;
+    top: 56px;
+    grid-template-columns: 36px minmax(70px, 1fr) 36px 36px;
+    transform: none;
+  }
+  .office-view-rail button { min-height: 38px; }
+  .office-inventory { right: 8px; bottom: 8px; }
+
+  .map-page .empire-command-bar { display: none; }
+  .unified-empire { height: 100%; position: relative; }
+  .uw-world-ledger { display: none; }
+  .uw-map-frame {
+    width: 100%;
+    height: calc(100vh - 134px);
+    height: calc(100dvh - 134px);
+    min-height: 256px;
+    margin: 0;
+    border-radius: 0;
+  }
+  .uw-arc-navigation {
+    width: calc(100% - 16px);
+    margin: 0;
+    padding: 4px;
+    position: absolute;
+    z-index: 12;
+    left: 8px;
+    top: 7px;
+    display: grid;
+    grid-template-columns: repeat(5, 220px);
+    gap: 5px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .uw-arc-navigation::-webkit-scrollbar { display: none; }
+  .uw-arc-navigation button { min-height: 48px; padding-block: 5px; scroll-snap-align: start; }
+  .uw-scene-title { display: none; }
+  .uw-scene-view-tabs { left: 9px; top: 64px; }
+  .uw-scene-view-tabs button { min-height: 38px; }
+  .uw-map-toolbar { right: 9px; top: 64px; grid-template-columns: repeat(4, 38px); }
+  .uw-map-toolbar button { width: 38px; height: 38px; }
+  .uw-level-navigator { bottom: 7px; }
+
+  .app-shell.active-case,
+  .app-shell.active-case > main,
+  .session-page {
+    height: calc(100vh - 68px);
+    height: calc(100dvh - 68px);
+    min-height: 0;
+    overflow: hidden;
+  }
+  .session-controls {
+    width: min(100% - 20px, 980px);
+    height: 40px;
+    padding-top: 3px;
+  }
+  .session-controls .secondary-button { min-height: 34px; padding-block: 5px; }
+  .question-layout {
+    width: min(100% - 20px, 980px);
+    height: calc(100% - 40px);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .learning-mode-banner,
+  .diagnostic-session-banner,
+  .active-matter-banner {
+    min-height: 36px;
+    max-height: 44px;
+    margin: 0 0 5px;
+    padding: 6px 10px;
+    flex: 0 0 auto;
+    overflow: hidden;
+  }
+  .learning-mode-banner { flex-wrap: nowrap; }
+  .learning-mode-banner > div span { font-size: 9px; }
+  .learning-mode-banner > strong { min-width: 0; font-size: 11px; }
+  .case-file-topbar {
+    min-height: 48px;
+    margin: 0;
+    padding: 5px 9px;
+    flex: 0 0 auto;
+    grid-template-columns: 1fr auto 1fr;
+  }
+  .matter-tag > span { width: 32px; height: 32px; }
+  .matter-tag small { font-size: 8.5px; }
+  .matter-tag strong { font-size: 10.5px; }
+  .question-progress { font-size: 10px; }
+  .question-progress span { display: none; }
+  .case-timer small { font-size: 8.5px; }
+  .progress-track { height: 3px; margin: 5px 0 7px; flex: 0 0 auto; }
+  .strategy-trial {
+    max-height: 84px;
+    margin: 0 0 6px;
+    padding: 8px;
+    flex: 0 0 auto;
+    overflow-y: auto;
+  }
+  .question-content,
+  .question-content.with-passage {
+    min-height: 0;
+    flex: 1 1 auto;
+    align-items: stretch;
+    gap: 8px;
+    overflow: hidden;
+  }
+  .question-content.with-passage {
+    grid-template: minmax(0, 1fr) / minmax(0, .92fr) minmax(0, 1.08fr);
+  }
+  .passage-card,
+  .answer-card,
+  .question-content.with-passage .passage-card,
+  .question-content.with-passage .answer-card {
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+    padding: 12px 13px;
+    position: relative;
+    top: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .document-heading { padding-bottom: 7px; font-size: 9px; }
+  .passage-text,
+  .stimulus { margin-top: 9px; font-size: 14px; line-height: 1.55; }
+  .answer-card h1 { margin-bottom: 12px; font-size: 16px; line-height: 1.3; }
+  .choice { min-height: 44px; padding: 7px 9px; }
+  .case-page-turn { inset: 45px 0 auto; height: calc(100dvh - 55px); }
+}

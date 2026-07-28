@@ -74,6 +74,11 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         FRONTEND_ORIGIN=os.getenv("FRONTEND_ORIGIN", "http://localhost:5173"),
         GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID", ""),
+        GOOGLE_MOBILE_CLIENT_IDS=tuple(
+            client_id.strip()
+            for client_id in os.getenv("GOOGLE_MOBILE_CLIENT_IDS", "").split(",")
+            if client_id.strip()
+        ),
         # Development login can impersonate an email address by design, so it
         # must be enabled explicitly and can never run in production.
         DEV_AUTH_ENABLED=dev_auth_requested and not is_production,
@@ -91,6 +96,7 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         AUTH_COOKIE="lsat_session",
         CSRF_COOKIE="lsat_csrf",
         COOKIE_SECURE=is_production,
+        MOBILE_AUTH_DAYS=max(1, int(os.getenv("MOBILE_AUTH_DAYS", "90"))),
         REPO_ROOT=str(backend_dir.parent),
         TFY_API_KEY=os.getenv("TFY_API_KEY", "").strip().strip('"'),
         TFY_URL=os.getenv("TFY_URL", "").strip().strip('"'),
@@ -111,7 +117,7 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         app,
         origins=[app.config["FRONTEND_ORIGIN"]],
         supports_credentials=True,
-        allow_headers=["Content-Type", "X-CSRF-Token", "Idempotency-Key"],
+        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "Idempotency-Key"],
     )
     init_auth(app)
     app.register_blueprint(api, url_prefix="/v1")
