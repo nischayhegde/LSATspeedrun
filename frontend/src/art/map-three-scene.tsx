@@ -247,18 +247,6 @@ function roadMesh(curve: THREE.Curve<THREE.Vector3>, width: number, color: numbe
   return group
 }
 
-function careerPromenade(curve: THREE.Curve<THREE.Vector3>, definition: ArcDefinition) {
-  const group = new THREE.Group()
-  const foundation = mesh(ribbonGeometry(curve, 1.58), material(0x77766c, .98))
-  foundation.position.y = .018
-  const walk = mesh(ribbonGeometry(curve, 1.18), material(definition.road, .86, .03))
-  walk.position.y = .062
-  const inlay = mesh(ribbonGeometry(curve, .16), new THREE.MeshStandardMaterial({ color: definition.accent, emissive: definition.accent, emissiveIntensity: .18, roughness: .52, metalness: .18 }))
-  inlay.position.y = .105
-  group.add(foundation, walk, inlay)
-  return group
-}
-
 function addCurveDashes(group: THREE.Group, curve: THREE.Curve<THREE.Vector3>, color: number, count: number, width: number, length: number, y: number) {
   const dashMaterial = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: .14, roughness: .5, metalness: .18 })
   for (let index = 0; index < count; index += 1) {
@@ -278,7 +266,7 @@ function addCurveDashes(group: THREE.Group, curve: THREE.Curve<THREE.Vector3>, c
  * orbital transfer corridor. The route is therefore part of the environment,
  * rather than a generic game ribbon laid over it.
  */
-function createNativeCareerRoute(region: MapRegionKey, curve: THREE.Curve<THREE.Vector3>, definition: ArcDefinition) {
+function createNativeCareerRoute(region: MapRegionKey, curve: THREE.Curve<THREE.Vector3>) {
   const group = new THREE.Group()
   group.userData.careerInfrastructure = true
   if (region === 'city') {
@@ -316,38 +304,6 @@ function createNativeCareerRoute(region: MapRegionKey, curve: THREE.Curve<THREE.
     group.add(halo, transfer)
   }
   return group
-}
-
-function levelMedallion(point: MapSceneTier) {
-  const canvas = document.createElement('canvas')
-  canvas.width = 256
-  canvas.height = 256
-  const context = canvas.getContext('2d')!
-  const color = point.state === 'current' ? '#f1ce77' : point.state === 'complete' ? '#76b7a5' : point.state === 'next' ? '#d6ba76' : '#6f7774'
-  context.clearRect(0, 0, 256, 256)
-  context.beginPath(); context.arc(128, 128, 111, 0, Math.PI * 2)
-  context.fillStyle = 'rgba(12,25,29,.96)'; context.fill()
-  context.lineWidth = 13; context.strokeStyle = color; context.stroke()
-  context.beginPath(); context.arc(128, 128, 88, 0, Math.PI * 2)
-  context.lineWidth = 3; context.strokeStyle = 'rgba(244,235,208,.42)'; context.stroke()
-  context.fillStyle = color
-  context.font = '700 42px Georgia, serif'
-  context.textAlign = 'center'
-  context.fillText('LEVEL', 128, 104)
-  context.fillStyle = '#f4eedf'
-  context.font = '700 92px Georgia, serif'
-  context.fillText(String(point.data.tier + 1), 128, 185)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  const medallion = mesh(
-    new THREE.CircleGeometry(.53, 48),
-    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
-  )
-  medallion.rotation.x = -Math.PI / 2
-  medallion.renderOrder = 18
-  medallion.userData.disposableTexture = texture
-  setSelectable(medallion, { key: point.key, kind: 'tier', locked: point.state === 'locked' })
-  return medallion
 }
 
 function makeTextTexture(lines: string[], options?: { accent?: string; width?: number; height?: number }) {
@@ -1211,7 +1167,6 @@ function createCrane() {
 }
 
 function addOceanEnvironment(root: THREE.Group, definition: ArcDefinition) {
-  const shore = material(0x637864, .98)
   for (const x of [-12, -6, 0, 6, 12]) {
     const z = x % 12 === 0 ? -6.2 : 5.7
     const portIsland = createIslandLandform(2.65 + (Math.abs(x) % 3) * .2, x + 41, 0x637864)
@@ -1275,7 +1230,7 @@ function addOceanEnvironment(root: THREE.Group, definition: ArcDefinition) {
   })
 }
 
-function addContinentEnvironment(root: THREE.Group, definition: ArcDefinition) {
+function addContinentEnvironment(root: THREE.Group) {
   for (const x of [-9, 0, 9]) {
     const campus = createBlockBuilding(3.8, 2.1 + (x === 0 ? .9 : 0), 2.7, x === 0 ? 0x58696c : 0x666c68, true)
     campus.position.set(x, .02, -6.1)
@@ -1366,7 +1321,7 @@ function addContinentEnvironment(root: THREE.Group, definition: ArcDefinition) {
   }
 }
 
-function addGlobalEnvironment(root: THREE.Group, definition: ArcDefinition) {
+function addGlobalEnvironment(root: THREE.Group) {
   const platformMaterial = material(0x1f3038, .48, .4)
   const platform = cylinder(34, .42, platformMaterial, [0, -.36, 0], 96)
   platform.scale.z = .72
@@ -2701,7 +2656,7 @@ export function MapThreeScene({
     world.add(ground)
 
     const routeCurve = curveFrom(definition.route, region === 'orbit' ? .5 : .09)
-    world.add(createNativeCareerRoute(region, routeCurve, definition))
+    world.add(createNativeCareerRoute(region, routeCurve))
     const railCurve = curveFrom(definition.rail, region === 'ocean' ? -.08 : .1)
     if (region !== 'ocean' && region !== 'orbit') {
       const railBed = mesh(ribbonGeometry(railCurve, .76), material(0x56584f, .98))
@@ -2714,8 +2669,8 @@ export function MapThreeScene({
     if (region === 'city') addCityEnvironment(world, definition)
     else if (region === 'nation') addNationEnvironment(world, definition)
     else if (region === 'ocean') addOceanEnvironment(world, definition)
-    else if (region === 'continent') addContinentEnvironment(world, definition)
-    else addGlobalEnvironment(world, definition)
+    else if (region === 'continent') addContinentEnvironment(world)
+    else addGlobalEnvironment(world)
     addPerimeterEnvironment(world, region, definition)
     enforceCareerSetback(world, routeCurve, region)
     addAuthoredDetailPass(world, region, routeCurve, definition)

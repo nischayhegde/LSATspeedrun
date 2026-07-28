@@ -9,13 +9,14 @@ import {
   Check,
   Clock3,
   Coins,
-  Flame,
   HelpCircle,
   LayoutGrid,
   LogOut,
   Map,
   Pause,
+  RotateCw,
   Scale,
+  Smartphone,
   Sparkles,
   Star,
   Target,
@@ -124,6 +125,8 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
     alignment: game?.story.alignment ?? 'Pragmatic',
   })
   const isActiveCase = /^\/cases\/[^/]+/.test(location.pathname)
+  const isWideScene = /^\/(office|map)\/?$/.test(location.pathname)
+  const [dismissedWideScene, setDismissedWideScene] = useState('')
   const playDataSound = (event: MouseEvent<HTMLDivElement>) => {
     if (!(event.target instanceof Element)) return
     const target = event.target.closest<HTMLElement>('[data-sound="navigate"]')
@@ -178,6 +181,17 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         </div>
       </header>
       <main>{children}</main>
+      {isWideScene && dismissedWideScene !== location.pathname && (
+        <aside className="mobile-landscape-prompt" role="dialog" aria-modal="true" aria-labelledby="mobile-landscape-title">
+          <div className="mobile-landscape-card">
+            <span className="mobile-landscape-device" aria-hidden="true"><Smartphone /><RotateCw /></span>
+            <span className="eyebrow">WIDE SCENE</span>
+            <h2 id="mobile-landscape-title">Turn your phone to see the whole {location.pathname === '/office' ? 'office' : 'world'}.</h2>
+            <p>The scene, route controls, and level markers will recompose into one horizontal workspace.</p>
+            <button type="button" className="secondary-button" onClick={() => setDismissedWideScene(location.pathname)}>Keep portrait for now</button>
+          </div>
+        </aside>
+      )}
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
           {navItems.map(({ to, label, icon: Icon }) => (

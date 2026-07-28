@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, BackHandler, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { WebView, type WebViewNavigation } from 'react-native-webview'
+import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview'
+import * as ScreenOrientation from 'expo-screen-orientation'
 
 import { WEB_APP_URL } from '@/src/lib/config'
 
@@ -10,15 +11,49 @@ const INJECT_NATIVE_CONTEXT = `
     document.documentElement.dataset.nativeApp = 'true';
     document.documentElement.classList.add('native-app-shell');
     window.__LSAT_SPEEDRUN_NATIVE__ = true;
+    var reportRoute = function () {
+      window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'lsat-route-change',
+        url: window.location.href
+      }));
+    };
+    ['pushState', 'replaceState'].forEach(function (method) {
+      var original = window.history[method];
+      window.history[method] = function () {
+        var result = original.apply(this, arguments);
+        reportRoute();
+        return result;
+      };
+    });
+    window.addEventListener('popstate', reportRoute);
+    window.setTimeout(reportRoute, 0);
   })();
   true;
 `
+
+const LANDSCAPE_SCENE_PATHS = new Set(['/office', '/map'])
+
+function isLandscapeScene(url: string) {
+  try {
+    const pathname = new URL(url).pathname.replace(/\/$/, '') || '/'
+    return LANDSCAPE_SCENE_PATHS.has(pathname)
+  } catch {
+    return false
+  }
+}
 
 export function WebApp() {
   const webView = useRef<WebView>(null)
   const [canGoBack, setCanGoBack] = useState(false)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
+  const [sceneLandscape, setSceneLandscape] = useState(false)
+  const landscapeState = useRef(false)
+
+  useEffect(() => {
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined)
+    return () => { void ScreenOrientation.unlockAsync().catch(() => undefined) }
+  }, [])
 
   useEffect(() => {
     if (Platform.OS !== 'android') return
@@ -30,9 +65,31 @@ export function WebApp() {
     return () => subscription.remove()
   }, [canGoBack])
 
+  const syncSceneOrientation = useCallback((url: string) => {
+    const nextLandscape = isLandscapeScene(url)
+    setSceneLandscape(nextLandscape)
+    if (landscapeState.current === nextLandscape) return
+    landscapeState.current = nextLandscape
+    void ScreenOrientation.lockAsync(
+      nextLandscape
+        ? ScreenOrientation.OrientationLock.LANDSCAPE
+        : ScreenOrientation.OrientationLock.PORTRAIT_UP,
+    ).catch(() => undefined)
+  }, [])
+
   const handleNavigation = useCallback((state: WebViewNavigation) => {
     setCanGoBack(state.canGoBack)
-  }, [])
+    syncSceneOrientation(state.url)
+  }, [syncSceneOrientation])
+
+  const handleMessage = useCallback((event: WebViewMessageEvent) => {
+    try {
+      const message = JSON.parse(event.nativeEvent.data) as { type?: string; url?: string }
+      if (message.type === 'lsat-route-change' && message.url) syncSceneOrientation(message.url)
+    } catch {
+      // Ignore non-routing messages so future WebView features can share the channel.
+    }
+  }, [syncSceneOrientation])
 
   const allowNavigation = useCallback((request: WebViewNavigation) => {
     const url = request.url
@@ -56,7 +113,7 @@ export function WebApp() {
   }, [])
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+    <SafeAreaView edges={sceneLandscape ? ['left', 'right'] : ['top', 'bottom']} style={styles.safeArea}>
       <WebView
         ref={webView}
         source={{ uri: WEB_APP_URL }}
@@ -77,6 +134,7 @@ export function WebApp() {
         setSupportMultipleWindows={false}
         applicationNameForUserAgent="LSATSpeedrunMobile/1.0"
         injectedJavaScriptBeforeContentLoaded={INJECT_NATIVE_CONTEXT}
+        onMessage={handleMessage}
         onNavigationStateChange={handleNavigation}
         onShouldStartLoadWithRequest={allowNavigation}
         onLoadStart={() => { setLoading(true); setFailed(false) }}

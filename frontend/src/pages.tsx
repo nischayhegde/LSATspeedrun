@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
@@ -14,11 +14,9 @@ import {
   CircleDollarSign,
   Clock3,
   Coins,
-  Crown,
   Eye,
   FileSearch,
   Flame,
-  Globe2,
   Gauge,
   Gavel,
   Handshake,
@@ -1155,16 +1153,6 @@ export function FirmPage() {
       {(purchase.error || advance.error || client.error || appearance.error) && <ErrorNotice error={purchase.error || advance.error || client.error || appearance.error} />}
     </div>
   )
-}
-
-
-function TierArtIcon({ tier }: { tier: number }) {
-  if (tier === 0) return <BriefcaseBusiness />
-  if (tier === 1) return <UsersRound />
-  if (tier <= 3) return <Building2 />
-  if (tier === 4) return <Crown />
-  if (tier === 5) return <Globe2 />
-  return <Trophy />
 }
 
 
