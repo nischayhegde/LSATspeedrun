@@ -1,6 +1,6 @@
 # Required Graded Explanations Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Require a written explanation on every non-diagnostic question, and let the AI grade of that explanation drive both the spaced-review queue and strategy trial selection.
 
@@ -32,7 +32,7 @@
 - Consumes: nothing.
 - Produces: `ReviewQueueItem.grade_pending: bool` (not null, default False) and `ReviewQueueItem.pre_grade_interval_index: int | None`. Tasks 3 and 4 read and write both.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `backend/tests/test_flow.py`:
 
@@ -46,12 +46,12 @@ def test_review_queue_tracks_pending_grade_state(app):
         assert ReviewQueueItem.__table__.c.pre_grade_interval_index.nullable is True
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && python -m pytest tests/test_flow.py::test_review_queue_tracks_pending_grade_state -v`
 Expected: FAIL with `AssertionError` — `grade_pending` is not in the column set.
 
-- [ ] **Step 3: Add the columns to the model**
+- [x] **Step 3: Add the columns to the model**
 
 In `backend/app/models.py`, inside `class ReviewQueueItem`, immediately after the `interval_index` column (line 461):
 
@@ -61,7 +61,7 @@ In `backend/app/models.py`, inside `class ReviewQueueItem`, immediately after th
     pre_grade_interval_index = db.Column(db.Integer, nullable=True)
 ```
 
-- [ ] **Step 4: Write the migration**
+- [x] **Step 4: Write the migration**
 
 Create `backend/migrations/versions/0019_explanation_scheduling.py`:
 
@@ -94,12 +94,12 @@ def downgrade():
         batch_op.drop_column("grade_pending")
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd backend && python -m pytest tests/test_flow.py::test_review_queue_tracks_pending_grade_state tests/test_migration_integrity.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/models.py backend/migrations/versions/0019_explanation_scheduling.py backend/tests/test_flow.py
@@ -121,7 +121,7 @@ git commit -m "Add review queue columns for pending explanation grades"
 
 **Note on the gate expression:** the spec writes this as `practice_style != "diagnostic"`. `create_study_session` can only ever produce the four practice styles, so the literal `True` below is equivalent and clearer. The diagnostic path is a separate function and keeps its explicit `False`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `backend/tests/test_flow.py`:
 
@@ -209,12 +209,12 @@ def test_deep_practice_enforces_the_longer_floor(app):
     assert response.json["error"]["code"] == "reasoning_too_short"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && python -m pytest tests/test_flow.py -k "requires_an_explanation or never_requires or short_explanation or longer_floor" -v`
 Expected: FAIL — `reasoning_min_chars` is absent from the payload, and short explanations return 200.
 
-- [ ] **Step 3: Add the constant and helper**
+- [x] **Step 3: Add the constant and helper**
 
 In `backend/app/services.py`, after `REVIEW_INTERVAL_DAYS` (line 34):
 
@@ -230,7 +230,7 @@ def reasoning_min_chars(session: StudySession) -> int:
     return REASONING_MIN_CHARS.get(session.practice_style, 0)
 ```
 
-- [ ] **Step 4: Flip the gate at all three creation sites**
+- [x] **Step 4: Flip the gate at all three creation sites**
 
 `backend/app/services.py:441`, inside the `SessionItem(...)` built by `create_study_session`:
 
@@ -246,7 +246,7 @@ def reasoning_min_chars(session: StudySession) -> int:
 
 `backend/app/services.py:488` in `create_diagnostic_session` keeps `requires_reasoning=False` — do not touch it.
 
-- [ ] **Step 5: Publish the floor on the serialized item**
+- [x] **Step 5: Publish the floor on the serialized item**
 
 In `serialize_item` (`backend/app/services.py:225`), directly after the `requires_reasoning` entry:
 
@@ -255,7 +255,7 @@ In `serialize_item` (`backend/app/services.py:225`), directly after the `require
         "reasoning_min_chars": reasoning_min_chars(item.session),
 ```
 
-- [ ] **Step 6: Enforce the floor on submit**
+- [x] **Step 6: Enforce the floor on submit**
 
 Replace `backend/app/services.py:877-879`:
 
@@ -268,7 +268,7 @@ Replace `backend/app/services.py:877-879`:
             raise ValueError("reasoning_too_short")
 ```
 
-- [ ] **Step 7: Map the new error code**
+- [x] **Step 7: Map the new error code**
 
 In `backend/app/routes.py`, add to the `messages` dict after line 671:
 
@@ -283,7 +283,19 @@ And add the code to the 400 set on line 676:
         status = 400 if code in {"invalid_choice", "reasoning_required", "reasoning_too_short", "invalid_confidence", "strategy_decision_required", "invalid_strategy_prompt_time"} else 409
 ```
 
-- [ ] **Step 8: Repair the existing tests this breaks**
+- [x] **Step 8: Repair the existing tests this breaks** — *wider than estimated; see note.*
+
+> **Deviation as built.** Sixteen tests broke, not six. The estimate counted only call
+> sites with *no* reasoning; because the default practice style is `deep`, its
+> 120-character floor also rejected fourteen sites that already supplied 40–99
+> characters. Fixed by adding an `explanation(marker)` helper (215 characters, distinct
+> per marker) and lengthening each existing string in place, preserving intent where the
+> wording carried meaning — the deliberately vacuous explanation in
+> `test_invalid_reasoning_does_not_advance_cash_daily_goals` and the historical one in
+> `test_finished_legacy_attempt_is_not_adopted_or_paid_retroactively`. Distinctness is
+> load-bearing: `game._is_reused_reasoning` forces an Invalid band on a repeat within a
+> user's last 50 attempts, so one shared literal would have silently changed what those
+> tests settle.
 
 Six existing call sites submit answers with no reasoning and will now 400. Each needs a reasoning string of at least 40 characters. Apply these exact edits in `backend/tests/test_flow.py`:
 
@@ -332,12 +344,12 @@ Line ~683 asserts the old gate. Change:
     assert infinite["current_item"]["requires_reasoning"] is True
 ```
 
-- [ ] **Step 9: Run the full backend suite**
+- [x] **Step 9: Run the full backend suite**
 
 Run: `cd backend && python -m pytest`
 Expected: PASS, all tests. If any test still fails with `reasoning_required` or `reasoning_too_short`, add a 40+ character `reasoning` value to that call site the same way.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add backend/app/services.py backend/app/routes.py backend/tests/test_flow.py
@@ -356,7 +368,7 @@ git commit -m "Require a written explanation on every non-diagnostic question"
 - Consumes: `ReviewQueueItem.grade_pending`, `ReviewQueueItem.pre_grade_interval_index` from Task 1.
 - Produces: `_schedule_review(attempt: Attempt) -> None` — now safe to call more than once for the same attempt. Task 4 calls it a second time.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `backend/tests/test_flow.py`:
 
@@ -498,12 +510,12 @@ def test_review_advance_depends_on_the_explanation_grade(app, start_index, score
         assert refreshed.status == expected_status
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && python -m pytest tests/test_flow.py -k "unsupported_correct or supported_correct or review_advance" -v`
 Expected: FAIL — no `unsupported_correct` reason exists, and advancement ignores the grade.
 
-- [ ] **Step 3: Import the band helper**
+- [x] **Step 3: Import the band helper**
 
 In `backend/app/services.py:13`, extend the existing `game` import:
 
@@ -511,7 +523,7 @@ In `backend/app/services.py:13`, extend the existing `game` import:
 from .game import CLIENT_BY_KEY, explanation_band, lock_user_profile, serialize_settlement, settle_attempt, snapshot_case_context
 ```
 
-- [ ] **Step 4: Replace `_schedule_review` with the grade-aware version**
+- [x] **Step 4: Replace `_schedule_review` with the grade-aware version**
 
 Replace the whole of `backend/app/services.py:779-835`:
 
@@ -627,17 +639,17 @@ def _schedule_review(attempt: Attempt) -> None:
         existing.grade_pending = pending
 ```
 
-- [ ] **Step 5: Run the new tests**
+- [x] **Step 5: Run the new tests**
 
 Run: `cd backend && python -m pytest tests/test_flow.py -k "unsupported_correct or supported_correct or review_advance" -v`
 Expected: PASS
 
-- [ ] **Step 6: Run the full backend suite**
+- [x] **Step 6: Run the full backend suite**
 
 Run: `cd backend && python -m pytest`
 Expected: PASS. The existing assertion `review_item.interval_index == 1` (around line 712) still holds: that test never runs coaching, so the review attempt is graded `None`, `band` is `None`, and `_advance_review` takes the `+1` default.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/app/services.py backend/tests/test_flow.py
@@ -656,7 +668,7 @@ git commit -m "Let explanation grades decide review queue entry and advancement"
 - Consumes: `_schedule_review(attempt)` from Task 3.
 - Produces: nothing new. Closes the loop so an async grade revises the provisional schedule.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `backend/tests/test_flow.py`:
 
@@ -706,12 +718,12 @@ def test_landing_grade_revises_the_provisional_schedule(app, monkeypatch):
         assert row.grade_pending is False
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && python -m pytest tests/test_flow.py::test_landing_grade_revises_the_provisional_schedule -v`
 Expected: FAIL with `NoResultFound` — nothing re-runs scheduling, so the queue stays empty.
 
-- [ ] **Step 3: Call the scheduler when the grade is first applied**
+- [x] **Step 3: Call the scheduler when the grade is first applied**
 
 In `backend/app/services.py`, inside `run_attempt_coaching`, extend the existing block at lines 1005-1015 with one line at the end:
 
@@ -733,17 +745,17 @@ In `backend/app/services.py`, inside `run_attempt_coaching`, extend the existing
 
 The guard means this runs exactly once per attempt, and it sits before the existing `db.session.commit()` at line 1027 so it shares that transaction.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd backend && python -m pytest tests/test_flow.py::test_landing_grade_revises_the_provisional_schedule -v`
 Expected: PASS
 
-- [ ] **Step 5: Run the full backend suite**
+- [x] **Step 5: Run the full backend suite**
 
 Run: `cd backend && python -m pytest`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/services.py backend/tests/test_flow.py
@@ -762,7 +774,16 @@ git commit -m "Re-run review scheduling when an explanation grade arrives"
 - Consumes: `Attempt.explanation_score` (already exists).
 - Produces: no new symbols. Changes the ranking inside `assign_strategy_trial`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test** — *implemented differently; see note.*
+
+> **Deviation as built.** The test below asserts arithmetic on local literals plus a
+> `STRATEGIES` membership check, so it never calls the code under test and passes
+> before the change — Step 2's "Expected: FAIL" is not achievable. It was replaced
+> with `test_strategy_scoring_weighs_explanation_quality`, which drives
+> `assign_strategy_trial` over candidates tied on accuracy, pace, and calibration and
+> differing only in `explanation_score`, pinning `_stable_fraction` to disable the 30%
+> explore branch and the 25% control arm. It fails without the explanation term
+> (selecting the sort's reverse-tiebreak winner) and passes with it.
 
 Add to `backend/tests/test_flow.py`:
 
@@ -837,12 +858,12 @@ def test_strategy_scoring_falls_back_without_graded_attempts(app):
         assert trial["key"] in {"argument_core", "prephrase", "scope_precision", "role_map"}
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && python -m pytest tests/test_flow.py -k "strategy_scoring" -v`
 Expected: `test_strategy_scoring_weighs_explanation_quality` FAILS — it asserts the new weight split, which does not exist yet. `test_strategy_scoring_falls_back_without_graded_attempts` PASSES already; it is the regression guard that Step 3 must not break, since a naive `sum(...)/len(...)` over `None` scores raises `TypeError`.
 
-- [ ] **Step 3: Add the explanation term with a fallback**
+- [x] **Step 3: Add the explanation term with a fallback**
 
 Replace the `score` function in `backend/app/strategies.py:333-344`:
 
@@ -868,17 +889,17 @@ Replace the `score` function in `backend/app/strategies.py:333-344`:
 
 `explanation_score` is already normalized 0–1, matching the scale of the other three terms, so no rescaling is applied here.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && python -m pytest tests/test_flow.py -k "strategy_scoring" -v`
 Expected: PASS
 
-- [ ] **Step 5: Run the full backend suite**
+- [x] **Step 5: Run the full backend suite**
 
 Run: `cd backend && python -m pytest`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/strategies.py backend/tests/test_flow.py
@@ -898,7 +919,7 @@ git commit -m "Weigh explanation quality when choosing which strategy to surface
 - Consumes: `Attempt.explanation_score`.
 - Produces: `explanation_mean`, `control_explanation_mean`, `explanation_lift` on each entry of `strategy_performance()["results"]`. All three are `int | None` on a 0–100 scale.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `backend/tests/test_flow.py`:
 
@@ -960,12 +981,12 @@ def test_strategy_performance_reports_explanation_metrics(app):
         assert result["explanation_lift"] == 40
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && python -m pytest tests/test_flow.py::test_strategy_performance_reports_explanation_metrics -v`
 Expected: FAIL with `KeyError`/`AssertionError` — the keys do not exist.
 
-- [ ] **Step 3: Extend `metrics` to return an explanation mean**
+- [x] **Step 3: Extend `metrics` to return an explanation mean**
 
 In `backend/app/strategies.py`, replace the `metrics` helper and its two call sites (lines 442-458):
 
@@ -1002,7 +1023,7 @@ In `backend/app/strategies.py`, replace the `metrics` helper and its two call si
         ranking_score = posterior * 100 + (pace or 0) * .08 + (lift or 0) * .25 + (explanation_lift or 0) * .15
 ```
 
-- [ ] **Step 4: Add the three fields to the result payload**
+- [x] **Step 4: Add the three fields to the result payload**
 
 In the same `results.append({...})` block in `backend/app/strategies.py`, after the existing `"lift": lift,` entry:
 
@@ -1013,7 +1034,7 @@ In the same `results.append({...})` block in `backend/app/strategies.py`, after 
                 "explanation_lift": explanation_lift,
 ```
 
-- [ ] **Step 5: Add the fields to the frontend type**
+- [x] **Step 5: Add the fields to the frontend type**
 
 In `frontend/src/types.ts`, in `export type StrategyResult` (line 375), directly after `lift: number | null` on line 389:
 
@@ -1024,12 +1045,12 @@ In `frontend/src/types.ts`, in `export type StrategyResult` (line 375), directly
   explanation_lift: number | null
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `cd backend && python -m pytest tests/test_flow.py::test_strategy_performance_reports_explanation_metrics -v && python -m pytest`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/app/strategies.py frontend/src/types.ts backend/tests/test_flow.py
@@ -1048,7 +1069,7 @@ git commit -m "Report explanation lift alongside accuracy lift per strategy"
 - Consumes: `reasoning_min_chars` on the serialized session item (Task 2).
 - Produces: nothing consumed downstream.
 
-- [ ] **Step 1: Add the field to the item type**
+- [x] **Step 1: Add the field to the item type**
 
 In `frontend/src/types.ts`, in the interface containing `requires_reasoning: boolean` (line 290):
 
@@ -1057,7 +1078,7 @@ In `frontend/src/types.ts`, in the interface containing `requires_reasoning: boo
   reasoning_min_chars: number
 ```
 
-- [ ] **Step 2: Read the floor in the component**
+- [x] **Step 2: Read the floor in the component**
 
 In `frontend/src/components.tsx`, beside the existing `requiresReasoning` declaration (line 418):
 
@@ -1071,7 +1092,7 @@ In `frontend/src/components.tsx`, beside the existing `requiresReasoning` declar
 
 `reasoning` is declared on line 423, so place these lines after it.
 
-- [ ] **Step 3: Update the run header**
+- [x] **Step 3: Update the run header**
 
 Replace line 655 of `frontend/src/components.tsx`:
 
@@ -1079,7 +1100,7 @@ Replace line 655 of `frontend/src/components.tsx`:
           <strong>{isInfinite ? 'Answer → explain → continue' : session.practice_style === 'review' ? 'Repair the questions you missed, in writing' : 'Answer and justify · full coaching unlocks when the run ends'}</strong>
 ```
 
-- [ ] **Step 4: Adapt the explanation box to the mode**
+- [x] **Step 4: Adapt the explanation box to the mode**
 
 Replace lines 762-779 of `frontend/src/components.tsx`:
 
@@ -1106,7 +1127,7 @@ Replace lines 762-779 of `frontend/src/components.tsx`:
           )}
 ```
 
-- [ ] **Step 5: Gate the submit button on the floor**
+- [x] **Step 5: Gate the submit button on the floor**
 
 Replace the `disabled` expression on line 792 of `frontend/src/components.tsx`:
 
@@ -1120,12 +1141,12 @@ And the button label on line 796 — replace `requiresReasoning ? 'Submit reason
                 {strategyDecisionRequired ? 'Pick Use it or Skip first' : submit.isPending || pageTurning ? 'Recording answer…' : !reasoningComplete ? `${minChars - reasoningLength} more characters` : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
 ```
 
-- [ ] **Step 6: Typecheck and build**
+- [x] **Step 6: Typecheck and build**
 
 Run: `cd frontend && npm run build`
 Expected: build succeeds with no TypeScript errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src/types.ts frontend/src/components.tsx
@@ -1136,16 +1157,16 @@ git commit -m "Ask for an explanation on every non-diagnostic question in the UI
 
 ## Verification
 
-- [ ] **Full backend suite**
+- [x] **Full backend suite**
 
 Run: `cd backend && python -m pytest`
 Expected: PASS, with the new tests from Tasks 1–6 included.
 
-- [ ] **Frontend build**
+- [x] **Frontend build**
 
 Run: `cd frontend && npm run build`
 Expected: success.
 
-- [ ] **Manual smoke**
+- [x] **Manual smoke**
 
 Start a Speedrun. Confirm the explanation box appears, the button reads "N more characters" until 40 are typed, and the answer submits at 40. Start a Method Lab run and confirm the floor is 120.
