@@ -288,6 +288,7 @@ export type SessionItem = {
   position: number
   section_index: number
   requires_reasoning: boolean
+  reasoning_min_chars: number
   strategy_trial?: StrategyTrial | null
   served_at: string
   elapsed_ms: number

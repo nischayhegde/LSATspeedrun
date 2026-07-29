@@ -507,6 +507,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const learningOnly = session.practice_style !== 'deep'
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
+  const minChars = item?.reasoning_min_chars ?? 0
+  const shortForm = session.practice_style === 'speedrun' || session.practice_style === 'infinite'
+  const reasoningLength = reasoning.trim().length
+  const reasoningComplete = !requiresReasoning || reasoningLength >= minChars
   const [confidence, setConfidence] = useState(3)
   const [answerChanged, setAnswerChanged] = useState(false)
   const [strategyApplied, setStrategyApplied] = useState<boolean | null>(null)
@@ -745,7 +749,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           aria-label={isDiagnostic ? 'Baseline diagnostic in progress' : `${session.practice_style} learning mode`}
         >
           <div>{isDiagnostic ? <Target size={20} /> : <Brain size={20} />}<span>{isDiagnostic ? 'BASELINE DIAGNOSTIC' : isInfinite ? 'INFINITE PRACTICE' : session.practice_style === 'review' ? 'REPAIR REVIEW' : 'TIMED SPRINT'}</span></div>
-          <strong>{isDiagnostic ? 'Neutral measurement · no currency, reputation, or streak changes' : isInfinite ? 'Answer → concise reasoning → continue' : session.practice_style === 'review' ? 'Explain only the questions that need repair' : 'Answer-only · explanations unlock when the run ends'}</strong>
+          <strong>{isDiagnostic ? 'Neutral measurement · no currency, reputation, or streak changes' : isInfinite ? 'Answer → explain → continue' : session.practice_style === 'review' ? 'Repair the questions you missed, in writing' : 'Answer and justify · full coaching unlocks when the run ends'}</strong>
           {isInfinite && <button type="button" onClick={() => finishInfinite.mutate()} disabled={finishInfinite.isPending || Boolean(result)}>{finishInfinite.isPending ? 'Ending…' : 'End run'}</button>}
         </section>
       ) : <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
@@ -870,16 +874,18 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           {!result && requiresReasoning && (
             <div className="reasoning-box">
               <div className="reasoning-heading">
-                <label htmlFor="reasoning">Your case theory <b>Required</b></label>
-                <span>{reasoning.trim().length} characters</span>
+                <label htmlFor="reasoning">{shortForm ? 'Why this answer' : 'Your case theory'} <b>Required</b></label>
+                <span>{reasoningLength} / {minChars} characters</span>
               </div>
               <textarea
                 id="reasoning"
                 value={reasoning}
                 disabled={strategyDecisionRequired}
                 onChange={(event) => setReasoning(event.target.value)}
-                placeholder="Identify the conclusion, decisive evidence or logical relationship, and why your choice answers the exact question…"
-                rows={5}
+                placeholder={shortForm
+                  ? 'One or two sentences: what in the text decided it…'
+                  : 'Identify the conclusion, decisive evidence or logical relationship, and why your choice answers the exact question…'}
+                rows={shortForm ? 3 : 5}
                 maxLength={4000}
               />
               <p>Substance beats length. Generic or repeated explanations receive no meaningful payout.</p>
@@ -897,11 +903,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           {!result && (
             <div className="answer-actions">
               {submit.error && <ErrorNotice error={submit.error} />}
-              <button className="primary-button verdict-button" disabled={!selected || (requiresReasoning && !reasoning.trim()) || strategyDecisionRequired || submit.isPending || pageTurning} onClick={() => {
+              <button className="primary-button verdict-button" disabled={!selected || !reasoningComplete || strategyDecisionRequired || submit.isPending || pageTurning} onClick={() => {
                 void play('submit', { seed: item.id, intensity: .68 })
                 submit.mutate()
               }}>
-                {strategyDecisionRequired ? 'Pick Use it or Skip first' : submit.isPending || pageTurning ? 'Recording answer…' : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
+                {strategyDecisionRequired ? 'Pick Use it or Skip first' : submit.isPending || pageTurning ? 'Recording answer…' : !reasoningComplete ? `${minChars - reasoningLength} more characters` : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
               </button>
             </div>
           )}
