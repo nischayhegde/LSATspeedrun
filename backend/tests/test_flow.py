@@ -2510,3 +2510,39 @@ def test_strategy_performance_reports_explanation_metrics(app):
         assert result["explanation_mean"] == 80
         assert result["control_explanation_mean"] == 40
         assert result["explanation_lift"] == 40
+
+
+@pytest.mark.parametrize(("practice_style", "floor"), [("speedrun", 40), ("deep", 120)])
+def test_explanation_floor_boundary_matches_the_published_minimum(app, practice_style, floor):
+    """The served floor is exactly the enforced floor.
+
+    The client enables submit at ``length >= reasoning_min_chars`` while the server
+    rejects at ``len < reasoning_min_chars``. An off-by-one on either side would
+    leave the button enabled on an answer the API refuses, so assert the boundary
+    from both directions.
+    """
+    client = app.test_client()
+    headers = login(client, f"boundary-{practice_style}@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": practice_style},
+        headers=headers,
+    ).json["session"]
+    item_id = session["current_item"]["id"]
+    assert session["current_item"]["reasoning_min_chars"] == floor
+
+    under = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": item_id, "selected_label": "C", "reasoning": "x" * (floor - 1)},
+        headers={**headers, "Idempotency-Key": f"under-{practice_style}"},
+    )
+    assert under.status_code == 400
+    assert under.json["error"]["code"] == "reasoning_too_short"
+
+    exact = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": item_id, "selected_label": "C", "reasoning": "y" * floor},
+        headers={**headers, "Idempotency-Key": f"exact-{practice_style}"},
+    )
+    assert exact.status_code == 200
