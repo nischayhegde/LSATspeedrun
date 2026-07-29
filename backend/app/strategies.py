@@ -444,23 +444,36 @@ def strategy_performance(user_id: str) -> dict:
         controls = [value for value in values if value.strategy_variant == "control"]
         skipped = sum(value.strategy_variant == "prompt" and value.strategy_applied is False for value in values)
 
-        def metrics(sample: list[Attempt]) -> tuple[int, int, int, int | None]:
+        def metrics(sample: list[Attempt]) -> tuple[int, int, int, int | None, int | None]:
             if not sample:
-                return 0, 0, 0, None
+                return 0, 0, 0, None, None
             correct = sum(value.is_correct for value in sample)
             adjusted = [max(1000, value.server_elapsed_ms - (value.strategy_prompt_ms or 0)) for value in sample]
             pace = sum(
                 elapsed <= value.session_item.target_time_seconds * 1000
                 for elapsed, value in zip(adjusted, sample)
             )
-            return len(sample), round(correct / len(sample) * 100), round(sum(adjusted) / len(sample) / 1000), round(pace / len(sample) * 100)
+            graded = [value for value in sample if value.explanation_score is not None]
+            explanation = round(sum(value.explanation_score for value in graded) / len(graded) * 100) if graded else None
+            return (
+                len(sample),
+                round(correct / len(sample) * 100),
+                round(sum(adjusted) / len(sample) / 1000),
+                round(pace / len(sample) * 100),
+                explanation,
+            )
 
-        sample, accuracy, seconds, pace = metrics(prompted)
-        control_sample, control_accuracy, control_seconds, _control_pace = metrics(controls)
+        sample, accuracy, seconds, pace, explanation_mean = metrics(prompted)
+        control_sample, control_accuracy, control_seconds, _control_pace, control_explanation_mean = metrics(controls)
         status = "forming" if sample < 4 or control_sample < 2 else "directional" if sample < 8 or control_sample < 4 else "supported"
         lift = accuracy - control_accuracy if sample and control_sample else None
+        explanation_lift = (
+            explanation_mean - control_explanation_mean
+            if explanation_mean is not None and control_explanation_mean is not None
+            else None
+        )
         posterior = (sum(value.is_correct for value in prompted) + 1) / (sample + 2)
-        ranking_score = posterior * 100 + (pace or 0) * .08 + (lift or 0) * .25
+        ranking_score = posterior * 100 + (pace or 0) * .08 + (lift or 0) * .25 + (explanation_lift or 0) * .15
         results.append(
             {
                 "key": key,
@@ -477,6 +490,9 @@ def strategy_performance(user_id: str) -> dict:
                 "control_accuracy": control_accuracy,
                 "control_seconds": control_seconds,
                 "lift": lift,
+                "explanation_mean": explanation_mean,
+                "control_explanation_mean": control_explanation_mean,
+                "explanation_lift": explanation_lift,
                 "skipped": skipped,
                 "status": status,
                 "ranking_score": round(ranking_score, 2),

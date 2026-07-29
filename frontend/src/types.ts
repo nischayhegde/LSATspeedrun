@@ -387,6 +387,9 @@ export type StrategyResult = {
   control_accuracy: number
   control_seconds: number
   lift: number | null
+  explanation_mean: number | null
+  control_explanation_mean: number | null
+  explanation_lift: number | null
   skipped: number
   /** Internal three-tier evidence state. Prefer `verdict` for display. */
   status: 'forming' | 'directional' | 'supported'

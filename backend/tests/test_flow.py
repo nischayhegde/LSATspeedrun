@@ -2453,3 +2453,60 @@ def test_strategy_scoring_falls_back_without_graded_attempts(app):
         trial = assign_strategy_trial(user.id, question, "deep", 2)
         assert trial is not None
         assert trial["key"] in {"argument_core", "prephrase", "scope_precision", "role_map"}
+
+
+def test_strategy_performance_reports_explanation_metrics(app):
+    """strategy_performance is surfaced under performance.strategy_lab, not its own route."""
+    with app.app_context():
+        user = User(email="strategy-metrics@example.test", display_name="Metrics")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.filter_by(section="Logical Reasoning").first()
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            target_minutes=10,
+            total_items=2,
+        )
+        db.session.add(session)
+        db.session.flush()
+        for index, (variant, score) in enumerate((("prompt", 0.80), ("control", 0.40))):
+            item = SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=index,
+                requires_reasoning=True,
+                target_time_seconds=150,
+                strategy_key="argument_core",
+                strategy_variant=variant,
+            )
+            db.session.add(item)
+            db.session.flush()
+            db.session.add(
+                Attempt(
+                    user_id=user.id,
+                    session_item_id=item.id,
+                    idempotency_key=f"metrics-{index}",
+                    selected_label=question.correct_answer,
+                    is_correct=True,
+                    reasoning_text="A graded written explanation for this attempt.",
+                    confidence=4,
+                    server_elapsed_ms=60_000,
+                    strategy_key="argument_core",
+                    strategy_variant=variant,
+                    strategy_applied=True if variant == "prompt" else None,
+                    explanation_score=score,
+                )
+            )
+        db.session.commit()
+
+        from app.strategies import strategy_performance
+
+        result = next(
+            entry for entry in strategy_performance(user.id)["results"] if entry["key"] == "argument_core"
+        )
+        assert result["explanation_mean"] == 80
+        assert result["control_explanation_mean"] == 40
+        assert result["explanation_lift"] == 40
