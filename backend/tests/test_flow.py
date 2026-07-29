@@ -2016,3 +2016,12 @@ def test_every_strategy_carries_student_facing_copy(app):
         assert served["plain_title"] == "Negate the answer"
         assert served["plain_subject"] == "Negating the answer"
         assert served["title"] == "Necessary-Assumption Negation"
+
+
+def test_review_queue_tracks_pending_grade_state(app):
+    with app.app_context():
+        columns = {column.name for column in ReviewQueueItem.__table__.columns}
+        assert "grade_pending" in columns
+        assert "pre_grade_interval_index" in columns
+        assert ReviewQueueItem.__table__.c.grade_pending.nullable is False
+        assert ReviewQueueItem.__table__.c.pre_grade_interval_index.nullable is True

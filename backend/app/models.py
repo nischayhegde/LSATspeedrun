@@ -459,6 +459,8 @@ class ReviewQueueItem(db.Model):
     reason_code = db.Column(db.String(40), nullable=False, default="incorrect")
     learner_rule = db.Column(db.Text, nullable=True)
     interval_index = db.Column(db.Integer, nullable=False, default=0)
+    grade_pending = db.Column(db.Boolean, nullable=False, default=False)
+    pre_grade_interval_index = db.Column(db.Integer, nullable=True)
     due_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
