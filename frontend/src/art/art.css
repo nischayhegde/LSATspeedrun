@@ -806,10 +806,9 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .client-portrait.client-card-portrait { margin-bottom: 15px; }
 .management-card .pro-bono-seal { top: 44px; right: 14px; }
 
-/* keep page content clear of the fixed mobile nav */
-@media (max-width: 900px) {
-  body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
-}
+/* The fixed mobile nav is cleared by `.app-shell`'s bottom padding in
+   mobile.css. A body-level gutter here stacked a second empty footer under
+   every route, so clearance is owned by the shell alone. */
 
 /* once the character/office duo stacks, the pinned mission board flows
    below the scene instead of covering the character plaque */

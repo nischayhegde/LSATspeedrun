@@ -36,13 +36,13 @@ import {
   UsersRound,
   Wrench,
 } from 'lucide-react'
-import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { api } from './api'
-import { Brand, ErrorNotice, formatMoney, LoadingScreen, OfficeEventPopup, PauseButton, QuestionFlow } from './components'
+import { Brand, ErrorNotice, formatMoney, LoadingScreen, OfficeEventPopup, PauseButton, QuestionFlow, useRestoredChrome } from './components'
 import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, MiniAvatar, OfficeScene, PixelAssetArtwork, StaffRoster } from './game-art'
 import { PixelStudyScenery } from './art/pixel-scenery'
-import { SoundControls, useSound } from './sound'
+import { SoundControls, useAmbientMusic, useSound } from './sound'
 import { MOTION_TIMING } from './motion'
 import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest } from './types'
 import './performance.css'
@@ -108,20 +108,51 @@ export function PerformancePage() {
     directional: 'The trend is useful for training decisions.',
     stable: 'Your sample is large enough for a stable performance signal.',
   }[metrics.evidence]
+  const openPrimaryTraining = () => {
+    if (activePractice) navigate(`/cases/${activePractice.id}`)
+    else startSpeedrun.mutate()
+  }
+  const openDiagnostic = () => {
+    if (diagnosticSession) navigate(`/cases/${diagnosticSession.id}`)
+    else startDiagnostic.mutate()
+  }
 
   return (
     <div className="performance-page page-wrap">
+      <section className="mobile-training-home" aria-label="Training overview">
+        <header className="mobile-learning-header">
+          <div><span>TRAINING</span><h1>Your next best rep.</h1></div>
+          <a href="#mobile-training-analysis">Analysis <ArrowRight size={15} /></a>
+        </header>
+        <div className="mobile-training-signal">
+          <div className="mobile-training-score" aria-label={`${testMetrics.accuracy} percent timed unseen accuracy`}>
+            <strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><span>{testMetrics.attempts ? '%' : 'NEW'}</span>
+          </div>
+          <div><small>TIMED UNSEEN ACCURACY</small><p>{testMetrics.attempts ? `${testMetrics.attempts} verified attempts · ${readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}` : 'Run a baseline sprint to establish your line.'}</p></div>
+        </div>
+        <div className="mobile-training-metrics" aria-label="Training evidence">
+          <div><span>Average split</span><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong></div>
+          <div><span>Review recovery</span><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong></div>
+          <div><span>Due now</span><strong>{reviewMetrics.due}</strong></div>
+        </div>
+        <div className="mobile-training-priority">
+          <Target size={19} />
+          <div><span>TRAINING PRIORITY</span><strong>{performance.recommendation?.skill ?? 'Establish your baseline'}</strong><small>{performance.recommendation ? `${performance.recommendation.accuracy}% current accuracy · ${performance.recommendation.reason}` : 'A diagnostic or sprint will identify the first weakness.'}</small></div>
+        </div>
+        <div className="mobile-training-actions">
+          <button className="primary-button" onClick={openPrimaryTraining} disabled={startSpeedrun.isPending}><TimerReset /> {activePractice ? 'Continue current run' : 'Start 10-question sprint'} <ArrowRight /></button>
+          <button className="mobile-training-secondary" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume diagnostic' : performance.diagnostic ? 'Run a new diagnostic' : 'Take baseline diagnostic'}</button>
+        </div>
+      </section>
+
       <section className="performance-hero">
         <div>
           <span className="eyebrow">EXPERIMENTAL · LSAT SPEEDRUN LAB</span>
           <h1>Build speed that survives a new question.</h1>
           <p>Timed unseen accuracy is the headline. Review recovery, confidence, and pacing explain what to train next.</p>
           <div className="performance-actions">
-            <button className="primary-button" onClick={() => {
-              if (activePractice) navigate(`/cases/${activePractice.id}`)
-              else startSpeedrun.mutate()
-            }} disabled={startSpeedrun.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10-question Sprint'} <ArrowRight /></button>
-            <button className="secondary-button" onClick={() => diagnosticSession ? navigate(`/cases/${diagnosticSession.id}`) : startDiagnostic.mutate()} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume diagnostic' : performance.diagnostic ? 'Retake diagnostic' : 'Take baseline diagnostic'}</button>
+            <button className="primary-button" onClick={openPrimaryTraining} disabled={startSpeedrun.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10-question Sprint'} <ArrowRight /></button>
+            <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume diagnostic' : performance.diagnostic ? 'Retake diagnostic' : 'Take baseline diagnostic'}</button>
           </div>
         </div>
         <div className="speedrun-index" aria-label={`${testMetrics.accuracy} percent timed unseen accuracy`}>
@@ -143,7 +174,7 @@ export function PerformancePage() {
         <article><div><Gauge /><span>CONFIDENCE ERRORS</span></div><strong>{confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`}</strong><small>High-confidence misses across {confidenceMetrics.sample} rated answers</small></article>
       </section>
 
-      <div className="mobile-performance-deck">
+      <div className="mobile-performance-deck" id="mobile-training-analysis">
         <header className="mobile-performance-deck-heading" aria-hidden="true"><span>YOUR TRAINING FILE</span><strong>Swipe between method, baseline, evidence, trends, and skills.</strong></header>
         <div className="mobile-performance-deck-track" aria-label="Training analysis panels">
       <section className="strategy-lab-panel" aria-labelledby="strategy-lab-title">
@@ -517,6 +548,8 @@ export function OnboardingPage() {
 export function OfficePage() {
   const navigate = useNavigate()
   const { play } = useSound()
+  useAmbientMusic('office')
+  const [mobileBriefOpen, setMobileBriefOpen] = useState(false)
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
   const start = useMutation({
@@ -545,6 +578,50 @@ export function OfficePage() {
 
   return (
     <div className="office-page office-game-page">
+      <div className="office-mobile-scene-status" aria-hidden="true">
+        <small>HQ {game.office_tier + 1} · {game.reputation_band.name.toUpperCase()}</small>
+        <strong>{game.office.name}</strong>
+      </div>
+      <button
+        type="button"
+        className="office-mobile-brief-toggle"
+        aria-expanded={mobileBriefOpen}
+        aria-controls="office-mobile-brief-sheet"
+        onClick={() => {
+          void play(mobileBriefOpen ? 'paper' : 'ledger', { seed: 'office-mobile-brief', intensity: .24 })
+          setMobileBriefOpen((open) => !open)
+        }}
+      >
+        <BriefcaseBusiness size={16} />
+        <span>Today</span>
+      </button>
+      {mobileBriefOpen && (
+        <aside className="office-mobile-brief-sheet" id="office-mobile-brief-sheet" role="dialog" aria-modal="true" aria-labelledby="office-mobile-brief-title">
+          <header>
+            <div><small>OFFICE BRIEF</small><h2 id="office-mobile-brief-title">Today at the firm</h2></div>
+            <button type="button" aria-label="Close office brief" onClick={() => setMobileBriefOpen(false)}>×</button>
+          </header>
+          <button type="button" className="office-mobile-current-case" onClick={() => { setMobileBriefOpen(false); openCase() }}>
+            <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
+            <span><small>{active ? 'CASE IN PROGRESS' : 'ACTIVE CLIENT'}</small><strong>{workingClient.name}</strong><em>{game.active_client.cases_remaining} files · {formatMoney(workingClient.base_fee)} base</em></span>
+            <b>{active ? 'Resume' : 'Start'} <ArrowRight size={15} /></b>
+          </button>
+          <div className="office-mobile-brief-metrics">
+            <span><small>TRAINING</small><strong>{game.daily.cases_completed}/10</strong><em>questions today</em></span>
+            <span><small>ACCURACY</small><strong>{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</strong><em>{game.total_cases} measured</em></span>
+            <span><small>LEASE</small><strong>{game.upkeep.completed ? 'Closed' : formatMoney(game.upkeep.daily_rent, true)}</strong><em>{game.upkeep.completed ? 'charter complete' : 'per day'}</em></span>
+          </div>
+          <div className="office-mobile-next-office">
+            <span><small>NEXT OFFICE</small><strong>{milestone?.name ?? 'Empire complete'}</strong></span>
+            {milestone && <div><i style={{ width: `${milestoneProgress}%` }} /><small>{formatMoney(Math.max(0, milestone.cost - game.cash), true)} to go</small></div>}
+          </div>
+          <nav aria-label="Office actions">
+            <button type="button" onClick={() => { setMobileBriefOpen(false); navigate('/progress') }}><BarChart3 size={17} />Progress</button>
+            <button type="button" onClick={() => { setMobileBriefOpen(false); navigate('/firm') }}><Wrench size={17} />Build</button>
+            <button type="button" onClick={() => { setMobileBriefOpen(false); navigate('/story') }}><ScrollText size={17} />Caseboard</button>
+          </nav>
+        </aside>
+      )}
       <section className="office-command-bar">
         <div>
           <span className="pixel-kicker">{game.reputation_band.name.toUpperCase()} COUNSEL · HQ LEVEL {game.office_tier}</span>
@@ -668,8 +745,66 @@ export function CasesLobbyPage() {
     if (daily.next_action.kind === 'start_review') start.mutate({ style: 'review', size: Math.max(1, daily.review.target) })
     else if (daily.next_action.kind === 'start_speedrun') start.mutate({ style: 'speedrun', size: 10 })
   }
+  const practiceModeCopy = {
+    speedrun: { title: 'Sprint', detail: '10 timed, unseen questions with results held until the end.', icon: TimerReset },
+    infinite: { title: 'Infinite', detail: 'Keep answering with concise reasoning until you choose to stop.', icon: Activity },
+    deep: { title: 'Method Lab', detail: 'Explain each rule and receive coaching after every answer.', icon: Brain },
+    review: { title: 'Review', detail: dueReviews ? `${dueReviews} spaced-retrieval repair item${dueReviews === 1 ? '' : 's'} ready.` : 'Your repair queue is clear.', icon: BookOpen },
+  } as const
+  const selectedMode = practiceModeCopy[practiceStyle]
+  const SelectedModeIcon = selectedMode.icon
+  const openSelectedPractice = () => {
+    if (active) {
+      void play('resume', { seed: active.id, intensity: .5 })
+      navigate(`/cases/${active.id}`)
+      return
+    }
+    start.mutate(undefined)
+  }
   return (
     <div className="case-lobby page-wrap">
+      <section className="mobile-practice-home" aria-label="Practice modes">
+        <header className="mobile-learning-header">
+          <div><span>PRACTICE</span><h1>Choose the work.</h1></div>
+        </header>
+
+        <div className="mobile-practice-client">
+          <ClientPortrait kind={workingClient.icon} name={workingClient.name} />
+          <span><small>CURRENT CLIENT</small><strong>{workingClient.name}</strong><em>{game.active_client.on_hold ? 'Walk-in matters available' : `${game.active_client.cases_remaining} files remaining`}</em></span>
+          <b><Coins size={14} />{formatMoney(workingClient.base_fee, true)} base</b>
+        </div>
+
+        {daily && (
+          <button className="mobile-docket-next" onClick={runNextDocketStep} disabled={start.isPending || daily.next_action.kind === 'done'}>
+            <span><small>TODAY’S DOCKET</small><strong>{daily.next_action.kind === 'done' ? 'Training loop complete' : daily.next_action.label}</strong><em>{daily.review.due} due · {daily.speedrun.state === 'complete' ? 'sprint complete' : 'sprint waiting'} · {daily.deep_brief.priority_count} to brief</em></span>
+            {daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}
+          </button>
+        )}
+
+        <div className="mobile-practice-mode-label"><span>SELECT A MODE</span><small>One tap changes the purpose of the run.</small></div>
+        <div className="mobile-practice-modes" role="tablist" aria-label="Choose a practice mode">
+          {(['speedrun', 'infinite', 'deep'] as const).map((mode) => {
+            const ModeIcon = practiceModeCopy[mode].icon
+            return <button type="button" role="tab" aria-selected={practiceStyle === mode} className={practiceStyle === mode ? 'active' : ''} onClick={() => { setPracticeStyle(mode); void play('tab', { seed: `mobile-practice:${mode}`, intensity: .26 }) }} key={mode}><ModeIcon size={18} /><span>{practiceModeCopy[mode].title}</span></button>
+          })}
+        </div>
+        <button type="button" className={`mobile-practice-review ${practiceStyle === 'review' ? 'active' : ''}`} aria-pressed={practiceStyle === 'review'} disabled={!dueReviews} onClick={() => { setPracticeStyle('review'); void play('paper', { seed: 'mobile-practice:review', intensity: .35 }) }}>
+          <BookOpen size={19} />
+          <span><strong>Spaced review</strong><small>{dueReviews ? 'Repair the questions that are ready today.' : 'Nothing is due right now.'}</small></span>
+          <b>{dueReviews || <Check size={14} />}</b>
+          <ArrowRight size={17} />
+        </button>
+
+        <div className="mobile-practice-selection">
+          <SelectedModeIcon size={23} />
+          <div><strong>{active ? 'Active run in progress' : selectedMode.title}</strong><p>{active ? 'Continue where you left off before opening another file.' : selectedMode.detail}</p></div>
+        </div>
+        <button className="mobile-practice-start" onClick={openSelectedPractice} disabled={start.isPending || (!active && practiceStyle === 'review' && !dueReviews)}>
+          {start.isPending ? 'Preparing run…' : active ? 'Continue active run' : `Start ${selectedMode.title}`} <ArrowRight />
+        </button>
+        {start.error && <ErrorNotice error={start.error} />}
+      </section>
+
       <section className="docket-hero">
         <PixelStudyScenery variant="docket" className="docket-scenery" />
         <div className="docket-copy">
@@ -735,6 +870,7 @@ function formatReviewTime(milliseconds: number) {
 
 
 function CompletedSessionReview({ sessionId }: { sessionId: string }) {
+  useRestoredChrome()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [selectedPosition, setSelectedPosition] = useState(0)
@@ -860,40 +996,60 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
 }
 
 
-export function CaseSessionPage() {
-  const { sessionId } = useParams()
+function PausedCasePage({ sessionId }: { sessionId: string }) {
+  useRestoredChrome()
   const queryClient = useQueryClient()
   const { play } = useSound()
-  const sessionQuery = useQuery({
-    queryKey: ['session', sessionId],
-    queryFn: () => api.session(sessionId!),
-    enabled: Boolean(sessionId),
-  })
   const resume = useMutation({
-    mutationFn: () => api.resumeSession(sessionId!),
+    mutationFn: () => api.resumeSession(sessionId),
     onSuccess: () => {
       void play('resume', { seed: sessionId, intensity: .5 })
       void queryClient.invalidateQueries({ queryKey: ['session', sessionId] })
     },
   })
+  return (
+    <div className="paused-case page-wrap">
+      <div className="paused-folder"><BriefcaseBusiness /></div>
+      <span className="eyebrow">CASE FILE SAVED</span>
+      <h1>Your argument is waiting.</h1>
+      <p>Your answer choice and written reasoning are safe. Paused questions do not receive time-bonus points.</p>
+      <button className="primary-button" onClick={() => resume.mutate()} disabled={resume.isPending}>
+        <Play size={18} /> {resume.isPending ? 'Returning…' : 'Return to the case'}
+      </button>
+      {resume.error && <ErrorNotice error={resume.error} />}
+    </div>
+  )
+}
+
+
+/* A case route hides the header and the bottom nav. Without the chrome back
+   there is no way off this screen, so a session that cannot be loaded has to
+   restore it and offer the way out itself. */
+function CaseSessionError({ error }: { error: unknown }) {
+  useRestoredChrome()
+  return (
+    <div className="paused-case page-wrap">
+      <div className="paused-folder"><BriefcaseBusiness /></div>
+      <span className="eyebrow">CASE FILE UNAVAILABLE</span>
+      <h1>That file is not on the desk.</h1>
+      <ErrorNotice error={error} />
+      <Link className="primary-button" to="/cases"><Play size={18} /> Back to the docket</Link>
+    </div>
+  )
+}
+
+export function CaseSessionPage() {
+  const { sessionId } = useParams()
+  const sessionQuery = useQuery({
+    queryKey: ['session', sessionId],
+    queryFn: () => api.session(sessionId!),
+    enabled: Boolean(sessionId),
+  })
   if (!sessionId) return <Navigate to="/cases" replace />
   if (sessionQuery.isLoading) return <LoadingScreen label="Pulling the case file…" />
-  if (sessionQuery.error) return <div className="contained"><ErrorNotice error={sessionQuery.error} /></div>
+  if (sessionQuery.error) return <CaseSessionError error={sessionQuery.error} />
   const session = sessionQuery.data!.session
-  if (session.status === 'paused') {
-    return (
-      <div className="paused-case page-wrap">
-        <div className="paused-folder"><BriefcaseBusiness /></div>
-        <span className="eyebrow">CASE FILE SAVED</span>
-        <h1>Your argument is waiting.</h1>
-        <p>Your answer choice and written reasoning are safe. Paused questions do not receive time-bonus points.</p>
-        <button className="primary-button" onClick={() => resume.mutate()} disabled={resume.isPending}>
-          <Play size={18} /> {resume.isPending ? 'Returning…' : 'Return to the case'}
-        </button>
-        {resume.error && <ErrorNotice error={resume.error} />}
-      </div>
-    )
-  }
+  if (session.status === 'paused') return <PausedCasePage sessionId={session.id} />
   if (session.status === 'completed' && !session.pending_result) return <CompletedSessionReview sessionId={session.id} />
   return (
     <div className="session-page">

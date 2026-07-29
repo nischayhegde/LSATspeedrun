@@ -2598,8 +2598,12 @@ export function MapThreeScene({
     const definition = ARC[region]
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4
-    const mobileViewport = window.matchMedia('(max-width: 760px)').matches
-    const renderPixelRatio = Math.min(window.devicePixelRatio || 1, constrainedDevice || mobileViewport ? 1 : 1.15)
+    // Matches the office scene: render at up to 2x instead of upscaling a
+    // ~1.35x buffer onto a 3x display, which read as blurry.
+    const renderPixelRatio = Math.min(
+      window.devicePixelRatio || 1,
+      constrainedDevice ? 1.5 : 2,
+    )
     renderer.setPixelRatio(renderPixelRatio)
     renderer.setSize(host.clientWidth, host.clientHeight, false)
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -3020,10 +3024,10 @@ export function MapThreeScene({
     if (transitCarrier) enableLiveTransform(transitCarrier)
     enableLiveTransform(selectionRing)
 
-    // Capture one complete, static world shadow map before camera-dependent
-    // render culling begins. Camera rotation should never regenerate it.
-    renderer.render(scene, camera)
-    renderer.shadowMap.needsUpdate = false
+    // The first render is deferred until every shader program has been
+    // compiled in parallel; see the `compileAsync` call that starts the loop.
+    // It still has to run before any camera-dependent culling so the one-off
+    // static shadow map sees every caster, including off-screen ones.
 
     let targetYaw = 0
     let targetPitch = 0
@@ -3032,6 +3036,8 @@ export function MapThreeScene({
     let dragging = false
     let pointerStart = new THREE.Vector2()
     let moved = false
+    const touchPointers = new Map<number, THREE.Vector2>()
+    let pinchDistance = 0
     let hoveredRoot: THREE.Object3D | null = null
     let lastCommandId = cameraCommand.id
     let lastViewMode = viewMode
@@ -3050,6 +3056,9 @@ export function MapThreeScene({
     let previousFrame = performance.now()
     let animationFrame = 0
     let disposed = false
+    // Nothing may render until shader compilation finishes, otherwise the
+    // driver links the programs one at a time inside a frame and stalls.
+    let ready = false
     let surfaceVisible = true
     let lastHoverRaycast = 0
     const lastOcclusionCamera = new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0)
@@ -3128,11 +3137,37 @@ export function MapThreeScene({
       return null
     }
     const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') {
+        touchPointers.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY))
+        renderer.domElement.setPointerCapture(event.pointerId)
+        if (touchPointers.size >= 2) {
+          const [first, second] = Array.from(touchPointers.values())
+          pinchDistance = first.distanceTo(second)
+          dragging = false
+          moved = true
+          renderer.domElement.classList.remove('is-grabbing')
+          event.preventDefault()
+          return
+        }
+      }
       dragging = true; moved = false; pointerStart.set(event.clientX, event.clientY)
       renderer.domElement.setPointerCapture(event.pointerId)
       renderer.domElement.classList.add('is-grabbing')
     }
     const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType === 'touch' && touchPointers.has(event.pointerId)) {
+        touchPointers.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY))
+        if (touchPointers.size >= 2) {
+          const [first, second] = Array.from(touchPointers.values())
+          const nextDistance = first.distanceTo(second)
+          if (pinchDistance > 0 && nextDistance > 0) zoom = THREE.MathUtils.clamp(zoom * pinchDistance / nextDistance, .64, 1.32)
+          pinchDistance = nextDistance
+          moved = true
+          dragging = false
+          event.preventDefault()
+          return
+        }
+      }
       if (dragging) {
         // Never raycast while surveying the map. Pointermove may fire faster
         // than the display refresh rate, and selection cannot occur mid-drag.
@@ -3164,10 +3199,15 @@ export function MapThreeScene({
       renderer.domElement.style.cursor = root ? 'pointer' : 'grab'
     }
     const onPointerUp = (event: PointerEvent) => {
+      const wasPinching = event.pointerType === 'touch' && touchPointers.size >= 2
+      if (event.pointerType === 'touch') {
+        touchPointers.delete(event.pointerId)
+        if (touchPointers.size < 2) pinchDistance = 0
+      }
       dragging = false
       renderer.domElement.classList.remove('is-grabbing')
       if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId)
-      if (moved) return
+      if (wasPinching || moved) return
       const root = hitSelection(event)
       const selection = root?.userData.mapSelection as { key: string; locked: boolean } | undefined
       if (!selection) return
@@ -3188,12 +3228,24 @@ export function MapThreeScene({
         zoom = 1
       }
     }
-    const onPointerLeave = () => {
+    const onPointerLeave = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') {
+        touchPointers.delete(event.pointerId)
+        if (touchPointers.size < 2) pinchDistance = 0
+      }
       dragging = false
       renderer.domElement.classList.remove('is-grabbing')
       if (hoveredRoot) hoveredRoot.scale.multiplyScalar(1 / 1.025)
       if (hoveredRoot) hoveredRoot.traverse((object) => { if (object.userData.destinationMarker) object.userData.destinationHover = false })
       hoveredRoot = null
+    }
+    const onPointerCancel = (event: PointerEvent) => {
+      touchPointers.delete(event.pointerId)
+      if (touchPointers.size < 2) pinchDistance = 0
+      dragging = false
+      moved = true
+      renderer.domElement.classList.remove('is-grabbing')
+      if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId)
     }
     const onWheel = (event: WheelEvent) => {
       event.preventDefault()
@@ -3203,6 +3255,7 @@ export function MapThreeScene({
     renderer.domElement.addEventListener('pointermove', onPointerMove)
     renderer.domElement.addEventListener('pointerup', onPointerUp)
     renderer.domElement.addEventListener('pointerleave', onPointerLeave)
+    renderer.domElement.addEventListener('pointercancel', onPointerCancel)
     renderer.domElement.addEventListener('wheel', onWheel, { passive: false })
 
     const resize = () => {
@@ -3404,13 +3457,12 @@ export function MapThreeScene({
       renderer.render(scene, camera)
       if (!disposed && surfaceVisible && !document.hidden) animationFrame = requestAnimationFrame(animate)
     }
-    updatePerformanceCulling()
     const surfaceObserver = new IntersectionObserver(([entry]) => {
       surfaceVisible = Boolean(entry?.isIntersecting)
       if (!surfaceVisible && animationFrame) {
         cancelAnimationFrame(animationFrame)
         animationFrame = 0
-      } else if (surfaceVisible && !document.hidden && !animationFrame) {
+      } else if (ready && surfaceVisible && !document.hidden && !animationFrame) {
         previousFrame = performance.now()
         animationFrame = requestAnimationFrame(animate)
       }
@@ -3420,13 +3472,29 @@ export function MapThreeScene({
       if (document.hidden && animationFrame) {
         cancelAnimationFrame(animationFrame)
         animationFrame = 0
-      } else if (!document.hidden && surfaceVisible && !animationFrame) {
+      } else if (ready && !document.hidden && surfaceVisible && !animationFrame) {
         previousFrame = performance.now()
         animationFrame = requestAnimationFrame(animate)
       }
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
-    animationFrame = requestAnimationFrame(animate)
+
+    // Compiling this many distinct materials inside the first `render()` makes
+    // the driver link each program in turn while the main thread waits, which
+    // is the bulk of the delay before the district appears. `compileAsync`
+    // links them in parallel instead, so the first frame only has to draw.
+    void renderer.compileAsync(scene, camera).then(() => {
+      if (disposed) return
+      // Full-scene pass first: it captures the static world shadow map while
+      // every caster is still visible. Culling may only run afterwards.
+      renderer.render(scene, camera)
+      renderer.shadowMap.needsUpdate = false
+      updatePerformanceCulling()
+      ready = true
+      if (!surfaceVisible || document.hidden) return
+      previousFrame = performance.now()
+      animationFrame = requestAnimationFrame(animate)
+    })
 
     return () => {
       disposed = true
@@ -3439,6 +3507,7 @@ export function MapThreeScene({
       renderer.domElement.removeEventListener('pointermove', onPointerMove)
       renderer.domElement.removeEventListener('pointerup', onPointerUp)
       renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
+      renderer.domElement.removeEventListener('pointercancel', onPointerCancel)
       renderer.domElement.removeEventListener('wheel', onWheel)
       disposeScene(scene)
       renderer.dispose()

@@ -3,6 +3,7 @@ import { ActivityIndicator, BackHandler, Linking, Platform, Pressable, StyleShee
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview'
 import * as ScreenOrientation from 'expo-screen-orientation'
+import { StatusBar } from 'expo-status-bar'
 
 import { WEB_APP_URL } from '@/src/lib/config'
 
@@ -113,7 +114,8 @@ export function WebApp() {
   }, [])
 
   return (
-    <SafeAreaView edges={sceneLandscape ? ['left', 'right'] : ['top', 'bottom']} style={styles.safeArea}>
+    <SafeAreaView edges={sceneLandscape ? [] : ['top', 'bottom']} style={styles.safeArea}>
+      <StatusBar hidden={sceneLandscape} style="light" backgroundColor="#101725" />
       <WebView
         ref={webView}
         source={{ uri: WEB_APP_URL }}
@@ -130,6 +132,8 @@ export function WebApp() {
         allowsFullscreenVideo
         mediaPlaybackRequiresUserAction={false}
         allowsBackForwardNavigationGestures
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
         applicationNameForUserAgent="LSATSpeedrunMobile/1.0"

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ActiveOfficeCase, CharacterGender, GameAsset, GameState } from './types'
 import { Bust, Person, type Mood } from './art/people'
@@ -379,11 +379,6 @@ function OfficeBackdrop({ game, previewTier, activeCase, children }: OfficeScene
   const assets = game?.catalog.assets ?? EMPTY_GAME_ASSETS
   const officeRef = useRef<HTMLDivElement | null>(null)
 
-  const [catAwake, setCatAwake] = useState(false)
-  const [cozyUntil, setCozyUntil] = useState(0)
-  const cozy = cozyUntil > Date.now()
-  const [roomMode, setRoomMode] = useState<'focus' | 'storm' | null>(null)
-  const [showRoomDetails, setShowRoomDetails] = useState(false)
   const [officeAnchors, setOfficeAnchors] = useState<OfficeAnchorMap>({})
 
   useEffect(() => {
@@ -405,47 +400,13 @@ function OfficeBackdrop({ game, previewTier, activeCase, children }: OfficeScene
     }
   }, [game?.id, play])
 
-  const anchorStyle = (key: OfficeAnchorKey, fallback: Position): CSSProperties => {
-    const anchor = officeAnchors[key] ?? fallback
-    return { left: `${anchor.x}%`, top: `${anchor.y}%`, opacity: anchor.visible === false ? 0 : undefined, pointerEvents: anchor.visible === false ? 'none' : undefined }
-  }
-
-  const petCat = useCallback(() => {
-    void play('cat', { seed: game?.id ?? 'preview-office', intensity: .55 })
-    setCatAwake(true)
-    window.setTimeout(() => setCatAwake(false), 1400)
-  }, [game?.id, play])
-  const brewCoffee = useCallback(() => {
-    void play('coffee', { seed: game?.id ?? 'preview-office', intensity: .48 })
-    setCozyUntil(Date.now() + 45_000)
-  }, [game?.id, play])
-  const setRoomScene = useCallback((mode: 'focus' | 'storm') => {
-    void play(mode === 'focus' ? 'select' : 'story', { seed: `${game?.id ?? 'preview-office'}:${mode}`, intensity: .42 })
-    setRoomMode((current) => current === mode ? null : mode)
-  }, [game?.id, play])
-  const rotateOffice = useCallback((delta = 0, reset = false) => {
-    officeRef.current?.dispatchEvent(new CustomEvent('office-camera-rotate', { detail: { delta, reset } }))
-    void play('select', { seed: `${game?.id ?? 'preview-office'}:camera:${reset ? 'reset' : delta}`, intensity: .18 })
-  }, [game?.id, play])
-
   return (
     <div
-      className={`av-office office-tier-${tier} ${cozy ? 'is-cozy' : ''} ${catAwake ? 'cat-awake' : ''} ${roomMode ? `room-${roomMode}` : ''} ${showRoomDetails ? 'show-office-details' : ''}`}
+      className={`av-office office-tier-${tier}`}
       data-tier={tier}
       ref={officeRef}
     >
       <OfficeRoom tier={tier} assets={assets} layoutKey={game?.id} activeCase={activeCase} />
-      {showRoomDetails && <button type="button" className="office-touchpoint touchpoint-cat" style={anchorStyle('cat', { x: 15.75, y: 86 })} onClick={petCat} aria-label="Pet the office cat"><span>Pet cat</span></button>}
-      {showRoomDetails && <button type="button" className="office-touchpoint touchpoint-coffee" style={anchorStyle('coffee', { x: 79.25, y: 71.5 })} onClick={brewCoffee} aria-label="Make coffee for the team"><span>Make coffee</span></button>}
-      {showRoomDetails && <button type="button" className={`office-hotspot hotspot-lamp ${roomMode === 'focus' ? 'is-active' : ''}`} style={anchorStyle('lamp', { x: 71.5, y: 64 })} onClick={() => setRoomScene('focus')} aria-label="Toggle the desk lamp study light"><i /><span>Desk light</span></button>}
-      {showRoomDetails && tier < 2 && <button type="button" className={`office-hotspot hotspot-window ${roomMode === 'storm' ? 'is-active' : ''}`} style={anchorStyle('window', { x: 28, y: 44 })} onClick={() => setRoomScene('storm')} aria-label="Toggle the rain at the window"><i /><span>Window weather</span></button>}
-      {roomMode && <div className="room-activity-note" role="status">{roomMode === 'focus' ? 'Desk light on — settle into the file.' : 'Rain at the window — the room grows quiet.'}</div>}
-      <nav className="office-view-rail" aria-label="Look around the office in 360 degrees">
-        <button type="button" onClick={() => rotateOffice(-Math.PI / 2)} aria-label="Turn office view left"><span>‹</span></button>
-        <button type="button" className="office-look-home" onClick={() => rotateOffice(0, true)} aria-label="Return to the main office view"><span>360° OFFICE</span><small>Drag to look around</small></button>
-        <button type="button" onClick={() => rotateOffice(Math.PI / 2)} aria-label="Turn office view right"><span>›</span></button>
-        <button type="button" className="office-detail-toggle" aria-pressed={showRoomDetails} onClick={() => setShowRoomDetails((shown) => !shown)} aria-label="Toggle interactive room details"><span>DETAILS</span></button>
-      </nav>
       <div className="cozy-glow" aria-hidden="true" />
       {typeof children === 'function' ? children(officeAnchors) : children}
       <div className="av-office-vignette" />

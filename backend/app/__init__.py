@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 import os
 from pathlib import Path
@@ -134,6 +135,32 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.after_request
+    def compress_response(response):
+        """Nothing in front of this app compresses for us. The game state is the
+        largest payload on the client's critical path and is mostly repetitive
+        catalog JSON, so it shrinks by roughly 85%."""
+        response.headers.add("Vary", "Accept-Encoding")
+        if response.direct_passthrough or response.status_code < 200 or response.status_code >= 300:
+            return response
+        if "gzip" not in request.headers.get("Accept-Encoding", "").lower():
+            return response
+        if response.headers.get("Content-Encoding"):
+            return response
+        mimetype = (response.mimetype or "").lower()
+        compressible = mimetype.startswith("text/") or mimetype in {
+            "application/json",
+            "application/javascript",
+            "image/svg+xml",
+        }
+        if not compressible or response.content_length is None or response.content_length < 1024:
+            return response
+        payload = gzip.compress(response.get_data(), compresslevel=6)
+        response.set_data(payload)
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Content-Length"] = str(len(payload))
         return response
 
     @app.errorhandler(404)

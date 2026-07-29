@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Volume2, VolumeX } from 'lucide-react'
+import { Music2, Volume2, VolumeX } from 'lucide-react'
 
 
 export type SoundCue =
@@ -52,7 +52,13 @@ export type SoundPreferences = {
   volume: number
   /** Uses one short layer per action and removes decorative tails. */
   reducedAudio: boolean
+  /** A quiet, original procedural score for the Office and World scenes. */
+  ambientEnabled: boolean
+  /** Intentionally capped well below the effects mix. */
+  ambientVolume: number
 }
+
+export type AmbientScene = 'office' | 'city' | 'nation' | 'ocean' | 'continent' | 'orbit'
 
 export type SoundPlayOptions = {
   /** Prevents React StrictMode effects or remounts from replaying an event. */
@@ -61,6 +67,8 @@ export type SoundPlayOptions = {
   seed?: string
   /** Per-event multiplier, clamped to a conservative range. */
   intensity?: number
+  /** Selects a restrained environmental motif for scene transitions. */
+  scene?: 'city' | 'nation' | 'ocean' | 'continent' | 'orbit'
   profile?: Partial<SoundProfile>
 }
 
@@ -75,6 +83,10 @@ export type SoundApi = SoundPreferences & {
   toggleMuted: () => void
   setVolume: (volume: number) => void
   setReducedAudio: (reduced: boolean) => void
+  setAmbientEnabled: (enabled: boolean) => void
+  setAmbientVolume: (volume: number) => void
+  startAmbient: (scene: AmbientScene) => boolean
+  stopAmbient: () => void
 }
 
 export type SoundProfileApi = {
@@ -100,6 +112,8 @@ const DEFAULT_PREFERENCES: SoundPreferences = {
   muted: false,
   volume: 0.24,
   reducedAudio: false,
+  ambientEnabled: true,
+  ambientVolume: 0.22,
 }
 
 const DEFAULT_PROFILE: SoundProfile = {
@@ -138,6 +152,8 @@ function readPreferences(): SoundPreferences {
       muted: typeof value.muted === 'boolean' ? value.muted : DEFAULT_PREFERENCES.muted,
       volume: clamp(typeof value.volume === 'number' ? value.volume : DEFAULT_PREFERENCES.volume, 0, 1),
       reducedAudio: typeof value.reducedAudio === 'boolean' ? value.reducedAudio : DEFAULT_PREFERENCES.reducedAudio,
+      ambientEnabled: typeof value.ambientEnabled === 'boolean' ? value.ambientEnabled : DEFAULT_PREFERENCES.ambientEnabled,
+      ambientVolume: clamp(typeof value.ambientVolume === 'number' ? value.ambientVolume : DEFAULT_PREFERENCES.ambientVolume, 0, 1),
     }
   } catch {
     return DEFAULT_PREFERENCES
@@ -210,14 +226,20 @@ const RATE_LIMIT_MS: Record<SoundCue, number> = {
 class ProceduralSoundEngine {
   readonly context: AudioContext
   private readonly master: GainNode
+  private readonly ambientMaster: GainNode
   private readonly compressor: DynamicsCompressorNode
   private readonly noiseBuffer: AudioBuffer
   private readonly lastCueAt = new Map<SoundCue, number>()
   private readonly playedIds = new Map<string, number>()
+  private ambientBus: GainNode | null = null
+  private ambientTimer: number | null = null
+  private ambientScene: AmbientScene | null = null
+  private ambientPhrase = 0
 
   constructor(Context: AudioContextConstructor) {
     this.context = new Context()
     this.master = this.context.createGain()
+    this.ambientMaster = this.context.createGain()
     this.compressor = this.context.createDynamicsCompressor()
     this.compressor.threshold.value = -20
     this.compressor.knee.value = 18
@@ -225,7 +247,9 @@ class ProceduralSoundEngine {
     this.compressor.attack.value = 0.006
     this.compressor.release.value = 0.18
     this.master.gain.value = 0
+    this.ambientMaster.gain.value = 0
     this.master.connect(this.compressor)
+    this.ambientMaster.connect(this.compressor)
     this.compressor.connect(this.context.destination)
 
     const frames = Math.max(1, Math.floor(this.context.sampleRate * 0.75))
@@ -246,8 +270,85 @@ class ProceduralSoundEngine {
     this.master.gain.setTargetAtTime(safeGain, now, 0.018)
   }
 
+  setAmbientVolume(volume: number) {
+    const safeGain = clamp(volume, 0, 1) * 0.14
+    const now = this.context.currentTime
+    this.ambientMaster.gain.cancelScheduledValues(now)
+    this.ambientMaster.gain.setTargetAtTime(safeGain, now, 0.12)
+  }
+
+  startAmbient(scene: AmbientScene, profile: SoundProfile, preferences: SoundPreferences) {
+    if (this.context.state !== 'running' || preferences.muted || !preferences.ambientEnabled || preferences.ambientVolume <= 0) {
+      this.stopAmbient()
+      return false
+    }
+    this.setAmbientVolume(preferences.ambientVolume)
+    if (this.ambientScene === scene && this.ambientBus) return true
+
+    this.stopAmbient()
+    const now = this.context.currentTime
+    const bus = this.context.createGain()
+    bus.gain.setValueAtTime(0.0001, now)
+    bus.gain.exponentialRampToValueAtTime(1, now + 0.45)
+    bus.connect(this.ambientMaster)
+    this.ambientBus = bus
+    this.ambientScene = scene
+    this.ambientPhrase = 0
+    this.renderAmbientPhrase(scene, profile, bus)
+    this.ambientTimer = window.setInterval(() => {
+      if (!this.ambientBus || this.ambientScene !== scene || this.context.state !== 'running') return
+      this.renderAmbientPhrase(scene, profile, this.ambientBus)
+    }, 4_800)
+    return true
+  }
+
+  stopAmbient() {
+    if (this.ambientTimer !== null) {
+      window.clearInterval(this.ambientTimer)
+      this.ambientTimer = null
+    }
+    const bus = this.ambientBus
+    this.ambientBus = null
+    this.ambientScene = null
+    if (!bus) return
+    const now = this.context.currentTime
+    bus.gain.cancelScheduledValues(now)
+    bus.gain.setTargetAtTime(0.0001, now, 0.18)
+    window.setTimeout(() => bus.disconnect(), 900)
+  }
+
   async suspend() {
+    this.stopAmbient()
     if (this.context.state === 'running') await this.context.suspend()
+  }
+
+  private renderAmbientPhrase(scene: AmbientScene, profile: SoundProfile, bus: GainNode) {
+    const motifs: Record<AmbientScene, { root: number; chord: number[]; notes: number[]; color: number }> = {
+      office: { root: 146.83, chord: [0, 3, 7, 10], notes: [0, 7, 3, 10, 7], color: 980 },
+      city: { root: 164.81, chord: [0, 3, 7, 10], notes: [0, 7, 10, 3, 7], color: 1420 },
+      nation: { root: 174.61, chord: [0, 4, 7, 11], notes: [0, 7, 4, 11, 7], color: 1180 },
+      ocean: { root: 130.81, chord: [0, 5, 7, 10], notes: [0, 7, 5, 10, 5], color: 620 },
+      continent: { root: 146.83, chord: [0, 4, 7, 9], notes: [0, 4, 9, 7, 4], color: 900 },
+      orbit: { root: 110, chord: [0, 4, 7, 11], notes: [0, 11, 7, 4, 11], color: 520 },
+    }
+    const motif = motifs[scene]
+    const at = this.context.currentTime + 0.06
+    const variation = hashString(`${profile.seed}:${scene}:${this.ambientPhrase}`)
+    const shift = [-2, 0, 2, 0][variation % 4]
+    const root = pitch(motif.root * (1 + Math.min(4, Math.floor(profile.officeTier / 3)) * .012), shift)
+
+    motif.chord.slice(0, 3).forEach((interval, index) => {
+      this.tone(bus, at + index * .035, pitch(root, interval), 3.8, .032 - index * .004, scene === 'ocean' || scene === 'orbit' ? 'sine' : 'triangle')
+    })
+    motif.notes.forEach((interval, index) => {
+      const offset = index * .74 + (scene === 'ocean' ? Math.sin(index + this.ambientPhrase) * .08 : 0)
+      this.tone(bus, at + offset, pitch(root * 2, interval), .82, .037, scene === 'orbit' ? 'sine' : 'triangle', pitch(root * 2, interval + (index % 2 ? -1 : 0)))
+    })
+    if (scene === 'office' || scene === 'city' || scene === 'ocean') {
+      this.noise(bus, at + .2, 1.7, .009, motif.color)
+      this.noise(bus, at + 2.35, 1.1, .006, motif.color * 1.15)
+    }
+    this.ambientPhrase += 1
   }
 
   play(cue: SoundCue, profile: SoundProfile, preferences: SoundPreferences, options: SoundPlayOptions) {
@@ -265,7 +366,7 @@ class ProceduralSoundEngine {
     bus.connect(this.master)
 
     const variation = hashString(`${profile.seed}:${options.seed ?? 'default'}:${cue}`)
-    this.renderCue(cue, bus, profile, preferences.reducedAudio, variation)
+    this.renderCue(cue, bus, profile, preferences.reducedAudio, variation, options.scene)
     this.lastCueAt.set(cue, nowMs)
     if (eventId) {
       this.playedIds.set(eventId, nowMs)
@@ -278,7 +379,14 @@ class ProceduralSoundEngine {
     return true
   }
 
-  private renderCue(cue: SoundCue, bus: GainNode, profile: SoundProfile, reduced: boolean, variation: number) {
+  private renderCue(
+    cue: SoundCue,
+    bus: GainNode,
+    profile: SoundProfile,
+    reduced: boolean,
+    variation: number,
+    scene?: SoundPlayOptions['scene'],
+  ) {
     const at = this.context.currentTime + 0.008
     const stage = Math.min(4, Math.floor(profile.officeTier / 3))
     const detune = [-8, -3, 0, 4, 7][variation % 5]
@@ -300,7 +408,9 @@ class ProceduralSoundEngine {
 
     if (reduced) {
       if (cue === 'map') {
-        tone(at, pitch(root, -7), 0.2, 0.15, 'sine', pitch(root, -2))
+        const interval = scene === 'city' ? -7 : scene === 'nation' ? -5 : scene === 'ocean' ? -12 : scene === 'continent' ? -9 : 2
+        const destination = scene === 'ocean' ? -5 : scene === 'orbit' ? 7 : interval + 4
+        tone(at, pitch(root, interval), 0.2, 0.115, 'sine', pitch(root, destination))
         return
       }
       if (cue === 'paper' || cue === 'story' || cue === 'coffee') {
@@ -401,8 +511,26 @@ class ProceduralSoundEngine {
         if (!reduced) tone(at + 0.14, pitch(root, 5), 0.2, 0.075, brightType)
         break
       case 'map':
-        paper(at, 0.16, 0.09, 1450)
-        tone(at + 0.03, pitch(root, -7), 0.22, 0.085, 'sine', pitch(root, -3))
+        if (scene === 'city') {
+          paper(at, 0.11, 0.075, 1500)
+          tone(at + 0.025, pitch(root, -7), 0.19, 0.075, 'triangle', pitch(root, -3))
+          tone(at + 0.12, pitch(root, 7), 0.08, 0.035, 'sine')
+        } else if (scene === 'nation') {
+          tone(at, pitch(root, -5), 0.22, 0.07, 'triangle', pitch(root, -2))
+          tone(at + 0.09, pitch(root, 2), 0.2, 0.048, 'sine', pitch(root, 4))
+        } else if (scene === 'ocean') {
+          paper(at, 0.28, 0.052, 720)
+          tone(at + 0.02, pitch(root, -12), 0.31, 0.065, 'sine', pitch(root, -5))
+        } else if (scene === 'continent') {
+          tone(at, pitch(root, -9), 0.27, 0.072, 'triangle', pitch(root, -7))
+          tone(at + 0.1, pitch(root, -2), 0.22, 0.045, 'sine')
+        } else if (scene === 'orbit') {
+          tone(at, pitch(root, -7), 0.3, 0.048, 'sine', pitch(root, -3))
+          tone(at + 0.04, pitch(root, 7), 0.34, 0.06, 'sine', pitch(root, 12))
+        } else {
+          paper(at, 0.16, 0.075, 1450)
+          tone(at + 0.03, pitch(root, -7), 0.22, 0.07, 'sine', pitch(root, -3))
+        }
         break
       case 'story': { // Alignment is deliberately confined to this decorative tail.
         paper(at, 0.11, 0.1, 980)
@@ -545,6 +673,7 @@ export function SoundProvider({ children, profile: suppliedProfile }: SoundProvi
     const didUnlock = await unlockSharedEngine(interaction)
     if (didUnlock) {
       sharedEngine?.setVolume(preferencesRef.current.volume)
+      sharedEngine?.setAmbientVolume(preferencesRef.current.muted || !preferencesRef.current.ambientEnabled ? 0 : preferencesRef.current.ambientVolume)
       setUnlocked(true)
     }
     return didUnlock
@@ -580,6 +709,8 @@ export function SoundProvider({ children, profile: suppliedProfile }: SoundProvi
   useEffect(() => {
     preferencesRef.current = preferences
     sharedEngine?.setVolume(preferences.volume)
+    sharedEngine?.setAmbientVolume(preferences.muted || !preferences.ambientEnabled ? 0 : preferences.ambientVolume)
+    if (preferences.muted || !preferences.ambientEnabled) sharedEngine?.stopAmbient()
   }, [preferences])
 
   useEffect(() => {
@@ -615,6 +746,24 @@ export function SoundProvider({ children, profile: suppliedProfile }: SoundProvi
     commitPreferences({ ...preferencesRef.current, reducedAudio })
   }, [commitPreferences])
 
+  const setAmbientEnabled = useCallback((ambientEnabled: boolean) => {
+    commitPreferences({ ...preferencesRef.current, ambientEnabled })
+  }, [commitPreferences])
+
+  const setAmbientVolume = useCallback((ambientVolume: number) => {
+    commitPreferences({ ...preferencesRef.current, ambientVolume: clamp(ambientVolume, 0, 1) })
+  }, [commitPreferences])
+
+  const startAmbient = useCallback((scene: AmbientScene) => {
+    const currentPreferences = preferencesRef.current
+    if (!sharedEngine || sharedEngine.context.state !== 'running' || currentPreferences.muted || !currentPreferences.ambientEnabled) return false
+    return sharedEngine.startAmbient(scene, profileRef.current, currentPreferences)
+  }, [])
+
+  const stopAmbient = useCallback(() => {
+    sharedEngine?.stopAmbient()
+  }, [])
+
   const setProfile = useCallback<SoundProfileApi['setProfile']>((next) => {
     setProfileState((current) => {
       const patch = typeof next === 'function' ? next(current) : next
@@ -634,9 +783,13 @@ export function SoundProvider({ children, profile: suppliedProfile }: SoundProvi
     toggleMuted,
     setVolume,
     setReducedAudio,
+    setAmbientEnabled,
+    setAmbientVolume,
+    startAmbient,
+    stopAmbient,
     profile,
     setProfile,
-  }), [preferences, profile, play, setMuted, setProfile, setReducedAudio, setVolume, toggleMuted, unlock, unlocked])
+  }), [preferences, profile, play, setAmbientEnabled, setAmbientVolume, setMuted, setProfile, setReducedAudio, setVolume, startAmbient, stopAmbient, toggleMuted, unlock, unlocked])
 
   return <SoundContext.Provider value={value}>{children}</SoundContext.Provider>
 }
@@ -659,6 +812,19 @@ export function useSound(): SoundApi {
 }
 
 
+export function useAmbientMusic(scene: AmbientScene | null) {
+  const { ambientEnabled, muted, startAmbient, stopAmbient, unlocked } = useSound()
+  useEffect(() => {
+    if (!scene || !unlocked || muted || !ambientEnabled) {
+      stopAmbient()
+      return
+    }
+    startAmbient(scene)
+    return () => stopAmbient()
+  }, [ambientEnabled, muted, scene, startAmbient, stopAmbient, unlocked])
+}
+
+
 export function useSoundProfile(syncProfile?: Partial<SoundProfile>): SoundProfileApi {
   const { profile, setProfile } = useSoundContext()
   useEffect(() => {
@@ -675,11 +841,13 @@ export function SoundControls({ className, compact = true, showReducedAudio = tr
     muted,
     volume,
     reducedAudio,
+    ambientEnabled,
     play,
     unlock,
     setMuted,
     setVolume,
     setReducedAudio,
+    setAmbientEnabled,
   } = useSound()
 
   const quiet = muted || volume === 0
@@ -700,6 +868,12 @@ export function SoundControls({ className, compact = true, showReducedAudio = tr
     const next = !reducedAudio
     setReducedAudio(next)
     void play('toggle', { intensity: 0.7 })
+  }
+
+  const toggleAmbient = (event: React.MouseEvent<HTMLButtonElement>) => {
+    void unlock(event.nativeEvent)
+    setAmbientEnabled(!ambientEnabled)
+    void play('toggle', { intensity: .48 })
   }
 
   if (!supported) return null
@@ -741,12 +915,25 @@ export function SoundControls({ className, compact = true, showReducedAudio = tr
           type="button"
           className={`sound-control-button sound-reduced-button ${reducedAudio ? 'active' : ''}`}
           data-sound-control="reduced-audio"
-          aria-label={`${reducedAudio ? 'Disable' : 'Enable'} lite sound`}
+          aria-label={`${reducedAudio ? 'Disable' : 'Enable'} short sound cues`}
           aria-pressed={reducedAudio}
-          title="Lite sound uses shorter, single-layer cues"
+          title="Short sound uses one brief cue per action"
           onClick={toggleReduced}
         >
-          <span aria-hidden="true">LITE</span>
+          <span aria-hidden="true">MIN</span>
+        </button>
+      )}
+      {!compact && (
+        <button
+          type="button"
+          className={`sound-control-button sound-ambient-button ${ambientEnabled ? 'active' : ''}`}
+          data-sound-control="ambient"
+          aria-label={`${ambientEnabled ? 'Disable' : 'Enable'} Office and World music`}
+          aria-pressed={ambientEnabled}
+          title={ambientEnabled ? 'Mute Office and World music' : 'Play Office and World music'}
+          onClick={toggleAmbient}
+        >
+          <Music2 aria-hidden="true" />
         </button>
       )}
     </div>

@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import type { GameState } from '../types'
-import { useSound } from '../sound'
+import { useAmbientMusic, useSound } from '../sound'
 import type {
   MapRegionKey,
   MapSceneEvent,
@@ -68,8 +68,10 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
   const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>(currentRegion.key)
   const [selectedKey, setSelectedKey] = useState('')
   const [viewMode, setViewMode] = useState<MapViewMode>('career')
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false)
   const [cameraCommand, setCameraCommand] = useState<{ id: number; action: 'in' | 'out' | 'home' | 'focus' }>({ id: 0, action: 'focus' })
   const activeRegion = regions.find((region) => region.key === activeRegionKey) ?? currentRegion
+  useAmbientMusic(activeRegionKey)
 
   const points = useMemo<MapScenePoint[]>(() => {
     const tiers: MapSceneTier[] = game.catalog.tiers
@@ -97,6 +99,7 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
   const careerTiers = points.filter((point): point is MapSceneTier => point.kind === 'tier')
   const rivalPoints = points.filter((point): point is MapSceneRival => point.kind === 'rival')
   const docketPoints = points.filter((point): point is MapSceneEvent => point.kind === 'event')
+  const menuPoints: MapScenePoint[] = viewMode === 'career' ? careerTiers : viewMode === 'rivals' ? rivalPoints : docketPoints
 
   const choosePoint = useCallback((key: string) => {
     setSelectedKey(key)
@@ -111,7 +114,7 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
     setSelectedKey('')
     setViewMode('career')
     setCameraCommand((command) => ({ id: command.id + 1, action: 'focus' }))
-    void play('map', { seed: `arc:${key}`, intensity: .68 })
+    void play('map', { seed: `arc:${key}`, scene: key, intensity: .44 })
   }
 
   const focusHeadquarters = () => {
@@ -119,7 +122,7 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
     setSelectedKey(`tier-${game.office_tier}`)
     setViewMode('career')
     setCameraCommand((command) => ({ id: command.id + 1, action: 'focus' }))
-    void play('map', { seed: `headquarters:${game.office_tier}`, intensity: .7 })
+    void play('map', { seed: `headquarters:${game.office_tier}`, scene: currentRegion.key, intensity: .46 })
   }
 
   const sendCameraCommand = (action: 'in' | 'out' | 'home' | 'focus') => {
@@ -131,7 +134,16 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
   const chooseView = (mode: MapViewMode) => {
     setViewMode(mode)
     setSelectedKey('')
-    void play('map', { seed: `map-view:${activeRegionKey}:${mode}`, intensity: .46 })
+    void play('map', { seed: `map-view:${activeRegionKey}:${mode}`, scene: activeRegionKey, intensity: .32 })
+  }
+
+  const chooseMenuPoint = (key: string) => {
+    if (!key) {
+      setSelectedKey('')
+      return
+    }
+    choosePoint(key)
+    setMobileControlsOpen(false)
   }
 
   return (
@@ -185,6 +197,72 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
             playerName={game.lawyer_name}
           />
         </Suspense>
+
+        <div className="uw-mobile-scene-summary" aria-hidden="true">
+          <small>{activeRegion.number} · {viewMode === 'career' ? 'CAREER' : viewMode === 'rivals' ? 'RIVALS' : 'DOCKETS'}</small>
+          <strong>{activeRegion.name}</strong>
+        </div>
+
+        <button
+          type="button"
+          className="uw-mobile-scene-menu-toggle"
+          aria-expanded={mobileControlsOpen}
+          aria-controls="uw-mobile-scene-menu"
+          onClick={() => {
+            void play(mobileControlsOpen ? 'paper' : 'select', { seed: 'mobile-map-controls', intensity: .2 })
+            setMobileControlsOpen((open) => !open)
+          }}
+        >
+          <span>{mobileControlsOpen ? 'Close' : 'Explore'}</span><b>{mobileControlsOpen ? '×' : '☰'}</b>
+        </button>
+
+        {mobileControlsOpen && (
+          <>
+            <button type="button" className="mobile-scene-menu-scrim" aria-label="Close map controls" onClick={() => setMobileControlsOpen(false)} />
+            <aside className="uw-mobile-scene-menu" id="uw-mobile-scene-menu" role="dialog" aria-modal="true" aria-labelledby="uw-mobile-scene-menu-title">
+            <header><small>CAREER ATLAS</small><strong id="uw-mobile-scene-menu-title">Explore the district</strong></header>
+            <div className="uw-mobile-progress-card">
+              <span><small>CURRENT HEADQUARTERS</small><strong>{game.office.name}</strong><em>{currentRegion.name}</em></span>
+              <div><i style={{ width: `${established / Math.max(1, game.catalog.tiers.length) * 100}%` }} /><small>{established} of {game.catalog.tiers.length} established</small></div>
+            </div>
+            <label>
+              <span>Environment</span>
+              <select value={activeRegionKey} onChange={(event) => focusRegion(event.target.value as MapRegionKey)}>
+                {regions.map((region) => <option value={region.key} key={region.key}>{region.number} · {region.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Map layer</span>
+              <select value={viewMode} onChange={(event) => chooseView(event.target.value as MapViewMode)}>
+                <option value="career">Career route · {pointCounts.career}</option>
+                <option value="rivals">Rival firms · {pointCounts.rivals}</option>
+                <option value="dockets">Live dockets · {pointCounts.dockets}</option>
+              </select>
+            </label>
+            <label>
+              <span>Destination</span>
+              <select value={selectedKey} onChange={(event) => chooseMenuPoint(event.target.value)}>
+                <option value="">Choose a location</option>
+                {menuPoints.map((point) => (
+                  <option value={point.key} key={point.key}>
+                    {point.kind === 'tier'
+                      ? `Level ${point.data.tier + 1} · ${point.data.name}`
+                      : point.kind === 'rival'
+                        ? point.data.name.replace('Acquire ', '')
+                        : point.data.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="uw-mobile-camera-actions">
+              <button type="button" onClick={() => { sendCameraCommand('focus'); setMobileControlsOpen(false) }}>Find counsel</button>
+              <button type="button" onClick={() => { sendCameraCommand('home'); setMobileControlsOpen(false) }}>Reset view</button>
+              <button type="button" onClick={() => { focusHeadquarters(); setMobileControlsOpen(false) }}>My HQ</button>
+            </div>
+            <p>Drag to survey · pinch to zoom · tap a marker to travel</p>
+            </aside>
+          </>
+        )}
 
         <div className="uw-scene-title" aria-hidden="true">
           <small>{activeRegion.number} · CAREER ENVIRONMENT</small>

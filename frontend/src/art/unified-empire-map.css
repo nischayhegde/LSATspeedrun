@@ -94,6 +94,10 @@
 .uw-map-instructions b { color: #e1c276; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .1em; }
 .uw-map-instructions i { width: 3px; height: 3px; border-radius: 50%; background: #6b8f88; }
 
+.uw-mobile-scene-summary,
+.uw-mobile-scene-menu-toggle,
+.uw-mobile-scene-menu { display: none; }
+
 .uw-level-navigator { width: min(930px, calc(100% - 32px)); min-height: 66px; padding: 7px; position: absolute; z-index: 9; left: 50%; bottom: 14px; translate: -50% 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: stretch; gap: 7px; border: 1px solid rgba(229, 207, 151, .5); border-radius: 11px; color: #e9e3d3; background: linear-gradient(110deg, rgba(11, 24, 28, .96), rgba(24, 39, 39, .92)); box-shadow: 0 14px 34px rgba(3, 10, 12, .38), inset 0 1px rgba(255, 244, 212, .08); backdrop-filter: blur(12px); }
 .uw-level-navigator-heading { min-width: 112px; padding: 5px 9px 5px 6px; display: grid; align-content: center; border-right: 1px solid rgba(213, 187, 123, .22); }
 .uw-level-navigator-heading b { color: #dfc173; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .12em; }
@@ -132,7 +136,7 @@
   .uw-map-frame { height: 68vh; }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
   .map-page .empire-command-bar { margin-bottom: 10px; flex-direction: row; align-items: center; gap: 10px; }
   .map-page .empire-command-bar > div:first-child { flex: 1; min-width: 0; }
   .map-page .empire-command-bar p { display: none; }
@@ -141,19 +145,86 @@
   .map-page .empire-command-bar > div:last-child strong { margin: 3px 0; font-size: 14px; }
   .map-page .empire-command-bar > div:last-child span { max-width: 120px; overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
   .uw-world-ledger { display: none; }
-  .uw-arc-navigation { grid-template-columns: repeat(5, 168px); }
-  .uw-map-frame { height: calc(100vh - 330px); min-height: 510px; border-radius: 12px; }
-  .uw-scene-title { left: 9px; top: 9px; padding: 10px 12px; }
-  .uw-scene-title span { display: none; }
-  .uw-scene-view-tabs { left: 9px; top: 77px; max-width: calc(100% - 18px); overflow-x: auto; }
-  .uw-scene-view-tabs button { white-space: nowrap; }
-  .uw-map-toolbar { right: 9px; top: 9px; }
-  .uw-location-card { right: 8px; bottom: 78px; }
-  .uw-level-navigator { width: calc(100% - 18px); min-height: 56px; bottom: 9px; grid-template-columns: 1fr; }
-  .uw-level-navigator-heading { display: none; }
-  .uw-level-navigator-track { overflow-x: auto; grid-template-columns: repeat(5, minmax(112px, 1fr)); }
-  .uw-level-navigator-track button { min-height: 42px; }
+  .uw-arc-navigation { display: none; }
+  /* A flat 510px floor was taller than the whole viewport on short landscape
+     phones, which pushed the map out the bottom of the page. */
+  .uw-map-frame { height: clamp(280px, calc(100dvh - 330px), 520px); border-radius: 12px; }
+  .uw-scene-title,
+  .uw-scene-view-tabs,
+  .uw-map-toolbar,
+  .uw-level-navigator,
   .uw-map-instructions { display: none; }
+  .uw-location-card { right: 8px; bottom: 8px; }
+  .uw-mobile-scene-summary {
+    padding: 8px 10px;
+    position: absolute;
+    z-index: 8;
+    left: 9px;
+    top: 9px;
+    display: grid;
+    border-left: 3px solid #d4b560;
+    border-radius: 5px;
+    color: #eee7d4;
+    background: rgba(10, 22, 27, .76);
+    box-shadow: 0 8px 20px rgba(3, 9, 12, .2);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+  }
+  .uw-mobile-scene-summary small { color: #80bcb0; font-family: var(--font-pixel); font-size: 7px; letter-spacing: .1em; }
+  .uw-mobile-scene-summary strong { margin-top: 2px; font-family: var(--font-display); font-size: 17px; }
+  .uw-mobile-scene-menu-toggle {
+    min-width: 88px;
+    min-height: 40px;
+    padding: 0 10px;
+    position: absolute;
+    z-index: 13;
+    right: 9px;
+    top: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 9px;
+    border: 1px solid rgba(233, 207, 143, .55);
+    border-radius: 8px;
+    color: #f1e4c1;
+    background: rgba(9, 21, 27, .9);
+    box-shadow: 0 10px 24px rgba(3, 8, 11, .28);
+    font-family: var(--font-pixel);
+    font-size: 8px;
+    letter-spacing: .06em;
+    backdrop-filter: blur(10px);
+  }
+  .uw-mobile-scene-menu-toggle b { color: #dfbd66; font-size: 15px; }
+  .uw-mobile-scene-menu {
+    width: min(320px, calc(100% - 18px));
+    max-height: calc(100% - 62px);
+    padding: 14px;
+    position: absolute;
+    z-index: 12;
+    right: 9px;
+    top: 54px;
+    display: grid;
+    gap: 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid rgba(226, 199, 130, .5);
+    border-radius: 12px;
+    color: #e9e2d0;
+    background: linear-gradient(150deg, rgba(9, 21, 28, .98), rgba(21, 38, 40, .97));
+    box-shadow: 0 24px 55px rgba(2, 7, 10, .52);
+    backdrop-filter: blur(18px);
+  }
+  .uw-mobile-scene-menu header { padding-bottom: 9px; display: block; border-bottom: 1px solid rgba(221, 193, 125, .2); }
+  .uw-mobile-scene-menu header small,
+  .uw-mobile-scene-menu header strong { display: block; }
+  .uw-mobile-scene-menu header small { color: #79b6aa; font-family: var(--font-pixel); font-size: 7px; letter-spacing: .12em; }
+  .uw-mobile-scene-menu header strong { margin-top: 2px; font-family: var(--font-display); font-size: 20px; }
+  .uw-mobile-scene-menu label { display: grid; gap: 5px; }
+  .uw-mobile-scene-menu label > span { color: #a6b6b0; font-family: var(--font-pixel); font-size: 7px; letter-spacing: .09em; text-transform: uppercase; }
+  .uw-mobile-scene-menu select { width: 100%; min-height: 40px; padding: 0 32px 0 10px; border: 1px solid rgba(211, 185, 120, .32); border-radius: 7px; color: #f1e5c7; background: #182c31; font-family: var(--font-ui); font-size: 12px; }
+  .uw-mobile-camera-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .uw-mobile-camera-actions button { min-height: 38px; padding: 5px; border: 1px solid rgba(222, 193, 120, .3); border-radius: 7px; color: #e9d69e; background: rgba(255,255,255,.05); font-family: var(--font-pixel); font-size: 7px; }
+  .uw-mobile-scene-menu > p { margin: 0; color: #91a59f; font-size: 10px; text-align: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {

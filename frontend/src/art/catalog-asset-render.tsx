@@ -25,7 +25,10 @@ function renderer() {
   const canvas = document.createElement('canvas')
   const next = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: true })
   next.setSize(WIDTH, HEIGHT, false)
-  next.setPixelRatio(1)
+  // These thumbnails are captured once and cached as data URLs, then displayed
+  // in cards roughly as wide as WIDTH itself. Capturing at 1x meant every card
+  // was an upscale on a retina display.
+  next.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
   next.outputColorSpace = THREE.SRGBColorSpace
   next.toneMapping = THREE.ACESFilmicToneMapping
   next.toneMappingExposure = 1.16

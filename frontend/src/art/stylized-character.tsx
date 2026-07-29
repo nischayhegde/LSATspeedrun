@@ -194,7 +194,7 @@ function paintCharacter(entry: CharacterEntry, now: number) {
   const surface = entry.renderer ? entry.canvas : renderSurface!
   const width = Math.max(1, Math.round(entry.host.clientWidth))
   const height = Math.max(1, Math.round(entry.host.clientHeight))
-  const pixelRatio = Math.min(1.5, window.devicePixelRatio || 1)
+  const pixelRatio = Math.min(2, window.devicePixelRatio || 1)
   const outputWidth = Math.max(1, Math.round(width * pixelRatio))
   const outputHeight = Math.max(1, Math.round(height * pixelRatio))
   if (!entry.renderer && (entry.canvas.width !== outputWidth || entry.canvas.height !== outputHeight)) {

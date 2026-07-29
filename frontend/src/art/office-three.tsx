@@ -283,8 +283,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const roomHalf = roomWidth / 2
     const detailLevel = Math.min(9, 1 + Math.floor(level / 2) + Math.floor(visualAssets.length / 7))
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' })
-    const mobileViewport = window.matchMedia('(max-width: 760px)').matches
-    const targetPixelRatio = Math.min(mobileViewport ? 1 : 1.15, window.devicePixelRatio || 1)
+    const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4
+    // Phones report a device pixel ratio of 3. Rendering at 1.4 and letting the
+    // compositor upscale was the reason the scene looked soft. 2x is the point
+    // where further density stops being visible on these stylized shapes, so it
+    // is the cap rather than the raw device ratio.
+    const targetPixelRatio = Math.min(
+      constrainedDevice ? 1.5 : 2,
+      window.devicePixelRatio || 1,
+    )
     // Keep one resolution for the lifetime of the scene. Resizing the WebGL
     // drawing buffer after the office appears creates a visible hitch.
     renderer.setPixelRatio(targetPixelRatio)
@@ -303,7 +310,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     // The camera now lives inside a complete four-wall set. Its small orbital
     // offset moves away from the wall being viewed, preserving comfortable
     // sightlines through a full 360-degree turn.
-    const camera = new THREE.PerspectiveCamera(rustic ? 58 : 59, 1, .1, 80)
+    const baseCameraFov = rustic ? 58 : 59
+    const camera = new THREE.PerspectiveCamera(baseCameraFov, 1, .1, 80)
     // Open on a composed three-quarter view instead of looking over the back
     // of the partner chair. The higher sightline reveals the working floor,
     // keeps the single primary workstation legible, and still leaves the user
@@ -1758,6 +1766,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       const height = Math.max(1, Math.round(bounds.height))
       renderer.setSize(width, height, false)
       camera.aspect = width / height
+      // Preserve a useful amount of the room on portrait phones. A fixed
+      // desktop FOV turns a tall canvas into an extreme crop even though the
+      // WebGL surface itself fills the screen.
+      camera.fov = Math.min(82, baseCameraFov + Math.max(0, .9 - camera.aspect) * 52)
       camera.updateProjectionMatrix()
     }
     const observer = new ResizeObserver(resize)

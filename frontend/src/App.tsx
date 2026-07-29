@@ -4,7 +4,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { api, ApiError } from './api'
 import { AppShell, ErrorNotice, LoadingScreen } from './components'
-import { loadStylizedCharacter, preloadArtForRoute } from './art/scene-loaders'
+import { preloadArtForRoute, preloadDockArt } from './art/scene-loaders'
 import {
   CasesLobbyPage,
   CaseSessionPage,
@@ -76,7 +76,7 @@ export default function App() {
   const location = useLocation()
   useEffect(() => {
     preloadArtForRoute(location.pathname)
-    const idle = window.requestIdleCallback?.(() => { void loadStylizedCharacter() }, { timeout: 1800 })
+    const idle = window.requestIdleCallback?.(() => { preloadDockArt(location.pathname) }, { timeout: 1800 })
     return () => {
       if (idle !== undefined) window.cancelIdleCallback?.(idle)
     }

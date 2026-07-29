@@ -8,7 +8,19 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23102735' stroke='%23c89b4b' stroke-width='3'/%3E%3Cpath d='M32 14v34M20 22h24M17 22 10 36h14L17 22Zm30 0-7 14h14l-7-14ZM23 49h18' fill='none' stroke='%23f5e8c8' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap" rel="stylesheet" />
+    <!-- Fetched without blocking the first paint. The families already declare
+         `display=swap`, so text draws immediately in the fallback and swaps
+         when the webfonts arrive instead of waiting on a third-party round
+         trip before anything appears. -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap" rel="stylesheet" />
+    </noscript>
     <title>Lawyer Tycoon</title>
   </head>
   <body>

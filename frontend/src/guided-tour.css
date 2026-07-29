@@ -156,7 +156,7 @@
   .guided-tour-card.place-right,
   .guided-tour-mode-premise .guided-tour-card,
   .guided-tour-mode-practice .guided-tour-card,
-  .guided-tour-mode-finish .guided-tour-card { width: calc(100vw - 24px); max-height: min(560px, calc(100vh - 110px)); left: 12px; right: auto; top: auto; bottom: 12px; translate: none; overflow: auto; }
+  .guided-tour-mode-finish .guided-tour-card { width: calc(100% - 24px); max-height: min(560px, calc(100dvh - 110px)); left: 12px; right: auto; top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); translate: none; overflow: auto; }
   .guided-tour-card { padding: 23px 20px 18px; }
   .tour-card-progress { margin: -23px -20px 20px; }
   .guided-tour-card h2 { font-size: 29px; }

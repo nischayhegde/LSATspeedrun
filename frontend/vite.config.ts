@@ -22,4 +22,13 @@ export default defineConfig({
       },
     },
   },
+  // `vite preview` serves the real production bundle. It needs the same API
+  // proxy as the dev server, otherwise a built app cannot be exercised locally.
+  preview: {
+    host: '0.0.0.0',
+    port: 4173,
+    proxy: {
+      '/v1': { target: 'http://127.0.0.1:5001', changeOrigin: true },
+    },
+  },
 })

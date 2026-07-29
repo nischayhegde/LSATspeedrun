@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
@@ -13,10 +13,9 @@ import {
   LayoutGrid,
   LogOut,
   Map,
+  Menu,
   Pause,
-  RotateCw,
   Scale,
-  Smartphone,
   Sparkles,
   Star,
   Target,
@@ -113,6 +112,23 @@ const navItems = [
   { to: '/map', label: 'World', icon: Map },
 ]
 
+const mobileNavItems = navItems.filter(({ to }) => to !== '/firm')
+
+
+/* A case route normally hides the header and bottom nav so the reader owns the
+   whole viewport. Screens that live on the same route but are ordinary scrolling
+   pages (the paused card, the post-run review) call `useRestoredChrome` to get
+   the navigation back and leave the locked-height shell. */
+const RestoreChromeContext = createContext<(restored: boolean) => void>(() => {})
+
+export function useRestoredChrome() {
+  const setRestored = useContext(RestoreChromeContext)
+  useLayoutEffect(() => {
+    setRestored(true)
+    return () => setRestored(false)
+  }, [setRestored])
+}
+
 
 export function AppShell({ user, game, children }: { user: User; game?: GameState | null; children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -124,9 +140,19 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
     officeTier: game?.office_tier ?? 0,
     alignment: game?.story.alignment ?? 'Pragmatic',
   })
-  const isActiveCase = /^\/cases\/[^/]+/.test(location.pathname)
+  const [chromeRestored, setChromeRestored] = useState(false)
+  const isActiveCase = /^\/cases\/[^/]+/.test(location.pathname) && !chromeRestored
   const isWideScene = /^\/(office|map)\/?$/.test(location.pathname)
-  const [dismissedWideScene, setDismissedWideScene] = useState('')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  useEffect(() => setMobileMenuOpen(false), [location.pathname])
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [mobileMenuOpen])
   const playDataSound = (event: MouseEvent<HTMLDivElement>) => {
     if (!(event.target instanceof Element)) return
     const target = event.target.closest<HTMLElement>('[data-sound="navigate"]')
@@ -144,7 +170,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
     },
   })
   return (
-    <div className={`app-shell ${isActiveCase ? 'active-case' : ''}`} onClick={playDataSound}>
+    <div className={`app-shell ${isActiveCase ? 'active-case' : ''} ${isWideScene ? 'wide-scene-shell' : ''}`} onClick={playDataSound}>
       <header className="app-header">
         <Brand caseFile={isActiveCase} />
         {game && !isActiveCase && (
@@ -178,23 +204,54 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
               <LogOut size={17} />
             </button>
           </div>
+          {game && !isActiveCase && (
+            <button
+              type="button"
+              className="mobile-overflow-trigger"
+              aria-label={mobileMenuOpen ? 'Close account and firm menu' : 'Open account and firm menu'}
+              aria-expanded={mobileMenuOpen}
+              onClick={() => {
+                void play(mobileMenuOpen ? 'paper' : 'ledger', { seed: 'mobile-firm-menu', intensity: .22 })
+                setMobileMenuOpen((open) => !open)
+              }}
+            >
+              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+              <span>{mobileMenuOpen ? 'Close' : 'Menu'}</span>
+            </button>
+          )}
         </div>
       </header>
-      <main>{children}</main>
-      {isWideScene && dismissedWideScene !== location.pathname && (
-        <aside className="mobile-landscape-prompt" role="dialog" aria-modal="true" aria-labelledby="mobile-landscape-title">
-          <div className="mobile-landscape-card">
-            <span className="mobile-landscape-device" aria-hidden="true"><Smartphone /><RotateCw /></span>
-            <span className="eyebrow">WIDE SCENE</span>
-            <h2 id="mobile-landscape-title">Turn your phone to see the whole {location.pathname === '/office' ? 'office' : 'world'}.</h2>
-            <p>The scene, route controls, and level markers will recompose into one horizontal workspace.</p>
-            <button type="button" className="secondary-button" onClick={() => setDismissedWideScene(location.pathname)}>Keep portrait for now</button>
-          </div>
+      <main><RestoreChromeContext.Provider value={setChromeRestored}>{children}</RestoreChromeContext.Provider></main>
+      {game && !isActiveCase && mobileMenuOpen && (
+        <aside className="mobile-site-menu" role="dialog" aria-modal="true" aria-labelledby="mobile-site-menu-title">
+          <button type="button" className="mobile-site-menu-scrim" aria-label="Close menu" onClick={() => setMobileMenuOpen(false)} />
+          <section>
+            <header>
+              <div>
+                <small>FIRM MENU</small>
+                <h2 id="mobile-site-menu-title">{game.lawyer_name}</h2>
+                <span>{game.reputation_band.name} counsel · {game.total_cases} questions</span>
+              </div>
+            </header>
+            <nav aria-label="Secondary navigation">
+              <NavLink to="/firm" data-sound="navigate" data-sound-seed="/firm"><LayoutGrid /><span><strong>Manage firm</strong><small>Upgrades, staff, clients, and assets</small></span><ArrowRight /></NavLink>
+              <NavLink to="/map" data-sound="navigate" data-sound-seed="/map"><Map /><span><strong>Career world</strong><small>Levels, rivals, and district dockets</small></span><ArrowRight /></NavLink>
+            </nav>
+            <div className="mobile-site-menu-tools">
+              <button type="button" onClick={() => { replayGuidedTour(); setMobileMenuOpen(false) }}><HelpCircle /><span><strong>Replay tutorial</strong><small>Tour the current learning workflow</small></span></button>
+              <div><span><strong>Audio</strong><small>Effects, volume, and scene music</small></span><SoundControls className="mobile-menu-sound" compact={false} /></div>
+            </div>
+            <footer>
+              <span className="avatar-fallback">{user.display_name.slice(0, 1).toUpperCase()}</span>
+              <div><strong>{user.display_name}</strong><small>{user.email}</small></div>
+              <button type="button" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut /><span>Sign out</span></button>
+            </footer>
+          </section>
         </aside>
       )}
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {mobileNavItems.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForRoute(to)} onFocus={() => preloadArtForRoute(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
               <Icon size={20} /><span>{label}</span>
             </NavLink>
@@ -455,6 +512,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [strategyApplied, setStrategyApplied] = useState<boolean | null>(null)
   const [strategyPromptMs, setStrategyPromptMs] = useState(0)
   const [pageTurning, setPageTurning] = useState(false)
+  const [mobileCasePane, setMobileCasePane] = useState<'passage' | 'question'>(() => item?.question.passage ? 'passage' : 'question')
   const [clock, setClock] = useState(Date.now())
   const [openedAt, setOpenedAt] = useState(Date.now())
   const verdictRef = useRef<HTMLDivElement>(null)
@@ -467,6 +525,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     setAnswerChanged(false)
     setStrategyApplied(null)
     setStrategyPromptMs(0)
+    setMobileCasePane(item?.question.passage ? 'passage' : 'question')
     setOpenedAt(Date.now())
   }, [item?.id])
 
@@ -661,6 +720,15 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
   const clientKind = caseClient?.icon
   const clientSatisfied = Boolean(result?.is_correct && reward && ['Good', 'Excellent'].includes(reward.explanation_grade))
+  const mobileSessionLabel = isDiagnostic
+    ? 'Diagnostic'
+    : isInfinite
+      ? 'Infinite'
+      : session.practice_style === 'review'
+        ? 'Review'
+        : session.practice_style === 'deep'
+          ? 'Method lab'
+          : 'Sprint'
 
   const counsel = counselFor(session.id)
   const counselRattled = Boolean(result?.is_correct)
@@ -671,17 +739,13 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   return (
     <div className="question-layout">
       <CasePageTurn active={pageTurning} spread={Boolean(question.passage)} />
-      {isDiagnostic ? (
-        <section className="diagnostic-session-banner" aria-label="Baseline diagnostic in progress">
-          <div><Target size={22} /><span>BASELINE DIAGNOSTIC</span></div>
-          <strong>Neutral measurement mode</strong>
-          <p>No currency, reputation, streak, or firm progress changes during this run.</p>
-          <small>{session.total_items} balanced LR/RC questions</small>
-        </section>
-      ) : learningOnly ? (
-        <section className="learning-mode-banner" aria-label={`${session.practice_style} learning mode`}>
-          <div><Brain size={20} /><span>{isInfinite ? 'INFINITE PRACTICE' : session.practice_style === 'review' ? 'REPAIR REVIEW' : 'TIMED SPRINT'}</span></div>
-          <strong>{isInfinite ? 'Answer → concise reasoning → continue' : session.practice_style === 'review' ? 'Explain only the questions that need repair' : 'Answer-only · explanations unlock when the run ends'}</strong>
+      {isDiagnostic || learningOnly ? (
+        <section
+          className={`learning-mode-banner ${isDiagnostic ? 'diagnostic-session-banner' : ''}`}
+          aria-label={isDiagnostic ? 'Baseline diagnostic in progress' : `${session.practice_style} learning mode`}
+        >
+          <div>{isDiagnostic ? <Target size={20} /> : <Brain size={20} />}<span>{isDiagnostic ? 'BASELINE DIAGNOSTIC' : isInfinite ? 'INFINITE PRACTICE' : session.practice_style === 'review' ? 'REPAIR REVIEW' : 'TIMED SPRINT'}</span></div>
+          <strong>{isDiagnostic ? 'Neutral measurement · no currency, reputation, or streak changes' : isInfinite ? 'Answer → concise reasoning → continue' : session.practice_style === 'review' ? 'Explain only the questions that need repair' : 'Answer-only · explanations unlock when the run ends'}</strong>
           {isInfinite && <button type="button" onClick={() => finishInfinite.mutate()} disabled={finishInfinite.isPending || Boolean(result)}>{finishInfinite.isPending ? 'Ending…' : 'End run'}</button>}
         </section>
       ) : <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
@@ -721,6 +785,20 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       </div>
       <div className="progress-track"><span style={{ width: `${session.progress_percent}%` }} /></div>
 
+      <div className="mobile-case-reader-header" aria-label="Case reader controls">
+        <div className="mobile-case-reader-meta">
+          <span>{question.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
+          <div><small>{mobileSessionLabel}</small><strong>{isInfinite ? `Question ${item.position + 1}` : `${item.position + 1} of ${session.total_items}`}</strong></div>
+        </div>
+        {question.passage && (
+          <div className="mobile-case-pane-tabs" role="tablist" aria-label="Reading view">
+            <button type="button" role="tab" aria-selected={mobileCasePane === 'passage'} className={mobileCasePane === 'passage' ? 'active' : ''} onClick={() => { setMobileCasePane('passage'); void play('paper', { seed: `${item.id}:passage`, intensity: .2 }) }}><BookOpen size={15} /> Passage</button>
+            <button type="button" role="tab" aria-selected={mobileCasePane === 'question'} className={mobileCasePane === 'question' ? 'active' : ''} onClick={() => { setMobileCasePane('question'); void play('tab', { seed: `${item.id}:question`, intensity: .22 }) }}>Question</button>
+          </div>
+        )}
+        <div className={`mobile-case-reader-time ${timerRatio > 1 ? 'over' : ''}`}><Clock3 size={14} /><span>{formatTime(elapsed)}</span></div>
+      </div>
+
       {strategyTrial && (
         <section className={`strategy-trial ${strategyApplied === true ? 'is-applied' : strategyApplied === false ? 'is-skipped' : ''}`} aria-label={`Strategy trial: ${strategyTrial.title}`}>
           <div className="strategy-trial-seal"><Brain size={21} /><small>{session.practice_style === 'deep' ? 'PARTNER BRIEF' : 'METHOD TRIAL'}</small></div>
@@ -749,11 +827,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         </section>
       )}
 
-      <div className={`${question.passage ? 'question-content with-passage' : 'question-content'} ${strategyDecisionRequired ? 'strategy-decision-pending' : ''}`}>
+      <div className={`${question.passage ? `question-content with-passage mobile-pane-${mobileCasePane}` : 'question-content'} ${strategyDecisionRequired ? 'strategy-decision-pending' : ''}`}>
         {question.passage && (
           <article className="passage-card">
             <div className="document-heading"><BookOpen size={16} /><span>EXHIBIT A · READING PASSAGE</span></div>
             <div className="passage-text">{question.passage.text}</div>
+            <button type="button" className="mobile-open-question" onClick={() => setMobileCasePane('question')}>Go to the question <ArrowRight size={17} /></button>
           </article>
         )}
 
