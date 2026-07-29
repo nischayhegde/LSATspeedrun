@@ -32,6 +32,14 @@ EVIDENCE_CLASS = {
     "diagnostic": "diagnostic",
 }
 REVIEW_INTERVAL_DAYS = (1, 3, 7, 21)
+REASONING_MIN_CHARS = {"deep": 120, "review": 120, "speedrun": 40, "infinite": 40}
+
+
+def reasoning_min_chars(session: StudySession) -> int:
+    """Characters of written explanation this session demands before an answer counts."""
+    if session.mode == "diagnostic":
+        return 0
+    return REASONING_MIN_CHARS.get(session.practice_style, 0)
 
 
 def _iso_utc(value) -> str | None:
@@ -223,6 +231,7 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
         "position": item.position,
         "section_index": item.section_index,
         "requires_reasoning": item.requires_reasoning,
+        "reasoning_min_chars": reasoning_min_chars(item.session),
         "strategy_trial": ({**strategy_trial, "variant": "prompt"} if strategy_trial else None),
         "served_at": _iso_utc(item.served_at),
         "elapsed_ms": _elapsed_ms(item),
@@ -438,7 +447,7 @@ def create_study_session(
                 session_id=session.id,
                 question_id=question.id,
                 position=position,
-                requires_reasoning=practice_style in {"deep", "review"},
+                requires_reasoning=True,
                 strategy_key=strategy_trial["key"] if strategy_trial else None,
                 strategy_variant=strategy_trial["variant"] if strategy_trial else None,
                 target_time_seconds=target_time_seconds,
@@ -767,7 +776,7 @@ def _append_infinite_item(session: StudySession, user: User) -> None:
             session_id=session.id,
             question_id=question.id,
             position=session.total_items,
-            requires_reasoning=False,
+            requires_reasoning=True,
             strategy_key=strategy_trial["key"] if strategy_trial else None,
             strategy_variant=strategy_trial["variant"] if strategy_trial else None,
             target_time_seconds=target_time_seconds,
@@ -875,8 +884,11 @@ def submit_attempt(
     if selected_label not in {choice.label for choice in item.question.choices}:
         raise ValueError("invalid_choice")
     reasoning = str(payload.get("reasoning") or "").strip()[:4000] or None
-    if item.requires_reasoning and not reasoning:
-        raise ValueError("reasoning_required")
+    if item.requires_reasoning:
+        if not reasoning:
+            raise ValueError("reasoning_required")
+        if len(reasoning) < reasoning_min_chars(session):
+            raise ValueError("reasoning_too_short")
     try:
         confidence = int(payload.get("confidence", 3))
     except (TypeError, ValueError):
