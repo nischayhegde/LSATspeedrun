@@ -1077,6 +1077,8 @@ def run_attempt_coaching(attempt: Attempt) -> dict:
             stat.explanation_count += 1
         attempt.explanation_score = normalized_score
         attempt.explanation_score_applied = True
+        # The submit-time schedule was written without a grade. Redo it now.
+        _schedule_review(attempt)
 
     feedback = dict(attempt.feedback_json or {})
     feedback["coaching"] = coaching

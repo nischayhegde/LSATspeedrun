@@ -2277,3 +2277,48 @@ def test_review_advance_depends_on_the_explanation_grade(app, start_index, score
         refreshed = db.session.get(ReviewQueueItem, row.id)
         assert refreshed.interval_index == expected_index
         assert refreshed.status == expected_status
+
+
+def test_landing_grade_revises_the_provisional_schedule(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "backfill@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    answered = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 5,
+            "reasoning": "I picked C because it seemed the most likely of the five choices.",
+        },
+        headers={**headers, "Idempotency-Key": "backfill-answer"},
+    ).json["result"]
+
+    with app.app_context():
+        assert ReviewQueueItem.query.count() == 0
+
+    monkeypatch.setattr(
+        "app.services.generate_attempt_coaching",
+        lambda _attempt: (
+            {
+                "explanation_grade": 12,
+                "reasoning_verdict": "unsupported",
+                "reasoning_summary": "The explanation never engages the argument.",
+                "model": "test-model",
+            },
+            {},
+        ),
+    )
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        run_attempt_coaching(db.session.get(Attempt, answered["attempt_id"]))
+
+        row = ReviewQueueItem.query.one()
+        assert row.reason_code == "unsupported_correct"
+        assert row.grade_pending is False
