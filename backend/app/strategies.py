@@ -341,7 +341,12 @@ def assign_strategy_trial(user_id: str, question: Question, practice_style: str,
             target_seconds = [value.session_item.target_time_seconds for value in values]
             pace = sum(elapsed <= target for elapsed, target in zip(adjusted_seconds, target_seconds)) / len(values)
             calibrated = sum((value.confidence or 3) <= 3 or value.is_correct for value in values) / len(values)
-            return posterior_accuracy * .76 + pace * .18 + calibrated * .06
+            graded = [value for value in values if value.explanation_score is not None]
+            if not graded:
+                # No graded explanation yet: fall back rather than penalize missing data.
+                return posterior_accuracy * .76 + pace * .18 + calibrated * .06
+            explanation_mean = sum(value.explanation_score for value in graded) / len(graded)
+            return posterior_accuracy * .50 + explanation_mean * .30 + pace * .14 + calibrated * .06
 
         ranked = sorted(candidates, key=lambda candidate: (score(candidate), -len(grouped[candidate]), candidate), reverse=True)
         explore = _stable_fraction(f"explore:{seed}") < .30

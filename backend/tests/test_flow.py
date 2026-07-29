@@ -2322,3 +2322,134 @@ def test_landing_grade_revises_the_provisional_schedule(app, monkeypatch):
         row = ReviewQueueItem.query.one()
         assert row.reason_code == "unsupported_correct"
         assert row.grade_pending is False
+
+
+def test_strategy_scoring_weighs_explanation_quality(app, monkeypatch):
+    """Candidates tied on accuracy, pace, and calibration separate on explanation quality.
+
+    Drives assign_strategy_trial rather than restating its arithmetic, so the test
+    fails if the explanation term is ever dropped. _stable_fraction is pinned to
+    0.5 to disable the 30% explore branch and the 25% control arm, leaving the
+    assigned key equal to the top-ranked candidate.
+    """
+    with app.app_context():
+        from app.strategies import _candidate_keys
+
+        user = User(email="strategy-weight@example.test", display_name="Weight")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.filter_by(section="Logical Reasoning").first()
+        candidates = _candidate_keys(question)
+        assert len(candidates) >= 2
+
+        # The best-explained candidate is the alphabetically first one. Before the
+        # explanation term exists every candidate ties, and the sort's reverse
+        # tiebreak on the key name picks the alphabetically last one instead.
+        best = sorted(candidates)[0]
+
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            target_minutes=10,
+            total_items=len(candidates) * 3,
+        )
+        db.session.add(session)
+        db.session.flush()
+        position = 0
+        for candidate in candidates:
+            for _ in range(3):
+                item = SessionItem(
+                    session_id=session.id,
+                    question_id=question.id,
+                    position=position,
+                    requires_reasoning=True,
+                    target_time_seconds=150,
+                    strategy_key=candidate,
+                    strategy_variant="prompt",
+                )
+                db.session.add(item)
+                db.session.flush()
+                db.session.add(
+                    Attempt(
+                        user_id=user.id,
+                        session_item_id=item.id,
+                        idempotency_key=f"weigh-{candidate}-{position}",
+                        selected_label=question.correct_answer,
+                        is_correct=True,
+                        reasoning_text=explanation(f"weighted attempt {position}"),
+                        confidence=4,
+                        server_elapsed_ms=60_000,
+                        strategy_key=candidate,
+                        strategy_variant="prompt",
+                        strategy_applied=True,
+                        explanation_score=0.95 if candidate == best else 0.05,
+                    )
+                )
+                position += 1
+        db.session.commit()
+
+        monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.5)
+
+        from app.strategies import assign_strategy_trial
+
+        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        assert trial is not None
+        assert trial["variant"] == "prompt"
+        assert trial["key"] == best
+
+
+def test_strategy_scoring_falls_back_without_graded_attempts(app):
+    """A candidate with no graded explanations uses the original three-term formula."""
+    with app.app_context():
+        user = User(email="strategy-fallback@example.test", display_name="Fallback")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.filter_by(section="Logical Reasoning").first()
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            target_minutes=10,
+            total_items=1,
+        )
+        db.session.add(session)
+        db.session.flush()
+        for index in range(4):
+            item = SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=index,
+                requires_reasoning=True,
+                target_time_seconds=150,
+                strategy_key="argument_core",
+                strategy_variant="prompt",
+            )
+            db.session.add(item)
+            db.session.flush()
+            db.session.add(
+                Attempt(
+                    user_id=user.id,
+                    session_item_id=item.id,
+                    idempotency_key=f"fallback-{index}",
+                    selected_label=question.correct_answer,
+                    is_correct=True,
+                    reasoning_text="An ungraded but present written explanation for this attempt.",
+                    confidence=4,
+                    server_elapsed_ms=60_000,
+                    strategy_key="argument_core",
+                    strategy_variant="prompt",
+                    strategy_applied=True,
+                    explanation_score=None,
+                )
+            )
+        db.session.commit()
+
+        from app.strategies import assign_strategy_trial
+
+        # Must not raise (a naive mean over None would) and must still assign.
+        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        assert trial is not None
+        assert trial["key"] in {"argument_core", "prephrase", "scope_precision", "role_map"}
