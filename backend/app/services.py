@@ -10,7 +10,7 @@ from sqlalchemy import or_
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
 from .extensions import db
-from .game import CLIENT_BY_KEY, lock_user_profile, serialize_settlement, settle_attempt, snapshot_case_context
+from .game import CLIENT_BY_KEY, explanation_band, lock_user_profile, serialize_settlement, settle_attempt, snapshot_case_context
 from .models import Attempt, Question, ReviewQueueItem, SessionItem, SkillProgress, StudySession, User, utcnow
 from .seed import SOURCE_PREFIX
 from .strategies import assign_strategy_trial, serialize_strategy, strategy_performance
@@ -785,10 +785,75 @@ def _append_infinite_item(session: StudySession, user: User) -> None:
     session.total_items += 1
 
 
-def _schedule_review(attempt: Attempt) -> None:
-    session = attempt.session_item.session
+def _attempt_band(attempt: Attempt) -> str | None:
+    """Economy band for a graded explanation, or None while the grade is missing.
+
+    ``Attempt.explanation_score`` is normalized 0-1; ``explanation_band`` wants a
+    raw 0-100 score. Reuse is already handled upstream: ``settle_attempt`` zeroes
+    a recycled explanation's grade before it is written here.
+    """
+    if attempt.explanation_score is None:
+        return None
+    return explanation_band(round(attempt.explanation_score * 100), bool(attempt.reasoning_text))
+
+
+def _entry_reason(attempt: Attempt, band: str | None) -> str | None:
+    """First matching reason this attempt belongs in the review queue."""
     confidence = attempt.confidence or 3
     slow = attempt.server_elapsed_ms > attempt.session_item.target_time_seconds * 1000
+    if not attempt.is_correct:
+        return "high_confidence_error" if confidence >= 4 else "incorrect"
+    if band in {"Invalid", "Weak"}:
+        return "unsupported_correct"
+    if confidence <= 2:
+        return "low_confidence_correct"
+    if slow:
+        return "slow_correct"
+    return None
+
+
+def _advance_review(existing: ReviewQueueItem, attempt: Attempt, band: str | None, from_index: int) -> None:
+    """Move a review card along the ladder according to answer and explanation."""
+    if not attempt.is_correct:
+        existing.status = "due"
+        existing.interval_index = 0
+        existing.reason_code = "repeat_error"
+        existing.due_at = utcnow()
+        return
+    if band == "Invalid":
+        existing.status = "due"
+        existing.interval_index = 0
+        existing.reason_code = "unsupported_correct"
+        existing.due_at = utcnow()
+        return
+    if band == "Weak":
+        existing.status = "due"
+        existing.interval_index = from_index
+        existing.reason_code = "unsupported_correct"
+        existing.due_at = utcnow() + timedelta(days=1)
+        return
+    next_index = from_index + (2 if band == "Excellent" else 1)
+    if next_index > len(REVIEW_INTERVAL_DAYS):
+        existing.status = "mastered"
+        existing.interval_index = len(REVIEW_INTERVAL_DAYS)
+        existing.due_at = utcnow() + timedelta(days=REVIEW_INTERVAL_DAYS[-1])
+    else:
+        existing.status = "due"
+        existing.interval_index = next_index
+        existing.due_at = utcnow() + timedelta(days=REVIEW_INTERVAL_DAYS[next_index - 1])
+
+
+def _schedule_review(attempt: Attempt) -> None:
+    """Place or move this question in the spaced-review queue.
+
+    Safe to call twice for the same attempt: once on submit, when the
+    explanation grade is still missing, and again from ``run_attempt_coaching``
+    once the grade lands. The second call recomputes from
+    ``pre_grade_interval_index`` so the provisional advance is not compounded.
+    """
+    session = attempt.session_item.session
+    band = _attempt_band(attempt)
+    pending = band is None and attempt.session_item.requires_reasoning
     existing = ReviewQueueItem.query.filter_by(
         user_id=attempt.user_id,
         question_id=attempt.session_item.question_id,
@@ -798,30 +863,15 @@ def _schedule_review(attempt: Attempt) -> None:
         if not existing:
             return
         existing.last_attempt_id = attempt.id
-        if attempt.is_correct:
-            next_index = existing.interval_index + 1
-            if next_index > len(REVIEW_INTERVAL_DAYS):
-                existing.status = "mastered"
-                existing.interval_index = len(REVIEW_INTERVAL_DAYS)
-                existing.due_at = utcnow() + timedelta(days=REVIEW_INTERVAL_DAYS[-1])
-            else:
-                existing.status = "due"
-                existing.interval_index = next_index
-                existing.due_at = utcnow() + timedelta(days=REVIEW_INTERVAL_DAYS[next_index - 1])
-        else:
-            existing.status = "due"
-            existing.interval_index = 0
-            existing.reason_code = "repeat_error"
-            existing.due_at = utcnow()
+        from_index = existing.pre_grade_interval_index
+        if from_index is None:
+            from_index = existing.interval_index
+        existing.pre_grade_interval_index = from_index if pending else None
+        existing.grade_pending = pending
+        _advance_review(existing, attempt, band, from_index)
         return
 
-    reason_code = None
-    if not attempt.is_correct:
-        reason_code = "high_confidence_error" if confidence >= 4 else "incorrect"
-    elif confidence <= 2:
-        reason_code = "low_confidence_correct"
-    elif slow:
-        reason_code = "slow_correct"
+    reason_code = _entry_reason(attempt, band)
     if not reason_code:
         return
     if not existing:
@@ -833,6 +883,7 @@ def _schedule_review(attempt: Attempt) -> None:
             reason_code=reason_code,
             interval_index=0,
             due_at=utcnow(),
+            grade_pending=pending,
         )
         db.session.add(existing)
     else:
@@ -842,6 +893,7 @@ def _schedule_review(attempt: Attempt) -> None:
         existing.reason_code = reason_code
         existing.interval_index = 0
         existing.due_at = utcnow()
+        existing.grade_pending = pending
 
 
 def submit_attempt(

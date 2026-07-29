@@ -2140,3 +2140,140 @@ def test_deep_practice_enforces_the_longer_floor(app):
     )
     assert response.status_code == 400
     assert response.json["error"]["code"] == "reasoning_too_short"
+
+
+def _graded_attempt(attempt_id: str, score: float | None):
+    """Set a normalized 0-1 explanation score on an attempt and re-run scheduling."""
+    from app.services import _schedule_review
+
+    attempt = db.session.get(Attempt, attempt_id)
+    attempt.explanation_score = score
+    db.session.flush()
+    _schedule_review(attempt)
+    db.session.commit()
+    return attempt
+
+
+def test_correct_answer_with_invalid_explanation_enters_the_review_queue(app):
+    client = app.test_client()
+    headers = login(client, "unsupported-correct@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    answered = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 5,
+            "reasoning": "It just felt like the best available answer to me on this one.",
+        },
+        headers={**headers, "Idempotency-Key": "guessed-right"},
+    ).json["result"]
+
+    with app.app_context():
+        # Confident, fast, correct: nothing schedules it before the grade lands.
+        assert ReviewQueueItem.query.count() == 0
+        _graded_attempt(answered["attempt_id"], 0.10)
+        row = ReviewQueueItem.query.one()
+        assert row.reason_code == "unsupported_correct"
+        assert row.interval_index == 0
+        assert row.grade_pending is False
+
+
+def test_good_explanation_on_a_confident_correct_answer_schedules_nothing(app):
+    client = app.test_client()
+    headers = login(client, "supported-correct@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    answered = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 5,
+            "reasoning": "C restates the controlling relationship exactly; the others add conditions.",
+        },
+        headers={**headers, "Idempotency-Key": "earned-right"},
+    ).json["result"]
+
+    with app.app_context():
+        _graded_attempt(answered["attempt_id"], 0.90)
+        assert ReviewQueueItem.query.count() == 0
+
+
+@pytest.mark.parametrize(
+    ("start_index", "score", "expected_index", "expected_status"),
+    [
+        (1, 0.90, 3, "due"),        # Excellent -> +2
+        (1, 0.60, 2, "due"),        # Good      -> +1
+        (1, 0.30, 1, "due"),        # Weak      -> hold
+        (1, 0.10, 0, "due"),        # Invalid   -> reset
+        (3, 0.90, 4, "mastered"),   # Excellent -> +2 overshoots the ladder
+    ],
+)
+def test_review_advance_depends_on_the_explanation_grade(app, start_index, score, expected_index, expected_status):
+    with app.app_context():
+        user = User(email=f"advance-{start_index}-{score}@example.test", display_name="Advance")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.first()
+        row = ReviewQueueItem(
+            user_id=user.id,
+            question_id=question.id,
+            status="due",
+            reason_code="incorrect",
+            interval_index=start_index,
+            due_at=utcnow(),
+        )
+        db.session.add(row)
+        db.session.commit()
+
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="review",
+            feedback_policy="immediate",
+            target_minutes=10,
+            total_items=1,
+        )
+        db.session.add(session)
+        db.session.flush()
+        item = SessionItem(
+            session_id=session.id,
+            question_id=question.id,
+            position=0,
+            requires_reasoning=True,
+            target_time_seconds=150,
+        )
+        db.session.add(item)
+        db.session.flush()
+        attempt = Attempt(
+            user_id=user.id,
+            session_item_id=item.id,
+            idempotency_key=f"advance-{start_index}-{score}",
+            selected_label=question.correct_answer,
+            is_correct=True,
+            reasoning_text="A written explanation long enough to be graded by the coach.",
+            confidence=4,
+            server_elapsed_ms=60_000,
+            explanation_score=score,
+        )
+        db.session.add(attempt)
+        db.session.flush()
+
+        from app.services import _schedule_review
+
+        _schedule_review(attempt)
+        db.session.commit()
+
+        refreshed = db.session.get(ReviewQueueItem, row.id)
+        assert refreshed.interval_index == expected_index
+        assert refreshed.status == expected_status
