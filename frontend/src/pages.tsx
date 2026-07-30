@@ -75,7 +75,20 @@ export function PerformancePage() {
     onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
   })
   if (performanceQuery.isLoading || diagnosticQuery.isLoading || current.isLoading) return <LoadingScreen label="Measuring your training line…" />
-  if (performanceQuery.error || diagnosticQuery.error) return <div className="contained"><ErrorNotice error={performanceQuery.error || diagnosticQuery.error} /></div>
+  if (performanceQuery.error || diagnosticQuery.error) {
+    return (
+      <div className="contained page-error">
+        <ErrorNotice
+          error={performanceQuery.error || diagnosticQuery.error}
+          retrying={performanceQuery.isFetching || diagnosticQuery.isFetching}
+          onRetry={() => {
+            if (performanceQuery.error) void performanceQuery.refetch()
+            if (diagnosticQuery.error) void diagnosticQuery.refetch()
+          }}
+        />
+      </div>
+    )
+  }
   const performance = performanceQuery.data!.performance
   const diagnostic = diagnosticQuery.data!
   const metrics = performance.overall
@@ -578,6 +591,12 @@ export function OfficePage() {
 
   return (
     <div className="office-page office-game-page">
+      {current.error && (
+        <div className="partial-load-notice">
+          <ErrorNotice error={current.error} retrying={current.isFetching} onRetry={() => void current.refetch()} />
+          <p>Your active case could not be checked, so the office may not show work already in progress.</p>
+        </div>
+      )}
       <div className="office-mobile-scene-status" aria-hidden="true">
         <small>HQ {game.office_tier + 1} · {game.reputation_band.name.toUpperCase()}</small>
         <strong>{game.office.name}</strong>
@@ -736,6 +755,15 @@ export function CasesLobbyPage() {
   const active = current.data?.session
   const dueReviews = reviews.data?.review_queue.due ?? 0
   const daily = docketQuery.data?.daily_docket
+  // These three reads are all optional on the page, so a failure used to leave
+  // sections quietly missing with no way to recover short of a reload.
+  const partialError = docketQuery.error || current.error || reviews.error
+  const partialRetrying = docketQuery.isFetching || current.isFetching || reviews.isFetching
+  const retryPartial = () => {
+    if (docketQuery.error) void docketQuery.refetch()
+    if (current.error) void current.refetch()
+    if (reviews.error) void reviews.refetch()
+  }
   const runNextDocketStep = () => {
     if (!daily) return
     if (daily.next_action.kind === 'resume' || daily.next_action.kind === 'open_brief') {
@@ -763,6 +791,12 @@ export function CasesLobbyPage() {
   }
   return (
     <div className="case-lobby page-wrap">
+      {partialError && (
+        <div className="partial-load-notice">
+          <ErrorNotice error={partialError} retrying={partialRetrying} onRetry={retryPartial} />
+          <p>Some of this page could not be loaded, so a few sections may be missing or out of date.</p>
+        </div>
+      )}
       <section className="mobile-practice-home" aria-label="Practice modes">
         <header className="mobile-learning-header">
           <div><span>PRACTICE</span><h1>Choose the work.</h1></div>

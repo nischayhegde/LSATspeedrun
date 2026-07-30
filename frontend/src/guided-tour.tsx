@@ -308,6 +308,10 @@ export function GuidedTour() {
         )}
         <div className="tour-card-actions">
           <button type="button" className="tour-back" onClick={back} disabled={index === 0}>Back</button>
+          {/* Moving focus into an aria-modal dialog on open is the intended
+              dialog behaviour, not the stray page-load autofocus this rule
+              guards against. */}
+          {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
           <button type="button" className="tour-next" onClick={advance} disabled={step.kind === 'practice' && practiceChoice === null} autoFocus>
             {step.kind === 'finish' ? 'Open Training' : step.kind === 'practice' && !practiceRevealed ? 'Lock answer' : step.kind === 'premise' ? 'Continue' : `Next · ${step.cue ?? 'Continue'}`}
             <ArrowRight />

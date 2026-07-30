@@ -86,9 +86,23 @@ export function LoadingScreen({ label = 'Opening the firm…' }: { label?: strin
 }
 
 
-export function ErrorNotice({ error }: { error: unknown }) {
+/**
+ * `onRetry` is optional so that a failed read can offer a way out instead of
+ * leaving a reload as the only recovery. Mutation errors, which the user can
+ * retry by resubmitting, keep the plain message.
+ */
+export function ErrorNotice({ error, onRetry, retrying = false }: { error: unknown; onRetry?: () => void; retrying?: boolean }) {
   const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.'
-  return <div className="error-notice" role="alert">{message}</div>
+  return (
+    <div className="error-notice" role="alert">
+      <span>{message}</span>
+      {onRetry && (
+        <button type="button" className="error-notice-retry" disabled={retrying} onClick={onRetry}>
+          {retrying ? 'Retrying…' : 'Retry'}
+        </button>
+      )}
+    </div>
+  )
 }
 
 
@@ -170,6 +184,11 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
     },
   })
   return (
+    /* The shell is not a control. This handler only delegates: it looks for a
+       real link or button carrying `data-sound` and plays a cue for it. Keyboard
+       activation of those native elements dispatches a click that bubbles here,
+       so keyboard users get the same cue without a separate key listener. */
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
     <div className={`app-shell ${isActiveCase ? 'active-case' : ''} ${isWideScene ? 'wide-scene-shell' : ''}`} onClick={playDataSound}>
       <header className="app-header">
         <Brand caseFile={isActiveCase} />
