@@ -112,6 +112,7 @@ export const api = {
       body: JSON.stringify({ rival_key: rivalKey, operation_key: operationKey }),
     }),
   currentSession: () => request<{ session: StudySession | null }>('/study-sessions/current'),
+  activeSessions: () => request<{ sessions: StudySession[]; queue_cap: number }>('/study-sessions/active'),
   dailyDocket: () => request<{ daily_docket: DailyDocket }>(`/daily-docket?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`),
   performance: () => request<{ performance: PerformanceSnapshot }>('/performance'),
   currentDiagnostic: () => request<{
@@ -136,6 +137,8 @@ export const api = {
     request<{ session: StudySession }>(`/study-sessions/${id}/pause`, { method: 'POST' }),
   resumeSession: (id: string) =>
     request<{ session: StudySession }>(`/study-sessions/${id}/resume`, { method: 'POST' }),
+  abandonSession: (id: string) =>
+    request<{ session: StudySession }>(`/study-sessions/${id}/abandon`, { method: 'POST' }),
   finishSession: (id: string) =>
     request<{ session: StudySession; run_complete: boolean }>(`/study-sessions/${id}/finish`, { method: 'POST' }),
   sessionReview: (id: string) => request<{ review: SessionReview }>(`/study-sessions/${id}/review`),

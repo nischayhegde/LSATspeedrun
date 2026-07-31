@@ -1,0 +1,1385 @@
+"""Install a lived-in demo account: months of study history, a differentiated
+strategy A/B record, and an advanced firm.
+
+The script is deterministic and re-runnable. Every run replaces only the target
+learner's study and game state, so repeated runs converge on the same account.
+
+    .venv/bin/python backend/scripts/seed_demo.py            # dry run report
+    .venv/bin/python backend/scripts/seed_demo.py --apply    # install
+
+Study history is written directly rather than replayed through submit_attempt.
+The demo needs an exact accuracy curve, an exact strategy-trial ledger, and
+backdated timestamps across eleven weeks, none of which the live request path
+can express. Everything the read models depend on is still produced here:
+evidence classes, session summaries, skill rollups, and the spaced-review queue.
+
+The economy is built through the real game module instead, so purchases, firm
+advancement, story choices, and settlements all write consistent ledger rows.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import random
+import shutil
+import sys
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from sqlalchemy import delete
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from app import create_app
+from app.extensions import db
+from app.game import (
+    ASSET_BY_KEY,
+    FIRM_TIERS,
+    LedgerEntry,
+    _missing_tier_assets,
+    _tier_required_asset_keys,
+    advance_firm,
+    choose_story,
+    create_profile,
+    purchase_asset,
+    select_client,
+    serialize_game,
+    settle_attempt,
+    snapshot_case_context,
+)
+from app.models import (
+    AiJob,
+    Attempt,
+    AttemptSettlement,
+    DailyProgress,
+    PlayerProfile,
+    Question,
+    ReviewQueueItem,
+    SessionItem,
+    SkillProgress,
+    StudySession,
+    User,
+    utcnow,
+)
+from app.services import (
+    EVIDENCE_CLASS,
+    STYLE_FEEDBACK_POLICY,
+    calculate_session_summary,
+    create_study_session,
+    performance_snapshot,
+    serialize_item,
+)
+from app.story import QUEST_BY_KEY, ensure_story_state
+from app.strategies import STRATEGIES, _candidate_keys, strategy_performance
+
+SEED_VERSION = "demo-seed-v2"
+DEFAULT_EMAIL = "student@localhost.test"
+RANDOM_SEED = 20260731
+
+# Only Hugging Face `tasksource/lsat-*` rows are eligible. The OCR'd questions
+# were removed from this database for licensing reasons and must never return.
+ALLOWED_SOURCE_PREFIX = "https://huggingface.co/datasets/tasksource/lsat-"
+
+HISTORY_DAYS = 77  # eleven weeks
+DIAGNOSTIC_QUESTIONS = 78
+TARGET_TIER = 4
+DEMO_GRANT = 8_000_000
+SETTLED_ATTEMPTS = 40
+
+ACCURACY_START = .56
+ACCURACY_END = .81
+# The dashboard's headline delta compares the last twenty attempts against the
+# twenty before them. Sampling accuracy from a probability cannot control a
+# window that small - at n=20 the draw routinely lands both windows on the same
+# number - so the closing attempts are assigned outcomes outright.
+#
+# `_stage_live_trial` appends two answered questions, so the recent window is
+# the last 18 history attempts plus those two. Distances below are 1-indexed
+# from the end of the written history.
+LIVE_TAIL_ATTEMPTS = 2
+RECENT_WINDOW = 20
+TAIL_ATTEMPTS = 38
+# Two misses in the recent window and four in the prior one, for a clearly
+# positive delta that still leaves no session sitting on a suspicious 100%.
+# Trials sit
+# at session positions where position % 4 == 2 and keep their planned outcome,
+# so these distances avoid that residue to stop a miss being overridden.
+TAIL_FORCED_MISSES = frozenset({5, 12, 21, 25, 31, 35})
+
+# Cosmetics the account already owns. `trophy_shelf` is deliberately left
+# unowned and affordable so a purchase can be performed live on stage.
+SEEDED_COSMETICS = (
+    "bar_certificate",
+    "banker_lamp",
+    "persian_rug",
+    "fig_tree",
+    "chesterfield",
+    "reporter_wall",
+    "grandfather_clock",
+    "skyline_painting",
+)
+LIVE_PURCHASE_COSMETIC = "trophy_shelf"
+
+# Connections are not gates for firm advancement, but owning them unlocks the
+# client book, which is what makes the firm screen look worked-in.
+SEEDED_CONNECTIONS = ("local_bar", "business_network", "board_network", "civic_referral_council")
+
+
+# --------------------------------------------------------------------------
+# Strategy A/B plan
+# --------------------------------------------------------------------------
+# (key, prompted_n, prompted_correct, control_n, control_correct, skips)
+#
+# Six strategies clear the `supported` bar (8+ prompted and 4+ control) with
+# deliberately differentiated lift: two strong winners, two solid, one roughly
+# neutral, and one slightly negative, so the panel reads as a real experiment.
+STRATEGY_PLAN = (
+    ("prephrase", 16, 13, 7, 4, 2),            # +24 pts · the headline winner
+    ("passage_map", 15, 12, 8, 5, 1),          # +18 pts
+    ("viewpoint_ledger", 13, 10, 5, 3, 1),     # +17 pts
+    ("argument_core", 18, 14, 8, 5, 2),        # +16 pts
+    ("conditional_chain", 13, 9, 6, 4, 1),     # +2 pts  · roughly neutral
+    ("textual_proof", 12, 8, 7, 5, 1),         # -4 pts  · costs this learner time
+    ("flaw_abstraction", 7, 6, 3, 2, 0),       # directional
+    ("causal_audit", 6, 5, 2, 1, 0),           # directional
+    ("main_point_synthesis", 6, 4, 3, 2, 0),   # directional
+    ("scope_precision", 4, 3, 1, 1, 0),        # forming
+    ("negation_test", 3, 2, 1, 1, 0),          # forming
+    ("paragraph_function", 2, 2, 0, 0, 0),     # forming, control arm not yet open
+)
+
+# Session schedule: (practice_style, questions). Deep and infinite sessions are
+# the only ones that carry strategy trials, at positions where position % 4 == 2.
+DEEP_SESSIONS = 50
+DEEP_SIZE = 12
+INFINITE_SESSIONS = 6
+INFINITE_SIZE = 16
+SPEEDRUN_SESSIONS = 10
+SPEEDRUN_SIZE = 10
+REVIEW_SESSIONS = 8
+REVIEW_SIZE = 8
+
+
+def _fraction(*parts: object) -> float:
+    """Stable pseudo-random value in [0, 1) for reproducible seeding."""
+    digest = hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") / float(2**64)
+
+
+def _assert_local_only(app, email: str) -> None:
+    uri = str(app.config["SQLALCHEMY_DATABASE_URI"])
+    if app.config.get("ENV") == "production" or not app.config.get("DEV_AUTH_ENABLED"):
+        raise RuntimeError("Demo seeding requires DEV_AUTH_ENABLED=true outside production.")
+    if not uri.startswith("sqlite:"):
+        raise RuntimeError("Demo seeding is restricted to a local SQLite database.")
+    if not email.endswith("@localhost.test"):
+        raise RuntimeError("Demo seeding only accepts an @localhost.test account.")
+
+
+def _backup_database() -> str | None:
+    database = db.engine.url.database
+    if not database:
+        return None
+    source = Path(database).resolve()
+    if not source.exists():
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target = source.parent / f"{source.stem}.pre-demo-seed-{stamp}{source.suffix}"
+    shutil.copy2(source, target)
+    return str(target)
+
+
+def _reset_learner(user: User) -> None:
+    """Remove this learner's study and game state, keeping the account itself.
+
+    Review rows reference attempts and daily rows reference the profile, so the
+    order here matters. Auth sessions are preserved so an open browser tab stays
+    signed in across a re-run.
+    """
+    db.session.execute(delete(ReviewQueueItem).where(ReviewQueueItem.user_id == user.id))
+    db.session.execute(delete(SkillProgress).where(SkillProgress.user_id == user.id))
+    db.session.execute(delete(AiJob).where(AiJob.user_id == user.id))
+    db.session.execute(delete(AttemptSettlement).where(AttemptSettlement.user_id == user.id))
+    for session in StudySession.query.filter_by(user_id=user.id).all():
+        db.session.delete(session)
+    db.session.execute(delete(LedgerEntry).where(LedgerEntry.user_id == user.id))
+    if user.game_profile:
+        db.session.execute(delete(DailyProgress).where(DailyProgress.profile_id == user.game_profile.id))
+        db.session.delete(user.game_profile)
+    db.session.commit()
+    db.session.expire_all()
+
+
+# --------------------------------------------------------------------------
+# Question pool
+# --------------------------------------------------------------------------
+
+
+class QuestionPool:
+    """Licensed questions, indexed by section, type, and eligible strategy."""
+
+    def __init__(self) -> None:
+        rows = (
+            Question.query.filter(Question.source.like(f"{ALLOWED_SOURCE_PREFIX}%"))
+            .order_by(Question.id.asc())
+            .all()
+        )
+        if not rows:
+            raise RuntimeError("No Hugging Face tasksource LSAT questions are available.")
+        self.all = rows
+        self.by_type: dict[tuple[str, str], list[Question]] = defaultdict(list)
+        self.by_strategy: dict[str, list[Question]] = defaultdict(list)
+        for question in rows:
+            self.by_type[(question.section, question.question_type)].append(question)
+            for key in _candidate_keys(question):
+                self.by_strategy[key].append(question)
+        self.used: set[str] = set()
+
+    def take_for_strategy(self, key: str, salt: object) -> Question:
+        """A question for which `key` is a genuine candidate strategy."""
+        candidates = self.by_strategy.get(key) or self.all
+        return self._pick(candidates, salt)
+
+    def take_for_type(self, section: str, question_type: str, salt: object) -> Question:
+        candidates = self.by_type.get((section, question_type)) or self.all
+        return self._pick(candidates, salt)
+
+    def _pick(self, candidates: list[Question], salt: object) -> Question:
+        start = int(_fraction(SEED_VERSION, salt) * len(candidates))
+        for offset in range(len(candidates)):
+            question = candidates[(start + offset) % len(candidates)]
+            if question.id not in self.used:
+                self.used.add(question.id)
+                return question
+        # Every candidate is spent; reuse is harmless because the read models
+        # score only the first attempt per question.
+        return candidates[start % len(candidates)]
+
+    def type_cycle(self) -> list[tuple[str, str]]:
+        """Section/type pairs ordered so every skill bar stays densely filled.
+
+        Frequency-weighted, but with a floor for the rare types so no bar on the
+        breakdown is left with a one-attempt sample.
+        """
+        pairs = sorted(self.by_type, key=lambda pair: (-len(self.by_type[pair]), pair))
+        weighted: list[tuple[str, str]] = []
+        for pair in pairs:
+            share = len(self.by_type[pair]) / len(self.all)
+            weighted.extend([pair] * max(3, round(share * 40)))
+        return weighted
+
+
+# --------------------------------------------------------------------------
+# Trial plan
+# --------------------------------------------------------------------------
+
+
+def _build_trial_tokens() -> list[dict]:
+    """Expand STRATEGY_PLAN into individual trial records.
+
+    Each strategy's own tokens are ordered so its misses land in the earliest
+    slots it receives. That keeps the account's accuracy curve rising even
+    though the aggregate per-strategy accuracy is fixed by the plan.
+    """
+    tokens: list[dict] = []
+    for key, prompted_n, prompted_correct, control_n, control_correct, skips in STRATEGY_PLAN:
+        own: list[dict] = []
+        for index in range(prompted_n):
+            own.append(
+                {
+                    "key": key,
+                    "variant": "prompt",
+                    "applied": True,
+                    # Misses first, so they can be pushed to early slots.
+                    "correct": index >= (prompted_n - prompted_correct),
+                }
+            )
+        for index in range(control_n):
+            own.append(
+                {
+                    "key": key,
+                    "variant": "control",
+                    "applied": None,
+                    "correct": index >= (control_n - control_correct),
+                }
+            )
+        for _ in range(skips):
+            own.append({"key": key, "variant": "prompt", "applied": False, "correct": False})
+        own.sort(key=lambda token: token["correct"])
+        tokens.append(own)
+
+    # Interleave strategies so early slots cover many methods (matching the
+    # coverage-forcing phase of assign_strategy_trial) and later slots
+    # concentrate on the strategies with the most observations.
+    ordered: list[dict] = []
+    for depth in range(max(len(group) for group in tokens)):
+        for group in tokens:
+            if depth < len(group):
+                ordered.append(group[depth])
+    return ordered
+
+
+# --------------------------------------------------------------------------
+# Session construction
+# --------------------------------------------------------------------------
+
+
+def _study_calendar(now: datetime) -> list[datetime]:
+    """Realistic session start times across eleven weeks.
+
+    Real study looks like streaks and gaps, not a uniform grid: weekends are
+    lighter, a couple of weeks go quiet, and busy days hold two sittings.
+    """
+    starts: list[datetime] = []
+    for day in range(HISTORY_DAYS, 0, -1):
+        date = now - timedelta(days=day)
+        weekday = date.weekday()
+        draw = _fraction(SEED_VERSION, "day", day)
+        # Two deliberate quiet stretches: a travel week and a lighter mid-block.
+        if 52 <= day <= 58 or 27 <= day <= 30:
+            if draw > .22:
+                continue
+        elif weekday >= 5:
+            if draw > .48:
+                continue
+        elif draw > .86:
+            continue
+        sittings = 2 if _fraction(SEED_VERSION, "sittings", day) > .62 else 1
+        for index in range(sittings):
+            slot = _fraction(SEED_VERSION, "hour", day, index)
+            if index == 0:
+                hour = 7 + int(slot * 3) if slot < .4 else 19 + int(slot * 3) % 3
+            else:
+                hour = 12 + int(slot * 2)
+            minute = int(_fraction(SEED_VERSION, "minute", day, index) * 60)
+            starts.append(date.replace(hour=min(22, hour), minute=minute, second=0, microsecond=0))
+    starts.sort()
+    return starts
+
+
+def _session_plan(slot_count: int) -> list[tuple[str, int]]:
+    """Assign a practice style to each calendar slot.
+
+    Deep work dominates, sprints appear throughout, review sittings only after
+    a queue exists, and infinite drills cluster in the later weeks.
+    """
+    plan: list[tuple[str, int]] = [("diagnostic", DIAGNOSTIC_QUESTIONS)]
+    remaining = {
+        "deep": DEEP_SESSIONS,
+        "infinite": INFINITE_SESSIONS,
+        "speedrun": SPEEDRUN_SESSIONS,
+        "review": REVIEW_SESSIONS,
+    }
+    sizes = {
+        "deep": DEEP_SIZE,
+        "infinite": INFINITE_SIZE,
+        "speedrun": SPEEDRUN_SIZE,
+        "review": REVIEW_SIZE,
+    }
+    body = slot_count - 1
+    for index in range(body):
+        phase = index / max(1, body - 1)
+        order = ["deep", "speedrun", "review", "infinite"]
+        if phase > .55:
+            order = ["deep", "infinite", "speedrun", "review"]
+        if index % 7 == 3:
+            order = ["speedrun", *[style for style in order if style != "speedrun"]]
+        if index % 9 == 5 and phase > .2:
+            order = ["review", *[style for style in order if style != "review"]]
+        for style in order:
+            if remaining[style] > 0:
+                remaining[style] -= 1
+                plan.append((style, sizes[style]))
+                break
+        else:
+            plan.append(("deep", DEEP_SIZE))
+    return plan[:slot_count]
+
+
+def _accuracy_for(phase: float, salt: object) -> float:
+    """Improving curve with natural noise, plus occasional bad days."""
+    base = ACCURACY_START + (ACCURACY_END - ACCURACY_START) * phase
+    noise = (_fraction(SEED_VERSION, "acc", salt) - .5) * .13
+    if _fraction(SEED_VERSION, "slump", salt) > .90:
+        noise -= .11
+    return max(.34, min(.94, base + noise))
+
+
+def _tail_outcome(attempts_from_end: int) -> bool | None:
+    """Fixed outcome for a closing attempt, or None to use the session curve."""
+    if attempts_from_end < 1 or attempts_from_end > TAIL_ATTEMPTS:
+        return None
+    return attempts_from_end not in TAIL_FORCED_MISSES
+
+
+def _elapsed_ms(target_seconds: int, phase: float, salt: object) -> int:
+    """Per-question time against target, including a credible overtime tail."""
+    draw = _fraction(SEED_VERSION, "pace", salt)
+    if draw > .87:
+        # Roughly one question in eight runs over target.
+        ratio = 1.02 + (draw - .87) * 2.4
+    else:
+        ratio = (.94 - .24 * phase) * (.70 + draw * .70)
+    return max(18_000, min(900_000, round(target_seconds * 1000 * ratio)))
+
+
+def _confidence(is_correct: bool, phase: float, salt: object) -> int:
+    """Confidence that carries real calibration signal.
+
+    High-confidence errors are what make a calibration display meaningful, so a
+    deliberate minority of misses are rated 4 or 5, decreasing as skill grows.
+    """
+    draw = _fraction(SEED_VERSION, "conf", salt)
+    if is_correct:
+        if draw < .08:
+            return 3
+        if draw < .16:
+            return 2 if phase < .4 else 3
+        return 4 if draw < .62 else 5
+    overconfident = .30 - .14 * phase
+    if draw < overconfident:
+        return 4 if draw < overconfident * .7 else 5
+    return 1 if draw > .93 else 2 if draw < overconfident + .45 else 3
+
+
+def _explanation_score(is_correct: bool, phase: float, salt: object) -> float:
+    base = .58 + .30 * phase + (_fraction(SEED_VERSION, "expl", salt) - .5) * .18
+    if not is_correct:
+        base -= .12
+    return max(.30, min(.97, round(base, 4)))
+
+
+def _wrong_label(question: Question) -> str:
+    labels = [choice.label for choice in question.choices]
+    if not labels:
+        return "A"
+    index = labels.index(question.correct_answer) if question.correct_answer in labels else 0
+    return labels[(index + 1) % len(labels)]
+
+
+def _reasoning_text(question: Question) -> str:
+    """Unique per question: `_is_reused_reasoning` invalidates duplicates."""
+    correct = next((choice for choice in question.choices if choice.label == question.correct_answer), None)
+    claim = (correct.canonical_text if correct else "")[:240]
+    return (
+        f"Case {question.id}: the stem asks me to {(question.stem or '').strip()[:180]} "
+        f"I marked the conclusion, then separated it from the support offered for it. "
+        f"Choice {question.correct_answer} is the credited answer because {claim} "
+        "stays inside the evidence given, while every other option adds, reverses, or drops a required step."
+    )
+
+
+def _coaching_payload(question: Question, selected_label: str, is_correct: bool, grade: int | None) -> dict:
+    correct = next((choice for choice in question.choices if choice.label == question.correct_answer), None)
+    selected = next((choice for choice in question.choices if choice.label == selected_label), None)
+    return {
+        "provider": "Local deterministic demo",
+        "model": SEED_VERSION,
+        "reasoning_effort": "fixture",
+        "prompt_version": SEED_VERSION,
+        "explanation_grade": grade,
+        "reasoning_verdict": (
+            "strong" if grade is not None and grade >= 84 and is_correct
+            else "mostly_correct" if grade is not None and is_correct
+            else "partial" if grade is not None
+            else "not_provided"
+        ),
+        "reasoning_summary": (
+            "The response matched the verified answer and completed the stem's task."
+            if is_correct
+            else "The response chose a plausible distractor but missed the stem's controlling distinction."
+        ),
+        "understood_correctly": (
+            "The comparison stayed tied to the stated task."
+            if is_correct
+            else "The response found a relevant option without finishing the task."
+        ),
+        "first_error": (
+            None
+            if is_correct or grade is None
+            else {
+                "code": "attractive_distractor",
+                "description": "The comparison stopped at relevance instead of testing the exact task.",
+                "repair": "Restate the stem as a one-line test, then reject any option failing one word of it.",
+            }
+        ),
+        "answer_analysis": {
+            "correct_answer_explanation": (
+                f"Choice {question.correct_answer} is credited because it completes the stem's task: "
+                f"{(correct.canonical_text if correct else '')[:320]}"
+            ),
+            "selected_answer_explanation": (
+                f"Choice {selected_label} is the credited response."
+                if is_correct
+                else f"Choice {selected_label} echoes the topic, but {(selected.canonical_text if selected else '')[:260]} does not complete the task."
+            ),
+            "choice_explanations": [
+                {
+                    "label": choice.label,
+                    "is_correct": choice.label == question.correct_answer,
+                    "explanation": (
+                        "This choice satisfies the verified task."
+                        if choice.label == question.correct_answer
+                        else "This choice is related to the text but changes a step the stem requires."
+                    ),
+                }
+                for choice in question.choices
+            ],
+        },
+        "next_step_hint": "If a choice is merely relevant, test it again against every operative word in the stem.",
+        "solution_method": "1) Translate the stem. 2) Locate the controlling evidence. 3) Eliminate choices that change the task.",
+        "debrief": "Keep the task visible while comparing choices. Relevance alone is not enough for credit.",
+    }
+
+
+def _feedback_payload(question: Question, selected_label: str, is_correct: bool, grade: int | None) -> dict:
+    return {
+        "correct_answer": question.correct_answer,
+        "selected_answer": selected_label,
+        "is_correct": is_correct,
+        "coaching": _coaching_payload(question, selected_label, is_correct, grade),
+    }
+
+
+def _target_seconds(question: Question, previous_passage_id: str | None) -> int:
+    if question.section == "Logical Reasoning":
+        return 150
+    if question.passage_id and question.passage_id == previous_passage_id:
+        return 135
+    return 330
+
+
+# --------------------------------------------------------------------------
+# History writer
+# --------------------------------------------------------------------------
+
+
+def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
+    calendar = _study_calendar(now)
+    plan = _session_plan(len(calendar))
+    tokens = _build_trial_tokens()
+    token_index = 0
+    type_cycle = pool.type_cycle()
+    type_cursor = 0
+    review_pool: list[tuple[str, str]] = []  # (question_id, reason_code)
+    stats = {
+        "sessions": 0,
+        "attempts": 0,
+        "trials": 0,
+        "controls": 0,
+        "skips": 0,
+        "by_style": defaultdict(int),
+    }
+
+    # Count eligible slots up front so the trial plan can be stretched to fill
+    # every one of them; a deep or infinite question at position % 4 == 2 always
+    # carries a trial in the live code path, so leaving one empty would be a lie.
+    eligible_slots = sum(
+        len([position for position in range(size) if position % 4 == 2])
+        for style, size in plan
+        if style in {"deep", "infinite"}
+    )
+    planned_tokens = len(tokens)
+    if eligible_slots > planned_tokens:
+        # Repeat the plan cyclically. Duplicating a balanced cross-section keeps
+        # every status and lift directionally intact rather than inventing arms.
+        tokens += [dict(tokens[index % planned_tokens]) for index in range(eligible_slots - planned_tokens)]
+
+    # Running attempt totals let the closing questions be shaped by their
+    # distance from the end of the whole history rather than their session.
+    planned_total = sum(size for _style, size in plan)
+    attempts_before: list[int] = []
+    running = 0
+    for _style, size in plan:
+        attempts_before.append(running)
+        running += size
+
+    for slot_index, (started_at, (style, size)) in enumerate(zip(calendar, plan)):
+        phase = slot_index / max(1, len(plan) - 1)
+        accuracy = _accuracy_for(phase, slot_index)
+        mode = "diagnostic" if style == "diagnostic" else "practice"
+        requires_reasoning = style in {"deep", "review"}
+        feedback_policy = "delayed" if style == "diagnostic" else STYLE_FEEDBACK_POLICY[style]
+        evidence_class = EVIDENCE_CLASS[style]
+
+        section_plan = None
+        if style == "diagnostic":
+            section_plan = [
+                {"index": 0, "label": "Logical Reasoning I", "minutes": 35, "questions": 25},
+                {"index": 1, "label": "Reading Comprehension", "minutes": 35, "questions": 27},
+                {"index": 2, "label": "Logical Reasoning II", "minutes": 35, "questions": 26},
+            ]
+
+        session = StudySession(
+            user_id=user.id,
+            mode=mode,
+            practice_style=style,
+            feedback_policy=feedback_policy,
+            status="completed",
+            target_minutes=105 if style == "diagnostic" else 20,
+            total_items=size,
+            section_plan_json=section_plan,
+            started_at=started_at,
+        )
+        db.session.add(session)
+        db.session.flush()
+
+        cursor = started_at
+        previous_passage_id: str | None = None
+        for position in range(size):
+            salt = (slot_index, position)
+            trial: dict | None = None
+            if style in {"deep", "infinite"} and position % 4 == 2 and token_index < len(tokens):
+                trial = tokens[token_index]
+                token_index += 1
+
+            if trial:
+                question = pool.take_for_strategy(trial["key"], salt)
+            elif style == "review" and review_pool:
+                question_id, _reason = review_pool[
+                    int(_fraction(SEED_VERSION, "review", salt) * len(review_pool))
+                ]
+                question = db.session.get(Question, question_id)
+                if question is None:
+                    question = pool.take_for_type(*type_cycle[type_cursor % len(type_cycle)], salt)
+                    type_cursor += 1
+            elif style == "diagnostic":
+                section = "Reading Comprehension" if 25 <= position < 52 else "Logical Reasoning"
+                choices = [pair for pair in type_cycle if pair[0] == section]
+                question = pool.take_for_type(*choices[type_cursor % len(choices)], salt)
+                type_cursor += 1
+            else:
+                question = pool.take_for_type(*type_cycle[type_cursor % len(type_cycle)], salt)
+                type_cursor += 1
+
+            target_seconds = _target_seconds(question, previous_passage_id)
+            previous_passage_id = question.passage_id
+            section_index = 0
+            if style == "diagnostic":
+                section_index = 0 if position < 25 else 1 if position < 52 else 2
+
+            item = SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=position,
+                section_index=section_index,
+                requires_reasoning=requires_reasoning,
+                strategy_key=trial["key"] if trial else None,
+                strategy_variant=trial["variant"] if trial else None,
+                target_time_seconds=target_seconds,
+            )
+            db.session.add(item)
+            db.session.flush()
+
+            attempts_from_end = planned_total - (attempts_before[slot_index] + position)
+            if trial:
+                # A trial's outcome is fixed by the A/B plan, which owns the lift
+                # numbers, so it always wins over the closing-window shaping.
+                is_correct = bool(trial["correct"])
+            else:
+                forced = _tail_outcome(attempts_from_end)
+                is_correct = (
+                    forced
+                    if forced is not None
+                    else _fraction(SEED_VERSION, "outcome", salt) < accuracy
+                )
+
+            elapsed = _elapsed_ms(target_seconds, phase, salt)
+            prompt_ms = 0
+            if trial and trial["variant"] == "prompt":
+                # Time spent reading the brief is recorded separately so pace
+                # analysis can subtract it, exactly as the live client does.
+                prompt_ms = 4_000 + int(_fraction(SEED_VERSION, "promptms", salt) * 11_000)
+                if trial["applied"] is False:
+                    prompt_ms = 1_500 + int(_fraction(SEED_VERSION, "skipms", salt) * 2_500)
+                elapsed += prompt_ms
+
+            selected_label = question.correct_answer if is_correct else _wrong_label(question)
+            confidence = _confidence(is_correct, phase, salt)
+            grade = None
+            explanation_score = None
+            if requires_reasoning:
+                explanation_score = _explanation_score(is_correct, phase, salt)
+                grade = round(explanation_score * 100)
+
+            completed_at = cursor + timedelta(milliseconds=elapsed)
+            item.served_at = cursor
+            item.timer_activated_at = cursor
+            item.active_elapsed_ms = elapsed
+            item.completed_at = completed_at
+
+            attempt = Attempt(
+                user_id=user.id,
+                session_item_id=item.id,
+                idempotency_key=f"{SEED_VERSION}:{session.id}:{position}",
+                selected_label=selected_label,
+                is_correct=is_correct,
+                reasoning_text=_reasoning_text(question) if requires_reasoning else None,
+                confidence=confidence,
+                answer_changed=_fraction(SEED_VERSION, "changed", salt) > .84,
+                strategy_key=trial["key"] if trial else None,
+                strategy_variant=trial["variant"] if trial else None,
+                strategy_applied=trial["applied"] if trial else None,
+                strategy_prompt_ms=prompt_ms,
+                evidence_class=evidence_class,
+                explanation_score=explanation_score,
+                explanation_score_applied=explanation_score is not None,
+                server_elapsed_ms=elapsed,
+                client_elapsed_ms=elapsed,
+                capm_points=0,
+                pace_scored=False,
+                xp_earned=0,
+                feedback_json=_feedback_payload(question, selected_label, is_correct, grade),
+                coaching_status="completed",
+                coaching_model=SEED_VERSION,
+                coached_at=completed_at + timedelta(seconds=18),
+                created_at=completed_at,
+            )
+            db.session.add(attempt)
+
+            if trial:
+                stats["trials"] += trial["variant"] == "prompt" and trial["applied"] is True
+                stats["controls"] += trial["variant"] == "control"
+                stats["skips"] += trial["applied"] is False
+
+            # Mirror _schedule_review's reason codes so the queue looks earned.
+            if style != "review":
+                reason = None
+                if not is_correct:
+                    reason = "high_confidence_error" if confidence >= 4 else "incorrect"
+                elif confidence <= 2:
+                    reason = "low_confidence_correct"
+                elif elapsed > target_seconds * 1000:
+                    reason = "slow_correct"
+                if reason:
+                    review_pool.append((question.id, reason))
+
+            cursor = completed_at
+            stats["attempts"] += 1
+
+        session.completed_at = cursor
+        session.current_index = size
+        session.results_seen_at = cursor + timedelta(minutes=2)
+        session.summary_seen_at = cursor + timedelta(minutes=2)
+        db.session.flush()
+        session.summary_json = calculate_session_summary(session)
+        stats["sessions"] += 1
+        stats["by_style"][style] += 1
+        db.session.commit()
+        if stats["sessions"] % 10 == 0:
+            print(
+                f"  … {stats['sessions']}/{len(plan)} sessions, {stats['attempts']} attempts",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    stats["by_style"] = dict(stats["by_style"])
+    stats["trial_slots"] = eligible_slots
+    # A non-zero value means the schedule has fewer eligible slots than the
+    # strategy plan needs, which would silently weaken the A/B panel.
+    stats["trials_unplaced"] = max(0, len(tokens) - token_index)
+    stats["review_candidates"] = len(review_pool)
+    return {"stats": stats, "review_pool": review_pool}
+
+
+# --------------------------------------------------------------------------
+# Derived learner tables
+# --------------------------------------------------------------------------
+
+
+def _rebuild_skill_progress(user: User) -> int:
+    """Recompute SkillProgress with the same semantics as _update_skill."""
+    db.session.execute(delete(SkillProgress).where(SkillProgress.user_id == user.id))
+    db.session.flush()
+    attempts = (
+        Attempt.query.filter_by(user_id=user.id)
+        .join(SessionItem)
+        .order_by(Attempt.created_at.asc())
+        .all()
+    )
+    rollup: dict[str, dict] = {}
+    for attempt in attempts:
+        name = attempt.session_item.question.question_type
+        row = rollup.setdefault(
+            name,
+            {"attempts": 0, "correct": 0, "total_time_ms": 0, "explanation_total": 0.0, "explanation_count": 0, "recent_mistakes": 0},
+        )
+        row["attempts"] += 1
+        row["correct"] += int(attempt.is_correct)
+        row["total_time_ms"] += attempt.server_elapsed_ms
+        row["recent_mistakes"] = 0 if attempt.is_correct else row["recent_mistakes"] + 1
+        if attempt.explanation_score is not None:
+            row["explanation_total"] += attempt.explanation_score
+            row["explanation_count"] += 1
+    for name, row in rollup.items():
+        db.session.add(SkillProgress(user_id=user.id, skill_name=name, **row))
+    db.session.commit()
+    return len(rollup)
+
+
+def _build_review_queue(user: User, review_pool: list[tuple[str, str]], now: datetime) -> dict:
+    """Populate the spaced-repetition queue with a realistic mix of states."""
+    db.session.execute(delete(ReviewQueueItem).where(ReviewQueueItem.user_id == user.id))
+    db.session.flush()
+
+    attempt_by_question: dict[str, Attempt] = {}
+    for attempt in (
+        Attempt.query.filter_by(user_id=user.id)
+        .join(SessionItem)
+        .order_by(Attempt.created_at.asc())
+        .all()
+    ):
+        attempt_by_question[attempt.session_item.question_id] = attempt
+
+    seen: set[str] = set()
+    entries: list[tuple[str, str]] = []
+    for question_id, reason in reversed(review_pool):
+        if question_id in seen:
+            continue
+        seen.add(question_id)
+        entries.append((question_id, reason))
+        if len(entries) >= 34:
+            break
+
+    counts = {"due": 0, "scheduled": 0, "mastered": 0}
+    for index, (question_id, reason) in enumerate(entries):
+        attempt = attempt_by_question.get(question_id)
+        if index < 9:
+            # Overdue, so the review surface has work waiting on stage.
+            status, interval, due_at = "due", 0, now - timedelta(days=1, hours=index * 3)
+            counts["due"] += 1
+        elif index < 24:
+            status, interval = "due", 1 + index % 3
+            due_at = now + timedelta(days=1 + (index - 9) * .6, hours=index)
+            counts["scheduled" if due_at > now else "due"] += 1
+        else:
+            status, interval, due_at = "mastered", 4, now + timedelta(days=21 + index)
+            counts["mastered"] += 1
+        db.session.add(
+            ReviewQueueItem(
+                user_id=user.id,
+                question_id=question_id,
+                source_attempt_id=attempt.id if attempt else None,
+                last_attempt_id=attempt.id if attempt else None,
+                status=status,
+                reason_code=reason,
+                interval_index=interval,
+                due_at=due_at,
+                created_at=attempt.created_at if attempt else now,
+            )
+        )
+    db.session.commit()
+    counts["total"] = len(entries)
+    return counts
+
+
+# --------------------------------------------------------------------------
+# Economy
+# --------------------------------------------------------------------------
+
+
+def _prepare_profile(user: User, now: datetime) -> PlayerProfile:
+    profile = create_profile(
+        user,
+        {
+            "lawyer_name": user.display_name or "Local Student",
+            "firm_name": "Mercer & Vale",
+            "character_gender": "female",
+        },
+    )
+    profile.cash += DEMO_GRANT
+    profile.lifetime_earnings += DEMO_GRANT
+    # Reputation has to clear each purchase gate before the catalog will sell.
+    # A months-old winning record is exactly what would have produced this.
+    profile.reputation = 78.0
+    profile.last_passive_collected_at = now
+    profile.upkeep_settled_at = now
+    profile.last_active_at = now
+    db.session.add(
+        LedgerEntry(
+            user_id=user.id,
+            kind="demo_seed_grant",
+            # Profile-scoped, matching _scoped_source, so a re-run with a new
+            # profile cannot collide on UNIQUE (user_id, kind, source_id).
+            source_id=f"{profile.id}:{SEED_VERSION}",
+            amount=DEMO_GRANT,
+            balance_after=profile.cash,
+            detail_json={"label": "Retained earnings from prior representation"},
+        )
+    )
+    db.session.commit()
+    return db.session.get(PlayerProfile, profile.id)
+
+
+def _purchase_in_order(profile: PlayerProfile, keys: list[str]) -> list[str]:
+    """Buy every asset whose gates are currently satisfied.
+
+    Ordering is not simply by tier: a tier-gated rival can depend on a
+    connection, which is not itself a tier requirement. So this repeats until it
+    stops making progress and silently leaves anything still gated by office
+    tier, reputation, or an unowned prerequisite for a later pass.
+    """
+    pending = list(keys)
+    bought: list[str] = []
+    while pending:
+        progressed = False
+        deferred: list[str] = []
+        for key in pending:
+            owned = {asset.asset_key for asset in profile.assets}
+            if key in owned:
+                continue
+            item = ASSET_BY_KEY[key]
+            gated = (
+                profile.office_tier < item.get("tier", 0)
+                or profile.reputation < item.get("reputation", 0)
+                or any(requirement not in owned for requirement in item.get("requires", []))
+                or profile.cash < item["cost"]
+            )
+            if gated:
+                deferred.append(key)
+                continue
+            purchase_asset(profile, key)
+            bought.append(key)
+            progressed = True
+            db.session.refresh(profile)
+        if not progressed:
+            break
+        pending = deferred
+    return bought
+
+
+def _build_firm(user: User) -> dict:
+    profile = user.game_profile
+    bought: list[str] = []
+    for tier in range(1, TARGET_TIER + 1):
+        # Connections open up as the office tier rises and are prerequisites for
+        # some tier-gated rivals, so they are retried on every step.
+        bought += _purchase_in_order(profile, [*SEEDED_CONNECTIONS, *_tier_required_asset_keys(tier)])
+        db.session.refresh(profile)
+        missing = _missing_tier_assets(tier, {asset.asset_key for asset in profile.assets})
+        if missing:
+            raise RuntimeError(f"Cannot reach tier {tier}; still missing {missing}")
+        advance_firm(profile, tier)
+        db.session.refresh(profile)
+    bought += _purchase_in_order(profile, [*SEEDED_CONNECTIONS, *SEEDED_COSMETICS])
+    db.session.refresh(profile)
+
+    # A signed client at the current tier makes the case terms on every question
+    # read like real work rather than a walk-in.
+    for client_key in ("property_developer", "wealthy_client", "small_business"):
+        try:
+            select_client(profile, client_key)
+            break
+        except ValueError:
+            continue
+    db.session.refresh(profile)
+    return {"purchased": bought, "office_tier": profile.office_tier}
+
+
+def _advance_story(user: User) -> dict:
+    profile = user.game_profile
+    ensure_story_state(profile)
+    db.session.commit()
+    resolved = []
+    # Principled choices, matching an account with high reputation.
+    for chapter_key, choice_key in (
+        ("one_light_on", "open_door"),
+        ("the_harrow_file", "share_file"),
+        ("city_hall_cipher", "publish_cipher"),
+    ):
+        try:
+            resolved.append(choose_story(profile, chapter_key, choice_key))
+        except ValueError:
+            continue
+        db.session.refresh(profile)
+
+    state = profile.story_state
+    state.intel = max(state.intel, 6)
+    state.influence = max(state.influence, 7)
+    db.session.commit()
+    return {"chapters": [entry["chapter"] for entry in resolved]}
+
+
+def _stage_active_quest(user: User) -> dict:
+    """Leave a quest in flight, after settlements have stopped consuming them.
+
+    Settlement runs `advance_quest`, so anything set active before that point is
+    completed by the recent case history instead of staying open for the demo.
+    """
+    state = user.game_profile.story_state
+    history = [key for key in (state.quest_history_json or []) if key in QUEST_BY_KEY]
+    for key in ("mercer_overflow", "harrow_missing_deed"):
+        if key not in history:
+            history.append(key)
+    active = next(
+        (
+            quest["key"]
+            for quest in (QUEST_BY_KEY[key] for key in ("innocence_archive", "city_hall_trail", "clinic_coverup"))
+            if quest["key"] not in history and quest["tier"] <= user.game_profile.office_tier
+        ),
+        None,
+    )
+    state.quest_history_json = history
+    state.active_quest_key = active
+    state.quest_progress = 2 if active else 0
+    db.session.commit()
+    return {"completed_quests": history, "active_quest": active}
+
+
+def _settle_recent(user: User) -> dict:
+    """Run real settlements on the most recent coached attempts.
+
+    This is what makes the ledger, reputation, streaks, and case counters real
+    rather than hand-written: every row goes through game.settle_attempt.
+    """
+    profile = user.game_profile
+    attempts = (
+        Attempt.query.filter_by(user_id=user.id)
+        .join(SessionItem)
+        .join(StudySession)
+        .filter(StudySession.practice_style.in_(["deep", "review"]))
+        .order_by(Attempt.created_at.desc())
+        .limit(SETTLED_ATTEMPTS)
+        .all()
+    )
+    settled = 0
+    for attempt in reversed(attempts):
+        item = attempt.session_item
+        if item.game_context_json is None:
+            item.game_context_json = snapshot_case_context(profile)
+            db.session.commit()
+        coaching = (attempt.feedback_json or {}).get("coaching") or {}
+        if settle_attempt(attempt, coaching) is not None:
+            settled += 1
+        db.session.commit()
+        db.session.refresh(profile)
+    return {"settled": settled, "cash": profile.cash, "reputation": profile.reputation}
+
+
+def _align_profile_counters(user: User) -> None:
+    """Make the firm's lifetime counters match the full study history.
+
+    Settlements only cover the recent window, but the account is supposed to
+    look like months of work, so the case counters are extended to the whole
+    attempt history while streaks stay consistent with the recent record.
+    """
+    profile = user.game_profile
+    attempts = Attempt.query.filter_by(user_id=user.id).all()
+    correct = sum(attempt.is_correct for attempt in attempts)
+    validated = sum(
+        1
+        for attempt in attempts
+        if attempt.is_correct and (attempt.explanation_score or 0) >= .5
+    )
+    profile.total_cases = max(profile.total_cases, len(attempts))
+    profile.total_correct = max(profile.total_correct, correct)
+    profile.total_validated_correct = max(profile.total_validated_correct, validated)
+    profile.best_streak = max(profile.best_streak, 14)
+    profile.lifetime_rent_paid = max(profile.lifetime_rent_paid, 96_000)
+    db.session.commit()
+
+
+def _refresh_daily(user: User) -> None:
+    profile = user.game_profile
+    today = utcnow().date()
+    daily = DailyProgress.query.filter_by(profile_id=profile.id, activity_date=today).first()
+    if not daily:
+        daily = DailyProgress(profile_id=profile.id, activity_date=today)
+        db.session.add(daily)
+    # Two of the three daily goals already met and unclaimed, so a reward can be
+    # collected live without needing to finish a case first.
+    daily.cases_completed = max(daily.cases_completed, 12)
+    daily.claimed_json = [5]
+    db.session.commit()
+
+
+# --------------------------------------------------------------------------
+# Live A/B staging
+# --------------------------------------------------------------------------
+
+
+def _stage_live_trial(user: User, *, style: str = "infinite", attempts: int = 60) -> dict:
+    """Leave one live session whose third question carries a prompted trial.
+
+    Variant assignment is a hash of user, question, position, and style, so a
+    fresh session lands on the invisible control arm about a quarter of the
+    time. Sessions are created and discarded here until one has a `prompt`
+    variant at position 2, and that session is left open. `create_study_session`
+    returns the resumable session, so the demo cannot draw a different one.
+
+    Positions 0 and 1 are pre-answered, leaving the learner one question away
+    from the brief.
+    """
+    for existing in StudySession.query.filter(
+        StudySession.user_id == user.id,
+        StudySession.status.in_(["in_progress", "paused"]),
+    ).all():
+        db.session.delete(existing)
+    db.session.commit()
+
+    for round_index in range(attempts):
+        session = create_study_session(user, count=8, practice_style=style)
+        item = SessionItem.query.filter_by(session_id=session.id, position=2).first()
+        if item and item.strategy_variant == "prompt" and item.strategy_key:
+            for position in (0, 1):
+                pre = SessionItem.query.filter_by(session_id=session.id, position=position).one()
+                serialize_item(pre)
+                question = pre.question
+                elapsed = 62_000 + position * 9_000
+                pre.active_elapsed_ms = elapsed
+                pre.timer_started_at = None
+                pre.completed_at = utcnow()
+                db.session.add(
+                    Attempt(
+                        user_id=user.id,
+                        session_item_id=pre.id,
+                        idempotency_key=f"{SEED_VERSION}:live:{session.id}:{position}",
+                        selected_label=question.correct_answer,
+                        is_correct=True,
+                        confidence=4,
+                        strategy_key=pre.strategy_key,
+                        strategy_variant=pre.strategy_variant,
+                        strategy_prompt_ms=0,
+                        evidence_class=EVIDENCE_CLASS[style],
+                        server_elapsed_ms=elapsed,
+                        client_elapsed_ms=elapsed,
+                        feedback_json=_feedback_payload(question, question.correct_answer, True, None),
+                        coaching_status="completed",
+                        coaching_model=SEED_VERSION,
+                        coached_at=utcnow(),
+                    )
+                )
+                db.session.flush()
+            session.current_index = 2
+            session.pending_attempt_id = None
+            session.status = "in_progress"
+            db.session.commit()
+            # Serve the trial question so the item is frozen and timing starts
+            # only when the demo actually opens the tab.
+            payload = serialize_item(item)
+            return {
+                "session_id": session.id,
+                "practice_style": style,
+                "position": item.position,
+                "question_number": item.position + 1,
+                "strategy_key": item.strategy_key,
+                "strategy_title": STRATEGIES[item.strategy_key]["title"],
+                "strategy_section": STRATEGIES[item.strategy_key]["section"],
+                "variant": item.strategy_variant,
+                "renders_prompt": bool(payload.get("strategy_trial")),
+                "attempts_needed": round_index + 1,
+                "url": f"http://localhost:5173/cases/{session.id}",
+            }
+        # Discard and draw a different question set.
+        db.session.delete(session)
+        db.session.commit()
+    raise RuntimeError("Could not stage a prompted strategy trial after repeated attempts.")
+
+
+# --------------------------------------------------------------------------
+# Verification
+# --------------------------------------------------------------------------
+
+
+def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
+    performance = performance_snapshot(user)
+    game = serialize_game(user.game_profile, include_catalog=True)
+    lab = performance["strategy_lab"]
+    supported = [result for result in lab["results"] if result["status"] == "supported"]
+    problems: list[str] = []
+
+    if performance["overall"]["attempts"] < 400:
+        problems.append(f"only {performance['overall']['attempts']} scored attempts")
+    if (performance["overall"].get("accuracy_delta") or 0) <= 0:
+        problems.append("recent accuracy is not trending up")
+    if len(supported) < 4:
+        problems.append(f"only {len(supported)} supported strategies")
+    lifts = [result["lift"] for result in supported if result["lift"] is not None]
+    if not any(lift <= 2 for lift in lifts):
+        problems.append("no neutral or negative strategy arm")
+    if not any(lift >= 12 for lift in lifts):
+        problems.append("no clearly winning strategy arm")
+    if not lab["strongest"]:
+        problems.append("no strongest strategy named")
+    if sum(result["skipped"] for result in lab["results"]) == 0:
+        problems.append("no skipped strategy prompts")
+    if unplaced:
+        problems.append(f"{unplaced} planned strategy trials had no eligible session slot")
+    if len(performance["skills"]) < 12:
+        problems.append(f"only {len(performance['skills'])} skills in the breakdown")
+    thin = [skill["name"] for skill in performance["skills"] if skill["attempts"] < 5]
+    if thin:
+        problems.append(f"thin skill samples: {thin}")
+    if performance["review"]["due"] < 5:
+        problems.append("review queue has too little due work")
+    if not game["story"]["active_quest"]:
+        problems.append("no quest left in flight for the story screen")
+    if performance["readiness"]["status"] != "ready":
+        problems.append("readiness did not reach 'ready'")
+    if not user.onboarding_complete:
+        problems.append("onboarding overlay would gate the demo")
+    if game["office_tier"] < TARGET_TIER:
+        problems.append(f"office tier is {game['office_tier']}")
+    cosmetics = [
+        key for key in game["owned_assets"]
+        if ASSET_BY_KEY.get(key, {}).get("type") == "cosmetic"
+    ]
+    if len(cosmetics) < 6:
+        problems.append(f"only {len(cosmetics)} cosmetics owned")
+    affordable = [
+        asset for asset in game["catalog"]["assets"]
+        if asset["available"] and not asset["owned"] and asset["cost"] <= game["cash"]
+    ]
+    if not affordable:
+        problems.append("nothing is affordable for a live purchase")
+    if not live.get("renders_prompt"):
+        problems.append("staged live session does not render a prompt")
+
+    return {
+        "problems": problems,
+        "attempts": performance["overall"]["attempts"],
+        "accuracy": performance["overall"]["accuracy"],
+        "accuracy_delta": performance["overall"]["accuracy_delta"],
+        "pace_adherence": performance["overall"]["pace_adherence"],
+        "reasoning": performance["overall"]["reasoning"],
+        "speedrun_index": performance["overall"]["speedrun_index"],
+        "evidence": performance["overall"]["evidence"],
+        "skills": len(performance["skills"]),
+        "trend_sessions": len(performance["trend"]),
+        "readiness": performance["readiness"],
+        "review": {key: performance["review"][key] for key in ("due", "scheduled", "mastered", "recovery_rate")},
+        "confidence": performance["confidence"],
+        "strategy_lab": {
+            "trials_completed": lab["trials_completed"],
+            "strategies_tested": lab["strategies_tested"],
+            "supported": [
+                {
+                    "title": result["title"],
+                    "section": "LR" if result["section"] == "Logical Reasoning" else "RC",
+                    "accuracy": result["accuracy"],
+                    "control_accuracy": result["control_accuracy"],
+                    "lift": result["lift"],
+                    "sample": result["sample"],
+                    "control_sample": result["control_sample"],
+                    "skipped": result["skipped"],
+                }
+                for result in supported
+            ],
+            "strongest": lab["strongest"]["title"] if lab["strongest"] else None,
+            "statuses": {
+                status: sum(result["status"] == status for result in lab["results"])
+                for status in ("supported", "directional", "forming")
+            },
+        },
+        "firm": {
+            "office": game["office"]["name"],
+            "tier": game["office_tier"],
+            "region": game["office"]["region"],
+            "cash": game["cash"],
+            "reputation": game["reputation"],
+            "valuation": game["firm_valuation"],
+            "total_cases": game["total_cases"],
+            "owned_assets": len(game["owned_assets"]),
+            "cosmetics_owned": len(cosmetics),
+            "staff_owned": sum(
+                ASSET_BY_KEY.get(key, {}).get("type") == "staff" for key in game["owned_assets"]
+            ),
+            "regions_unlocked": sorted({FIRM_TIERS[tier]["region"] for tier in range(game["office_tier"] + 1)}),
+            "story": {
+                "alignment": game["story"]["alignment"],
+                "ethics": game["story"]["ethics"],
+                "chapters_seen": sum(chapter["seen"] for chapter in game["story"]["chapters"]),
+                "completed_quests": game["story"]["completed_quests"],
+                "active_quest": (game["story"]["active_quest"] or {}).get("title"),
+            },
+            "live_purchase_options": [
+                {"key": asset["key"], "name": asset["name"], "cost": asset["cost"], "type": asset["type"]}
+                for asset in sorted(affordable, key=lambda asset: asset["cost"])[:6]
+            ],
+        },
+        "live_demo": live,
+    }
+
+
+def seed_demo(email: str) -> dict:
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        user = User(email=email, display_name="Local Student")
+        db.session.add(user)
+        db.session.commit()
+    _reset_learner(user)
+    user = User.query.filter_by(email=email).one()
+    # The onboarding overlay gates every route on a fresh profile.
+    user.onboarding_complete = True
+    user.story_intro_seen = True
+    user.target_minutes = 20
+    db.session.commit()
+
+    random.seed(RANDOM_SEED)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+
+    _prepare_profile(user, now)
+    pool = QuestionPool()
+    history = _write_history(user, pool, now)
+    skills = _rebuild_skill_progress(user)
+    review = _build_review_queue(user, history["review_pool"], now)
+    firm = _build_firm(user)
+    story = _advance_story(user)
+    settled = _settle_recent(user)
+    story |= _stage_active_quest(user)
+    _align_profile_counters(user)
+    _refresh_daily(user)
+    live = _stage_live_trial(user)
+
+    report = _verify(user, live, history["stats"].get("trials_unplaced", 0))
+    report["seeded"] = {
+        **history["stats"],
+        "skills_tracked": skills,
+        "review_queue": review,
+        "questions_used": len(pool.used),
+        "assets_purchased": len(firm["purchased"]),
+        "story": story,
+        "settlements": settled["settled"],
+    }
+    return report
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Seed the local LSAT Speedrun demo account.")
+    parser.add_argument("--email", default=DEFAULT_EMAIL)
+    parser.add_argument("--apply", action="store_true", help="Write the demo state. Without this flag nothing changes.")
+    parser.add_argument("--no-backup", action="store_true", help="Skip the automatic pre-seed database copy.")
+    args = parser.parse_args()
+
+    app = create_app({"AUTO_SEED": False, "DIAGNOSTIC_SESSION_SIZE": DIAGNOSTIC_QUESTIONS})
+    with app.app_context():
+        _assert_local_only(app, args.email)
+        if not args.apply:
+            user = User.query.filter_by(email=args.email).first()
+            print(json.dumps(
+                {
+                    "email": args.email,
+                    "exists": bool(user),
+                    "database": str(db.engine.url.database),
+                    "sessions": StudySession.query.filter_by(user_id=user.id).count() if user else 0,
+                    "attempts": Attempt.query.filter_by(user_id=user.id).count() if user else 0,
+                    "eligible_questions": Question.query.filter(Question.source.like(f"{ALLOWED_SOURCE_PREFIX}%")).count(),
+                    "next": "Re-run with --apply to install the demo account.",
+                },
+                indent=2,
+            ))
+            return 0
+        backup = None if args.no_backup else _backup_database()
+        report = seed_demo(args.email)
+        report["database_backup"] = backup
+        print(json.dumps(report, indent=2, default=str))
+        return 1 if report["problems"] else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

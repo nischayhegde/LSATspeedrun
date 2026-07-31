@@ -54,7 +54,15 @@ def _aware_utc(value):
     return value.astimezone(timezone.utc)
 
 
-def find_resumable_session(user: User) -> StudySession | None:
+def list_resumable_sessions(user: User) -> list[StudySession]:
+    """All practice runs still occupying a queue slot, most recent first.
+
+    A run occupies a slot while it is in progress or paused, or while it is
+    sitting on an unresolved debrief (`pending_attempt_id` set) even after its
+    status has flipped to "completed" — the student still owes that run an
+    explicit acknowledgement. This list backs both the queue-cap check in
+    `create_study_session` and the `/study-sessions/active` endpoint.
+    """
     return (
         StudySession.query.filter(
             StudySession.user_id == user.id,
@@ -65,8 +73,21 @@ def find_resumable_session(user: User) -> StudySession | None:
             ),
         )
         .order_by(StudySession.started_at.desc())
-        .first()
+        .all()
     )
+
+
+def find_resumable_session(user: User) -> StudySession | None:
+    """The single most-recently-started queued practice run, if any.
+
+    Kept for call sites that only ever cared about one representative active
+    run (the `next_route` shortcut, the daily docket's "resume" action, the
+    Office/Training pages' one-tap continue). Those surfaces are unaffected by
+    the multi-run queue: picking the most recently started run is a sane
+    single answer even when several runs are queued.
+    """
+    sessions = list_resumable_sessions(user)
+    return sessions[0] if sessions else None
 
 
 def find_active_diagnostic(user: User) -> StudySession | None:
@@ -378,6 +399,28 @@ def _questions_due_for_review(user_id: str, count: int) -> list[Question]:
     return [item.question for item in due]
 
 
+def _pause_other_active_practice_sessions(user_id: str, *, exclude_id: str | None = None) -> None:
+    """Enforce "at most one actively-ticking practice timer per student".
+
+    Multiple practice runs may be queued (paused) at once, but an item's
+    `timer_started_at` only means anything while the student is actually
+    looking at that item. Whenever a run is about to become "in_progress"
+    (freshly created, or explicitly resumed), every other run that is still
+    marked in_progress must be paused first — otherwise its last item would
+    keep silently accumulating wall-clock elapsed time while the student is on
+    a different run, corrupting pace/evidence data downstream.
+    """
+    others = StudySession.query.filter(
+        StudySession.user_id == user_id,
+        StudySession.mode == "practice",
+        StudySession.status == "in_progress",
+    )
+    if exclude_id:
+        others = others.filter(StudySession.id != exclude_id)
+    for other in others.all():
+        pause_study_session(other)
+
+
 def create_study_session(
     user: User,
     *,
@@ -391,10 +434,10 @@ def create_study_session(
     profile = lock_user_profile(user.id)
     if not profile:
         raise ValueError("onboarding_required")
-    active = find_resumable_session(user)
-    if active:
+    queue_cap = int(current_app.config["PRACTICE_QUEUE_MAX"])
+    if len(list_resumable_sessions(user)) >= queue_cap:
         db.session.commit()
-        return active
+        raise ValueError("queue_full")
 
     if practice_style not in PRACTICE_STYLES:
         raise ValueError("invalid_practice_style")
@@ -415,6 +458,13 @@ def create_study_session(
         if practice_style == "review":
             raise ValueError("no_reviews_due")
         raise RuntimeError("No Hugging Face LSAT questions are available")
+
+    # A new run always starts in_progress (see the StudySession default), so
+    # whatever else was ticking must be paused first — see
+    # `_pause_other_active_practice_sessions` for why this matters. Deferred
+    # to this point so a validation failure above never has the side effect
+    # of pausing a run that was otherwise left untouched.
+    _pause_other_active_practice_sessions(user.id)
 
     session = StudySession(
         user_id=user.id,
@@ -521,7 +571,30 @@ def resume_study_session(session: StudySession) -> StudySession:
         return session
     if session.status != "paused":
         raise ValueError("session_complete")
+    if session.mode == "practice":
+        _pause_other_active_practice_sessions(session.user_id, exclude_id=session.id)
     session.status = "in_progress"
+    db.session.commit()
+    return session
+
+
+def abandon_study_session(session: StudySession) -> StudySession:
+    """Let a student discard an unfinished run instead of letting it sit.
+
+    Already-graded attempts inside the run are untouched, so nothing already
+    scored or recorded for spaced review is lost; this only frees the queue
+    slot the run was occupying (see `list_resumable_sessions`), which matters
+    once the queue is at its cap and a new run cannot start otherwise.
+    """
+    if session.status not in {"in_progress", "paused"}:
+        raise ValueError("session_complete")
+    if session.pending_attempt_id:
+        raise ValueError("debrief_required")
+    # Deliberately leave completed_at unset: daily_docket_snapshot treats any
+    # non-null completed_at as "done today" without checking status, and an
+    # abandoned Sprint or Review run must not silently mark that slot cleared.
+    session.status = "abandoned"
+    session.ended_by_user = True
     db.session.commit()
     return session
 

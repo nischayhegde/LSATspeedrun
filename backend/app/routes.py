@@ -36,6 +36,7 @@ from .jobs import (
 from .models import AiJob, Attempt, Question, SessionItem, StudySession, User, utcnow
 from .seed import SOURCE_PREFIX
 from .services import (
+    abandon_study_session,
     calculate_session_summary,
     create_diagnostic_session,
     create_study_session,
@@ -44,6 +45,7 @@ from .services import (
     find_active_diagnostic,
     find_resumable_session,
     finish_infinite_session,
+    list_resumable_sessions,
     pause_study_session,
     performance_snapshot,
     resume_study_session,
@@ -535,6 +537,13 @@ def start_practice_session():
         )
     except ValueError as exc:
         code = str(exc)
+        if code == "queue_full":
+            cap = int(current_app.config["PRACTICE_QUEUE_MAX"])
+            return error(
+                code,
+                f"You already have {cap} practice runs queued. Discard one to start another.",
+                409,
+            )
         messages = {
             "invalid_practice_style": "Choose Sprint, Deep Practice, Infinite, or Review.",
             "invalid_feedback_policy": "Choose immediate or delayed feedback.",
@@ -551,6 +560,24 @@ def start_practice_session():
 def current_study_session():
     session = find_resumable_session(g.current_user)
     return jsonify({"session": serialize_session(session) if session else None})
+
+
+@api.get("/study-sessions/active")
+@require_auth
+def active_study_sessions():
+    """List every queued practice run (in progress, paused, or awaiting a
+    debrief) so the Practice tab can render more than one run at a time.
+
+    Diagnostics are intentionally excluded — they remain single-active, per
+    `find_active_diagnostic` / `/diagnostics/current`.
+    """
+    sessions = list_resumable_sessions(g.current_user)
+    return jsonify(
+        {
+            "sessions": [serialize_session(session, False) for session in sessions],
+            "queue_cap": int(current_app.config["PRACTICE_QUEUE_MAX"]),
+        }
+    )
 
 
 @api.patch("/study-sessions/<session_id>/items/<item_id>/draft")
@@ -620,6 +647,22 @@ def resume_session(session_id: str):
     except ValueError:
         return error("session_complete", "This practice session is already complete.", 409)
     return jsonify({"session": serialize_session(session)})
+
+
+@api.post("/study-sessions/<session_id>/abandon")
+@require_auth
+def abandon_session(session_id: str):
+    session = _owned_session(session_id)
+    if not session:
+        return error("session_not_found", "That practice session was not found.", 404)
+    try:
+        abandon_study_session(session)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "debrief_required":
+            return error(code, "Finish reviewing the current answer before discarding this run.", 409)
+        return error("session_complete", "This practice session is already finished.", 409)
+    return jsonify({"session": serialize_session(session, False)})
 
 
 @api.post("/study-sessions/<session_id>/finish")

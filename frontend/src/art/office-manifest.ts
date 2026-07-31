@@ -4,7 +4,7 @@ export type OfficeVisualZone =
   | 'desk' | 'lighting' | 'workstation' | 'library' | 'conference'
   | 'evidence' | 'simulation' | 'media' | 'operations' | 'mobility'
   | 'network' | 'archive' | 'jurisdiction' | 'campus' | 'prestige'
-  | 'staff-floor' | 'relationship-wall' | 'acquisition-gallery'
+  | 'staff-floor' | 'relationship-wall' | 'acquisition-gallery' | 'decor'
 
 export type OfficeAssetVisual = {
   zone: OfficeVisualZone
@@ -55,6 +55,24 @@ export const OFFICE_ASSET_MANIFEST = {
   chronicle_vault: visual('archive', 'Civilization chronicle vault', 'Archive portal', 2),
   planetary_command: visual('operations', 'Planetary justice command', 'Operations table', 4),
   justice_constellation: visual('prestige', 'Justice constellation', 'Legacy installation', 1),
+
+  // Cosmetics share one zone but never merge into a staged installation: each
+  // one is an individual authored prop in a reserved spot, so `stage` is only a
+  // stable ordering hint for the inventory list.
+  bar_certificate: visual('decor', 'Framed bar certificate', 'Front wall', 1),
+  banker_lamp: visual('decor', 'Brass banker’s lamp', 'Partner desk', 2),
+  persian_rug: visual('decor', 'Persian rug', 'Entry floor', 3),
+  fig_tree: visual('decor', 'Potted fig tree', 'Window corner', 4),
+  chesterfield: visual('decor', 'Leather chesterfield', 'Client reading corner', 5),
+  reporter_wall: visual('decor', 'Bound reporter shelf', 'Front wall', 6),
+  grandfather_clock: visual('decor', 'Grandfather clock', 'Front wall', 7),
+  skyline_painting: visual('decor', 'Commissioned skyline painting', 'Conference-side wall', 8),
+  trophy_shelf: visual('decor', 'Advocacy trophy shelf', 'Firm-floor wall', 9),
+  justice_bust: visual('decor', 'Marble bust of Justice', 'Front wall plinth', 10),
+  globe_bar: visual('decor', 'Antique globe bar', 'Front wall lounge', 11),
+  stained_glass: visual('decor', 'Stained-glass panel', 'Window wall', 12),
+  charter_vitrine: visual('decor', 'First-charter vitrine', 'Entry gallery', 13),
+  orchid_wall: visual('decor', 'Living orchid wall', 'Entry wall', 14),
 
   paralegal: visual('staff-floor', 'Maya’s active desk', 'Firm floor', 1),
   junior_associate: visual('staff-floor', 'Theo’s active desk', 'Firm floor', 2),

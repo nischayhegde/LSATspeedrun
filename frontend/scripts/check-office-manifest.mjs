@@ -21,7 +21,7 @@ const pythonList = (name) => {
   return next < 0 ? remainder : remainder.slice(0, next)
 }
 
-const catalogSections = ['UPGRADES', 'STAFF', 'CONNECTIONS', 'RIVALS']
+const catalogSections = ['UPGRADES', 'STAFF', 'CONNECTIONS', 'RIVALS', 'COSMETICS']
 const catalogKeys = new Map()
 for (const section of catalogSections) {
   const keys = []

@@ -18,7 +18,7 @@ export type GameRequirement = {
 
 export type GameAsset = {
   key: string
-  type: 'upgrade' | 'staff' | 'connection' | 'rival'
+  type: 'upgrade' | 'staff' | 'connection' | 'rival' | 'cosmetic'
   name: string
   cost: number
   list_cost?: number
@@ -327,7 +327,7 @@ export type StudySession = {
   mode: 'practice' | 'diagnostic'
   practice_style: 'deep' | 'speedrun' | 'infinite' | 'review' | 'diagnostic'
   feedback_policy: 'immediate' | 'delayed'
-  status: 'in_progress' | 'paused' | 'completed'
+  status: 'in_progress' | 'paused' | 'completed' | 'abandoned'
   target_minutes: number
   accommodation_multiplier: number
   section_plan: Array<{ index: number; label: string; start: number; end: number; questions: number; minutes: number }>

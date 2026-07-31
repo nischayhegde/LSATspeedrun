@@ -219,11 +219,275 @@ function addCampus(group: THREE.Object3D, p: typeof palettes[number], ocean = fa
   addGlobe(group, p, .62, [0, 2.0, .15])
 }
 
+/**
+ * Cosmetics are single objects rather than rooms full of systems, so each card
+ * frames one prop on a plinth in the same lit interior every other card uses.
+ */
+function addPlinth(group: THREE.Object3D, p: typeof palettes[number], height = 1.15) {
+  box(group, [2.4, height, 1.9], material(0x1d2429, .58), [0, height / 2, .2], undefined, .06)
+  box(group, [2.62, .12, 2.1], material(p.brass, .28, .78), [0, height + .05, .2], undefined, .03)
+  return height + .11
+}
+
+function addCosmetic(group: THREE.Object3D, asset: RenderAsset, p: typeof palettes[number]) {
+  const key = asset.key
+  const brass = material(p.brass, .24, .8)
+  const walnut = material(p.wood, .52, .05)
+  const leaf = material(0x2f5a46, .9)
+  const leafLight = material(0x437a5c, .88)
+  const stone = material(0xe3ded1, .36, .04)
+  const glass = material(0xa5cbd6, .18, .1, p.glow, .18)
+
+  if (key === 'bar_certificate' || key === 'skyline_painting') {
+    const skyline = key === 'skyline_painting'
+    box(group, [3.4, 2.55, .18], skyline ? brass : walnut, [0, 2.55, -.35], undefined, .08)
+    box(group, [2.75, 1.95, .06], material(skyline ? 0xc9a877 : 0xe3d6b2, .88), [0, 2.55, -.22], undefined, .03)
+    if (skyline) {
+      for (let building = 0; building < 9; building += 1) {
+        const height = .35 + ((building * 5) % 7) * .16
+        box(group, [.24, height, .04], material(building % 3 ? 0x1d2a33 : 0x2b3a44, .8), [-1.1 + building * .28, 1.78 + height / 2, -.18], undefined, .01)
+        if (building % 3 === 0) box(group, [.08, .07, .02], material(p.glow, .2, .3, p.glow, .8), [-1.1 + building * .28, 2.1 + height * .5, -.16], undefined, .005)
+      }
+    } else {
+      for (let line = 0; line < 5; line += 1) box(group, [1.5 - line * .18, .07, .03], material(line ? 0x3a3129 : p.brass, .6, line ? .05 : .7), [0, 3.15 - line * .32, -.18], undefined, .01)
+      add(group, new THREE.CylinderGeometry(.22, .22, .05, 24), brass, [-.85, 1.72, -.16], [Math.PI / 2, 0, 0])
+    }
+    return
+  }
+
+  if (key === 'stained_glass') {
+    // The same leaded transom the office scene sets into the window head: a
+    // grid of small quarries in the room's amber and teal rather than a wheel
+    // of primaries.
+    const tints = [0x27506a, 0x9c7a3c, 0x2a5747, 0x9c7a3c, 0x6f3630]
+    const lead = material(0x14181b, .6)
+    box(group, [4.3, 1.9, .16], brass, [0, 2.6, -.34], undefined, .05)
+    for (let light = 0; light < 5; light += 1) {
+      const x = -1.66 + light * .83
+      for (let course = 0; course < 3; course += 1) {
+        const y = 2.05 + course * .55
+        const tint = tints[(light + course * 2) % tints.length]
+        const pane = box(group, [.74, .46, .05], material(tint, .38, .1, tint, .22), [x, y, -.22], undefined, .01)
+        pane.castShadow = false
+        const quarry = add(group, new THREE.CircleGeometry(.13, 4), material(course % 2 ? 0x9c7a3c : 0x2a5747, .34, .1, course % 2 ? 0x9c7a3c : 0x2a5747, .3), [x, y, -.185])
+        quarry.castShadow = false
+      }
+      box(group, [.06, 1.72, .06], lead, [x - .415, 2.6, -.19], undefined, .01)
+    }
+    box(group, [.06, 1.72, .06], lead, [1.66 + .415, 2.6, -.19], undefined, .01)
+    for (const y of [2.32, 2.88]) box(group, [3.36, .06, .06], lead, [0, y, -.19], undefined, .01)
+    const roundel = add(group, new THREE.CircleGeometry(.36, 22), material(0x9c7a3c, .34, .1, 0x9c7a3c, .34), [0, 2.6, -.17])
+    roundel.castShadow = false
+    add(group, new THREE.TorusGeometry(.36, .04, 10, 28), lead, [0, 2.6, -.16])
+    box(group, [.46, .05, .04], lead, [0, 2.7, -.14], undefined, .01)
+    box(group, [.05, .28, .04], lead, [0, 2.56, -.14], undefined, .01)
+    for (const side of [-1, 1]) add(group, new THREE.CylinderGeometry(.1, .035, .07, 12), lead, [side * .22, 2.64, -.14])
+    return
+  }
+
+  const top = addPlinth(group, p, key === 'persian_rug' ? .55 : 1.1)
+
+  if (key === 'persian_rug') {
+    box(group, [2.5, .07, 1.95], material(0x1f3d52, .96), [0, top, .2], undefined, .02)
+    const field = add(group, new THREE.PlaneGeometry(2.2, 1.65), material(0x7d3128, .96), [0, top + .05, .2], [-Math.PI / 2, 0, 0])
+    field.castShadow = false
+    const medallion = add(group, new THREE.CircleGeometry(.5, 32), material(0x1f3d52, .96), [0, top + .06, .2], [-Math.PI / 2, 0, 0])
+    medallion.scale.y = .6
+    medallion.castShadow = false
+    for (let motif = 0; motif < 6; motif += 1) {
+      const dot = add(group, new THREE.CircleGeometry(.13, 16), material(0xc9af83, .95), [-.9 + motif * .36, top + .06, motif % 2 ? -.42 : .82], [-Math.PI / 2, 0, 0])
+      dot.scale.y = .6
+      dot.castShadow = false
+    }
+    return
+  }
+
+  if (key === 'banker_lamp') {
+    add(group, new THREE.CylinderGeometry(.42, .5, .11, 24), brass, [0, top + .06, .2])
+    add(group, new THREE.CylinderGeometry(.07, .085, .72, 16), brass, [0, top + .45, .2])
+    box(group, [1.28, .3, .52], material(0x2f6b52, .3, .12, 0x1c4433, .5), [0, top + .92, .2], undefined, .14)
+    box(group, [1.1, .04, .4], brass, [0, top + .77, .2], undefined, .01)
+    const bulb = add(group, new THREE.SphereGeometry(.12, 18, 12), material(0xffe0a8, .3, .05, 0xffbe6a, 1.4), [0, top + .72, .2])
+    bulb.castShadow = false
+    const light = new THREE.PointLight(0xffc878, 2.6, 4.5, 1.6)
+    light.position.set(0, top + .68, .55)
+    group.add(light)
+    return
+  }
+
+  if (key === 'fig_tree') {
+    add(group, new THREE.CylinderGeometry(.58, .44, .95, 24), material(0x9a5a3f, .9), [0, top + .48, .2])
+    add(group, new THREE.CylinderGeometry(.5, .5, .08, 20), material(0x2b201a, .95), [0, top + .95, .2])
+    add(group, new THREE.CylinderGeometry(.09, .13, 1.5, 12), walnut, [.05, top + 1.7, .2], [0, 0, -.05])
+    for (let clump = 0; clump < 9; clump += 1) {
+      const angle = clump / 9 * Math.PI * 2 + .6
+      const blade = add(group, new THREE.SphereGeometry(.42 + (clump % 3) * .08, 18, 12), clump % 2 ? leaf : leafLight, [Math.cos(angle) * (.3 + (clump % 3) * .2), top + 2.35 + (clump % 4) * .3, .2 + Math.sin(angle) * .28])
+      blade.scale.set(1.1, .6, .9)
+      blade.rotation.z = Math.cos(angle) * .35
+    }
+    return
+  }
+
+  if (key === 'chesterfield') {
+    const oxblood = material(0x5f2b26, .5)
+    box(group, [3.0, .55, 1.35], oxblood, [0, top + .38, .3], undefined, .24)
+    box(group, [3.0, 1.1, .4], oxblood, [0, top + 1.05, -.28], [-.09, 0, 0], .2)
+    add(group, new THREE.CylinderGeometry(.2, .2, 3.0, 16), oxblood, [0, top + 1.58, -.36], [0, 0, Math.PI / 2])
+    for (const x of [-1.36, 1.36]) {
+      box(group, [.32, .8, 1.4], oxblood, [x, top + .6, .3], undefined, .14)
+      add(group, new THREE.CylinderGeometry(.18, .18, 1.4, 16), oxblood, [x, top + 1.02, .3], [Math.PI / 2, 0, 0])
+      for (const z of [-.2, .8]) add(group, new THREE.CylinderGeometry(.07, .09, .3, 10), brass, [x * .9, top + .1, z])
+    }
+    for (let column = 0; column < 5; column += 1) for (let row = 0; row < 2; row += 1) {
+      add(group, new THREE.SphereGeometry(.055, 12, 8), material(0x351713, .6), [-.9 + column * .45, top + .85 + row * .4, -.1])
+    }
+    return
+  }
+
+  if (key === 'reporter_wall') {
+    const spines = [0x6d3a2c, 0x2f4a3c, 0x8a6a34, 0x40323f]
+    box(group, [3.1, 2.7, .62], walnut, [0, top + 1.35, -.15], undefined, .06)
+    box(group, [3.3, .16, .72], brass, [0, top + 2.76, -.15], undefined, .04)
+    for (let row = 0; row < 4; row += 1) {
+      const shelfY = top + .2 + row * .66
+      box(group, [2.9, .09, .6], material(0x241c19, .7), [0, shelfY, -.1], undefined, .02)
+      for (let volume = 0; volume < 9; volume += 1) {
+        const height = .42 + ((volume + row * 3) % 4) * .06
+        box(group, [.26, height, .42], material(spines[(volume + row) % spines.length], .74), [-1.15 + volume * .29, shelfY + .06 + height / 2, .02], [0, 0, ((volume + row) % 3 - 1) * .02], .015)
+        box(group, [.17, .04, .03], brass, [-1.15 + volume * .29, shelfY + .06 + height * .76, .24], undefined, .008)
+      }
+    }
+    return
+  }
+
+  if (key === 'grandfather_clock') {
+    // A longcase clock is tall enough that the card's fixed frame cropped the
+    // hood off entirely, leaving a bare post. The case is drawn shorter here so
+    // the dial, pendulum and cornice all sit inside the shot.
+    const base = top - .55
+    box(group, [1.05, .2, .68], walnut, [0, base + .1, .1], undefined, .03)
+    box(group, [.88, 2.15, .55], walnut, [0, base + 1.24, .1], undefined, .04)
+    box(group, [1.05, .78, .64], walnut, [0, base + 2.7, .1], undefined, .05)
+    box(group, [1.15, .15, .72], brass, [0, base + 3.15, .1], undefined, .04)
+    add(group, new THREE.SphereGeometry(.1, 16, 12), brass, [0, base + 3.3, .1])
+    add(group, new THREE.CylinderGeometry(.29, .29, .06, 30), material(0xe8dcbc, .85), [0, base + 2.7, .44], [Math.PI / 2, 0, 0])
+    add(group, new THREE.TorusGeometry(.31, .035, 12, 32), brass, [0, base + 2.7, .46])
+    for (let mark = 0; mark < 12; mark += 1) {
+      const angle = mark / 12 * Math.PI * 2
+      box(group, [.03, .06, .02], material(0x241c19, .6), [Math.cos(angle) * .22, base + 2.7 + Math.sin(angle) * .22, .49], undefined, .005)
+    }
+    box(group, [.03, .2, .02], material(0x241c19, .6), [0, base + 2.79, .5], undefined, .005)
+    box(group, [.14, .03, .02], material(0x241c19, .6), [.06, base + 2.7, .5], undefined, .005)
+    const pane = box(group, [.5, 1.35, .03], glass, [0, base + 1.4, .39], undefined, .01)
+    pane.castShadow = false
+    add(group, new THREE.CylinderGeometry(.02, .02, 1.05, 10), brass, [0, base + 1.55, .3])
+    add(group, new THREE.CylinderGeometry(.16, .16, .04, 24), brass, [0, base + .95, .3], [Math.PI / 2, 0, 0])
+    return
+  }
+
+  if (key === 'trophy_shelf') {
+    box(group, [3.0, 2.5, .12], walnut, [0, top + 1.3, -.5], undefined, .04)
+    for (let shelf = 0; shelf < 2; shelf += 1) {
+      const shelfY = top + .5 + shelf * 1.15
+      box(group, [2.8, .12, .62], walnut, [0, shelfY, -.15], undefined, .02)
+      const strip = box(group, [2.5, .05, .05], material(p.glow, .2, .3, p.glow, .9), [0, shelfY + .95, .1], undefined, .01)
+      strip.castShadow = false
+      add(group, new THREE.CylinderGeometry(.22, .14, .42, 20), brass, [-.85, shelfY + .3, -.12])
+      add(group, new THREE.CylinderGeometry(.07, .14, .22, 14), brass, [-.85, shelfY + .13, -.12])
+      for (const side of [-1, 1]) add(group, new THREE.TorusGeometry(.12, .03, 8, 18, Math.PI), brass, [-.85 + side * .24, shelfY + .32, -.12], [0, 0, side * Math.PI / 2])
+      box(group, [.62, .72, .08], material(0x241c19, .7), [.15, shelfY + .45, -.2], undefined, .02)
+      box(group, [.46, .54, .04], brass, [.15, shelfY + .45, -.14], undefined, .015)
+      add(group, new THREE.ConeGeometry(.16, .78, 4), stone, [1.02, shelfY + .5, -.15])
+    }
+    return
+  }
+
+  if (key === 'justice_bust') {
+    // Carved, not stacked: a squared socle, a faceted tapering torso and a
+    // shoulder line, with the blindfold as a narrow band over the eyes.
+    const lead = material(0x1b2126, .55)
+    box(group, [1.24, .3, 1.02], stone, [0, top + .15, .2], undefined, .04)
+    add(group, new THREE.CylinderGeometry(.68, .92, 1.2, 8), stone, [0, top + .9, .2])
+    box(group, [1.9, .46, .92], stone, [0, top + 1.38, .22], undefined, .05)
+    add(group, new THREE.CylinderGeometry(.2, .26, .4, 14), stone, [0, top + 1.78, .22])
+    const head = add(group, new THREE.SphereGeometry(.47, 26, 18), stone, [0, top + 2.24, .22])
+    head.scale.set(.86, 1.1, .9)
+    add(group, new THREE.ConeGeometry(.09, .24, 6), stone, [0, top + 2.16, .64], [Math.PI / 2, 0, 0])
+    box(group, [.34, .18, .18], stone, [0, top + 1.96, .58], undefined, .03)
+    box(group, [.72, .17, .32], lead, [0, top + 2.3, .5], undefined, .02)
+    for (const side of [-1, 1]) box(group, [.19, .15, .32], lead, [side * .38, top + 2.3, .22], undefined, .02)
+    const crown = add(group, new THREE.SphereGeometry(.48, 24, 16), stone, [0, top + 2.52, .2])
+    crown.scale.set(.92, .6, .94)
+    const bun = add(group, new THREE.SphereGeometry(.25, 18, 12), stone, [0, top + 2.4, -.24])
+    bun.scale.set(1, .9, .85)
+    add(group, new THREE.TorusGeometry(.24, .035, 10, 26), brass, [0, top - .5, 1.0])
+    return
+  }
+
+  if (key === 'globe_bar') {
+    for (let leg = 0; leg < 3; leg += 1) {
+      const angle = leg / 3 * Math.PI * 2
+      add(group, new THREE.CylinderGeometry(.07, .07, 1.15, 10), walnut, [Math.cos(angle) * .3, top + .55, .2 + Math.sin(angle) * .3], [Math.sin(angle) * .22, 0, -Math.cos(angle) * .22])
+    }
+    add(group, new THREE.CylinderGeometry(.16, .2, .2, 16), brass, [0, top + 1.2, .2])
+    add(group, new THREE.SphereGeometry(.82, 34, 24), material(0x30608a, .35, .18), [0, top + 2.1, .2])
+    for (let land = 0; land < 7; land += 1) {
+      const angle = land / 7 * Math.PI * 2 + .4
+      const patch = add(group, new THREE.SphereGeometry(.32 + (land % 3) * .09, 16, 12), land % 2 ? leafLight : material(0xc9a877, .85), [Math.cos(angle) * .66, top + 2.1 + Math.sin(angle * 1.7) * .42, .2 + Math.sin(angle) * .66])
+      patch.scale.set(.9, .6, .9)
+    }
+    add(group, new THREE.TorusGeometry(.86, .045, 12, 42), brass, [0, top + 2.1, .2], [Math.PI / 2, 0, 0])
+    add(group, new THREE.TorusGeometry(.93, .05, 12, 44), brass, [0, top + 2.1, .2], [0, .4, 0])
+    return
+  }
+
+  if (key === 'charter_vitrine') {
+    box(group, [1.9, 1.4, 1.2], material(0x1b2228, .55), [0, top + .7, .2], undefined, .04)
+    box(group, [2.05, .1, 1.35], brass, [0, top + 1.45, .2], undefined, .03)
+    for (const x of [-.82, .82]) for (const z of [-.28, .68]) add(group, new THREE.CylinderGeometry(.045, .045, 1.5, 8), brass, [x, top + 2.25, z])
+    box(group, [1.75, .1, 1.15], brass, [0, top + 3.02, .2], undefined, .03)
+    const cover = box(group, [1.7, 1.45, 1.1], glass, [0, top + 2.25, .2], undefined, .02)
+    cover.castShadow = false
+    const charter = box(group, [1.05, 1.2, .05], material(0xe6d9b6, .88), [0, top + 2.2, .28], [-.13, 0, 0], .02)
+    charter.castShadow = false
+    for (let line = 0; line < 6; line += 1) box(group, [.62 - (line % 3) * .12, .04, .03], material(0x3a3129, .7), [-.04, top + 2.6 - line * .16, .36], undefined, .008)
+    add(group, new THREE.CylinderGeometry(.1, .1, .03, 16), material(0x9d3630, .5), [.28, top + 1.72, .4], [Math.PI / 2, 0, 0])
+    const lamp = box(group, [1.2, .06, .4], material(p.glow, .2, .3, p.glow, .95), [0, top + 2.92, .2], undefined, .01)
+    lamp.castShadow = false
+    return
+  }
+
+  // orchid_wall and any future planted decor
+  box(group, [3.4, 2.6, .35], walnut, [0, top + 1.35, -.4], undefined, .06)
+  box(group, [3.1, 2.3, .16], leaf, [0, top + 1.35, -.2], undefined, .03)
+  for (let clump = 0; clump < 40; clump += 1) {
+    const column = clump % 10
+    const row = Math.floor(clump / 10)
+    const blade = add(group, new THREE.SphereGeometry(.24 + ((clump * 7) % 5) * .05, 12, 8), clump % 3 ? leaf : leafLight, [-1.35 + column * .3, top + .45 + row * .6 + (((clump * 11) % 5) - 2) * .05, -.05])
+    blade.scale.set(1.15, .68, .5)
+    blade.rotation.z = (((clump * 13) % 7) - 3) * .16
+    blade.castShadow = false
+  }
+  for (let flower = 0; flower < 9; flower += 1) {
+    const x = -1.2 + flower * .3
+    const y = top + .8 + (flower % 3) * .62
+    add(group, new THREE.SphereGeometry(.12, 14, 10), material(0xe6cbd4, .76), [x, y, .1]).castShadow = false
+    add(group, new THREE.SphereGeometry(.045, 10, 8), material(0xd79a3d, .5, .1, 0xd79a3d, .6), [x, y, .19]).castShadow = false
+  }
+  const rail = box(group, [3.1, .06, .06], material(p.glow, .2, .3, p.glow, .9), [0, top + 2.5, -.02], undefined, .01)
+  rail.castShadow = false
+}
+
 function buildSubject(asset: RenderAsset, p: typeof palettes[number]) {
   const subject = new THREE.Group()
   subject.rotation.y = -.04
   const key = asset.key
   const art = asset.art ?? ''
+
+  if (asset.type === 'cosmetic') {
+    addCosmetic(subject, asset, p)
+    return subject
+  }
 
   if (asset.type === 'connection') {
     if (key === 'local_bar') addScales(subject, p)

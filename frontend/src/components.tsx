@@ -144,6 +144,36 @@ export function useRestoredChrome() {
 }
 
 
+const DIAGNOSTIC_REMINDER_STORAGE_KEY = 'lawyer-speedrun:diagnostic-reminder:dismissed'
+
+
+function DiagnosticReminderBanner({ onNavigate }: { onNavigate: () => void }) {
+  const [dismissed, setDismissed] = useState(() => window.localStorage.getItem(DIAGNOSTIC_REMINDER_STORAGE_KEY) === '1')
+  if (dismissed) return null
+  const dismiss = () => {
+    window.localStorage.setItem(DIAGNOSTIC_REMINDER_STORAGE_KEY, '1')
+    setDismissed(true)
+  }
+  return (
+    <section className="diagnostic-reminder-banner" role="status" aria-label="Diagnostic reminder">
+      <Target size={22} />
+      <div className="diagnostic-reminder-copy">
+        <strong>Your readiness is stuck at “forming” until you take the baseline diagnostic.</strong>
+        <span>It’s the one step that unlocks “ready” status and fills in a section-by-section performance breakdown — scattered practice alone won’t get you there.</span>
+      </div>
+      <div className="diagnostic-reminder-actions">
+        <button type="button" className="diagnostic-reminder-cta" onClick={onNavigate}>
+          Take the diagnostic
+        </button>
+        <button type="button" className="icon-button diagnostic-reminder-dismiss" onClick={dismiss} aria-label="Dismiss diagnostic reminder">
+          <X size={16} />
+        </button>
+      </div>
+    </section>
+  )
+}
+
+
 export function AppShell({ user, game, children }: { user: User; game?: GameState | null; children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -240,6 +270,9 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           )}
         </div>
       </header>
+      {game && !isActiveCase && !user.diagnostic_complete && location.pathname !== '/progress' && (
+        <DiagnosticReminderBanner onNavigate={() => navigate('/progress')} />
+      )}
       <main><RestoreChromeContext.Provider value={setChromeRestored}>{children}</RestoreChromeContext.Provider></main>
       {game && !isActiveCase && mobileMenuOpen && (
         <aside className="mobile-site-menu" role="dialog" aria-modal="true" aria-labelledby="mobile-site-menu-title">
@@ -616,6 +649,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['performance'] })
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+      void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
       void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
       navigate(`/cases/${session.id}`, { replace: true })
     },
@@ -633,6 +667,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       if (nextSession.status === 'completed') {
         void queryClient.invalidateQueries({ queryKey: ['performance'] })
         void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+        void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
         void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
         navigate(`/cases/${session.id}`, { replace: true })
         return
@@ -644,6 +679,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       })
       void queryClient.invalidateQueries({ queryKey: ['game'] })
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+      void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
       if (nextSession.id !== session.id) navigate(`/cases/${nextSession.id}`, { replace: true })
       else void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
     },
@@ -922,7 +958,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                 void play('submit', { seed: item.id, intensity: .68 })
                 submit.mutate()
               }}>
-                {strategyDecisionRequired ? 'Choose a method above' : submit.isPending || pageTurning ? 'Recording answer…' : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
+                {strategyDecisionRequired ? 'Choose a method above' : submit.isPending || pageTurning ? 'Recording answer…' : !selected ? 'Select an answer' : requiresReasoning && !reasoning.trim() ? 'Add your reasoning' : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
               </button>
             </div>
           )}
@@ -965,7 +1001,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                 disabled={!coachingReady || (session.practice_style === 'deep' && !reward) || continueCases.isPending || coaching.isLoading || pageTurning}
                 onClick={() => void beginPageTurn(() => continueCases.mutateAsync())}
               >
-                {!coachingReady ? 'Preparing concise reasoning…' : continueCases.isPending || pageTurning ? 'Turning the page…' : isInfinite ? <>Next question <ArrowRight size={18} /></> : session.practice_style === 'review' ? <>Continue review <ArrowRight size={18} /></> : <>Next case <ArrowRight size={18} /></>}
+                {!coachingReady ? 'Preparing concise reasoning…' : session.practice_style === 'deep' && !reward ? 'Settling the case…' : continueCases.isPending || pageTurning ? 'Turning the page…' : isInfinite ? <>Next question <ArrowRight size={18} /></> : session.practice_style === 'review' ? <>Continue review <ArrowRight size={18} /></> : <>Next case <ArrowRight size={18} /></>}
               </button>
             </div>
           )}
@@ -1074,6 +1110,7 @@ export function PauseButton({ sessionId, returnTo = '/office' }: { sessionId: st
     onSuccess: () => {
       void play('pause', { id: `pause:${sessionId}`, seed: sessionId, intensity: .52 })
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+      void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
       navigate(returnTo)
     },
   })

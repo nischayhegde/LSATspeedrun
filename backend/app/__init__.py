@@ -85,6 +85,11 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         DEV_AUTH_ENABLED=dev_auth_requested and not is_production,
         AUTO_SEED=os.getenv("AUTO_SEED", auto_seed_default).lower() == "true",
         PRACTICE_SESSION_SIZE=max(1, int(os.getenv("PRACTICE_SESSION_SIZE", "10"))),
+        # A student may keep this many practice runs (Sprint/Infinite/Method Lab/
+        # Review) queued at once — paused or in progress — before another start
+        # request is rejected with "queue_full". Diagnostics are unaffected;
+        # they keep the single-active-run rule enforced separately.
+        PRACTICE_QUEUE_MAX=max(1, int(os.getenv("PRACTICE_QUEUE_MAX", "8"))),
         DIAGNOSTIC_SESSION_SIZE=max(6, int(os.getenv("DIAGNOSTIC_SESSION_SIZE", "75"))),
         HUGGINGFACE_REQUEST_INTERVAL_SECONDS=max(
             0.0,

@@ -21,7 +21,9 @@ import {
   Gavel,
   Handshake,
   HeartHandshake,
+  Lamp,
   Lock,
+  Pause,
   Play,
   Scale,
   ScrollText,
@@ -44,7 +46,7 @@ import { ClientPortrait, CutsceneArtwork, EmpireWorldMap, ExplorableOffice, Mini
 import { PixelStudyScenery } from './art/pixel-scenery'
 import { SoundControls, useAmbientMusic, useSound } from './sound'
 import { MOTION_TIMING } from './motion'
-import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest } from './types'
+import type { CharacterGender, GameAsset, GameClient, GameResponse, GameState, StoryChapter, StoryQuest, StudySession } from './types'
 import './performance.css'
 
 
@@ -734,7 +736,7 @@ export function CasesLobbyPage() {
   const queryClient = useQueryClient()
   const [practiceStyle, setPracticeStyle] = useState<'speedrun' | 'deep' | 'infinite' | 'review'>('speedrun')
   const gameQuery = useGame()
-  const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
+  const activeSessions = useQuery({ queryKey: ['active-sessions'], queryFn: api.activeSessions })
   const reviews = useQuery({ queryKey: ['review-queue'], queryFn: api.reviewQueue })
   const docketQuery = useQuery({ queryKey: ['daily-docket'], queryFn: api.dailyDocket })
   const start = useMutation({
@@ -745,23 +747,51 @@ export function CasesLobbyPage() {
     }),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `case-open:${session.id}`, seed: session.id, intensity: .62 })
+      void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
       void queryClient.invalidateQueries({ queryKey: ['daily-docket'] })
       navigate(`/cases/${session.id}`)
     },
   })
-  if (gameQuery.isLoading || current.isLoading || reviews.isLoading || docketQuery.isLoading) return <LoadingScreen label="Checking the docket…" />
+  // A student can queue up to `queueCap` unfinished runs at once. Discarding
+  // surfaces an explicit way out of a stale run instead of forcing it to be
+  // finished or silently left to rot in the queue.
+  const discardRun = useMutation({
+    mutationFn: (id: string) => api.abandonSession(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
+      void queryClient.invalidateQueries({ queryKey: ['daily-docket'] })
+    },
+  })
+  // Only one queued run may ever be `in_progress` — its item timer is the
+  // only one actually ticking. The backend enforces this by auto-pausing
+  // whatever else was in_progress whenever a run is created or resumed, but a
+  // student can still explicitly pause the one live run from the queue list.
+  const pauseRun = useMutation({
+    mutationFn: (id: string) => api.pauseSession(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['active-sessions'] }),
+  })
+  const resumeRun = useMutation({
+    mutationFn: (id: string) => api.resumeSession(id),
+    onSuccess: (_data, id) => {
+      void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
+      navigate(`/cases/${id}`)
+    },
+  })
+  if (gameQuery.isLoading || activeSessions.isLoading || reviews.isLoading || docketQuery.isLoading) return <LoadingScreen label="Checking the docket…" />
   const game = gameQuery.data!.game!
   const workingClient = effectiveClient(game)
-  const active = current.data?.session
+  const runs = activeSessions.data?.sessions ?? []
+  const queueCap = activeSessions.data?.queue_cap ?? 8
+  const queueFull = runs.length >= queueCap
   const dueReviews = reviews.data?.review_queue.due ?? 0
   const daily = docketQuery.data?.daily_docket
   // These three reads are all optional on the page, so a failure used to leave
   // sections quietly missing with no way to recover short of a reload.
-  const partialError = docketQuery.error || current.error || reviews.error
-  const partialRetrying = docketQuery.isFetching || current.isFetching || reviews.isFetching
+  const partialError = docketQuery.error || activeSessions.error || reviews.error
+  const partialRetrying = docketQuery.isFetching || activeSessions.isFetching || reviews.isFetching
   const retryPartial = () => {
     if (docketQuery.error) void docketQuery.refetch()
-    if (current.error) void current.refetch()
+    if (activeSessions.error) void activeSessions.refetch()
     if (reviews.error) void reviews.refetch()
   }
   const runNextDocketStep = () => {
@@ -770,6 +800,7 @@ export function CasesLobbyPage() {
       if (daily.next_action.session_id) navigate(`/cases/${daily.next_action.session_id}`)
       return
     }
+    if (queueFull) return
     if (daily.next_action.kind === 'start_review') start.mutate({ style: 'review', size: Math.max(1, daily.review.target) })
     else if (daily.next_action.kind === 'start_speedrun') start.mutate({ style: 'speedrun', size: 10 })
   }
@@ -781,14 +812,43 @@ export function CasesLobbyPage() {
   } as const
   const selectedMode = practiceModeCopy[practiceStyle]
   const SelectedModeIcon = selectedMode.icon
-  const openSelectedPractice = () => {
-    if (active) {
-      void play('resume', { seed: active.id, intensity: .5 })
-      navigate(`/cases/${active.id}`)
+  const describeStarted = (startedAt: string) => {
+    const minutes = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 60000))
+    if (minutes < 1) return 'started just now'
+    if (minutes < 60) return `started ${minutes} min ago`
+    const hours = Math.round(minutes / 60)
+    return `started ${hours} hr${hours === 1 ? '' : 's'} ago`
+  }
+  const runStatus = (run: StudySession) => {
+    if (run.pending_result) return { label: 'Needs review', cls: 'is-debrief' }
+    if (run.status === 'in_progress') return { label: 'Running', cls: 'is-running' }
+    return { label: 'Paused', cls: 'is-paused' }
+  }
+  const startNewRun = (plan?: { style?: 'speedrun' | 'deep' | 'infinite' | 'review'; size?: number }) => {
+    if (queueFull) return
+    start.mutate(plan)
+  }
+  // A queued run's timer only ticks while its case view is open, so resuming
+  // one that is already `in_progress` (or mid-debrief) is just a navigation —
+  // only a `paused` run needs the resume call before it is safe to open.
+  const openRun = (run: StudySession) => {
+    void play('resume', { seed: run.id, intensity: .5 })
+    if (run.pending_result || run.status === 'in_progress') {
+      navigate(`/cases/${run.id}`)
       return
     }
-    start.mutate(undefined)
+    resumeRun.mutate(run.id)
   }
+  const pauseRunClick = (run: StudySession) => {
+    void play('pause', { id: `pause:${run.id}`, seed: run.id, intensity: .45 })
+    pauseRun.mutate(run.id)
+  }
+  const discardRunClick = (run: StudySession) => {
+    if (run.pending_result) return
+    void play('paper', { seed: `discard:${run.id}`, intensity: .4 })
+    discardRun.mutate(run.id)
+  }
+  const queueError = discardRun.error || pauseRun.error || resumeRun.error
   return (
     <div className="case-lobby page-wrap">
       {partialError && (
@@ -796,6 +856,55 @@ export function CasesLobbyPage() {
           <ErrorNotice error={partialError} retrying={partialRetrying} onRetry={retryPartial} />
           <p>Some of this page could not be loaded, so a few sections may be missing or out of date.</p>
         </div>
+      )}
+      {runs.length > 0 && (
+        <section className="run-queue-panel" aria-label="Your practice run queue">
+          <header className="run-queue-header">
+            <div>
+              <span className="eyebrow">YOUR RUNS</span>
+              <h2>{runs.length} of {queueCap} queued</h2>
+            </div>
+            {queueFull && <span className="run-queue-full-flag"><ShieldAlert size={14} /> Queue full — discard a run to start another</span>}
+          </header>
+          <div className="run-queue-list">
+            {runs.map((run) => {
+              const copy = practiceModeCopy[run.practice_style as keyof typeof practiceModeCopy] ?? practiceModeCopy.deep
+              const RunIcon = copy.icon
+              const status = runStatus(run)
+              const pendingReview = Boolean(run.pending_result)
+              return (
+                <article key={run.id} className={`run-queue-item ${status.cls}`}>
+                  <RunIcon size={19} />
+                  <div className="run-queue-item-copy">
+                    <strong>{copy.title}</strong>
+                    <span>{run.current_index} of {run.total_items} answered · {describeStarted(run.started_at)}</span>
+                  </div>
+                  <span className={`run-queue-status-pill ${status.cls}`}>{status.label}</span>
+                  <div className="run-queue-item-actions">
+                    {run.status === 'in_progress' && !pendingReview && (
+                      <button type="button" className="run-queue-pause" disabled={pauseRun.isPending} onClick={() => pauseRunClick(run)}>
+                        <Pause size={13} /> Pause
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="run-queue-discard"
+                      disabled={pendingReview || discardRun.isPending}
+                      onClick={() => discardRunClick(run)}
+                      title={pendingReview ? 'Finish reviewing the current answer first' : 'Discard this run'}
+                    >
+                      Discard
+                    </button>
+                    <button type="button" className="run-queue-resume" disabled={resumeRun.isPending} onClick={() => openRun(run)}>
+                      {run.status === 'in_progress' ? 'Continue' : 'Resume'} <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+          {queueError && <ErrorNotice error={queueError} />}
+        </section>
       )}
       <section className="mobile-practice-home" aria-label="Practice modes">
         <header className="mobile-learning-header">
@@ -809,7 +918,11 @@ export function CasesLobbyPage() {
         </div>
 
         {daily && (
-          <button className="mobile-docket-next" onClick={runNextDocketStep} disabled={start.isPending || daily.next_action.kind === 'done'}>
+          <button
+            className="mobile-docket-next"
+            onClick={runNextDocketStep}
+            disabled={start.isPending || daily.next_action.kind === 'done' || (queueFull && (daily.next_action.kind === 'start_review' || daily.next_action.kind === 'start_speedrun'))}
+          >
             <span><small>TODAY’S DOCKET</small><strong>{daily.next_action.kind === 'done' ? 'Training loop complete' : daily.next_action.label}</strong><em>{daily.review.due} due · {daily.speedrun.state === 'complete' ? 'sprint complete' : 'sprint waiting'} · {daily.deep_brief.priority_count} to brief</em></span>
             {daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}
           </button>
@@ -831,10 +944,13 @@ export function CasesLobbyPage() {
 
         <div className="mobile-practice-selection">
           <SelectedModeIcon size={23} />
-          <div><strong>{active ? 'Active run in progress' : selectedMode.title}</strong><p>{active ? 'Continue where you left off before opening another file.' : selectedMode.detail}</p></div>
+          <div>
+            <strong>{selectedMode.title}</strong>
+            <p>{queueFull ? `Queue full (${runs.length}/${queueCap}) — discard a run above to start another.` : selectedMode.detail}</p>
+          </div>
         </div>
-        <button className="mobile-practice-start" onClick={openSelectedPractice} disabled={start.isPending || (!active && practiceStyle === 'review' && !dueReviews)}>
-          {start.isPending ? 'Preparing run…' : active ? 'Continue active run' : `Start ${selectedMode.title}`} <ArrowRight />
+        <button className="mobile-practice-start" onClick={() => startNewRun()} disabled={start.isPending || queueFull || (practiceStyle === 'review' && !dueReviews)}>
+          {start.isPending ? 'Preparing run…' : queueFull ? 'Queue full' : `Start ${selectedMode.title}`} <ArrowRight />
         </button>
         {start.error && <ErrorNotice error={start.error} />}
       </section>
@@ -845,13 +961,12 @@ export function CasesLobbyPage() {
           <span className="eyebrow gold">LSAT SPEEDRUN</span>
           <h1>More questions.<br />Cleaner review.<br /><em>Measured improvement.</em></h1>
           <p>Choose the amount of friction you need. Answer-only modes build volume; Method Lab is there when the reasoning itself needs work.</p>
-          <button className="primary-button jumbo" onClick={() => {
-            if (active) {
-              void play('resume', { seed: active.id, intensity: .5 })
-              navigate(`/cases/${active.id}`)
-            } else start.mutate(undefined)
-          }} disabled={start.isPending || (!active && practiceStyle === 'review' && !dueReviews)}>
-            <BriefcaseBusiness /> {active ? 'Resume active run' : start.isPending ? 'Building your run…' : practiceStyle === 'speedrun' ? 'Start 10-question Sprint' : practiceStyle === 'infinite' ? 'Start Infinite mode' : practiceStyle === 'review' ? `Review ${dueReviews} due` : 'Start Deep Practice'} <ArrowRight />
+          <button
+            className="primary-button jumbo"
+            onClick={() => startNewRun()}
+            disabled={start.isPending || queueFull || (practiceStyle === 'review' && !dueReviews)}
+          >
+            <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : practiceStyle === 'speedrun' ? 'Start 10-question Sprint' : practiceStyle === 'infinite' ? 'Start Infinite mode' : practiceStyle === 'review' ? `Review ${dueReviews} due` : 'Start Deep Practice'} <ArrowRight />
           </button>
           {start.error && <ErrorNotice error={start.error} />}
         </div>
@@ -868,7 +983,13 @@ export function CasesLobbyPage() {
       {daily && <section className="daily-docket" aria-labelledby="daily-docket-title">
         <header>
           <div><span className="eyebrow">TODAY'S DOCKET · {daily.date}</span><h2 id="daily-docket-title">One measured loop. No busywork.</h2><p>Repair what is due, produce fresh timed evidence, then brief only the decisions worth revisiting.</p></div>
-          <button className="daily-docket-action" onClick={runNextDocketStep} disabled={start.isPending || daily.next_action.kind === 'done'}>{daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}<span><small>NEXT ACTION</small><strong>{start.isPending ? 'Preparing docket…' : daily.next_action.label}</strong></span></button>
+          <button
+            className="daily-docket-action"
+            onClick={runNextDocketStep}
+            disabled={start.isPending || daily.next_action.kind === 'done' || (queueFull && (daily.next_action.kind === 'start_review' || daily.next_action.kind === 'start_speedrun'))}
+          >
+            {daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}<span><small>NEXT ACTION</small><strong>{start.isPending ? 'Preparing docket…' : daily.next_action.label}</strong></span>
+          </button>
         </header>
         <div className="daily-docket-track">
           <article className={`state-${daily.review.state}`}><b>01</b><div><span><TimerReset /> DUE REVIEW</span><strong>{daily.review.state === 'clear' ? 'Queue clear' : `${daily.review.target || daily.review.due} priority repair${(daily.review.target || daily.review.due) === 1 ? '' : 's'}`}</strong><small>Spaced retrieval · reasoning only where needed</small></div><i>{daily.review.state === 'complete' || daily.review.state === 'clear' ? <Check /> : daily.review.state === 'locked' ? <Lock /> : 'NOW'}</i></article>
@@ -929,6 +1050,7 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
     mutationFn: () => api.startPractice({ size: Math.min(5, Math.max(1, dueReviews)), practice_style: 'review', feedback_policy: 'immediate' }),
     onSuccess: ({ session }) => {
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
+      void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
       navigate(`/cases/${session.id}`)
     },
   })
@@ -1094,10 +1216,11 @@ export function CaseSessionPage() {
 }
 
 
-type FirmTab = 'upgrades' | 'staff' | 'clients' | 'connections' | 'rivals' | 'achievements'
+type FirmTab = 'upgrades' | 'decor' | 'staff' | 'clients' | 'connections' | 'rivals' | 'achievements'
 
 const firmTabs: Array<{ key: FirmTab; label: string; icon: typeof Wrench }> = [
   { key: 'upgrades', label: 'Upgrades', icon: Wrench },
+  { key: 'decor', label: 'Decor', icon: Lamp },
   { key: 'staff', label: 'Staff', icon: UsersRound },
   { key: 'clients', label: 'Clients', icon: BriefcaseBusiness },
   { key: 'connections', label: 'Connections', icon: Handshake },
@@ -1185,7 +1308,7 @@ export function FirmPage() {
 
   if (gameQuery.isLoading) return <LoadingScreen />
   const game = gameQuery.data!.game!
-  const typeMap: Record<FirmTab, GameAsset['type'] | null> = { upgrades: 'upgrade', staff: 'staff', clients: null, connections: 'connection', rivals: 'rival', achievements: null }
+  const typeMap: Record<FirmTab, GameAsset['type'] | null> = { upgrades: 'upgrade', decor: 'cosmetic', staff: 'staff', clients: null, connections: 'connection', rivals: 'rival', achievements: null }
   const assets = game.catalog.assets.filter((item) => item.type === typeMap[tab])
   const regions = Array.from(new Set([
     ...game.catalog.tiers.map((tier) => tier.region),
@@ -1282,7 +1405,7 @@ export function FirmPage() {
             <span className="next-tier-rent"><CircleDollarSign size={14} /> New lease: {formatMoney(nextTier.rent_daily)} per day</span>
             {missingTierAssets.length > 0 && <><br /><small className="requirements missing">Still needed: {missingTierAssets.slice(0, 3).join(' · ')}{missingTierAssets.length > 3 ? ` · +${missingTierAssets.length - 3} more` : ''}</small></>}
           </div>
-          <div className="tier-buy"><strong>{formatMoney(nextTier.cost)}</strong><button className="primary-button" disabled={!nextTier.available || game.cash < nextTier.cost || advance.isPending} onClick={() => advance.mutate(nextTier.tier)}>{advance.isPending ? 'Renovating…' : 'Advance firm'}</button></div>
+          <div className="tier-buy"><strong>{formatMoney(nextTier.cost)}</strong><button className="primary-button" disabled={!nextTier.available || game.cash < nextTier.cost || advance.isPending} onClick={() => advance.mutate(nextTier.tier)}>{advance.isPending ? 'Renovating…' : !nextTier.available ? 'Locked' : game.cash < nextTier.cost ? 'Keep earning' : 'Advance firm'}</button></div>
           </section>
         )}
 
@@ -1312,7 +1435,7 @@ export function FirmPage() {
                 {item.on_hold && <div className="effective-client-note"><BriefcaseBusiness size={13} />Cases use {workingClient.name} · {formatMoney(workingClient.base_fee)} base fee</div>}
                 {item.contract && <div className="contract-mini"><span>{item.contract.cases_remaining} left</span><span>{item.contract.loyalty} loyalty</span></div>}
                 <ClientRequirementLine client={item} game={game} />
-                <button className={item.selected ? 'secondary-button full' : 'primary-button full'} disabled={!item.unlocked || item.selected || client.isPending} onClick={() => client.mutate(item.key)}>{client.isPending && client.variables === item.key ? 'Switching files…' : item.on_hold ? 'Current client · On hold' : item.selected ? 'Working these cases' : `Work for ${item.name}`}</button>
+                <button className={item.selected ? 'secondary-button full' : 'primary-button full'} disabled={!item.unlocked || item.selected || client.isPending} onClick={() => client.mutate(item.key)}>{client.isPending && client.variables === item.key ? 'Switching files…' : item.on_hold ? 'Current client · On hold' : item.selected ? 'Working these cases' : !item.unlocked ? 'Locked' : `Work for ${item.name}`}</button>
                 {justActivated === item.key && <div className="client-activated-flash"><Check /> NEW CLIENT ACTIVE</div>}
               </article>
             ))}
@@ -1334,7 +1457,10 @@ export function FirmPage() {
               <div className="card-status">{item.owned ? <><Check size={13} /> OWNED</> : item.available ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
               <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{item.benefit}</span></div>
               <RequirementLine asset={item} game={game} />
-               <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
+              {/* Locked is named before cost, because an unmet requirement is the
+                  blocker that earning more cannot clear. Leaving it out labelled a
+                  disabled button 'Purchase', which reads as an unresponsive click. */}
+              <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : !item.available ? 'Locked' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
             </article>
           ))}
         </div>
@@ -1464,7 +1590,7 @@ export function StoryPage() {
                 <h3>{quest.title}</h3><p>{quest.description}</p><strong>{quest.objective}</strong>
                 {quest.start_label && <small className="quest-cost">Opening cost: {quest.start_label}</small>}
                 <small className="quest-reward">Reward: {quest.reward_label}</small>
-                <button disabled={!quest.available || startQuestMutation.isPending} onClick={() => startQuestMutation.mutate(quest.key)}>{quest.completed ? 'File closed' : quest.active ? `${quest.progress} / ${quest.target}` : story.active_quest ? 'Caseboard occupied' : 'Open this file'}</button>
+                <button disabled={!quest.available || startQuestMutation.isPending} onClick={() => startQuestMutation.mutate(quest.key)}>{quest.completed ? 'File closed' : quest.active ? `${quest.progress} / ${quest.target}` : story.active_quest ? 'Caseboard occupied' : !quest.available ? 'Locked' : 'Open this file'}</button>
               </article>
             ))}</div>
           </div>
@@ -1489,7 +1615,7 @@ export function StoryPage() {
               <div><span>{item.category}</span><strong>−{item.discount_bps / 100}%</strong></div><h3>{item.name}</h3><p>{item.description}</p>
               <small>{formatMoney(item.cost)}{item.intel ? ` · ${item.intel} Intel` : ''}{item.influence ? ` · ${item.influence} Influence` : ''}{item.heat_surcharge_bps ? ` · +${item.heat_surcharge_bps / 100}% Heat surcharge` : ''}</small>
               {item.missing.length > 0 && <em>Needs {item.missing.join(' · ')}</em>}
-              <button disabled={!item.available || operation.isPending} onClick={() => operation.mutate({ rivalKey: rival.key, operationKey: item.key })}>{item.completed ? 'Operation complete' : item.category === 'sabotage' ? 'Authorize sabotage' : 'Launch operation'}</button>
+              <button disabled={!item.available || operation.isPending} onClick={() => operation.mutate({ rivalKey: rival.key, operationKey: item.key })}>{item.completed ? 'Operation complete' : item.missing.length > 0 ? 'Locked' : !item.available ? 'Discount capped' : item.category === 'sabotage' ? 'Authorize sabotage' : 'Launch operation'}</button>
             </article>
           ))}</div>
         </> : <div className="all-rivals-acquired"><Trophy /><h3>Every rival has joined the network.</h3><p>The war room is quiet. The legacy question remains.</p></div>}

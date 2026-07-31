@@ -1,10 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 import type { CharacterGender } from '../types'
 import { buildStylizedCounsel, type StylizedCounselRig, type StylizedCounselRole } from './stylized-counsel'
 
-export type StylizedCharacterMode = 'full' | 'portrait' | 'icon' | 'scene'
+export type StylizedCharacterMode = 'hero' | 'full' | 'portrait' | 'icon' | 'scene'
 export type StylizedCharacterMood = 'neutral' | 'happy' | 'unhappy' | 'thinking'
 export type StylizedCharacterActivity = 'idle' | 'briefing' | 'working' | 'celebrating' | 'heel-click' | 'thumbs-up' | 'courtroom-bow' | 'professional-wave'
 
@@ -31,6 +31,7 @@ type CharacterEntry = {
   scene: THREE.Scene
   camera: THREE.OrthographicCamera
   rig: StylizedCounselRig
+  shadow: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null
   mode: StylizedCharacterMode
   mood: StylizedCharacterMood
   activity: StylizedCharacterActivity
@@ -41,13 +42,47 @@ type CharacterEntry = {
   pointerTarget: THREE.Vector2
   pointerActive: boolean
   elapsed: number
+  gestureElapsed: number
   lastAnimated: number
+  hostWidth: number
+  hostHeight: number
+  ready: boolean
+  onFirstPaint: () => void
+  outputWidth: number
+  outputHeight: number
   visible: boolean
   reduced: boolean
   dirty: boolean
   quality: 'preview' | 'sharp'
   lastPainted: number
   disposed: boolean
+}
+
+/** Framing presets. `viewHeight` is the world height the camera covers, so a
+ *  larger value leaves the figure smaller inside the same panel. */
+const framings: Record<StylizedCharacterMode, { viewHeight: number; centerY: number }> = {
+  // The counsel rig stands roughly 5.45 world units tall, so 7.4 leaves the
+  // Office hero at ~74% of its window with headroom above the hair and a
+  // floor gap below the shoes instead of touching every panel edge.
+  hero: { viewHeight: 7.4, centerY: 3.18 },
+  full: { viewHeight: 5.92, centerY: 2.8 },
+  scene: { viewHeight: 5.82, centerY: 2.8 },
+  portrait: { viewHeight: 1.78, centerY: 5.07 },
+  icon: { viewHeight: 1.56, centerY: 5.07 },
+}
+
+/** Ambient idle amplitudes are authored for the full-body framings. The tight
+ *  head crops magnify a world unit ~3x, so they take a proportionate share. */
+const ambientMotion: Record<StylizedCharacterMode, number> = {
+  hero: 1.18,
+  full: 1,
+  scene: 1,
+  portrait: .3,
+  icon: .26,
+}
+
+function isFullBody(mode: StylizedCharacterMode) {
+  return mode === 'hero' || mode === 'full' || mode === 'scene'
 }
 
 const entries = new Set<CharacterEntry>()
@@ -81,25 +116,46 @@ function configureCharacterRenderer(renderer: THREE.WebGLRenderer) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.22
   renderer.shadowMap.enabled = false
+  // paintCharacter clears explicitly, so the automatic clear is redundant work.
+  renderer.autoClear = false
 }
 
 function animateRig(entry: CharacterEntry, now: number) {
   const { rig, mood, role, walking, activity } = entry
   const delta = entry.lastAnimated ? Math.min(.05, Math.max(0, (now - entry.lastAnimated) / 1000)) : 1 / 60
   entry.lastAnimated = now
-  if (!entry.reduced) entry.elapsed += delta
+  if (!entry.reduced) {
+    entry.elapsed += delta
+    entry.gestureElapsed += delta
+  }
   const time = entry.reduced ? 0 : entry.elapsed
-  const entranceTime = time
+  // Scripted gestures run on their own clock. They used to share the idle clock
+  // and reset it, which snapped every ambient sine back to phase zero and made
+  // the figure visibly jump the moment an activity changed.
+  const entranceTime = entry.reduced ? 0 : entry.gestureElapsed
   entry.pointer.lerp(entry.pointerTarget, entry.reduced ? 1 : 1 - Math.exp(-5 * delta))
-  const breath = Math.sin(time * 1.18)
-  const sway = Math.sin(time * .55 + .7)
+  const ambient = ambientMotion[entry.mode]
+  // Skewing the breath sine by a fraction of itself gives a quicker inhale and
+  // a longer settle while staying continuously differentiable, so the chest
+  // never ticks between two poses.
+  const breathPhase = time * 1.18
+  const breath = Math.sin(breathPhase + Math.sin(breathPhase) * .26) * ambient
+  const sway = Math.sin(time * .55 + .7) * ambient
   const stride = walking ? Math.sin(time * 7.0) : 0
   const step = walking ? Math.abs(Math.sin(time * 7.0)) : 0
   const happy = mood === 'happy' ? 1 : 0
   const unhappy = mood === 'unhappy' ? 1 : 0
   const thinking = mood === 'thinking' ? 1 : 0
-  const weightShift = Math.sin(time * .31 + .8)
-  const gazeDrift = entry.pointerActive ? 0 : Math.sin(time * .23 + .4) * .34
+  const weightShift = Math.sin(time * .31 + .8) * ambient
+  // Torso, head and arms trail the pelvis by a beat. That overlap is what makes
+  // an idle read as a breathing person rather than a single rigid hinge.
+  const swayFollow = Math.sin(time * .55 + .44) * ambient
+  const weightFollow = Math.sin(time * .31 + .52) * ambient
+  // Two incommensurate periods keep the gaze from sweeping on an obvious loop.
+  // Both start at zero so the character appears looking straight ahead.
+  const gazeDrift = entry.pointerActive
+    ? 0
+    : (Math.sin(time * .23) * .62 + Math.sin(time * .097) * .38) * ambient
   const gesturePhase = (time + 3) % 10.5
   const cuffAdjust = !walking && activity === 'idle' && gesturePhase < 1.7
     ? Math.pow(Math.sin(gesturePhase / 1.7 * Math.PI), 2)
@@ -136,43 +192,46 @@ function animateRig(entry: CharacterEntry, now: number) {
     : 0
   const waveOscillation = waveFollowThrough * Math.sin(Math.max(0, entranceTime - .30) * Math.PI * 4.1)
 
-  rig.hips.position.y = rig.base.hipsY + step * .035 + breath * .008 + heelPose * .018 - bowBody * .012
-  rig.hips.position.x = sway * .012 + weightShift * .022 * (1 - Math.min(1, Math.abs(stride))) - heelPose * .035 - wavePose * .012
+  // Lateral idle motion is carried by the spine and chest rather than the
+  // pelvis, so the shoes stay planted while the torso genuinely shifts weight.
+  rig.hips.position.y = rig.base.hipsY + step * .035 + breath * .026 - Math.abs(weightShift) * .006 + heelPose * .018 - bowBody * .012
+  rig.hips.position.x = sway * .014 + weightShift * .020 * (1 - Math.min(1, Math.abs(stride))) - heelPose * .035 - wavePose * .012
   rig.hips.position.z = -bowBody * .018
-  rig.hips.rotation.y = weightShift * .012
-  rig.hips.rotation.z = stride * .012 + sway * .004 + weightShift * .004 - heelPose * .018
-  rig.spine.rotation.x = bowBody * .145
-  rig.spine.rotation.y = -weightShift * .018 + briefingGesture * .022 - wavePose * .018
-  rig.spine.rotation.z = -stride * .018 + sway * .008 - workingGesture * .012 - wavePose * .012
-  rig.chest.scale.set(1 + breath * .006, 1 + breath * .004, 1 + breath * .007)
-  rig.head.rotation.y = entry.pointer.x * .24 + gazeDrift * .16 - stride * .018 + thinking * .08 + wavePose * .035
-  rig.head.rotation.x = entry.pointer.y * -.075 + breath * .004 + unhappy * .03 + workingGesture * .035 + bowHead * .085
-  rig.head.rotation.z = sway * .010 - happy * .015 + unhappy * .018 + briefingGesture * .012 - thumbPose * .012 + wavePose * .016
-  rig.leftShoulder.rotation.x = -stride * .30 + workingGesture * .16 - celebration * .10 - bowBody * .012
-  rig.rightShoulder.rotation.x = stride * .30 - workingGesture * .20 + cuffAdjust * .26 - celebration * .10 - thumbPose * .14 - bowBody * .012 - wavePose * .10
-  rig.leftShoulder.rotation.z = rig.base.leftShoulderZ - breath * .006 - happy * .045 - celebration * .34 + workingGesture * .08 + bowBody * .012
-  rig.rightShoulder.rotation.z = rig.base.rightShoulderZ + breath * .006 + happy * .075 + welcome * .52 - thinking * .42 + briefingGesture * .34 + celebration * .34 + cuffAdjust * .16 + thumbPose * .16 - bowBody * .012 + wavePose * .36
-  rig.leftElbow.rotation.x = workingGesture * .52 + celebration * .16
-  rig.rightElbow.rotation.x = workingGesture * .44 + briefingGesture * .16 + cuffAdjust * .62 + celebration * .16 + thumbPose * .06 + wavePose * .05
+  rig.hips.rotation.y = weightShift * .034
+  rig.hips.rotation.z = stride * .012 + sway * .008 + weightShift * .012 - heelPose * .018
+  rig.spine.rotation.x = bowBody * .145 - breath * .012
+  rig.spine.rotation.y = -weightFollow * .040 + briefingGesture * .022 - wavePose * .018
+  rig.spine.rotation.z = -stride * .018 + sway * .016 + weightFollow * .030 - workingGesture * .012 - wavePose * .012
+  rig.chest.rotation.z = -swayFollow * .010 - weightFollow * .013
+  rig.chest.scale.set(1 + breath * .016, 1 + breath * .010, 1 + breath * .018)
+  rig.head.rotation.y = entry.pointer.x * .24 + gazeDrift * .34 - weightFollow * .022 - stride * .018 + thinking * .08 + wavePose * .035
+  rig.head.rotation.x = entry.pointer.y * -.075 + breath * .010 + unhappy * .03 + workingGesture * .035 + bowHead * .085
+  rig.head.rotation.z = sway * .020 - weightFollow * .014 - happy * .015 + unhappy * .018 + briefingGesture * .012 - thumbPose * .012 + wavePose * .016
+  rig.leftShoulder.rotation.x = -stride * .30 - weightFollow * .026 + workingGesture * .16 - celebration * .10 - bowBody * .012
+  rig.rightShoulder.rotation.x = stride * .30 + weightFollow * .026 - workingGesture * .20 + cuffAdjust * .26 - celebration * .10 - thumbPose * .14 - bowBody * .012 - wavePose * .10
+  rig.leftShoulder.rotation.z = rig.base.leftShoulderZ - breath * .016 - happy * .045 - celebration * .34 + workingGesture * .08 + bowBody * .012
+  rig.rightShoulder.rotation.z = rig.base.rightShoulderZ + breath * .016 + happy * .075 + welcome * .52 - thinking * .42 + briefingGesture * .34 + celebration * .34 + cuffAdjust * .16 + thumbPose * .16 - bowBody * .012 + wavePose * .36
+  rig.leftElbow.rotation.x = swayFollow * .016 + workingGesture * .52 + celebration * .16
+  rig.rightElbow.rotation.x = -swayFollow * .016 + workingGesture * .44 + briefingGesture * .16 + cuffAdjust * .62 + celebration * .16 + thumbPose * .06 + wavePose * .05
   rig.leftElbow.rotation.z = rig.base.leftElbowZ + Math.max(0, stride) * .08 - happy * .04 - workingGesture * .18 - celebration * .22
   // The wave bends toward the character's outside shoulder. The previous
   // negative rotation folded the forearm through the jacket and made the hand
   // appear inside the torso.
   rig.rightElbow.rotation.z = rig.base.rightElbowZ - Math.max(0, -stride) * .08 - welcome * .20 - thinking * .28 - briefingGesture * .18 - cuffAdjust * .46 + celebration * .22 - thumbPose * .92 + wavePose * 2.46
   rig.rightHand.rotation.x = thumbPose * -.14 - wavePose * .04
-  rig.rightHand.rotation.z = Math.sin(time * 4.2) * welcome * .20 + briefingGesture * Math.sin(time * 2.1) * .10 - cuffAdjust * .18 + thumbPose * .28 + wavePose * .08 + waveOscillation * .22
-  rig.leftHand.rotation.z = workingGesture * .10 + celebration * .08 - heelPose * .08
+  rig.rightHand.rotation.z = -swayFollow * .045 + Math.sin(time * 4.2) * welcome * .20 + briefingGesture * Math.sin(time * 2.1) * .10 - cuffAdjust * .18 + thumbPose * .28 + wavePose * .08 + waveOscillation * .22
+  rig.leftHand.rotation.z = swayFollow * .045 + workingGesture * .10 + celebration * .08 - heelPose * .08
   rig.rightThumb.rotation.z = -.75 + thumbPose * 1.35
   rig.rightThumb.position.set(.115, -.035, .012)
   rig.rightThumb.scale.set(.9, 1, .75)
   rig.leftHip.position.x = -.275
   rig.rightHip.position.x = .275
-  rig.leftHip.rotation.x = stride * .46 + Math.max(0, weightShift) * .012
-  rig.rightHip.rotation.x = -stride * .46 + Math.max(0, -weightShift) * .012 + heelClick * .08
+  rig.leftHip.rotation.x = stride * .46 + Math.max(0, weightShift) * .020
+  rig.rightHip.rotation.x = -stride * .46 + Math.max(0, -weightShift) * .020 + heelClick * .08
   rig.leftHip.rotation.z = -.025
   rig.rightHip.rotation.z = .025 - heelPose * .035
-  rig.leftKnee.rotation.x = Math.max(0, -stride) * .52 + Math.max(0, weightShift) * .012
-  rig.rightKnee.rotation.x = Math.max(0, stride) * .52 + Math.max(0, -weightShift) * .012 + heelClick * .20
+  rig.leftKnee.rotation.x = Math.max(0, -stride) * .52 + Math.max(0, weightShift) * .024
+  rig.rightKnee.rotation.x = Math.max(0, stride) * .52 + Math.max(0, -weightShift) * .024 + heelClick * .20
   rig.leftFoot.rotation.x = Math.max(0, stride) * .16
   rig.rightFoot.rotation.x = Math.max(0, -stride) * .16
   rig.leftFoot.position.x = 0
@@ -181,19 +240,45 @@ function animateRig(entry: CharacterEntry, now: number) {
   rig.rightFoot.rotation.y = heelClick * .16
   rig.leftFoot.rotation.z = 0
   rig.rightFoot.rotation.z = heelClick * .055
-  rig.root.rotation.y = entry.baseTurn + entry.pointer.x * .025
+  rig.root.rotation.y = entry.baseTurn + entry.pointer.x * .025 + sway * .014
 
-  const blinkPhase = time % 6.2
-  const blink = blinkPhase > 3.0 && blinkPhase < 3.23 ? Math.sin((blinkPhase - 3.0) / .23 * Math.PI) : 0
+  // A real blink shuts faster than it opens. Both halves are eased so the lids
+  // accelerate out of and settle into the open pose.
+  const blinkPhase = (time + 3.1) % 5.6
+  const blink = blinkPhase < .085
+    ? ease(blinkPhase / .085)
+    : blinkPhase < .265
+      ? 1 - ease((blinkPhase - .085) / .18)
+      : 0
   rig.eyes.forEach((eye) => { eye.scale.y = Math.max(.08, 1 - blink * .92) })
-  rig.pupils.forEach((pupil) => pupil.position.set(entry.pointer.x * .012, entry.pointer.y * -.008, Number(pupil.userData.baseZ ?? .027)))
+  // Slow paired drifts keep the gaze alive without a mechanical single-sine
+  // sweep, and hold the pupils inside the eye whites.
+  const pupilX = entry.pointer.x * .012 + (Math.sin(time * .77) * .6 + Math.sin(time * .29) * .4) * ambient * .006
+  const pupilY = entry.pointer.y * -.008 + Math.sin(time * .51) * ambient * .003
+  rig.pupils.forEach((pupil) => pupil.position.set(pupilX, pupilY, Number(pupil.userData.baseZ ?? .027)))
+
+  if (entry.shadow) {
+    // The contact shadow tracks the weight shift and tightens on the inhale,
+    // which sells the ground contact the static ellipse used to break.
+    entry.shadow.position.x = rig.hips.position.x * .55 + weightShift * .012
+    entry.shadow.scale.set(1 - breath * .012, .36 * (1 - breath * .016), 1)
+    entry.shadow.material.opacity = .28 - breath * .012
+  }
+}
+
+/** Reads the host box. Only ever called from the ResizeObserver and on mount:
+ *  doing it inside the frame loop forced a synchronous layout every frame,
+ *  which is what made the figure hitch while the office scene mutated the DOM. */
+function measureHost(entry: CharacterEntry) {
+  entry.hostWidth = Math.max(1, Math.round(entry.host.clientWidth))
+  entry.hostHeight = Math.max(1, Math.round(entry.host.clientHeight))
 }
 
 function paintCharacter(entry: CharacterEntry, now: number) {
   const renderer = entry.renderer ?? rendererForCharacters()
   const surface = entry.renderer ? entry.canvas : renderSurface!
-  const width = Math.max(1, Math.round(entry.host.clientWidth))
-  const height = Math.max(1, Math.round(entry.host.clientHeight))
+  const width = entry.hostWidth
+  const height = entry.hostHeight
   const pixelRatio = Math.min(2, window.devicePixelRatio || 1)
   const outputWidth = Math.max(1, Math.round(width * pixelRatio))
   const outputHeight = Math.max(1, Math.round(height * pixelRatio))
@@ -204,41 +289,50 @@ function paintCharacter(entry: CharacterEntry, now: number) {
   }
 
   const aspect = width / height
-  const viewHeight = entry.mode === 'portrait' ? 1.78 : entry.mode === 'icon' ? 1.56 : entry.mode === 'scene' ? 5.82 : 5.92
-  entry.camera.top = viewHeight / 2
-  entry.camera.bottom = -viewHeight / 2
-  entry.camera.left = -viewHeight * aspect / 2
-  entry.camera.right = viewHeight * aspect / 2
-  entry.camera.updateProjectionMatrix()
+  const framing = framings[entry.mode]
+  if (entry.camera.top !== framing.viewHeight / 2 || entry.camera.right !== framing.viewHeight * aspect / 2) {
+    entry.camera.top = framing.viewHeight / 2
+    entry.camera.bottom = -framing.viewHeight / 2
+    entry.camera.left = -framing.viewHeight * aspect / 2
+    entry.camera.right = framing.viewHeight * aspect / 2
+    entry.camera.updateProjectionMatrix()
+  }
 
   // Render into a target with the same aspect ratio as the visible panel.
   // The previous square 320px target gave tall characters only a ~100px-wide
   // source strip, which was then enlarged and visibly softened. A quick first
   // pass makes the character appear promptly; the next pass resolves it at the
   // panel's actual density without allocating another WebGL context.
-  const sharpHeight = entry.mode === 'full'
+  const sharpHeight = entry.mode === 'hero' || entry.mode === 'full'
     ? Math.min(1200, Math.max(760, outputHeight))
     : entry.mode === 'scene'
       ? Math.min(960, Math.max(640, outputHeight))
       : entry.mode === 'portrait'
         ? Math.min(480, Math.max(320, outputHeight))
         : Math.min(360, Math.max(240, outputHeight))
-  const previewHeight = entry.mode === 'full' || entry.mode === 'scene' ? 420 : entry.mode === 'portrait' ? 220 : 180
+  const previewHeight = isFullBody(entry.mode) ? 420 : entry.mode === 'portrait' ? 220 : 180
   let renderHeight = entry.renderer ? height : entry.quality === 'preview' ? Math.min(previewHeight, sharpHeight) : sharpHeight
   let renderWidth = entry.renderer ? width : Math.max(1, Math.round(renderHeight * aspect))
-  const maxWidth = entry.mode === 'full' || entry.mode === 'scene' ? 880 : 520
+  const maxWidth = isFullBody(entry.mode) ? 880 : 520
   if (renderWidth > maxWidth) {
     renderHeight = Math.max(1, Math.round(renderHeight * maxWidth / renderWidth))
     renderWidth = maxWidth
   }
+  // Reassigning canvas.width reallocates the drawing buffer, so both branches
+  // resize only when the target has actually changed shape.
   if (entry.renderer) {
-    renderer.setPixelRatio(pixelRatio)
-    renderer.setSize(width, height, false)
-  } else if (surface.width !== renderWidth || surface.height !== renderHeight) {
-    renderer.setSize(renderWidth, renderHeight, false)
+    if (entry.outputWidth !== outputWidth || entry.outputHeight !== outputHeight) {
+      entry.outputWidth = outputWidth
+      entry.outputHeight = outputHeight
+      renderer.setPixelRatio(pixelRatio)
+      renderer.setSize(width, height, false)
+      renderer.setViewport(0, 0, width, height)
+    }
+  } else {
+    if (surface.width !== renderWidth || surface.height !== renderHeight) renderer.setSize(renderWidth, renderHeight, false)
+    renderer.setViewport(0, 0, renderWidth, renderHeight)
+    renderer.setScissorTest(false)
   }
-  renderer.setViewport(0, 0, renderWidth, renderHeight)
-  renderer.setScissorTest(false)
   renderer.clear(true, true, true)
   animateRig(entry, now)
   renderer.render(entry.scene, entry.camera)
@@ -251,7 +345,10 @@ function paintCharacter(entry: CharacterEntry, now: number) {
     entry.context.drawImage(surface, 0, 0, renderWidth, renderHeight, 0, 0, outputWidth, outputHeight)
     entry.context.globalCompositeOperation = 'source-over'
   }
-  entry.host.classList.add('is-ready')
+  if (!entry.ready) {
+    entry.ready = true
+    entry.onFirstPaint()
+  }
   entry.lastPainted = now
   if (entry.quality === 'preview' && !entry.reduced) {
     entry.quality = 'sharp'
@@ -270,7 +367,7 @@ function runCharacterFrame(now: number) {
     if (entry.dirty) return true
     // Large hero characters follow the display refresh rate. Portraits and
     // icons remain deliberately cheaper because several may share one page.
-    const interval = entry.walking || entry.mode === 'full' || entry.mode === 'scene' ? 0 : entry.mode === 'portrait' ? 32 : 50
+    const interval = entry.walking || isFullBody(entry.mode) ? 0 : entry.mode === 'portrait' ? 32 : 50
     return now - entry.lastPainted >= interval
   })
   const budget = Math.min(8, visible.length)
@@ -279,7 +376,10 @@ function runCharacterFrame(now: number) {
     paintCharacter(entry, now)
   }
   if (visible.length > budget) renderCursor = (renderCursor + budget) % visible.length
-  animationFrame = window.requestAnimationFrame(runCharacterFrame)
+  // Nothing on screen wants a frame. Visibility, resize and prop changes all
+  // re-request one, so idling here costs the page nothing.
+  const live = Array.from(entries).some((entry) => entry.visible && !entry.disposed && (!entry.reduced || entry.dirty))
+  if (live) animationFrame = window.requestAnimationFrame(runCharacterFrame)
 }
 
 function requestCharacterFrame() {
@@ -290,13 +390,14 @@ function createEntry(
   host: HTMLSpanElement,
   canvas: HTMLCanvasElement,
   props: Required<Pick<StylizedCharacterProps, 'gender' | 'tier' | 'role' | 'mode' | 'mood' | 'activity' | 'walking' | 'direction'>> & Pick<StylizedCharacterProps, 'paletteSeed'>,
+  onFirstPaint: () => void,
 ): CharacterEntry | null {
   // The full Office hero owns one transparent WebGL canvas. Rendering it
   // directly removes the intermediate WebGL-to-2D copy whose backing rectangle
   // remained faintly visible against the portrait card and clipped overscan.
   // Smaller portraits/icons keep sharing a renderer to avoid proliferating
   // contexts across staff-heavy screens.
-  const renderer = props.mode === 'full'
+  const renderer = props.mode === 'hero' || props.mode === 'full'
     ? new THREE.WebGLRenderer({
       canvas,
       alpha: true,
@@ -309,18 +410,19 @@ function createEntry(
   if (!renderer && !context) return null
   if (renderer) configureCharacterRenderer(renderer)
   const scene = new THREE.Scene()
-  const targetY = props.mode === 'portrait' || props.mode === 'icon' ? 5.03 : 2.76
+  const framing = framings[props.mode]
   const camera = new THREE.OrthographicCamera(-2, 2, 3.2, -3.2, .1, 40)
-  camera.position.set(0, targetY + .04, 10.5)
-  camera.lookAt(0, targetY, .12)
+  camera.position.set(0, framing.centerY, 10.5)
+  camera.lookAt(0, framing.centerY - .04, .12)
 
   const rig = buildStylizedCounsel(props.gender, props.tier, { role: props.role, paletteSeed: props.paletteSeed })
   const baseTurn = props.direction === 'left' ? -.24 : props.direction === 'right' ? .24 : -.075
   rig.root.rotation.y = baseTurn
   scene.add(rig.root)
 
-  if (props.mode === 'full' || props.mode === 'scene') {
-    const shadow = new THREE.Mesh(
+  let shadow: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null = null
+  if (isFullBody(props.mode)) {
+    shadow = new THREE.Mesh(
       new THREE.CircleGeometry(.68, 28),
       new THREE.MeshBasicMaterial({ color: 0x101820, transparent: true, opacity: .28, depthWrite: false }),
     )
@@ -341,7 +443,7 @@ function createEntry(
   rim.position.set(3.5, 6.2, -4.5)
   scene.add(rim)
 
-  return {
+  const entry = {
     host,
     canvas,
     context,
@@ -349,6 +451,7 @@ function createEntry(
     scene,
     camera,
     rig,
+    shadow,
     mode: props.mode,
     mood: props.mood,
     activity: props.activity,
@@ -359,7 +462,14 @@ function createEntry(
     pointerTarget: new THREE.Vector2(),
     pointerActive: false,
     elapsed: 0,
+    gestureElapsed: 0,
     lastAnimated: 0,
+    hostWidth: 1,
+    hostHeight: 1,
+    ready: false,
+    onFirstPaint,
+    outputWidth: 0,
+    outputHeight: 0,
     visible: true,
     reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     dirty: true,
@@ -369,12 +479,13 @@ function createEntry(
     lastPainted: 0,
     disposed: false,
   } satisfies CharacterEntry
+  measureHost(entry)
+  return entry
 }
 
 function disposeEntry(entry: CharacterEntry) {
   entry.disposed = true
   entries.delete(entry)
-  entry.host.classList.remove('is-ready')
   entry.renderer?.dispose()
   const geometries = new Set<THREE.BufferGeometry>()
   const materials = new Set<THREE.Material>()
@@ -407,13 +518,18 @@ export function StylizedCharacter({
   const hostRef = useRef<HTMLSpanElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const entryRef = useRef<CharacterEntry | null>(null)
+  // Readiness is React state rather than an imperative class. Toggling the class
+  // from the frame loop fought every re-render of the host: React rewrote
+  // className, dropping `is-ready`, and the figure flickered through its opacity
+  // transition until the next painted frame restored it.
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     const host = hostRef.current
     const canvas = canvasRef.current
     if (!host || !canvas) return
-    host.classList.remove('is-ready')
-    const entry = createEntry(host, canvas, { gender, tier, role, mode, mood, activity, walking, direction, paletteSeed })
+    setReady(false)
+    const entry = createEntry(host, canvas, { gender, tier, role, mode, mood, activity, walking, direction, paletteSeed }, () => setReady(true))
     if (!entry) return
     entryRef.current = entry
     entries.add(entry)
@@ -425,15 +541,22 @@ export function StylizedCharacter({
         THREE.MathUtils.clamp(((event.clientX - bounds.left) / Math.max(1, bounds.width) - .5) * 2, -1, 1),
         THREE.MathUtils.clamp(((event.clientY - bounds.top) / Math.max(1, bounds.height) - .5) * 2, -1, 1),
       )
+      // Reduced-motion entries do not keep a frame loop alive, so gaze tracking
+      // has to ask for the frame it needs.
+      entry.dirty = true
+      requestCharacterFrame()
     }
     const onPointerLeave = () => {
       entry.pointerActive = false
       entry.pointerTarget.set(0, 0)
+      entry.dirty = true
+      requestCharacterFrame()
     }
     host.addEventListener('pointermove', onPointerMove)
     host.addEventListener('pointerleave', onPointerLeave)
 
     const resizeObserver = new ResizeObserver(() => {
+      measureHost(entry)
       entry.dirty = true
       requestCharacterFrame()
     })
@@ -467,17 +590,16 @@ export function StylizedCharacter({
     entry.mood = mood
     entry.walking = walking
     entry.baseTurn = direction === 'left' ? -.24 : direction === 'right' ? .24 : -.075
-    if (activityChanged && activity !== 'idle') {
-      entry.elapsed = 0
-      entry.lastAnimated = 0
-    }
+    // Only the gesture clock rewinds. The idle clock keeps running so breath and
+    // weight-shift phase carry through the transition without a snap.
+    if (activityChanged && activity !== 'idle') entry.gestureElapsed = 0
     entry.dirty = true
     requestCharacterFrame()
   }, [activity, direction, mood, walking])
 
   return (
     <span
-      className={`stylized-character stylized-character-${mode} role-${role} mood-${mood} activity-${activity} ${className}`}
+      className={`stylized-character stylized-character-${mode} role-${role} mood-${mood} activity-${activity} ${ready ? 'is-ready' : ''} ${className}`}
       ref={hostRef}
       role={label ? 'img' : undefined}
       aria-label={label}

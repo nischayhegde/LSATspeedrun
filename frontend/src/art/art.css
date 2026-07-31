@@ -60,6 +60,9 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 }
 .stylized-character-portrait .stylized-character-rim,
 .stylized-character-icon .stylized-character-rim { display: none; }
+/* The hero framing keeps the shoes ~10.5% up from the canvas floor, so its
+   contact shadow sits higher and tighter than the edge-to-edge default. */
+.stylized-character-hero .stylized-character-rim { left: 32%; right: 32%; bottom: 6.5%; height: 8%; }
 .av-person-three { width: 100%; height: 100%; }
 .av-person-three .stylized-character { filter: drop-shadow(0 12px 13px rgba(5, 10, 16, .34)); }
 
@@ -171,7 +174,10 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .av-hero-stage::before { content: none; }
 .av-hero-halo { position: absolute; left: 50%; top: 39%; width: 88%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle, rgba(255,239,201,.42), rgba(48,68,80,.08) 47%, transparent 68%); animation: av-halo 6s ease-in-out infinite; }
 @keyframes av-halo { 50% { opacity: 0.55; transform: translate(-50%, -50%) scale(1.07); } }
-.av-hero-figure { position: relative; z-index: 2; width: 116%; height: 106%; margin: 0 -8% -2%; display: flex; align-items: flex-end; justify-content: center; overflow: visible; transform-origin: 50% 100%; }
+/* The figure sits wholly inside the stage. It used to be sized 116% x 106% with
+   negative margins, which pushed the hair and shoulders past the panel's own
+   border. Framing headroom now comes from the hero camera instead. */
+.av-hero-figure { position: relative; z-index: 2; width: 100%; height: 100%; margin: 0; display: flex; align-items: flex-end; justify-content: center; overflow: visible; transform-origin: 50% 100%; }
 .av-hero-img { position: relative; z-index: 2; display: block; height: 100%; width: auto; max-width: 100%; object-fit: contain; object-position: center bottom; filter: saturate(.88) contrast(1.035) drop-shadow(0 2px 1px rgba(255,242,204,.18)) drop-shadow(0 18px 22px rgba(7,13,20,.46)); transform-origin: 50% 100%; }
 .av-hero-light-pass { position: absolute; z-index: 3; left: 50%; bottom: 0; translate: -50% 0; opacity: 0; pointer-events: none; filter: saturate(.82) brightness(1.24) contrast(1.04); mix-blend-mode: soft-light; -webkit-mask-image: linear-gradient(103deg,transparent 22%,#000 42%,#000 49%,transparent 67%); mask-image: linear-gradient(103deg,transparent 22%,#000 42%,#000 49%,transparent 67%); -webkit-mask-size: 230% 100%; mask-size: 230% 100%; animation: av-hero-light-pass 12.5s ease-in-out infinite; }
 .av-rigged-character { width: 100%; height: 100%; position: relative; display: flex; align-items: flex-end; justify-content: center; overflow: visible; isolation: isolate; contain: layout style; }
@@ -191,7 +197,9 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 @keyframes av-hero-rim-light { 0%,100% { opacity: .12; transform: translateX(-2%); } 48% { opacity: .42; transform: translateX(2%); } 66% { opacity: .18; } }
 @keyframes av-portrait-sheen { 0%,62% { background-position: 110% 0; opacity: 0; } 70% { opacity: .8; } 100% { background-position: -80% 0; opacity: 0; } }
 @keyframes av-portrait-light { to { opacity: .95; transform: translateX(6%); } }
-.av-hero-floor { position: absolute; z-index: 1; left: 50%; bottom: 3.5%; width: 58%; height: 5%; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(closest-side, rgba(88, 58, 20, 0.42), transparent 74%); }
+/* Sits under the shoes rather than at the very bottom of the stage, which the
+   reframed hero left ~10% of the canvas above. */
+.av-hero-floor { position: absolute; z-index: 1; left: 50%; bottom: 8.2%; width: 42%; height: 5%; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(closest-side, rgba(88, 58, 20, 0.42), transparent 74%); }
 .av-hero-plaque { position: relative; z-index: 4; margin: 0 12px 12px; padding: 10px 14px 11px; border-radius: 12px; border: 1px solid var(--av-panel-line); background: var(--av-panel); text-align: center; box-shadow: 0 10px 24px rgba(6, 10, 18, 0.35); }
 .av-hero-plaque small { display: block; color: var(--av-brass-bright); font-family: var(--font-pixel); font-size: 9px; font-weight: 800; letter-spacing: 0.24em; }
 .av-hero-plaque strong { display: block; margin-top: 2px; color: #f6f1e2; font-family: var(--font-display); font-size: 19px; font-weight: 640; line-height: 1.1; }
@@ -429,7 +437,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .office-inventory-list button { width: 100%; min-height: 51px; padding: 7px 8px; display: grid; grid-template-columns: 9px minmax(0,1fr) auto; align-items: center; gap: 9px; border: 0; border-radius: 9px; color: #eee5d0; background: transparent; text-align: left; transition: background .16s ease,transform .16s ease; }
 .office-inventory-list button:hover,.office-inventory-list button:focus-visible { outline: 0; background: rgba(64,107,111,.23); transform: translateX(2px); }
 .office-inventory-list .inventory-type { width: 7px; height: 7px; border-radius: 50%; background: #5fa9a4; box-shadow: 0 0 0 3px rgba(95,169,164,.1); }
-.office-inventory-list .type-staff { background: #d2ae62; }.office-inventory-list .type-connection { background: #7aa58a; }.office-inventory-list .type-rival { background: #a97883; }
+.office-inventory-list .type-staff { background: #d2ae62; }.office-inventory-list .type-connection { background: #7aa58a; }.office-inventory-list .type-rival { background: #a97883; }.office-inventory-list .type-cosmetic { background: #b78fc2; }
 .office-inventory-list button > span { min-width: 0; }
 .office-inventory-list button strong,.office-inventory-list button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .office-inventory-list button strong { color: #f3ead6; font-size: 11.5px; font-weight: 750; }
@@ -536,6 +544,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .av-vignette.asset-connection { background: linear-gradient(180deg, #1c2f40 0%, #14222f 100%); }
 .av-vignette.asset-staff { background: linear-gradient(180deg, #3a3226 0%, #292216 100%); }
 .av-vignette.asset-rival { background: linear-gradient(180deg, #2c2330 0%, #191420 100%); }
+.av-vignette.asset-cosmetic { background: linear-gradient(180deg, #33283a 0%, #1d1826 100%); }
 
 .av-card-frame { position: relative; overflow: hidden; width: 100%; height: 100%; }
 .av-card-render { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(110% 90% at 50% 70%,#2a414b,#121c27 72%); }

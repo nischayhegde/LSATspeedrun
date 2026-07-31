@@ -450,10 +450,6 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
         "client_name": "Walk-in client",
         "base_fee": CLIENT_BY_KEY["walk_in"]["base_fee"],
     }
-    duplicate_start = client.post("/v1/study-sessions", headers=headers)
-    assert duplicate_start.status_code == 201
-    assert duplicate_start.json["session"]["id"] == session["id"]
-
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
         assert [item.question_id for item in items] == chosen_ids
@@ -464,10 +460,85 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
         assert items[0].game_context_json
         assert all(item.game_context_json is None for item in items[1:])
 
+    # Starting a second practice run no longer just resumes the first — it
+    # queues a new run (a student may hold several at once, up to the cap)
+    # and auto-pauses whichever run was still ticking, since only one run may
+    # ever have an actively-running timer at a time.
+    second_start = client.post("/v1/study-sessions", headers=headers)
+    assert second_start.status_code == 201
+    second_session = second_start.json["session"]
+    assert second_session["id"] != session["id"]
+
+    with app.app_context():
+        first_after = db.session.get(StudySession, session["id"])
+        assert first_after.status == "paused"
+        second_after = db.session.get(StudySession, second_session["id"])
+        assert second_after.status == "in_progress"
+
+    active_list = client.get("/v1/study-sessions/active", headers=headers)
+    assert active_list.status_code == 200
+    assert active_list.json["queue_cap"] == 8
+    active_ids = {entry["id"] for entry in active_list.json["sessions"]}
+    assert active_ids == {session["id"], second_session["id"]}
+
     diagnostics = client.get("/v1/diagnostics/current", headers=headers)
     assert diagnostics.status_code == 200
     assert diagnostics.json == {"session": None, "latest": None}
     assert client.get("/v1/story/progress").status_code == 404
+
+
+def test_practice_queue_cap_and_single_active_timer(app):
+    client = app.test_client()
+    headers = login(client, "queue-cap@example.test")
+    create_game(client, headers)
+
+    started_ids = []
+    for _ in range(8):
+        response = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+        assert response.status_code == 201
+        started_ids.append(response.json["session"]["id"])
+
+    overflow = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+    assert overflow.status_code == 409
+    assert overflow.json["error"]["code"] == "queue_full"
+
+    with app.app_context():
+        statuses = {
+            session_id: db.session.get(StudySession, session_id).status
+            for session_id in started_ids
+        }
+        # Only the most-recently-started run may be ticking; every other
+        # queued run must have been auto-paused as soon as the next one began,
+        # otherwise two items could accumulate active_elapsed_ms at once.
+        assert sum(status == "in_progress" for status in statuses.values()) == 1
+        assert statuses[started_ids[-1]] == "in_progress"
+        assert all(statuses[session_id] == "paused" for session_id in started_ids[:-1])
+
+    active = client.get("/v1/study-sessions/active", headers=headers)
+    assert active.status_code == 200
+    assert active.json["queue_cap"] == 8
+    assert {entry["id"] for entry in active.json["sessions"]} == set(started_ids)
+
+    # Explicitly resuming an older paused run must re-pause whatever else was
+    # ticking, so the "exactly one in_progress session" invariant survives
+    # switching focus between already-queued runs, not just creating new ones.
+    resumed = client.post(f"/v1/study-sessions/{started_ids[0]}/resume", headers=headers)
+    assert resumed.status_code == 200
+    assert resumed.json["session"]["status"] == "in_progress"
+    with app.app_context():
+        statuses = {
+            session_id: db.session.get(StudySession, session_id).status
+            for session_id in started_ids
+        }
+        assert sum(status == "in_progress" for status in statuses.values()) == 1
+        assert statuses[started_ids[0]] == "in_progress"
+
+    discarded = client.post(f"/v1/study-sessions/{started_ids[1]}/abandon", headers=headers)
+    assert discarded.status_code == 200
+    assert discarded.json["session"]["status"] == "abandoned"
+
+    freed = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+    assert freed.status_code == 201
 
 
 def test_diagnostic_is_neutral_and_feeds_performance(app):
@@ -1115,11 +1186,10 @@ def test_stale_ai_job_is_resent_and_redelivery_settles_once(app, monkeypatch):
         assert completed.status == "completed"
         assert completed.attempt_count == 2
         assert AttemptSettlement.query.filter_by(attempt_id=attempt.id).count() == 1
-        assert LedgerEntry.query.filter_by(
-            user_id=attempt.user_id,
-            kind="case_payout",
-            source_id=attempt.id,
-        ).count() == 1
+        # The key is scoped to the paying profile, so match on the attempt it names.
+        payouts = LedgerEntry.query.filter_by(user_id=attempt.user_id, kind="case_payout").all()
+        assert len(payouts) == 1
+        assert payouts[0].source_id.endswith(f":{attempt.id}")
 
         duplicate = process_ai_job(job_id)
         assert duplicate.status == "completed"
@@ -1197,8 +1267,13 @@ def test_case_settlement_and_ledger_are_exactly_once(app, monkeypatch):
         second = run_attempt_coaching(attempt)
         assert first == second
         assert AttemptSettlement.query.filter_by(attempt_id=attempt.id).count() == 1
-        assert LedgerEntry.query.filter_by(user_id=attempt.user_id, kind="case_payout", source_id=attempt.id).count() == 1
         profile = PlayerProfile.query.filter_by(user_id=attempt.user_id).one()
+        # Ledger keys name the profile that recorded them; see `_scoped_source`.
+        assert LedgerEntry.query.filter_by(
+            user_id=attempt.user_id,
+            kind="case_payout",
+            source_id=f"{profile.id}:{attempt.id}",
+        ).count() == 1
         assert profile.cash == created["cash"] + attempt.settlement.payout
         assert profile.total_cases == 1
 
@@ -1461,6 +1536,58 @@ def test_purchases_and_passive_income_are_account_bound(app):
         asset for asset in collected.json["game"]["catalog"]["assets"] if asset["key"] == "office_manager"
     )
     assert manager["benefit"] == ASSET_BY_KEY["office_manager"]["benefit"]
+
+
+def test_cosmetics_are_purchasable_account_bound_and_respect_their_requirement(app):
+    first = app.test_client()
+    first_headers = login(first, "decor@example.test")
+    created = create_game(first, first_headers)
+    second = app.test_client()
+    second_headers = login(second, "decor-other@example.test")
+    create_game(second, second_headers, "male")
+
+    lamp = ASSET_BY_KEY["banker_lamp"]
+    assert lamp["type"] == "cosmetic"
+    assert lamp["requires"] == ["repaired_desk"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = lamp["cost"] * 2
+        db.session.commit()
+
+    # The lamp needs a desk to stand on, so its requirement gates it exactly as
+    # a functional upgrade's does.
+    blocked = first.post("/v1/game/purchases", json={"asset_key": "banker_lamp"}, headers=first_headers)
+    assert blocked.status_code == 409
+    assert blocked.json["error"]["code"] == "requirements_not_met"
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        db.session.add(
+            PlayerAsset(
+                profile_id=profile.id,
+                asset_key="repaired_desk",
+                asset_type="upgrade",
+                purchase_price=ASSET_BY_KEY["repaired_desk"]["cost"],
+            )
+        )
+        db.session.commit()
+
+    bought = first.post("/v1/game/purchases", json={"asset_key": "banker_lamp"}, headers=first_headers)
+    assert bought.status_code == 200
+    assert bought.json["game"]["cash"] == lamp["cost"]
+    assert "banker_lamp" in bought.json["game"]["owned_assets"]
+    assert first.post("/v1/game/purchases", json={"asset_key": "banker_lamp"}, headers=first_headers).status_code == 409
+
+    # Decor buys nothing but the view: no passive income and no payout effect
+    # leaks into the serialized catalog entry.
+    assert bought.json["game"]["passive_income"]["hourly_rate"] == 0
+    catalog_lamp = next(asset for asset in bought.json["game"]["catalog"]["assets"] if asset["key"] == "banker_lamp")
+    assert catalog_lamp["owned"] is True
+    assert catalog_lamp["benefit"] == lamp["benefit"]
+    assert "payout_mult" not in catalog_lamp
+
+    assert "banker_lamp" not in second.get("/v1/game").json["game"]["owned_assets"]
 
 
 def test_locked_economy_action_refreshes_a_stale_profile(app):
@@ -1986,3 +2113,114 @@ def test_strategy_dashboard_waits_for_supported_evidence_and_excludes_skips(app)
     response = client.get("/v1/performance", headers=headers)
     assert response.status_code == 200
     assert response.json["performance"]["strategy_lab"]["strongest"]["key"] == "argument_core"
+
+
+def _replace_profile(app, client, headers, profile_id: str) -> dict:
+    """Retire a profile and start a fresh one for the same account.
+
+    `player_profiles.user_id` is unique, so a user's second playthrough can only
+    exist after the first is gone. Spending history is deliberately user-owned and
+    survives, which is the situation the ledger scoping has to tolerate.
+    """
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        DailyProgress.query.filter_by(profile_id=profile.id).delete()
+        db.session.delete(profile)
+        db.session.commit()
+        # `create_profile` reads `user.game_profile`, which is cached on the
+        # identity map until the deleted row is expired.
+        db.session.expire_all()
+    return create_game(client, headers)
+
+
+def test_a_replacement_profile_can_repurchase_an_asset_the_ledger_still_records(app):
+    """The reported 500: a surviving ledger row with no matching asset row.
+
+    `purchase_asset` decides ownership from `player_assets`, which belongs to the
+    profile, while `uq_ledger_source` spans the user. A replacement profile
+    therefore saw the asset as unowned and then collided with the retired
+    profile's ledger row on insert.
+    """
+
+    client = app.test_client()
+    headers = login(client, "second-firm@example.test")
+    created = create_game(client, headers)
+    desk_cost = ASSET_BY_KEY["repaired_desk"]["cost"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = desk_cost
+        db.session.commit()
+    assert client.post("/v1/game/purchases", json={"asset_key": "repaired_desk"}, headers=headers).status_code == 200
+
+    restarted = _replace_profile(app, client, headers, created["id"])
+    assert restarted["id"] != created["id"]
+    with app.app_context():
+        user_id = PlayerProfile.query.filter_by(id=restarted["id"]).one().user_id
+        # Exactly the inconsistency that used to fail: the purchase is still in the
+        # ledger, but nothing owns the asset any more.
+        assert LedgerEntry.query.filter_by(user_id=user_id, kind="asset_purchase").count() == 1
+        assert PlayerAsset.query.filter_by(asset_key="repaired_desk").count() == 0
+
+        profile = PlayerProfile.query.filter_by(id=restarted["id"]).one()
+        profile.cash = desk_cost
+        db.session.commit()
+
+    repeated = client.post("/v1/game/purchases", json={"asset_key": "repaired_desk"}, headers=headers)
+    assert repeated.status_code == 200
+    assert repeated.json["game"]["cash"] == 0
+
+    with app.app_context():
+        rows = LedgerEntry.query.filter_by(user_id=user_id, kind="asset_purchase").all()
+        assert len(rows) == 2
+        assert len({row.source_id for row in rows}) == 2
+        assert all(row.source_id.endswith(":repaired_desk") for row in rows)
+        assert {created["id"], restarted["id"]} == {row.source_id.split(":")[0] for row in rows}
+
+
+def test_profile_scoped_ledger_keys_let_each_playthrough_record_the_same_content(app):
+    from app.game import _ledger, _scoped_source
+
+    # Every kind that keys on a content name rather than a unique event id.
+    content_keys = {
+        "asset_purchase": "repaired_desk",
+        "firm_advancement": "1",
+        "story_choice": "sterling_invitation",
+        "quest_advance": "mercer_overflow",
+    }
+
+    client = app.test_client()
+    headers = login(client, "two-runs@example.test")
+    created = create_game(client, headers)
+
+    def record(profile_id: str) -> None:
+        with app.app_context():
+            profile = PlayerProfile.query.filter_by(id=profile_id).one()
+            for kind, source in content_keys.items():
+                _ledger(profile, kind, source, -1, {"note": "scoping"})
+            db.session.commit()
+
+    record(created["id"])
+    restarted = _replace_profile(app, client, headers, created["id"])
+    # Would raise IntegrityError on uq_ledger_source before the keys were scoped.
+    record(restarted["id"])
+
+    with app.app_context():
+        user_id = PlayerProfile.query.filter_by(id=restarted["id"]).one().user_id
+        for kind, source in content_keys.items():
+            rows = LedgerEntry.query.filter_by(user_id=user_id, kind=kind).all()
+            recorded = {row.source_id for row in rows if row.source_id.endswith(f":{source}")}
+            assert recorded == {f'{created["id"]}:{source}', f'{restarted["id"]}:{source}'}
+
+        # The opening balance is keyed on the profile id alone and needs no prefix,
+        # so each playthrough still contributes exactly one.
+        opening = LedgerEntry.query.filter_by(user_id=user_id, kind="opening_balance").all()
+        assert {row.source_id for row in opening} == {created["id"], restarted["id"]}
+
+        profile = PlayerProfile.query.filter_by(id=restarted["id"]).one()
+        assert _scoped_source(profile, "repaired_desk") == f'{restarted["id"]}:repaired_desk'
+        # An over-long key loses its tail rather than the profile it belongs to.
+        scoped = _scoped_source(profile, "x" * 200)
+        assert len(scoped) == 100
+        assert scoped.startswith(f'{restarted["id"]}:')

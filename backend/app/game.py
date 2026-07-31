@@ -267,8 +267,31 @@ RIVALS = [
     _asset("planetary_rival", "rival", "Acquire Apex Justice Network", 140_000_000_000, 95, 14, "+100% payout · $6B/hour", "The final rival becomes the other half of a planetary public-interest legal network.", requires=("lunar_rival", "justice_constellation"), art="nexus", payout_mult=1.0, passive_hourly=6_000_000_000),
 ]
 
-ASSETS = UPGRADES + STAFF + CONNECTIONS + RIVALS
+# Cosmetics are the only purchases with no mechanical effect. They exist so a
+# player can furnish the office to taste, so they are deliberately cheaper than
+# the functional asset at the same tier, never gate a headquarters advance, and
+# are excluded from the economy rebalance that prices everything else in cases.
+COSMETICS = [
+    _asset("bar_certificate", "cosmetic", "Framed bar certificate", 400, 0, 0, "Decor · hangs beside the desk", "The document that started all of this, finally out of the drawer and under glass.", art="decor-frame"),
+    _asset("banker_lamp", "cosmetic", "Brass banker's lamp", 950, 0, 0, "Decor · sits on the partner desk", "A green glass shade and a warm pool of light for the hours after everyone leaves.", requires=("repaired_desk",), art="decor-lamp"),
+    _asset("persian_rug", "cosmetic", "Hand-knotted Persian rug", 3_400, 20, 1, "Decor · covers the client floor", "Deep madder and indigo underfoot; the first thing a nervous client notices.", art="decor-rug"),
+    _asset("fig_tree", "cosmetic", "Potted fig tree", 5_200, 20, 1, "Decor · fills the window corner", "Something alive in the room, kept carefully in the light from the window.", art="decor-plant"),
+    _asset("chesterfield", "cosmetic", "Leather chesterfield", 19_000, 32, 2, "Decor · client reading corner", "Buttoned oxblood leather that makes waiting feel like being taken seriously.", art="decor-seating"),
+    _asset("reporter_wall", "cosmetic", "Wall of bound reporters", 27_000, 32, 2, "Decor · reading shelf beside the library", "Gilt spines from a century of decisions, arranged the way a partner actually reads them.", requires=("legal_library",), art="decor-books"),
+    _asset("grandfather_clock", "cosmetic", "Grandfather clock", 90_000, 42, 3, "Decor · stands against the window wall", "Walnut, brass, and a quarter chime that keeps the room honest about billable hours.", art="decor-clock"),
+    _asset("skyline_painting", "cosmetic", "Commissioned skyline painting", 140_000, 42, 3, "Decor · hangs above the reception storage", "The city you argue in, painted by someone who clearly loves the courthouse dome.", art="decor-art"),
+    _asset("trophy_shelf", "cosmetic", "Advocacy trophy shelf", 480_000, 50, 4, "Decor · lit shelf behind the desk", "Advocacy prizes and bar honors, lit well enough to be read from the doorway.", art="decor-trophy"),
+    _asset("justice_bust", "cosmetic", "Marble bust of Justice", 1_900_000, 56, 5, "Decor · plinth near the entry", "Carrara marble on a black plinth, blindfold intact, watching the whole floor.", art="decor-bust"),
+    _asset("globe_bar", "cosmetic", "Antique globe bar", 8_000_000, 62, 6, "Decor · beside the client seating", "A hollow terrestrial globe that opens into crystal and a very good decanter.", art="decor-globe"),
+    _asset("stained_glass", "cosmetic", "Stained-glass jurisprudence panel", 32_000_000, 68, 7, "Decor · set into the window wall", "Scales, oath, and open book in leaded glass, throwing colour across the floor at dusk.", art="decor-glass"),
+    _asset("charter_vitrine", "cosmetic", "First-charter vitrine", 480_000_000, 79, 9, "Decor · sealed case by the archive", "The firm's founding charter under museum glass, inert gas, and its own quiet light.", requires=("vault_archive",), art="decor-vitrine"),
+    _asset("orchid_wall", "cosmetic", "Living orchid wall", 3_000_000_000, 86, 11, "Decor · planted wall on the rear wall", "A tended vertical garden that keeps a planet-scale practice breathing like a place people work.", art="decor-living-wall"),
+]
+
+ASSETS = UPGRADES + STAFF + CONNECTIONS + RIVALS + COSMETICS
 TIER_GATED_ASSET_TYPES = {"upgrade", "staff", "rival"}
+# Purely decorative purchases keep their authored price and carry no effects.
+UNBALANCED_ASSET_TYPES = {"cosmetic"}
 
 
 def _tier_required_asset_keys(target_tier: int) -> list[str]:
@@ -401,6 +424,8 @@ def _replace_case_payout_benefit(item: dict, percentage: int) -> None:
 def _rebalance_asset_catalog() -> None:
     """Give every purchase durable value and price it in successful cases."""
     for item in ASSETS:
+        if item["type"] in UNBALANCED_ASSET_TYPES:
+            continue
         tier = item["tier"]
         original_payout = float(item.get("payout_mult", 0))
         base_percentage = 2 + tier // 3
@@ -598,7 +623,7 @@ def _pay_rent_arrears(
     _ledger(
         profile,
         "office_rent",
-        source_id[:100],
+        source_id,
         -paid,
         {
             "office": FIRM_TIERS[profile.office_tier]["name"],
@@ -1017,12 +1042,39 @@ def update_profile(profile: PlayerProfile, payload: dict) -> PlayerProfile:
     return profile
 
 
+_LEDGER_SOURCE_LIMIT = 100
+
+
+def _scoped_source(profile: PlayerProfile, source_id: str) -> str:
+    """Name the playthrough an event belongs to.
+
+    A ledger row is owned by the user so that spending history survives the
+    profile being replaced, and `uq_ledger_source` spans
+    ``(user_id, kind, source_id)`` to make each event recordable once. The events
+    themselves are per-profile facts though: acquiring an asset, reaching a firm
+    tier, or resolving a chapter all describe one playthrough. Keyed on the bare
+    content key, a replacement profile would collide with the previous profile's
+    history and the insert would fail, so the profile is named here. That keeps
+    the once-only guarantee while scoping it to the run it describes.
+
+    Every write funnels through `_ledger`, so applying the rule here rather than
+    at each call site is what stops a newly added ledger kind from reintroducing
+    the collision. `create_profile` is the one exception and needs none: its
+    opening balance is keyed on the profile id alone, which already cannot repeat.
+    """
+
+    prefix = f"{profile.id}:"
+    # Trim the event key rather than the prefix, so a row stays attributable to
+    # its profile even in the pathological case of an over-long key.
+    return prefix + source_id[: _LEDGER_SOURCE_LIMIT - len(prefix)]
+
+
 def _ledger(profile: PlayerProfile, kind: str, source_id: str, amount: int, detail: dict) -> None:
     db.session.add(
         LedgerEntry(
             user_id=profile.user_id,
             kind=kind,
-            source_id=source_id,
+            source_id=_scoped_source(profile, source_id),
             amount=amount,
             balance_after=profile.cash,
             detail_json=detail,
@@ -1173,7 +1225,7 @@ def _collect_passive_locked(profile: PlayerProfile) -> int:
     _ledger(
         profile,
         "passive_collection",
-        f"{profile.id}:{collected_at.isoformat()}",
+        collected_at.isoformat(),
         amount,
         {"stored_hours": state["stored_hours"], "hourly_rate": state["hourly_rate"]},
     )

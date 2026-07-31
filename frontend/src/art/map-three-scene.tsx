@@ -1,5 +1,6 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import type { CharacterGender, FirmTier, GameAsset } from '../types'
 import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
@@ -148,8 +149,26 @@ function hashUnit(seed: number) {
   return value - Math.floor(value)
 }
 
+/**
+ * The district asked for a material per call, which left ~2,900 instances
+ * describing only ~130 distinct looks. Sharing them cuts GPU state changes and
+ * is what lets `batchStaticScenery` collapse meshes into large batches.
+ *
+ * Shared instances outlive any single mount, so they are flagged the same way
+ * shared geometry already is and skipped by `disposeScene`. Nothing may mutate
+ * a material returned from here; see `setOccluderFade`, which swaps in a
+ * variant rather than editing one in place.
+ */
+const sharedMaterials = new Map<string, THREE.MeshStandardMaterial>()
+
 function material(color: number, roughness = .78, metalness = .02) {
-  return new THREE.MeshStandardMaterial({ color, roughness, metalness })
+  const key = `${color}:${roughness}:${metalness}`
+  const cached = sharedMaterials.get(key)
+  if (cached) return cached
+  const created = new THREE.MeshStandardMaterial({ color, roughness, metalness })
+  created.userData.mapShared = true
+  sharedMaterials.set(key, created)
+  return created
 }
 
 function groundMaterial(color: number) {
@@ -350,18 +369,32 @@ function setSelectable(root: THREE.Object3D, data: { key: string; kind: MapScene
   root.traverse((child) => { child.userData.mapSelectionRoot = root })
 }
 
-function windowBand(width: number, count: number, y: number, depth: number, lit: boolean) {
-  const group = new THREE.Group()
-  const windowMaterial = new THREE.MeshStandardMaterial({
+// Windows are the bulk of every building: one band per floor, each previously
+// allocating its own material for one of only two possible looks.
+const windowMaterials = new Map<'lit' | 'dim', THREE.MeshStandardMaterial>()
+
+function windowMaterial(lit: boolean) {
+  const key = lit ? 'lit' : 'dim'
+  const cached = windowMaterials.get(key)
+  if (cached) return cached
+  const created = new THREE.MeshStandardMaterial({
     color: lit ? 0xb8c7bd : 0x314349,
     emissive: lit ? 0x554c32 : 0x10181b,
     emissiveIntensity: lit ? .32 : .12,
     roughness: .32,
     metalness: .24,
   })
+  created.userData.mapShared = true
+  windowMaterials.set(key, created)
+  return created
+}
+
+function windowBand(width: number, count: number, y: number, depth: number, lit: boolean) {
+  const group = new THREE.Group()
+  const bandMaterial = windowMaterial(lit)
   const span = width / count
   for (let i = 0; i < count; i += 1) {
-    group.add(box([span * .48, .34, .04], windowMaterial, [-width / 2 + span * (i + .5), y, depth]))
+    group.add(box([span * .48, .34, .04], bandMaterial, [-width / 2 + span * (i + .5), y, depth]))
   }
   return group
 }
@@ -2550,12 +2583,215 @@ function disposeScene(scene: THREE.Scene) {
       if (!object.geometry?.userData.characterShared && !object.geometry?.userData.mapShared) object.geometry?.dispose?.()
       const materials = Array.isArray(object.material) ? object.material : [object.material]
       materials.forEach((entry) => {
-        if (entry.userData.characterShared) return
+        // Shared materials are reused by the next mount, exactly like shared
+        // geometry. Disposing them here would leave a remounted map drawing
+        // against released GPU resources.
+        if (entry.userData.characterShared || entry.userData.mapShared) return
         const spriteMap = (entry as THREE.SpriteMaterial).map
         spriteMap?.dispose()
         entry.dispose()
       })
     }
+  })
+}
+
+/**
+ * Colour is the only thing most of these materials disagree on: the palette
+ * changes per building while roughness, metalness, and emissive rarely do.
+ * Grouping on everything *except* colour, then moving colour into a vertex
+ * attribute, turns ~170 material variants into ~50 batches.
+ */
+function batchFamilyKey(source: THREE.Material) {
+  const standard = source as THREE.MeshStandardMaterial
+  return [
+    source.type, standard.roughness, standard.metalness, source.side, source.opacity,
+    standard.emissive?.getHexString() ?? '', standard.emissiveIntensity ?? '',
+    standard.map?.uuid ?? '', standard.flatShading ? 1 : 0,
+  ].join('|')
+}
+
+/**
+ * Unlike the shared materials these are cloned from, batch materials live and
+ * die with one mount: a family key can name a per-mount texture, so caching
+ * them for the process would grow a little on every region change. The clone
+ * therefore drops the shared flag it inherited and lets `disposeScene` collect
+ * it alongside the merged geometry it was built for.
+ */
+type BatchMaterialCache = Map<string, THREE.Material>
+
+function batchMaterialFor(source: THREE.Material, family: string, cache: BatchMaterialCache) {
+  const cached = cache.get(family)
+  if (cached) return cached
+  const batched = source.clone()
+  const standard = batched as THREE.MeshStandardMaterial
+  // White base so the baked vertex colour comes through unmodulated.
+  standard.color?.setRGB(1, 1, 1)
+  batched.vertexColors = true
+  batched.userData = {}
+  cache.set(family, batched)
+  return batched
+}
+
+function isBatchable(object: THREE.Object3D): object is THREE.Mesh {
+  if (!(object instanceof THREE.Mesh) || (object as THREE.InstancedMesh).isInstancedMesh) return false
+  // A mesh with children would take them along when it is removed.
+  if (object.children.length > 0) return false
+  if (Array.isArray(object.material)) return false
+  const source = object.material as THREE.MeshStandardMaterial
+  // Transparent surfaces are depth-sorted against each other per object, so
+  // merging them would freeze their draw order.
+  if (source.transparent || source.depthWrite === false || !source.color) return false
+  const { attributes } = object.geometry
+  return Boolean(attributes.position && attributes.normal && attributes.uv)
+}
+
+/**
+ * Bakes `meshes` into one mesh per material family, parented to `container` and
+ * positioned relative to it, then removes the originals.
+ */
+function bakeBatches(container: THREE.Object3D, meshes: THREE.Mesh[], cache: BatchMaterialCache) {
+  if (meshes.length < 2) return
+  const families = new Map<string, THREE.Mesh[]>()
+  meshes.forEach((item) => {
+    const family = batchFamilyKey(item.material as THREE.Material)
+    // Shadow flags are per mesh, so they have to agree within a batch.
+    const key = `${family}|${item.castShadow ? 1 : 0}|${item.receiveShadow ? 1 : 0}`
+    const existing = families.get(key)
+    if (existing) existing.push(item)
+    else families.set(key, [item])
+  })
+
+  const toContainer = new THREE.Matrix4().copy(container.matrixWorld).invert()
+  const local = new THREE.Matrix4()
+  families.forEach((group) => {
+    if (group.length < 2) return
+    // `mergeGeometries` needs every input to agree on being indexed, and indices
+    // are worth keeping: dropping them tripled the vertex data to upload, which
+    // cost more at load than the draw calls it saved.
+    const indexed = group.filter((item) => item.geometry.index)
+    const unindexed = group.filter((item) => !item.geometry.index)
+    if (indexed.length && unindexed.length) {
+      bakeBatches(container, indexed, cache)
+      bakeBatches(container, unindexed, cache)
+      return
+    }
+    const geometries = group.map((item) => {
+      const geometry = item.geometry.clone()
+      // Some scenery already ships its own vertex colours — the shaded landforms,
+      // for instance. The shader multiplies those by the material colour, so the
+      // two are combined here; overwriting them flattens the mesh to a single
+      // tone.
+      const authored = geometry.getAttribute('color')
+      Object.keys(geometry.attributes).forEach((name) => {
+        if (name !== 'position' && name !== 'normal' && name !== 'uv') geometry.deleteAttribute(name)
+      })
+      geometry.applyMatrix4(local.multiplyMatrices(toContainer, item.matrixWorld))
+      const { color } = item.material as THREE.MeshStandardMaterial
+      const count = geometry.attributes.position.count
+      const colors = new Float32Array(count * 3)
+      // `color` is already in the renderer's working space, so it is copied raw.
+      for (let index = 0; index < count; index += 1) {
+        colors[index * 3] = color.r * (authored ? authored.getX(index) : 1)
+        colors[index * 3 + 1] = color.g * (authored ? authored.getY(index) : 1)
+        colors[index * 3 + 2] = color.b * (authored ? authored.getZ(index) : 1)
+      }
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      return geometry
+    })
+    const merged = mergeGeometries(geometries, false)
+    geometries.forEach((geometry) => geometry.dispose())
+    if (!merged) return
+
+    const source = group[0].material as THREE.Material
+    const batch = new THREE.Mesh(merged, batchMaterialFor(source, batchFamilyKey(source), cache))
+    batch.castShadow = group[0].castShadow
+    batch.receiveShadow = group[0].receiveShadow
+    batch.userData.staticBatch = true
+    group.forEach((item) => item.removeFromParent())
+    container.add(batch)
+  })
+}
+
+/**
+ * Collects the batchable meshes under `node`. Anything in `live` is not
+ * returned: it becomes its own batching boundary so that it keeps moving,
+ * hiding, or hit-testing independently, and its interior is baked into it
+ * rather than lifted out of it.
+ */
+function collectBatchable(node: THREE.Object3D, live: Set<THREE.Object3D>, out: THREE.Mesh[], boundaries: THREE.Object3D[]) {
+  node.children.forEach((child) => {
+    if (live.has(child)) {
+      boundaries.push(child)
+      return
+    }
+    if (isBatchable(child)) out.push(child)
+    collectBatchable(child, live, out, boundaries)
+  })
+}
+
+function bakeBoundary(boundary: THREE.Object3D, live: Set<THREE.Object3D>, cache: BatchMaterialCache) {
+  const meshes: THREE.Mesh[] = []
+  const nested: THREE.Object3D[] = []
+  collectBatchable(boundary, live, meshes, nested)
+  bakeBatches(boundary, meshes, cache)
+  nested.forEach((child) => bakeBoundary(child, live, cache))
+}
+
+/**
+ * Static scenery is authored as thousands of small meshes — a building is a
+ * facade plus one mesh per window, cornice, and awning — which reads well but
+ * costs a draw call each. This bakes them down once the world is built, so the
+ * authoring code above stays untouched.
+ *
+ * Cells that fade or are hit-tested as a unit (the player-occluding buildings)
+ * keep their own batches. Everything else pools with its neighbours into a
+ * spatial grid, which is what makes the batches large: the district is authored
+ * as ~355 small cells, so batching within each one would barely help.
+ *
+ * `live` must list every object that moves, hides, or is hit-tested on its own.
+ * Pooling reparents meshes, so anything omitted from it gets frozen in place —
+ * the callers build it from the same set the animation loop drives.
+ */
+function batchStaticScenery(world: THREE.Group, live: Set<THREE.Object3D>, gridSize = 30) {
+  world.updateMatrixWorld(true)
+  const cache: BatchMaterialCache = new Map()
+  const pooled = new Map<string, THREE.Mesh[]>()
+  const position = new THREE.Vector3()
+
+  world.children.slice().forEach((cell) => {
+    if (live.has(cell)) {
+      bakeBoundary(cell, live, cache)
+      return
+    }
+    const meshes: THREE.Mesh[] = []
+    const boundaries: THREE.Object3D[] = []
+    collectBatchable(cell, live, meshes, boundaries)
+    boundaries.forEach((child) => bakeBoundary(child, live, cache))
+
+    if (cell.userData.playerOccluder) {
+      bakeBatches(cell, meshes, cache)
+      return
+    }
+    meshes.forEach((item) => {
+      item.getWorldPosition(position)
+      const key = `${Math.floor(position.x / gridSize)}:${Math.floor(position.z / gridSize)}`
+      const bucket = pooled.get(key)
+      if (bucket) bucket.push(item)
+      else pooled.set(key, [item])
+    })
+  })
+
+  pooled.forEach((meshes, key) => {
+    const bucket = new THREE.Group()
+    bucket.name = `static-batch-${key}`
+    // Deliberately not registered with the frustum pass below. That pass works by
+    // toggling `visible`, and the shadow map is baked exactly once, so anything
+    // hidden at bake time loses its shadow for good. Three's own per-object
+    // frustum test already skips these in the camera pass without that side
+    // effect, and there are few enough buckets that the saving is marginal.
+    world.add(bucket)
+    bucket.updateMatrixWorld(true)
+    bakeBatches(bucket, meshes, cache)
   })
 }
 
@@ -2980,6 +3216,23 @@ export function MapThreeScene({
 
     const selectableRoots: THREE.Object3D[] = []
     world.traverse((object) => { if (object.userData.mapSelection) selectableRoots.push(object) })
+
+    // The one list of things that move under their own steam. Batching treats
+    // each as a boundary and the matrix freeze further down exempts the same
+    // set, so the two cannot drift apart.
+    const liveObjects = new Set<THREE.Object3D>()
+    animatedObjects.forEach((object) => liveObjects.add(object))
+    selectableRoots.forEach((object) => liveObjects.add(object))
+    transports.forEach(({ object }) => liveObjects.add(object))
+    // The rig animates limb by limb, so no part of it may be baked.
+    lawyer.traverse((object) => liveObjects.add(object))
+    if (transitCarrier) liveObjects.add(transitCarrier)
+    liveObjects.add(selectionRing)
+
+    // The world is complete here; nothing below adds static scenery, so this is
+    // the point at which it can be safely baked into batches.
+    batchStaticScenery(world, liveObjects)
+
     const playerOccluders = world.children.filter((object) => object.userData.playerOccluder)
 
     // Top-level scenery cells are removed from both rendering and traversal
@@ -3016,13 +3269,7 @@ export function MapThreeScene({
     // parent matrix, so this does not alter any visible motion.
     scene.updateMatrixWorld(true)
     scene.traverse((object) => { object.matrixAutoUpdate = false })
-    const enableLiveTransform = (object: THREE.Object3D) => { object.matrixAutoUpdate = true }
-    animatedObjects.forEach(enableLiveTransform)
-    selectableRoots.forEach(enableLiveTransform)
-    transports.forEach(({ object }) => enableLiveTransform(object))
-    lawyer.traverse(enableLiveTransform)
-    if (transitCarrier) enableLiveTransform(transitCarrier)
-    enableLiveTransform(selectionRing)
+    liveObjects.forEach((object) => { object.matrixAutoUpdate = true })
 
     // The first render is deferred until every shader program has been
     // compiled in parallel; see the `compileAsync` call that starts the loop.
@@ -3074,25 +3321,39 @@ export function MapThreeScene({
     const occlusionFocus = new THREE.Vector3()
     const occlusionDirection = new THREE.Vector3()
 
+    // Materials are shared across the whole district now, so fading one building
+    // by editing its material in place would fade every building that happens to
+    // share the look. Each material instead gets one lazily-built faded twin, and
+    // fading swaps the reference. That also avoids the shader recompile that
+    // toggling `transparent` on a live material triggers.
+    const fadedTwins = new Map<THREE.Material, THREE.Material>()
+    const fadedTwinOf = (source: THREE.Material) => {
+      const cached = fadedTwins.get(source)
+      if (cached) return cached
+      const twin = source.clone()
+      twin.transparent = true
+      twin.opacity = Math.min(source.opacity, .24)
+      twin.depthWrite = false
+      // `clone` carries userData across, but a twin belongs to this mount alone
+      // and is disposed with it, so it must not claim the shared exemption.
+      twin.userData = {}
+      fadedTwins.set(source, twin)
+      return twin
+    }
     const setOccluderFade = (root: THREE.Object3D, faded: boolean) => {
       root.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) return
-        const materials = Array.isArray(object.material) ? object.material : [object.material]
-        materials.forEach((entry) => {
-          const saved = entry.userData.playerOcclusionOriginal as { transparent: boolean; opacity: number; depthWrite: boolean } | undefined
-          if (faded) {
-            if (!saved) entry.userData.playerOcclusionOriginal = { transparent: entry.transparent, opacity: entry.opacity, depthWrite: entry.depthWrite }
-            entry.transparent = true
-            entry.opacity = Math.min(saved?.opacity ?? entry.opacity, .24)
-            entry.depthWrite = false
-          } else if (saved) {
-            entry.transparent = saved.transparent
-            entry.opacity = saved.opacity
-            entry.depthWrite = saved.depthWrite
-            delete entry.userData.playerOcclusionOriginal
-          }
-          entry.needsUpdate = true
-        })
+        const original = object.userData.playerOcclusionMaterial as THREE.Material | THREE.Material[] | undefined
+        if (faded) {
+          if (original) return
+          object.userData.playerOcclusionMaterial = object.material
+          object.material = Array.isArray(object.material)
+            ? object.material.map(fadedTwinOf)
+            : fadedTwinOf(object.material)
+        } else if (original) {
+          object.material = original
+          delete object.userData.playerOcclusionMaterial
+        }
       })
     }
 
@@ -3500,6 +3761,9 @@ export function MapThreeScene({
       disposed = true
       cancelAnimationFrame(animationFrame)
       fadedOccluders.forEach((root) => setOccluderFade(root, false))
+      // Restored above, so no mesh still references a twin by this point.
+      fadedTwins.forEach((twin) => twin.dispose())
+      fadedTwins.clear()
       resizeObserver.disconnect()
       surfaceObserver.disconnect()
       document.removeEventListener('visibilitychange', onVisibilityChange)

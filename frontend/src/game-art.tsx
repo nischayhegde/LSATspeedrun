@@ -240,7 +240,7 @@ export function PixelAssetArtwork({ asset }: { asset: GameAsset }) {
           <Suspense fallback={<div className="av-card-render-placeholder" aria-hidden="true"><i /><i /><i /></div>}>
             <CatalogAssetRender
               asset={asset}
-              fallbackSrc={asset.type === 'upgrade' ? upgradeArt(asset.key) : connectionArt(asset.key)}
+              fallbackSrc={asset.type === 'upgrade' || asset.type === 'cosmetic' ? upgradeArt(asset.key) : connectionArt(asset.key)}
             />
           </Suspense>
           <i className="av-card-sheen" />
@@ -249,7 +249,7 @@ export function PixelAssetArtwork({ asset }: { asset: GameAsset }) {
       {state === 'locked' && <div className="av-vignette-lock"><span>?</span></div>}
       {state === 'owned' && <div className="av-vignette-owned">✓</div>}
       <span className="asset-art-label av-vignette-label">
-        {asset.type === 'upgrade' ? 'OFFICE UPGRADE' : asset.type === 'staff' ? 'TEAM MEMBER' : asset.type === 'connection' ? 'NEW CONTACTS' : 'ACQUISITION'}
+        {asset.type === 'upgrade' ? 'OFFICE UPGRADE' : asset.type === 'cosmetic' ? 'OFFICE DECOR' : asset.type === 'staff' ? 'TEAM MEMBER' : asset.type === 'connection' ? 'NEW CONTACTS' : 'ACQUISITION'}
       </span>
     </div>
   )
@@ -463,7 +463,7 @@ export function CharacterPanel({ game }: { game: GameState }) {
               label={`${game.lawyer_name}, ${stageTitles[stage]}`}
               gender={game.character_gender}
               tier={game.office_tier}
-              mode="full"
+              mode="hero"
               activity={characterActivity}
               onReady={beginEntranceTimer}
             />
@@ -502,7 +502,7 @@ function OfficeInventory({ game, onFocus }: { game: GameState; onFocus: (key: st
             <small>HEADQUARTERS TIER {game.office_tier}</small>
             <h3>{environment.name}</h3>
             <p>{environment.identity}</p>
-            <div><span>{counts.upgrade ?? 0} upgrades</span><span>{counts.staff ?? 0} people</span><span>{(counts.connection ?? 0) + (counts.rival ?? 0)} network</span></div>
+            <div><span>{counts.upgrade ?? 0} upgrades</span><span>{counts.staff ?? 0} people</span><span>{(counts.connection ?? 0) + (counts.rival ?? 0)} network</span><span>{counts.cosmetic ?? 0} decor</span></div>
           </header>
           <div className="office-inventory-list" aria-label="Installed assets">
             {installed.map((asset) => {

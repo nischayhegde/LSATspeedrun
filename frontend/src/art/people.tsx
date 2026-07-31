@@ -81,6 +81,15 @@ export function Person({
           paletteSeed={seed}
           role={identity ? 'visitor' : 'counsel'}
           label={label}
+          // `Person` renders in card grids (staff roster, catalog, rosters)
+          // where many instances mount at once. The default 'full' mode gives
+          // each its own dedicated WebGLRenderer/context, which silently blows
+          // past the browser's simultaneous-context limit (commonly ~8-16) and
+          // gets the oldest cards' contexts evicted — they go permanently
+          // blank. 'scene' has nearly identical framing but shares one pooled
+          // renderer across every instance, the same pattern RivalPortrait
+          // already uses for its own many-at-once grid below.
+          mode="scene"
         />
       </Suspense>
     </span>

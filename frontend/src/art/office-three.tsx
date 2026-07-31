@@ -368,6 +368,25 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const focusLight = new THREE.PointLight(0xf3c66a, 0, 4.2, 1.65)
     scene.add(focusLight)
 
+    // The office authors most of its props inline, so identical definitions —
+    // the five book cloths on every shelf, one colour per star in the skylight —
+    // used to produce one material instance per mesh, and each instance is its
+    // own GPU state change. Identical definitions are therefore interned.
+    // Materials the draw loop writes to are built directly instead, so that
+    // pulsing one screen cannot pulse every screen in the room.
+    const materialCache = new Map<string, THREE.Material>()
+    const shared = <T extends THREE.Material>(key: string, create: () => T) => {
+      const cached = materialCache.get(key)
+      if (cached) return cached as T
+      const material = create()
+      materialCache.set(key, material)
+      return material
+    }
+    const sharedStandard = (parameters: THREE.MeshStandardMaterialParameters) =>
+      shared(`s|${JSON.stringify(parameters)}`, () => new THREE.MeshStandardMaterial(parameters))
+    const sharedBasic = (parameters: THREE.MeshBasicMaterialParameters) =>
+      shared(`b|${JSON.stringify(parameters)}`, () => new THREE.MeshBasicMaterial(parameters))
+
     const attachFocus = (
       keys: string[],
       object: THREE.Object3D,
@@ -375,9 +394,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       y = .12,
       rotation: [number, number, number] = [Math.PI / 2, 0, 0],
     ) => {
-      const halo = addMesh(object, new THREE.TorusGeometry(radius, .038, 12, 64), focusMaterial, [0, y, 0], rotation)
+      const halo = addMesh(object, new THREE.TorusGeometry(radius, .036, 8, 40), focusMaterial, [0, y, 0], rotation)
       halo.visible = false
       halo.castShadow = false
+      halo.receiveShadow = false
       focusHalos.push(halo)
       keys.forEach((key) => focusTargets.set(key, { object, halo }))
       return halo
@@ -448,9 +468,11 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       for (let panel = 0; panel < 3; panel += 1) {
         const z = -2.45 + panel * 2.65
         addMesh(root, new RoundedBoxGeometry(1.62, 2.05, .055, 3, .025), darkWood, [side * (roomHalf - .12), 3.05, z], [0, side < 0 ? Math.PI / 2 : -Math.PI / 2, 0])
-        addMesh(root, new RoundedBoxGeometry(1.28, 1.7, .025, 3, .018), new THREE.MeshStandardMaterial({ color: panel % 2 ? new THREE.Color(look.upholstery).offsetHSL(0, -.08, .08) : new THREE.Color(look.wall).offsetHSL(0, -.04, .06), roughness: .9 }), [side * (roomHalf - .08), 3.05, z], [0, side < 0 ? Math.PI / 2 : -Math.PI / 2, 0])
+        addMesh(root, new RoundedBoxGeometry(1.28, 1.7, .025, 3, .018), sharedStandard({ color: (panel % 2 ? new THREE.Color(look.upholstery).offsetHSL(0, -.08, .08) : new THREE.Color(look.wall).offsetHSL(0, -.04, .06)).getHex(), roughness: .9 }), [side * (roomHalf - .08), 3.05, z], [0, side < 0 ? Math.PI / 2 : -Math.PI / 2, 0])
         addMesh(root, new RoundedBoxGeometry(.82, .055, .018, 2, .01), brass, [side * (roomHalf - .055), 3.42, z], [0, side < 0 ? Math.PI / 2 : -Math.PI / 2, 0])
-        for (let mark = 0; mark < 3; mark += 1) addMesh(root, new THREE.CylinderGeometry(.045, .045, .018, 16), mark === panel ? glow : paper, [side * (roomHalf - .045), 3.05, z - .24 + mark * .24], [0, 0, Math.PI / 2])
+        // One lit indicator per bay reads as a panel light; the two dark discs
+        // beside it were noise at every distance the camera actually sits.
+        addMesh(root, new THREE.CylinderGeometry(.045, .045, .018, 12), glow, [side * (roomHalf - .045), 3.05, z], [0, 0, Math.PI / 2])
       }
     }
     let hearthEmber: THREE.Mesh | null = null
@@ -520,8 +542,11 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const exterior = new THREE.Group()
     const exteriorMovers: THREE.Object3D[] = []
     windowGroup.add(exterior)
+    // Exterior movers keep their own material: the draw loop writes a per-object
+    // phase into it, so interning them would lock the whole skyline into one
+    // pulse.
     if (look.exterior === 'forest') {
-      addMesh(exterior, new THREE.CircleGeometry(.23, 24), new THREE.MeshBasicMaterial({ color: 0xb3a47a }), [.72, .72, .06])
+      addMesh(exterior, new THREE.CircleGeometry(.23, 20), sharedBasic({ color: 0xb3a47a }), [.72, .72, .06])
       for (let index = 0; index < 12; index += 1) {
         const height = .5 + seeded(index + 9) * .92
         const tree = addMesh(exterior, new THREE.ConeGeometry(.14 + height * .12, height, 7), new THREE.MeshStandardMaterial({ color: index % 2 ? 0x13251f : 0x1a2f27, roughness: 1 }), [-1.34 + index * .24, -1.25 + height / 2, .08])
@@ -529,24 +554,30 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         tree.userData.restRotation = tree.rotation.z
         exteriorMovers.push(tree)
       }
-      addMesh(exterior, new THREE.BoxGeometry(1.2, .48, .05), new THREE.MeshStandardMaterial({ color: 0x271b18, roughness: 1 }), [-.58, -1.03, .1])
-      addMesh(exterior, new THREE.ConeGeometry(.88, .45, 4), new THREE.MeshStandardMaterial({ color: 0x38251e, roughness: 1 }), [-.58, -.69, .1], [0, 0, Math.PI / 4])
+      addMesh(exterior, new THREE.BoxGeometry(1.2, .48, .05), sharedStandard({ color: 0x271b18, roughness: 1 }), [-.58, -1.03, .1])
+      addMesh(exterior, new THREE.ConeGeometry(.88, .45, 4), sharedStandard({ color: 0x38251e, roughness: 1 }), [-.58, -.69, .1], [0, 0, Math.PI / 4])
     } else if (look.exterior === 'ocean') {
-      for (let band = 0; band < 5; band += 1) addMesh(exterior, new THREE.PlaneGeometry(windowWidth, .12), new THREE.MeshBasicMaterial({ color: band % 2 ? 0x245b68 : 0x337786, transparent: true, opacity: .6 }), [0, -1.15 + band * .15, .07])
+      for (let band = 0; band < 5; band += 1) addMesh(exterior, new THREE.PlaneGeometry(windowWidth, .12), sharedBasic({ color: band % 2 ? 0x245b68 : 0x337786, transparent: true, opacity: .6 }), [0, -1.15 + band * .15, .07])
     } else if (look.exterior === 'orbit' || look.exterior === 'lunar' || look.exterior === 'nexus') {
       const planetColor = look.exterior === 'lunar' ? 0xbec1ba : look.exterior === 'nexus' ? 0x427d91 : 0x315f78
-      addMesh(exterior, new THREE.CircleGeometry(look.exterior === 'nexus' ? .62 : .88, 48), new THREE.MeshStandardMaterial({ color: planetColor, emissive: planetColor, emissiveIntensity: .12, roughness: .84 }), [.56, -.08, .07])
-      for (let index = 0; index < 28; index += 1) addMesh(exterior, new THREE.CircleGeometry(.008 + seeded(index) * .013, 8), new THREE.MeshBasicMaterial({ color: index % 4 ? 0xb7cad1 : 0xd6b76a }), [-windowWidth / 2 + seeded(index * 2) * windowWidth, -windowHeight / 2 + seeded(index * 2 + 1) * windowHeight, .09])
+      addMesh(exterior, new THREE.CircleGeometry(look.exterior === 'nexus' ? .62 : .88, 32), sharedStandard({ color: planetColor, emissive: planetColor, emissiveIntensity: .12, roughness: .84 }), [.56, -.08, .07])
+      for (let index = 0; index < 28; index += 1) addMesh(exterior, new THREE.CircleGeometry(.008 + seeded(index) * .013, 6), sharedBasic({ color: index % 4 ? 0xb7cad1 : 0xd6b76a }), [-windowWidth / 2 + seeded(index * 2) * windowWidth, -windowHeight / 2 + seeded(index * 2 + 1) * windowHeight, .09])
     } else {
       const count = 12 + Math.min(12, level)
       for (let index = 0; index < count; index += 1) {
         const width = .14 + seeded(index + 2) * .25
         const height = .35 + seeded(index + 9) * (look.exterior === 'street' ? .8 : 1.48)
-        const building = addMesh(exterior, new THREE.BoxGeometry(width, height, .06), new THREE.MeshStandardMaterial({ color: index % 3 ? 0x0c1826 : 0x14283b, emissive: index % 4 === 0 ? 0x6e5730 : 0x07101a, emissiveIntensity: .18 + level * .01 }), [-windowWidth / 2 + .18 + index * ((windowWidth - .36) / Math.max(1, count - 1)), -windowHeight / 2 + height / 2, .08])
+        const moving = index % 4 === 0
+        const material = moving
+          ? new THREE.MeshStandardMaterial({ color: index % 3 ? 0x0c1826 : 0x14283b, emissive: 0x6e5730, emissiveIntensity: .18 + level * .01 })
+          : sharedStandard({ color: index % 3 ? 0x0c1826 : 0x14283b, emissive: 0x07101a, emissiveIntensity: .18 + level * .01 })
+        const building = addMesh(exterior, new THREE.BoxGeometry(width, height, .06), material, [-windowWidth / 2 + .18 + index * ((windowWidth - .36) / Math.max(1, count - 1)), -windowHeight / 2 + height / 2, .08])
         building.castShadow = false
-        if (index % 4 === 0) exteriorMovers.push(building)
+        if (moving) {
+          exteriorMovers.push(building)
+        }
       }
-      if (look.exterior === 'harbor') addMesh(exterior, new THREE.PlaneGeometry(windowWidth, .42), new THREE.MeshBasicMaterial({ color: 0x174759, transparent: true, opacity: .72 }), [0, -windowHeight / 2 + .2, .1])
+      if (look.exterior === 'harbor') addMesh(exterior, new THREE.PlaneGeometry(windowWidth, .42), sharedBasic({ color: 0x174759, transparent: true, opacity: .72 }), [0, -windowHeight / 2 + .2, .1])
     }
     const glass = addMesh(windowGroup, new THREE.PlaneGeometry(windowWidth, windowHeight), new THREE.MeshStandardMaterial({ color: rustic ? 0x465f62 : 0x5d899f, transparent: true, opacity: rustic ? .34 : .22, roughness: rustic ? .34 : .2, metalness: .05 }), [0, 0, .14])
     glass.castShadow = false
@@ -585,7 +616,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
           for (let column = 0; column < 4 + row; column += 1) {
             const height = .46 + seeded(row * 17 + column) * .27
             const palette = [0x574237, 0x3b4b49, 0x77593b, 0x4f3e35]
-            const book = addMesh(shelf, new THREE.BoxGeometry(.14 + seeded(column) * .045, height, .35), new THREE.MeshStandardMaterial({ color: palette[(row + column) % palette.length], roughness: .94 }), [-.58 + column * .23, -1.74 + row * 1.35 + height / 2, .24], [0, 0, (seeded(column + row * 6) - .5) * .13])
+            const book = addMesh(shelf, new THREE.BoxGeometry(.14 + seeded(column) * .045, height, .35), sharedStandard({ color: palette[(row + column) % palette.length], roughness: .94 }), [-.58 + column * .23, -1.74 + row * 1.35 + height / 2, .24], [0, 0, (seeded(column + row * 6) - .5) * .13])
             books.push(book)
           }
         }
@@ -593,7 +624,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         addMesh(shelf, new THREE.BoxGeometry(1.05, .035, .6), darkWood, [0, 1.69, .44])
       } else {
         addMesh(shelf, new RoundedBoxGeometry(1.8, 5.15, .48, 3, .05), darkWood, [0, 0, 0])
-        addMesh(shelf, new RoundedBoxGeometry(1.55, 4.75, .54, 3, .04), new THREE.MeshStandardMaterial({ color: level >= 10 ? 0x121c27 : 0x101923, roughness: .85 }), [0, 0, .05])
+        addMesh(shelf, new RoundedBoxGeometry(1.55, 4.75, .54, 3, .04), sharedStandard({ color: level >= 10 ? 0x121c27 : 0x101923, roughness: .85 }), [0, 0, .05])
         const rowCount = Math.min(5, 3 + Math.floor(level / 4))
         for (let row = 0; row < rowCount; row += 1) {
           const rowY = -1.85 + row * (4.55 / Math.max(1, rowCount - 1))
@@ -602,7 +633,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
           for (let column = 0; column < columnCount; column += 1) {
             const height = .48 + seeded(row * 17 + column) * .31
             const palette = [0x75503f, 0x415c66, 0x9b713c, 0x4e6050, 0x5d455c]
-            const book = addMesh(shelf, new RoundedBoxGeometry(.11 + seeded(column) * .04, height, .38, 2, .018), new THREE.MeshStandardMaterial({ color: palette[(row * 3 + column) % palette.length], roughness: .72 }), [-.64 + column * (1.3 / Math.max(1, columnCount - 1)), rowY + .1 + height / 2, .27], [0, 0, (seeded(column + row * 6) - .5) * .08])
+            const book = addMesh(shelf, new RoundedBoxGeometry(.11 + seeded(column) * .04, height, .38, 2, .018), sharedStandard({ color: palette[(row * 3 + column) % palette.length], roughness: .72 }), [-.64 + column * (1.3 / Math.max(1, columnCount - 1)), rowY + .1 + height / 2, .27], [0, 0, (seeded(column + row * 6) - .5) * .08])
             books.push(book)
           }
         }
@@ -610,7 +641,6 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     }
     if (!rustic && level >= 2) addShelf(-6.15)
     addShelf(rustic ? 6.05 : 6.15)
-
     if (rustic) {
       // A joined file chest and working cast-iron stove make the room a
       // believable cold-weather practice rather than a collection of props.
@@ -631,7 +661,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       }
       addMesh(hearth, new RoundedBoxGeometry(1.2, .82, .72, 4, .09), charcoal, [0, .92, .02])
       addMesh(hearth, new RoundedBoxGeometry(.78, .46, .04, 3, .04), new THREE.MeshStandardMaterial({ color: 0x17191a, roughness: .74, metalness: .66 }), [0, .93, .4])
-      hearthEmber = addMesh(hearth, new THREE.PlaneGeometry(.54, .23), new THREE.MeshStandardMaterial({ color: 0x8b2f18, emissive: 0xd54b20, emissiveIntensity: .65, roughness: .88 }), [0, .9, .43])
+      const emberMaterial = new THREE.MeshStandardMaterial({ color: 0x8b2f18, emissive: 0xd54b20, emissiveIntensity: .65, roughness: .88 })
+      hearthEmber = addMesh(hearth, new THREE.PlaneGeometry(.54, .23), emberMaterial, [0, .9, .43])
       hearthEmber.castShadow = false
       hearthLight = new THREE.PointLight(0xff7d31, .52, 3.6, 1.8)
       hearthLight.position.set(0, .92, .72)
@@ -918,15 +949,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const catFur = new THREE.MeshStandardMaterial({ color: 0x8b5c3f, roughness: .88 })
     const catFurLight = new THREE.MeshStandardMaterial({ color: 0xc49a72, roughness: .92 })
     const catFurDark = new THREE.MeshStandardMaterial({ color: 0x573a30, roughness: .9 })
-    const catBody = addMesh(cat, new THREE.SphereGeometry(.42, 28, 20), catFur, [0, .5, 0])
+    const catBody = addMesh(cat, new THREE.SphereGeometry(.42, 20, 14), catFur, [0, .5, 0])
     catBody.scale.set(.92, .72, 1.34)
-    const catChest = addMesh(cat, new THREE.SphereGeometry(.34, 26, 18), catFurLight, [0, .58, .33])
+    const catChest = addMesh(cat, new THREE.SphereGeometry(.34, 18, 12), catFurLight, [0, .58, .33])
     catChest.scale.set(.78, .94, .72)
 
     const catHead = new THREE.Group()
     catHead.position.set(0, .83, .49)
     cat.add(catHead)
-    const catSkull = addMesh(catHead, new THREE.SphereGeometry(.31, 28, 20), catFur, [0, 0, 0])
+    const catSkull = addMesh(catHead, new THREE.SphereGeometry(.31, 20, 14), catFur, [0, 0, 0])
     catSkull.scale.set(.92, .9, .86)
     for (const side of [-1, 1]) {
       const ear = addMesh(catHead, new THREE.ConeGeometry(.13, .31, 5), catFur, [side * .18, .3, -.01], [0, 0, side * -.14])
@@ -1037,7 +1068,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       addMesh(plant, new THREE.CylinderGeometry(.32, .25, .62, 22), level >= 8 ? brass : darkWood, [0, .31, 0])
       for (let leaf = 0; leaf < 6; leaf += 1) {
         const angle = leaf / 6 * Math.PI * 2
-        const blade = addMesh(plant, new THREE.SphereGeometry(.24, 18, 12), new THREE.MeshStandardMaterial({ color: leaf % 2 ? 0x2f5948 : 0x3c6953, roughness: .9 }), [Math.cos(angle) * .2, .8 + (leaf % 3) * .2, Math.sin(angle) * .18])
+        const blade = addMesh(plant, new THREE.SphereGeometry(.24, 12, 8), sharedStandard({ color: leaf % 2 ? 0x2f5948 : 0x3c6953, roughness: .9 }), [Math.cos(angle) * .2, .8 + (leaf % 3) * .2, Math.sin(angle) * .18])
         blade.scale.set(.58, 1.55, .42)
         blade.rotation.z = Math.cos(angle) * .42
       }
@@ -1046,12 +1077,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     for (let index = 0; index < artCount; index += 1) {
       const x = -1.6 + index * (3.2 / Math.max(1, artCount - 1))
       addMesh(root, new RoundedBoxGeometry(.42, .56, .055, 3, .025), level >= 8 ? brass : darkWood, [x, 5.42, -3.72], [0, 0, (index % 2 ? 1 : -1) * .012])
-      addMesh(root, new THREE.PlaneGeometry(.31, .44), new THREE.MeshStandardMaterial({ color: index % 2 ? look.upholstery : look.accent, roughness: .8 }), [x, 5.42, -3.684])
+      addMesh(root, new THREE.PlaneGeometry(.31, .44), sharedStandard({ color: index % 2 ? look.upholstery : look.accent, roughness: .8 }), [x, 5.42, -3.684])
     }
 
     const addDataPanel = (parent: THREE.Object3D, width: number, height: number, lines: number) => {
       addMesh(parent, new RoundedBoxGeometry(width, height, .09, 4, .035), charcoal, [0, 0, 0])
-      addMesh(parent, new THREE.PlaneGeometry(width - .16, height - .16), new THREE.MeshStandardMaterial({ color: 0x12313a, emissive: 0x1f7772, emissiveIntensity: .55, roughness: .3 }), [0, 0, .058])
+      addMesh(parent, new THREE.PlaneGeometry(width - .16, height - .16), sharedStandard({ color: 0x12313a, emissive: 0x1f7772, emissiveIntensity: .55, roughness: .3 }), [0, 0, .058])
       for (let line = 0; line < lines; line += 1) {
         const lineWidth = .24 + seeded(line + width * 10) * Math.max(.2, width - .58)
         addMesh(parent, new THREE.BoxGeometry(lineWidth, .025, .015), line % 3 ? glow : brass, [-width * .32 + lineWidth / 2, -height * .3 + line * (height * .6 / Math.max(1, lines - 1)), .072])
@@ -1101,10 +1132,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       for (let spoke = 0; spoke < 8; spoke += 1) addMesh(environmentFeature, new THREE.BoxGeometry(.018, .5, .018), spoke % 2 ? brass : paper, [0, 0, featureDepth + .018], [0, 0, spoke * Math.PI / 4])
     } else if (level <= 8) {
       addMesh(environmentFeature, new THREE.SphereGeometry(.23 + (level - 6) * .035, 24, 18), glow, [0, 0, featureDepth])
-      for (let ring = 0; ring < level - 4; ring += 1) addMesh(environmentFeature, new THREE.TorusGeometry(.34 + ring * .075, .012, 8, 42), ring % 2 ? brass : paper, [0, 0, featureDepth + .025], [ring * .38, ring * .26, 0])
+      for (let ring = 0; ring < level - 4; ring += 1) addMesh(environmentFeature, new THREE.TorusGeometry(.34 + ring * .075, .012, 6, 28), ring % 2 ? brass : paper, [0, 0, featureDepth + .025], [ring * .38, ring * .26, 0])
     } else if (level === 9) {
-      addMesh(environmentFeature, new THREE.SphereGeometry(.28, 28, 20), paper, [0, 0, featureDepth])
-      for (let ring = 0; ring < 3; ring += 1) addMesh(environmentFeature, new THREE.TorusGeometry(.38 + ring * .08, .014, 8, 44), ring === 1 ? glow : brass, [0, 0, featureDepth + .025], [Math.PI / 2 + ring * .31, ring * .4, 0])
+      addMesh(environmentFeature, new THREE.SphereGeometry(.28, 20, 14), paper, [0, 0, featureDepth])
+      for (let ring = 0; ring < 3; ring += 1) addMesh(environmentFeature, new THREE.TorusGeometry(.38 + ring * .08, .014, 6, 28), ring === 1 ? glow : brass, [0, 0, featureDepth + .025], [Math.PI / 2 + ring * .31, ring * .4, 0])
     } else if (level === 10) {
       for (let building = 0; building < 7; building += 1) {
         const height = .22 + (building % 3) * .12
@@ -1117,18 +1148,18 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         addMesh(environmentFeature, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 28, .012, 6, false), wave % 2 ? glow : paper, [0, 0, 0])
       }
     } else if (level === 12) {
-      addMesh(environmentFeature, new THREE.SphereGeometry(.23, 24, 18), paper, [0, 0, featureDepth])
-      for (let ring = 0; ring < 4; ring += 1) addMesh(environmentFeature, new THREE.TorusGeometry(.34 + ring * .075, .014, 8, 48), ring % 2 ? glow : brass, [0, 0, featureDepth + .02], [ring * .52, ring * .34, 0])
+      addMesh(environmentFeature, new THREE.SphereGeometry(.23, 18, 12), paper, [0, 0, featureDepth])
+      for (let ring = 0; ring < 4; ring += 1) addMesh(environmentFeature, new THREE.TorusGeometry(.34 + ring * .075, .014, 6, 28), ring % 2 ? glow : brass, [0, 0, featureDepth + .02], [ring * .52, ring * .34, 0])
     } else if (level === 13) {
-      addMesh(environmentFeature, new THREE.CylinderGeometry(.32, .32, .035, 36), charcoal, [0, 0, featureDepth], [Math.PI / 2, 0, 0])
-      for (let ring = 0; ring < 4; ring += 1) addMesh(environmentFeature, new THREE.TorusGeometry(.09 + ring * .07, .018, 8, 36), ring % 2 ? brass : paper, [0, 0, featureDepth + .025])
+      addMesh(environmentFeature, new THREE.CylinderGeometry(.32, .32, .035, 24), charcoal, [0, 0, featureDepth], [Math.PI / 2, 0, 0])
+      for (let ring = 0; ring < 4; ring += 1) addMesh(environmentFeature, new THREE.TorusGeometry(.09 + ring * .07, .018, 6, 24), ring % 2 ? brass : paper, [0, 0, featureDepth + .025])
       for (let spoke = 0; spoke < 6; spoke += 1) addMesh(environmentFeature, new THREE.BoxGeometry(.018, .5, .018), brass, [0, 0, featureDepth + .03], [0, 0, spoke * Math.PI / 3])
     } else {
       for (let star = 0; star < 14; star += 1) {
         const angle = star / 14 * Math.PI * 2
         addMesh(environmentFeature, new THREE.SphereGeometry(.025 + (star % 4) * .009, 10, 8), star % 3 ? glow : brass, [Math.cos(angle) * (.28 + (star % 3) * .11), Math.sin(angle * 2) * .23, featureDepth])
       }
-      addMesh(environmentFeature, new THREE.TorusGeometry(.51, .014, 8, 56), brass, [0, 0, featureDepth], [Math.PI / 2, .24, 0])
+      addMesh(environmentFeature, new THREE.TorusGeometry(.51, .014, 6, 32), brass, [0, 0, featureDepth], [Math.PI / 2, .24, 0])
     }
 
     const makeInstallation = (zone: OfficeVisualZone, position: [number, number, number], radius = .72) => {
@@ -1157,9 +1188,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       const fixtureCount = Math.min(5, 2 + stage)
       for (let index = 0; index < fixtureCount; index += 1) {
         const x = -2.6 + index * (5.2 / Math.max(1, fixtureCount - 1))
-        addMesh(installation, new THREE.CylinderGeometry(.04, .04, .42, 12), brass, [x, -.2, 0])
-        addMesh(installation, new THREE.CylinderGeometry(.23, .34, .14, 24), brass, [x, -.46, 0])
-        const bulb = addMesh(installation, new THREE.SphereGeometry(.12, 20, 14), new THREE.MeshStandardMaterial({ color: 0xf0ddb0, emissive: 0xd59d4e, emissiveIntensity: 1.1, roughness: .45 }), [x, -.54, 0])
+        addMesh(installation, new THREE.CylinderGeometry(.04, .04, .42, 8), brass, [x, -.2, 0])
+        addMesh(installation, new THREE.CylinderGeometry(.23, .34, .14, 16), brass, [x, -.46, 0])
+        const bulb = addMesh(installation, new THREE.SphereGeometry(.12, 14, 10), sharedStandard({ color: 0xf0ddb0, emissive: 0xd59d4e, emissiveIntensity: 1.1, roughness: .45 }), [x, -.54, 0])
         bulb.castShadow = false
       }
     }
@@ -1202,8 +1233,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const conferenceInstallation = makeInstallation('conference', [-3.75, .02, .3], 1.35)
     if (conferenceInstallation) {
       const { installation, stage } = conferenceInstallation
-      addMesh(installation, new THREE.CylinderGeometry(1.32 + stage * .12, 1.18, .16, 40), wood, [0, .8, 0])
-      addMesh(installation, new THREE.CylinderGeometry(.24, .38, .76, 22), charcoal, [0, .38, 0])
+      addMesh(installation, new THREE.CylinderGeometry(1.32 + stage * .12, 1.18, .16, 28), wood, [0, .8, 0])
+      addMesh(installation, new THREE.CylinderGeometry(.24, .38, .76, 16), charcoal, [0, .38, 0])
       for (let seat = 0; seat < Math.min(6, 2 + stage); seat += 1) {
         const angle = seat / Math.min(6, 2 + stage) * Math.PI * 2
         const chair = new THREE.Group(); chair.position.set(Math.cos(angle) * 1.78, 0, Math.sin(angle) * 1.15); chair.rotation.y = -angle + Math.PI / 2; installation.add(chair)
@@ -1239,7 +1270,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     if (operationsInstallation) {
       const { installation, stage } = operationsInstallation
       addMesh(installation, new THREE.CylinderGeometry(1.15 + stage * .12, .94, .28, 8), charcoal, [0, .72, 0])
-      addMesh(installation, new THREE.CylinderGeometry(.82 + stage * .08, .82, .035, 40), glow, [0, .89, 0])
+      addMesh(installation, new THREE.CylinderGeometry(.82 + stage * .08, .82, .035, 28), glow, [0, .89, 0])
       for (let panel = 0; panel < stage; panel += 1) {
         const angle = panel / stage * Math.PI * 2
         addMesh(installation, new RoundedBoxGeometry(.52, .3, .035, 3, .015), charcoal, [Math.cos(angle) * .75, 1.25 + (panel % 2) * .12, Math.sin(angle) * .58], [0, -angle, 0])
@@ -1258,30 +1289,30 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const networkInstallation = makeInstallation('network', [-.2, 4.72, -3.58], .85)
     if (networkInstallation) {
       const { installation, stage } = networkInstallation
-      addMesh(installation, new THREE.SphereGeometry(.42 + stage * .08, 28, 20), new THREE.MeshStandardMaterial({ color: 0x2d6570, emissive: 0x174f59, emissiveIntensity: .55, roughness: .45 }), [0, 0, 0])
-      for (let ring = 0; ring < stage; ring += 1) addMesh(installation, new THREE.TorusGeometry(.58 + ring * .14, .016, 8, 48), ring % 2 ? brass : glow, [0, 0, 0], [Math.PI / 2 + ring * .38, ring * .46, 0])
+      addMesh(installation, new THREE.SphereGeometry(.42 + stage * .08, 20, 14), sharedStandard({ color: 0x2d6570, emissive: 0x174f59, emissiveIntensity: .55, roughness: .45 }), [0, 0, 0])
+      for (let ring = 0; ring < stage; ring += 1) addMesh(installation, new THREE.TorusGeometry(.58 + ring * .14, .016, 6, 28), ring % 2 ? brass : glow, [0, 0, 0], [Math.PI / 2 + ring * .38, ring * .46, 0])
     }
 
     const archiveInstallation = makeInstallation('archive', [-5.72, 3.05, -3.52], 1.0)
     if (archiveInstallation) {
       const { installation, stage } = archiveInstallation
-      addMesh(installation, new THREE.CylinderGeometry(1.02, 1.02, .18, 48), charcoal, [0, 0, 0], [Math.PI / 2, 0, 0])
-      for (let ring = 0; ring < 3 + stage; ring += 1) addMesh(installation, new THREE.TorusGeometry(.25 + ring * .13, .025, 8, 48), ring % 2 ? brass : darkWood, [0, 0, .11])
+      addMesh(installation, new THREE.CylinderGeometry(1.02, 1.02, .18, 28), charcoal, [0, 0, 0], [Math.PI / 2, 0, 0])
+      for (let ring = 0; ring < 3 + stage; ring += 1) addMesh(installation, new THREE.TorusGeometry(.25 + ring * .13, .025, 6, 28), ring % 2 ? brass : darkWood, [0, 0, .11])
       for (let spoke = 0; spoke < 6; spoke += 1) addMesh(installation, new THREE.BoxGeometry(.04, .8, .04), brass, [0, 0, .14], [0, 0, spoke / 6 * Math.PI * 2])
     }
 
     const jurisdictionInstallation = makeInstallation('jurisdiction', [4.4, 1.78, -.7], .9)
     if (jurisdictionInstallation) {
       const { installation, stage } = jurisdictionInstallation
-      addMesh(installation, new THREE.CylinderGeometry(.48, .62, .16, 30), brass, [0, -.75, 0])
-      addMesh(installation, new THREE.SphereGeometry(.36 + stage * .09, 32, 24), new THREE.MeshStandardMaterial({ color: stage >= 3 ? 0x9a9e9b : 0x326b77, emissive: stage >= 2 ? 0x174b55 : 0x000000, emissiveIntensity: .45, roughness: .55 }), [0, 0, 0])
-      for (let ring = 0; ring < stage; ring += 1) addMesh(installation, new THREE.TorusGeometry(.55 + ring * .13, .018, 10, 48), ring % 2 ? brass : glow, [0, 0, 0], [Math.PI / 2 + ring * .36, ring * .28, 0])
+      addMesh(installation, new THREE.CylinderGeometry(.48, .62, .16, 20), brass, [0, -.75, 0])
+      addMesh(installation, new THREE.SphereGeometry(.36 + stage * .09, 22, 16), sharedStandard({ color: stage >= 3 ? 0x9a9e9b : 0x326b77, emissive: stage >= 2 ? 0x174b55 : 0x000000, emissiveIntensity: .45, roughness: .55 }), [0, 0, 0])
+      for (let ring = 0; ring < stage; ring += 1) addMesh(installation, new THREE.TorusGeometry(.55 + ring * .13, .018, 6, 28), ring % 2 ? brass : glow, [0, 0, 0], [Math.PI / 2 + ring * .36, ring * .28, 0])
     }
 
     const campusInstallation = makeInstallation('campus', [-4.25, .12, -.65], 1.1)
     if (campusInstallation) {
       const { installation, stage } = campusInstallation
-      addMesh(installation, new THREE.CylinderGeometry(1.45, 1.62, .14, 40), stage >= 2 ? teal : charcoal, [0, .15, 0])
+      addMesh(installation, new THREE.CylinderGeometry(1.45, 1.62, .14, 28), stage >= 2 ? teal : charcoal, [0, .15, 0])
       for (let building = 0; building < 4 + stage; building += 1) {
         const angle = building / (4 + stage) * Math.PI * 2
         const height = .36 + (building % 3) * .18
@@ -1296,7 +1327,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         const angle = star / 12 * Math.PI * 2
         addMesh(installation, new THREE.SphereGeometry(.035 + (star % 3) * .012, 12, 8), star % 3 ? glow : brass, [Math.cos(angle) * (1.0 + (star % 2) * .35), Math.sin(angle * 2) * .44, Math.sin(angle) * .24])
       }
-      addMesh(installation, new THREE.TorusGeometry(1.18, .018, 8, 64), brass, [0, 0, 0], [Math.PI / 2, .3, 0])
+      addMesh(installation, new THREE.TorusGeometry(1.18, .018, 6, 40), brass, [0, 0, 0], [Math.PI / 2, .3, 0])
     }
 
     // Connections and acquisitions receive individual plaques so every item
@@ -1320,6 +1351,420 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         addMesh(plaque, new RoundedBoxGeometry(.28, .18, .02, 3, .015), index % 2 ? brass : teal, [0, 0, .026])
         attachFocus([asset.key], plaque, .22, 0, [0, 0, 0])
       })
+    }
+
+    // Cosmetics buy nothing but the view, so each one is an individual authored
+    // prop in a reserved spot rather than another stage of a shared
+    // installation. Every prop draws from this one decor palette: a material
+    // per item would add a GPU state change for each otherwise-static object,
+    // and these materials are mount-local exactly like the room palette above,
+    // so the scene's dispose pass still frees them.
+    const decorAssets = zoneAssets('decor')
+    if (decorAssets.length) {
+      const terracotta = new THREE.MeshStandardMaterial({ color: 0x9a5a3f, roughness: .92 })
+      const foliage = new THREE.MeshStandardMaterial({ color: 0x2c5342, roughness: .93 })
+      const foliageLight = new THREE.MeshStandardMaterial({ color: 0x40745a, roughness: .9 })
+      const bloom = new THREE.MeshStandardMaterial({ color: 0xe6cbd4, roughness: .76 })
+      const oxblood = new THREE.MeshStandardMaterial({ color: 0x5f2b26, roughness: rustic ? .8 : .5 })
+      const rugField = new THREE.MeshStandardMaterial({ color: 0x6f342c, roughness: .98 })
+      const rugPattern = new THREE.MeshStandardMaterial({ color: 0x22384c, roughness: .98 })
+      const rugTrim = new THREE.MeshStandardMaterial({ color: 0xbfa079, roughness: .96 })
+      const marble = new THREE.MeshStandardMaterial({ color: 0xe3ded1, roughness: .36, metalness: .04 })
+      const spine = new THREE.MeshStandardMaterial({ color: 0x6d3a2c, roughness: .74 })
+      const decorGlass = new THREE.MeshStandardMaterial({ color: 0x9fc7d2, transparent: true, opacity: .2, roughness: .16, metalness: .06 })
+      // Coloured glass belongs to the same muted palette as the room. Saturated
+      // primaries at full emissive strength read as a pinwheel toy rather than
+      // leaded glass, so every tint is dulled and lit only faintly.
+      const stainAmber = new THREE.MeshStandardMaterial({ color: 0x9c7a3c, emissive: 0x543110, emissiveIntensity: .18, roughness: .38 })
+      const stainRuby = new THREE.MeshStandardMaterial({ color: 0x6f3630, emissive: 0x36100e, emissiveIntensity: .18, roughness: .38 })
+      const stainCobalt = new THREE.MeshStandardMaterial({ color: 0x27506a, emissive: 0x0d1f2e, emissiveIntensity: .18, roughness: .38 })
+      const stainEmerald = new THREE.MeshStandardMaterial({ color: 0x2a5747, emissive: 0x0d251b, emissiveIntensity: .18, roughness: .38 })
+      // Amber and teal carry the panel; ruby appears once so the glass stays in
+      // the room's palette rather than turning into a primary-colour wheel.
+      const stains = [stainCobalt, stainAmber, stainEmerald, stainAmber, stainRuby]
+      const canvasSky = new THREE.MeshStandardMaterial({ color: 0xcaa877, roughness: .9 })
+      // Wall decor hangs on the same plane the corkboard and clock already use,
+      // which is flush with the timber boards of the shack and reads as hung
+      // rather than floating in every later finish.
+      const decorWallZ = -3.86
+      const deskTopY = rustic ? 1.36 : 1.41
+      // The reception wall is already divided by the door, its framed art and
+      // the storage runs. The clear span above each cabinet is the one place a
+      // large panel can hang there, and it matches where the sconces already
+      // throw light.
+      const cabinetX = Math.min(roomHalf - 2.05, 4.9)
+
+      const decorProp = (
+        asset: GameAsset,
+        parent: THREE.Object3D,
+        position: [number, number, number],
+        rotationY: number,
+        radius: number,
+        wall: boolean,
+      ) => {
+        const prop = new THREE.Group()
+        prop.position.set(...position)
+        prop.rotation.y = rotationY
+        prop.userData.officeCosmetic = asset.key
+        parent.add(prop)
+        attachFocus([asset.key], prop, radius, wall ? 0 : .1, wall ? [0, 0, 0] : [Math.PI / 2, 0, 0])
+        return prop
+      }
+
+      const decorBuilders: Record<string, (asset: GameAsset) => void> = {
+        bar_certificate: (asset) => {
+          const prop = decorProp(asset, root, [.75, 2.62, decorWallZ], 0, .46, true)
+          addMesh(prop, new RoundedBoxGeometry(.58, .72, .06, 3, .025), darkWood, [0, 0, 0])
+          addMesh(prop, new RoundedBoxGeometry(.46, .58, .02, 3, .014), paper, [0, 0, .04])
+          for (let line = 0; line < 4; line += 1) {
+            addMesh(prop, new THREE.BoxGeometry(.28 - line * .04, .017, .012), line ? charcoal : brass, [0, .18 - line * .08, .056])
+          }
+          addMesh(prop, new THREE.CylinderGeometry(.045, .045, .012, 16), brass, [-.11, -.16, .056], [Math.PI / 2, 0, 0])
+          addMesh(prop, new THREE.BoxGeometry(.14, .016, .012), charcoal, [.06, -.16, .056])
+        },
+        banker_lamp: (asset) => {
+          const prop = decorProp(asset, desk, [-1.8, deskTopY, .45], 0, .34, false)
+          addMesh(prop, new THREE.CylinderGeometry(.17, .21, .05, 20), brass, [0, .025, 0])
+          addMesh(prop, new THREE.CylinderGeometry(.028, .034, .3, 12), brass, [0, .19, 0])
+          addMesh(prop, new RoundedBoxGeometry(.52, .12, .21, 3, .055), stainEmerald, [0, .39, 0])
+          addMesh(prop, new THREE.BoxGeometry(.44, .012, .16), brass, [0, .33, 0])
+          const filament = addMesh(prop, new THREE.SphereGeometry(.045, 12, 8), glow, [0, .31, 0])
+          filament.castShadow = false
+          const lampLight = new THREE.PointLight(0xffc878, .55, 2.1, 1.9)
+          lampLight.position.set(0, .26, .06)
+          lampLight.castShadow = false
+          prop.add(lampLight)
+        },
+        persian_rug: (asset) => {
+          // The entry strip in front of the door, kept clear of the room's own
+          // rug so the two never meet in a seam.
+          const prop = decorProp(asset, root, [0, 0, 3.98], 0, 1.5, false)
+          addMesh(prop, new THREE.BoxGeometry(4.4, .02, 1.5), rugPattern, [0, .014, 0])
+          // Every painted motif is a decal on the same horizontal surface, so
+          // each one is raised onto its own plane in draw order. Sharing a
+          // single y made the stacked medallions z-fight, which reads as jagged
+          // triangles flickering inside the lozenges as the camera moves. The
+          // whole stack is under 1.5cm tall, so the rug still lies flat.
+          const decalStep = .0018
+          const flat = (layer: number, geometry: THREE.BufferGeometry, material: THREE.Material, x: number, z: number) => {
+            const piece = addMesh(prop, geometry, material, [x, .03 + layer * decalStep, z], [-Math.PI / 2, 0, 0])
+            piece.castShadow = false
+            return piece
+          }
+          const field = flat(0, new THREE.PlaneGeometry(3.92, 1.06), rugField, 0, 0)
+          field.receiveShadow = false
+          // A knotted rug is a border, a guard stripe, a centre medallion and
+          // corner spandrels. Laying the motifs out that way rather than
+          // scattering dots is what makes the small shape read as a carpet.
+          for (const z of [-.44, .44]) flat(1, new THREE.PlaneGeometry(3.84, .05), rugTrim, 0, z)
+          for (const x of [-1.9, 1.9]) flat(2, new THREE.PlaneGeometry(.05, .93), rugTrim, x, 0)
+          // A four-segment circle already sits point-up, so it draws the lozenge
+          // a knotted medallion needs without any extra spin.
+          flat(3, new THREE.CircleGeometry(.62, 4), rugTrim, 0, 0).scale.set(1, .66, 1)
+          flat(4, new THREE.CircleGeometry(.48, 4), rugPattern, 0, 0).scale.set(1, .66, 1)
+          flat(5, new THREE.CircleGeometry(.24, 4), rugTrim, 0, 0).scale.set(1, .66, 1)
+          for (const x of [-1.3, 1.3]) {
+            flat(3, new THREE.CircleGeometry(.38, 4), rugTrim, x, 0).scale.set(1, .66, 1)
+            flat(4, new THREE.CircleGeometry(.24, 4), rugPattern, x, 0).scale.set(1, .66, 1)
+          }
+          for (const x of [-.66, .66]) {
+            for (const z of [-.3, .3]) flat(6, new THREE.CircleGeometry(.14, 4), rugPattern, x, z).scale.set(1, .66, 1)
+          }
+          // One fringe band per end rather than eleven separate knots: at the
+          // size this rug ever occupies on screen the individual tassels were
+          // sub-pixel detail that only cost draw calls.
+          for (const side of [-1, 1]) addMesh(prop, new THREE.BoxGeometry(.045, .014, 1.32), rugTrim, [side * 2.25, .018, 0])
+        },
+        fig_tree: (asset) => {
+          // The corner where the window jamb meets the wall, so the tree stands
+          // in the daylight without covering the view.
+          const prop = decorProp(asset, root, [-1.35, 0, -3.18], 0, .62, false)
+          addMesh(prop, new THREE.CylinderGeometry(.3, .23, .5, 20), terracotta, [0, .25, 0])
+          addMesh(prop, new THREE.TorusGeometry(.3, .028, 8, 22), terracotta, [0, .48, 0], [Math.PI / 2, 0, 0])
+          addMesh(prop, new THREE.CylinderGeometry(.27, .27, .04, 18), darkWood, [0, .48, 0])
+          addCapsuleBetween(prop, new THREE.Vector3(0, .48, 0), new THREE.Vector3(.07, 1.38, -.03), .052, darkWood)
+          for (let branch = 0; branch < 3; branch += 1) {
+            const angle = branch / 3 * Math.PI * 2 + .4
+            addCapsuleBetween(
+              prop,
+              new THREE.Vector3(.05, 1.2 + branch * .12, -.02),
+              new THREE.Vector3(Math.cos(angle) * .34, 1.62 + branch * .18, Math.sin(angle) * .26),
+              .03,
+              darkWood,
+            )
+          }
+          for (let leaf = 0; leaf < 9; leaf += 1) {
+            const angle = leaf / 9 * Math.PI * 2 + .7
+            const height = 1.5 + (leaf % 4) * .22
+            const clump = addMesh(prop, new THREE.SphereGeometry(.25 + (leaf % 3) * .05, 16, 12), leaf % 2 ? foliage : foliageLight, [Math.cos(angle) * (.16 + (leaf % 3) * .12), height, Math.sin(angle) * (.12 + (leaf % 3) * .08)])
+            clump.scale.set(1.05, .62, .9)
+            clump.rotation.z = Math.cos(angle) * .3
+          }
+        },
+        chesterfield: (asset) => {
+          const prop = decorProp(asset, root, [-3.9, 0, -3.26], .26, 1.1, false)
+          addMesh(prop, new RoundedBoxGeometry(1.78, .32, .78, 4, .12), oxblood, [0, .5, .02])
+          addMesh(prop, new RoundedBoxGeometry(1.78, .66, .22, 4, .095), oxblood, [0, .9, -.29], [-.1, 0, 0])
+          addMesh(prop, new THREE.CylinderGeometry(.11, .11, 1.78, 14), oxblood, [0, 1.21, -.34], [0, 0, Math.PI / 2])
+          for (const x of [-.81, .81]) {
+            addMesh(prop, new RoundedBoxGeometry(.17, .46, .8, 4, .07), oxblood, [x, .74, .02])
+            addMesh(prop, new THREE.CylinderGeometry(.095, .095, .8, 14), oxblood, [x, .98, .02], [Math.PI / 2, 0, 0])
+            for (const z of [-.27, .29]) addMesh(prop, new THREE.CylinderGeometry(.035, .045, .34, 10), brass, [x * .88, .17, z])
+          }
+          for (let column = 0; column < 5; column += 1) {
+            for (let row = 0; row < 2; row += 1) {
+              addMesh(prop, new THREE.SphereGeometry(.026, 10, 8), darkWood, [-.56 + column * .28, .77 + row * .24, -.18 + row * .012])
+            }
+          }
+          addMesh(prop, new THREE.BoxGeometry(1.7, .012, .028), darkWood, [0, .662, .02])
+        },
+        reporter_wall: (asset) => {
+          // Left of the library bookcase, which the room installs at x 6.15.
+          const prop = decorProp(asset, root, [3.95, 0, -3.4], 0, 1.18, false)
+          // An open carcass: back panel, two stiles, plinth and cornice. A solid
+          // block would bury the spines inside the case.
+          addMesh(prop, new THREE.BoxGeometry(2.1, 1.78, .06), darkWood, [0, .92, -.15])
+          for (const x of [-1.0, 1.0]) addMesh(prop, new RoundedBoxGeometry(.1, 1.84, .34, 3, .03), darkWood, [x, .92, 0])
+          addMesh(prop, new THREE.BoxGeometry(2.2, .1, .42), brass, [0, 1.89, 0])
+          addMesh(prop, new THREE.BoxGeometry(2.16, .12, .4), darkWood, [0, .06, 0])
+          for (let row = 0; row < 4; row += 1) {
+            const shelfY = .17 + row * .41
+            addMesh(prop, new THREE.BoxGeometry(1.9, .05, .32), wood, [0, shelfY, .0])
+            for (let book = 0; book < 9; book += 1) {
+              const height = .28 + seeded(row * 13 + book) * .06
+              // Vellum volumes among the leather ones: an all-dark run of spines
+              // reads as one black mass against walnut at the later finishes.
+              const cloth = book % 4 === 0 ? paper : book % 4 === 1 ? teal : book % 4 === 2 ? spine : leather
+              const volume = addMesh(prop, new RoundedBoxGeometry(.16, height, .26, 2, .012), cloth, [-.86 + book * .215, shelfY + .025 + height / 2, .03], [0, 0, (seeded(book + row * 5) - .5) * .05])
+              addMesh(prop, new THREE.BoxGeometry(.11, .022, .015), brass, [volume.position.x, shelfY + .025 + height * .72, .17])
+            }
+          }
+          // Gilt spines against dark walnut disappear on an unlit wall, so the
+          // case carries its own reading light the way the room's sconces do.
+          addMesh(prop, new RoundedBoxGeometry(1.1, .1, .22, 3, .04), brass, [0, 2.06, .12])
+          for (const x of [-.34, .34]) addMesh(prop, new THREE.CylinderGeometry(.02, .02, .18, 10), brass, [x, 1.97, .1])
+          const shelfGlow = addMesh(prop, new THREE.BoxGeometry(.94, .03, .06), glow, [0, 2.0, .17])
+          shelfGlow.castShadow = false
+          const shelfLight = new THREE.PointLight(0xffd39a, .7, 2.8, 1.9)
+          shelfLight.position.set(0, 1.86, .42)
+          shelfLight.castShadow = false
+          prop.add(shelfLight)
+        },
+        grandfather_clock: (asset) => {
+          const prop = decorProp(asset, root, [-.22, 0, -3.34], 0, .55, false)
+          addMesh(prop, new THREE.BoxGeometry(.66, .12, .4), darkWood, [0, .06, 0])
+          addMesh(prop, new RoundedBoxGeometry(.54, 1.86, .32, 4, .035), darkWood, [0, .98, 0])
+          addMesh(prop, new RoundedBoxGeometry(.64, .5, .38, 4, .045), darkWood, [0, 2.16, 0])
+          addMesh(prop, new THREE.BoxGeometry(.7, .09, .42), brass, [0, 2.44, 0])
+          addMesh(prop, new THREE.SphereGeometry(.055, 14, 10), brass, [0, 2.53, 0])
+          addMesh(prop, new THREE.CylinderGeometry(.19, .19, .035, 26), paper, [0, 2.16, .2], [Math.PI / 2, 0, 0])
+          addMesh(prop, new THREE.TorusGeometry(.2, .02, 8, 26), brass, [0, 2.16, .215])
+          for (let mark = 0; mark < 12; mark += 1) {
+            const angle = mark / 12 * Math.PI * 2
+            addMesh(prop, new THREE.BoxGeometry(.016, .03, .01), charcoal, [Math.cos(angle) * .145, 2.16 + Math.sin(angle) * .145, .222])
+          }
+          addMesh(prop, new THREE.BoxGeometry(.018, .13, .012), charcoal, [0, 2.22, .228])
+          addMesh(prop, new THREE.BoxGeometry(.09, .016, .012), charcoal, [.04, 2.16, .228], [0, 0, .3])
+          const pane = addMesh(prop, new THREE.BoxGeometry(.3, .92, .015), decorGlass, [0, 1.16, .165])
+          pane.castShadow = false
+          addMesh(prop, new THREE.CylinderGeometry(.012, .012, .74, 8), brass, [0, 1.24, .13])
+          addMesh(prop, new THREE.CylinderGeometry(.085, .085, .02, 20), brass, [0, .84, .13], [Math.PI / 2, 0, 0])
+          for (const x of [-.11, .11]) addMesh(prop, new THREE.CylinderGeometry(.035, .035, .26, 12), brass, [x, 1.72, .1])
+        },
+        skyline_painting: (asset) => {
+          const prop = decorProp(asset, root, [cabinetX, 2.5, rearWallZ - .12], Math.PI, .95, true)
+          addMesh(prop, new RoundedBoxGeometry(1.72, 1.32, .08, 3, .03), brass, [0, 0, 0])
+          addMesh(prop, new RoundedBoxGeometry(1.5, 1.1, .03, 3, .014), canvasSky, [0, 0, .05])
+          for (let building = 0; building < 12; building += 1) {
+            const height = .2 + seeded(building + 61) * .52
+            addMesh(prop, new THREE.BoxGeometry(.13, height, .014), building % 3 ? charcoal : darkWood, [-.62 + building * .115, -.5 + height / 2, .064])
+            if (building % 3 === 0) addMesh(prop, new THREE.BoxGeometry(.05, .03, .016), stainAmber, [-.62 + building * .115, -.42 + height * .6, .07])
+          }
+          const dome = addMesh(prop, new THREE.SphereGeometry(.16, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), brass, [.42, -.15, .064])
+          dome.scale.set(1, .82, .3)
+          addMesh(prop, new THREE.BoxGeometry(.14, .2, .014), darkWood, [.42, -.4, .062])
+          addMesh(prop, new THREE.BoxGeometry(1.5, .03, .016), darkWood, [0, -.52, .066])
+          addMesh(prop, new RoundedBoxGeometry(.42, .06, .06, 2, .022), brass, [0, .74, .05])
+        },
+        trophy_shelf: (asset) => {
+          // Hung on the working wall behind the desk rather than a side wall the
+          // camera only ever sees from across the room.
+          const prop = decorProp(asset, root, [3.95, 2.74, decorWallZ], 0, .7, true)
+          addMesh(prop, new RoundedBoxGeometry(1.0, .92, .035, 3, .02), darkWood, [0, .16, .01])
+          for (let shelf = 0; shelf < 2; shelf += 1) {
+            const shelfY = -.12 + shelf * .48
+            addMesh(prop, new RoundedBoxGeometry(.94, .06, .28, 3, .02), darkWood, [0, shelfY, .15])
+            for (const x of [-.36, .36]) addMesh(prop, new THREE.BoxGeometry(.05, .1, .22), brass, [x, shelfY - .07, .12])
+            const strip = addMesh(prop, new THREE.BoxGeometry(.86, .022, .022), glow, [0, shelfY + .38, .24])
+            strip.castShadow = false
+            if (shelf === 0) {
+              addMesh(prop, new THREE.CylinderGeometry(.075, .05, .16, 18), brass, [-.28, shelfY + .12, .16])
+              addMesh(prop, new THREE.CylinderGeometry(.028, .05, .1, 14), brass, [-.28, shelfY + .09, .16])
+              for (const side of [-1, 1]) addMesh(prop, new THREE.TorusGeometry(.045, .012, 6, 16, Math.PI), brass, [-.28 + side * .09, shelfY + .13, .16], [0, 0, side * Math.PI / 2])
+              addMesh(prop, new RoundedBoxGeometry(.22, .26, .03, 3, .014), darkWood, [.04, shelfY + .16, .14])
+              addMesh(prop, new RoundedBoxGeometry(.16, .19, .016, 2, .008), brass, [.04, shelfY + .16, .158])
+              addMesh(prop, new THREE.ConeGeometry(.055, .3, 4), marble, [.34, shelfY + .18, .15])
+            } else {
+              addMesh(prop, new THREE.CylinderGeometry(.06, .085, .06, 18), darkWood, [-.3, shelfY + .06, .16])
+              addMesh(prop, new THREE.SphereGeometry(.07, 16, 12), brass, [-.3, shelfY + .15, .16])
+              addMesh(prop, new RoundedBoxGeometry(.3, .22, .028, 3, .014), darkWood, [.1, shelfY + .15, .14])
+              addMesh(prop, new THREE.CylinderGeometry(.06, .06, .014, 20), brass, [.1, shelfY + .15, .16], [Math.PI / 2, 0, 0])
+              addMesh(prop, new THREE.BoxGeometry(.1, .016, .012), paper, [.1, shelfY + .04, .156])
+            }
+          }
+        },
+        justice_bust: (asset) => {
+          const prop = decorProp(asset, root, [1.78, 0, 4.78], Math.PI - .16, .54, false)
+          addMesh(prop, new RoundedBoxGeometry(.5, 1.14, .5, 4, .03), charcoal, [0, .57, 0])
+          addMesh(prop, new THREE.BoxGeometry(.58, .07, .58), brass, [0, 1.17, 0])
+          addMesh(prop, new THREE.BoxGeometry(.56, .06, .56), charcoal, [0, .04, 0])
+          addMesh(prop, new THREE.TorusGeometry(.09, .012, 6, 22), brass, [0, .74, .26])
+          addMesh(prop, new THREE.BoxGeometry(.24, .014, .012), brass, [0, .8, .26])
+          for (const x of [-.1, .1]) addMesh(prop, new THREE.CylinderGeometry(.045, .045, .01, 16), brass, [x, .73, .265], [Math.PI / 2, 0, 0])
+          // A carved bust is cut square at the chest and sits on a plinth block.
+          // Stacked balls read as a snowman and stacked slabs as a cake, so the
+          // mass is a faceted tapering torso with a carved shoulder line, sized
+          // life-size to stay legible from across the room.
+          addMesh(prop, new THREE.BoxGeometry(.46, .11, .38), marble, [0, 1.27, 0])
+          addMesh(prop, new THREE.CylinderGeometry(.26, .35, .44, 8), marble, [0, 1.55, 0])
+          addMesh(prop, new THREE.BoxGeometry(.72, .17, .34), marble, [0, 1.72, .01])
+          addMesh(prop, new THREE.CylinderGeometry(.075, .095, .15, 12), marble, [0, 1.87, .01])
+          const head = addMesh(prop, new THREE.SphereGeometry(.18, 18, 12), marble, [0, 2.04, .01])
+          head.scale.set(.86, 1.1, .9)
+          addMesh(prop, new THREE.ConeGeometry(.035, .09, 6), marble, [0, 2.0, .16], [Math.PI / 2, 0, 0])
+          addMesh(prop, new THREE.BoxGeometry(.13, .07, .07), marble, [0, 1.91, .12])
+          // The blindfold is a narrow band tied across the eyes. Carried over the
+          // whole crown it reads as a hat, so it stops at the temples and the
+          // carved hair sits above it.
+          addMesh(prop, new THREE.BoxGeometry(.27, .062, .12), charcoal, [0, 2.07, .11])
+          for (const side of [-1, 1]) addMesh(prop, new THREE.BoxGeometry(.07, .058, .12), charcoal, [side * .145, 2.07, .01])
+          const crown = addMesh(prop, new THREE.SphereGeometry(.185, 20, 14), marble, [0, 2.15, -.01])
+          crown.scale.set(.92, .6, .94)
+          const bun = addMesh(prop, new THREE.SphereGeometry(.095, 16, 12), marble, [0, 2.09, -.18])
+          bun.scale.set(1, .9, .85)
+        },
+        globe_bar: (asset) => {
+          const prop = decorProp(asset, root, [Math.min(roomHalf - 3.9, 6.1), 0, 4.05], -.42, .6, false)
+          for (let leg = 0; leg < 3; leg += 1) {
+            const angle = leg / 3 * Math.PI * 2
+            addCapsuleBetween(prop, new THREE.Vector3(Math.cos(angle) * .3, .02, Math.sin(angle) * .3), new THREE.Vector3(0, .5, 0), .028, darkWood)
+          }
+          addMesh(prop, new THREE.CylinderGeometry(.34, .34, .022, 26), darkWood, [0, .04, 0])
+          addMesh(prop, new THREE.CylinderGeometry(.05, .07, .1, 14), brass, [0, .53, 0])
+          addMesh(prop, new THREE.SphereGeometry(.3, 20, 14), stainCobalt, [0, .84, 0])
+          for (let land = 0; land < 6; land += 1) {
+            const angle = land / 6 * Math.PI * 2 + .5
+            const patch = addMesh(prop, new THREE.SphereGeometry(.12 + (land % 3) * .035, 14, 10), land % 2 ? foliageLight : canvasSky, [Math.cos(angle) * .24, .84 + Math.sin(angle * 1.7) * .16, Math.sin(angle) * .24])
+            patch.scale.set(.9, .62, .9)
+          }
+          addMesh(prop, new THREE.TorusGeometry(.315, .016, 8, 34), brass, [0, .84, 0], [Math.PI / 2, 0, 0])
+          addMesh(prop, new THREE.TorusGeometry(.34, .018, 8, 36), brass, [0, .84, 0], [0, .38, 0])
+          const tray = addMesh(prop, new THREE.CylinderGeometry(.17, .17, .018, 20), brass, [.42, .56, .18])
+          tray.castShadow = false
+          const decanter = addMesh(prop, new THREE.CylinderGeometry(.055, .075, .17, 14), decorGlass, [.42, .655, .18])
+          decanter.castShadow = false
+          addMesh(prop, new THREE.SphereGeometry(.03, 12, 8), brass, [.42, .76, .18])
+          for (const offset of [-.09, .09]) {
+            const tumbler = addMesh(prop, new THREE.CylinderGeometry(.032, .028, .07, 12), decorGlass, [.42 + offset, .6, .18 + offset * .6])
+            tumbler.castShadow = false
+          }
+        },
+        stained_glass: (asset) => {
+          // A leaded transom across the head of the existing window. A disc in
+          // the middle of the glass would both block the view the office is
+          // built around and read as a pinwheel rather than architecture.
+          const panelHeight = Math.min(.96, windowHeight * .26)
+          const panelWidth = windowWidth - .12
+          const prop = decorProp(asset, windowGroup, [0, windowHeight / 2 - panelHeight / 2 - .06, .155], 0, panelWidth * .5, true)
+          const lights = 5
+          const courses = 3
+          const lightWidth = (panelWidth - .1) / lights
+          const courseHeight = (panelHeight - .18) / courses
+          // Leaded glass is a grid of small quarries in one narrow palette. Large
+          // single-colour lights with pointed caps read as bunting instead.
+          for (let light = 0; light < lights; light += 1) {
+            const x = -panelWidth / 2 + .05 + lightWidth * (light + .5)
+            for (let course = 0; course < courses; course += 1) {
+              const y = -panelHeight / 2 + .09 + courseHeight * (course + .5)
+              const pane = addMesh(prop, new THREE.BoxGeometry(lightWidth - .05, courseHeight - .05, .02), stains[(light + course * 2) % stains.length], [x, y, 0])
+              pane.castShadow = false
+              const quarry = addMesh(prop, new THREE.CircleGeometry(Math.min(lightWidth, courseHeight) * .26, 4), course % 2 ? stainAmber : stainEmerald, [x, y, .014])
+              quarry.castShadow = false
+            }
+            addMesh(prop, new THREE.BoxGeometry(.022, panelHeight - .16, .026), charcoal, [x - lightWidth / 2, 0, .016])
+          }
+          addMesh(prop, new THREE.BoxGeometry(.022, panelHeight - .16, .026), charcoal, [panelWidth / 2 - .05, 0, .016])
+          for (let course = 1; course < courses; course += 1) {
+            addMesh(prop, new THREE.BoxGeometry(panelWidth - .1, .022, .026), charcoal, [0, -panelHeight / 2 + .09 + courseHeight * course, .016])
+          }
+          const roundel = addMesh(prop, new THREE.CircleGeometry(panelHeight * .21, 20), stainAmber, [0, -.02, .022])
+          roundel.castShadow = false
+          addMesh(prop, new THREE.TorusGeometry(panelHeight * .21, .018, 8, 26), charcoal, [0, -.02, .024])
+          // Scales in lead: a beam, a pivot and two pans.
+          addMesh(prop, new THREE.BoxGeometry(panelHeight * .26, .022, .014), charcoal, [0, .04, .03])
+          addMesh(prop, new THREE.BoxGeometry(.02, panelHeight * .16, .014), charcoal, [0, -.04, .03])
+          for (const side of [-1, 1]) addMesh(prop, new THREE.CylinderGeometry(.035, .012, .03, 10), charcoal, [side * panelHeight * .13, -.01, .03])
+          for (const y of [panelHeight / 2 - .05, -panelHeight / 2 + .05]) {
+            addMesh(prop, new THREE.BoxGeometry(panelWidth + .1, .08, .1), brass, [0, y, .012])
+          }
+        },
+        charter_vitrine: (asset) => {
+          const prop = decorProp(asset, root, [2.7, 0, 4.66], Math.PI, .62, false)
+          addMesh(prop, new RoundedBoxGeometry(.8, .7, .5, 4, .03), charcoal, [0, .35, 0])
+          addMesh(prop, new THREE.BoxGeometry(.86, .05, .56), brass, [0, .72, 0])
+          for (const x of [-.34, .34]) for (const z of [-.21, .21]) addMesh(prop, new THREE.BoxGeometry(.03, .62, .03), brass, [x, 1.06, z])
+          addMesh(prop, new THREE.BoxGeometry(.74, .04, .48), brass, [0, 1.39, 0])
+          const cover = addMesh(prop, new RoundedBoxGeometry(.7, .6, .44, 3, .012), decorGlass, [0, 1.06, 0])
+          cover.castShadow = false
+          const charter = addMesh(prop, new RoundedBoxGeometry(.44, .5, .018, 2, .008), paper, [0, 1.04, .02], [-.14, 0, 0])
+          charter.castShadow = false
+          for (let line = 0; line < 6; line += 1) {
+            addMesh(prop, new THREE.BoxGeometry(.26 - (line % 3) * .05, .014, .01), charcoal, [-.02, 1.19 - line * .06, .04])
+          }
+          addMesh(prop, new THREE.CylinderGeometry(.04, .04, .01, 14), stainRuby, [.11, .86, .05], [Math.PI / 2, 0, 0])
+          const lamp = addMesh(prop, new THREE.BoxGeometry(.5, .02, .18), glow, [0, 1.35, 0])
+          lamp.castShadow = false
+          addMesh(prop, new RoundedBoxGeometry(.3, .045, .06, 2, .018), brass, [0, .755, .19])
+        },
+        orchid_wall: (asset) => {
+          const prop = decorProp(asset, root, [-cabinetX, 2.32, rearWallZ - .12], Math.PI, 1.4, true)
+          addMesh(prop, new RoundedBoxGeometry(2.42, 2.06, .16, 4, .045), darkWood, [0, 0, 0])
+          addMesh(prop, new THREE.BoxGeometry(2.2, 1.82, .06), foliage, [0, .02, .09])
+          // A denser planting was indistinguishable from this one: the leaves
+          // already overlap into a continuous mass at the size the panel is
+          // ever seen, so the extra clumps were pure cost.
+          for (let clump = 0; clump < 36; clump += 1) {
+            const column = clump % 6
+            const row = Math.floor(clump / 6)
+            const leaf = addMesh(prop, new THREE.SphereGeometry(.15 + seeded(clump + 5) * .07, 10, 6), clump % 3 ? foliage : foliageLight, [-.9 + column * .36, -.76 + row * .3 + (seeded(clump) - .5) * .12, .13 + seeded(clump + 40) * .05])
+            leaf.scale.set(1.15, .74, .52)
+            leaf.rotation.z = (seeded(clump + 20) - .5) * .9
+            leaf.castShadow = false
+          }
+          // Orchids are staked stems, so each one arcs out of the planting and
+          // carries its blooms clear of the leaf mass.
+          for (let stem = 0; stem < 7; stem += 1) {
+            const x = -1.0 + stem * .34
+            const base = -.62 + (stem % 3) * .34
+            addCapsuleBetween(prop, new THREE.Vector3(x, base, .17), new THREE.Vector3(x + .1, base + .46, .24), .014, foliageLight)
+            for (let flower = 0; flower < 2; flower += 1) {
+              const y = base + .24 + flower * .14
+              addMesh(prop, new THREE.SphereGeometry(.058 - flower * .008, 10, 6), bloom, [x + .05 + flower * .02, y, .23]).castShadow = false
+              addMesh(prop, new THREE.SphereGeometry(.017, 6, 4), stainAmber, [x + .05 + flower * .02, y, .27]).castShadow = false
+            }
+          }
+          addMesh(prop, new RoundedBoxGeometry(2.3, .16, .34, 3, .04), brass, [0, -1.06, .1])
+          for (const y of [.98, -.9]) {
+            const rail = addMesh(prop, new THREE.BoxGeometry(2.12, .03, .03), glow, [0, y, .2])
+            rail.castShadow = false
+          }
+          const growLight = new THREE.PointLight(0xbfe3c4, .3, 2.6, 2)
+          growLight.position.set(0, .4, .5)
+          growLight.castShadow = false
+          prop.add(growLight)
+        },
+      }
+      decorAssets.forEach((asset) => decorBuilders[asset.key]?.(asset))
     }
 
     // The active shift remains intentionally small, while this department
@@ -1383,6 +1828,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       return stationSlots[preferred][0]
     }
 
+    const occupiedWings: { x: number, z: number }[] = []
     const addStaffStation = (station: OfficeStaffStation, asset: GameAsset, index: number) => {
       const slot = reserveStationSlot(station)
       const bay = new THREE.Group()
@@ -1392,21 +1838,19 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       bay.userData.staffKey = asset.key
       root.add(bay)
 
-      const stationLight = new THREE.PointLight(
-        station === 'technology' ? 0x7bc8c0 : station === 'diplomatic' ? 0xe4c77d : 0xffdaa0,
-        rustic ? .24 : .38,
-        4.4,
-        1.55,
-      )
-      stationLight.position.set(0, 2.85, .65)
-      stationLight.castShadow = false
-      bay.add(stationLight)
+      // Every light is evaluated for every lit fragment in the room, so a light
+      // per bay made the office progressively slower with each hire. The wings
+      // are lit once each instead, below.
+      occupiedWings.push(slot)
 
       const stationWood = level >= 8 ? charcoal : wood
       const stationMetal = level >= 9 ? brass : charcoal
-      const stationScreen = new THREE.MeshStandardMaterial({ color: 0x10272d, emissive: 0x174a4c, emissiveIntensity: .24, roughness: .38, metalness: .14 })
+      const stationScreen = sharedStandard({ color: 0x10272d, emissive: 0x174a4c, emissiveIntensity: .24, roughness: .38, metalness: .14 })
       const matColor = station === 'leadership' ? look.accent : station === 'diplomatic' ? 0x32595b : look.upholstery
-      addMesh(bay, new THREE.PlaneGeometry(2.15, 1.72), new THREE.MeshStandardMaterial({ color: matColor, roughness: .96 }), [0, .012, .12], [-Math.PI / 2, 0, 0])
+      // Bays sit closer together than their mats are long, so neighbouring mats
+      // overlap. Each shift member's mat therefore gets its own plane instead of
+      // sharing y with the next one, which otherwise z-fights along the seam.
+      addMesh(bay, new THREE.PlaneGeometry(2.15, 1.72), sharedStandard({ color: matColor, roughness: .96 }), [0, .012 + index * .0015, .12], [-Math.PI / 2, 0, 0])
 
       if (station === 'diplomatic') {
         // Client-facing counsel share a briefing salon. The lawyer occupies
@@ -1446,7 +1890,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       } else if (station === 'investigation') {
         // Investigators work from a pinboard and wide evidence surface rather
         // than an office partition or computer cubicle.
-        addMesh(bay, new RoundedBoxGeometry(1.42, .72, .055, 3, .025), new THREE.MeshStandardMaterial({ color: 0x6b4a34, roughness: .94 }), [0, 1.42, -.64])
+        addMesh(bay, new RoundedBoxGeometry(1.42, .72, .055, 3, .025), sharedStandard({ color: 0x6b4a34, roughness: .94 }), [0, 1.42, -.64])
         for (let note = 0; note < 4; note += 1) addMesh(bay, new THREE.PlaneGeometry(.27 + (note % 2) * .08, .2), paper, [-.5 + note * .32, 1.33 + (note % 2) * .24, -.605], [0, 0, (note - 1.5) * .08])
         addMesh(bay, new THREE.TorusGeometry(.18, .025, 10, 28), brass, [.54, 1.04, .18], [Math.PI / 2, 0, 0])
         addMesh(bay, new THREE.CylinderGeometry(.018, .018, .42, 10), brass, [.68, .89, .18], [0, 0, -.64])
@@ -1526,6 +1970,17 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       addStaffStation(officeStaffStationFor(asset.key), asset, index)
     })
 
+    // One overhead pool per staffed wing, centred on the bays it serves, so the
+    // cost is fixed at two lights however many people are on shift.
+    ;[-1, 1].forEach((side) => {
+      const wing = occupiedWings.filter((slot) => Math.sign(slot.x) === side)
+      if (!wing.length) return
+      const light = new THREE.PointLight(0xffdaa0, rustic ? .3 : .48, 7.4, 1.5)
+      light.position.set(wing[0].x, 2.85, wing.reduce((sum, slot) => sum + slot.z, 0) / wing.length)
+      light.castShadow = false
+      root.add(light)
+    })
+
     // Renovations read as architectural improvements, not loose reward props.
     if (!rustic) {
       const rug = addMesh(root, new THREE.PlaneGeometry(5.2 + Math.min(1.4, level * .1), 3.15), new THREE.MeshStandardMaterial({ color: look.upholstery, roughness: .98, metalness: 0 }), [.15, .018, 1.35], [-Math.PI / 2, 0, 0])
@@ -1537,21 +1992,21 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const practicalCount = rustic ? 0 : Math.min(4, Math.max(1, detailLevel - 1))
     for (let index = 0; index < practicalCount; index += 1) {
       const x = -4.5 + index * (9 / Math.max(1, practicalCount - 1))
-      addMesh(root, new THREE.CylinderGeometry(.25, .29, .08, 24), charcoal, [x, 6.25, .4])
-      addMesh(root, new THREE.CircleGeometry(.2, 24), new THREE.MeshStandardMaterial({ color: 0xf0ddb0, emissive: 0xc89b54, emissiveIntensity: .72, roughness: .5 }), [x, 6.20, .4], [Math.PI / 2, 0, 0])
+      addMesh(root, new THREE.CylinderGeometry(.25, .29, .08, 16), charcoal, [x, 6.25, .4])
+      addMesh(root, new THREE.CircleGeometry(.2, 16), sharedStandard({ color: 0xf0ddb0, emissive: 0xc89b54, emissiveIntensity: .72, roughness: .5 }), [x, 6.20, .4], [Math.PI / 2, 0, 0])
     }
     if (level >= 6) {
       // An integrated evidence wall becomes denser with national/global scale.
       const evidencePanel = new THREE.Group(); evidencePanel.position.set(3.25, 4.55, -3.82); root.add(evidencePanel)
       addMesh(evidencePanel, new RoundedBoxGeometry(3.1, 1.1, .09, 4, .035), new THREE.MeshStandardMaterial({ color: 0x101a22, roughness: .38, metalness: .36 }), [0, 0, 0])
       const traceCount = Math.min(9, 3 + Math.floor(level / 2))
-      for (let trace = 0; trace < traceCount; trace += 1) addMesh(evidencePanel, new THREE.BoxGeometry(.18 + seeded(trace) * .55, .018, .012), new THREE.MeshBasicMaterial({ color: trace % 3 ? 0x5da39e : look.accent }), [-1.2 + (trace % 4) * .72, -.35 + Math.floor(trace / 4) * .3, .06], [0, 0, (seeded(trace + 4) - .5) * .4])
+      for (let trace = 0; trace < traceCount; trace += 1) addMesh(evidencePanel, new THREE.BoxGeometry(.18 + seeded(trace) * .55, .018, .012), sharedBasic({ color: trace % 3 ? 0x5da39e : look.accent }), [-1.2 + (trace % 4) * .72, -.35 + Math.floor(trace / 4) * .3, .06], [0, 0, (seeded(trace + 4) - .5) * .4])
     }
     if (frontier) {
       // Orbital/lunar tiers gain one coherent, restrained jurisdiction model.
       const jurisdiction = new THREE.Group(); jurisdiction.position.set(4.3, 1.85, -.7); root.add(jurisdiction)
-      addMesh(jurisdiction, new THREE.SphereGeometry(.32, 28, 20), new THREE.MeshStandardMaterial({ color: level === 13 ? 0xaab2b1 : 0x376f7f, roughness: .54, metalness: .18, emissive: level === 14 ? 0x173d48 : 0x000000, emissiveIntensity: .35 }), [0, 0, 0])
-      for (let ring = 0; ring < Math.min(3, level - 11); ring += 1) addMesh(jurisdiction, new THREE.TorusGeometry(.48 + ring * .12, .018, 10, 42), brass, [0, 0, 0], [Math.PI / 2 + ring * .38, ring * .31, 0])
+      addMesh(jurisdiction, new THREE.SphereGeometry(.32, 20, 14), sharedStandard({ color: level === 13 ? 0xaab2b1 : 0x376f7f, roughness: .54, metalness: .18, emissive: level === 14 ? 0x173d48 : 0x000000, emissiveIntensity: .35 }), [0, 0, 0])
+      for (let ring = 0; ring < Math.min(3, level - 11); ring += 1) addMesh(jurisdiction, new THREE.TorusGeometry(.48 + ring * .12, .018, 6, 28), brass, [0, 0, 0], [Math.PI / 2 + ring * .38, ring * .31, 0])
     }
     // Broad architectural sources replace the previous high-contrast key.
     // They keep faces and furniture readable from every camera heading while
@@ -1588,6 +2043,14 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({ color: 0xe8d4a5, size: .025, transparent: true, opacity: .22, depthWrite: false }))
     root.add(dust)
 
+    // Static scenery is deliberately NOT merged into batched meshes here, unlike
+    // the world map. Merging was implemented and measured on this room: it cut
+    // draw calls from 953 to 581 at the top tier, and moved the frame time by
+    // 0.2ms, because the office is bound by per-fragment light evaluation rather
+    // than by draw submission — throttling the CPU 4x does not change its frame
+    // time at all. It did cost 123ms of time to first frame to do the merging,
+    // so it was a straight loss. Cutting a light is worth ~1.5ms/frame here;
+    // cutting a draw call is worth nothing measurable.
     const surface = canvas.closest<HTMLElement>('.av-office')
     const dragPointer = new THREE.Vector2()
     const raycaster = new THREE.Raycaster()
