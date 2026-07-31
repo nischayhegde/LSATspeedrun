@@ -776,11 +776,12 @@ def create_attempt(session_id: str):
             "invalid_session_item": "This is not the current question. Refresh and try again.",
             "invalid_choice": "Choose one of the available answers.",
             "reasoning_required": "Explain your reasoning before submitting the case.",
+            "reasoning_too_short": "Your explanation is too short to grade — add the reasoning that decided your answer.",
             "invalid_confidence": "Choose a confidence level from 1 to 5.",
             "strategy_decision_required": "Choose whether to use the assigned method before submitting.",
             "invalid_strategy_prompt_time": "The strategy decision time could not be recorded.",
         }
-        status = 400 if code in {"invalid_choice", "reasoning_required", "invalid_confidence", "strategy_decision_required", "invalid_strategy_prompt_time"} else 409
+        status = 400 if code in {"invalid_choice", "reasoning_required", "reasoning_too_short", "invalid_confidence", "strategy_decision_required", "invalid_strategy_prompt_time"} else 409
         return error(code, messages.get(code, "The answer could not be saved."), status)
     return jsonify({"result": serialize_attempt_result(attempt, duplicate)})
 

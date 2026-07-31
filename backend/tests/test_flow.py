@@ -106,6 +106,21 @@ def app():
     return application
 
 
+def explanation(marker: str) -> str:
+    """A gradable explanation that clears the 120-character Method Lab floor.
+
+    Distinct per ``marker`` on purpose: ``game._is_reused_reasoning`` compares an
+    attempt against the same user's last 50 explanations and forces an Invalid
+    band on a repeat, so reusing one literal string inside a test would silently
+    change what that test settles.
+    """
+    return (
+        f"The conclusion depends on the link that {marker} makes explicit, and the credited "
+        "choice supplies exactly that connection while every other option either widens "
+        "the scope or swaps the term the argument actually needs."
+    )
+
+
 def login(client, email: str = "student@example.test") -> dict[str, str]:
     response = client.post("/v1/auth/dev", json={"email": email, "display_name": "Test Student"})
     assert response.status_code == 200
@@ -334,7 +349,7 @@ def test_final_case_completion_stops_future_rent_and_reputation_decay(app, monke
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
-            "reasoning": "Choice C follows from the controlling premise while each alternative adds an unsupported condition.",
+            "reasoning": "Choice C follows from the controlling premise while each alternative adds an unsupported condition, so the credited answer is the only one the argument licenses.",
         },
         headers={**headers, "Idempotency-Key": "complete-final-charter"},
     ).json["result"]
@@ -613,7 +628,7 @@ def test_answer_only_speedrun_redacts_feedback_stays_neutral_and_seeds_review(ap
     session = started.json["session"]
     assert session["practice_style"] == "speedrun"
     assert session["feedback_policy"] == "delayed"
-    assert session["current_item"]["requires_reasoning"] is False
+    assert session["current_item"]["requires_reasoning"] is True
     assert session["current_item"]["case_terms"] is None
 
     first = client.post(
@@ -622,6 +637,7 @@ def test_answer_only_speedrun_redacts_feedback_stays_neutral_and_seeds_review(ap
             "item_id": session["current_item"]["id"],
             "selected_label": "A",
             "confidence": 5,
+            "reasoning": explanation("the first sprint answer"),
         },
         headers={**headers, "Idempotency-Key": "speedrun-delayed-one"},
     )
@@ -639,6 +655,7 @@ def test_answer_only_speedrun_redacts_feedback_stays_neutral_and_seeds_review(ap
             "item_id": resumed["current_item"]["id"],
             "selected_label": "C",
             "confidence": 5,
+            "reasoning": explanation("the resumed sprint answer"),
         },
         headers={**headers, "Idempotency-Key": "speedrun-delayed-two"},
     )
@@ -697,7 +714,12 @@ def test_daily_docket_drives_speedrun_into_priority_deep_brief(app):
         answer = "A" if index == 0 else "C"
         response = client.post(
             f"/v1/study-sessions/{session['id']}/attempts",
-            json={"item_id": current["current_item"]["id"], "selected_label": answer, "confidence": 5},
+            json={
+                "item_id": current["current_item"]["id"],
+                "selected_label": answer,
+                "confidence": 5,
+                "reasoning": explanation(f"docket question {index}"),
+            },
             headers={**headers, "Idempotency-Key": f"daily-docket-{index}"},
         )
         assert response.status_code == 200
@@ -739,7 +761,12 @@ def test_infinite_and_review_are_immediate_neutral_and_timezone_safe(app):
     ).json["session"]
     client.post(
         f"/v1/study-sessions/{sprint['id']}/attempts",
-        json={"item_id": sprint["current_item"]["id"], "selected_label": "A", "confidence": 4},
+        json={
+            "item_id": sprint["current_item"]["id"],
+            "selected_label": "A",
+            "confidence": 4,
+            "reasoning": explanation("the seeded sprint miss"),
+        },
         headers={**headers, "Idempotency-Key": "review-seed-miss"},
     )
 
@@ -757,7 +784,7 @@ def test_infinite_and_review_are_immediate_neutral_and_timezone_safe(app):
         json={
             "item_id": review_session["current_item"]["id"],
             "selected_label": "C",
-            "reasoning": "C is the only choice directly supported by the stated relationship.",
+            "reasoning": "C is the only choice directly supported by the stated relationship, and each other option either reverses that relationship or introduces a term the passage never establishes.",
             "confidence": 4,
         },
         headers={**headers, "Idempotency-Key": "spaced-review-correct"},
@@ -785,10 +812,15 @@ def test_infinite_and_review_are_immediate_neutral_and_timezone_safe(app):
     assert infinite.status_code == 201
     infinite = infinite.json["session"]
     assert infinite["feedback_policy"] == "immediate"
-    assert infinite["current_item"]["requires_reasoning"] is False
+    assert infinite["current_item"]["requires_reasoning"] is True
     answered = client.post(
         f"/v1/study-sessions/{infinite['id']}/attempts",
-        json={"item_id": infinite["current_item"]["id"], "selected_label": "C", "confidence": 5},
+        json={
+            "item_id": infinite["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 5,
+            "reasoning": explanation("the infinite-run answer"),
+        },
         headers={**headers, "Idempotency-Key": "infinite-answer"},
     )
     assert answered.status_code == 200
@@ -853,7 +885,7 @@ def test_completed_speedrun_stops_at_training_lab_boundary(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
-            "reasoning": "C follows from the stated relationship; the alternatives add claims the stimulus does not support.",
+            "reasoning": "C follows from the stated relationship; the alternatives add claims the stimulus does not support, which is why they fail even though they restate its vocabulary.",
         },
         headers={**headers, "Idempotency-Key": "one-question-speedrun"},
     ).json["result"]
@@ -941,7 +973,7 @@ def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monke
         json={
             "item_id": item["id"],
             "selected_label": "B",
-            "reasoning": "The premises support B, and C appears to go beyond the evidence provided.",
+            "reasoning": "The premises support B, and C appears to go beyond the evidence provided by asserting a degree of certainty the argument never earns anywhere in its chain.",
         },
         headers={**headers, "Idempotency-Key": "first-answer"},
     )
@@ -1052,7 +1084,7 @@ def test_coaching_can_run_as_a_durable_async_job(app, monkeypatch):
         json={
             "item_id": item["id"],
             "selected_label": "C",
-            "reasoning": "The credited choice follows directly from the stated evidence in this stimulus.",
+            "reasoning": "The credited choice follows directly from the stated evidence in this stimulus, while the remaining options depend on a comparison the author declines to make.",
         },
         headers={**headers, "Idempotency-Key": "async-answer"},
     ).json["result"]
@@ -1086,7 +1118,7 @@ def test_current_ai_job_lease_keeps_sqs_redelivery_retryable(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
-            "reasoning": "The credited answer is supported by the final premise and stays within its scope.",
+            "reasoning": "The credited answer is supported by the final premise and stays within its scope, whereas the distractors generalize past the single case the evidence describes.",
         },
         headers={**headers, "Idempotency-Key": "current-lease-answer"},
     ).json["result"]
@@ -1134,7 +1166,7 @@ def test_stale_ai_job_is_resent_and_redelivery_settles_once(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
-            "reasoning": "Choice C follows from the stated evidence without adding a new assumption.",
+            "reasoning": "Choice C follows from the stated evidence without adding a new assumption, and the other four each require a bridging claim the stimulus pointedly leaves out.",
         },
         headers={**headers, "Idempotency-Key": "stale-lease-answer"},
     ).json["result"]
@@ -1234,7 +1266,7 @@ def test_case_settlement_and_ledger_are_exactly_once(app, monkeypatch):
         json={
             "item_id": item["id"],
             "selected_label": "C",
-            "reasoning": "The conclusion follows because the stated premise directly supports choice C.",
+            "reasoning": "The conclusion follows because the stated premise directly supports choice C, and no other option connects the evidence to the conclusion without a gap.",
         },
         headers={**headers, "Idempotency-Key": "settle-once"},
     ).json["result"]
@@ -1288,7 +1320,7 @@ def test_invalid_reasoning_does_not_advance_cash_daily_goals(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
-            "reasoning": "This answer is right because it is the right answer.",
+            "reasoning": "This answer is right because it is the right answer, and the other answers are wrong because they are not the right answer, which is how I knew to pick it.",
         },
         headers={**headers, "Idempotency-Key": "invalid-daily-answer"},
     ).json["result"]
@@ -1337,7 +1369,7 @@ def test_tycoon_review_cannot_skip_wrong_answer_settlement(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "B",
-            "reasoning": "Choice B seems plausible because it appears to follow from the final premise.",
+            "reasoning": "Choice B seems plausible because it appears to follow from the final premise, though it quietly swaps the qualifier the author attached to that premise.",
         },
         headers={**headers, "Idempotency-Key": "wrong-cannot-skip"},
     ).json["result"]
@@ -1397,7 +1429,7 @@ def test_finished_legacy_attempt_is_not_adopted_or_paid_retroactively(app):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "B",
-            "reasoning": "This is a historical explanation created before the tycoon economy existed.",
+            "reasoning": "This is a historical explanation created before the tycoon economy existed, recorded when attempts were stored without any settlement or client context attached.",
         },
         headers={**headers, "Idempotency-Key": "finished-legacy"},
     ).json["result"]
@@ -1717,7 +1749,7 @@ def test_pro_bono_win_and_caseboard_completion_change_the_settlement(app, monkey
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
-            "reasoning": "Choice C follows from the decisive premise while the other choices require facts not supplied.",
+            "reasoning": "Choice C follows from the decisive premise while the other choices require facts not supplied, so only C survives a strict reading of what the passage actually claims.",
         },
         headers={**headers, "Idempotency-Key": "pro-bono-completion"},
     ).json["result"]
@@ -1846,7 +1878,7 @@ def test_completed_contract_auto_renews_so_a_client_can_be_replayed(app, monkeyp
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
-            "reasoning": "Choice C follows directly from the final premise without importing an unstated assumption.",
+            "reasoning": "Choice C follows directly from the final premise without importing an unstated assumption, and the rest fail once that premise is read at its stated strength.",
         },
         headers={**headers, "Idempotency-Key": "renew-final-case"},
     ).json["result"]
@@ -2002,7 +2034,7 @@ def test_prompted_strategy_requires_a_decision_and_valid_prompt_time(app):
     payload = {
         "item_id": item_id,
         "selected_label": "C",
-        "reasoning": "The credited answer follows from the stated relationship without adding a new assumption.",
+        "reasoning": "The credited answer follows from the stated relationship without adding a new assumption, while every competing choice needs a premise the argument never states.",
         "confidence": 4,
     }
     with app.app_context():
@@ -2109,6 +2141,18 @@ def test_strategy_dashboard_waits_for_supported_evidence_and_excludes_skips(app)
         assert result["status"] == "supported"
         assert snapshot["strongest"]["key"] == "argument_core"
         assert snapshot["trials_completed"] == 12
+
+        assert snapshot["leader"]["key"] == "argument_core"
+        assert result["verdict"] == "confirmed"
+        assert result["verdict_label"] == "confirmed"
+        assert result["plain_title"] == "Split the argument"
+        assert result["summary"] == "Splitting the argument is helping you."
+        assert result["detail"] == "You get 75% right with it and 50% right without it on similar questions."
+        assert result["with_headline"] == "75%"
+        assert result["with_note"] == "8 questions with it"
+        assert result["without_note"] == "4 questions without it"
+        assert result["difference_headline"] == "+25 points"
+        assert result["difference_note"] == "95s average with it"
 
     response = client.get("/v1/performance", headers=headers)
     assert response.status_code == 200
@@ -2224,3 +2268,519 @@ def test_profile_scoped_ledger_keys_let_each_playthrough_record_the_same_content
         scoped = _scoped_source(profile, "x" * 200)
         assert len(scoped) == 100
         assert scoped.startswith(f'{restarted["id"]}:')
+
+
+def test_every_strategy_carries_student_facing_copy(app):
+    with app.app_context():
+        from app.strategies import STRATEGIES, serialize_strategy, strategy_catalog
+
+        catalog = strategy_catalog()
+        assert len(catalog) == len(STRATEGIES)
+        for strategy in catalog:
+            for field in ("plain_title", "plain_subject", "plain_line"):
+                assert strategy[field].strip(), f"{strategy['key']} is missing {field}"
+            assert strategy["plain_title"] != strategy["title"]
+            assert len(strategy["steps"]) == 3
+
+        served = serialize_strategy("negation_test")
+        assert served["plain_title"] == "Negate the answer"
+        assert served["plain_subject"] == "Negating the answer"
+        assert served["title"] == "Necessary-Assumption Negation"
+
+
+def test_review_queue_tracks_pending_grade_state(app):
+    with app.app_context():
+        columns = {column.name for column in ReviewQueueItem.__table__.columns}
+        assert "grade_pending" in columns
+        assert "pre_grade_interval_index" in columns
+        assert ReviewQueueItem.__table__.c.grade_pending.nullable is False
+        assert ReviewQueueItem.__table__.c.pre_grade_interval_index.nullable is True
+
+
+@pytest.mark.parametrize("practice_style", ["deep", "speedrun", "infinite"])
+def test_every_practice_style_requires_an_explanation(app, practice_style):
+    client = app.test_client()
+    headers = login(client, f"requires-{practice_style}@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": practice_style},
+        headers=headers,
+    ).json["session"]
+    assert session["current_item"]["requires_reasoning"] is True
+    expected = 120 if practice_style == "deep" else 40
+    assert session["current_item"]["reasoning_min_chars"] == expected
+
+
+def test_diagnostic_never_requires_an_explanation(app):
+    client = app.test_client()
+    headers = login(client, "diagnostic-no-reasoning@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/diagnostics", json={}, headers=headers).json["session"]
+    assert session["current_item"]["requires_reasoning"] is False
+    assert session["current_item"]["reasoning_min_chars"] == 0
+
+
+def test_missing_explanation_is_rejected(app):
+    client = app.test_client()
+    headers = login(client, "no-reasoning@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    response = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": session["current_item"]["id"], "selected_label": "C"},
+        headers={**headers, "Idempotency-Key": "no-reasoning"},
+    )
+    assert response.status_code == 400
+    assert response.json["error"]["code"] == "reasoning_required"
+
+
+def test_short_explanation_is_rejected_with_its_own_code(app):
+    client = app.test_client()
+    headers = login(client, "short-reasoning@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    response = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": session["current_item"]["id"], "selected_label": "C", "reasoning": "C is right."},
+        headers={**headers, "Idempotency-Key": "too-short"},
+    )
+    assert response.status_code == 400
+    assert response.json["error"]["code"] == "reasoning_too_short"
+
+
+def test_deep_practice_enforces_the_longer_floor(app):
+    client = app.test_client()
+    headers = login(client, "deep-floor@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "deep"},
+        headers=headers,
+    ).json["session"]
+    # 60 characters clears the speedrun floor of 40 but not the deep floor of 120.
+    response = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "reasoning": "C follows from the premise and the others overreach here.",
+        },
+        headers={**headers, "Idempotency-Key": "deep-too-short"},
+    )
+    assert response.status_code == 400
+    assert response.json["error"]["code"] == "reasoning_too_short"
+
+
+def _graded_attempt(attempt_id: str, score: float | None):
+    """Set a normalized 0-1 explanation score on an attempt and re-run scheduling."""
+    from app.services import _schedule_review
+
+    attempt = db.session.get(Attempt, attempt_id)
+    attempt.explanation_score = score
+    db.session.flush()
+    _schedule_review(attempt)
+    db.session.commit()
+    return attempt
+
+
+def test_correct_answer_with_invalid_explanation_enters_the_review_queue(app):
+    client = app.test_client()
+    headers = login(client, "unsupported-correct@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    answered = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 5,
+            "reasoning": "It just felt like the best available answer to me on this one.",
+        },
+        headers={**headers, "Idempotency-Key": "guessed-right"},
+    ).json["result"]
+
+    with app.app_context():
+        # Confident, fast, correct: nothing schedules it before the grade lands.
+        assert ReviewQueueItem.query.count() == 0
+        _graded_attempt(answered["attempt_id"], 0.10)
+        row = ReviewQueueItem.query.one()
+        assert row.reason_code == "unsupported_correct"
+        assert row.interval_index == 0
+        assert row.grade_pending is False
+
+
+def test_good_explanation_on_a_confident_correct_answer_schedules_nothing(app):
+    client = app.test_client()
+    headers = login(client, "supported-correct@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    answered = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 5,
+            "reasoning": "C restates the controlling relationship exactly; the others add conditions.",
+        },
+        headers={**headers, "Idempotency-Key": "earned-right"},
+    ).json["result"]
+
+    with app.app_context():
+        _graded_attempt(answered["attempt_id"], 0.90)
+        assert ReviewQueueItem.query.count() == 0
+
+
+@pytest.mark.parametrize(
+    ("start_index", "score", "expected_index", "expected_status"),
+    [
+        (1, 0.90, 3, "due"),        # Excellent -> +2
+        (1, 0.60, 2, "due"),        # Good      -> +1
+        (1, 0.30, 1, "due"),        # Weak      -> hold
+        (1, 0.10, 0, "due"),        # Invalid   -> reset
+        (3, 0.90, 4, "mastered"),   # Excellent -> +2 overshoots the ladder
+    ],
+)
+def test_review_advance_depends_on_the_explanation_grade(app, start_index, score, expected_index, expected_status):
+    with app.app_context():
+        user = User(email=f"advance-{start_index}-{score}@example.test", display_name="Advance")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.first()
+        row = ReviewQueueItem(
+            user_id=user.id,
+            question_id=question.id,
+            status="due",
+            reason_code="incorrect",
+            interval_index=start_index,
+            due_at=utcnow(),
+        )
+        db.session.add(row)
+        db.session.commit()
+
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="review",
+            feedback_policy="immediate",
+            target_minutes=10,
+            total_items=1,
+        )
+        db.session.add(session)
+        db.session.flush()
+        item = SessionItem(
+            session_id=session.id,
+            question_id=question.id,
+            position=0,
+            requires_reasoning=True,
+            target_time_seconds=150,
+        )
+        db.session.add(item)
+        db.session.flush()
+        attempt = Attempt(
+            user_id=user.id,
+            session_item_id=item.id,
+            idempotency_key=f"advance-{start_index}-{score}",
+            selected_label=question.correct_answer,
+            is_correct=True,
+            reasoning_text="A written explanation long enough to be graded by the coach.",
+            confidence=4,
+            server_elapsed_ms=60_000,
+            explanation_score=score,
+        )
+        db.session.add(attempt)
+        db.session.flush()
+
+        from app.services import _schedule_review
+
+        _schedule_review(attempt)
+        db.session.commit()
+
+        refreshed = db.session.get(ReviewQueueItem, row.id)
+        assert refreshed.interval_index == expected_index
+        assert refreshed.status == expected_status
+
+
+def test_landing_grade_revises_the_provisional_schedule(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "backfill@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": "speedrun"},
+        headers=headers,
+    ).json["session"]
+    answered = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 5,
+            "reasoning": "I picked C because it seemed the most likely of the five choices.",
+        },
+        headers={**headers, "Idempotency-Key": "backfill-answer"},
+    ).json["result"]
+
+    with app.app_context():
+        assert ReviewQueueItem.query.count() == 0
+
+    monkeypatch.setattr(
+        "app.services.generate_attempt_coaching",
+        lambda _attempt: (
+            {
+                "explanation_grade": 12,
+                "reasoning_verdict": "unsupported",
+                "reasoning_summary": "The explanation never engages the argument.",
+                "model": "test-model",
+            },
+            {},
+        ),
+    )
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        run_attempt_coaching(db.session.get(Attempt, answered["attempt_id"]))
+
+        row = ReviewQueueItem.query.one()
+        assert row.reason_code == "unsupported_correct"
+        assert row.grade_pending is False
+
+
+def test_strategy_scoring_weighs_explanation_quality(app, monkeypatch):
+    """Candidates tied on accuracy, pace, and calibration separate on explanation quality.
+
+    Drives assign_strategy_trial rather than restating its arithmetic, so the test
+    fails if the explanation term is ever dropped. _stable_fraction is pinned to
+    0.5 to disable the 30% explore branch and the 25% control arm, leaving the
+    assigned key equal to the top-ranked candidate.
+    """
+    with app.app_context():
+        from app.strategies import _candidate_keys
+
+        user = User(email="strategy-weight@example.test", display_name="Weight")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.filter_by(section="Logical Reasoning").first()
+        candidates = _candidate_keys(question)
+        assert len(candidates) >= 2
+
+        # The best-explained candidate is the alphabetically first one. Before the
+        # explanation term exists every candidate ties, and the sort's reverse
+        # tiebreak on the key name picks the alphabetically last one instead.
+        best = sorted(candidates)[0]
+
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            target_minutes=10,
+            total_items=len(candidates) * 3,
+        )
+        db.session.add(session)
+        db.session.flush()
+        position = 0
+        for candidate in candidates:
+            for _ in range(3):
+                item = SessionItem(
+                    session_id=session.id,
+                    question_id=question.id,
+                    position=position,
+                    requires_reasoning=True,
+                    target_time_seconds=150,
+                    strategy_key=candidate,
+                    strategy_variant="prompt",
+                )
+                db.session.add(item)
+                db.session.flush()
+                db.session.add(
+                    Attempt(
+                        user_id=user.id,
+                        session_item_id=item.id,
+                        idempotency_key=f"weigh-{candidate}-{position}",
+                        selected_label=question.correct_answer,
+                        is_correct=True,
+                        reasoning_text=explanation(f"weighted attempt {position}"),
+                        confidence=4,
+                        server_elapsed_ms=60_000,
+                        strategy_key=candidate,
+                        strategy_variant="prompt",
+                        strategy_applied=True,
+                        explanation_score=0.95 if candidate == best else 0.05,
+                    )
+                )
+                position += 1
+        db.session.commit()
+
+        monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.5)
+
+        from app.strategies import assign_strategy_trial
+
+        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        assert trial is not None
+        assert trial["variant"] == "prompt"
+        assert trial["key"] == best
+
+
+def test_strategy_scoring_falls_back_without_graded_attempts(app):
+    """A candidate with no graded explanations uses the original three-term formula."""
+    with app.app_context():
+        user = User(email="strategy-fallback@example.test", display_name="Fallback")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.filter_by(section="Logical Reasoning").first()
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            target_minutes=10,
+            total_items=1,
+        )
+        db.session.add(session)
+        db.session.flush()
+        for index in range(4):
+            item = SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=index,
+                requires_reasoning=True,
+                target_time_seconds=150,
+                strategy_key="argument_core",
+                strategy_variant="prompt",
+            )
+            db.session.add(item)
+            db.session.flush()
+            db.session.add(
+                Attempt(
+                    user_id=user.id,
+                    session_item_id=item.id,
+                    idempotency_key=f"fallback-{index}",
+                    selected_label=question.correct_answer,
+                    is_correct=True,
+                    reasoning_text="An ungraded but present written explanation for this attempt.",
+                    confidence=4,
+                    server_elapsed_ms=60_000,
+                    strategy_key="argument_core",
+                    strategy_variant="prompt",
+                    strategy_applied=True,
+                    explanation_score=None,
+                )
+            )
+        db.session.commit()
+
+        from app.strategies import assign_strategy_trial
+
+        # Must not raise (a naive mean over None would) and must still assign.
+        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        assert trial is not None
+        assert trial["key"] in {"argument_core", "prephrase", "scope_precision", "role_map"}
+
+
+def test_strategy_performance_reports_explanation_metrics(app):
+    """strategy_performance is surfaced under performance.strategy_lab, not its own route."""
+    with app.app_context():
+        user = User(email="strategy-metrics@example.test", display_name="Metrics")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.filter_by(section="Logical Reasoning").first()
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            target_minutes=10,
+            total_items=2,
+        )
+        db.session.add(session)
+        db.session.flush()
+        for index, (variant, score) in enumerate((("prompt", 0.80), ("control", 0.40))):
+            item = SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=index,
+                requires_reasoning=True,
+                target_time_seconds=150,
+                strategy_key="argument_core",
+                strategy_variant=variant,
+            )
+            db.session.add(item)
+            db.session.flush()
+            db.session.add(
+                Attempt(
+                    user_id=user.id,
+                    session_item_id=item.id,
+                    idempotency_key=f"metrics-{index}",
+                    selected_label=question.correct_answer,
+                    is_correct=True,
+                    reasoning_text="A graded written explanation for this attempt.",
+                    confidence=4,
+                    server_elapsed_ms=60_000,
+                    strategy_key="argument_core",
+                    strategy_variant=variant,
+                    strategy_applied=True if variant == "prompt" else None,
+                    explanation_score=score,
+                )
+            )
+        db.session.commit()
+
+        from app.strategies import strategy_performance
+
+        result = next(
+            entry for entry in strategy_performance(user.id)["results"] if entry["key"] == "argument_core"
+        )
+        assert result["explanation_mean"] == 80
+        assert result["control_explanation_mean"] == 40
+        assert result["explanation_lift"] == 40
+
+
+@pytest.mark.parametrize(("practice_style", "floor"), [("speedrun", 40), ("deep", 120)])
+def test_explanation_floor_boundary_matches_the_published_minimum(app, practice_style, floor):
+    """The served floor is exactly the enforced floor.
+
+    The client enables submit at ``length >= reasoning_min_chars`` while the server
+    rejects at ``len < reasoning_min_chars``. An off-by-one on either side would
+    leave the button enabled on an answer the API refuses, so assert the boundary
+    from both directions.
+    """
+    client = app.test_client()
+    headers = login(client, f"boundary-{practice_style}@example.test")
+    create_game(client, headers)
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 1, "practice_style": practice_style},
+        headers=headers,
+    ).json["session"]
+    item_id = session["current_item"]["id"]
+    assert session["current_item"]["reasoning_min_chars"] == floor
+
+    under = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": item_id, "selected_label": "C", "reasoning": "x" * (floor - 1)},
+        headers={**headers, "Idempotency-Key": f"under-{practice_style}"},
+    )
+    assert under.status_code == 400
+    assert under.json["error"]["code"] == "reasoning_too_short"
+
+    exact = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": item_id, "selected_label": "C", "reasoning": "y" * floor},
+        headers={**headers, "Idempotency-Key": f"exact-{practice_style}"},
+    )
+    assert exact.status_code == 200

@@ -34,6 +34,27 @@ No professional source located during this review offers a defensible guarantee 
 
 Every in-product brief is intentionally limited to three steps. The full catalog stays collapsed on the dashboard so it does not compete with the current question.
 
+### Student-facing names
+
+The names above are the ones these techniques carry in LSAC and prep-provider materials. Students see a plain name instead, so the question card reads as help rather than as terminology. The formal name appears only as a subtitle in the dashboard catalog, which preserves the link to the published sources. Both strings live in `backend/app/strategies.py`.
+
+| Formal name | Student-facing name |
+| --- | --- |
+| Argument Core | Split the argument |
+| Prephrase Before Choices | Guess before you look |
+| Necessary-Assumption Negation | Negate the answer |
+| Causal Alternatives Audit | Question the cause |
+| Conditional Chain | Follow the if-thens |
+| Abstract the Flaw | Name the bad move |
+| Scope and Force Check | Watch the wording |
+| Statement Role Map | Label each sentence |
+| Low-Resolution Passage Map | Map the paragraphs |
+| Viewpoint Ledger | Track who thinks what |
+| Paragraph Function | Ask why this paragraph |
+| Textual Proof Standard | Point to the line |
+| Comparative Relationship Matrix | Compare the two passages |
+| Main-Point Synthesis | Say the point in one line |
+
 ## Assignment algorithm
 
 ### Eligible surfaces
@@ -53,7 +74,7 @@ Every in-product brief is intentionally limited to three steps. The full catalog
 - Twenty-five percent of eligible assignments are hidden controls. The question is served normally, while its strategy key is retained for comparison.
 - The first three adhered prompted observations for each applicable method prioritize coverage.
 - After exploration, 70% of assignments favor the current leader and 30% test the next challenger. This prevents the system from permanently locking onto an early lucky result.
-- Students receive one assigned brief and choose `Use this brief` or `Solve normally`. They do not select their favorite strategy from a menu, which would create severe self-selection bias.
+- Students receive one assigned brief and choose `Use it` or `Skip this one`. They do not select their favorite strategy from a menu, which would create severe self-selection bias. The two options are deliberately unequal in visual weight — one primary button, one quiet link — because the point is to lower the cost of the decision, not to present it as a dilemma.
 
 ### Timing
 
@@ -76,6 +97,8 @@ Evidence labels are deliberately conservative:
 - **Forming:** fewer than four prompted observations or fewer than two controls
 - **Directional:** at least four prompted and two controls, but fewer than eight prompted or four controls
 - **Supported:** at least eight prompted and four controls
+
+These three tiers remain the internal state and are still returned by `strategy_performance`. The dashboard collapses them to two words — `still checking` for forming and directional, `confirmed` for supported — so a student is never asked to interpret a sample threshold. The distinction survives in the sentence attached to each approach: an unconfirmed one always says more questions are needed.
 
 The dashboard names a strongest method only at the supported threshold. Directional leaders remain visible but are not presented as winners. These thresholds reduce overclaiming; they do not turn the result into a population-level clinical or educational trial.
 
