@@ -2446,6 +2446,22 @@ def test_good_explanation_on_a_confident_correct_answer_schedules_nothing(app):
         assert ReviewQueueItem.query.count() == 0
 
 
+def test_every_case_attaches_game_context_and_the_diagnostic_never_does(app):
+    client = app.test_client()
+    headers = login(client, "every-case-pays@example.test")
+    create_game(client, headers)
+
+    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    with app.app_context():
+        item = SessionItem.query.filter_by(session_id=session["id"]).one()
+        assert item.game_context_json is not None
+
+    diagnostic = client.post("/v1/diagnostics", json={}, headers=headers).json["session"]
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=diagnostic["id"]).all()
+        assert all(item.game_context_json is None for item in items)
+
+
 def test_session_items_record_review_queue_origin(app):
     with app.app_context():
         columns = {column.name for column in SessionItem.__table__.columns}
