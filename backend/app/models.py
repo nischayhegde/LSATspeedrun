@@ -131,6 +131,7 @@ class SessionItem(db.Model):
     position = db.Column(db.Integer, nullable=False)
     section_index = db.Column(db.Integer, nullable=False, default=0)
     requires_reasoning = db.Column(db.Boolean, nullable=False, default=False)
+    from_review_queue = db.Column(db.Boolean, nullable=False, default=False)
     strategy_key = db.Column(db.String(80), nullable=True, index=True)
     strategy_variant = db.Column(db.String(20), nullable=True)
     target_time_seconds = db.Column(db.Integer, nullable=False, default=150)

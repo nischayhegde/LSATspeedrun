@@ -2447,6 +2447,13 @@ def test_good_explanation_on_a_confident_correct_answer_schedules_nothing(app):
         assert ReviewQueueItem.query.count() == 0
 
 
+def test_session_items_record_review_queue_origin(app):
+    with app.app_context():
+        columns = {column.name for column in SessionItem.__table__.columns}
+        assert "from_review_queue" in columns
+        assert SessionItem.__table__.c.from_review_queue.nullable is False
+
+
 @pytest.mark.parametrize(
     ("start_index", "score", "expected_index", "expected_status"),
     [
