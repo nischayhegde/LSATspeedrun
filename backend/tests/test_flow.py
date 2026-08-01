@@ -2385,6 +2385,141 @@ def test_session_items_record_review_queue_origin(app):
         assert SessionItem.__table__.c.from_review_queue.nullable is False
 
 
+def _queue_due_question(user_id: str, question_id: str) -> None:
+    """Put one question in the review queue, due now."""
+    db.session.add(
+        ReviewQueueItem(
+            user_id=user_id,
+            question_id=question_id,
+            status="due",
+            reason_code="incorrect",
+            interval_index=0,
+            due_at=utcnow() - timedelta(days=1),
+        )
+    )
+    db.session.commit()
+
+
+def test_due_repairs_are_seeded_first_and_capped_at_half_a_run(app):
+    client = app.test_client()
+    headers = login(client, "folded-repairs@example.test")
+    create_game(client, headers)
+    with app.app_context():
+        user = User.query.filter_by(email="folded-repairs@example.test").one()
+        for question in Question.query.order_by(Question.id).limit(5).all():
+            _queue_due_question(user.id, question.id)
+
+    session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        assert [item.from_review_queue for item in items] == [True, True, True, False, False, False]
+
+
+def test_an_empty_review_queue_still_produces_a_full_run(app):
+    client = app.test_client()
+    headers = login(client, "no-repairs@example.test")
+    create_game(client, headers)
+    response = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
+    assert response.status_code == 201
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=response.json["session"]["id"]).all()
+        assert len(items) == 4
+        assert not any(item.from_review_queue for item in items)
+
+
+def test_a_focused_run_seeds_no_repairs(app):
+    client = app.test_client()
+    headers = login(client, "focused-no-repairs@example.test")
+    create_game(client, headers)
+    with app.app_context():
+        user = User.query.filter_by(email="focused-no-repairs@example.test").one()
+        for question in Question.query.order_by(Question.id).limit(4).all():
+            _queue_due_question(user.id, question.id)
+
+    session = client.post(
+        "/v1/study-sessions",
+        json={"size": 4, "question_type": "Inference"},
+        headers=headers,
+    ).json["session"]
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).all()
+        assert not any(item.from_review_queue for item in items)
+
+
+def test_question_selection_never_returns_an_excluded_question(app):
+    """The seen-question fallback must respect exclude_ids too.
+
+    select_random_questions widens its pool to already-seen questions once the
+    unseen pool is smaller than the requested count. Without filtering the
+    exclusions out of `eligible` rather than only out of `unseen`, that widening
+    can hand back a question already seeded as a repair, putting it twice in one
+    run. Asking for the whole bank is the cheapest way to force the widening.
+    """
+    from app.services import select_random_questions
+
+    with app.app_context():
+        every_id = [question.id for question in Question.query.order_by(Question.id).all()]
+        blocked = set(every_id[:3])
+        picked = select_random_questions(len(every_id), exclude_ids=blocked)
+        assert blocked.isdisjoint({question.id for question in picked})
+        assert len(picked) == len(every_id) - len(blocked)
+
+
+def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeypatch):
+    client = app.test_client()
+    headers = login(client, "mixed-run@example.test")
+    create_game(client, headers)
+    with app.app_context():
+        user = User.query.filter_by(email="mixed-run@example.test").one()
+        repaired = Question.query.order_by(Question.id).first()
+        _queue_due_question(user.id, repaired.id)
+        repaired_id = repaired.id
+
+    session = client.post("/v1/study-sessions", json={"size": 2}, headers=headers).json["session"]
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        assert items[0].question_id == repaired_id
+        assert items[0].from_review_queue is True
+        assert items[1].from_review_queue is False
+
+    # Position 0 is the repair: a correct answer with a Good explanation advances it.
+    first = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "confidence": 4,
+            "reasoning": explanation("the repaired question"),
+        },
+        headers={**headers, "Idempotency-Key": "mixed-repair"},
+    ).json["result"]
+    coach_and_settle(app, monkeypatch, first["attempt_id"], grade=65)
+    client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
+    with app.app_context():
+        card = ReviewQueueItem.query.filter_by(question_id=repaired_id).one()
+        assert card.interval_index == 1
+
+    # Position 1 is fresh: a high-confidence miss must enter the queue at zero.
+    current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
+    second = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": current["current_item"]["id"],
+            "selected_label": "A",
+            "confidence": 5,
+            "reasoning": explanation("the fresh question"),
+        },
+        headers={**headers, "Idempotency-Key": "mixed-fresh"},
+    ).json["result"]
+    with app.app_context():
+        attempt = db.session.get(Attempt, second["attempt_id"])
+        fresh_card = ReviewQueueItem.query.filter_by(
+            question_id=attempt.session_item.question_id
+        ).one()
+        assert fresh_card.reason_code == "high_confidence_error"
+        assert fresh_card.interval_index == 0
+
+
 @pytest.mark.parametrize(
     ("start_index", "score", "expected_index", "expected_status"),
     [
@@ -2415,7 +2550,7 @@ def test_review_advance_depends_on_the_explanation_grade(app, start_index, score
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="review",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=10,
             total_items=1,
@@ -2427,6 +2562,9 @@ def test_review_advance_depends_on_the_explanation_grade(app, start_index, score
             question_id=question.id,
             position=0,
             requires_reasoning=True,
+            # The ladder advances for items seeded from the queue, which is now
+            # a property of the item rather than of the whole run.
+            from_review_queue=True,
             target_time_seconds=150,
         )
         db.session.add(item)

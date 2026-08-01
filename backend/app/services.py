@@ -319,11 +319,17 @@ def select_random_questions(
     question_type: str | None = None,
     *,
     user_id: str | None = None,
+    exclude_ids: set[str] | None = None,
 ) -> list[Question]:
     query = Question.query.filter(Question.source.like(f"{SOURCE_PREFIX}%"))
     if question_type:
         query = query.filter(Question.question_type == question_type)
-    eligible = query.all()
+    # Excluding here rather than from `unseen` alone matters: the fallback below
+    # widens the pool to already-seen questions, and a question seeded as a
+    # repair is by definition seen. Filtering only `unseen` would let it come
+    # back through the fallback and appear twice in one run.
+    blocked = exclude_ids or set()
+    eligible = [question for question in query.all() if question.id not in blocked]
     if not eligible:
         return []
     unseen = [question for question in eligible if not user_id or question.id not in _seen_question_ids(user_id)]
@@ -442,9 +448,20 @@ def create_study_session(
     policy = "immediate"
 
     session_size = count if count is not None else int(current_app.config["PRACTICE_SESSION_SIZE"])
-    questions = select_random_questions(session_size, question_type, user_id=user.id)
+    # Repairs fill at most half a run so a large queue can never turn practice
+    # into pure repetition. A type-filtered run is a focused drill; mixing
+    # off-type repairs into it would defeat the filter the student asked for.
+    repairs = [] if question_type else _questions_due_for_review(user.id, session_size // 2)
+    fresh = select_random_questions(
+        session_size - len(repairs),
+        question_type,
+        user_id=user.id,
+        exclude_ids={question.id for question in repairs},
+    )
+    questions = repairs + fresh
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
+    repair_ids = {question.id for question in repairs}
 
     # A new run always starts in_progress (see the StudySession default), so
     # whatever else was ticking must be paused first — see
@@ -476,6 +493,7 @@ def create_study_session(
                 question_id=question.id,
                 position=position,
                 requires_reasoning=True,
+                from_review_queue=question.id in repair_ids,
                 strategy_key=strategy_trial["key"] if strategy_trial else None,
                 strategy_variant=strategy_trial["variant"] if strategy_trial else None,
                 target_time_seconds=target_time_seconds,
@@ -832,7 +850,6 @@ def _schedule_review(attempt: Attempt) -> None:
     once the grade lands. The second call recomputes from
     ``pre_grade_interval_index`` so the provisional advance is not compounded.
     """
-    session = attempt.session_item.session
     band = _attempt_band(attempt)
     pending = band is None and attempt.session_item.requires_reasoning
     existing = ReviewQueueItem.query.filter_by(
@@ -840,7 +857,9 @@ def _schedule_review(attempt: Attempt) -> None:
         question_id=attempt.session_item.question_id,
     ).first()
 
-    if session.practice_style == "review":
+    # Per item, not per session: one run now carries both seeded repairs and
+    # fresh questions, and each is scheduled by what it actually is.
+    if attempt.session_item.from_review_queue:
         if not existing:
             return
         existing.last_attempt_id = attempt.id
