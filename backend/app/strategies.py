@@ -301,14 +301,19 @@ def _candidate_keys(question: Question) -> list[str]:
 
 
 def assign_strategy_trial(user_id: str, question: Question, practice_style: str, position: int) -> dict | None:
-    """Assign sparse, balanced within-student strategy trials.
+    """Assign a balanced within-student strategy trial on every question.
 
-    Diagnostics and timed sprints remain clean measurement surfaces. Deep and
-    infinite practice expose one trial every four questions. Early trials force
-    coverage; later trials favor the best posterior performer while preserving
-    a challenger and an invisible 25% control condition.
+    The diagnostic stays a clean measurement surface and gets no trial. Early
+    trials force coverage across the candidate approaches; later trials favor
+    the best posterior performer while preserving a challenger and an invisible
+    25% control condition.
+
+    The old cadence exposed one trial every four questions so that Sprint and
+    Infinite could stay clean measurement surfaces. With the diagnostic as the
+    only such surface, that reason is gone, and trialling every question makes
+    the prompt-versus-control comparison converge about four times faster.
     """
-    if practice_style not in {"deep", "infinite"} or position % 4 != 2:
+    if practice_style == "diagnostic":
         return None
     candidates = _candidate_keys(question)
     observations = (
@@ -519,7 +524,7 @@ def strategy_performance(user_id: str) -> dict:
         ),
         "empty_state": {
             "title": "Nothing to compare yet.",
-            "body": "Answer questions in Method Lab or Infinite. Every few questions arrives with a suggested approach.",
+            "body": "Answer a few cases. Every question arrives with a suggested approach.",
         },
         "catalog_note": (
             "No source guarantees a 170. Official LSAC guidance comes first; the rest are approaches this app tests against your own results."

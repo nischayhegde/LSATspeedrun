@@ -374,6 +374,7 @@ def test_final_case_completion_stops_future_rent_and_reputation_decay(app, monke
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "Choice C follows from the controlling premise while each alternative adds an unsupported condition, so the credited answer is the only one the argument licenses.",
         },
         headers={**headers, "Idempotency-Key": "complete-final-charter"},
@@ -599,6 +600,7 @@ def test_diagnostic_is_neutral_and_feeds_performance(app):
         json={
             "item_id": item["id"],
             "selected_label": "A",
+            "strategy_applied": True,
             "reasoning": "I identified the conclusion and tested A against the exact logical requirement.",
         },
         headers={**headers, "Idempotency-Key": "diagnostic-answer-one"},
@@ -656,6 +658,7 @@ def test_a_case_run_releases_feedback_immediately_and_seeds_review(app, monkeypa
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "A",
+            "strategy_applied": True,
             "confidence": 5,
             "reasoning": explanation("the first sprint answer"),
         },
@@ -674,6 +677,7 @@ def test_a_case_run_releases_feedback_immediately_and_seeds_review(app, monkeypa
         json={
             "item_id": resumed["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "confidence": 5,
             "reasoning": explanation("the resumed sprint answer"),
         },
@@ -731,6 +735,7 @@ def test_daily_docket_drives_cases_into_priority_deep_brief(app, monkeypatch):
             json={
                 "item_id": current["current_item"]["id"],
                 "selected_label": answer,
+                "strategy_applied": True,
                 "confidence": 5,
                 "reasoning": explanation(f"docket question {index}"),
             },
@@ -783,6 +788,7 @@ def test_scheduled_reviews_are_timezone_safe(app):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "A",
+            "strategy_applied": True,
             "confidence": 4,
             "reasoning": explanation("the seeded sprint miss"),
         },
@@ -827,6 +833,7 @@ def test_completed_run_stops_at_training_lab_boundary(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "C follows from the stated relationship; the alternatives add claims the stimulus does not support, which is why they fail even though they restate its vocabulary.",
         },
         headers={**headers, "Idempotency-Key": "one-question-speedrun"},
@@ -915,6 +922,7 @@ def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monke
         json={
             "item_id": item["id"],
             "selected_label": "B",
+            "strategy_applied": True,
             "reasoning": "The premises support B, and C appears to go beyond the evidence provided by asserting a degree of certainty the argument never earns anywhere in its chain.",
         },
         headers={**headers, "Idempotency-Key": "first-answer"},
@@ -1026,6 +1034,7 @@ def test_coaching_can_run_as_a_durable_async_job(app, monkeypatch):
         json={
             "item_id": item["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "The credited choice follows directly from the stated evidence in this stimulus, while the remaining options depend on a comparison the author declines to make.",
         },
         headers={**headers, "Idempotency-Key": "async-answer"},
@@ -1060,6 +1069,7 @@ def test_current_ai_job_lease_keeps_sqs_redelivery_retryable(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "The credited answer is supported by the final premise and stays within its scope, whereas the distractors generalize past the single case the evidence describes.",
         },
         headers={**headers, "Idempotency-Key": "current-lease-answer"},
@@ -1108,6 +1118,7 @@ def test_stale_ai_job_is_resent_and_redelivery_settles_once(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "Choice C follows from the stated evidence without adding a new assumption, and the other four each require a bridging claim the stimulus pointedly leaves out.",
         },
         headers={**headers, "Idempotency-Key": "stale-lease-answer"},
@@ -1208,6 +1219,7 @@ def test_case_settlement_and_ledger_are_exactly_once(app, monkeypatch):
         json={
             "item_id": item["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "The conclusion follows because the stated premise directly supports choice C, and no other option connects the evidence to the conclusion without a gap.",
         },
         headers={**headers, "Idempotency-Key": "settle-once"},
@@ -1262,6 +1274,7 @@ def test_invalid_reasoning_does_not_advance_cash_daily_goals(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "This answer is right because it is the right answer, and the other answers are wrong because they are not the right answer, which is how I knew to pick it.",
         },
         headers={**headers, "Idempotency-Key": "invalid-daily-answer"},
@@ -1311,6 +1324,7 @@ def test_tycoon_review_cannot_skip_wrong_answer_settlement(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "B",
+            "strategy_applied": True,
             "reasoning": "Choice B seems plausible because it appears to follow from the final premise, though it quietly swaps the qualifier the author attached to that premise.",
         },
         headers={**headers, "Idempotency-Key": "wrong-cannot-skip"},
@@ -1371,6 +1385,7 @@ def test_finished_legacy_attempt_is_not_adopted_or_paid_retroactively(app):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "B",
+            "strategy_applied": True,
             "reasoning": "This is a historical explanation created before the tycoon economy existed, recorded when attempts were stored without any settlement or client context attached.",
         },
         headers={**headers, "Idempotency-Key": "finished-legacy"},
@@ -1442,6 +1457,7 @@ def test_unfinished_legacy_rc_item_is_adopted_with_correct_target(app):
         json={
             "item_id": current_item_id,
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "The passage directly supports this choice.",
         },
         headers={**headers, "Idempotency-Key": "legacy-before-onboarding"},
@@ -1691,6 +1707,7 @@ def test_pro_bono_win_and_caseboard_completion_change_the_settlement(app, monkey
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "Choice C follows from the decisive premise while the other choices require facts not supplied, so only C survives a strict reading of what the passage actually claims.",
         },
         headers={**headers, "Idempotency-Key": "pro-bono-completion"},
@@ -1738,6 +1755,7 @@ def _settle_wrong_answer(app, monkeypatch, email: str, grade: int, *, reputation
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "B",
+            "strategy_applied": True,
             "reasoning": (
                 f"Choice B is tempting for {email}, but it only holds if we assume an "
                 "unstated premise about scope that the stimulus never actually supplies."
@@ -1820,6 +1838,7 @@ def test_completed_contract_auto_renews_so_a_client_can_be_replayed(app, monkeyp
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "Choice C follows directly from the final premise without importing an unstated assumption, and the rest fail once that premise is read at its stated strength.",
         },
         headers={**headers, "Idempotency-Key": "renew-final-case"},
@@ -1878,6 +1897,54 @@ def test_player_is_never_stranded_without_an_available_client(app):
         select_client(profile, "walk_in")
         contract = PlayerClientContract.query.filter_by(profile_id=profile.id, client_key="walk_in").one()
         assert contract.cases_remaining == CLIENT_BY_KEY["walk_in"]["length"]
+
+
+def test_every_case_carries_a_strategy_trial(app):
+    client = app.test_client()
+    headers = login(client, "strategy-cadence@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", json={"size": 7}, headers=headers).json["session"]
+
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        # Every position, not just the old position % 4 == 2 cadence.
+        assert [item.position for item in items if item.strategy_key] == [0, 1, 2, 3, 4, 5, 6]
+        assert all(item.strategy_variant in {"prompt", "control"} for item in items)
+
+
+def test_the_diagnostic_still_has_no_strategy_trial(app):
+    client = app.test_client()
+    headers = login(client, "diagnostic-no-trial@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/diagnostics", json={}, headers=headers).json["session"]
+
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).all()
+        assert all(item.strategy_key is None for item in items)
+
+        from app.strategies import assign_strategy_trial
+
+        user = User.query.filter_by(email="diagnostic-no-trial@example.test").one()
+        question = Question.query.order_by(Question.id).first()
+        assert assign_strategy_trial(user.id, question, "diagnostic", 2) is None
+        assert assign_strategy_trial(user.id, question, "cases", 1) is not None
+
+
+def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
+    client = app.test_client()
+    headers = login(client, "strategy-stable@example.test")
+    create_game(client, headers)
+
+    with app.app_context():
+        from app.strategies import assign_strategy_trial
+
+        user = User.query.filter_by(email="strategy-stable@example.test").one()
+        question = Question.query.order_by(Question.id).first()
+        first = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
+        second = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
+        assert first == second
+        # The hidden control arm still exists alongside the prompts.
+        assert {trial["variant"] for trial in first} <= {"prompt", "control"}
 
 
 def test_strategy_control_assignment_is_stable_and_hidden(app, monkeypatch):
@@ -1942,12 +2009,10 @@ def test_prompted_strategy_requires_a_decision_and_valid_prompt_time(app):
     client = app.test_client()
     headers = login(client, "strategy-submit@example.test")
     create_game(client, headers)
-    session = client.post(
-        "/v1/study-sessions",
-        json={"size": 1, "practice_style": "deep"},
-        headers=headers,
-    ).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
     item_id = session["current_item"]["id"]
+    # Deliberately omits strategy_applied: the first submission below must be
+    # rejected for exactly that reason.
     payload = {
         "item_id": item_id,
         "selected_label": "C",
@@ -2284,7 +2349,7 @@ def test_short_explanation_is_rejected_with_its_own_code(app):
     ).json["session"]
     response = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
-        json={"item_id": session["current_item"]["id"], "selected_label": "C", "reasoning": "C is right."},
+        json={"item_id": session["current_item"]["id"], "selected_label": "C", "strategy_applied": True, "reasoning": "C is right."},
         headers={**headers, "Idempotency-Key": "too-short"},
     )
     assert response.status_code == 400
@@ -2306,6 +2371,7 @@ def test_deep_practice_enforces_the_longer_floor(app):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "reasoning": "C follows from the premise and the others overreach here.",
         },
         headers={**headers, "Idempotency-Key": "deep-too-short"},
@@ -2336,6 +2402,7 @@ def test_correct_answer_with_invalid_explanation_enters_the_review_queue(app):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "confidence": 5,
             # Long enough to clear the floor, but still says nothing about the
             # argument — exactly the answer the grader should call unsupported.
@@ -2367,6 +2434,7 @@ def test_good_explanation_on_a_confident_correct_answer_schedules_nothing(app):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "confidence": 5,
             "reasoning": explanation("the controlling relationship"),
         },
@@ -2488,6 +2556,7 @@ def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeyp
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "confidence": 4,
             "reasoning": explanation("the repaired question"),
         },
@@ -2506,6 +2575,7 @@ def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeyp
         json={
             "item_id": current["current_item"]["id"],
             "selected_label": "A",
+            "strategy_applied": True,
             "confidence": 5,
             "reasoning": explanation("the fresh question"),
         },
@@ -2603,6 +2673,7 @@ def test_landing_grade_revises_the_provisional_schedule(app, monkeypatch):
         json={
             "item_id": session["current_item"]["id"],
             "selected_label": "C",
+            "strategy_applied": True,
             "confidence": 5,
             "reasoning": (
                 "I picked C because it seemed the most likely of the five choices, and none of "
@@ -2843,7 +2914,7 @@ def test_explanation_floor_boundary_matches_the_published_minimum(app):
 
     under = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
-        json={"item_id": item_id, "selected_label": "C", "reasoning": "x" * (floor - 1)},
+        json={"item_id": item_id, "selected_label": "C", "strategy_applied": True, "reasoning": "x" * (floor - 1)},
         headers={**headers, "Idempotency-Key": "under-cases"},
     )
     assert under.status_code == 400
@@ -2851,7 +2922,7 @@ def test_explanation_floor_boundary_matches_the_published_minimum(app):
 
     exact = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
-        json={"item_id": item_id, "selected_label": "C", "reasoning": "y" * floor},
+        json={"item_id": item_id, "selected_label": "C", "strategy_applied": True, "reasoning": "y" * floor},
         headers={**headers, "Idempotency-Key": "exact-cases"},
     )
     assert exact.status_code == 200
