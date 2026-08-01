@@ -30,12 +30,13 @@ the design follows from them:
 
 - **The server owns every consequence.** Timing, correctness, rewards, purchases, rent, and reputation are all
   settled server-side. The client renders; it does not decide.
-- **Different kinds of evidence are never mixed.** A coached practice answer, a timed unseen answer, a fluency
-  answer, a spaced-review answer, and a diagnostic answer are stored with distinct `evidence_class` values and
-  reported separately. This is why the app can claim improvement without fooling itself.
-- **The game layer must not be able to distort measurement.** Only one practice mode pays money; the diagnostic
-  and timed sprints deliberately earn nothing and carry no strategy prompts, so they stay clean measuring
-  instruments.
+- **Different kinds of evidence are never mixed.** A coached practice answer and a diagnostic answer are stored
+  with distinct `evidence_class` values and reported in separate panels. This is why the app can claim
+  improvement without fooling itself.
+- **The game layer must not be able to distort measurement.** Every practice case now pays, so the containment
+  moved rather than disappeared: the diagnostic is the only surface feeding the headline accuracy number, and it
+  pays nothing, prompts no strategy, and coaches nothing. Coached practice reports its own accuracy in its own
+  panel, where a cash incentive on every question is a stated property of the number rather than a hidden one.
 
 ---
 
@@ -89,29 +90,25 @@ of its questions rather than orphaned. It returns the questions, a per-question 
 plan giving each block a label, a question range, and a minute budget (35 minutes for a full-length block of 18+
 questions, otherwise about 1.55 minutes per question, floored at 8).
 
-### 2.3 The practice styles
+### 2.3 The practice mode
 
-There are four practice styles plus the diagnostic, which is a separate session `mode` rather than a practice
-style. Each style is locked to a feedback policy — the API rejects a mismatched pairing — and each stamps its
-attempts with a distinct evidence class:
+There is one practice mode plus the diagnostic, which is a separate session `mode` rather than a practice style:
 
 | Style (API) | UI name | Feedback | Reasoning required | Evidence class | Purpose |
 | --- | --- | --- | --- | --- | --- |
-| `speedrun` | Sprint | Delayed to end of run | No | `timed_unseen` | Clean timed transfer evidence on unseen questions |
-| `deep` | Method Lab | Immediate | **Yes** | `coached_practice` | Written reasoning, full AI coaching, and the only mode that pays |
-| `infinite` | Infinite | Immediate | No | `fluency` | Unbounded volume with a concise post-answer explanation |
-| `review` | Review | Immediate | **Yes** | `spaced_review` | Repair scheduled errors and confidence mismatches |
+| `cases` | Cases | Immediate | **Yes**, 120 characters | `coached_practice` | Written reasoning, full AI coaching, a strategy trial on every question, and game settlement |
 | `diagnostic` (mode) | Diagnostic | Delayed to end | No | `diagnostic` | Sectioned neutral baseline |
+
+Every run is the same shape. Due repairs from the spaced-review queue fill up to half the run and occupy the
+first positions; unseen questions fill the rest. A `question_type`-filtered run seeds no repairs, because mixing
+off-type repairs into a focused drill would defeat the filter the student asked for.
+`SessionItem.from_review_queue` records which items were repairs, and that flag — not the session — decides
+whether an answer advances a review card or enqueues a new one, which is why one run can now do both.
 
 `create_study_session` enforces one active run per account. It takes a row lock on the player profile
 (`lock_user_profile`) as a cross-request mutex, and if a resumable session already exists it returns that
 instead of building a new one. This is why the app can always answer "where was I?" — `serialize_user` computes a
 `next_route` that sends a returning learner straight back into an unfinished run.
-
-Infinite is the interesting special case. It never has a fixed length: after each answer, `_append_infinite_item`
-appends the next question so the following one is ready without another round trip. When the learner ends the
-run, `finish_infinite_session` deletes the unattempted tail so those placeholder items are not counted as
-omissions in the summary, then truncates `total_items` to what was actually answered.
 
 ### 2.4 Timing and scoring
 
@@ -198,12 +195,12 @@ explanation scores after coaching, but no API reads it — `/performance` recomp
 
 ### 2.8 The Daily Docket
 
-`daily_docket_snapshot` derives a three-step daily plan rather than introducing a second mission system with its
-own state: **due review → 10-question Sprint → Deep Brief**. Each step reports a state (`locked`, `ready`,
-`active`, `complete`, `clear`), the whole thing is computed from sessions completed today in the learner's own
-timezone, and it exposes a single `next_action` the UI turns into one button. The Deep Brief step is complete
-only once the learner has acknowledged the sprint's review screen (`summary_seen_at`), which is what keeps
-"review your mistakes" from being an optional step people skip.
+`daily_docket_snapshot` derives a two-step daily plan rather than introducing a second mission system with its
+own state: **10 cases → Deep Brief**. Due repairs are folded into the cases run rather than being a step of
+their own. Each step reports a state (`locked`, `ready`, `active`, `complete`), the whole thing is computed from
+sessions completed today in the learner's own timezone, and it exposes a single `next_action` the UI turns into
+one button. The Deep Brief step is complete only once the learner has acknowledged the run's review screen
+(`summary_seen_at`), which is what keeps "review your mistakes" from being an optional step people skip.
 
 ---
 
@@ -251,15 +248,17 @@ distraction, not instruction.
 
 ### 3.3 When a trial fires
 
-`assign_strategy_trial(user_id, question, practice_style, position)` returns `None` unless both conditions hold:
+`assign_strategy_trial(user_id, question, practice_style, position)` returns `None` only for the diagnostic.
+Every question in a cases run is trial-eligible.
 
-- the mode is **`deep` or `infinite`**, and
-- `position % 4 == 2` — that is, the 3rd, 7th, 11th … question of a run.
+The diagnostic is excluded to keep it a neutral baseline — it is the one surface the dashboard headline reads.
+Everywhere else, the unprompted comparison condition comes from the hidden 25% control arm rather than from a
+sparse cadence, which is why prompting every question does not destroy the comparison; it converges it roughly
+four times faster.
 
-Everything else is excluded to protect measurement. Diagnostics stay a neutral baseline. Sprints stay clean
-timed-transfer evidence. Review is excluded because repeated, error-targeted items would bias the comparison.
-The cadence is sparse for the same reason: a prompt on every question would turn the app into a tutorial and
-leave no unprompted comparison condition.
+The cost is real and worth stating: a prompted item requires an explicit `strategy_applied` decision before the
+answer is accepted, so roughly three questions in four carry that extra tap. The decision cannot be defaulted —
+`strategy_performance` separates "prompted and used" from "prompted and ignored" using exactly that field.
 
 ### 3.4 Choosing candidate methods for a question
 
@@ -414,14 +413,13 @@ Either way the coaching is stored on the attempt, so it is generated once and re
 Coaching is generated **on demand**, not eagerly for every answer, which keeps LLM cost proportional to
 attention:
 
-- **Method Lab (deep)** shows the full coaching panel after every answer — keep this / fix this first / clean
-  approach, why the credited answer wins, why your choice fell short, an expandable audit of all five choices,
-  and the one-line rule — and it is also where the case settlement appears. The "Next case" button stays
-  disabled until both the coaching and the settlement have arrived, so the learner cannot outrun their own
-  feedback.
-- **Infinite and Review** show a compact version: why the credited answer wins, why the chosen answer failed,
-  the transferable rule, and a collapsed audit of all choices.
-- **Sprint and Diagnostic** show nothing during the run. In the post-run review screen, opening any question
+- **Cases** show the full coaching panel after every answer — keep this / fix this first / clean approach, why
+  the credited answer wins, why your choice fell short, an expandable audit of all five choices, and the
+  one-line rule — and it is also where the case settlement appears. The "Next case" button stays disabled until
+  both the coaching and the settlement have arrived, so the learner cannot outrun their own feedback. Because
+  every case now settles, that gate applies to the whole app rather than to one mode: a grader outage stops
+  forward progress, which is the sharpest operational risk this design carries.
+- **The Diagnostic** shows nothing during the run. In the post-run review screen, opening any question
   lazily requests coaching for that specific attempt, so explanations exist for timed work but are only paid for
   when someone actually reads them. If coaching is unavailable the panel degrades to the verified key and the
   choice texts, and says so.
@@ -505,11 +503,11 @@ backfills existing rows into the same shape, idempotently, leaving alone the two
 
 This is the join between the two halves of the product, and it runs through `settle_attempt`.
 
-**Only Method Lab (deep) practice earns anything.** `_freeze_current_case` attaches a game context to an item
-only when the session is a practice session with `practice_style == "deep"`, the item is the currently visible
-unfinished question, and the learner has onboarded. Sprint, Infinite, Review, and Diagnostic attempts have no
-game context, so `settle_attempt` returns `None` for them and they pay nothing. The reason is measurement
-integrity: the modes used as evidence must not have money riding on them.
+**Every practice case earns; the diagnostic never does.** `_freeze_current_case` attaches a game context to an
+item when the session is a practice session, the item is the currently visible unfinished question, and the
+learner has onboarded. Diagnostic attempts have no game context, so `settle_attempt` returns `None` for them and
+they pay nothing. That single exclusion is what protects measurement integrity now: the surface used as the
+headline evidence is the one surface with no money riding on it.
 
 **The economy is frozen at question-view time.** `snapshot_case_context` captures the client key, base fee, firm
 multiplier, staff bonuses, streak cap, contract multiplier, reputation guards, and pro-bono terms into the
@@ -752,10 +750,10 @@ path.
 
 ## 8. How the pieces fit together
 
-Follow one answer through the system. A learner in a Method Lab run opens question 3 of a session.
+Follow one answer through the system. A learner in a cases run opens question 3 of a session.
 
 1. **Serving.** `serialize_item` starts the server-side timer, freezes the economy into the item's
-   `game_context_json` via `snapshot_case_context`, and — because this is position 2 of a deep session —
+   `game_context_json` via `snapshot_case_context`, and — because every question in a cases run carries a trial —
    includes the strategy brief that `assign_strategy_trial` chose at session creation. If that trial was drawn
    into the invisible 25% control arm, the brief is withheld and the item looks completely ordinary.
 2. **Answering.** The learner reads the brief, chooses "Use this brief," selects an answer, writes reasoning, and
@@ -795,8 +793,8 @@ Stated plainly, because presenting is easier when you already know where the sof
 - **Session start does more database work than it should.** In `select_random_questions`, the
   `_seen_question_ids(user_id)` call sits inside a list comprehension over the whole eligible pool, so it is
   re-evaluated per candidate question — thousands of identical queries per session creation. It is functionally
-  correct and invisible on a fresh local SQLite database, but it is the most likely source of a slow "Start
-  Sprint" click on a remote Postgres instance with a full 6,886-question bank.
+  correct and invisible on a fresh local SQLite database, but it is the most likely source of a slow "Start 10
+  cases" click on a remote Postgres instance with a full 6,886-question bank.
 - **No adaptive difficulty.** Every seeded question has `difficulty = 3`, so selection is uniform random within
   the (optionally type-filtered) pool. The system adapts *what it reviews* and *which method it tests*, not how
   hard the next question is. The `difficulty` column exists and is passed to the coach, but nothing varies it.
@@ -816,9 +814,13 @@ Stated plainly, because presenting is easier when you already know where the sof
 - **Accommodation timing has no UI.** The API accepts 1.0×, 1.5×, and 2.0× diagnostic timing, and the backend
   applies it correctly, but the frontend always starts a diagnostic at 1.0×. The feature is built but not
   exposed.
-- **Only one of four practice modes pays.** This is intentional and defensible, but it is the first thing a
-  sharp audience member will ask about ("so most practice earns nothing?"). The answer is that the paying mode
-  is the one where the learner writes real reasoning, and the non-paying modes are the measurement instruments.
+- **Every practice question carries a cash incentive.** This is intentional, but it inverts the old defence and
+  a sharp audience member will notice ("doesn't paying for every answer corrupt your own numbers?"). The answer
+  is that the diagnostic is the only surface feeding the headline, and it pays nothing, prompts nothing, and
+  coaches nothing. Coached practice is reported separately, with the incentive stated rather than hidden.
+- **Three questions in four require a strategy decision.** A prompted trial will not accept an answer until the
+  learner says whether they applied the suggested approach. That is what makes the A/B comparison meaningful,
+  but it is a real per-question friction cost on top of the 120-character explanation and the confidence rating.
 - **README counts drift slightly.** The README calls all 19 quests "optional," but one of them
   (`constellation_charter`) is the game's completion condition rather than optional, and its catalog line omits
   the 14 cosmetics entirely. The counts themselves — 15 tiers, 35 upgrades, 30 staff, 14 connections, 14 rivals,

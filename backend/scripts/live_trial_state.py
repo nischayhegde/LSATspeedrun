@@ -52,10 +52,10 @@ def _describe(session: StudySession) -> dict:
 def _find(user: User, session_id: str | None) -> StudySession | None:
     if session_id:
         return StudySession.query.filter_by(id=session_id, user_id=user.id).first()
-    # The staged run is the newest Infinite session carrying a prompt at the
+    # The staged run is the newest cases session carrying a prompt at the
     # trial position.
     candidates = (
-        StudySession.query.filter_by(user_id=user.id, practice_style="infinite")
+        StudySession.query.filter_by(user_id=user.id, practice_style="cases")
         .order_by(StudySession.started_at.desc())
         .all()
     )

@@ -43,7 +43,6 @@ from app.services import (
     calculate_session_summary,
     create_diagnostic_session,
     create_study_session,
-    finish_infinite_session,
     performance_snapshot,
     submit_attempt,
 )
@@ -333,46 +332,9 @@ def _answer_finite_session(
         _attach_demo_coaching(
             attempt,
             grade=grade,
-            settle=session.mode == "practice" and session.practice_style == "deep",
+            settle=session.mode == "practice",
         )
     _backdate_session(session, completed_at)
-
-
-def _answer_infinite_session(
-    user: User,
-    *,
-    count: int,
-    accuracy: float,
-    phase: float,
-    completed_at: datetime,
-) -> StudySession:
-    label = "infinite"
-    session = create_study_session(user, count=1, practice_style="infinite")
-    wrong_positions = {
-        position
-        for position in range(count)
-        if _stable_fraction(DEMO_VERSION, label, position) > accuracy
-    }
-    for position in range(count):
-        item = SessionItem.query.filter_by(session_id=session.id, position=position).one()
-        item.active_elapsed_ms = _elapsed_for(item, phase, label)
-        item.timer_started_at = None
-        is_wrong = position in wrong_positions
-        attempt, _ = submit_attempt(
-            user,
-            session,
-            {
-                "item_id": item.id,
-                "selected_label": _wrong_label(item) if is_wrong else item.question.correct_answer,
-                "confidence": 2 if is_wrong else 4,
-                "answer_changed": position % 7 == 0,
-            },
-            f"{DEMO_VERSION}:{label}:{position}",
-        )
-        _attach_demo_coaching(attempt, grade=None, settle=False)
-    finish_infinite_session(session)
-    _backdate_session(session, completed_at)
-    return session
 
 
 def _normalize_review_queue(user: User) -> None:
@@ -473,41 +435,37 @@ def seed_demo_learner(email: str, *, replace: bool) -> dict:
         completed_at=now - timedelta(days=24),
     )
 
+    # (size, accuracy, phase, days_ago). Every run is a cases run now; the
+    # varying sizes and rising accuracy are what make the history read as real.
     schedule = [
-        ("speedrun", 10, .60, .15, 20),
-        ("deep", 5, .60, .25, 18),
-        ("speedrun", 10, .60, .35, 16),
-        ("review", 6, .67, .40, 14),
-        ("speedrun", 10, .70, .52, 12),
-        ("deep", 5, .80, .62, 10),
-        ("speedrun", 10, .80, .72, 8),
-        ("review", 6, .83, .80, 6),
+        (10, .60, .15, 20),
+        (5, .60, .25, 18),
+        (10, .60, .35, 16),
+        (6, .67, .40, 14),
+        (10, .70, .52, 12),
+        (5, .80, .62, 10),
+        (10, .80, .72, 8),
+        (6, .83, .80, 6),
+        (12, .82, .88, 4),
     ]
-    for index, (style, size, accuracy, phase, days_ago) in enumerate(schedule):
-        session = create_study_session(user, count=size, practice_style=style)
+    for index, (size, accuracy, phase, days_ago) in enumerate(schedule):
+        session = create_study_session(user, count=size)
         _answer_finite_session(
             user,
             session,
             accuracy=accuracy,
             phase=phase,
-            label=f"{style}-{index}",
+            label=f"cases-{index}",
             completed_at=now - timedelta(days=days_ago),
         )
 
-    _answer_infinite_session(
-        user,
-        count=12,
-        accuracy=.82,
-        phase=.88,
-        completed_at=now - timedelta(days=4),
-    )
-    final_sprint = create_study_session(user, count=10, practice_style="speedrun")
+    final_run = create_study_session(user, count=10)
     _answer_finite_session(
         user,
-        final_sprint,
+        final_run,
         accuracy=.80,
         phase=.96,
-        label="speedrun-final",
+        label="cases-final",
         completed_at=now - timedelta(days=2),
     )
 

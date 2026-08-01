@@ -68,7 +68,6 @@ from app.models import (
 )
 from app.services import (
     EVIDENCE_CLASS,
-    STYLE_FEEDBACK_POLICY,
     calculate_session_summary,
     create_study_session,
     performance_snapshot,
@@ -106,9 +105,6 @@ RECENT_WINDOW = 20
 TAIL_ATTEMPTS = 38
 # Two misses in the recent window and four in the prior one, for a clearly
 # positive delta that still leaves no session sitting on a suspicious 100%.
-# Trials sit
-# at session positions where position % 4 == 2 and keep their planned outcome,
-# so these distances avoid that residue to stop a miss being overridden.
 TAIL_FORCED_MISSES = frozenset({5, 12, 21, 25, 31, 35})
 
 # Cosmetics the account already owns. `trophy_shelf` is deliberately left
@@ -153,16 +149,10 @@ STRATEGY_PLAN = (
     ("paragraph_function", 2, 2, 0, 0, 0),     # forming, control arm not yet open
 )
 
-# Session schedule: (practice_style, questions). Deep and infinite sessions are
-# the only ones that carry strategy trials, at positions where position % 4 == 2.
-DEEP_SESSIONS = 50
-DEEP_SIZE = 12
-INFINITE_SESSIONS = 6
-INFINITE_SIZE = 16
-SPEEDRUN_SESSIONS = 10
-SPEEDRUN_SIZE = 10
-REVIEW_SESSIONS = 8
-REVIEW_SIZE = 8
+# Session schedule: (practice_style, questions). Every practice session is a
+# "cases" run and every question in one carries a strategy trial. The sizes
+# still vary so the demo history does not look mechanically uniform.
+CASES_SIZES = (12, 16, 10, 8)
 
 
 def _fraction(*parts: object) -> float:
@@ -363,41 +353,15 @@ def _study_calendar(now: datetime) -> list[datetime]:
 
 
 def _session_plan(slot_count: int) -> list[tuple[str, int]]:
-    """Assign a practice style to each calendar slot.
+    """Assign a run size to each calendar slot.
 
-    Deep work dominates, sprints appear throughout, review sittings only after
-    a queue exists, and infinite drills cluster in the later weeks.
+    Every slot after the diagnostic is a cases run. Sizes cycle so the seeded
+    history reads like real sittings rather than one repeated shape.
     """
     plan: list[tuple[str, int]] = [("diagnostic", DIAGNOSTIC_QUESTIONS)]
-    remaining = {
-        "deep": DEEP_SESSIONS,
-        "infinite": INFINITE_SESSIONS,
-        "speedrun": SPEEDRUN_SESSIONS,
-        "review": REVIEW_SESSIONS,
-    }
-    sizes = {
-        "deep": DEEP_SIZE,
-        "infinite": INFINITE_SIZE,
-        "speedrun": SPEEDRUN_SIZE,
-        "review": REVIEW_SIZE,
-    }
     body = slot_count - 1
     for index in range(body):
-        phase = index / max(1, body - 1)
-        order = ["deep", "speedrun", "review", "infinite"]
-        if phase > .55:
-            order = ["deep", "infinite", "speedrun", "review"]
-        if index % 7 == 3:
-            order = ["speedrun", *[style for style in order if style != "speedrun"]]
-        if index % 9 == 5 and phase > .2:
-            order = ["review", *[style for style in order if style != "review"]]
-        for style in order:
-            if remaining[style] > 0:
-                remaining[style] -= 1
-                plan.append((style, sizes[style]))
-                break
-        else:
-            plan.append(("deep", DEEP_SIZE))
+        plan.append(("cases", CASES_SIZES[index % len(CASES_SIZES)]))
     return plan[:slot_count]
 
 
@@ -577,13 +541,9 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
     }
 
     # Count eligible slots up front so the trial plan can be stretched to fill
-    # every one of them; a deep or infinite question at position % 4 == 2 always
-    # carries a trial in the live code path, so leaving one empty would be a lie.
-    eligible_slots = sum(
-        len([position for position in range(size) if position % 4 == 2])
-        for style, size in plan
-        if style in {"deep", "infinite"}
-    )
+    # every one of them; every question in a cases run carries a trial in the
+    # live code path, so leaving one empty would be a lie.
+    eligible_slots = sum(size for style, size in plan if style == "cases")
     planned_tokens = len(tokens)
     if eligible_slots > planned_tokens:
         # Repeat the plan cyclically. Duplicating a balanced cross-section keeps
@@ -603,8 +563,8 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
         phase = slot_index / max(1, len(plan) - 1)
         accuracy = _accuracy_for(phase, slot_index)
         mode = "diagnostic" if style == "diagnostic" else "practice"
-        requires_reasoning = style in {"deep", "review"}
-        feedback_policy = "delayed" if style == "diagnostic" else STYLE_FEEDBACK_POLICY[style]
+        requires_reasoning = style != "diagnostic"
+        feedback_policy = "delayed" if style == "diagnostic" else "immediate"
         evidence_class = EVIDENCE_CLASS[style]
 
         section_plan = None
@@ -634,20 +594,25 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
         for position in range(size):
             salt = (slot_index, position)
             trial: dict | None = None
-            if style in {"deep", "infinite"} and position % 4 == 2 and token_index < len(tokens):
+            if style == "cases" and token_index < len(tokens):
                 trial = tokens[token_index]
                 token_index += 1
 
-            if trial:
-                question = pool.take_for_strategy(trial["key"], salt)
-            elif style == "review" and review_pool:
+            # Repairs occupy the first positions of a run, capped at half of it,
+            # mirroring how create_study_session seeds them.
+            is_repair = bool(
+                style == "cases" and review_pool and position < size // 2 and position % 3 == 0
+            )
+            repair_question = None
+            if is_repair:
                 question_id, _reason = review_pool[
                     int(_fraction(SEED_VERSION, "review", salt) * len(review_pool))
                 ]
-                question = db.session.get(Question, question_id)
-                if question is None:
-                    question = pool.take_for_type(*type_cycle[type_cursor % len(type_cycle)], salt)
-                    type_cursor += 1
+                repair_question = db.session.get(Question, question_id)
+            if repair_question is not None:
+                question = repair_question
+            elif trial:
+                question = pool.take_for_strategy(trial["key"], salt)
             elif style == "diagnostic":
                 section = "Reading Comprehension" if 25 <= position < 52 else "Logical Reasoning"
                 choices = [pair for pair in type_cycle if pair[0] == section]
@@ -669,6 +634,7 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
                 position=position,
                 section_index=section_index,
                 requires_reasoning=requires_reasoning,
+                from_review_queue=is_repair and repair_question is not None,
                 strategy_key=trial["key"] if trial else None,
                 strategy_variant=trial["variant"] if trial else None,
                 target_time_seconds=target_seconds,
@@ -748,7 +714,7 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
                 stats["skips"] += trial["applied"] is False
 
             # Mirror _schedule_review's reason codes so the queue looks earned.
-            if style != "review":
+            if not (is_repair and repair_question is not None):
                 reason = None
                 if not is_correct:
                     reason = "high_confidence_error" if confidence >= 4 else "incorrect"
@@ -1042,7 +1008,7 @@ def _settle_recent(user: User) -> dict:
         Attempt.query.filter_by(user_id=user.id)
         .join(SessionItem)
         .join(StudySession)
-        .filter(StudySession.practice_style.in_(["deep", "review"]))
+        .filter(StudySession.practice_style == "cases")
         .order_by(Attempt.created_at.desc())
         .limit(SETTLED_ATTEMPTS)
         .all()
@@ -1103,7 +1069,7 @@ def _refresh_daily(user: User) -> None:
 # --------------------------------------------------------------------------
 
 
-def _stage_live_trial(user: User, *, style: str = "infinite", attempts: int = 60) -> dict:
+def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -> dict:
     """Leave one live session whose third question carries a prompted trial.
 
     Variant assignment is a hash of user, question, position, and style, so a
