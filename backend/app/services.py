@@ -16,30 +16,21 @@ from .seed import SOURCE_PREFIX
 from .strategies import assign_strategy_trial, serialize_strategy, strategy_performance
 
 
-PRACTICE_STYLES = {"deep", "speedrun", "infinite", "review"}
+PRACTICE_STYLES = {"cases"}
 FEEDBACK_POLICIES = {"immediate", "delayed"}
-STYLE_FEEDBACK_POLICY = {
-    "deep": "immediate",
-    "speedrun": "delayed",
-    "infinite": "immediate",
-    "review": "immediate",
-}
 EVIDENCE_CLASS = {
-    "deep": "coached_practice",
-    "speedrun": "timed_unseen",
-    "infinite": "fluency",
-    "review": "spaced_review",
+    "cases": "coached_practice",
     "diagnostic": "diagnostic",
 }
 REVIEW_INTERVAL_DAYS = (1, 3, 7, 21)
-REASONING_MIN_CHARS = {"deep": 120, "review": 120, "speedrun": 40, "infinite": 40}
+REASONING_MIN_CHARS = 120
 
 
 def reasoning_min_chars(session: StudySession) -> int:
-    """Characters of written explanation this session demands before an answer counts."""
+    """Characters of written explanation a session demands before an answer counts."""
     if session.mode == "diagnostic":
         return 0
-    return REASONING_MIN_CHARS.get(session.practice_style, 0)
+    return REASONING_MIN_CHARS
 
 
 def _iso_utc(value) -> str | None:
@@ -205,7 +196,6 @@ def _freeze_current_case(item: SessionItem, user: User) -> bool:
     """Adopt only the visible unfinished case into the tycoon economy."""
     if (
         item.session.mode == "diagnostic"
-        or item.session.practice_style != "deep"
         or item.game_context_json is not None
         or not user.game_profile
         or not _is_unfinished_current_item(item)
@@ -435,8 +425,7 @@ def create_study_session(
     *,
     count: int | None = None,
     question_type: str | None = None,
-    practice_style: str = "deep",
-    feedback_policy: str | None = None,
+    practice_style: str = "cases",
 ) -> StudySession:
     # The account row is the cross-request mutex for the single active case
     # batch. Both POST /study-sessions and final acknowledgement use this path.
@@ -450,22 +439,11 @@ def create_study_session(
 
     if practice_style not in PRACTICE_STYLES:
         raise ValueError("invalid_practice_style")
-    required_policy = STYLE_FEEDBACK_POLICY[practice_style]
-    if feedback_policy is not None and feedback_policy not in FEEDBACK_POLICIES:
-        raise ValueError("invalid_feedback_policy")
-    if feedback_policy is not None and feedback_policy != required_policy:
-        raise ValueError("invalid_feedback_policy")
-    policy = required_policy
+    policy = "immediate"
 
     session_size = count if count is not None else int(current_app.config["PRACTICE_SESSION_SIZE"])
-    questions = (
-        _questions_due_for_review(user.id, session_size)
-        if practice_style == "review"
-        else select_random_questions(session_size, question_type, user_id=user.id)
-    )
+    questions = select_random_questions(session_size, question_type, user_id=user.id)
     if not questions:
-        if practice_style == "review":
-            raise ValueError("no_reviews_due")
         raise RuntimeError("No Hugging Face LSAT questions are available")
 
     # A new run always starts in_progress (see the StudySession default), so
@@ -608,34 +586,6 @@ def abandon_study_session(session: StudySession) -> StudySession:
     return session
 
 
-def finish_infinite_session(session: StudySession) -> StudySession:
-    if session.practice_style != "infinite":
-        raise ValueError("not_infinite")
-    if session.pending_attempt_id:
-        raise ValueError("debrief_required")
-    if session.status != "in_progress":
-        return session
-    # Infinite sessions keep an unattempted tail ready so the next question
-    # appears without another start request. Once the learner ends the run,
-    # those placeholders are not omissions and must not enter the summary.
-    unfinished = SessionItem.query.filter(
-        SessionItem.session_id == session.id,
-        SessionItem.position >= session.current_index,
-        SessionItem.completed_at.is_(None),
-    ).all()
-    for item in unfinished:
-        if item.attempt is None:
-            db.session.delete(item)
-    session.total_items = session.current_index
-    session.status = "completed"
-    session.ended_by_user = True
-    session.completed_at = utcnow()
-    db.session.flush()
-    session.summary_json = calculate_session_summary(session)
-    db.session.commit()
-    return session
-
-
 def session_review(session: StudySession) -> dict:
     if session.status != "completed":
         raise ValueError("session_in_progress")
@@ -700,45 +650,29 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
         .order_by(StudySession.completed_at.desc())
         .all()
     )
-    completed_review = next((item for item in completed_today if item.practice_style == "review"), None)
-    completed_sprint = next(
-        (item for item in completed_today if item.practice_style == "speedrun" and item.total_items >= 5),
+    completed_cases = next(
+        (item for item in completed_today if item.mode == "practice" and item.total_items >= 5),
         None,
     )
     active = find_resumable_session(user)
     queue = review_queue_snapshot(user)
 
-    review_state = (
-        "active" if active and active.practice_style == "review"
-        else "complete" if completed_review
-        else "clear" if completed_sprint
-        else "ready" if queue["due"]
-        else "clear"
-    )
-    review_cleared = review_state in {"complete", "clear"}
-    sprint_state = (
-        "active" if active and active.practice_style == "speedrun"
-        else "complete" if completed_sprint
-        else "ready" if review_cleared and not active
-        else "locked"
-    )
+    cases_state = "active" if active else "complete" if completed_cases else "ready"
     priority_count = 0
-    if completed_sprint:
-        priority_count = sum(bool(item["priority_reason"]) for item in session_review(completed_sprint)["items"])
+    if completed_cases:
+        priority_count = sum(bool(item["priority_reason"]) for item in session_review(completed_cases)["items"])
     brief_state = (
-        "complete" if completed_sprint and completed_sprint.summary_seen_at
-        else "ready" if completed_sprint
+        "complete" if completed_cases and completed_cases.summary_seen_at
+        else "ready" if completed_cases
         else "locked"
     )
 
     if active:
         next_action = {"kind": "resume", "session_id": active.id, "label": "Resume active run"}
     elif brief_state == "ready":
-        next_action = {"kind": "open_brief", "session_id": completed_sprint.id, "label": "Open Deep Brief"}
-    elif review_state == "ready":
-        next_action = {"kind": "start_review", "label": f"Repair {min(5, queue['due'])} due"}
-    elif sprint_state == "ready":
-        next_action = {"kind": "start_speedrun", "label": "Start 10-question Speedrun"}
+        next_action = {"kind": "open_brief", "session_id": completed_cases.id, "label": "Open Deep Brief"}
+    elif cases_state == "ready":
+        next_action = {"kind": "start_cases", "label": "Start 10 cases"}
     else:
         next_action = {"kind": "done", "label": "Daily docket complete"}
 
@@ -746,21 +680,16 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
         "date": local_date.isoformat(),
         "timezone": timezone_name,
         "active_session": serialize_session(active, False) if active else None,
-        "review": {
-            "state": review_state,
-            "due": queue["due"],
-            "target": min(5, queue["due"]),
-            "session_id": (active.id if active and active.practice_style == "review" else completed_review.id if completed_review else None),
-        },
-        "speedrun": {
-            "state": sprint_state,
+        "cases": {
+            "state": cases_state,
             "target": 10,
-            "session_id": (active.id if active and active.practice_style == "speedrun" else completed_sprint.id if completed_sprint else None),
-            "summary": completed_sprint.summary_json if completed_sprint else None,
+            "repairs_due": queue["due"],
+            "session_id": (active.id if active else completed_cases.id if completed_cases else None),
+            "summary": completed_cases.summary_json if completed_cases else None,
         },
         "deep_brief": {
             "state": brief_state,
-            "session_id": completed_sprint.id if completed_sprint else None,
+            "session_id": completed_cases.id if completed_cases else None,
             "priority_count": priority_count,
         },
         "next_action": next_action,
@@ -835,27 +764,6 @@ def _update_skill(user_id: str, question: Question, is_correct: bool, elapsed_ms
     stat.correct += int(is_correct)
     stat.total_time_ms += elapsed_ms
     stat.recent_mistakes = 0 if is_correct else stat.recent_mistakes + 1
-
-
-def _append_infinite_item(session: StudySession, user: User) -> None:
-    question = select_random_questions(1, user_id=user.id)[0]
-    previous = SessionItem.query.filter_by(session_id=session.id, position=session.total_items - 1).first()
-    target_time_seconds = 150
-    if question.section == "Reading Comprehension":
-        target_time_seconds = 135 if previous and previous.question.passage_id == question.passage_id else 330
-    strategy_trial = assign_strategy_trial(user.id, question, session.practice_style, session.total_items)
-    db.session.add(
-        SessionItem(
-            session_id=session.id,
-            question_id=question.id,
-            position=session.total_items,
-            requires_reasoning=True,
-            strategy_key=strategy_trial["key"] if strategy_trial else None,
-            strategy_variant=strategy_trial["variant"] if strategy_trial else None,
-            target_time_seconds=target_time_seconds,
-        )
-    )
-    session.total_items += 1
 
 
 def _attempt_band(attempt: Attempt) -> str | None:
@@ -1069,9 +977,7 @@ def submit_attempt(
     item.draft_updated_at = None
     session.current_index += 1
     session.pending_attempt_id = attempt.id if session.feedback_policy == "immediate" else None
-    if session.practice_style == "infinite" and session.current_index >= session.total_items:
-        _append_infinite_item(session, user)
-    elif session.current_index >= session.total_items:
+    if session.current_index >= session.total_items:
         session.status = "completed"
         session.completed_at = utcnow()
         db.session.flush()

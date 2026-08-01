@@ -44,7 +44,6 @@ from .services import (
     eligible_question_count,
     find_active_diagnostic,
     find_resumable_session,
-    finish_infinite_session,
     list_resumable_sessions,
     pause_study_session,
     performance_snapshot,
@@ -518,8 +517,6 @@ def start_practice_session():
             503,
         )
     payload = request.get_json(silent=True) or {}
-    practice_style = str(payload.get("practice_style") or "deep").strip().lower()
-    feedback_policy = str(payload.get("feedback_policy") or "").strip().lower() or None
     try:
         requested_size = int(payload.get("size", current_app.config["PRACTICE_SESSION_SIZE"]))
     except (TypeError, ValueError):
@@ -532,8 +529,6 @@ def start_practice_session():
             g.current_user,
             count=requested_size,
             question_type=question_type,
-            practice_style=practice_style,
-            feedback_policy=feedback_policy,
         )
     except ValueError as exc:
         code = str(exc)
@@ -545,12 +540,10 @@ def start_practice_session():
                 409,
             )
         messages = {
-            "invalid_practice_style": "Choose Sprint, Deep Practice, Infinite, or Review.",
-            "invalid_feedback_policy": "Choose immediate or delayed feedback.",
-            "no_reviews_due": "Your review queue is clear. Complete a Sprint to generate new repair work.",
+            "onboarding_required": "Create your lawyer before starting cases.",
         }
         if code in messages:
-            return error(code, messages[code], 409 if code == "no_reviews_due" else 400)
+            return error(code, messages[code], 409)
         raise
     return jsonify({"session": serialize_session(session)}), 201
 
@@ -665,22 +658,6 @@ def abandon_session(session_id: str):
     return jsonify({"session": serialize_session(session, False)})
 
 
-@api.post("/study-sessions/<session_id>/finish")
-@require_auth
-def finish_session(session_id: str):
-    session = _owned_session(session_id)
-    if not session:
-        return error("session_not_found", "That practice session was not found.", 404)
-    try:
-        finish_infinite_session(session)
-    except ValueError as exc:
-        code = str(exc)
-        if code == "debrief_required":
-            return error(code, "Finish the current explanation before ending the run.", 409)
-        if code == "not_infinite":
-            return error(code, "Only Infinite runs can be ended manually.", 409)
-        raise
-    return jsonify({"session": serialize_session(session, False), "run_complete": True})
 
 
 @api.get("/study-sessions/<session_id>/review")
