@@ -126,8 +126,6 @@ export const api = {
   startPractice: (options?: {
     size?: number
     question_type?: string
-    practice_style?: 'deep' | 'speedrun' | 'infinite' | 'review'
-    feedback_policy?: 'immediate' | 'delayed'
   }) => request<{ session: StudySession }>('/study-sessions', {
     method: 'POST',
     body: JSON.stringify(options || {}),
@@ -139,8 +137,6 @@ export const api = {
     request<{ session: StudySession }>(`/study-sessions/${id}/resume`, { method: 'POST' }),
   abandonSession: (id: string) =>
     request<{ session: StudySession }>(`/study-sessions/${id}/abandon`, { method: 'POST' }),
-  finishSession: (id: string) =>
-    request<{ session: StudySession; run_complete: boolean }>(`/study-sessions/${id}/finish`, { method: 'POST' }),
   sessionReview: (id: string) => request<{ review: SessionReview }>(`/study-sessions/${id}/review`),
   acknowledgeSessionReview: (id: string) =>
     request<{ session: StudySession; brief_complete: boolean }>(`/study-sessions/${id}/review/acknowledge`, { method: 'POST' }),

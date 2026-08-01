@@ -8,7 +8,7 @@ import './guided-tour.css'
 
 const StylizedCharacter = lazy(() => loadStylizedCharacter().then((module) => ({ default: module.StylizedCharacter })))
 
-const TOUR_STORAGE_KEY = 'lawyer-speedrun:guided-tour:v3'
+const TOUR_STORAGE_KEY = 'lawyer-speedrun:guided-tour:v4'
 const TOUR_REPLAY_EVENT = 'lawyer-speedrun:replay-tour'
 
 type TourStep = {
@@ -47,7 +47,7 @@ const steps: TourStep[] = [
     kind: 'spotlight',
     eyebrow: '02 · PRACTICE',
     title: 'Choose the right depth for the moment.',
-    body: 'Speedrun is answer-first volume. Deep Practice coaches reasoning. Review repairs misses, and Infinite keeps serving focused questions.',
+    body: 'Every run is the same: unseen questions with any due repairs folded in, a written explanation on each one, and coaching after every answer.',
     target: '[data-tour="nav-cases"]',
     route: '/cases',
     cue: 'Practice',

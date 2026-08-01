@@ -98,7 +98,7 @@
 .daily-docket { margin: 22px 0 0; overflow: hidden; border: 1px solid rgba(169,132,66,.34); border-radius: 18px; color: #e9e4d8; background: linear-gradient(145deg,#122732 0%,#192e36 58%,#10242e 100%); box-shadow: 0 24px 55px rgba(11,24,30,.16); }
 .daily-docket > header { padding: 24px 26px 20px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 28px; border-bottom: 1px solid rgba(255,255,255,.08); }
 .daily-docket h2 { margin: 5px 0 6px; color: #f1e5c7; font: 600 clamp(25px,3vw,36px)/1.05 var(--font-display); }
-.daily-docket header p,.practice-mode-heading p { max-width: var(--prose-measure); margin: 0; color: #a9b6b1; font-size: 13px; }
+.daily-docket header p { max-width: var(--prose-measure); margin: 0; color: #a9b6b1; font-size: 13px; }
 .daily-docket-action { min-width: 252px; padding: 14px 17px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(226,187,101,.44); border-radius: 10px; color: #f4ead4; background: rgba(226,187,101,.09); text-align: left; }
 .daily-docket-action:hover:not(:disabled) { background: rgba(226,187,101,.16); }.daily-docket-action:disabled { opacity: .75; }
 .daily-docket-action span,.daily-docket-action small,.daily-docket-action strong { display: block; }.daily-docket-action small { margin-bottom: 2px; color: #c8a85d; font-size: 10px; font-weight: 800; letter-spacing: .11em; }.daily-docket-action strong { font-size: 13px; }
@@ -106,7 +106,6 @@
 .daily-docket-track article { min-height: 118px; padding: 15px; display: grid; grid-template-columns: 32px 1fr auto; align-items: start; gap: 10px; border: 1px solid rgba(255,255,255,.09); border-radius: 11px; background: rgba(5,17,22,.3); }
 .daily-docket-track article > b { color: #647b7c; font: 700 12px var(--font-mono); }.daily-docket-track article div > span { display: flex; align-items: center; gap: 6px; color: #d0b36e; font-size: 10px; font-weight: 850; letter-spacing: .1em; }.daily-docket-track article div > span svg { width: 14px; }.daily-docket-track article strong { margin: 10px 0 5px; display: block; color: #f0eadc; font: 600 17px/1.15 var(--font-display); }.daily-docket-track article small { display: block; color: #91a19e; font-size: 11px; line-height: 1.35; }.daily-docket-track article > i { min-width: 36px; padding: 4px 6px; border-radius: 5px; color: #81918f; background: rgba(255,255,255,.06); font: normal 800 9px var(--font-mono); text-align: center; }.daily-docket-track article > i svg { width: 13px; height: 13px; }
 .daily-docket-track .state-ready,.daily-docket-track .state-active { border-color: rgba(219,177,84,.48); background: rgba(219,177,84,.075); }.daily-docket-track .state-complete,.daily-docket-track .state-clear { border-color: rgba(96,175,148,.3); }.daily-docket-track .state-complete > i,.daily-docket-track .state-clear > i { color: #72c9aa; }
-.practice-mode-heading { margin: 26px 0 10px; display: flex; align-items: end; justify-content: space-between; gap: 20px; }.practice-mode-heading p { max-width: 520px; color: #63706e; text-align: right; }
 .brief-filter { margin: -3px 0 12px!important; display: grid!important; grid-template-columns: 1fr 1fr; gap: 5px; }.brief-filter button { min-height: 32px; border: 1px solid rgba(255,255,255,.09); border-radius: 5px; color: #8ba09e; background: rgba(255,255,255,.035); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }.brief-filter button.active { border-color: rgba(114,205,191,.45); color: #d9f0e9; background: rgba(114,205,191,.12); }
 
 @media (max-width: 900px) {
@@ -119,7 +118,6 @@
   .review-signal-row { grid-template-columns: 1fr 1fr; }.answer-audit-shell { grid-template-columns: 200px minmax(0,1fr); }
 }
 @media (max-width: 620px) {
-  .practice-mode-heading { display: block; }.practice-mode-heading p { margin-top: 5px; text-align: left; }
   .performance-page { padding-inline: 10px; }.performance-hero { padding: 22px 17px; }.performance-hero h1 { font-size: 37px; }.performance-actions { display: grid; }.performance-actions button { width: 100%; justify-content: center; }
   .speedrun-index { grid-template-columns: 105px 1fr; }.index-ring { width: 96px; height: 96px; }.index-ring strong { font-size: 35px; }
   .evidence-strip { grid-template-columns: 1fr; gap: 4px; }.evidence-strip strong { display: none; }

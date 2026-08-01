@@ -423,7 +423,6 @@ body {
 
   .docket-hero { min-height: 0; padding: clamp(28px, 7vw, 44px); gap: 30px; }
   .case-brief-card { width: min(100%, 440px); min-height: 0; }
-  .practice-mode-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .office-game-page,
   .empire-game-page { min-height: calc(100dvh - 62px); }
@@ -562,8 +561,6 @@ body {
   .primary-button.jumbo { width: 100%; min-height: 52px; padding-inline: 13px; font-size: 10px; }
   .case-brief-card { padding: 22px 18px; transform: none; }
   .case-brief-card h2 { font-size: 18px; }
-  .practice-mode-picker { grid-template-columns: 1fr; }
-  .practice-mode-picker > button { min-height: 68px; }
   .how-scoring-works { padding-top: 42px; }
 
   /* Active case: the passage and response file are independently scrollable
@@ -989,7 +986,6 @@ body {
      vertical document. A small portion of the next card remains visible as a
      natural swipe affordance. */
   .daily-docket-track,
-  .practice-mode-picker,
   .how-scoring-works > div,
   .performance-metrics,
   .strategy-leader-grid,
@@ -1007,7 +1003,6 @@ body {
     scrollbar-width: none;
   }
   .daily-docket-track::-webkit-scrollbar,
-  .practice-mode-picker::-webkit-scrollbar,
   .how-scoring-works > div::-webkit-scrollbar,
   .performance-metrics::-webkit-scrollbar,
   .strategy-leader-grid::-webkit-scrollbar,
@@ -1016,7 +1011,6 @@ body {
   .client-roster-grid::-webkit-scrollbar,
   .asset-management-grid::-webkit-scrollbar { display: none; }
   .daily-docket-track > *,
-  .practice-mode-picker > *,
   .how-scoring-works > div > *,
   .performance-metrics > *,
   .strategy-leader-grid > *,
@@ -1027,7 +1021,6 @@ body {
     scroll-snap-align: start;
   }
   .daily-docket-track > *,
-  .practice-mode-picker > *,
   .how-scoring-works > div > *,
   .performance-metrics > *,
   .strategy-leader-grid > * { flex: 0 0 min(82vw, 330px); }
@@ -1044,7 +1037,6 @@ body {
   }
   .client-grid::-webkit-scrollbar { display: none; }
   .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }
-  .practice-mode-picker > button { min-height: 82px; }
   .how-scoring-works > div > article { min-height: 190px; }
   .performance-metrics { grid-template-columns: none; }
 
@@ -1929,14 +1921,6 @@ body {
   .docket-copy h1 { margin: 10px 0 14px; font-size: clamp(29px, 8.4vw, 35px); }
   .docket-copy > p { margin: 0 0 18px; font-size: 14px; }
   .case-brief-card { margin: 0 12px 12px; border: 1px solid rgba(233, 201, 125, .42); border-radius: 16px; box-shadow: none; }
-  .practice-mode-picker {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0,1fr));
-    gap: 10px;
-    overflow: visible;
-    scroll-snap-type: none;
-  }
-  .practice-mode-picker > button { min-width: 0; min-height: 92px; flex: initial; scroll-snap-align: none; }
 
   .performance-hero { padding: 22px 18px; border-radius: 20px; }
   .performance-hero h1 { font-size: clamp(29px, 8.4vw, 35px); }
@@ -2254,15 +2238,6 @@ body {
   .daily-docket { margin-top: 14px; border-radius: 16px; }
   .daily-docket > header { padding: 18px 16px; gap: 14px; }
   .daily-docket h2 { font-size: 25px; }
-  .practice-mode-heading { margin-top: 22px; text-align: center; }
-  .practice-mode-heading p { max-width: 34ch; margin: 6px auto 0; text-align: center; }
-  .practice-mode-picker { gap: 8px; }
-  .practice-mode-picker > button {
-    min-height: 82px;
-    padding: 12px;
-    border-radius: 12px;
-    text-align: left;
-  }
   .how-scoring-works { padding: 34px 0 0; }
 
   /* Active questions use the full viewport. RC keeps both documents visible
@@ -2479,12 +2454,6 @@ body {
     gap: 16px;
   }
   .mobile-learning-header > div > span,
-  .mobile-practice-mode-label > span {
-    display: block;
-    color: #78c4b9;
-    font: 700 10px/1.2 var(--font-pixel);
-    letter-spacing: .14em;
-  }
   .mobile-learning-header h1 {
     margin: 5px 0 0;
     color: #f1d586;
@@ -2585,8 +2554,6 @@ body {
   }
   .case-lobby > .docket-hero,
   .case-lobby > .daily-docket,
-  .case-lobby > .practice-mode-heading,
-  .case-lobby > .practice-mode-picker,
   .case-lobby > .how-scoring-works { display: none !important; }
   .mobile-practice-home {
     min-height: calc(100dvh - 58px - 70px - env(safe-area-inset-bottom));
@@ -2633,30 +2600,6 @@ body {
   .mobile-docket-next strong { margin-top: 6px; font-size: 15px; }
   .mobile-docket-next em { margin-top: 5px; color: #8fa5a2; font-size: 9.5px; font-style: normal; }
   .mobile-docket-next > svg { color: #dfbf6a; }
-  .mobile-practice-mode-label { margin-top: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-  .mobile-practice-mode-label > small { color: #839795; font: 500 9.5px var(--font-pixel); }
-  .mobile-practice-modes {
-    margin-top: 10px;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
-  }
-  .mobile-practice-modes button {
-    min-width: 0;
-    min-height: 64px;
-    padding: 8px 4px;
-    display: grid;
-    place-items: center;
-    gap: 5px;
-    position: relative;
-    border: 1px solid rgba(219, 196, 139, .16);
-    border-radius: 12px;
-    color: #92a6a3;
-    background: rgba(255,255,255,.025);
-    font: 650 9.5px var(--font-pixel);
-  }
-  .mobile-practice-modes button.active { border-color: #d8b65f; color: #f0db9c; background: rgba(218, 183, 95, .1); }
-  .mobile-practice-modes button b { min-width: 17px; height: 17px; display: grid; place-items: center; position: absolute; right: 4px; top: 4px; border-radius: 99px; color: #18242c; background: #dcb95f; font-size: 8px; }
   .mobile-practice-selection {
     margin-top: 18px;
     padding: 15px 0;
@@ -3027,31 +2970,6 @@ body {
   .mobile-practice-client strong { margin-top: 4px; color: #eee5cb; font-size: 13px; }
   .mobile-practice-client em { margin-top: 3px; color: #91a3a1; font-size: 9.5px; font-style: normal; }
   .mobile-practice-client > b { align-self: center; display: flex; align-items: center; gap: 4px; color: #dfbf6a; font: 700 9.5px var(--font-pixel); white-space: nowrap; }
-  .mobile-practice-modes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .mobile-practice-modes button { min-height: 68px; }
-  .mobile-practice-review {
-    width: 100%;
-    min-height: 56px;
-    margin-top: 8px;
-    padding: 9px 11px;
-    display: grid;
-    grid-template-columns: 22px minmax(0, 1fr) auto 18px;
-    align-items: center;
-    gap: 9px;
-    border: 1px solid rgba(219, 196, 139, .18);
-    border-radius: 12px;
-    color: #9aacaa;
-    background: rgba(255,255,255,.025);
-    text-align: left;
-  }
-  .mobile-practice-review > svg:first-child { color: #7fbcb2; }
-  .mobile-practice-review span strong,
-  .mobile-practice-review span small { display: block; font-family: var(--font-pixel); }
-  .mobile-practice-review span strong { color: #d9e0d3; font-size: 11px; }
-  .mobile-practice-review span small { margin-top: 3px; color: #849794; font-size: 9px; }
-  .mobile-practice-review > b { min-width: 23px; height: 23px; display: grid; place-items: center; border-radius: 99px; color: #17242c; background: #dcb95f; font: 750 9px var(--font-pixel); }
-  .mobile-practice-review:disabled > b { color: #8fa29f; background: transparent; }
-  .mobile-practice-review.active { border-color: #d8b65f; color: #f0db9c; background: rgba(218, 183, 95, .1); }
   .mobile-practice-start { margin-top: 22px; }
 
   /* Sizing for this header lives in the earlier `max-width: 640px` block; only

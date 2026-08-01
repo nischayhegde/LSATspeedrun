@@ -554,13 +554,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const result = session.pending_result
   const isDiagnostic = session.mode === 'diagnostic'
   const requiresReasoning = Boolean(item?.requires_reasoning)
-  const isInfinite = session.practice_style === 'infinite'
-  const compactReview = session.practice_style !== 'deep'
-  const learningOnly = session.practice_style !== 'deep'
+  // Every practice run is a paid, fully coached case now, so the only banner
+  // and panel split left is diagnostic versus everything else.
+  const learningOnly = isDiagnostic
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
   const minChars = item?.reasoning_min_chars ?? 0
-  const shortForm = session.practice_style === 'speedrun' || session.practice_style === 'infinite'
   const reasoningLength = reasoning.trim().length
   const reasoningComplete = !requiresReasoning || reasoningLength >= minChars
   const [confidence, setConfidence] = useState(3)
@@ -648,16 +647,6 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     },
     onError: () => setPageTurning(false),
   })
-  const finishInfinite = useMutation({
-    mutationFn: () => api.finishSession(session.id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['performance'] })
-      void queryClient.invalidateQueries({ queryKey: ['current-session'] })
-      void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
-      void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
-      navigate(`/cases/${session.id}`, { replace: true })
-    },
-  })
   const continueCases = useMutation({
     mutationFn: () => api.acknowledgeReview(session.id),
     onSuccess: ({ session: nextSession }) => {
@@ -694,7 +683,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const coaching = useQuery({
     queryKey: ['coaching', result?.attempt_id],
     queryFn: () => api.coaching(result!.attempt_id),
-    enabled: Boolean(result?.feedback_released && (!savedCoaching || (session.practice_style === 'deep' && !savedReward))),
+    enabled: Boolean(result?.feedback_released && (!savedCoaching || (!isDiagnostic && !savedReward))),
     retry: false,
   })
   const coachingFeedback = savedCoaching || coaching.data?.coaching
@@ -779,15 +768,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
   const clientKind = caseClient?.icon
   const clientSatisfied = Boolean(result?.is_correct && reward && ['Good', 'Excellent'].includes(reward.explanation_grade))
-  const mobileSessionLabel = isDiagnostic
-    ? 'Diagnostic'
-    : isInfinite
-      ? 'Infinite'
-      : session.practice_style === 'review'
-        ? 'Review'
-        : session.practice_style === 'deep'
-          ? 'Method lab'
-          : 'Sprint'
+  const mobileSessionLabel = isDiagnostic ? 'Diagnostic' : 'Cases'
 
   const counsel = counselFor(session.id)
   const counselRattled = Boolean(result?.is_correct)
@@ -798,14 +779,13 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   return (
     <div className="question-layout">
       <CasePageTurn active={pageTurning} spread={Boolean(question.passage)} />
-      {isDiagnostic || learningOnly ? (
+      {isDiagnostic ? (
         <section
-          className={`learning-mode-banner ${isDiagnostic ? 'diagnostic-session-banner' : ''}`}
-          aria-label={isDiagnostic ? 'Baseline diagnostic in progress' : `${session.practice_style} learning mode`}
+          className="learning-mode-banner diagnostic-session-banner"
+          aria-label="Baseline diagnostic in progress"
         >
-          <div>{isDiagnostic ? <Target size={20} /> : <Brain size={20} />}<span>{isDiagnostic ? 'BASELINE DIAGNOSTIC' : isInfinite ? 'INFINITE PRACTICE' : session.practice_style === 'review' ? 'REPAIR REVIEW' : 'TIMED SPRINT'}</span></div>
-          <strong>{isDiagnostic ? 'Neutral measurement · no currency, reputation, or streak changes' : isInfinite ? 'Answer → explain → continue' : session.practice_style === 'review' ? 'Repair the questions you missed, in writing' : 'Answer and justify · full coaching unlocks when the run ends'}</strong>
-          {isInfinite && <button type="button" onClick={() => finishInfinite.mutate()} disabled={finishInfinite.isPending || Boolean(result)}>{finishInfinite.isPending ? 'Ending…' : 'End run'}</button>}
+          <div><Target size={20} /><span>BASELINE DIAGNOSTIC</span></div>
+          <strong>Neutral measurement · no currency, reputation, or streak changes</strong>
         </section>
       ) : <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
         <ClientPortrait kind={clientKind} name={clientName} />
@@ -833,7 +813,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <div><small>{learningOnly ? 'QUESTION TYPE' : 'ACTIVE MATTER'}</small><strong>{question.question_type}</strong></div>
         </div>
         <div className="question-progress">
-          <strong>{isDiagnostic ? 'Diagnostic' : isInfinite ? 'Infinite' : session.practice_style === 'review' ? 'Review' : 'Sprint'} {Math.min(item.position + 1, session.total_items)}{isInfinite ? '' : ` / ${session.total_items}`}</strong>
+          <strong>{isDiagnostic ? 'Diagnostic' : 'Case'} {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
           {item.case_terms && <span>{item.case_terms.client_name} · {formatMoney(item.case_terms.base_fee)} base fee</span>}
         </div>
         <div className={`case-timer ${timerRatio > 1 ? 'over' : ''}`}>
@@ -847,7 +827,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       <div className="mobile-case-reader-header" aria-label="Case reader controls">
         <div className="mobile-case-reader-meta">
           <span>{question.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span>
-          <div><small>{mobileSessionLabel}</small><strong>{isInfinite ? `Question ${item.position + 1}` : `${item.position + 1} of ${session.total_items}`}</strong></div>
+          <div><small>{mobileSessionLabel}</small><strong>{item.position + 1} of {session.total_items}</strong></div>
         </div>
         {question.passage && (
           <div className="mobile-case-pane-tabs" role="tablist" aria-label="Reading view">
@@ -861,7 +841,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       {strategyTrial && (
         <section className={`strategy-tip ${strategyApplied === true ? 'is-applied' : strategyApplied === false ? 'is-skipped' : ''}`} aria-label={`Suggested approach: ${strategyTrial.plain_title}`}>
           <div className="strategy-tip-head">
-            <span><Brain size={15} /> {session.practice_style === 'deep' ? 'PARTNER TIP' : 'TRY THIS'}</span>
+            <span><Brain size={15} /> PARTNER TIP</span>
             {!result && <small>Pick one before you answer</small>}
           </div>
           <h2>{strategyTrial.plain_title}</h2>
@@ -929,7 +909,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           {!result && requiresReasoning && (
             <div className="reasoning-box">
               <div className="reasoning-heading">
-                <label htmlFor="reasoning">{shortForm ? 'Why this answer' : 'Your case theory'} <b>Required</b></label>
+                <label htmlFor="reasoning">Your case theory <b>Required</b></label>
                 <span>{reasoningLength} / {minChars} characters</span>
               </div>
               <textarea
@@ -937,10 +917,8 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                 value={reasoning}
                 disabled={strategyDecisionRequired}
                 onChange={(event) => setReasoning(event.target.value)}
-                placeholder={shortForm
-                  ? 'One or two sentences: what in the text decided it…'
-                  : 'Identify the conclusion, decisive evidence or logical relationship, and why your choice answers the exact question…'}
-                rows={shortForm ? 3 : 5}
+                placeholder="Identify the conclusion, decisive evidence or logical relationship, and why your choice answers the exact question…"
+                rows={5}
                 maxLength={4000}
               />
               <p>Substance beats length. Generic or repeated explanations receive no meaningful payout.</p>
@@ -987,7 +965,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               <button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button>
             </div>
           )}
-          {coachingFeedback && (compactReview
+          {coachingFeedback && (isDiagnostic
             ? <CompactReasoningPanel coaching={coachingFeedback} selectedLabel={result?.feedback?.selected_label} />
             : <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result?.feedback?.selected_label} />)}
           {reward && (
@@ -1002,10 +980,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               {continueCases.error && <ErrorNotice error={continueCases.error} />}
               <button
                 className="primary-button next-case-button"
-                disabled={!coachingReady || (session.practice_style === 'deep' && !reward) || continueCases.isPending || coaching.isLoading || pageTurning}
+                disabled={!coachingReady || (!isDiagnostic && !reward) || continueCases.isPending || coaching.isLoading || pageTurning}
                 onClick={() => void beginPageTurn(() => continueCases.mutateAsync())}
               >
-                {!coachingReady ? 'Preparing concise reasoning…' : session.practice_style === 'deep' && !reward ? 'Settling the case…' : continueCases.isPending || pageTurning ? 'Turning the page…' : isInfinite ? <>Next question <ArrowRight size={18} /></> : session.practice_style === 'review' ? <>Continue review <ArrowRight size={18} /></> : <>Next case <ArrowRight size={18} /></>}
+                {!coachingReady ? 'Preparing concise reasoning…' : !isDiagnostic && !reward ? 'Settling the case…' : continueCases.isPending || pageTurning ? 'Turning the page…' : <>Next case <ArrowRight size={18} /></>}
               </button>
             </div>
           )}

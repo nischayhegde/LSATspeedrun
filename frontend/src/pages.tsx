@@ -68,12 +68,12 @@ export function PerformancePage() {
       navigate(`/cases/${session.id}`)
     },
   })
-  const startSpeedrun = useMutation({
-    mutationFn: () => api.startPractice({ size: 10, practice_style: 'speedrun', feedback_policy: 'delayed' }),
+  const startCases = useMutation({
+    mutationFn: () => api.startPractice({ size: 10 }),
     onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
   })
   const startFocus = useMutation({
-    mutationFn: (questionType: string) => api.startPractice({ size: 3, question_type: questionType, practice_style: 'speedrun', feedback_policy: 'delayed' }),
+    mutationFn: (questionType: string) => api.startPractice({ size: 3, question_type: questionType }),
     onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
   })
   if (performanceQuery.isLoading || diagnosticQuery.isLoading || current.isLoading) return <LoadingScreen label="Measuring your training line…" />
@@ -107,7 +107,7 @@ export function PerformancePage() {
     strategies_tested: 0,
     strongest: null,
     intro: 'Some questions come with a suggested approach, then we compare how you did against similar questions without one.',
-    empty_state: { title: 'Nothing to compare yet.', body: 'Answer questions in Method Lab or Infinite to get started.' },
+    empty_state: { title: 'Nothing to compare yet.', body: 'Answer a few cases. Every question arrives with a suggested approach.' },
     catalog_note: 'Official LSAC guidance comes first; the rest are approaches this app tests against your own results.',
     evidence_note: 'This measures your own practice, not your score.',
   }
@@ -127,7 +127,7 @@ export function PerformancePage() {
   }[metrics.evidence]
   const openPrimaryTraining = () => {
     if (activePractice) navigate(`/cases/${activePractice.id}`)
-    else startSpeedrun.mutate()
+    else startCases.mutate()
   }
   const openDiagnostic = () => {
     if (diagnosticSession) navigate(`/cases/${diagnosticSession.id}`)
@@ -142,10 +142,10 @@ export function PerformancePage() {
           <a href="#mobile-training-analysis">Analysis <ArrowRight size={15} /></a>
         </header>
         <div className="mobile-training-signal">
-          <div className="mobile-training-score" aria-label={`${testMetrics.accuracy} percent timed unseen accuracy`}>
+          <div className="mobile-training-score" aria-label={`${testMetrics.accuracy} percent diagnostic accuracy`}>
             <strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><span>{testMetrics.attempts ? '%' : 'NEW'}</span>
           </div>
-          <div><small>TIMED UNSEEN ACCURACY</small><p>{testMetrics.attempts ? `${testMetrics.attempts} verified attempts · ${readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}` : 'Run a baseline sprint to establish your line.'}</p></div>
+          <div><small>DIAGNOSTIC ACCURACY</small><p>{testMetrics.attempts ? `${testMetrics.attempts} verified attempts · ${readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}` : 'Take the baseline diagnostic to establish your line.'}</p></div>
         </div>
         <div className="mobile-training-metrics" aria-label="Training evidence">
           <div><span>Average split</span><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong></div>
@@ -154,10 +154,10 @@ export function PerformancePage() {
         </div>
         <div className="mobile-training-priority">
           <Target size={19} />
-          <div><span>TRAINING PRIORITY</span><strong>{performance.recommendation?.skill ?? 'Establish your baseline'}</strong><small>{performance.recommendation ? `${performance.recommendation.accuracy}% current accuracy · ${performance.recommendation.reason}` : 'A diagnostic or sprint will identify the first weakness.'}</small></div>
+          <div><span>TRAINING PRIORITY</span><strong>{performance.recommendation?.skill ?? 'Establish your baseline'}</strong><small>{performance.recommendation ? `${performance.recommendation.accuracy}% current accuracy · ${performance.recommendation.reason}` : 'A diagnostic will identify the first weakness.'}</small></div>
         </div>
         <div className="mobile-training-actions">
-          <button className="primary-button" onClick={openPrimaryTraining} disabled={startSpeedrun.isPending}><TimerReset /> {activePractice ? 'Continue current run' : 'Start 10-question sprint'} <ArrowRight /></button>
+          <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Continue current run' : 'Start 10 cases'} <ArrowRight /></button>
           <button className="mobile-training-secondary" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume diagnostic' : performance.diagnostic ? 'Run a new diagnostic' : 'Take baseline diagnostic'}</button>
         </div>
       </section>
@@ -168,14 +168,14 @@ export function PerformancePage() {
           <h1>Build speed that survives a new question.</h1>
           <p>Timed unseen accuracy is the headline. Review recovery, confidence, and pacing explain what to train next.</p>
           <div className="performance-actions">
-            <button className="primary-button" onClick={openPrimaryTraining} disabled={startSpeedrun.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10-question Sprint'} <ArrowRight /></button>
+            <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10 cases'} <ArrowRight /></button>
             <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume diagnostic' : performance.diagnostic ? 'Retake diagnostic' : 'Take baseline diagnostic'}</button>
           </div>
         </div>
-        <div className="speedrun-index" aria-label={`${testMetrics.accuracy} percent timed unseen accuracy`}>
+        <div className="speedrun-index" aria-label={`${testMetrics.accuracy} percent diagnostic accuracy`}>
           <div className="index-ring" style={{ '--index': `${testMetrics.accuracy * 3.6}deg` } as React.CSSProperties}><span><strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><small>{testMetrics.attempts ? '%' : 'NO DATA'}</small></span></div>
-          <small>TIMED UNSEEN ACCURACY</small>
-          <p>{testMetrics.attempts} independent question{testMetrics.attempts === 1 ? '' : 's'} · {readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}</p>
+          <small>DIAGNOSTIC ACCURACY</small>
+          <p>{testMetrics.attempts} diagnostic question{testMetrics.attempts === 1 ? '' : 's'} · {readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}</p>
         </div>
         <PixelStudyScenery variant="training" className="performance-hero-scenery" />
       </section>
@@ -185,8 +185,9 @@ export function PerformancePage() {
       </section>
 
       <section className="performance-metrics" aria-label="Core LSAT performance measures">
-        <article><div><Target /><span>TEST PERFORMANCE</span></div><strong>{testMetrics.attempts ? `${testMetrics.accuracy}%` : '—'}</strong><small>{testMetrics.attempts} timed unseen attempts · {testMetrics.pace_adherence}% inside target</small></article>
-        <article><div><TimerReset /><span>AVERAGE SPLIT</span></div><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong><small>Comparable Sprint and Diagnostic work only</small></article>
+        <article><div><Target /><span>DIAGNOSTIC PERFORMANCE</span></div><strong>{testMetrics.attempts ? `${testMetrics.accuracy}%` : '—'}</strong><small>{testMetrics.attempts} diagnostic attempts · {testMetrics.pace_adherence}% inside target</small></article>
+        <article><div><TimerReset /><span>AVERAGE SPLIT</span></div><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong><small>Diagnostic work only</small></article>
+        <article><div><Brain /><span>COACHED PRACTICE</span></div><strong>{performance.coached_practice.attempts ? `${performance.coached_practice.accuracy}%` : '—'}</strong><small>{performance.coached_practice.attempts} case{performance.coached_practice.attempts === 1 ? '' : 's'} · {performance.coached_practice.reasoning === null ? 'no grades yet' : `${performance.coached_practice.reasoning}% mean explanation`}</small></article>
         <article><div><Brain /><span>REVIEW RECOVERY</span></div><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong><small>{reviewMetrics.due} due · {reviewMetrics.scheduled} scheduled · {reviewMetrics.mastered} mastered</small></article>
         <article><div><Gauge /><span>CONFIDENCE ERRORS</span></div><strong>{confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`}</strong><small>High-confidence misses across {confidenceMetrics.sample} rated answers</small></article>
       </section>
@@ -266,7 +267,7 @@ export function PerformancePage() {
           <div><strong>{readiness.rc_samples}</strong><span>Timed RC</span><small>20 recommended</small></div>
           <div><strong>{readiness.completed_diagnostics}</strong><span>Diagnostics</span><small>1 required</small></div>
         </div>
-        <details><summary>How evidence is separated</summary><p>Sprint and Diagnostic estimate test performance. Deep Practice measures coached learning. Infinite measures fluency. Review measures recovery. Repeated questions never inflate the timed-unseen headline.</p></details>
+        <details><summary>How evidence is separated</summary><p>The diagnostic estimates test performance: it pays nothing, prompts nothing, and coaches nothing. Everything else is coached practice, reported separately. Repeated questions never inflate the diagnostic headline.</p></details>
       </section>
 
       <section className="performance-grid">
@@ -283,7 +284,7 @@ export function PerformancePage() {
 
         <article className="priority-panel">
           <div className="panel-heading"><div><span>WEAKEST-LINK SIGNAL</span><h2>{performance.recommendation?.skill ?? 'Still collecting evidence'}</h2></div><Target /></div>
-          {performance.recommendation ? <><strong>{performance.recommendation.accuracy}% accuracy</strong><p>Recommended because it currently has the {performance.recommendation.reason}.</p><button className="focus-sprint-button" disabled={startFocus.isPending || Boolean(activePractice)} onClick={() => startFocus.mutate(performance.recommendation!.skill)}>{activePractice ? 'Finish current run first' : startFocus.isPending ? 'Building focus sprint…' : 'Run 3 focused questions'} <ArrowRight size={15} /></button><small>Experimental: this signal updates after every reviewed answer.</small></> : <><p>Complete the diagnostic or a speedrun to identify the first training priority.</p><small>No weakness is inferred without evidence.</small></>}
+          {performance.recommendation ? <><strong>{performance.recommendation.accuracy}% accuracy</strong><p>Recommended because it currently has the {performance.recommendation.reason}.</p><button className="focus-sprint-button" disabled={startFocus.isPending || Boolean(activePractice)} onClick={() => startFocus.mutate(performance.recommendation!.skill)}>{activePractice ? 'Finish current run first' : startFocus.isPending ? 'Building focus sprint…' : 'Run 3 focused questions'} <ArrowRight size={15} /></button><small>Experimental: this signal updates after every reviewed answer.</small></> : <><p>Complete the diagnostic or a few cases to identify the first training priority.</p><small>No weakness is inferred without evidence.</small></>}
         </article>
       </section>
 
@@ -294,7 +295,7 @@ export function PerformancePage() {
         </div>
       </div>
 
-      {(startDiagnostic.error || startSpeedrun.error || startFocus.error) && <ErrorNotice error={startDiagnostic.error || startSpeedrun.error || startFocus.error} />}
+      {(startDiagnostic.error || startCases.error || startFocus.error) && <ErrorNotice error={startDiagnostic.error || startCases.error || startFocus.error} />}
     </div>
   )
 }
@@ -729,17 +730,12 @@ export function CasesLobbyPage() {
   const navigate = useNavigate()
   const { play } = useSound()
   const queryClient = useQueryClient()
-  const [practiceStyle, setPracticeStyle] = useState<'speedrun' | 'deep' | 'infinite' | 'review'>('speedrun')
   const gameQuery = useGame()
   const activeSessions = useQuery({ queryKey: ['active-sessions'], queryFn: api.activeSessions })
   const reviews = useQuery({ queryKey: ['review-queue'], queryFn: api.reviewQueue })
   const docketQuery = useQuery({ queryKey: ['daily-docket'], queryFn: api.dailyDocket })
   const start = useMutation({
-    mutationFn: (plan?: { style?: 'speedrun' | 'deep' | 'infinite' | 'review'; size?: number }) => api.startPractice({
-      size: plan?.size ?? (plan?.style === 'speedrun' || (!plan?.style && practiceStyle === 'speedrun') ? 10 : 5),
-      practice_style: plan?.style ?? practiceStyle,
-      feedback_policy: (plan?.style ?? practiceStyle) === 'speedrun' ? 'delayed' : 'immediate',
-    }),
+    mutationFn: (plan?: { size?: number }) => api.startPractice({ size: plan?.size ?? 10 }),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `case-open:${session.id}`, seed: session.id, intensity: .62 })
       void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
@@ -796,17 +792,8 @@ export function CasesLobbyPage() {
       return
     }
     if (queueFull) return
-    if (daily.next_action.kind === 'start_review') start.mutate({ style: 'review', size: Math.max(1, daily.review.target) })
-    else if (daily.next_action.kind === 'start_speedrun') start.mutate({ style: 'speedrun', size: 10 })
+    if (daily.next_action.kind === 'start_cases') start.mutate({ size: 10 })
   }
-  const practiceModeCopy = {
-    speedrun: { title: 'Sprint', detail: '10 timed, unseen questions with results held until the end.', icon: TimerReset },
-    infinite: { title: 'Infinite', detail: 'Keep answering with concise reasoning until you choose to stop.', icon: Activity },
-    deep: { title: 'Method Lab', detail: 'Explain each rule and receive coaching after every answer.', icon: Brain },
-    review: { title: 'Review', detail: dueReviews ? `${dueReviews} spaced-retrieval repair item${dueReviews === 1 ? '' : 's'} ready.` : 'Your repair queue is clear.', icon: BookOpen },
-  } as const
-  const selectedMode = practiceModeCopy[practiceStyle]
-  const SelectedModeIcon = selectedMode.icon
   const describeStarted = (startedAt: string) => {
     const minutes = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 60000))
     if (minutes < 1) return 'started just now'
@@ -819,7 +806,7 @@ export function CasesLobbyPage() {
     if (run.status === 'in_progress') return { label: 'Running', cls: 'is-running' }
     return { label: 'Paused', cls: 'is-paused' }
   }
-  const startNewRun = (plan?: { style?: 'speedrun' | 'deep' | 'infinite' | 'review'; size?: number }) => {
+  const startNewRun = (plan?: { size?: number }) => {
     if (queueFull) return
     start.mutate(plan)
   }
@@ -863,15 +850,14 @@ export function CasesLobbyPage() {
           </header>
           <div className="run-queue-list">
             {runs.map((run) => {
-              const copy = practiceModeCopy[run.practice_style as keyof typeof practiceModeCopy] ?? practiceModeCopy.deep
-              const RunIcon = copy.icon
+              const RunIcon = BriefcaseBusiness
               const status = runStatus(run)
               const pendingReview = Boolean(run.pending_result)
               return (
                 <article key={run.id} className={`run-queue-item ${status.cls}`}>
                   <RunIcon size={19} />
                   <div className="run-queue-item-copy">
-                    <strong>{copy.title}</strong>
+                    <strong>Cases</strong>
                     <span>{run.current_index} of {run.total_items} answered · {describeStarted(run.started_at)}</span>
                   </div>
                   <span className={`run-queue-status-pill ${status.cls}`}>{status.label}</span>
@@ -903,7 +889,7 @@ export function CasesLobbyPage() {
       )}
       <section className="mobile-practice-home" aria-label="Practice modes">
         <header className="mobile-learning-header">
-          <div><span>PRACTICE</span><h1>Choose the work.</h1></div>
+          <div><span>PRACTICE</span><h1>Do cases.</h1></div>
         </header>
 
         <div className="mobile-practice-client">
@@ -916,36 +902,26 @@ export function CasesLobbyPage() {
           <button
             className="mobile-docket-next"
             onClick={runNextDocketStep}
-            disabled={start.isPending || daily.next_action.kind === 'done' || (queueFull && (daily.next_action.kind === 'start_review' || daily.next_action.kind === 'start_speedrun'))}
+            disabled={start.isPending || daily.next_action.kind === 'done' || (queueFull && daily.next_action.kind === 'start_cases')}
           >
-            <span><small>TODAY’S DOCKET</small><strong>{daily.next_action.kind === 'done' ? 'Training loop complete' : daily.next_action.label}</strong><em>{daily.review.due} due · {daily.speedrun.state === 'complete' ? 'sprint complete' : 'sprint waiting'} · {daily.deep_brief.priority_count} to brief</em></span>
+            <span><small>TODAY’S DOCKET</small><strong>{daily.next_action.kind === 'done' ? 'Training loop complete' : daily.next_action.label}</strong><em>{daily.cases.repairs_due} repair{daily.cases.repairs_due === 1 ? '' : 's'} folded in · {daily.deep_brief.priority_count} to brief</em></span>
             {daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}
           </button>
         )}
 
-        <div className="mobile-practice-mode-label"><span>SELECT A MODE</span><small>One tap changes the purpose of the run.</small></div>
-        <div className="mobile-practice-modes" role="tablist" aria-label="Choose a practice mode">
-          {(['speedrun', 'infinite', 'deep'] as const).map((mode) => {
-            const ModeIcon = practiceModeCopy[mode].icon
-            return <button type="button" role="tab" aria-selected={practiceStyle === mode} className={practiceStyle === mode ? 'active' : ''} onClick={() => { setPracticeStyle(mode); void play('tab', { seed: `mobile-practice:${mode}`, intensity: .26 }) }} key={mode}><ModeIcon size={18} /><span>{practiceModeCopy[mode].title}</span></button>
-          })}
-        </div>
-        <button type="button" className={`mobile-practice-review ${practiceStyle === 'review' ? 'active' : ''}`} aria-pressed={practiceStyle === 'review'} disabled={!dueReviews} onClick={() => { setPracticeStyle('review'); void play('paper', { seed: 'mobile-practice:review', intensity: .35 }) }}>
-          <BookOpen size={19} />
-          <span><strong>Spaced review</strong><small>{dueReviews ? 'Repair the questions that are ready today.' : 'Nothing is due right now.'}</small></span>
-          <b>{dueReviews || <Check size={14} />}</b>
-          <ArrowRight size={17} />
-        </button>
-
         <div className="mobile-practice-selection">
-          <SelectedModeIcon size={23} />
+          <BriefcaseBusiness size={23} />
           <div>
-            <strong>{selectedMode.title}</strong>
-            <p>{queueFull ? `Queue full (${runs.length}/${queueCap}) — discard a run above to start another.` : selectedMode.detail}</p>
+            <strong>Cases</strong>
+            <p>{queueFull
+              ? `Queue full (${runs.length}/${queueCap}) — discard a run above to start another.`
+              : dueReviews
+                ? `10 questions, ${Math.min(5, dueReviews)} due repair${Math.min(5, dueReviews) === 1 ? '' : 's'} folded in. Explain every answer.`
+                : '10 unseen questions. Explain every answer and get coached on it.'}</p>
           </div>
         </div>
-        <button className="mobile-practice-start" onClick={() => startNewRun()} disabled={start.isPending || queueFull || (practiceStyle === 'review' && !dueReviews)}>
-          {start.isPending ? 'Preparing run…' : queueFull ? 'Queue full' : `Start ${selectedMode.title}`} <ArrowRight />
+        <button className="mobile-practice-start" onClick={() => startNewRun()} disabled={start.isPending || queueFull}>
+          {start.isPending ? 'Preparing run…' : queueFull ? 'Queue full' : 'Start 10 cases'} <ArrowRight />
         </button>
         {start.error && <ErrorNotice error={start.error} />}
       </section>
@@ -955,13 +931,13 @@ export function CasesLobbyPage() {
         <div className="docket-copy">
           <span className="eyebrow gold">LSAT SPEEDRUN</span>
           <h1>More questions.<br />Cleaner review.<br /><em>Measured improvement.</em></h1>
-          <p>Choose the amount of friction you need. Answer-only modes build volume; Method Lab is there when the reasoning itself needs work.</p>
+          <p>Every run is the same shape: unseen questions with any due repairs folded in, a written explanation on each one, and coaching after every answer.</p>
           <button
             className="primary-button jumbo"
             onClick={() => startNewRun()}
-            disabled={start.isPending || queueFull || (practiceStyle === 'review' && !dueReviews)}
+            disabled={start.isPending || queueFull}
           >
-            <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : practiceStyle === 'speedrun' ? 'Start 10-question Sprint' : practiceStyle === 'infinite' ? 'Start Infinite mode' : practiceStyle === 'review' ? `Review ${dueReviews} due` : 'Start Deep Practice'} <ArrowRight />
+            <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : 'Start 10 cases'} <ArrowRight />
           </button>
           {start.error && <ErrorNotice error={start.error} />}
         </div>
@@ -977,28 +953,20 @@ export function CasesLobbyPage() {
       </section>
       {daily && <section className="daily-docket" aria-labelledby="daily-docket-title">
         <header>
-          <div><span className="eyebrow">TODAY'S DOCKET · {daily.date}</span><h2 id="daily-docket-title">One measured loop. No busywork.</h2><p>Repair what is due, produce fresh timed evidence, then brief only the decisions worth revisiting.</p></div>
+          <div><span className="eyebrow">TODAY'S DOCKET · {daily.date}</span><h2 id="daily-docket-title">One measured loop. No busywork.</h2><p>Do the cases — repairs are folded in — then brief only the decisions worth revisiting.</p></div>
           <button
             className="daily-docket-action"
             onClick={runNextDocketStep}
-            disabled={start.isPending || daily.next_action.kind === 'done' || (queueFull && (daily.next_action.kind === 'start_review' || daily.next_action.kind === 'start_speedrun'))}
+            disabled={start.isPending || daily.next_action.kind === 'done' || (queueFull && daily.next_action.kind === 'start_cases')}
           >
             {daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}<span><small>NEXT ACTION</small><strong>{start.isPending ? 'Preparing docket…' : daily.next_action.label}</strong></span>
           </button>
         </header>
         <div className="daily-docket-track">
-          <article className={`state-${daily.review.state}`}><b>01</b><div><span><TimerReset /> DUE REVIEW</span><strong>{daily.review.state === 'clear' ? 'Queue clear' : `${daily.review.target || daily.review.due} priority repair${(daily.review.target || daily.review.due) === 1 ? '' : 's'}`}</strong><small>Spaced retrieval · reasoning only where needed</small></div><i>{daily.review.state === 'complete' || daily.review.state === 'clear' ? <Check /> : daily.review.state === 'locked' ? <Lock /> : 'NOW'}</i></article>
-          <article className={`state-${daily.speedrun.state}`}><b>02</b><div><span><TimerReset /> SPEEDRUN</span><strong>10 timed unseen questions</strong><small>Answer only · confidence captured · results held to the end</small></div><i>{daily.speedrun.state === 'complete' ? <Check /> : daily.speedrun.state === 'locked' ? <Lock /> : daily.speedrun.state === 'active' ? 'LIVE' : 'NEXT'}</i></article>
-          <article className={`state-${daily.deep_brief.state}`}><b>03</b><div><span><Brain /> DEEP BRIEF</span><strong>{daily.deep_brief.priority_count ? `${daily.deep_brief.priority_count} decision${daily.deep_brief.priority_count === 1 ? '' : 's'} to audit` : 'Confirm what held'}</strong><small>Correct rule · selected trap · transfer cue</small></div><i>{daily.deep_brief.state === 'complete' ? <Check /> : daily.deep_brief.state === 'locked' ? <Lock /> : 'OPEN'}</i></article>
+          <article className={`state-${daily.cases.state}`}><b>01</b><div><span><BriefcaseBusiness /> CASES</span><strong>10 questions{daily.cases.repairs_due ? `, ${Math.min(5, daily.cases.repairs_due)} repairs folded in` : ''}</strong><small>Written explanation · graded · coaching after every answer</small></div><i>{daily.cases.state === 'complete' ? <Check /> : daily.cases.state === 'active' ? 'LIVE' : 'NOW'}</i></article>
+          <article className={`state-${daily.deep_brief.state}`}><b>02</b><div><span><Brain /> DEEP BRIEF</span><strong>{daily.deep_brief.priority_count ? `${daily.deep_brief.priority_count} decision${daily.deep_brief.priority_count === 1 ? '' : 's'} to audit` : 'Confirm what held'}</strong><small>Correct rule · selected trap · transfer cue</small></div><i>{daily.deep_brief.state === 'complete' ? <Check /> : daily.deep_brief.state === 'locked' ? <Lock /> : 'OPEN'}</i></article>
         </div>
       </section>}
-      <div className="practice-mode-heading"><span className="eyebrow">CHOOSE ANOTHER MODE</span><p>The Daily Docket is the default. Use these when you need a specific kind of practice.</p></div>
-      <section className="practice-mode-picker" aria-label="Choose a study mode">
-        <button className={practiceStyle === 'speedrun' ? 'active' : ''} onClick={() => setPracticeStyle('speedrun')}><TimerReset /><span><strong>Sprint</strong><small>10 timed answers · review at end</small></span></button>
-        <button className={practiceStyle === 'infinite' ? 'active' : ''} onClick={() => setPracticeStyle('infinite')}><Activity /><span><strong>Infinite</strong><small>Answer · concise reasoning · repeat</small></span></button>
-        <button className={practiceStyle === 'deep' ? 'active' : ''} onClick={() => setPracticeStyle('deep')}><Brain /><span><strong>Method Lab</strong><small>Write every rule · immediate coaching</small></span></button>
-        <button className={practiceStyle === 'review' ? 'active' : ''} onClick={() => setPracticeStyle('review')} disabled={!dueReviews}><TimerReset /><span><strong>Review</strong><small>{dueReviews ? `${dueReviews} repair item${dueReviews === 1 ? '' : 's'} due` : 'Queue clear'}</small></span></button>
-      </section>
       <section className="how-scoring-works">
         <span className="eyebrow">THE LEARNING LOOP</span>
         <div>
@@ -1042,7 +1010,8 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
   })
   const dueReviews = queueQuery.data?.review_queue.due ?? 0
   const startRepair = useMutation({
-    mutationFn: () => api.startPractice({ size: Math.min(5, Math.max(1, dueReviews)), practice_style: 'review', feedback_policy: 'immediate' }),
+    // Due repairs are folded into an ordinary run now; there is no repair mode.
+    mutationFn: () => api.startPractice({ size: Math.min(5, Math.max(1, dueReviews)) }),
     onSuccess: ({ session }) => {
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
       void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
@@ -1071,7 +1040,10 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
   const summary = review.summary
   const isDiagnostic = review.session.mode === 'diagnostic'
   const highConfidenceErrors = review.items.filter((item) => !item.is_correct && (item.confidence ?? 0) >= 4).length
-  const isSpeedrun = review.session.practice_style === 'speedrun'
+  // Every completed practice run gets a brief. Gating this on a style that no
+  // longer exists would leave the brief permanently unacknowledgeable, which
+  // would strand the daily docket at "brief ready" forever.
+  const isBrief = !isDiagnostic
   const correctChoice = selected?.question.choices.find((choice) => choice.label === selected.correct_label)
   const selectedChoice = selected?.question.choices.find((choice) => choice.label === selected.selected_label)
   const rationale = coaching.data?.coaching
@@ -1080,7 +1052,7 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
     <div className="session-review-page page-wrap">
       <section className="review-summary-hero">
         <div>
-          <span className="eyebrow">{isDiagnostic ? 'DIAGNOSTIC COMPLETE' : isSpeedrun ? 'DEEP BRIEF' : `${review.session.practice_style.toUpperCase()} COMPLETE`}</span>
+          <span className="eyebrow">{isDiagnostic ? 'DIAGNOSTIC COMPLETE' : 'DEEP BRIEF'}</span>
           <h1>{priorityItems.length ? 'Brief the decisions that can change your next run.' : 'Clean run. Confirm what held.'}</h1>
           <p>Results are separated from firm currency and rank. Open any question for a concise rationale; only mistakes and uncertainty enter repair.</p>
         </div>
@@ -1096,7 +1068,7 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
 
       <section className="answer-audit-shell">
         <aside className="answer-audit-index" aria-label="Questions in this run">
-          <div><span>{isSpeedrun ? 'DEEP BRIEF' : 'ANSWER AUDIT'}</span><small>{priorityOnly && priorityItems.length ? `${priorityItems.length} priority decisions` : `All ${review.items.length} questions`}</small></div>
+          <div><span>{isBrief ? 'DEEP BRIEF' : 'ANSWER AUDIT'}</span><small>{priorityOnly && priorityItems.length ? `${priorityItems.length} priority decisions` : `All ${review.items.length} questions`}</small></div>
           {priorityItems.length > 0 && <div className="brief-filter" role="group" aria-label="Brief scope"><button className={priorityOnly ? 'active' : ''} onClick={() => setPriorityOnly(true)}>Priority</button><button className={!priorityOnly ? 'active' : ''} onClick={() => setPriorityOnly(false)}>All {review.items.length}</button></div>}
           <div className="answer-audit-list">
             {visibleItems.map((item) => (
@@ -1133,9 +1105,9 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
       </section>
 
       <section className="review-next-actions">
-        <div><span className="eyebrow">NEXT BEST ACTION</span><h2>{dueReviews ? `Repair ${Math.min(5, dueReviews)} due item${dueReviews === 1 ? '' : 's'}` : 'Return to unseen questions'}</h2><p>{dueReviews ? 'Write reasoning only where the evidence says it is needed.' : 'Your repair queue is clear; another Sprint provides fresh transfer evidence.'}</p></div>
+        <div><span className="eyebrow">NEXT BEST ACTION</span><h2>{dueReviews ? `Repair ${Math.min(5, dueReviews)} due item${dueReviews === 1 ? '' : 's'}` : 'Return to unseen questions'}</h2><p>{dueReviews ? 'Write reasoning only where the evidence says it is needed.' : 'Your repair queue is clear; another run of cases provides fresh evidence.'}</p></div>
         <div>
-          {isSpeedrun && <button className="primary-button" onClick={() => finishBrief.mutate()} disabled={finishBrief.isPending}>{finishBrief.isPending ? 'Closing brief…' : 'Finish Deep Brief'} <CheckCircle2 /></button>}
+          {isBrief && <button className="primary-button" onClick={() => finishBrief.mutate()} disabled={finishBrief.isPending}>{finishBrief.isPending ? 'Closing brief…' : 'Finish Deep Brief'} <CheckCircle2 /></button>}
           {dueReviews > 0 && <button className="primary-button" onClick={() => startRepair.mutate()} disabled={startRepair.isPending}>{startRepair.isPending ? 'Building review…' : 'Start priority review'} <ArrowRight /></button>}
           <button className="secondary-button" onClick={() => navigate('/cases')}>Practice modes</button>
           <button className="secondary-button" onClick={() => navigate('/progress')}>View progress</button>

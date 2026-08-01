@@ -332,7 +332,7 @@ export type AttemptResult = {
 export type StudySession = {
   id: string
   mode: 'practice' | 'diagnostic'
-  practice_style: 'deep' | 'speedrun' | 'infinite' | 'review' | 'diagnostic'
+  practice_style: 'cases' | 'diagnostic'
   feedback_policy: 'immediate' | 'delayed'
   status: 'in_progress' | 'paused' | 'completed' | 'abandoned'
   target_minutes: number
@@ -439,6 +439,7 @@ export type PerformanceSnapshot = {
     projection_note: string
   } | null
   test_performance: PerformanceMetric
+  coached_practice: PerformanceMetric
   evidence_classes: Record<string, PerformanceMetric>
   readiness: { status: 'forming' | 'ready'; lr_samples: number; rc_samples: number; completed_diagnostics: number }
   review: ReviewQueue & { recovery_rate: number | null }
@@ -471,11 +472,16 @@ export type DailyDocket = {
   date: string
   timezone: string
   active_session: StudySession | null
-  review: { state: DailyDocketState; due: number; target: number; session_id?: string | null }
-  speedrun: { state: DailyDocketState; target: number; session_id?: string | null; summary?: PracticeSummary | null }
+  cases: {
+    state: DailyDocketState
+    target: number
+    repairs_due: number
+    session_id?: string | null
+    summary?: PracticeSummary | null
+  }
   deep_brief: { state: DailyDocketState; session_id?: string | null; priority_count: number }
   next_action: {
-    kind: 'resume' | 'start_review' | 'start_speedrun' | 'open_brief' | 'done'
+    kind: 'resume' | 'start_cases' | 'open_brief' | 'done'
     session_id?: string | null
     label: string
   }
