@@ -2446,6 +2446,56 @@ def test_good_explanation_on_a_confident_correct_answer_schedules_nothing(app):
         assert ReviewQueueItem.query.count() == 0
 
 
+def test_headline_counts_diagnostic_only_and_cases_get_their_own_panel(app):
+    client = app.test_client()
+    headers = login(client, "headline-split@example.test")
+    create_game(client, headers)
+
+    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "strategy_applied": True,
+            "confidence": 3,
+            "reasoning": explanation("the headline case"),
+        },
+        headers={**headers, "Idempotency-Key": "headline-case"},
+    )
+
+    performance = client.get("/v1/performance", headers=headers).json["performance"]
+    # A cases attempt is coached practice; it must not reach the headline.
+    assert performance["test_performance"]["attempts"] == 0
+    assert performance["coached_practice"]["attempts"] == 1
+    assert performance["coached_practice"]["accuracy"] == 100
+
+
+def test_review_recovery_reads_the_review_queue_flag(app):
+    client = app.test_client()
+    headers = login(client, "recovery-flag@example.test")
+    create_game(client, headers)
+    with app.app_context():
+        user = User.query.filter_by(email="recovery-flag@example.test").one()
+        _queue_due_question(user.id, Question.query.order_by(Question.id).first().id)
+
+    session = client.post("/v1/study-sessions", json={"size": 2}, headers=headers).json["session"]
+    client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "strategy_applied": True,
+            "confidence": 3,
+            "reasoning": explanation("the recovered repair"),
+        },
+        headers={**headers, "Idempotency-Key": "recovery-repair"},
+    )
+
+    performance = client.get("/v1/performance", headers=headers).json["performance"]
+    assert performance["review"]["recovery_rate"] == 100
+
+
 def test_every_case_attaches_game_context_and_the_diagnostic_never_does(app):
     client = app.test_client()
     headers = login(client, "every-case-pays@example.test")

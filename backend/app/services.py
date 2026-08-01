@@ -1267,14 +1267,21 @@ def performance_snapshot(user: User) -> dict:
     for attempt in attempts:
         by_evidence[attempt.evidence_class].append(attempt)
     evidence_classes = {name: summarize(values) for name, values in by_evidence.items()}
-    test_values = [attempt for attempt in first_attempts if attempt.evidence_class in {"timed_unseen", "diagnostic"}]
+    # The diagnostic pays nothing and prompts nothing, so it is the only surface
+    # the economy and the strategy prompts cannot reach. Everything else is
+    # coached practice and reports in its own panel, where the cash incentive on
+    # every question is a known property of the number rather than a hidden one.
+    test_values = [attempt for attempt in first_attempts if attempt.evidence_class == "diagnostic"]
     test_performance = summarize(test_values)
+    coached_practice = summarize(
+        [attempt for attempt in first_attempts if attempt.evidence_class == "coached_practice"]
+    )
     lr_samples = sum(attempt.session_item.question.section == "Logical Reasoning" for attempt in test_values)
     rc_samples = sum(attempt.session_item.question.section == "Reading Comprehension" for attempt in test_values)
     completed_diagnostics = StudySession.query.filter_by(user_id=user.id, mode="diagnostic", status="completed").count()
     readiness_status = "ready" if lr_samples >= 40 and rc_samples >= 20 and completed_diagnostics else "forming"
     queue = review_queue_snapshot(user)
-    review_values = by_evidence.get("spaced_review", [])
+    review_values = [attempt for attempt in attempts if attempt.session_item.from_review_queue]
     review_recovery = round(sum(value.is_correct for value in review_values) / len(review_values) * 100) if review_values else None
     confidence_values = [attempt for attempt in first_attempts if attempt.confidence is not None]
     high_confidence = [attempt for attempt in confidence_values if (attempt.confidence or 0) >= 4]
@@ -1293,6 +1300,7 @@ def performance_snapshot(user: User) -> dict:
         "trend": trend,
         "diagnostic": diagnostic,
         "test_performance": test_performance,
+        "coached_practice": coached_practice,
         "evidence_classes": evidence_classes,
         "readiness": {
             "status": readiness_status,
