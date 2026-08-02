@@ -735,8 +735,18 @@ dirty and visible.
 
 All three scenes are lazily loaded through `scene-loaders.ts` and preloaded per route on idle, so the 3D code is
 not in the critical path. `sound.tsx` (~940 lines) adds procedurally generated, seeded sound effects and
-per-region ambient music with user-controllable volume and a reduced-audio mode, and `guided-tour.tsx` provides
-a first-run walkthrough.
+per-region ambient music with user-controllable volume and a reduced-audio mode.
+
+**The guided tour.** `guided-tour.tsx` is the first-run walkthrough, and it explains the game rather than just
+the navigation. Eighteen steps run in four kinds: `premise` sets the fiction over a cinematic office, `spotlight`
+cuts a hole in a scrim around a real `data-tour` element and routes to the page it lives on, `practice` plays a
+working LR question with a 1–5 confidence control and a written debrief, and `feature` covers a mechanic that has
+no single element to point at — the mega-litigation, written reasoning, the repair queue, the Method Lab, the fee
+formula, upkeep, and the campaign. A `feature` step pairs prose with a short `facts` list, because the prose is
+where the reason lives and the list is where the numbers do; the numbers in it are the real ones (75 questions
+across three 35-minute blocks, a 120-character reasoning floor, repairs capped at half a run, a 25% silent control
+arm, three days of rent arrears, 48 hours of reputation grace). It runs once, is replayable from the header or the
+mobile menu, and is gated on a versioned `localStorage` key so a rewrite re-shows it a single time.
 
 ---
 

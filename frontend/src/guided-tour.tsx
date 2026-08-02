@@ -8,14 +8,17 @@ import './guided-tour.css'
 
 const StylizedCharacter = lazy(() => loadStylizedCharacter().then((module) => ({ default: module.StylizedCharacter })))
 
-const TOUR_STORAGE_KEY = 'lawyer-speedrun:guided-tour:v4'
+const TOUR_STORAGE_KEY = 'lawyer-speedrun:guided-tour:v5'
 const TOUR_REPLAY_EVENT = 'lawyer-speedrun:replay-tour'
 
 type TourStep = {
-  kind: 'premise' | 'spotlight' | 'practice' | 'finish'
+  /** `feature` explains a mechanic that has no single element to point at. */
+  kind: 'premise' | 'spotlight' | 'practice' | 'feature' | 'finish'
   eyebrow: string
   title: string
   body: string
+  /** Short scannable specifics. Prose says why; these say what. */
+  facts?: string[]
   target?: string
   route?: string
   cue?: string
@@ -38,16 +41,29 @@ const steps: TourStep[] = [
     kind: 'spotlight',
     eyebrow: '01 · DASHBOARD',
     title: 'Start from evidence, not guesswork.',
-    body: 'Sit a mega-litigation — a full practice LSAT — follow today’s prescription, and watch accuracy, pacing, confidence, and retention improve separately.',
+    body: 'Accuracy, pacing, confidence, and retention are reported separately, because they fail separately. The Speedrun Index sits on top, and the app never claims a trend it cannot support with a sample.',
     target: '[data-tour="nav-progress"]',
     route: '/progress',
     cue: 'Dashboard',
   },
   {
+    kind: 'feature',
+    eyebrow: '02 · THE MEGA-LITIGATION',
+    title: 'Basically a full practice LSAT.',
+    body: 'The one measurement that pays nothing, prompts nothing, and coaches nothing — which is exactly what makes it worth trusting. Sit one whenever you have the afternoon.',
+    facts: [
+      '75 questions in three blocks under one clock, about 105 minutes',
+      'One sitting: no pause, no save, and the clock runs if you close the tab',
+      'Clear 70% of the form and your firm jumps a tier, prerequisites unlocked free',
+      'Never required — nothing in the firm waits on one',
+    ],
+    cue: 'Mega-litigation',
+  },
+  {
     kind: 'spotlight',
-    eyebrow: '02 · PRACTICE',
-    title: 'Choose the right depth for the moment.',
-    body: 'Every run is the same: unseen questions with any due repairs folded in, a written explanation on each one, and coaching after every answer.',
+    eyebrow: '03 · PRACTICE',
+    title: 'The docket knows the next right move.',
+    body: 'One button always points at today’s work. Every run mixes unseen questions with whatever repairs have come due, so review happens without you scheduling it.',
     target: '[data-tour="nav-cases"]',
     route: '/cases',
     cue: 'Practice',
@@ -61,26 +77,104 @@ const steps: TourStep[] = [
     cue: 'Question workflow',
   },
   {
+    kind: 'feature',
+    eyebrow: '04 · WRITE, THEN LEARN',
+    title: 'The explanation is the work.',
+    body: 'Every case wants your reasoning in writing before it accepts the letter. The coach then grades that reasoning, names the first place it went wrong, and shows why each choice lives or dies.',
+    facts: [
+      'At least 120 characters of reasoning per case',
+      'Rate your confidence 1–5 — an assured miss is treated as worse than a hesitant one',
+      'Graded Invalid, Weak, Good, or Excellent, and the grade moves your fee',
+      'You cannot skip past the debrief to the next question',
+    ],
+    cue: 'Reasoning',
+  },
+  {
+    kind: 'feature',
+    eyebrow: '05 · REPAIR',
+    title: 'Mistakes come back on a schedule.',
+    body: 'Anything you missed, guessed at, or solved too slowly is queued and folded into a later run at widening intervals — until you get it right on a day you had forgotten it.',
+    facts: [
+      'A confident miss comes due immediately — so does a right answer you doubted',
+      'Repairs fill up to half a run and go first',
+      'Getting one right pushes the interval out; missing it resets to today',
+      'The post-run brief ranks the decisions worth re-reading',
+    ],
+    cue: 'Repair queue',
+  },
+  {
+    kind: 'feature',
+    eyebrow: '06 · THE METHOD LAB',
+    title: 'Fourteen methods, tested on you.',
+    body: 'Each case suggests a named LSAT method and asks whether you used it. Skipping is a real answer — a quarter of cases stay silent on purpose, so the app can compare you with the method against you without it.',
+    facts: [
+      'Accuracy, pace, and explanation quality are compared, not vibes',
+      'A verdict reads "forming" until both sides of the comparison have a sample',
+      'Weak question types keep getting tested longer before the app settles',
+      'The Dashboard shows the lift for each method, with or without',
+    ],
+    cue: 'Method Lab',
+  },
+  {
+    kind: 'feature',
+    eyebrow: '07 · GETTING PAID',
+    title: 'Every case is billable.',
+    body: 'A client pays a base fee; what you actually collect depends on the verdict, the quality of your written reasoning, how fast you closed, and everything you have built.',
+    facts: [
+      'Fee = client base × your score × your firm, plus streak, staff, and contract bonuses',
+      'Reputation rises on wins and falls on losses; pro bono pays normally and shields the loss',
+      'Streaks compound, and one careless miss ends them',
+      'The exact breakdown is shown after every case — nothing is hidden',
+    ],
+    cue: 'The economy',
+  },
+  {
+    kind: 'feature',
+    eyebrow: '08 · RENT COMES DUE',
+    title: 'A firm left alone loses ground.',
+    body: 'Your office bills rent every day whether you show up or not, and a silent week costs reputation as well as cash. It is the one pressure that makes a daily habit the cheap option.',
+    facts: [
+      'Daily rent scales with your tier; away from the desk it accrues at a fifth of the rate',
+      'Arrears stop at three days — you can always dig out',
+      'Reputation only starts slipping after two quiet days, and staff can shield it',
+      'Passive income accrues hourly up to a cap; collect it in the office',
+    ],
+    cue: 'Upkeep',
+  },
+  {
     kind: 'spotlight',
-    eyebrow: '03 · OFFICE',
+    eyebrow: '09 · OFFICE',
     title: 'Your working day lives here.',
-    body: 'Open the next case, meet the active client, and see the serious workspace evolve as your demonstrated mastery rises.',
+    body: 'Open the next case, meet the active client, collect passive income, and clear daily goals. The workspace itself fills in with every upgrade you actually own.',
     target: '[data-tour="nav-office"]',
     route: '/office',
     cue: 'Office',
   },
   {
     kind: 'spotlight',
-    eyebrow: '04 · FIRM',
-    title: 'Progression follows learning.',
-    body: 'Upgrades, staff, and acquisitions reflect your practice history. They support the loop; they never replace instruction.',
+    eyebrow: '10 · FIRM',
+    title: 'Spend what the work earned.',
+    body: 'Upgrades, staff, connections, cosmetics, and rival acquisitions all sit here, each with a plain line telling you exactly what is still missing. Headquarters tiers need reputation, cash, and a specific checklist of assets.',
     target: '[data-tour="nav-firm"]',
     route: '/firm',
     cue: 'Firm',
   },
   {
+    kind: 'feature',
+    eyebrow: '11 · THE CAMPAIGN',
+    title: 'The work has a story attached.',
+    body: 'Chapters arrive as you climb the tiers, and the choices in them are not cosmetic: they move where you sit between principled and ruthless, and that changes which work will have you.',
+    facts: [
+      'Ethics, heat, influence, and intel all track separately',
+      'Quests run alongside cases: pro bono, investigations, shadow work, legacy matters',
+      'Rival operations can buy out a competitor cleanly — or not cleanly, for a price',
+      'Heat surcharges every future gray operation, so ruthless is a real bet',
+    ],
+    cue: 'Story',
+  },
+  {
     kind: 'spotlight',
-    eyebrow: '05 · WORLD',
+    eyebrow: '12 · WORLD',
     title: 'The map is your career record.',
     body: 'Each arc is a living legal environment. Levels sit on one deliberate route, with districts unlocking as your firm and LSAT skill advance.',
     target: '[data-tour="nav-map"]',
@@ -89,7 +183,7 @@ const steps: TourStep[] = [
   },
   {
     kind: 'spotlight',
-    eyebrow: '06 · YOUR EVIDENCE',
+    eyebrow: '13 · YOUR EVIDENCE',
     title: 'Read the signal, not the decoration.',
     body: 'This compact standing shows verified accuracy and completed questions. The Dashboard holds the deeper analysis.',
     target: '[data-tour="standing"]',
@@ -98,7 +192,7 @@ const steps: TourStep[] = [
   },
   {
     kind: 'spotlight',
-    eyebrow: '07 · SOUND',
+    eyebrow: '14 · SOUND',
     title: 'A quiet layer of feedback.',
     body: 'Sound marks navigation, files, verdicts, and promotions. Keep it on, lower it, use Lite mode, or mute it at any time.',
     target: '[data-tour="sound"]',
@@ -259,6 +353,11 @@ export function GuidedTour() {
         </div>
         <h2>{step.title}</h2>
         <p>{step.body}</p>
+        {step.facts && (
+          <ul className="tour-facts">
+            {step.facts.map((fact) => <li key={fact}><Check size={14} /><span>{fact}</span></li>)}
+          </ul>
+        )}
         {step.kind === 'premise' && index === 1 && (
           <div className="tour-loop" aria-label="The learning loop">
             <span><Scale /> Diagnose</span><i />
@@ -297,7 +396,8 @@ export function GuidedTour() {
                 </button>
               ))}
             </div>
-            <div className="tour-confidence"><span>Confidence</span><button type="button" tabIndex={-1}>Low</button><button type="button" className="active" tabIndex={-1}>Medium</button><button type="button" tabIndex={-1}>High</button></div>
+            {/* Mirrors the real runner's 1–5 control so the first live case looks familiar. */}
+            <div className="tour-confidence"><span>Confidence</span>{[1, 2, 3, 4, 5].map((value) => <button type="button" className={value === 3 ? 'active' : ''} tabIndex={-1} key={value}>{value}</button>)}<em>Moderate</em></div>
             {practiceRevealed && (
               <div className={`tour-answer-reasoning ${practiceChoice === 1 ? 'is-correct' : 'needs-repair'}`} role="status">
                 <strong>{practiceChoice === 1 ? 'Correct reasoning' : 'Repair the chain'}</strong>

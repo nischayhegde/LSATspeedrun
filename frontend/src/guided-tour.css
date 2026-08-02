@@ -45,6 +45,12 @@
 .guided-tour-mode-premise .guided-tour-card { right: clamp(26px, 8vw, 120px); top: 50%; translate: 0 -50%; }
 .guided-tour-mode-finish .guided-tour-card { left: 50%; top: 50%; translate: -50% -50%; text-align: center; }
 .guided-tour-mode-practice .guided-tour-card { width: min(760px, calc(100vw - 40px)); left: 50%; top: 50%; translate: -50% -50%; }
+/* A feature step points at nothing, so it reads centred like the premise. */
+.guided-tour-mode-feature .guided-tour-card { width: min(600px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow-y: auto; left: 50%; top: 50%; translate: -50% -50%; }
+
+.tour-facts { margin: 17px 0 0; padding: 15px 17px; display: grid; gap: 9px; list-style: none; border: 1px solid rgba(52, 75, 73, .18); border-radius: 9px; background: rgba(255,255,255,.36); }
+.tour-facts li { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 9px; color: #435450; font-size: 13.5px; line-height: 1.5; }
+.tour-facts svg { margin-top: 3px; color: #2c7f76; }
 .tour-card-progress { height: 3px; margin: -28px -30px 25px; overflow: hidden; border-radius: 12px 12px 0 0; background: rgba(38, 63, 63, .12); }
 .tour-card-progress i { height: 100%; display: block; background: linear-gradient(90deg, #318b80, #e1ad49); transition: width .45s ease; }
 .tour-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -130,6 +136,7 @@
 .tour-confidence > span { margin-right: 4px; }
 .tour-confidence button { padding: 5px 8px; border: 1px solid rgba(66,79,73,.2); border-radius: 4px; color: #64716d; background: rgba(255,255,255,.36); font-family: inherit; font-size: 7px; }
 .tour-confidence button.active { color: #214c47; border-color: #599086; background: #dce9dc; }
+.tour-confidence em { margin-left: 4px; color: #5c6b66; font-style: normal; }
 .tour-answer-reasoning { margin-top: 12px; padding: 11px 13px; border-left: 3px solid #337c65; border-radius: 4px; background: rgba(211,234,217,.68); animation: tour-reasoning-enter .35s ease both; }
 .tour-answer-reasoning.needs-repair { border-left-color: #ad704f; background: rgba(239,222,203,.75); }
 .tour-answer-reasoning strong { color: #235441; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .05em; }
@@ -156,6 +163,7 @@
   .guided-tour-card.place-right,
   .guided-tour-mode-premise .guided-tour-card,
   .guided-tour-mode-practice .guided-tour-card,
+  .guided-tour-mode-feature .guided-tour-card,
   .guided-tour-mode-finish .guided-tour-card { width: calc(100% - 24px); max-height: min(560px, calc(100dvh - 110px)); left: 12px; right: auto; top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); translate: none; overflow: auto; }
   .guided-tour-card { padding: 23px 20px 18px; }
   .tour-card-progress { margin: -23px -20px 20px; }

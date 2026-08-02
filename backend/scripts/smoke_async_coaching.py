@@ -95,14 +95,20 @@ def run_smoke_test(timeout_seconds: int, lambda_function: str | None = None) -> 
             if not item:
                 raise RuntimeError("The smoke-test case was not created.")
 
+            payload = {
+                "item_id": item.id,
+                "selected_label": item.question.correct_answer,
+                "reasoning": _specific_reasoning(item),
+            }
+            # Every case question now carries a strategy trial, and a prompted
+            # trial refuses an answer without an explicit use/skip decision.
+            if item.strategy_key and item.strategy_variant == "prompt":
+                payload["strategy_applied"] = True
+                payload["strategy_prompt_ms"] = 4000
             attempt, _duplicate = submit_attempt(
                 user,
                 session,
-                {
-                    "item_id": item.id,
-                    "selected_label": item.question.correct_answer,
-                    "reasoning": _specific_reasoning(item),
-                },
+                payload,
                 f"deploy-smoke-{smoke_token}",
             )
             attempt_id = attempt.id
