@@ -119,7 +119,7 @@ export function Brand({ light = false, caseFile = false }: { light?: boolean; ca
 
 
 const navItems = [
-  { to: '/progress', label: 'Training', icon: Brain },
+  { to: '/progress', label: 'Dashboard', icon: Brain },
   { to: '/cases', label: 'Practice', icon: BriefcaseBusiness },
   { to: '/office', label: 'Office', icon: Building2 },
   { to: '/firm', label: 'Firm', icon: LayoutGrid },

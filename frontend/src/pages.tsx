@@ -203,7 +203,7 @@ export function PerformancePage() {
     <div className="performance-page page-wrap">
       <section className="mobile-training-home" aria-label="Training overview">
         <header className="mobile-learning-header">
-          <div><span>TRAINING</span><h1>Your next best rep.</h1></div>
+          <div><span>DASHBOARD</span><h1>Your next best rep.</h1></div>
           <a href="#mobile-training-analysis">Analysis <ArrowRight size={15} /></a>
         </header>
         <div className="mobile-training-signal">

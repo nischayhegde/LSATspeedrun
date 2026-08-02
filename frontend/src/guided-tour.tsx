@@ -36,12 +36,12 @@ const steps: TourStep[] = [
   },
   {
     kind: 'spotlight',
-    eyebrow: '01 · TRAINING',
+    eyebrow: '01 · DASHBOARD',
     title: 'Start from evidence, not guesswork.',
     body: 'Sit a mega-litigation — a full practice LSAT — follow today’s prescription, and watch accuracy, pacing, confidence, and retention improve separately.',
     target: '[data-tour="nav-progress"]',
     route: '/progress',
-    cue: 'Training',
+    cue: 'Dashboard',
   },
   {
     kind: 'spotlight',
@@ -91,7 +91,7 @@ const steps: TourStep[] = [
     kind: 'spotlight',
     eyebrow: '06 · YOUR EVIDENCE',
     title: 'Read the signal, not the decoration.',
-    body: 'This compact standing shows verified accuracy and completed questions. The Training page holds the deeper analysis.',
+    body: 'This compact standing shows verified accuracy and completed questions. The Dashboard holds the deeper analysis.',
     target: '[data-tour="standing"]',
     route: '/map',
     cue: 'Standing',
@@ -313,7 +313,7 @@ export function GuidedTour() {
               guards against. */}
           {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
           <button type="button" className="tour-next" onClick={advance} disabled={step.kind === 'practice' && practiceChoice === null} autoFocus>
-            {step.kind === 'finish' ? 'Open Training' : step.kind === 'practice' && !practiceRevealed ? 'Lock answer' : step.kind === 'premise' ? 'Continue' : `Next · ${step.cue ?? 'Continue'}`}
+            {step.kind === 'finish' ? 'Open Dashboard' :step.kind === 'practice' && !practiceRevealed ? 'Lock answer' : step.kind === 'premise' ? 'Continue' : `Next · ${step.cue ?? 'Continue'}`}
             <ArrowRight />
           </button>
         </div>
