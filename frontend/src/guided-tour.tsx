@@ -38,7 +38,7 @@ const steps: TourStep[] = [
     kind: 'spotlight',
     eyebrow: '01 · TRAINING',
     title: 'Start from evidence, not guesswork.',
-    body: 'Take the diagnostic, follow today’s prescription, and watch accuracy, pacing, confidence, and retention improve separately.',
+    body: 'Sit a mega-litigation — a full practice LSAT — follow today’s prescription, and watch accuracy, pacing, confidence, and retention improve separately.',
     target: '[data-tour="nav-progress"]',
     route: '/progress',
     cue: 'Training',
@@ -108,8 +108,8 @@ const steps: TourStep[] = [
   {
     kind: 'finish',
     eyebrow: 'THE DOCKET IS OPEN',
-    title: 'Begin with a baseline.',
-    body: 'Your first best move is the diagnostic. After that, the app can prescribe the fastest useful work instead of merely giving you more work.',
+    title: 'Take a case. Or take the whole test.',
+    body: 'Start billing cases whenever you like. When you have a free couple of hours, a mega-litigation — basically a full practice LSAT — tells the app what to prescribe, and clearing 70% of it promotes your firm.',
   },
 ]
 

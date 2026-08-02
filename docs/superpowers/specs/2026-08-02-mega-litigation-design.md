@@ -59,11 +59,17 @@ give the results a breakdown. `section_plan_json` loses its per-section `minutes
 there are no section clocks any more.
 
 Per-question splits keep recording (`active_elapsed_ms`, `server_elapsed_ms`), so results can
-still show where the time went. What goes away is per-question *pace adherence* for
-diagnostic attempts: measuring a student against a 150-second target the app no longer shows
-or enforces would be dishonest. Diagnostic pace becomes session-level — time used against
-budget, and how far into the form they got. Coached practice keeps per-question pace
-untouched.
+still show where the time went. What changes is what they are measured against. Measuring a
+student against a 150-second target the app no longer shows or enforces would be dishonest —
+and the old targets were never coherent for a form anyway: 150 s LR / 330 s RC summed to
+roughly 15 750 seconds against a 6 300-second budget.
+
+So `create_diagnostic_session` overwrites every item's `target_time_seconds` with an even
+split of the form budget, `max(30, round(target_minutes × 60 / len(questions)))`. Per-question
+pace adherence stays meaningful, keeps working for `pace_adherence` and the Speedrun Index
+without any frontend change, and now means something honest: "an even split of the clock."
+Session-level pace is reported alongside it — time used against budget, and how far into the
+form they got. Coached practice keeps its realistic per-question targets untouched.
 
 ## 2. The tier reward
 

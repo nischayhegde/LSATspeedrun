@@ -115,6 +115,9 @@ class StudySession(db.Model):
     results_seen_at = db.Column(db.DateTime(timezone=True), nullable=True)
     summary_seen_at = db.Column(db.DateTime(timezone=True), nullable=True)
     started_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+    # A whole-form clock, set only for the mega-litigation. Null means the run has
+    # no deadline of its own and is paced question by question.
+    deadline_at = db.Column(db.DateTime(timezone=True), nullable=True)
     completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     user = db.relationship("User")

@@ -337,12 +337,18 @@ export type StudySession = {
   status: 'in_progress' | 'paused' | 'completed' | 'abandoned'
   target_minutes: number
   accommodation_multiplier: number
-  section_plan: Array<{ index: number; label: string; start: number; end: number; questions: number; minutes: number }>
+  /** Blocks keep their labels and boundaries; a mega-litigation has one clock, so they carry no minutes. */
+  section_plan: Array<{ index: number; label: string; start: number; end: number; questions: number }>
   ended_by_user: boolean
   total_items: number
   current_index: number
   progress_percent: number
   started_at: string
+  /** Whole-form deadline. Set only for a mega-litigation. */
+  deadline_at?: string | null
+  /** Server-authoritative time left on that deadline; the client counts down between polls but never decides. */
+  remaining_ms?: number | null
+  time_limit_seconds?: number | null
   completed_at?: string | null
   current_item?: SessionItem | null
   pending_item?: SessionItem | null
@@ -354,6 +360,8 @@ export type PracticeSummary = {
   practice_style?: StudySession['practice_style']
   feedback_policy?: StudySession['feedback_policy']
   accuracy: number
+  /** Correct out of every question on the form, counting anything left blank. The promotion bar reads this one. */
+  form_accuracy?: number
   correct: number
   questions_completed: number
   elapsed_minutes: number
@@ -363,6 +371,16 @@ export type PracticeSummary = {
   omitted?: number
   confidence?: { average: number | null; high_confidence_errors: number; high_confidence_attempts: number }
   timing_compromised?: boolean
+  promotion?: MegaLitigationPromotion
+}
+
+export type MegaLitigationPromotion = {
+  name: string
+  tier: number
+  granted_assets: Array<{ key: string; name: string }>
+  waived_cost: number
+  reputation_before: number
+  reputation_after: number
 }
 
 export type PerformanceMetric = {
@@ -434,7 +452,14 @@ export type PerformanceSnapshot = {
     summary: PracticeSummary
     raw_correct: number
     raw_total: number
+    form_total: number
+    form_accuracy: number | null
     sections: NonNullable<PracticeSummary['sections']>
+    promotion: MegaLitigationPromotion | null
+    time_limit_minutes: number
+    elapsed_minutes: number
+    budget_used_percent: number
+    completion_percent: number
     projection_available: false
     projection_note: string
   } | null
@@ -455,6 +480,14 @@ export type PerformanceSnapshot = {
     empty_state: { title: string; body: string }
     catalog_note: string
     evidence_note: string
+  }
+  /** What the last mega-litigation told practice to work on. */
+  focus: {
+    types: string[]
+    session_id: string | null
+    completed_at: string | null
+    baseline_accuracy: number | null
+    explanation: string
   }
   recommendation: { skill: string; accuracy: number; reason: string } | null
 }

@@ -46,6 +46,18 @@
 .evidence-class-panel summary { color: #79cdbf; cursor: pointer; font-weight: 750; }
 .evidence-class-panel details p { max-width: var(--prose-measure); margin: 8px 0 0; }
 
+.focus-panel { margin: 12px 0; padding: 20px; border: 1px solid rgba(232,205,137,.22); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#1a2a24,#101c28); box-shadow: 0 13px 29px rgba(4,9,15,.2); }
+.focus-panel p { max-width: var(--prose-measure); margin: 14px 0 0; color: #c3cbc2; font-size: 13px; line-height: 1.6; }
+.focus-panel small { display: block; margin-top: 9px; color: #8fa39f; font-size: 11px; }
+
+.promotion-banner { margin: 14px 0 0; padding: 22px; display: grid; gap: 12px; border: 1px solid rgba(239,209,124,.4); border-radius: 18px; background: linear-gradient(140deg,#25321f,#13202a); box-shadow: 0 16px 34px rgba(4,9,15,.28); }
+.promotion-banner span { color: #efd17c; font-family: var(--font-pixel); font-size: 9px; font-weight: 900; letter-spacing: .12em; }
+.promotion-banner strong { display: block; margin: 7px 0 6px; color: #f6ecd3; font: 620 clamp(24px,3vw,36px)/1.05 var(--font-display); }
+.promotion-banner p { max-width: var(--prose-measure); margin: 0; color: #c1cabf; font-size: 13px; line-height: 1.6; }
+.promotion-banner ul { margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 7px; list-style: none; }
+.promotion-banner li { padding: 6px 11px; border: 1px solid rgba(239,209,124,.3); border-radius: 999px; color: #f0e3c4; background: rgba(5,13,20,.35); font-size: 12px; font-weight: 700; }
+.promotion-banner small { color: #9fb0a5; font-size: 11px; }
+
 .session-review-page { max-width: 1280px; padding-bottom: 60px; color: #e8e0cf; }
 .review-summary-hero { padding: clamp(26px,4vw,50px); display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 28px; border: 1px solid rgba(224,192,115,.28); border-radius: 20px; background: radial-gradient(circle at 82% 22%,rgba(83,168,151,.15),transparent 28%),linear-gradient(135deg,#111f2c,#1b303b); box-shadow: 0 22px 50px rgba(4,9,15,.34); }
 .review-summary-hero h1 { max-width: 780px; margin: 7px 0 9px; color: #f4e9d0; font: 620 clamp(34px,4.5vw,60px)/1 var(--font-display); letter-spacing: -.02em; }

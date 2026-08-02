@@ -6,6 +6,11 @@ from collections import defaultdict
 from .models import Attempt, Question
 
 
+# Observations per candidate approach before a trial stops covering and starts
+# exploiting its leader. Measured weaknesses get the longer runway.
+BASE_COVERAGE_TRIALS = 3
+FOCUS_COVERAGE_TRIALS = 5
+
 STRATEGY_SOURCES = {
     "lsac_lr": {
         "label": "LSAC · Suggested Approach for Logical Reasoning",
@@ -300,18 +305,30 @@ def _candidate_keys(question: Question) -> list[str]:
     return list(dict.fromkeys(candidates))
 
 
-def assign_strategy_trial(user_id: str, question: Question, practice_style: str, position: int) -> dict | None:
+def assign_strategy_trial(
+    user_id: str,
+    question: Question,
+    practice_style: str,
+    position: int,
+    *,
+    focus_types: list[str] | None = None,
+) -> dict | None:
     """Assign a balanced within-student strategy trial on every question.
 
-    The diagnostic stays a clean measurement surface and gets no trial. Early
-    trials force coverage across the candidate approaches; later trials favor
-    the best posterior performer while preserving a challenger and an invisible
-    25% control condition.
+    The mega-litigation stays a clean measurement surface and gets no trial.
+    Early trials force coverage across the candidate approaches; later trials
+    favor the best posterior performer while preserving a challenger and an
+    invisible 25% control condition.
 
     The old cadence exposed one trial every four questions so that Sprint and
     Infinite could stay clean measurement surfaces. With the diagnostic as the
     only such surface, that reason is gone, and trialling every question makes
     the prompt-versus-control comparison converge about four times faster.
+
+    `focus_types` are the question types the last mega-litigation marked weak.
+    On those, coverage runs longer before the trial starts exploiting its
+    leader: a wrong early winner is most costly exactly where the student is
+    weakest, and that is where the extra exploration buys the most.
     """
     if practice_style == "diagnostic":
         return None
@@ -331,7 +348,10 @@ def assign_strategy_trial(user_id: str, question: Question, practice_style: str,
     seed = f"{user_id}:{question.id}:{position}:{practice_style}"
     minimum = min((len(grouped[key]) for key in candidates), default=0)
     under_sampled = [key for key in candidates if len(grouped[key]) == minimum]
-    if minimum < 3:
+    coverage_target = (
+        FOCUS_COVERAGE_TRIALS if question.question_type in (focus_types or ()) else BASE_COVERAGE_TRIALS
+    )
+    if minimum < coverage_target:
         index = int(_stable_fraction(f"coverage:{seed}") * len(under_sampled)) % len(under_sampled)
         key = under_sampled[index]
     else:

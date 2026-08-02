@@ -55,15 +55,79 @@ function useGame() {
 }
 
 
+function MegaLitigationGate({
+  questions,
+  minutes,
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  questions: number
+  minutes: number
+  pending: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  // Escape backs out. The scrim itself is inert: a click-to-dismiss div is not
+  // reachable by keyboard, and this gate is the one screen that must be read.
+  useEffect(() => {
+    const dismiss = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', dismiss)
+    return () => window.removeEventListener('keydown', dismiss)
+  }, [onCancel])
+
+  return (
+    <div className="mega-gate-scrim" role="dialog" aria-modal="true" aria-labelledby="mega-gate-title">
+      <section className="mega-gate">
+        <span>MEGA-LITIGATION</span>
+        <h2 id="mega-gate-title">This is basically a full practice LSAT.</h2>
+        <p>
+          {questions} questions across three blocks, sat the way the real test is sat. Start it only when you have the
+          whole {minutes} minutes free.
+        </p>
+        <ul>
+          <li>
+            <Clock3 size={17} />
+            <div><strong>One clock for the whole form — about {minutes} minutes.</strong><span>Spend it however you like across the {questions} questions. It does not stop between them.</span></div>
+          </li>
+          <li>
+            <ShieldAlert size={17} />
+            <div><strong>One sitting. There is no pause and no save.</strong><span>The clock keeps running if you close the tab, and whatever is unanswered when it hits zero is submitted blank.</span></div>
+          </li>
+          <li>
+            <Trophy size={17} />
+            <div><strong>Above 70% and your firm moves up a tier.</strong><span>Every prerequisite upgrade for that tier is unlocked with it, at no cost.</span></div>
+          </li>
+          <li>
+            <Target size={17} />
+            <div><strong>Nothing here pays, prompts, or coaches you.</strong><span>That is what makes it the honest read — and what it finds is what your case runs practice next.</span></div>
+          </li>
+        </ul>
+        <div className="mega-gate-actions">
+          <button type="button" className="mega-gate-cancel" onClick={onCancel}>Not right now</button>
+          <button type="button" className="primary-button" onClick={onConfirm} disabled={pending}>
+            {pending ? 'Filing…' : "I have the time — start"} <ArrowRight />
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+
 export function PerformancePage() {
   const navigate = useNavigate()
   const { play } = useSound()
   const performanceQuery = useQuery({ queryKey: ['performance'], queryFn: api.performance })
   const diagnosticQuery = useQuery({ queryKey: ['diagnostic'], queryFn: api.currentDiagnostic })
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
+  // The clock starts the moment the form is created, so creation sits behind
+  // the gate rather than in front of it.
+  const [gateOpen, setGateOpen] = useState(false)
   const startDiagnostic = useMutation({
     mutationFn: () => api.startDiagnostic(1),
     onSuccess: ({ session }) => {
+      setGateOpen(false)
       void play('file-open', { seed: `diagnostic:${session.id}`, intensity: .64 })
       navigate(`/cases/${session.id}`)
     },
@@ -131,8 +195,9 @@ export function PerformancePage() {
   }
   const openDiagnostic = () => {
     if (diagnosticSession) navigate(`/cases/${diagnosticSession.id}`)
-    else startDiagnostic.mutate()
+    else setGateOpen(true)
   }
+  const focus = performance.focus ?? { types: [], session_id: null, completed_at: null, baseline_accuracy: null, explanation: '' }
 
   return (
     <div className="performance-page page-wrap">
@@ -145,7 +210,7 @@ export function PerformancePage() {
           <div className="mobile-training-score" aria-label={`${testMetrics.accuracy} percent diagnostic accuracy`}>
             <strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><span>{testMetrics.attempts ? '%' : 'NEW'}</span>
           </div>
-          <div><small>DIAGNOSTIC ACCURACY</small><p>{testMetrics.attempts ? `${testMetrics.attempts} verified attempts · ${readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}` : 'Take the baseline diagnostic to establish your line.'}</p></div>
+          <div><small>MEGA-LITIGATION ACCURACY</small><p>{testMetrics.attempts ? `${testMetrics.attempts} verified attempts · ${readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}` : 'Sit a mega-litigation — a full practice LSAT — to establish your line.'}</p></div>
         </div>
         <div className="mobile-training-metrics" aria-label="Training evidence">
           <div><span>Average split</span><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong></div>
@@ -154,11 +219,11 @@ export function PerformancePage() {
         </div>
         <div className="mobile-training-priority">
           <Target size={19} />
-          <div><span>TRAINING PRIORITY</span><strong>{performance.recommendation?.skill ?? 'Establish your baseline'}</strong><small>{performance.recommendation ? `${performance.recommendation.accuracy}% current accuracy · ${performance.recommendation.reason}` : 'A diagnostic will identify the first weakness.'}</small></div>
+          <div><span>TRAINING PRIORITY</span><strong>{performance.recommendation?.skill ?? 'Establish your baseline'}</strong><small>{performance.recommendation ? `${performance.recommendation.accuracy}% current accuracy · ${performance.recommendation.reason}` : 'A mega-litigation will identify the first weakness.'}</small></div>
         </div>
         <div className="mobile-training-actions">
           <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Continue current run' : 'Start 10 cases'} <ArrowRight /></button>
-          <button className="mobile-training-secondary" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume diagnostic' : performance.diagnostic ? 'Run a new diagnostic' : 'Take baseline diagnostic'}</button>
+          <button className="mobile-training-secondary" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'}</button>
         </div>
       </section>
 
@@ -169,13 +234,13 @@ export function PerformancePage() {
           <p>Timed unseen accuracy is the headline. Review recovery, confidence, and pacing explain what to train next.</p>
           <div className="performance-actions">
             <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10 cases'} <ArrowRight /></button>
-            <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume diagnostic' : performance.diagnostic ? 'Retake diagnostic' : 'Take baseline diagnostic'}</button>
+            <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'}</button>
           </div>
         </div>
-        <div className="speedrun-index" aria-label={`${testMetrics.accuracy} percent diagnostic accuracy`}>
+        <div className="speedrun-index" aria-label={`${testMetrics.accuracy} percent mega-litigation accuracy`}>
           <div className="index-ring" style={{ '--index': `${testMetrics.accuracy * 3.6}deg` } as React.CSSProperties}><span><strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><small>{testMetrics.attempts ? '%' : 'NO DATA'}</small></span></div>
-          <small>DIAGNOSTIC ACCURACY</small>
-          <p>{testMetrics.attempts} diagnostic question{testMetrics.attempts === 1 ? '' : 's'} · {readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}</p>
+          <small>MEGA-LITIGATION ACCURACY</small>
+          <p>{testMetrics.attempts} measured question{testMetrics.attempts === 1 ? '' : 's'} · {readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}</p>
         </div>
         <PixelStudyScenery variant="training" className="performance-hero-scenery" />
       </section>
@@ -185,8 +250,8 @@ export function PerformancePage() {
       </section>
 
       <section className="performance-metrics" aria-label="Core LSAT performance measures">
-        <article><div><Target /><span>DIAGNOSTIC PERFORMANCE</span></div><strong>{testMetrics.attempts ? `${testMetrics.accuracy}%` : '—'}</strong><small>{testMetrics.attempts} diagnostic attempts · {testMetrics.pace_adherence}% inside target</small></article>
-        <article><div><TimerReset /><span>AVERAGE SPLIT</span></div><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong><small>Diagnostic work only</small></article>
+        <article><div><Target /><span>MEGA-LITIGATION PERFORMANCE</span></div><strong>{testMetrics.attempts ? `${testMetrics.accuracy}%` : '—'}</strong><small>{testMetrics.attempts} measured attempts · {testMetrics.pace_adherence}% inside an even split of the clock</small></article>
+        <article><div><TimerReset /><span>AVERAGE SPLIT</span></div><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong><small>Mega-litigation work only</small></article>
         <article><div><Brain /><span>COACHED PRACTICE</span></div><strong>{performance.coached_practice.attempts ? `${performance.coached_practice.accuracy}%` : '—'}</strong><small>{performance.coached_practice.attempts} case{performance.coached_practice.attempts === 1 ? '' : 's'} · {performance.coached_practice.reasoning === null ? 'no grades yet' : `${performance.coached_practice.reasoning}% mean explanation`}</small></article>
         <article><div><Brain /><span>REVIEW RECOVERY</span></div><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong><small>{reviewMetrics.due} due · {reviewMetrics.scheduled} scheduled · {reviewMetrics.mastered} mastered</small></article>
         <article><div><Gauge /><span>CONFIDENCE ERRORS</span></div><strong>{confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`}</strong><small>High-confidence misses across {confidenceMetrics.sample} rated answers</small></article>
@@ -249,15 +314,21 @@ export function PerformancePage() {
 
       <section className="diagnostic-lab">
         <div className="diagnostic-copy">
-          <span className="eyebrow">BASELINE DIAGNOSTIC</span>
-          <h2>{performance.diagnostic ? 'Your first performance anchor is set.' : 'Measure before you optimize.'}</h2>
-          <p>A sectioned {diagnosticSize}-question LR/RC baseline with delayed results. It changes no currency, reputation, streak, or firm progress.</p>
-          <ul><li>Raw verified accuracy</li><li>Section pacing</li><li>Omissions</li><li>Confidence calibration</li></ul>
-          <button className="primary-button" onClick={() => diagnosticSession ? navigate(`/cases/${diagnosticSession.id}`) : startDiagnostic.mutate()} disabled={startDiagnostic.isPending}>{diagnosticSession ? 'Continue baseline' : performance.diagnostic ? 'Run a new baseline' : 'Start diagnostic'} <ArrowRight /></button>
+          <span className="eyebrow">MEGA-LITIGATION</span>
+          <h2>{performance.diagnostic ? 'Your performance anchor is set.' : 'Basically a full practice LSAT.'}</h2>
+          <p>{diagnosticSize} LR and RC questions in three blocks under a single {diagnosticMinutes}-minute clock, with results held to the end. It takes one sitting and there is no pause. Take one whenever you like — nothing in the firm waits on it.</p>
+          <ul><li>Above 70% promotes your firm a tier</li><li>Prerequisite upgrades unlocked free</li><li>Sets what your case runs practice</li><li>Pays nothing, prompts nothing, coaches nothing</li></ul>
+          <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>{diagnosticSession ? 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight /></button>
         </div>
         <div className="diagnostic-score">
-          {performance.diagnostic ? <><small>RAW DIAGNOSTIC RESULT</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.raw_total ?? performance.diagnostic.summary.questions_completed}</strong><span>{performance.diagnostic.summary.accuracy}% verified accuracy</span><p>{performance.diagnostic.projection_note ?? 'A scaled score is withheld until the form has a validated conversion.'}</p></> : <><small>{diagnosticSession ? 'BASELINE IN PROGRESS' : 'NO BASELINE YET'}</small><strong>—</strong><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>Scaled-score projections remain withheld until a form has a validated conversion.</p></>}
+          {performance.diagnostic ? <><small>LAST FORM SCORE</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong><span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span><p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p></> : <><small>{diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small><strong>—</strong><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>Scaled-score projections remain withheld until a form has a validated conversion.</p></>}
         </div>
+      </section>
+
+      <section className="focus-panel" aria-label="What practice is weighted toward">
+        <div className="panel-heading"><div><span>PRACTICE FOCUS</span><h2>{focus.types.length ? focus.types.join(' · ') : 'Weighted evenly across the test'}</h2></div><Target /></div>
+        <p>{focus.explanation}</p>
+        {focus.baseline_accuracy !== null && <small>Measured against your own {focus.baseline_accuracy}% on that form, not a fixed bar.</small>}
       </section>
 
       <section className="evidence-class-panel" aria-label="Evidence coverage">
@@ -265,9 +336,9 @@ export function PerformancePage() {
         <div className="readiness-grid">
           <div><strong>{readiness.lr_samples}</strong><span>Timed LR</span><small>40 recommended</small></div>
           <div><strong>{readiness.rc_samples}</strong><span>Timed RC</span><small>20 recommended</small></div>
-          <div><strong>{readiness.completed_diagnostics}</strong><span>Diagnostics</span><small>1 required</small></div>
+          <div><strong>{readiness.completed_diagnostics}</strong><span>Mega-litigations</span><small>1 recommended</small></div>
         </div>
-        <details><summary>How evidence is separated</summary><p>The diagnostic estimates test performance: it pays nothing, prompts nothing, and coaches nothing. Everything else is coached practice, reported separately. Repeated questions never inflate the diagnostic headline.</p></details>
+        <details><summary>How evidence is separated</summary><p>A mega-litigation is a full practice LSAT, and the only thing that estimates test performance: it pays nothing, prompts nothing, and coaches nothing. Everything else is coached practice, reported separately. Repeated questions never inflate the headline.</p></details>
       </section>
 
       <section className="performance-grid">
@@ -284,16 +355,18 @@ export function PerformancePage() {
 
         <article className="priority-panel">
           <div className="panel-heading"><div><span>WEAKEST-LINK SIGNAL</span><h2>{performance.recommendation?.skill ?? 'Still collecting evidence'}</h2></div><Target /></div>
-          {performance.recommendation ? <><strong>{performance.recommendation.accuracy}% accuracy</strong><p>Recommended because it currently has the {performance.recommendation.reason}.</p><button className="focus-sprint-button" disabled={startFocus.isPending || Boolean(activePractice)} onClick={() => startFocus.mutate(performance.recommendation!.skill)}>{activePractice ? 'Finish current run first' : startFocus.isPending ? 'Building focus sprint…' : 'Run 3 focused questions'} <ArrowRight size={15} /></button><small>Experimental: this signal updates after every reviewed answer.</small></> : <><p>Complete the diagnostic or a few cases to identify the first training priority.</p><small>No weakness is inferred without evidence.</small></>}
+          {performance.recommendation ? <><strong>{performance.recommendation.accuracy}% accuracy</strong><p>Recommended because it currently has the {performance.recommendation.reason}.</p><button className="focus-sprint-button" disabled={startFocus.isPending || Boolean(activePractice)} onClick={() => startFocus.mutate(performance.recommendation!.skill)}>{activePractice ? 'Finish current run first' : startFocus.isPending ? 'Building focus sprint…' : 'Run 3 focused questions'} <ArrowRight size={15} /></button><small>Experimental: this signal updates after every reviewed answer.</small></> : <><p>Run a few cases, or sit a mega-litigation, to identify the first training priority.</p><small>No weakness is inferred without evidence.</small></>}
         </article>
       </section>
 
       <section className="skill-table-panel">
         <div className="panel-heading"><div><span>SKILL MATRIX</span><h2>Where the points are actually moving</h2></div><Brain /></div>
-        {performance.skills.length ? <div className="skill-table"><div className="skill-row header"><span>Question type</span><span>Sample</span><span>Accuracy</span><span>Pace</span><span>Reasoning</span></div>{performance.skills.map((skill) => <div className="skill-row" key={skill.name}><strong>{skill.name}</strong><span>{skill.attempts}</span><span><i style={{ width: `${skill.accuracy}%` }} />{skill.accuracy}%</span><span>{skill.pace_adherence}%</span><span>{skill.reasoning === null ? '—' : `${skill.reasoning}%`}</span></div>)}</div> : <div className="empty-skills"><p>No skill claims yet. The diagnostic creates the first evidence-backed matrix.</p></div>}
+        {performance.skills.length ? <div className="skill-table"><div className="skill-row header"><span>Question type</span><span>Sample</span><span>Accuracy</span><span>Pace</span><span>Reasoning</span></div>{performance.skills.map((skill) => <div className="skill-row" key={skill.name}><strong>{skill.name}</strong><span>{skill.attempts}</span><span><i style={{ width: `${skill.accuracy}%` }} />{skill.accuracy}%</span><span>{skill.pace_adherence}%</span><span>{skill.reasoning === null ? '—' : `${skill.reasoning}%`}</span></div>)}</div> : <div className="empty-skills"><p>No skill claims yet. A mega-litigation creates the first evidence-backed matrix.</p></div>}
       </section>
         </div>
       </div>
+
+      {gateOpen && <MegaLitigationGate questions={diagnosticSize} minutes={diagnosticMinutes} pending={startDiagnostic.isPending} onConfirm={() => startDiagnostic.mutate()} onCancel={() => setGateOpen(false)} />}
 
       {(startDiagnostic.error || startCases.error || startFocus.error) && <ErrorNotice error={startDiagnostic.error || startCases.error || startFocus.error} />}
     </div>
@@ -1052,12 +1125,20 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
     <div className="session-review-page page-wrap">
       <section className="review-summary-hero">
         <div>
-          <span className="eyebrow">{isDiagnostic ? 'DIAGNOSTIC COMPLETE' : 'DEEP BRIEF'}</span>
+          <span className="eyebrow">{isDiagnostic ? 'MEGA-LITIGATION COMPLETE' : 'DEEP BRIEF'}</span>
           <h1>{priorityItems.length ? 'Brief the decisions that can change your next run.' : 'Clean run. Confirm what held.'}</h1>
-          <p>Results are separated from firm currency and rank. Open any question for a concise rationale; only mistakes and uncertainty enter repair.</p>
+          <p>{isDiagnostic ? 'A full practice LSAT pays no fees and moves no streak — only the tier promotion above 70%. Open any question for a concise rationale; only mistakes and uncertainty enter repair.' : 'Results are separated from firm currency and rank. Open any question for a concise rationale; only mistakes and uncertainty enter repair.'}</p>
         </div>
-        <div className="review-score"><strong>{summary.accuracy}%</strong><span>{summary.correct} of {summary.questions_completed} correct</span><small>{summary.elapsed_minutes} minutes</small></div>
+        <div className="review-score"><strong>{isDiagnostic && summary.form_accuracy !== undefined ? summary.form_accuracy : summary.accuracy}%</strong><span>{summary.correct} of {summary.questions_completed} correct</span><small>{summary.elapsed_minutes} minutes</small></div>
       </section>
+
+      {summary.promotion && (
+        <section className="promotion-banner" aria-label="Firm promotion">
+          <div><span>THE FIRM MOVED UP</span><strong>{summary.promotion.name}</strong><p>Clearing 70% of the form promoted you to tier {summary.promotion.tier}. Reputation was raised to {summary.promotion.reputation_after}.</p></div>
+          {summary.promotion.granted_assets.length > 0 && <ul>{summary.promotion.granted_assets.map((asset) => <li key={asset.key}>{asset.name}</li>)}</ul>}
+          <small>{summary.promotion.granted_assets.length ? `${summary.promotion.granted_assets.length} prerequisite ${summary.promotion.granted_assets.length === 1 ? 'upgrade was' : 'upgrades were'} unlocked free — ${formatMoney(summary.promotion.waived_cost)} waived.` : 'You already owned every prerequisite for this tier.'}</small>
+        </section>
+      )}
 
       <section className="review-signal-row" aria-label="Run signals">
         <article><Target /><span>Accuracy</span><strong>{summary.accuracy}%</strong></article>
@@ -1176,7 +1257,10 @@ export function CaseSessionPage() {
   if (session.status === 'completed' && !session.pending_result) return <CompletedSessionReview sessionId={session.id} />
   return (
     <div className="session-page">
-      {!session.pending_result && <div className="session-controls"><PauseButton sessionId={session.id} returnTo={session.mode === 'diagnostic' ? '/progress' : '/office'} /></div>}
+      {/* A mega-litigation runs in one sitting, so there is no pause to offer — the server refuses one. */}
+      {!session.pending_result && (session.mode === 'diagnostic'
+        ? <div className="session-controls"><span className="one-sitting-note">One sitting · the clock does not stop</span></div>
+        : <div className="session-controls"><PauseButton sessionId={session.id} returnTo="/office" /></div>)}
       <QuestionFlow session={session} />
     </div>
   )

@@ -1180,6 +1180,69 @@ def advance_firm(profile: PlayerProfile, target_tier: int) -> None:
     db.session.commit()
 
 
+MEGA_LITIGATION_LEDGER_KIND = "mega_litigation_promotion"
+
+
+def grant_mega_litigation_promotion(profile: PlayerProfile, session_id: str) -> dict | None:
+    """Promote the firm one tier for winning a mega-litigation.
+
+    This is the one advancement that ignores the tier's cash price, its
+    reputation floor, and its prerequisite purchases — the missing prerequisites
+    are handed over instead, at no charge, because a firm cannot hold a tier
+    whose fittings it does not own. Everything after the promotion is priced
+    normally, so a student who skips ahead still has to earn the next one.
+
+    Returns None when there is nothing to grant: the firm is already at the top,
+    or this run has already paid out. Idempotency is real rather than advisory —
+    `uq_ledger_source` spans (user_id, kind, source_id) and the source is the
+    session, so a second finalization of the same run cannot double-promote.
+    """
+    profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
+    next_tier_number = profile.office_tier + 1
+    if next_tier_number >= len(FIRM_TIERS):
+        db.session.commit()
+        return None
+    already_paid = LedgerEntry.query.filter_by(
+        user_id=profile.user_id,
+        kind=MEGA_LITIGATION_LEDGER_KIND,
+        source_id=_scoped_source(profile, session_id),
+    ).first()
+    if already_paid:
+        db.session.commit()
+        return None
+
+    tier = FIRM_TIERS[next_tier_number]
+    granted = _missing_tier_assets(next_tier_number, _owned_keys(profile))
+    for asset_key in granted:
+        item = ASSET_BY_KEY[asset_key]
+        db.session.add(
+            PlayerAsset(
+                profile_id=profile.id,
+                asset_key=asset_key,
+                asset_type=item["type"],
+                purchase_price=0,
+            )
+        )
+    reputation_before = profile.reputation
+    # Clients and assets unlock off reputation, so a firm parked at a tier its
+    # own standing cannot support would show a floor of locked work.
+    if profile.reputation < tier["reputation"]:
+        profile.reputation = float(tier["reputation"])
+    profile.office_tier = next_tier_number
+    detail = {
+        "name": tier["name"],
+        "tier": next_tier_number,
+        "granted_assets": [{"key": key, "name": ASSET_BY_KEY[key]["name"]} for key in granted],
+        "waived_cost": tier["cost"],
+        "reputation_before": round(reputation_before, 1),
+        "reputation_after": round(profile.reputation, 1),
+    }
+    _ledger(profile, MEGA_LITIGATION_LEDGER_KIND, session_id, 0, detail)
+    db.session.commit()
+    return detail
+
+
 def select_client(profile: PlayerProfile, client_key: str) -> None:
     client = CLIENT_BY_KEY.get(client_key)
     if not client:

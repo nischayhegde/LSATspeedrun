@@ -2992,3 +2992,474 @@ def test_explanation_floor_boundary_matches_the_published_minimum(app):
         headers={**headers, "Idempotency-Key": "exact-cases"},
     )
     assert exact.status_code == 200
+
+
+def _answer_mega_litigation(client, headers, session: dict, correct: int, marker: str) -> dict:
+    """Sit the whole form, getting exactly ``correct`` questions right.
+
+    Every fixture question is keyed "C", so a wrong answer is any other label.
+    The diagnostic releases feedback at the end, so no debrief stands between
+    questions and each answer is followed straight by the next.
+    """
+    session_id = session["id"]
+    for position in range(session["total_items"]):
+        current = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+        item = current.get("current_item")
+        if not item:
+            break
+        answered = client.post(
+            f"/v1/study-sessions/{session_id}/attempts",
+            json={"item_id": item["id"], "selected_label": "C" if position < correct else "A"},
+            headers={**headers, "Idempotency-Key": f"{marker}-{position}"},
+        )
+        assert answered.status_code == 200, answered.json
+    return client.get(f"/v1/study-sessions/{session_id}", headers=headers).json
+
+
+def _expire_mega_litigation(session_id: str) -> None:
+    """Move a running form's deadline into the past without touching its status.
+
+    Written straight to the column so the run stays exactly as the student left
+    it — the point of each test that calls this is what the *next* request does
+    when it finds the clock already spent.
+    """
+    db.session.execute(
+        update(StudySession)
+        .where(StudySession.id == session_id)
+        .values(deadline_at=utcnow() - timedelta(minutes=1))
+    )
+    db.session.commit()
+
+
+def test_a_mega_litigation_runs_on_one_whole_form_clock(app):
+    """One deadline for the sitting, and one even per-question budget under it.
+
+    The blocks keep their labels and boundaries but lose their minutes: with a
+    single clock, a per-section budget would be a number nothing enforces.
+    """
+    client = app.test_client()
+    headers = login(client, "mega-clock@example.test")
+    create_game(client, headers)
+
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    assert session["deadline_at"]
+    assert session["time_limit_seconds"] == session["target_minutes"] * 60
+    assert 0 < session["remaining_ms"] <= session["time_limit_seconds"] * 1000
+    assert all("minutes" not in block for block in session["section_plan"])
+    assert [block["label"] for block in session["section_plan"]] == [
+        "Logical Reasoning I",
+        "Reading Comprehension",
+        "Logical Reasoning II",
+    ]
+
+    with app.app_context():
+        record = db.session.get(StudySession, session["id"])
+        assert record.deadline_at - record.started_at == timedelta(minutes=record.target_minutes)
+        even_split = round(record.target_minutes * 60 / record.total_items)
+        targets = {item.target_time_seconds for item in SessionItem.query.filter_by(session_id=record.id)}
+        # One budget for every question, not the old 150s LR / 330s RC targets
+        # that summed to more than twice the form's own clock.
+        assert targets == {even_split}
+
+
+def test_a_mega_litigation_cannot_be_paused_or_resumed(app):
+    """One sitting means the clock is wall-clock, and nothing stops wall-clock."""
+    client = app.test_client()
+    headers = login(client, "mega-no-pause@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+
+    paused = client.post(f"/v1/study-sessions/{session['id']}/pause", headers=headers)
+    assert paused.status_code == 409
+    assert paused.json["error"]["code"] == "diagnostic_no_pause"
+
+    resumed = client.post(f"/v1/study-sessions/{session['id']}/resume", headers=headers)
+    assert resumed.status_code == 409
+    assert resumed.json["error"]["code"] == "diagnostic_no_pause"
+
+    with app.app_context():
+        assert db.session.get(StudySession, session["id"]).status == "in_progress"
+
+
+def test_the_clock_running_out_submits_the_mega_litigation_as_it_stood(app):
+    client = app.test_client()
+    headers = login(client, "mega-expired@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    total = session["total_items"]
+
+    client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": session["current_item"]["id"], "selected_label": "C"},
+        headers={**headers, "Idempotency-Key": "expired-one"},
+    )
+    current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
+
+    with app.app_context():
+        _expire_mega_litigation(session["id"])
+
+    late = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={"item_id": current["current_item"]["id"], "selected_label": "C"},
+        headers={**headers, "Idempotency-Key": "expired-two"},
+    )
+    assert late.status_code == 409
+    assert late.json["error"]["code"] == "diagnostic_expired"
+
+    finished = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json
+    assert finished["session"]["status"] == "completed"
+    assert finished["session"]["remaining_ms"] == 0
+    assert finished["summary"]["questions_completed"] == 1
+    assert finished["summary"]["omitted"] == total - 1
+    # Everything unanswered counts against the paper, so the form score is not
+    # the accuracy of the one question that was reached.
+    assert finished["summary"]["accuracy"] == 100
+    assert finished["summary"]["form_accuracy"] == round(100 / total)
+
+    with app.app_context():
+        record = db.session.get(StudySession, session["id"])
+        # Credited to the moment the clock ran out, not to whenever the student
+        # next happened to make a request.
+        assert record.completed_at == record.deadline_at
+
+
+def test_an_expired_mega_litigation_stops_being_the_active_one(app):
+    """The clock frees the student to start another form without asking anyone."""
+    client = app.test_client()
+    headers = login(client, "mega-restart@example.test")
+    create_game(client, headers)
+    first = client.post("/v1/diagnostics", headers=headers).json["session"]
+
+    with app.app_context():
+        _expire_mega_litigation(first["id"])
+        user = User.query.filter_by(email="mega-restart@example.test").one()
+
+        from app.services import find_active_diagnostic
+
+        assert find_active_diagnostic(user) is None
+        assert db.session.get(StudySession, first["id"]).status == "completed"
+
+    current = client.get("/v1/diagnostics/current", headers=headers).json
+    assert current["session"] is None
+    assert current["latest"]["session"]["id"] == first["id"]
+
+    second = client.post("/v1/diagnostics", headers=headers)
+    assert second.status_code == 201
+    assert second.json["session"]["id"] != first["id"]
+
+
+def test_clearing_a_mega_litigation_promotes_the_firm_and_unlocks_prerequisites(app):
+    """Above 70% of the whole form: one tier, every gate opened, nothing paid."""
+    client = app.test_client()
+    headers = login(client, "mega-promoted@example.test")
+    profile_id = create_game(client, headers)["id"]
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    total = session["total_items"]
+    cleared = int(0.70 * total) + 1
+
+    finished = _answer_mega_litigation(client, headers, session, cleared, "promoted")
+    summary = finished["summary"]
+    assert summary["correct"] == cleared
+    assert summary["form_accuracy"] > 70
+
+    promotion = summary["promotion"]
+    required = {
+        asset["key"] for asset in ASSETS if asset["type"] in TIER_GATED_ASSET_TYPES and asset["tier"] < 1
+    }
+    assert promotion["tier"] == 1
+    assert promotion["name"] == FIRM_TIERS[1]["name"]
+    assert {granted["key"] for granted in promotion["granted_assets"]} == required
+    assert promotion["waived_cost"] == FIRM_TIERS[1]["cost"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        assert profile.office_tier == 1
+        # Reputation follows the firm up: clients and assets unlock off
+        # reputation, so a tier-1 office standing at tier-0 esteem would show
+        # its owner a floor of work they cannot take.
+        assert profile.reputation >= FIRM_TIERS[1]["reputation"]
+        assert profile.cash == 250
+        assert {asset.asset_key for asset in PlayerAsset.query.filter_by(profile_id=profile.id)} == required
+        assert all(asset.purchase_price == 0 for asset in PlayerAsset.query.filter_by(profile_id=profile.id))
+        entry = LedgerEntry.query.filter_by(kind="mega_litigation_promotion").one()
+        assert entry.amount == 0
+
+
+def test_a_mega_litigation_under_the_bar_promotes_nothing(app):
+    client = app.test_client()
+    headers = login(client, "mega-short@example.test")
+    profile_id = create_game(client, headers)["id"]
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    short = int(0.70 * session["total_items"])
+
+    finished = _answer_mega_litigation(client, headers, session, short, "short")
+    assert finished["summary"]["form_accuracy"] <= 70
+    assert "promotion" not in finished["summary"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        assert profile.office_tier == 0
+        assert PlayerAsset.query.filter_by(profile_id=profile.id).count() == 0
+        assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 0
+
+
+def test_a_promotion_is_paid_once_however_often_the_form_is_finalized(app):
+    """Finalization is reachable from the last answer and from the clock alike."""
+    client = app.test_client()
+    headers = login(client, "mega-once@example.test")
+    profile_id = create_game(client, headers)["id"]
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    cleared = int(0.70 * session["total_items"]) + 1
+    _answer_mega_litigation(client, headers, session, cleared, "once")
+
+    with app.app_context():
+        from app.services import finalize_diagnostic
+
+        record = db.session.get(StudySession, session["id"])
+        summary = finalize_diagnostic(record)
+        assert summary["promotion"]["tier"] == 1
+        assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 1
+        assert PlayerProfile.query.filter_by(id=profile_id).one().office_tier == 1
+
+
+def test_a_promotion_at_the_top_of_the_ladder_is_a_no_op(app):
+    client = app.test_client()
+    headers = login(client, "mega-topped-out@example.test")
+    profile_id = create_game(client, headers)["id"]
+
+    with app.app_context():
+        from app.game import grant_mega_litigation_promotion
+
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        profile.office_tier = len(FIRM_TIERS) - 1
+        db.session.commit()
+
+        assert grant_mega_litigation_promotion(profile, "nowhere-left-to-go") is None
+        assert PlayerProfile.query.filter_by(id=profile_id).one().office_tier == len(FIRM_TIERS) - 1
+        assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 0
+
+
+def _completed_mega_litigation(user_id: str, results: list[tuple[Question, bool]]) -> StudySession:
+    """A finished form with a chosen right/wrong answer per question."""
+    session = StudySession(
+        user_id=user_id,
+        mode="diagnostic",
+        practice_style="diagnostic",
+        feedback_policy="delayed",
+        target_minutes=24,
+        total_items=len(results),
+        status="completed",
+        completed_at=utcnow(),
+    )
+    db.session.add(session)
+    db.session.flush()
+    for position, (question, is_correct) in enumerate(results):
+        item = SessionItem(
+            session_id=session.id,
+            question_id=question.id,
+            position=position,
+            requires_reasoning=False,
+            target_time_seconds=84,
+        )
+        db.session.add(item)
+        db.session.flush()
+        db.session.add(
+            Attempt(
+                user_id=user_id,
+                session_item_id=item.id,
+                idempotency_key=f"focus-{session.id}-{position}",
+                selected_label="C" if is_correct else "A",
+                is_correct=is_correct,
+                confidence=3,
+                server_elapsed_ms=60_000,
+                evidence_class="diagnostic",
+            )
+        )
+    db.session.commit()
+    return session
+
+
+def test_focus_types_are_the_weak_spots_of_the_latest_mega_litigation(app):
+    """Weak means below this student's own average on this form, not below a fixed bar."""
+    with app.app_context():
+        user = User(email="focus-types@example.test", display_name="Focus")
+        db.session.add(user)
+        db.session.flush()
+        questions = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).all()
+        for index, question in enumerate(questions[:6]):
+            question.question_type = ["Flaw", "Flaw", "Assumption", "Assumption", "Inference", "Inference"][index]
+        db.session.commit()
+
+        flaw, assumption, inference = questions[0:2], questions[2:4], questions[4:6]
+        _completed_mega_litigation(
+            user.id,
+            [(flaw[0], False), (flaw[1], False)]
+            + [(assumption[0], True), (assumption[1], False)]
+            + [(inference[0], True), (inference[1], True)],
+        )
+
+        from app.focus import diagnostic_focus_detail
+
+        detail = diagnostic_focus_detail(user.id)
+        # The form ran at 50%. Flaw (0%) and Assumption (50%)... Assumption sits
+        # on the average, not under it, so only Flaw qualifies.
+        assert detail["baseline_accuracy"] == 50
+        assert detail["types"] == ["Flaw"]
+
+
+def test_a_type_seen_once_in_a_mega_litigation_is_not_yet_a_weakness(app):
+    """One unlucky question must not brand a whole question type."""
+    with app.app_context():
+        user = User(email="focus-sample@example.test", display_name="Sample")
+        db.session.add(user)
+        db.session.flush()
+        questions = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).all()
+        questions[0].question_type = "Parallel Reasoning"
+        for question in questions[1:4]:
+            question.question_type = "Inference"
+        db.session.commit()
+
+        _completed_mega_litigation(
+            user.id,
+            [(questions[0], False), (questions[1], True), (questions[2], True), (questions[3], False)],
+        )
+
+        from app.focus import diagnostic_focus
+
+        assert diagnostic_focus(user.id) == []
+
+
+def test_a_focused_case_run_draws_most_of_its_questions_from_those_types(app):
+    """A bias, not a filter: the rest of the test still gets practiced."""
+    with app.app_context():
+        questions = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).all()
+        for question in questions[:4]:
+            question.question_type = "Flaw"
+        db.session.commit()
+
+        from app.services import FOCUS_FILL_RATIO, select_random_questions
+
+        size = 5
+        for _ in range(8):
+            picked = select_random_questions(size, focus_types=["Flaw"])
+            assert len(picked) == size
+            focused = sum(question.question_type == "Flaw" for question in picked)
+            assert focused >= round(size * FOCUS_FILL_RATIO)
+            assert focused < size
+
+        # No focus, no bias — the run is a plain sample of everything eligible.
+        unfocused = [
+            sum(question.question_type == "Flaw" for question in select_random_questions(size))
+            for _ in range(8)
+        ]
+        assert min(unfocused) < round(size * FOCUS_FILL_RATIO)
+
+
+def _strategy_observation(user_id: str, question: Question, key: str, index: int, is_correct: bool) -> None:
+    session = StudySession(
+        user_id=user_id,
+        mode="practice",
+        practice_style="cases",
+        feedback_policy="immediate",
+        target_minutes=10,
+        total_items=1,
+    )
+    db.session.add(session)
+    db.session.flush()
+    item = SessionItem(
+        session_id=session.id,
+        question_id=question.id,
+        position=0,
+        requires_reasoning=True,
+        target_time_seconds=150,
+        strategy_key=key,
+        strategy_variant="prompt",
+    )
+    db.session.add(item)
+    db.session.flush()
+    db.session.add(
+        Attempt(
+            user_id=user_id,
+            session_item_id=item.id,
+            idempotency_key=f"coverage-{key}-{index}",
+            selected_label="C" if is_correct else "A",
+            is_correct=is_correct,
+            reasoning_text=explanation(f"the {key} observation {index}"),
+            confidence=3,
+            server_elapsed_ms=60_000,
+            strategy_key=key,
+            strategy_variant="prompt",
+            strategy_applied=True,
+        )
+    )
+
+
+def test_a_weak_type_keeps_exploring_strategies_after_others_have_settled(app):
+    """The extra runway goes where a wrong early winner would cost the most."""
+    with app.app_context():
+        user = User(email="focus-coverage@example.test", display_name="Coverage")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).first()
+
+        from app.strategies import (
+            BASE_COVERAGE_TRIALS,
+            FOCUS_COVERAGE_TRIALS,
+            _candidate_keys,
+            assign_strategy_trial,
+        )
+
+        candidates = _candidate_keys(question)
+        assert len(candidates) > 1
+        starved, *settled = candidates
+        # Every approach but one has cleared the base coverage bar, and the one
+        # that has not is also the worst performer — so coverage and exploit
+        # cannot pick the same key.
+        for index in range(BASE_COVERAGE_TRIALS):
+            _strategy_observation(user.id, question, starved, index, is_correct=False)
+        for key in settled:
+            for index in range(BASE_COVERAGE_TRIALS + 1):
+                _strategy_observation(user.id, question, key, index, is_correct=True)
+        db.session.commit()
+
+        assert BASE_COVERAGE_TRIALS < FOCUS_COVERAGE_TRIALS
+        assert assign_strategy_trial(user.id, question, "cases", 1)["key"] != starved
+        focused = assign_strategy_trial(
+            user.id, question, "cases", 1, focus_types=[question.question_type]
+        )
+        assert focused["key"] == starved
+        # The focus list is read by question type, not applied to everything.
+        elsewhere = assign_strategy_trial(user.id, question, "cases", 1, focus_types=["Some Other Type"])
+        assert elsewhere["key"] != starved
+
+
+def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
+    client = app.test_client()
+    headers = login(client, "mega-report@example.test")
+    create_game(client, headers)
+
+    blank = client.get("/v1/performance", headers=headers).json["performance"]
+    assert blank["focus"]["types"] == []
+    assert "Finish a mega-litigation" in blank["focus"]["explanation"]
+
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    total = session["total_items"]
+    _answer_mega_litigation(client, headers, session, total - 1, "report")
+
+    snapshot = client.get("/v1/performance", headers=headers).json["performance"]
+    report = snapshot["diagnostic"]
+    assert report["form_total"] == total
+    assert report["completion_percent"] == 100
+    assert report["time_limit_minutes"] == session["target_minutes"]
+    # The whole sitting is the unit now: how much of the budget went out, and
+    # how much of the paper it bought.
+    assert report["budget_used_percent"] == round(
+        100 * report["elapsed_minutes"] / session["target_minutes"]
+    )
+    assert report["promotion"]["tier"] == 1
+    # The diagnostic pays no per-question cash, so the promotion is the only
+    # thing the whole form put in the ledger.
+    with app.app_context():
+        user = User.query.filter_by(email="mega-report@example.test").one()
+        kinds = {entry.kind for entry in LedgerEntry.query.filter_by(user_id=user.id)}
+        assert kinds == {"opening_balance", "mega_litigation_promotion"}

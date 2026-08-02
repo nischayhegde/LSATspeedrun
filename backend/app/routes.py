@@ -624,7 +624,13 @@ def pause_session(session_id: str):
         return error("session_not_found", "That practice session was not found.", 404)
     try:
         pause_study_session(session)
-    except ValueError:
+    except ValueError as exc:
+        if str(exc) == "diagnostic_no_pause":
+            return error(
+                "diagnostic_no_pause",
+                "A mega-litigation runs in one sitting — its clock cannot be paused.",
+                409,
+            )
         return error("session_complete", "This practice session is already complete.", 409)
     return jsonify({"session": serialize_session(session, False)})
 
@@ -637,7 +643,13 @@ def resume_session(session_id: str):
         return error("session_not_found", "That practice session was not found.", 404)
     try:
         resume_study_session(session)
-    except ValueError:
+    except ValueError as exc:
+        if str(exc) == "diagnostic_no_pause":
+            return error(
+                "diagnostic_no_pause",
+                "A mega-litigation runs in one sitting — its clock never stopped.",
+                409,
+            )
         return error("session_complete", "This practice session is already complete.", 409)
     return jsonify({"session": serialize_session(session)})
 
@@ -725,7 +737,15 @@ def acknowledge_answer_review(session_id: str):
     db.session.commit()
     if completed_batch:
         if session.mode == "diagnostic":
-            return jsonify({"session": serialize_session(session, False), "diagnostic_complete": True})
+            summary = session.summary_json or calculate_session_summary(session)
+            return jsonify(
+                {
+                    "session": serialize_session(session, False),
+                    "diagnostic_complete": True,
+                    "summary": summary,
+                    "promotion": summary.get("promotion"),
+                }
+            )
         return jsonify({"session": serialize_session(session, False), "run_complete": True})
     return jsonify({"session": serialize_session(session)})
 
@@ -749,6 +769,7 @@ def create_attempt(session_id: str):
             "game_context_required": "Reload the current case before submitting it.",
             "idempotency_conflict": "That request identifier was already used.",
             "debrief_required": "Review the current answer before continuing.",
+            "diagnostic_expired": "Time is up. Your mega-litigation has been submitted as it stood.",
             "session_complete": "This practice session is already complete.",
             "invalid_session_item": "This is not the current question. Refresh and try again.",
             "invalid_choice": "Choose one of the available answers.",

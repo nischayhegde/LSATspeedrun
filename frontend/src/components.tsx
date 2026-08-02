@@ -144,34 +144,9 @@ export function useRestoredChrome() {
 }
 
 
-const DIAGNOSTIC_REMINDER_STORAGE_KEY = 'lawyer-speedrun:diagnostic-reminder:dismissed'
-
-
-function DiagnosticReminderBanner({ onNavigate }: { onNavigate: () => void }) {
-  const [dismissed, setDismissed] = useState(() => window.localStorage.getItem(DIAGNOSTIC_REMINDER_STORAGE_KEY) === '1')
-  if (dismissed) return null
-  const dismiss = () => {
-    window.localStorage.setItem(DIAGNOSTIC_REMINDER_STORAGE_KEY, '1')
-    setDismissed(true)
-  }
-  return (
-    <section className="diagnostic-reminder-banner" role="status" aria-label="Diagnostic reminder">
-      <Target size={22} />
-      <div className="diagnostic-reminder-copy">
-        <strong>Your readiness is stuck at “forming” until you take the baseline diagnostic.</strong>
-        <span>It’s the one step that unlocks “ready” status and fills in a section-by-section performance breakdown — scattered practice alone won’t get you there.</span>
-      </div>
-      <div className="diagnostic-reminder-actions">
-        <button type="button" className="diagnostic-reminder-cta" onClick={onNavigate}>
-          Take the diagnostic
-        </button>
-        <button type="button" className="icon-button diagnostic-reminder-dismiss" onClick={dismiss} aria-label="Dismiss diagnostic reminder">
-          <X size={16} />
-        </button>
-      </div>
-    </section>
-  )
-}
+// A mega-litigation blocks nothing and is not required, so nothing nags about
+// one. The Progress tab advertises it where a student is already looking at
+// their own numbers, which is where it is worth taking.
 
 
 export function AppShell({ user, game, children }: { user: User; game?: GameState | null; children: React.ReactNode }) {
@@ -270,9 +245,6 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           )}
         </div>
       </header>
-      {game && !isActiveCase && !user.diagnostic_complete && location.pathname !== '/progress' && (
-        <DiagnosticReminderBanner onNavigate={() => navigate('/progress')} />
-      )}
       <main><RestoreChromeContext.Provider value={setChromeRestored}>{children}</RestoreChromeContext.Provider></main>
       {game && !isActiveCase && mobileMenuOpen && (
         <aside className="mobile-site-menu" role="dialog" aria-modal="true" aria-labelledby="mobile-site-menu-title">
@@ -321,6 +293,16 @@ function formatTime(milliseconds: number) {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+
+/** A whole-form clock runs past an hour, where bare minutes stop reading as a time. */
+function formatCountdown(milliseconds: number) {
+  const totalSeconds = Math.floor(milliseconds / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  if (!hours) return formatTime(milliseconds)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  return `${hours}:${minutes.toString().padStart(2, '0')}:${(totalSeconds % 60).toString().padStart(2, '0')}`
 }
 
 
@@ -570,8 +552,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [mobileCasePane, setMobileCasePane] = useState<'passage' | 'question'>(() => item?.question.passage ? 'passage' : 'question')
   const [clock, setClock] = useState(Date.now())
   const [openedAt, setOpenedAt] = useState(Date.now())
+  const [formClock, setFormClock] = useState(Date.now())
   const verdictRef = useRef<HTMLDivElement>(null)
   const pageTurnRunRef = useRef(0)
+  const formExpiredRef = useRef(false)
 
   useEffect(() => {
     setSelected(item?.draft.selected_label || '')
@@ -593,6 +577,32 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     const interval = window.setInterval(() => setClock(Date.now()), 1000)
     return () => window.clearInterval(interval)
   }, [item?.timer_active, result])
+
+  // The whole-form clock. The server sends the milliseconds left and rejects
+  // anything that arrives after zero; this only counts down between polls, and
+  // re-anchors every time the session is refetched.
+  const formDeadline = useMemo(
+    () => (session.remaining_ms == null ? null : Date.now() + session.remaining_ms),
+    [session.id, session.remaining_ms],
+  )
+  const formRemaining = formDeadline == null ? null : Math.max(0, formDeadline - formClock)
+
+  useEffect(() => {
+    if (formDeadline == null) return
+    formExpiredRef.current = false
+    const interval = window.setInterval(() => setFormClock(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [formDeadline])
+
+  useEffect(() => {
+    if (formRemaining !== 0 || formExpiredRef.current) return
+    // Time is up. The server has already decided; ask it what the form became.
+    formExpiredRef.current = true
+    void queryClient.invalidateQueries({ queryKey: ['session', session.id] })
+    void queryClient.invalidateQueries({ queryKey: ['diagnostic'] })
+    void queryClient.invalidateQueries({ queryKey: ['performance'] })
+    void queryClient.invalidateQueries({ queryKey: ['game'] })
+  }, [formRemaining, queryClient, session.id])
 
   useEffect(() => {
     if (result) verdictRef.current?.focus()
@@ -768,7 +778,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
   const clientKind = caseClient?.icon
   const clientSatisfied = Boolean(result?.is_correct && reward && ['Good', 'Excellent'].includes(reward.explanation_grade))
-  const mobileSessionLabel = isDiagnostic ? 'Diagnostic' : 'Cases'
+  const mobileSessionLabel = isDiagnostic ? 'Mega-litigation' : 'Cases'
 
   const counsel = counselFor(session.id)
   const counselRattled = Boolean(result?.is_correct)
@@ -782,10 +792,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       {isDiagnostic ? (
         <section
           className="learning-mode-banner diagnostic-session-banner"
-          aria-label="Baseline diagnostic in progress"
+          aria-label="Mega-litigation in progress"
         >
-          <div><Target size={20} /><span>BASELINE DIAGNOSTIC</span></div>
-          <strong>Neutral measurement · no currency, reputation, or streak changes</strong>
+          <div><Target size={20} /><span>MEGA-LITIGATION</span></div>
+          <strong>A full practice LSAT · one sitting, one clock · no fees, reputation, or streak until the verdict</strong>
         </section>
       ) : <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
         <ClientPortrait kind={clientKind} name={clientName} />
@@ -813,14 +823,24 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <div><small>{learningOnly ? 'QUESTION TYPE' : 'ACTIVE MATTER'}</small><strong>{question.question_type}</strong></div>
         </div>
         <div className="question-progress">
-          <strong>{isDiagnostic ? 'Diagnostic' : 'Case'} {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
+          <strong>{isDiagnostic ? 'Question' : 'Case'} {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
           {item.case_terms && <span>{item.case_terms.client_name} · {formatMoney(item.case_terms.base_fee)} base fee</span>}
         </div>
-        <div className={`case-timer ${timerRatio > 1 ? 'over' : ''}`}>
-          <Clock3 size={17} />
-          <span>{formatTime(elapsed)}</span>
-          <small>target {formatTime(item.target_time_seconds * 1000)}</small>
-        </div>
+        {formRemaining == null ? (
+          <div className={`case-timer ${timerRatio > 1 ? 'over' : ''}`}>
+            <Clock3 size={17} />
+            <span>{formatTime(elapsed)}</span>
+            <small>target {formatTime(item.target_time_seconds * 1000)}</small>
+          </div>
+        ) : (
+          // One clock for the sitting. Spending it unevenly is the student's
+          // call, so the per-question target is a reference, not the headline.
+          <div className={`case-timer ${formRemaining <= 5 * 60_000 ? 'over' : ''}`} aria-label="Time left in this sitting">
+            <Clock3 size={17} />
+            <span>{formatCountdown(formRemaining)}</span>
+            <small>left · {formatTime(item.target_time_seconds * 1000)} a question keeps you on pace</small>
+          </div>
+        )}
       </div>
       <div className="progress-track"><span style={{ width: `${session.progress_percent}%` }} /></div>
 

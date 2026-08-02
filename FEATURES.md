@@ -87,8 +87,15 @@ datasets carry no difficulty labels.
 builds three blocks — Logical Reasoning I, Reading Comprehension, Logical Reasoning II — with roughly two-thirds
 LR. Crucially, RC questions are selected **by whole passage group**, so a passage always arrives intact with all
 of its questions rather than orphaned. It returns the questions, a per-question `section_index`, and a section
-plan giving each block a label, a question range, and a minute budget (35 minutes for a full-length block of 18+
-questions, otherwise about 1.55 minutes per question, floored at 8).
+plan giving each block a label and a question range. The plan still computes a per-block minute budget (35
+minutes for a full-length block of 18+ questions, otherwise about 1.55 minutes per question, floored at 8), but
+only to sum it into the form's single clock — `create_diagnostic_session` strips the per-block minutes before
+storing the plan, because a mega-litigation is timed as one whole form.
+
+Practice selection is also weighted by the last mega-litigation. `select_random_questions` takes an optional
+`focus_types` list and `_weight_toward_focus` pulls roughly `FOCUS_FILL_RATIO` (60%) of the run from those types,
+leaving the rest to normal random coverage. It is a bias, not a filter: the whole test still shows up, so one bad
+form cannot narrow practice into a self-reinforcing rut.
 
 ### 2.3 The practice mode
 
@@ -97,7 +104,7 @@ There is one practice mode plus the diagnostic, which is a separate session `mod
 | Style (API) | UI name | Feedback | Reasoning required | Evidence class | Purpose |
 | --- | --- | --- | --- | --- | --- |
 | `cases` | Cases | Immediate | **Yes**, 120 characters | `coached_practice` | Written reasoning, full AI coaching, a strategy trial on every question, and game settlement |
-| `diagnostic` (mode) | Diagnostic | Delayed to end | No | `diagnostic` | Sectioned neutral baseline |
+| `diagnostic` (mode) | Mega-litigation | Delayed to end | No | `diagnostic` | Sectioned neutral baseline |
 
 Every run is the same shape. Due repairs from the spaced-review queue fill up to half the run and occupy the
 first positions; unseen questions fill the rest. A `question_type`-filtered run seeds no repairs, because mixing
@@ -119,7 +126,9 @@ from realistic LSAT pacing:
 - Reading Comprehension, first question on a passage: **330 seconds** (it includes reading the passage).
 - Reading Comprehension, a consecutive question on the *same* passage: **135 seconds**, because the passage has
   already been read. `_target_time_seconds` looks at the previous item to detect this.
-- Diagnostic items multiply the base 150/330 by the accommodation multiplier (1.0, 1.5, or 2.0).
+- A mega-litigation is the exception: it is timed as one whole form, so every item's target is simply the form
+  budget divided evenly across its questions (floored at 30 seconds). The accommodation multiplier still applies,
+  but to the form budget rather than to each item.
 
 The clock starts when the question is first serialized to the client (`serialize_item` sets `timer_started_at`)
 and accumulates into `active_elapsed_ms`. Pausing a session banks the elapsed time, clears the running timer, and
@@ -138,23 +147,53 @@ explicit strategy decision when a trial is attached. It then determines correctn
 updates skill counters, schedules review, advances the session, and — for immediate-feedback modes — parks the
 attempt in `pending_attempt_id` so the learner cannot skip past the debrief.
 
-### 2.5 The diagnostic
+### 2.5 The mega-litigation
 
 The diagnostic exists to give every other number a reference point, and its design is mostly a list of things it
-refuses to do. It is a separate session mode (`mode = "diagnostic"`, `practice_style = "diagnostic"`), sized by
-`DIAGNOSTIC_SESSION_SIZE` (default 75 questions), with delayed feedback, no reasoning requirement, no strategy
-trials, no case context, and therefore **no cash, no reputation, no streak, and no firm progress**. It is
-sectioned via the block plan described above, supports accommodation timing of 1.0×, 1.5×, or 2.0×, and only one
-can be active at a time.
+refuses to do. In the game it is called a **mega-litigation**, and every player-facing surface says plainly that
+it is basically a full practice LSAT. It is a separate session mode (`mode = "diagnostic"`,
+`practice_style = "diagnostic"`), sized by `DIAGNOSTIC_SESSION_SIZE` (default 75 questions), with delayed
+feedback, no reasoning requirement, no strategy trials, no case context, and therefore **no cash, no reputation
+from settlement, no streak, and no per-answer firm progress**. It is sectioned via the block plan described
+above, supports accommodation timing of 1.0×, 1.5×, or 2.0×, and only one can be active at a time.
 
-Its results appear in `performance_snapshot` as raw correct-out-of-total plus a per-section breakdown, and it
-carries an explicit `projection_available: false` with the note that "a scaled score is withheld until the form
-has a validated conversion." That is a deliberate refusal to fake a 120–180 score from an unvalidated question
-set, and it is worth saying out loud when presenting, because it is the kind of restraint competitors don't show.
+**One clock, one sitting.** `create_diagnostic_session` stamps a server-authoritative `StudySession.deadline_at`
+= now + the summed block budget (about 105 minutes in production). That deadline is the whole timing story: the
+per-block minutes are stripped from the stored plan and per-item targets become an even split of the form budget.
+`enforce_diagnostic_deadline` runs at every touch point — serialization, the active-session lookup, and
+`submit_attempt` — and finalizes an expired run in place, so nothing unanswered is lost and no sweeper job is
+needed. There is no pause: `pause_session` and `resume_session` raise `diagnostic_no_pause`, which the API
+returns as a 409, and the clock keeps running whether or not the tab is open. The client counts down between
+polls purely for display and re-anchors on `remaining_ms` at every refetch.
 
-A completed diagnostic is also one of three gates on the dashboard's `readiness` status: comparing time periods
-requires at least 40 LR and 20 RC first attempts in the timed/diagnostic evidence classes plus at least one
-completed diagnostic. Until then, the dashboard says it is still building a defensible sample.
+**Clearing it promotes the firm.** `finalize_diagnostic` compares correct answers against
+`MEGA_LITIGATION_PROMOTION_ACCURACY` (0.70) of `total_items` — the whole form, not just the answered part, so
+answering four questions correctly and walking away qualifies for nothing. Above the bar,
+`grant_mega_litigation_promotion` locks the profile, settles upkeep, grants every missing tier-gated asset at
+`purchase_price = 0`, raises reputation to the new tier's minimum, bumps `office_tier` by one, and writes a
+zero-amount `mega_litigation_promotion` ledger entry. That ledger row is also the idempotency key: the
+`uq_ledger_source` constraint means finalization reached twice — once by the last answer, once by the deadline —
+pays exactly once. At the top of the ladder it is a no-op.
+
+**What it finds shapes practice.** `focus.py` reads the most recent completed mega-litigation and returns the
+question types where the learner scored below their own accuracy on that same form, with at least
+`MIN_TYPE_ATTEMPTS` (2) attempts, capped at `MAX_FOCUS_TYPES` (5). Those types feed two places: case-run question
+selection weights toward them (§2.2), and `assign_strategy_trial` raises its coverage target from
+`BASE_COVERAGE_TRIALS` (3) to `FOCUS_COVERAGE_TRIALS` (5) on them, so the A/B experiment keeps exploring
+strategies on weak types after it has settled everywhere else. The dashboard surfaces the list and the sentence
+explaining where it came from, so the weighting is never invisible.
+
+Its results appear in `performance_snapshot` as raw correct-out-of-total plus `form_accuracy`, the promotion (if
+any), clock usage, and a per-section breakdown, and it carries an explicit `projection_available: false` with the
+note that "a scaled score is withheld until the form has a validated conversion." That is a deliberate refusal to
+fake a 120–180 score from an unvalidated question set, and it is worth saying out loud when presenting, because
+it is the kind of restraint competitors don't show.
+
+**It gates nothing.** A mega-litigation can be sat at any time and is never required; nothing in the firm waits
+on one, no route redirects to one, and no banner nags about it. It is still one of three inputs to the
+dashboard's `readiness` label, alongside 40 LR and 20 RC first attempts in the timed/diagnostic evidence classes
+— but that label only decides whether the dashboard is willing to compare time periods, and the UI presents all
+three as recommendations rather than requirements.
 
 ### 2.6 Spaced review
 
@@ -248,13 +287,18 @@ distraction, not instruction.
 
 ### 3.3 When a trial fires
 
-`assign_strategy_trial(user_id, question, practice_style, position)` returns `None` only for the diagnostic.
-Every question in a cases run is trial-eligible.
+`assign_strategy_trial(user_id, question, practice_style, position, *, focus_types=None)` returns `None` only for
+a mega-litigation. Every question in a cases run is trial-eligible.
 
-The diagnostic is excluded to keep it a neutral baseline — it is the one surface the dashboard headline reads.
-Everywhere else, the unprompted comparison condition comes from the hidden 25% control arm rather than from a
-sparse cadence, which is why prompting every question does not destroy the comparison; it converges it roughly
-four times faster.
+The mega-litigation is excluded to keep it a neutral baseline — it is the one surface the dashboard headline
+reads. Everywhere else, the unprompted comparison condition comes from the hidden 25% control arm rather than
+from a sparse cadence, which is why prompting every question does not destroy the comparison; it converges it
+roughly four times faster.
+
+`focus_types` is what the last mega-litigation found weak (§2.5). A question whose type is on that list raises
+the coverage target from `BASE_COVERAGE_TRIALS` (3) to `FOCUS_COVERAGE_TRIALS` (5), so the explore phase runs
+longer where the learner is actually losing points and the experiment does not settle prematurely on a weak
+type.
 
 The cost is real and worth stating: a prompted item requires an explicit `strategy_applied` decision before the
 answer is accepted, so roughly three questions in four carry that extra tap. The decision cannot be defaulted —
@@ -419,7 +463,7 @@ attention:
   both the coaching and the settlement have arrived, so the learner cannot outrun their own feedback. Because
   every case now settles, that gate applies to the whole app rather than to one mode: a grader outage stops
   forward progress, which is the sharpest operational risk this design carries.
-- **The Diagnostic** shows nothing during the run. In the post-run review screen, opening any question
+- **The mega-litigation** shows nothing during the run. In the post-run review screen, opening any question
   lazily requests coaching for that specific attempt, so explanations exist for timed work but are only paid for
   when someone actually reads them. If coaching is unavailable the panel degrades to the verified key and the
   choice texts, and says so.
@@ -503,11 +547,15 @@ backfills existing rows into the same shape, idempotently, leaving alone the two
 
 This is the join between the two halves of the product, and it runs through `settle_attempt`.
 
-**Every practice case earns; the diagnostic never does.** `_freeze_current_case` attaches a game context to an
-item when the session is a practice session, the item is the currently visible unfinished question, and the
-learner has onboarded. Diagnostic attempts have no game context, so `settle_attempt` returns `None` for them and
-they pay nothing. That single exclusion is what protects measurement integrity now: the surface used as the
-headline evidence is the one surface with no money riding on it.
+**Every practice case earns; a mega-litigation answer never does.** `_freeze_current_case` attaches a game
+context to an item when the session is a practice session, the item is the currently visible unfinished question,
+and the learner has onboarded. Mega-litigation attempts have no game context, so `settle_attempt` returns `None`
+for them and they pay nothing. That single exclusion is what protects measurement integrity now: the surface used
+as the headline evidence is the one surface with no money riding on it.
+
+The tier promotion in §2.5 is deliberately outside this path. It is granted once by `finalize_diagnostic` against
+the whole form, not per answer, so no individual question is ever worth anything — which is the property that
+matters. It also pays no cash: it moves the firm and waives the prerequisite upgrades, nothing more.
 
 **The economy is frozen at question-view time.** `snapshot_case_context` captures the client key, base fee, firm
 multiplier, staff bonuses, streak cap, contract multiplier, reputation guards, and pro-bono terms into the
@@ -611,7 +659,7 @@ for the 3D scenes. The same responsive build serves desktop, mobile web, and the
 | `/` | Redirect | Sends the user to `next_route` from `/v1/me` |
 | `/onboarding` | Onboarding | Name the lawyer and firm, choose the character; creates the profile |
 | `/office` | Office | The 3D office, daily state, and the day's entry point |
-| `/progress` | Progress | Diagnostic, performance analytics, skill matrix, and the Method Lab |
+| `/progress` | Progress | Mega-litigation, performance analytics, skill matrix, and the Method Lab |
 | `/cases` | Practice lobby | Daily Docket, mode selection, and the active client brief |
 | `/cases/:sessionId` | Case session | The actual question flow, debrief, and post-run review |
 | `/firm` | Firm | Catalog: upgrades, staff, connections, rivals, cosmetics, clients, tiers |
@@ -646,8 +694,9 @@ also renders the paused state and the completed-run review, where a priority-fil
 confident misses first and lazily fetches a concise rationale for whichever question you open.
 
 **Progress (`/progress`)** is the measurement surface: the Speedrun Index, deltas against the previous window,
-the diagnostic anchor, comparison readiness, the accuracy trend by run, the weakest-link recommendation, the
-skill matrix, and the Method Lab panel with its per-strategy lift and evidence status.
+the mega-litigation lab and its one-sitting confirmation gate, the practice-focus panel explaining what the last
+form told practice to work on, comparison readiness, the accuracy trend by run, the weakest-link recommendation,
+the skill matrix, and the Method Lab panel with its per-strategy lift and evidence status.
 
 **Firm (`/firm`)** is the ledger and shop: every catalog family with requirement lines explaining exactly what
 is missing, the next headquarters with its required-asset checklist, and client selection.
@@ -807,13 +856,12 @@ Stated plainly, because presenting is easier when you already know where the sof
 - **A few vestigial columns.** `Attempt.capm_points`, `pace_scored`, and `xp_earned` are always set to
   0/False/0 — leftovers from an earlier scoring model superseded by `AttemptSettlement`. `ReviewQueueItem.learner_rule`
   is never populated.
-- **Diagnostic section timing is informational.** The section plan carries per-block minute budgets and the
-  summary reports per-section results, but the UI enforces only per-question target times; there is no hard
-  35-minute section clock. Calling it "sectioned, test-like timing" is fair; calling it a proctored section timer
-  is not.
-- **Accommodation timing has no UI.** The API accepts 1.0×, 1.5×, and 2.0× diagnostic timing, and the backend
-  applies it correctly, but the frontend always starts a diagnostic at 1.0×. The feature is built but not
-  exposed.
+- **A mega-litigation has one clock, not four.** The whole-form deadline is enforced server-side and is real, but
+  the blocks inside it are labels: nothing stops a learner spending 60 minutes on Logical Reasoning I. Calling it
+  "sectioned, whole-form timing" is fair; calling it a proctored section timer is not.
+- **Accommodation timing has no UI.** The API accepts 1.0×, 1.5×, and 2.0× mega-litigation timing, and the
+  backend applies it to the form budget correctly, but the frontend always starts one at 1.0×. The feature is
+  built but not exposed.
 - **Every practice question carries a cash incentive.** This is intentional, but it inverts the old defence and
   a sharp audience member will notice ("doesn't paying for every answer corrupt your own numbers?"). The answer
   is that the diagnostic is the only surface feeding the headline, and it pays nothing, prompts nothing, and

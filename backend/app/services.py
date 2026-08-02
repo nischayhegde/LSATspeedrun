@@ -10,7 +10,16 @@ from sqlalchemy import or_
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
 from .extensions import db
-from .game import CLIENT_BY_KEY, explanation_band, lock_user_profile, serialize_settlement, settle_attempt, snapshot_case_context
+from .focus import diagnostic_focus, diagnostic_focus_detail
+from .game import (
+    CLIENT_BY_KEY,
+    explanation_band,
+    grant_mega_litigation_promotion,
+    lock_user_profile,
+    serialize_settlement,
+    settle_attempt,
+    snapshot_case_context,
+)
 from .models import Attempt, Question, ReviewQueueItem, SessionItem, SkillProgress, StudySession, User, utcnow
 from .seed import SOURCE_PREFIX
 from .strategies import assign_strategy_trial, serialize_strategy, strategy_performance
@@ -24,6 +33,12 @@ EVIDENCE_CLASS = {
 }
 REVIEW_INTERVAL_DAYS = (1, 3, 7, 21)
 REASONING_MIN_CHARS = 120
+# Clearing this share of the whole form — not of the questions reached — promotes
+# the firm one tier. See `finalize_diagnostic`.
+MEGA_LITIGATION_PROMOTION_ACCURACY = 0.70
+# Share of a practice run's fresh questions drawn from measured weaknesses. The
+# rest stay random so practice keeps covering the whole test.
+FOCUS_FILL_RATIO = 0.6
 
 
 def reasoning_min_chars(session: StudySession) -> int:
@@ -89,8 +104,39 @@ def find_resumable_session(user: User) -> StudySession | None:
     return sessions[0] if sessions else None
 
 
+def diagnostic_remaining_ms(session: StudySession) -> int | None:
+    """Milliseconds left on a mega-litigation's whole-form clock.
+
+    None for anything without a deadline: coached practice, and diagnostics
+    started before the whole-form clock existed.
+    """
+    if session.mode != "diagnostic" or not session.deadline_at:
+        return None
+    return max(0, int((_aware_utc(session.deadline_at) - utcnow()).total_seconds() * 1000))
+
+
+def enforce_diagnostic_deadline(session: StudySession) -> bool:
+    """Close out a mega-litigation whose clock has run out.
+
+    Called at the top of every path that can touch a diagnostic, which is what
+    makes the deadline real without a background sweeper: a run that expires
+    while the student is away is finalized by whichever request next looks at
+    it, and until then nothing can be written to it.
+
+    Returns True when this call finalized the run.
+    """
+    if session.mode != "diagnostic" or not session.deadline_at:
+        return False
+    if session.status not in {"in_progress", "paused"}:
+        return False
+    if _aware_utc(session.deadline_at) > utcnow():
+        return False
+    finalize_diagnostic(session, completed_at=_aware_utc(session.deadline_at))
+    return True
+
+
 def find_active_diagnostic(user: User) -> StudySession | None:
-    return (
+    session = (
         StudySession.query.filter(
             StudySession.user_id == user.id,
             StudySession.mode == "diagnostic",
@@ -102,6 +148,11 @@ def find_active_diagnostic(user: User) -> StudySession | None:
         .order_by(StudySession.started_at.desc())
         .first()
     )
+    if session and enforce_diagnostic_deadline(session):
+        # The clock decided this run is over. It is no longer the active one, and
+        # the student is free to start another.
+        return None
+    return session
 
 
 def serialize_user(user: User) -> dict:
@@ -267,6 +318,7 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
 
 
 def serialize_session(session: StudySession, include_item: bool = True) -> dict:
+    enforce_diagnostic_deadline(session)
     payload = {
         "id": session.id,
         "mode": session.mode,
@@ -281,6 +333,12 @@ def serialize_session(session: StudySession, include_item: bool = True) -> dict:
         "current_index": session.current_index,
         "progress_percent": round(100 * session.current_index / max(1, session.total_items)),
         "started_at": _iso_utc(session.started_at),
+        "deadline_at": _iso_utc(session.deadline_at),
+        # The client counts down between polls, but it never decides when the
+        # form is over: the server hands it the remaining time and rejects
+        # anything that arrives after zero.
+        "remaining_ms": diagnostic_remaining_ms(session),
+        "time_limit_seconds": session.target_minutes * 60 if session.deadline_at else None,
         "completed_at": _iso_utc(session.completed_at),
     }
     if session.pending_attempt_id:
@@ -320,6 +378,7 @@ def select_random_questions(
     *,
     user_id: str | None = None,
     exclude_ids: set[str] | None = None,
+    focus_types: list[str] | None = None,
 ) -> list[Question]:
     query = Question.query.filter(Question.source.like(f"{SOURCE_PREFIX}%"))
     if question_type:
@@ -334,11 +393,45 @@ def select_random_questions(
         return []
     unseen = [question for question in eligible if not user_id or question.id not in _seen_question_ids(user_id)]
     pool = unseen if len(unseen) >= count else unseen + [question for question in eligible if question not in unseen]
-    return random.sample(pool, k=min(count, len(pool)))
+    return _weight_toward_focus(pool, count, focus_types)
+
+
+def _weight_toward_focus(pool: list[Question], count: int, focus_types: list[str] | None) -> list[Question]:
+    """Fill most of a run from the mega-litigation's weak types, the rest at random.
+
+    Deliberately a bias and not a filter. Drilling only the weak types would
+    stop measuring everything else and would make one bad run self-reinforcing;
+    a majority share is enough to move the needle while practice still covers
+    the whole test. Falls back to a plain sample when there is no focus, or too
+    little focus material to reach the quota.
+    """
+    take = min(count, len(pool))
+    wanted = set(focus_types or ())
+    if not wanted or take == 0:
+        return random.sample(pool, k=take)
+    preferred = [question for question in pool if question.question_type in wanted]
+    others = [question for question in pool if question.question_type not in wanted]
+    quota = min(len(preferred), round(take * FOCUS_FILL_RATIO))
+    selected = random.sample(preferred, k=quota)
+    remainder = random.sample(others, k=min(take - quota, len(others)))
+    selected.extend(remainder)
+    if len(selected) < take:
+        # Not enough off-focus material to round the run out; top up from focus.
+        leftover = [question for question in preferred if question not in selected]
+        selected.extend(random.sample(leftover, k=min(take - len(selected), len(leftover))))
+    random.shuffle(selected)
+    return selected
 
 
 def select_diagnostic_questions(count: int) -> tuple[list[Question], list[int], list[dict]]:
-    """Build LR / intact RC / LR blocks without revealing or coaching mid-form."""
+    """Build LR / intact RC / LR blocks without revealing or coaching mid-form.
+
+    The blocks no longer carry their own clocks — the mega-litigation runs on one
+    whole-form deadline — but they still keep RC passages intact, order the form
+    like a real test, and give the results screen a per-block breakdown. Each
+    block reports the `minutes` it would be worth on a real LSAT, which is what
+    the whole-form budget is summed from.
+    """
     eligible = Question.query.filter(Question.source.like(f"{SOURCE_PREFIX}%")).all()
     if not eligible:
         return [], [], []
@@ -452,11 +545,15 @@ def create_study_session(
     # into pure repetition. A type-filtered run is a focused drill; mixing
     # off-type repairs into it would defeat the filter the student asked for.
     repairs = [] if question_type else _questions_due_for_review(user.id, session_size // 2)
+    # A type-filtered run is the student overriding the weighting by hand, so the
+    # last mega-litigation only steers an unfiltered one.
+    focus_types = [] if question_type else diagnostic_focus(user.id)
     fresh = select_random_questions(
         session_size - len(repairs),
         question_type,
         user_id=user.id,
         exclude_ids={question.id for question in repairs},
+        focus_types=focus_types,
     )
     questions = repairs + fresh
     if not questions:
@@ -486,7 +583,7 @@ def create_study_session(
             target_time_seconds = 150
         else:
             target_time_seconds = 135 if question.passage_id and question.passage_id == previous_passage_id else 330
-        strategy_trial = assign_strategy_trial(user.id, question, practice_style, position)
+        strategy_trial = assign_strategy_trial(user.id, question, practice_style, position, focus_types=focus_types)
         db.session.add(
             SessionItem(
                 session_id=session.id,
@@ -517,23 +614,35 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
     questions, section_indexes, section_plan = select_diagnostic_questions(int(current_app.config["DIAGNOSTIC_SESSION_SIZE"]))
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
+    target_minutes = max(1, round(sum(section["minutes"] for section in section_plan) * accommodation_multiplier))
+    started_at = utcnow()
     session = StudySession(
         user_id=user.id,
         mode="diagnostic",
         practice_style="diagnostic",
         feedback_policy="delayed",
         accommodation_multiplier=accommodation_multiplier,
+        # The blocks keep their labels and boundaries but lose their minutes:
+        # under one whole-form clock a per-section budget would be a number the
+        # server does not enforce and the student cannot act on.
         section_plan_json=[
-            {**section, "minutes": round(section["minutes"] * accommodation_multiplier)}
+            {key: value for key, value in section.items() if key != "minutes"}
             for section in section_plan
         ],
-        target_minutes=max(1, round(sum(section["minutes"] for section in section_plan) * accommodation_multiplier)),
+        target_minutes=target_minutes,
         total_items=len(questions),
+        started_at=started_at,
+        deadline_at=started_at + timedelta(minutes=target_minutes),
     )
     db.session.add(session)
     db.session.flush()
+    # One clock for the form means one budget per question: the student is free
+    # to spend it unevenly, and the even split is what "on pace" is measured
+    # against. The old 150s/330s targets belong to coached practice, where a
+    # written explanation is part of the work, and summed to well over twice
+    # this form's budget.
+    per_question_seconds = max(30, round(target_minutes * 60 / len(questions)))
     for position, question in enumerate(questions):
-        base_target = 150 if question.section == "Logical Reasoning" else 330
         db.session.add(
             SessionItem(
                 session_id=session.id,
@@ -541,14 +650,51 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
                 position=position,
                 section_index=section_indexes[position],
                 requires_reasoning=False,
-                target_time_seconds=round(base_target * accommodation_multiplier),
+                target_time_seconds=per_question_seconds,
             )
         )
     db.session.commit()
     return session
 
 
+def finalize_diagnostic(session: StudySession, *, completed_at=None) -> dict:
+    """Close a mega-litigation and pay out whatever the score earned.
+
+    Reached from two directions — the last answer, and the deadline passing with
+    questions still unanswered — so it has to be safe to arrive at twice. The
+    summary is idempotent by construction and the promotion is guarded by the
+    ledger's `uq_ledger_source` constraint.
+    """
+    if session.status != "completed":
+        session.status = "completed"
+        session.completed_at = completed_at or utcnow()
+    db.session.flush()
+    summary = calculate_session_summary(session)
+    session.summary_json = summary
+    db.session.commit()
+
+    profile = session.user.game_profile
+    if not profile:
+        return summary
+    # Against the whole form, not the questions reached: a student who answers
+    # four correctly and walks away has not cleared anything.
+    cleared = summary.get("correct", 0) > MEGA_LITIGATION_PROMOTION_ACCURACY * max(1, session.total_items)
+    if not cleared:
+        return summary
+    promotion = grant_mega_litigation_promotion(profile, session.id)
+    if promotion:
+        session.summary_json = {**summary, "promotion": promotion}
+        db.session.commit()
+        return session.summary_json
+    return summary
+
+
 def pause_study_session(session: StudySession) -> StudySession:
+    # A mega-litigation is one sitting. Its clock is wall-clock and nothing stops
+    # it, so "paused" would be a lie the interface told about a run that is
+    # still burning down.
+    if session.mode == "diagnostic" and session.deadline_at:
+        raise ValueError("diagnostic_no_pause")
     if session.status == "paused":
         return session
     if session.status == "completed" and session.pending_attempt_id:
@@ -572,6 +718,11 @@ def pause_study_session(session: StudySession) -> StudySession:
 
 
 def resume_study_session(session: StudySession) -> StudySession:
+    if session.mode == "diagnostic" and session.deadline_at:
+        # Nothing pauses it, so nothing resumes it. An expired run finalizes here
+        # rather than pretending it can be picked back up.
+        enforce_diagnostic_deadline(session)
+        raise ValueError("diagnostic_no_pause")
     if session.status == "in_progress":
         return session
     if session.status != "paused":
@@ -916,6 +1067,8 @@ def submit_attempt(
         return existing, True
     if session.pending_attempt_id:
         raise ValueError("debrief_required")
+    if enforce_diagnostic_deadline(session):
+        raise ValueError("diagnostic_expired")
     if session.status != "in_progress":
         raise ValueError("session_complete")
 
@@ -1002,6 +1155,10 @@ def submit_attempt(
         db.session.flush()
         session.summary_json = calculate_session_summary(session)
     db.session.commit()
+    if session.status == "completed" and session.mode == "diagnostic":
+        # Answering the last question closes the form the same way the clock
+        # does, promotion included.
+        finalize_diagnostic(session)
     return attempt, False
 
 
@@ -1092,6 +1249,12 @@ def run_attempt_coaching(attempt: Attempt) -> dict:
     return coaching
 
 
+def _join_types(names: list[str]) -> str:
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + f" and {names[-1]}"
+
+
 def _skill_breakdown(attempts: list[Attempt]) -> list[dict]:
     grouped: dict[str, list[Attempt]] = defaultdict(list)
     for attempt in attempts:
@@ -1138,12 +1301,17 @@ def calculate_session_summary(session: StudySession) -> dict:
         )
     confidence_values = [attempt.confidence for attempt in attempts if attempt.confidence is not None]
     high_confidence = [attempt for attempt in attempts if (attempt.confidence or 0) >= 4]
-    return {
+    correct = sum(attempt.is_correct for attempt in attempts)
+    summary = {
         "kind": session.mode,
         "practice_style": session.practice_style,
         "feedback_policy": session.feedback_policy,
-        "accuracy": round(sum(attempt.is_correct for attempt in attempts) / max(1, len(attempts)) * 100),
-        "correct": sum(attempt.is_correct for attempt in attempts),
+        "accuracy": round(correct / max(1, len(attempts)) * 100),
+        # Accuracy scores what was answered; the form score scores the paper,
+        # counting everything left blank against the student. The promotion bar
+        # reads this one.
+        "form_accuracy": round(correct / max(1, session.total_items) * 100),
+        "correct": correct,
         "questions_completed": len(attempts),
         "elapsed_minutes": round(sum(attempt.server_elapsed_ms for attempt in attempts) / 60_000, 1),
         "explanation_accuracy": (
@@ -1161,6 +1329,13 @@ def calculate_session_summary(session: StudySession) -> dict:
         },
         "timing_compromised": any(attempt.session_item.timer_compromised for attempt in attempts),
     }
+    # A promotion is granted once and recorded on the run that earned it. This
+    # function is called again whenever a summary is refreshed, so carry it
+    # across rather than dropping the one field that is not recomputable.
+    promotion = (session.summary_json or {}).get("promotion")
+    if promotion:
+        summary["promotion"] = promotion
+    return summary
 
 
 def performance_snapshot(user: User) -> dict:
@@ -1252,13 +1427,26 @@ def performance_snapshot(user: User) -> dict:
     diagnostic = None
     if latest_diagnostic:
         summary = latest_diagnostic.summary_json or calculate_session_summary(latest_diagnostic)
+        elapsed_minutes = summary.get("elapsed_minutes", 0)
         diagnostic = {
             "session_id": latest_diagnostic.id,
             "completed_at": _iso_utc(latest_diagnostic.completed_at),
             "summary": summary,
             "raw_correct": summary.get("correct", 0),
             "raw_total": summary.get("questions_completed", 0),
+            "form_total": latest_diagnostic.total_items,
+            "form_accuracy": summary.get("form_accuracy"),
             "sections": summary.get("sections", []),
+            "promotion": summary.get("promotion"),
+            # One clock means pace is a property of the sitting, not of any one
+            # question: how much of the budget went out, and how much of the
+            # paper it bought.
+            "time_limit_minutes": latest_diagnostic.target_minutes,
+            "elapsed_minutes": elapsed_minutes,
+            "budget_used_percent": round(100 * elapsed_minutes / max(1, latest_diagnostic.target_minutes)),
+            "completion_percent": round(
+                100 * summary.get("questions_completed", 0) / max(1, latest_diagnostic.total_items)
+            ),
             "projection_available": False,
             "projection_note": "A scaled score is withheld until the form has a validated conversion.",
         }
@@ -1292,6 +1480,22 @@ def performance_snapshot(user: User) -> dict:
     }
     recommendation_skill = next((skill for skill in skills if skill["attempts"] >= 3), None)
     strategy_lab = strategy_performance(user.id)
+    focus_detail = diagnostic_focus_detail(user.id)
+    focus = {
+        "types": focus_detail["types"],
+        "session_id": focus_detail["session_id"],
+        "completed_at": _iso_utc(focus_detail["completed_at"]) if focus_detail["completed_at"] else None,
+        "baseline_accuracy": focus_detail["baseline_accuracy"],
+        "explanation": (
+            "Your last mega-litigation came in under its own average on "
+            + _join_types(focus_detail["types"])
+            + ". Most of each new case run is drawn from those, and their strategy trials keep testing "
+            "approaches for longer before settling."
+            if focus_detail["types"]
+            else "Finish a mega-litigation and practice will start weighting itself toward whatever it "
+            "shows you are weakest at."
+        ),
+    }
 
     return {
         "overall": overall,
@@ -1311,6 +1515,7 @@ def performance_snapshot(user: User) -> dict:
         "review": {**queue, "recovery_rate": review_recovery},
         "confidence": confidence,
         "strategy_lab": strategy_lab,
+        "focus": focus,
         "recommendation": (
             {
                 "skill": recommendation_skill["name"],
