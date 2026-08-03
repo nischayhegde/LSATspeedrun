@@ -192,12 +192,12 @@ const steps: TourStep[] = [
   },
   {
     kind: 'spotlight',
-    eyebrow: '14 · SOUND',
-    title: 'A quiet layer of feedback.',
-    body: 'Sound marks navigation, files, verdicts, and promotions. Keep it on, lower it, use Lite mode, or mute it at any time.',
-    target: '[data-tour="sound"]',
+    eyebrow: '14 · SETTINGS',
+    title: 'Sound and settings live here.',
+    body: 'Sound marks navigation, files, verdicts, and promotions — keep it on, lower it, use Lite mode, or mute it from this menu. It also holds tutorial replay and sign out.',
+    target: '[data-tour="account"]',
     route: '/map',
-    cue: 'Sound controls',
+    cue: 'Settings',
   },
   {
     kind: 'finish',
@@ -262,12 +262,18 @@ export function GuidedTour() {
       return
     }
     let frame = 0
+    // A target can be a frame or two late (lazy art, a route still settling),
+    // so retry — but give up rather than re-queue forever if the element is
+    // hidden at this breakpoint. The step then reads without a spotlight
+    // instead of spinning a rAF loop for as long as the tour is open.
+    let attempts = 0
     const measure = () => {
       const target = findVisibleTarget(step.target)
       if (!target) {
-        frame = window.requestAnimationFrame(measure)
+        if (attempts++ < 90) frame = window.requestAnimationFrame(measure)
         return
       }
+      attempts = 0
       const rect = target.getBoundingClientRect()
       const pad = 8
       setHighlight({

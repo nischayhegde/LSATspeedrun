@@ -7,6 +7,7 @@ import {
   BriefcaseBusiness,
   Building2,
   Check,
+  ChevronDown,
   Clock3,
   Coins,
   HelpCircle,
@@ -172,6 +173,28 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [mobileMenuOpen])
+  // Sound, tutorial replay, and sign out used to sit loose in the header
+  // alongside the standing chip. They are settings, not signals, so they live
+  // behind the avatar — the desktop mirror of the mobile menu below.
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const accountMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => setAccountMenuOpen(false), [location.pathname])
+  useEffect(() => {
+    if (!accountMenuOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAccountMenuOpen(false)
+    }
+    const closeOnOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && accountMenuRef.current?.contains(event.target)) return
+      setAccountMenuOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('pointerdown', closeOnOutside)
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('pointerdown', closeOnOutside)
+    }
+  }, [accountMenuOpen])
   const playDataSound = (event: MouseEvent<HTMLDivElement>) => {
     if (!(event.target instanceof Element)) return
     const target = event.target.closest<HTMLElement>('[data-sound="navigate"]')
@@ -207,26 +230,51 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           </nav>
         )}
         <div className="header-right">
-          <div data-tour="sound"><SoundControls className="header-sound-controls" compact /></div>
           {game && (
             <div className="header-economy training-standing" aria-label="Training standing" data-tour="standing">
               <span><Check size={16} />{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</span>
               <span><Brain size={16} />{game.total_cases} Q</span>
             </div>
           )}
-          {game && !isActiveCase && (
-            <button className="icon-button tour-replay-button" type="button" onClick={replayGuidedTour} aria-label="Replay guided tour" title="Replay guided tour">
-              <HelpCircle size={18} />
+          <div className="account-menu" ref={accountMenuRef}>
+            <button
+              type="button"
+              className="account-menu-trigger"
+              aria-haspopup="true"
+              aria-expanded={accountMenuOpen}
+              aria-label={accountMenuOpen ? 'Close account settings' : 'Open account settings'}
+              data-tour="account"
+              onClick={() => {
+                void play(accountMenuOpen ? 'paper' : 'ledger', { seed: 'account-menu', intensity: .22 })
+                setAccountMenuOpen((open) => !open)
+              }}
+            >
+              {user.avatar_url
+                ? <img src={user.avatar_url} alt="" referrerPolicy="no-referrer" />
+                : <span className="avatar-fallback">{user.display_name.slice(0, 1).toUpperCase()}</span>}
+              <span className="account-name">{game?.lawyer_name || user.display_name}</span>
+              <ChevronDown size={15} />
             </button>
-          )}
-          <div className="account-menu">
-            {user.avatar_url
-              ? <img src={user.avatar_url} alt="" referrerPolicy="no-referrer" />
-              : <span className="avatar-fallback">{user.display_name.slice(0, 1).toUpperCase()}</span>}
-            <span className="account-name">{game?.lawyer_name || user.display_name}</span>
-            <button className="icon-button" onClick={() => logout.mutate()} aria-label="Sign out" title="Sign out">
-              <LogOut size={17} />
-            </button>
+            {accountMenuOpen && (
+              <div className="account-menu-panel">
+                <div className="account-menu-identity">
+                  <strong>{user.display_name}</strong>
+                  <small>{user.email}</small>
+                </div>
+                <div className="account-menu-sound">
+                  <span><strong>Audio</strong><small>Effects, volume, and scene music</small></span>
+                  <SoundControls className="account-menu-sound-controls" compact={false} />
+                </div>
+                {game && !isActiveCase && (
+                  <button type="button" onClick={() => { replayGuidedTour(); setAccountMenuOpen(false) }}>
+                    <HelpCircle size={16} /><span><strong>Replay tutorial</strong><small>Tour the current learning workflow</small></span>
+                  </button>
+                )}
+                <button type="button" onClick={() => logout.mutate()} disabled={logout.isPending}>
+                  <LogOut size={16} /><span><strong>Sign out</strong><small>{logout.isPending ? 'Signing out…' : 'End this session'}</small></span>
+                </button>
+              </div>
+            )}
           </div>
           {game && !isActiveCase && (
             <button
@@ -234,6 +282,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
               className="mobile-overflow-trigger"
               aria-label={mobileMenuOpen ? 'Close account and firm menu' : 'Open account and firm menu'}
               aria-expanded={mobileMenuOpen}
+              data-tour="account"
               onClick={() => {
                 void play(mobileMenuOpen ? 'paper' : 'ledger', { seed: 'mobile-firm-menu', intensity: .22 })
                 setMobileMenuOpen((open) => !open)

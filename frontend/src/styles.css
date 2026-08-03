@@ -62,9 +62,28 @@ h1, h2, h3, p { text-wrap: pretty; }
 .header-economy > span { min-height: 32px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border: 1px solid #ded7ca; border-radius: 999px; background: white; color: var(--navy); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .header-economy svg { color: var(--gold-dark); }
 .header-economy .streak { color: #9a4a2c; background: #fff3e7; border-color: #f0c9a9; }
-.account-menu { gap: 9px; color: var(--muted); font-size: 13px; }
+.account-menu { position: relative; gap: 9px; color: var(--muted); font-size: 13px; }
 .account-menu img, .avatar-fallback { width: 32px; height: 32px; border-radius: 50%; }
 .avatar-fallback { display: grid; place-items: center; color: white; background: var(--navy); font-weight: 800; }
+/* Sound, tutorial replay, and sign out are settings, so they sit behind the
+   avatar instead of competing with the standing chip for header space. */
+.account-menu-trigger { padding: 4px 8px 4px 4px; display: flex; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: 999px; color: inherit; background: transparent; font-size: 13px; }
+.account-menu-trigger:hover, .account-menu-trigger[aria-expanded="true"] { border-color: #ded7ca; background: white; }
+.account-menu-trigger > svg:last-child { color: #9aa2a6; transition: rotate .18s ease; }
+.account-menu-trigger[aria-expanded="true"] > svg:last-child { rotate: 180deg; }
+.account-menu-panel { width: 288px; padding: 7px; position: absolute; z-index: 40; top: calc(100% + 9px); right: 0; display: grid; gap: 3px; border: 1px solid #ded7ca; border-radius: 13px; background: white; box-shadow: 0 18px 42px rgba(24,32,38,.18); }
+.account-menu-identity { padding: 10px 11px 11px; border-bottom: 1px solid #ece7dc; }
+.account-menu-identity strong { display: block; color: var(--navy); font-size: 13.5px; }
+.account-menu-identity small { display: block; margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; }
+.account-menu-sound { padding: 11px; display: grid; gap: 9px; border-bottom: 1px solid #ece7dc; }
+.account-menu-sound > span strong { display: block; color: var(--navy); font-size: 12.5px; }
+.account-menu-sound > span small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
+.account-menu-panel > button { padding: 10px 11px; display: flex; align-items: center; gap: 10px; border: 0; border-radius: 9px; color: var(--navy); background: transparent; text-align: left; }
+.account-menu-panel > button:hover:not(:disabled) { background: #f3efe6; }
+.account-menu-panel > button:disabled { opacity: .55; }
+.account-menu-panel > button svg { flex: none; color: var(--gold-dark); }
+.account-menu-panel > button strong { display: block; font-size: 12.5px; }
+.account-menu-panel > button small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
 .icon-button { display: grid; place-items: center; padding: 7px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; }
 .icon-button:hover { color: var(--navy); background: #eee9df; }
 .mobile-nav { display: none; }
@@ -209,7 +228,7 @@ h1, h2, h3, p { text-wrap: pretty; }
 .office-lower-grid > div { min-height: 150px; padding: 21px; border: 1px solid #d9d0c2; border-radius: 14px; background: #fffdf8; }
 .client-contract-card { display: grid; grid-template-columns: 51px 1fr auto; align-items: center; gap: 15px; }
 .contract-icon { width: 51px; height: 51px; display: grid; place-items: center; border-radius: 50%; color: #f1d292; background: var(--navy); }
-.client-contract-card h3, .daily-docket-card h3 { margin: 5px 0 4px; color: var(--navy); font-family: Georgia, serif; font-size: 22px; font-weight: 500; }
+.client-contract-card h3 { margin: 5px 0 4px; color: var(--navy); font-family: Georgia, serif; font-size: 22px; font-weight: 500; }
 .client-contract-card p { margin: 0; color: var(--muted); font-size: 11px; }
 .client-contract-card p strong { margin-top: 4px; display: block; color: var(--gold-dark); font-size: 11.5px; }
 .daily-heading { display: flex; align-items: center; justify-content: space-between; }
@@ -230,23 +249,42 @@ h1, h2, h3, p { text-wrap: pretty; }
 .standing-stats b { color: var(--navy); }
 
 /* Cases lobby */
-.docket-hero { min-height: 560px; padding: clamp(40px, 7vw, 88px); display: grid; grid-template-columns: 1.15fr .65fr; align-items: center; gap: 70px; position: relative; overflow: hidden; border-radius: 22px; color: white; background: radial-gradient(circle at 10% 0%, #31566a, transparent 33%), linear-gradient(135deg, #112c3a, #0b1d27); box-shadow: 0 28px 70px rgba(13,32,42,.22); }
-.docket-hero::before { content: "§"; position: absolute; left: -35px; bottom: -170px; color: rgba(255,255,255,.035); font-family: Georgia, serif; font-size: 620px; line-height: 1; }
-.docket-copy { position: relative; z-index: 1; }
-.docket-copy h1 { margin: 13px 0 21px; font-family: Georgia, serif; font-size: clamp(48px, 6vw, 78px); line-height: .99; font-weight: 400; letter-spacing: -.045em; }
-.docket-copy h1 em { color: #e6c478; font-weight: 400; }
-.docket-copy > p { max-width: 620px; margin: 0 0 29px; color: #bfd0d7; font-size: 16px; line-height: 1.6; }
+/* One card carries the whole reason to be on this page: who is paying, what a
+   run contains, and the button that starts it. */
+.practice-action { padding: clamp(20px, 3vw, 32px); position: relative; overflow: hidden; isolation: isolate; display: grid; gap: 15px; border-radius: 20px; color: white; background: radial-gradient(circle at 10% 0%, #31566a, transparent 33%), linear-gradient(135deg, #112c3a, #0b1d27); box-shadow: 0 22px 50px rgba(13,32,42,.2); }
+.practice-action > :not(.practice-action-scenery) { position: relative; z-index: 1; }
+.practice-action-scenery { width: min(300px, 32%); position: absolute; z-index: 0; right: 3%; bottom: -6%; opacity: .4; }
+.practice-action > h1 { margin: 0; font-family: Georgia, serif; font-size: clamp(31px, 4vw, 46px); font-weight: 400; letter-spacing: -.03em; line-height: 1; }
+.practice-action-client { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 16px; }
+.practice-action-client > div > small { color: #d0b36e; font-size: 10px; font-weight: 800; letter-spacing: .13em; }
+.practice-action-client > div > strong { display: block; margin: 3px 0 8px; font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
+.practice-action-terms { display: flex; flex-wrap: wrap; gap: 7px 9px; }
+.practice-action-terms b { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; color: #cfdde2; background: rgba(5,17,22,.34); font-size: 11.5px; font-weight: 600; }
+.practice-action-terms svg { color: var(--gold); }
+.practice-action-shape { max-width: var(--prose-measure); margin: 0; color: #bfd0d7; font-size: 14px; line-height: 1.6; }
+.practice-action-secondary { padding: 11px 14px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(226,187,101,.4); border-radius: 10px; color: #f4ead4; background: rgba(226,187,101,.09); font-size: 13px; font-weight: 600; text-align: left; }
+.practice-action-secondary:hover:not(:disabled) { background: rgba(226,187,101,.17); }
+.practice-action-secondary:disabled { opacity: .72; }
+.practice-action-secondary > svg { flex: none; color: var(--gold); }
+.practice-action-secondary > span { flex: 1; min-width: 0; }
+.practice-action-secondary em { flex: none; color: #c8a85d; font-size: 11px; font-style: normal; font-weight: 800; }
 .primary-button.jumbo { min-height: 57px; padding: 0 23px; color: var(--navy); background: #e8c77f; box-shadow: 0 13px 30px rgba(0,0,0,.22); }
 .primary-button.jumbo:hover:not(:disabled) { color: var(--navy); background: #f0d493; }
-.case-brief-card { min-height: 390px; padding: 34px; position: relative; transform: rotate(1.3deg); border-radius: 7px 7px 19px 7px; color: var(--ink); background: #f8f0df; box-shadow: 18px 23px 45px rgba(0,0,0,.29); }
-.case-brief-card::before { content: ""; position: absolute; inset: 11px; pointer-events: none; border: 1px solid #d6c7aa; }
-.brief-stamp { width: max-content; margin-left: auto; padding: 7px 9px; transform: rotate(3deg); border: 2px solid #9c503e; color: #9c503e; font-size: 11px; font-weight: 900; letter-spacing: .13em; }
-.case-brief-card h2 { margin: 0 0 8px; color: var(--navy); font-family: Georgia, serif; font-size: 31px; font-weight: 500; }
-.case-brief-card > p { color: #71746e; font-size: 13px; line-height: 1.5; }
-.brief-terms { margin-top: 25px; display: flex; flex-direction: column; gap: 10px; }
-.brief-terms span { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 7px; padding-bottom: 8px; border-bottom: 1px solid #d9cfbc; color: #7c7c74; font-size: 11.5px; }
-.brief-terms svg { width: 16px; color: var(--gold-dark); }
-.brief-terms strong { color: var(--navy); font-size: 12px; }
+/* Everything explanatory about practice — the loop, the client, the docket —
+   says the same thing on every visit, so it opens on request rather than
+   occupying the page. */
+.practice-guide { margin-top: 12px; border: 1px solid #d8cfc0; border-radius: 13px; background: #fffdf8; }
+.practice-guide > summary { padding: 15px 18px; display: flex; align-items: center; gap: 9px; cursor: pointer; color: var(--navy); font-size: 13.5px; font-weight: 700; }
+.practice-guide > summary svg { color: var(--gold-dark); }
+.practice-guide-body { padding: 0 18px 18px; display: grid; gap: 22px; }
+.practice-guide-body h2 { margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: 20px; font-weight: 500; }
+.practice-guide-body p { max-width: var(--prose-measure); margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.practice-loop { margin: 13px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; list-style: none; }
+.practice-loop li { padding: 15px; position: relative; border: 1px solid #d8cfc0; border-radius: 11px; background: #fdf8ec; }
+.practice-loop li > b { position: absolute; top: 12px; right: 14px; color: #ded4c2; font-family: Georgia, serif; font-size: 22px; }
+.practice-loop li > svg { color: var(--gold-dark); }
+.practice-loop h3 { margin: 13px 0 6px; color: var(--navy); font-family: Georgia, serif; font-size: 18px; font-weight: 500; }
+.practice-loop p { margin: 0; font-size: 12px; }
 .run-queue-panel { margin-bottom: 22px; padding: 16px 19px 19px; border: 1px solid rgba(238,203,130,.5); border-radius: 14px; color: white; background: linear-gradient(120deg, #0d2d38, #163f4c); box-shadow: 0 14px 30px rgba(4,10,12,.25); }
 .run-queue-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .run-queue-header .eyebrow { color: #d0b36e; }
@@ -299,13 +337,6 @@ h1, h2, h3, p { text-wrap: pretty; }
   .mega-gate { padding: 20px 16px; }
   .mega-gate-actions { flex-direction: column-reverse; }
 }
-.how-scoring-works { padding: 65px 15px 0; }
-.how-scoring-works > div { margin-top: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.how-scoring-works article { min-height: 205px; padding: 22px; position: relative; border: 1px solid #d8cfc0; border-radius: 13px; background: #fffdf8; }
-.how-scoring-works article > span { position: absolute; top: 15px; right: 17px; color: #ded4c2; font-family: Georgia, serif; font-size: 26px; }
-.how-scoring-works article > svg { color: var(--gold-dark); }
-.how-scoring-works h3 { margin: 19px 0 8px; color: var(--navy); font-family: Georgia, serif; font-size: 21px; font-weight: 500; }
-.how-scoring-works p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 
 /* Question file */
 .session-page { min-height: calc(100vh - 72px); background: #e9e3d8; }
@@ -591,7 +622,9 @@ h1, h2, h3, p { text-wrap: pretty; }
 @keyframes client-unhappy { 0%,86%,100% { transform: translateX(0); } 89% { transform: translateX(-2px); } 92% { transform: translateX(2px); } 95% { transform: translateX(-1px); } }
 
 .lobby-client-portrait { width: 94px; height: 101px; margin: 4px 0 10px; }
-.case-brief-card { background-color: #f7e8c7; background-image: radial-gradient(circle at 17% 21%, rgba(99,72,34,.1) 0 1px, transparent 1.5px), radial-gradient(circle at 72% 64%, rgba(99,72,34,.07) 0 1px, transparent 1.5px), linear-gradient(95deg, rgba(255,255,255,.28), transparent 30%, rgba(126,88,37,.04)); background-size: 17px 19px, 23px 29px, auto; }
+/* The aged-paper texture the brief card used to carry now lands on the four
+   loop steps inside the guide drawer, so the lobby keeps its case-file feel. */
+.practice-loop li { background-color: #f7e8c7; background-image: radial-gradient(circle at 17% 21%, rgba(99,72,34,.1) 0 1px, transparent 1.5px), radial-gradient(circle at 72% 64%, rgba(99,72,34,.07) 0 1px, transparent 1.5px), linear-gradient(95deg, rgba(255,255,255,.28), transparent 30%, rgba(126,88,37,.04)); background-size: 17px 19px, 23px 29px, auto; }
 
 .session-page { min-height: calc(100vh - 72px); position: relative; overflow: hidden; background-color: #34261f; background-image: radial-gradient(ellipse at 50% -10%, rgba(190,145,73,.25), transparent 42%), linear-gradient(90deg, rgba(24,15,12,.25) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(135deg, #3e2c23, #241b18 72%); background-size: auto, 46px 100%, 100% 9px, auto; }
 .session-page::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .36; background: radial-gradient(ellipse at center, transparent 42%, rgba(6,8,9,.55)), repeating-linear-gradient(88deg, transparent 0 87px, rgba(255,255,255,.018) 88px, transparent 90px); }
@@ -752,9 +785,7 @@ h1, h2, h3, p { text-wrap: pretty; }
   .office-sidebar { display: grid; grid-template-columns: 1fr 1fr; }
   .office-lower-grid { grid-template-columns: 1fr; }
   .standing-card { grid-column: auto; }
-  .docket-hero { grid-template-columns: 1fr; padding: 50px 35px; gap: 40px; }
-  .case-brief-card { width: min(440px, 100%); justify-self: center; }
-  .how-scoring-works > div { grid-template-columns: repeat(2, 1fr); }
+  .practice-loop { grid-template-columns: repeat(2, 1fr); }
   .question-content.with-passage { grid-template-columns: 1fr; }
   .passage-card { position: static; max-height: 50vh; }
   .client-roster-status { grid-template-columns: 80px 1fr; }
@@ -785,10 +816,9 @@ h1, h2, h3, p { text-wrap: pretty; }
   .client-contract-card { grid-template-columns: 45px 1fr; }
   .client-contract-card .text-button { grid-column: 2; }
   .daily-goals { grid-template-columns: 1fr; }
-  .docket-hero { padding: 38px 22px; }
-  .docket-copy h1 { font-size: 43px; }
-  .how-scoring-works { padding-inline: 0; }
-  .how-scoring-works > div { grid-template-columns: 1fr; }
+  .practice-action-scenery { display: none; }
+  .practice-action-client { grid-template-columns: 1fr; }
+  .practice-loop { grid-template-columns: 1fr; }
   .case-file-topbar { grid-template-columns: 1fr auto; }
   .question-progress { grid-column: 1 / -1; grid-row: 2; padding-top: 2px; }
   .question-layout { width: min(100% - 20px, 600px); }
@@ -1257,7 +1287,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .login-nav { border-bottom: 4px solid #080c13; background: #111a29; }.login-hero { background-color: #17283a; background-image: linear-gradient(90deg, rgba(105,153,157,.05) 2px, transparent 2px), linear-gradient(rgba(105,153,157,.05) 2px, transparent 2px), radial-gradient(circle at 20% 10%, #2b5662, transparent 38%); background-size: 18px 18px, 18px 18px, auto; }.login-copy h1 { font-family: var(--font-pixel); font-size: clamp(38px, 4.5vw, 68px); font-weight: 900; text-transform: uppercase; text-shadow: 5px 5px #0a111d; }.login-copy h1 em { color: #f0c65c; font-style: normal; }.login-copy > p { color: #b4c9ce; }.feature-list { font-family: var(--font-pixel); font-size: 10.5px; }.login-panel-wrap { color: #2e2a25; background-color: #d5c89f; background-image: linear-gradient(90deg, rgba(49,40,32,.06) 1px, transparent 1px), linear-gradient(rgba(49,40,32,.06) 1px, transparent 1px); background-size: 8px 8px; }.login-panel { border: 4px solid #141721; border-radius: 0; background: #f3e4ba; box-shadow: inset 0 0 0 3px #c59b58, 9px 9px #141721; }.login-panel h2 { font-family: var(--font-pixel); font-size: 26px; font-weight: 900; text-transform: uppercase; }.crest { border: 4px solid #141721; border-radius: 0; background: #1e3548; box-shadow: inset 0 0 0 2px #dbad4e, 5px 5px #141721; }.login-scene { border: 4px solid #080c13; border-radius: 0; box-shadow: 10px 10px #080c13; transform: none; }
 .office-scene.pixel-scene { border: 4px solid #080c13; border-radius: 0; box-shadow: inset 0 0 0 3px #34465a, 8px 8px #080c13; }.pixel-scene .pixel-office-world { position: relative; width: 100%; height: 100%; }.pixel-scene .preview-lawyer { z-index: 20; }
 .onboarding-page { background: #101725; }.onboarding-scene-wrap { background-color: #17283a; background-image: linear-gradient(90deg, rgba(105,153,157,.06) 2px, transparent 2px), linear-gradient(rgba(105,153,157,.06) 2px, transparent 2px); background-size: 18px 18px; }.opening-caption h2, .onboarding-panel h1 { font-family: var(--font-pixel); font-weight: 900; text-transform: uppercase; }.onboarding-panel { background-color: #d8cba4; background-image: linear-gradient(90deg, rgba(49,40,32,.06) 1px, transparent 1px), linear-gradient(rgba(49,40,32,.06) 1px, transparent 1px); background-size: 8px 8px; }.character-choice button { border: 3px solid #171923; border-radius: 0; background: #f3e4ba; box-shadow: 4px 4px #171923; font-family: var(--font-pixel); font-size: 10.5px; }.character-choice button.selected { border: 4px solid #171923; background: #f1d990; box-shadow: inset 0 0 0 3px #bd8b3e, 5px 5px #171923; }.name-fields label { font-family: var(--font-pixel); font-size: 10px; }.name-fields input { border: 3px solid #171923; border-radius: 0; background: #f8edcf; box-shadow: inset 3px 3px #c7ad78; font-family: var(--font-pixel); font-size: 11.5px; }
-.case-lobby, .firm-page { color: #2a2830; }.docket-hero { border: 4px solid #080c13; border-radius: 0; background-color: #172a3b; background-image: linear-gradient(90deg, rgba(101,201,194,.06) 2px, transparent 2px), linear-gradient(rgba(101,201,194,.06) 2px, transparent 2px), radial-gradient(circle at 10% 0%, #315a68, transparent 35%); background-size: 20px 20px, 20px 20px, auto; box-shadow: inset 0 0 0 3px #385064, 9px 9px #080c13; }.docket-hero::before { font-family: var(--font-pixel); }.docket-copy h1 { font-family: var(--font-pixel); font-size: clamp(39px, 5vw, 68px); font-weight: 900; text-transform: uppercase; text-shadow: 5px 5px #080c13; }.docket-copy h1 em { color: #f0c65c; font-style: normal; }.case-brief-card { border: 4px solid #10151e; border-radius: 0; box-shadow: inset 0 0 0 3px #c49c5b, 7px 7px #10151e; }.case-brief-card h2 { font-family: var(--font-pixel); font-size: 19px; text-transform: uppercase; }.brief-stamp, .brief-terms strong { font-family: var(--font-pixel); }.how-scoring-works article { border: 3px solid #171923; border-radius: 0; background: #efddb1; box-shadow: inset 0 0 0 2px #c39d61, 5px 5px #171923; }.how-scoring-works h3 { font-family: var(--font-pixel); font-size: 14px; text-transform: uppercase; }
+.case-lobby, .firm-page { color: #2a2830; }.practice-action { border: 4px solid #080c13; border-radius: 0; background-color: #172a3b; background-image: linear-gradient(90deg, rgba(101,201,194,.06) 2px, transparent 2px), linear-gradient(rgba(101,201,194,.06) 2px, transparent 2px), radial-gradient(circle at 10% 0%, #315a68, transparent 35%); background-size: 20px 20px, 20px 20px, auto; box-shadow: inset 0 0 0 3px #385064, 9px 9px #080c13; }.practice-action > h1 { font-family: var(--font-pixel); font-size: clamp(28px, 3.6vw, 44px); font-weight: 900; text-transform: uppercase; text-shadow: 5px 5px #080c13; }.practice-action-client > div > strong { font-family: var(--font-pixel); font-size: 17px; text-transform: uppercase; }.practice-action-terms b { border: 2px solid #0e151e; border-radius: 0; font-family: var(--font-pixel); font-size: 9.5px; }.practice-action-secondary { border: 3px solid #0e131c; border-radius: 0; box-shadow: 4px 4px #0e131c; font-family: var(--font-pixel); font-size: 10px; }.practice-guide { border: 4px solid #10151e; border-radius: 0; box-shadow: inset 0 0 0 3px #c49c5b, 7px 7px #10151e; }.practice-guide > summary { font-family: var(--font-pixel); font-size: 12px; text-transform: uppercase; }.practice-guide-body h2 { font-family: var(--font-pixel); font-size: 16px; text-transform: uppercase; }.practice-loop li { border: 3px solid #171923; border-radius: 0; box-shadow: inset 0 0 0 2px #c39d61, 5px 5px #171923; }.practice-loop h3 { font-family: var(--font-pixel); font-size: 14px; text-transform: uppercase; }
 .page-heading h1, .map-heading h1 { font-family: var(--font-pixel); font-size: clamp(28px, 4vw, 48px); font-weight: 900; text-transform: uppercase; }.firm-wallet, .tier-upgrade-banner, .client-roster-status { border: 4px solid #10151e; border-radius: 0; box-shadow: inset 0 0 0 2px #41576a, 6px 6px #10151e; }.firm-wallet { background: #20374a; }.firm-wallet small, .firm-wallet strong, .firm-wallet span { font-family: var(--font-pixel); }.firm-tabs { gap: 5px; border: 0; }.firm-tabs button { border: 3px solid #171923; border-radius: 0; background: #dbc89d; box-shadow: 3px 3px #171923; font-family: var(--font-pixel); font-size: 10.5px; }.firm-tabs button.active { color: #162031; border-color: #171923; background: #efc55a; box-shadow: inset -3px -3px #b57a2e, 3px 3px #171923; }.management-card, .achievement-grid article { border: 3px solid #171923; border-radius: 0; background: #f1dfb2; box-shadow: inset 0 0 0 2px #c9a568, 5px 5px #171923; }.management-card h3, .achievement-grid h3 { font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.card-icon, .tier-preview { border: 3px solid #131720; border-radius: 0; color: #efc65c; background: #243d4e; box-shadow: 3px 3px #131720; }.benefit-pill { border-radius: 0; font-family: var(--font-pixel); font-size: 10px; }
 .session-page { background-color: #162130; background-image: linear-gradient(90deg, rgba(112,173,170,.05) 2px, transparent 2px), linear-gradient(rgba(112,173,170,.05) 2px, transparent 2px), radial-gradient(ellipse at 50% -10%, #39493e, transparent 50%); background-size: 18px 18px, 18px 18px, auto; }.session-page::before { opacity: .13; background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(5,8,12,.3) 4px); }.active-matter-banner, .case-file-topbar, .judge-review, .client-settlement { border: 4px solid #080c13; border-radius: 0; box-shadow: inset 0 0 0 3px #405a6d, 7px 7px #080c13; }.active-matter-copy > span, .active-matter-fee > span, .matter-tag small, .question-progress, .case-timer small { font-family: var(--font-pixel); }.active-matter-copy > strong, .active-matter-fee strong { font-family: var(--font-pixel); text-transform: uppercase; }.passage-card, .answer-card { border: 4px solid #2c261e; border-radius: 0; box-shadow: inset 0 0 0 3px #c59e5e, 8px 8px #17130f; }.answer-card h1 { font-family: var(--font-pixel); font-size: clamp(17px, 1.7vw, 22px); font-weight: 900; }.choice { border: 3px solid #544937; border-radius: 0; box-shadow: 3px 3px #544937; }.choice-label { border: 2px solid #27241f; border-radius: 0; font-family: var(--font-pixel); }.reasoning-box, .reasoning-box textarea, .coaching-panel, .correct-explanation, .debrief-step, .case-score-card { border-radius: 0; }.judge-speech { border: 3px solid #1a1a1d; border-radius: 0; box-shadow: inset 0 0 0 2px #d0a95e, 5px 5px #12151b; }.judge-speech h2, .coaching-heading h2 { font-family: var(--font-pixel); font-size: clamp(16px, 2vw, 22px); text-transform: uppercase; }.grade-pill { border: 2px solid currentColor; border-radius: 0; font-family: var(--font-pixel); font-size: 10px; }.score-seal { border: 5px solid #9c6f2c; border-radius: 0; box-shadow: inset 0 0 0 3px #e9c668; }.score-seal span, .score-seal strong { font-family: var(--font-pixel); }.client-speech { border: 3px solid #171923; border-radius: 0; box-shadow: 5px 5px #171923; }.client-speech strong, .reward-packet strong { font-family: var(--font-pixel); }
 
@@ -1333,7 +1363,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
   .map-legend { display: none; }.map-compass { transform: scale(.8); transform-origin: top left; }
   .empire-node { transform: translate(-50%, -70%) scale(.72); }
   .road-a, .road-b { width: 90%; }.map-water { width: 22%; }
-  .login-copy h1 { font-size: 38px; }.docket-copy h1 { font-size: 36px; }
+  .login-copy h1 { font-size: 38px; }.practice-action > h1 { font-size: 26px; }
   .firm-tabs button { font-size: 10px; }
 }
 
@@ -2163,10 +2193,11 @@ body::before {
 .scanlines,
 .asset-art-scanlines { display: none !important; }
 
-/* The case lobby reads as a small office at dusk instead of a glowing grid. */
-.docket-hero {
-  isolation: isolate;
-  perspective: 1300px;
+/* The case lobby reads as a small office at dusk instead of a glowing grid.
+   The tilted brief card and the decorative rings behind each loop step are
+   gone: the card was a rotated surface holding real numbers, and the rings
+   sat behind text that now lives inside a drawer. */
+.practice-action {
   background-color: #162a39;
   background-image:
     radial-gradient(ellipse at 75% 18%, rgba(81,151,151,.25), transparent 34%),
@@ -2174,57 +2205,6 @@ body::before {
     linear-gradient(135deg, #193545 0%, #112735 59%, #0c1c29 100%);
   background-size: auto;
 }
-
-.docket-hero::before {
-  z-index: 0;
-  color: rgba(241,205,119,.055);
-}
-
-.docket-scenery {
-  width: min(390px, 38%);
-  position: absolute;
-  z-index: 0;
-  right: 32%;
-  bottom: -4%;
-  opacity: .53;
-}
-
-.docket-copy,
-.case-brief-card { z-index: 1; }
-
-.case-brief-card {
-  transform: rotate(1.3deg) translateZ(0);
-  transform-style: preserve-3d;
-  transition: transform .32s cubic-bezier(.2,.8,.2,1), box-shadow .32s ease;
-}
-
-.case-brief-card:hover {
-  transform: rotate(.35deg) translateY(-6px) rotateX(1deg) rotateY(-1deg);
-  box-shadow: inset 0 0 0 3px #c49c5b, 13px 18px #10151e, 0 25px 38px rgba(5,11,16,.26);
-}
-
-.how-scoring-works article {
-  overflow: hidden;
-  isolation: isolate;
-  transition: translate .2s steps(2), box-shadow .2s ease;
-}
-
-.how-scoring-works article::after {
-  content: "";
-  width: 76px;
-  height: 76px;
-  position: absolute;
-  z-index: -1;
-  right: -28px;
-  bottom: -33px;
-  border: 14px solid rgba(180,132,65,.12);
-  border-radius: 50%;
-}
-
-.how-scoring-works article:nth-child(2)::after { border-color: rgba(56,123,116,.15); }
-.how-scoring-works article:nth-child(3)::after { border-color: rgba(154,76,60,.15); }
-.how-scoring-works article:nth-child(4)::after { border-color: rgba(73,105,149,.15); }
-.how-scoring-works article:hover { translate: 0 -4px; box-shadow: inset 0 0 0 2px #c39d61, 8px 10px #171923; }
 
 /* The focused question surface stays calm—no decorative scanlines behind text. */
 .session-page {
@@ -2305,19 +2285,13 @@ body::before {
 }
 
 @media (max-width: 900px) {
-  .docket-scenery { right: 38%; opacity: .26; }
+  .practice-action-scenery { opacity: .26; }
   .firm-ledger-scenery { right: 10%; opacity: .18; }
 }
 
 @media (max-width: 620px) {
-  .docket-scenery,
+  .practice-action-scenery,
   .firm-ledger-scenery { display: none; }
-  .case-brief-card:hover { transform: rotate(1.3deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .case-brief-card,
-  .how-scoring-works article { transition: none; }
 }
 
 @media (max-width: 620px) {

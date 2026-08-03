@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
@@ -115,6 +115,16 @@ function MegaLitigationGate({
 }
 
 
+const DASHBOARD_TABS = [
+  { key: 'skills', label: 'Skills' },
+  { key: 'methods', label: 'Methods' },
+  { key: 'mega', label: 'Mega-litigation' },
+  { key: 'evidence', label: 'Evidence' },
+] as const
+
+type DashboardTab = (typeof DASHBOARD_TABS)[number]['key']
+
+
 export function PerformancePage() {
   const navigate = useNavigate()
   const { play } = useSound()
@@ -124,6 +134,9 @@ export function PerformancePage() {
   // The clock starts the moment the form is created, so creation sits behind
   // the gate rather than in front of it.
   const [gateOpen, setGateOpen] = useState(false)
+  // The nine analysis panels used to stack open all at once. They are the same
+  // panels; only one is on screen at a time now, at every breakpoint.
+  const [tab, setTab] = useState<DashboardTab>('skills')
   const startDiagnostic = useMutation({
     mutationFn: () => api.startDiagnostic(1),
     onSuccess: ({ session }) => {
@@ -140,6 +153,24 @@ export function PerformancePage() {
     mutationFn: (questionType: string) => api.startPractice({ size: 3, question_type: questionType }),
     onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
   })
+  const selectTab = (next: DashboardTab) => {
+    if (next === tab) return
+    void play('tab', { seed: `dash:${next}`, intensity: .24 })
+    setTab(next)
+  }
+  const moveTab = (event: KeyboardEvent<HTMLButtonElement>, current: DashboardTab) => {
+    const currentIndex = DASHBOARD_TABS.findIndex((item) => item.key === current)
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % DASHBOARD_TABS.length
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + DASHBOARD_TABS.length) % DASHBOARD_TABS.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = DASHBOARD_TABS.length - 1
+    if (nextIndex === null) return
+    event.preventDefault()
+    const next = DASHBOARD_TABS[nextIndex].key
+    selectTab(next)
+    document.getElementById(`dash-tab-${next}`)?.focus()
+  }
   if (performanceQuery.isLoading || diagnosticQuery.isLoading || current.isLoading) return <LoadingScreen label="Measuring your training line…" />
   if (performanceQuery.error || diagnosticQuery.error) {
     return (
@@ -189,6 +220,9 @@ export function PerformancePage() {
     directional: 'The trend is useful for training decisions.',
     stable: 'Your sample is large enough for a stable performance signal.',
   }[metrics.evidence]
+  const averageSplit = testMetrics.attempts
+    ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}`
+    : '—'
   const openPrimaryTraining = () => {
     if (activePractice) navigate(`/cases/${activePractice.id}`)
     else startCases.mutate()
@@ -198,172 +232,228 @@ export function PerformancePage() {
     else setGateOpen(true)
   }
   const focus = performance.focus ?? { types: [], session_id: null, completed_at: null, baseline_accuracy: null, explanation: '' }
+  const megaLitigationLabel = diagnosticSession
+    ? 'Resume mega-litigation'
+    : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'
 
   return (
     <div className="performance-page page-wrap">
-      <section className="mobile-training-home" aria-label="Training overview">
-        <header className="mobile-learning-header">
-          <div><span>DASHBOARD</span><h1>Your next best rep.</h1></div>
-          <a href="#mobile-training-analysis">Analysis <ArrowRight size={15} /></a>
-        </header>
-        <div className="mobile-training-signal">
-          <div className="mobile-training-score" aria-label={`${testMetrics.accuracy} percent diagnostic accuracy`}>
-            <strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><span>{testMetrics.attempts ? '%' : 'NEW'}</span>
-          </div>
-          <div><small>MEGA-LITIGATION ACCURACY</small><p>{testMetrics.attempts ? `${testMetrics.attempts} verified attempts · ${readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}` : 'Sit a mega-litigation — a full practice LSAT — to establish your line.'}</p></div>
-        </div>
-        <div className="mobile-training-metrics" aria-label="Training evidence">
-          <div><span>Average split</span><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong></div>
-          <div><span>Review recovery</span><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong></div>
-          <div><span>Due now</span><strong>{reviewMetrics.due}</strong></div>
-        </div>
-        <div className="mobile-training-priority">
-          <Target size={19} />
-          <div><span>TRAINING PRIORITY</span><strong>{performance.recommendation?.skill ?? 'Establish your baseline'}</strong><small>{performance.recommendation ? `${performance.recommendation.accuracy}% current accuracy · ${performance.recommendation.reason}` : 'A mega-litigation will identify the first weakness.'}</small></div>
-        </div>
-        <div className="mobile-training-actions">
-          <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Continue current run' : 'Start 10 cases'} <ArrowRight /></button>
-          <button className="mobile-training-secondary" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'}</button>
-        </div>
-      </section>
+      <section className="dash-summary" aria-label="Training summary">
+        <PixelStudyScenery variant="training" className="dash-summary-scenery" />
+        <h1 className="dash-title">Dashboard</h1>
 
-      <section className="performance-hero">
-        <div>
-          <span className="eyebrow">EXPERIMENTAL · LSAT SPEEDRUN LAB</span>
-          <h1>Build speed that survives a new question.</h1>
-          <p>Timed unseen accuracy is the headline. Review recovery, confidence, and pacing explain what to train next.</p>
-          <div className="performance-actions">
-            <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10 cases'} <ArrowRight /></button>
-            <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'}</button>
+        <div className="dash-signal">
+          <div
+            className="index-ring"
+            style={{ '--index': `${testMetrics.accuracy * 3.6}deg` } as CSSProperties}
+            aria-label={`${testMetrics.accuracy} percent mega-litigation accuracy`}
+          >
+            <span><strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><small>{testMetrics.attempts ? '%' : 'NO DATA'}</small></span>
+          </div>
+          <div className="dash-signal-copy">
+            <small>Mega-litigation accuracy</small>
+            <p>{testMetrics.attempts
+              ? `${testMetrics.attempts} measured question${testMetrics.attempts === 1 ? '' : 's'} · ${readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}`
+              : 'Sit a mega-litigation — a full practice LSAT — to establish your line.'}</p>
+            <em>
+              <span className="dash-evidence-band"><Activity size={12} /> {metrics.evidence}</span>
+              {metrics.attempts} question{metrics.attempts === 1 ? '' : 's'} observed — {evidenceCopy}
+            </em>
+          </div>
+          <div className="dash-tiles">
+            <div><span>Average split</span><strong>{averageSplit}</strong></div>
+            <div><span>Review recovery</span><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong></div>
+            <div><span>Due now</span><strong>{reviewMetrics.due}</strong></div>
           </div>
         </div>
-        <div className="speedrun-index" aria-label={`${testMetrics.accuracy} percent mega-litigation accuracy`}>
-          <div className="index-ring" style={{ '--index': `${testMetrics.accuracy * 3.6}deg` } as React.CSSProperties}><span><strong>{testMetrics.attempts ? testMetrics.accuracy : '—'}</strong><small>{testMetrics.attempts ? '%' : 'NO DATA'}</small></span></div>
-          <small>MEGA-LITIGATION ACCURACY</small>
-          <p>{testMetrics.attempts} measured question{testMetrics.attempts === 1 ? '' : 's'} · {readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}</p>
-        </div>
-        <PixelStudyScenery variant="training" className="performance-hero-scenery" />
-      </section>
 
-      <section className="evidence-strip">
-        <span><Activity /> EVIDENCE: {metrics.evidence.toUpperCase()}</span><p>{evidenceCopy}</p><strong>{metrics.attempts} questions observed</strong>
-      </section>
-
-      <section className="performance-metrics" aria-label="Core LSAT performance measures">
-        <article><div><Target /><span>MEGA-LITIGATION PERFORMANCE</span></div><strong>{testMetrics.attempts ? `${testMetrics.accuracy}%` : '—'}</strong><small>{testMetrics.attempts} measured attempts · {testMetrics.pace_adherence}% inside an even split of the clock</small></article>
-        <article><div><TimerReset /><span>AVERAGE SPLIT</span></div><strong>{testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—'}</strong><small>Mega-litigation work only</small></article>
-        <article><div><Brain /><span>COACHED PRACTICE</span></div><strong>{performance.coached_practice.attempts ? `${performance.coached_practice.accuracy}%` : '—'}</strong><small>{performance.coached_practice.attempts} case{performance.coached_practice.attempts === 1 ? '' : 's'} · {performance.coached_practice.reasoning === null ? 'no grades yet' : `${performance.coached_practice.reasoning}% mean explanation`}</small></article>
-        <article><div><Brain /><span>REVIEW RECOVERY</span></div><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong><small>{reviewMetrics.due} due · {reviewMetrics.scheduled} scheduled · {reviewMetrics.mastered} mastered</small></article>
-        <article><div><Gauge /><span>CONFIDENCE ERRORS</span></div><strong>{confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`}</strong><small>High-confidence misses across {confidenceMetrics.sample} rated answers</small></article>
-      </section>
-
-      <div className="mobile-performance-deck" id="mobile-training-analysis">
-        <header className="mobile-performance-deck-heading" aria-hidden="true"><span>YOUR TRAINING FILE</span><strong>Swipe between method, baseline, evidence, trends, and skills.</strong></header>
-        <div className="mobile-performance-deck-track" aria-label="Training analysis panels">
-      <section className="strategy-lab-panel" aria-labelledby="strategy-lab-title">
-        <div className="panel-heading strategy-lab-heading">
-          <div><span>WHAT'S WORKING FOR YOU</span><h2 id="strategy-lab-title">The approaches that actually help you.</h2></div>
-          <Brain />
-        </div>
-        <p className="strategy-lab-intro">{strategyLab.intro}</p>
-
-        {leadingStrategy ? (
-          <div className="strategy-leader-grid">
-            <div className="strategy-leader-copy">
-              <span className={`strategy-evidence-badge ${leadingStrategy.verdict}`}>{leadingStrategy.verdict_label}</span>
-              <h3>{leadingStrategy.plain_title}</h3>
-              <p>{leadingStrategy.summary}</p>
-              <small>{leadingStrategy.detail} {leadingStrategy.next_step}</small>
-            </div>
-            <div className="strategy-comparison" aria-label={`${leadingStrategy.plain_title}: with it compared with without it`}>
-              <div><span>WITH IT</span><strong>{leadingStrategy.with_headline}</strong><small>{leadingStrategy.with_note}</small></div>
-              <div><span>WITHOUT IT</span><strong>{leadingStrategy.without_headline}</strong><small>{leadingStrategy.without_note}</small></div>
-              <div className={leadingStrategy.lift !== null && leadingStrategy.lift > 0 ? 'positive' : ''}><span>DIFFERENCE</span><strong>{leadingStrategy.difference_headline}</strong><small>{leadingStrategy.difference_note}</small></div>
-            </div>
+        <div className="dash-next">
+          <Target size={17} />
+          <div>
+            <span>Next up</span>
+            <strong>{performance.recommendation?.skill ?? 'Establish your baseline'}</strong>
+            <small>{performance.recommendation
+              ? `${performance.recommendation.accuracy}% accuracy · ${performance.recommendation.reason}`
+              : 'A mega-litigation will identify the first weakness. No weakness is inferred without evidence.'}</small>
           </div>
-        ) : (
-          <div className="strategy-empty-state"><Activity /><div><strong>{strategyLab.empty_state.title}</strong><p>{strategyLab.empty_state.body}</p></div></div>
-        )}
+          {performance.recommendation && (
+            <button
+              className="focus-sprint-button"
+              disabled={startFocus.isPending || Boolean(activePractice)}
+              onClick={() => startFocus.mutate(performance.recommendation!.skill)}
+            >
+              {activePractice ? 'Finish current run first' : startFocus.isPending ? 'Building focus sprint…' : 'Run 3 focused questions'}
+              <ArrowRight size={14} />
+            </button>
+          )}
+        </div>
 
-        {strategyLab.results.length > 0 && (
-          <details className="strategy-results-detail">
-            <summary>Every approach you've tried <span>{strategyLab.strategies_tested} tried · {strategyLab.trials_completed} questions measured</span></summary>
-            <div className="strategy-results-table">
-              <div className="header"><span>Approach</span><span>With it / without it</span><span>Difference</span><span>Where it stands</span></div>
-              {strategyLab.results.map((strategy) => (
-                <div key={strategy.key}>
-                  <strong>{strategy.plain_title}<small>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</small></strong>
-                  <span>{strategy.with_headline} / {strategy.without_headline}<small>{strategy.sample} with · {strategy.control_sample} without</small></span>
-                  <span>{strategy.difference_headline}</span>
-                  <span className={`strategy-evidence-badge ${strategy.verdict}`}>{strategy.verdict_label}</span>
+        <div className="dash-actions">
+          <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}>
+            <TimerReset /> {activePractice ? 'Resume current run' : 'Start 10 cases'} <ArrowRight />
+          </button>
+          <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>
+            <Target /> {megaLitigationLabel}
+          </button>
+        </div>
+      </section>
+
+      <div className="dash-tabs" role="tablist" aria-label="Training analysis">
+        {DASHBOARD_TABS.map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            id={`dash-tab-${key}`}
+            aria-selected={tab === key}
+            aria-controls={`dash-panel-${key}`}
+            tabIndex={tab === key ? 0 : -1}
+            className={tab === key ? 'active' : ''}
+            onKeyDown={(event) => moveTab(event, key)}
+            onClick={() => selectTab(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Only the selected panel holds content, but every tab's `aria-controls`
+          has to resolve to a real element, so the rest render empty and hidden. */}
+      {DASHBOARD_TABS.filter(({ key }) => key !== tab).map(({ key }) => (
+        <div key={key} id={`dash-panel-${key}`} role="tabpanel" aria-labelledby={`dash-tab-${key}`} hidden />
+      ))}
+
+      <div className="dash-panel" role="tabpanel" id={`dash-panel-${tab}`} aria-labelledby={`dash-tab-${tab}`} tabIndex={0}>
+        {tab === 'skills' && (
+          <>
+            <article className="skill-table-panel">
+              <div className="panel-heading"><h2>Where the points are actually moving</h2><Brain /></div>
+              {performance.skills.length ? (
+                <div className="skill-table">
+                  <div className="skill-row header"><span>Question type</span><span>Sample</span><span>Accuracy</span><span>Pace</span><span>Reasoning</span></div>
+                  {performance.skills.map((skill) => (
+                    <div className="skill-row" key={skill.name}>
+                      <strong>{skill.name}</strong>
+                      <span>{skill.attempts}</span>
+                      <span><i style={{ width: `${skill.accuracy}%` }} />{skill.accuracy}%</span>
+                      <span>{skill.pace_adherence}%</span>
+                      <span>{skill.reasoning === null ? '—' : `${skill.reasoning}%`}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </details>
+              ) : <div className="empty-skills"><p>No skill claims yet. A mega-litigation creates the first evidence-backed matrix.</p></div>}
+            </article>
+
+            <article className="focus-panel">
+              <div className="panel-heading"><h2>What practice is weighted toward</h2><Target /></div>
+              <strong className="focus-panel-types">{focus.types.length ? focus.types.join(' · ') : 'Weighted evenly across the test'}</strong>
+              <p>{focus.explanation}</p>
+              {focus.baseline_accuracy !== null && <small>Measured against your own {focus.baseline_accuracy}% on that form, not a fixed bar.</small>}
+            </article>
+          </>
         )}
 
-        <details className="strategy-catalog-detail">
-          <summary>All 14 approaches and where they come from</summary>
-          <p>{strategyLab.catalog_note}</p>
-          <div className="strategy-catalog-grid">
-            {strategyLab.catalog.map((strategy) => <article key={strategy.key}><span>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span><h3>{strategy.plain_title}</h3><em>{strategy.title}</em><p>{strategy.plain_line}</p><ol>{strategy.steps.map((step) => <li key={step}>{step}</li>)}</ol><small>Best for: {strategy.best_for}</small><div>{strategy.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>{source.label}</a>)}</div></article>)}
-          </div>
-        </details>
-        <p className="strategy-lab-caveat"><ShieldAlert /> {strategyLab.evidence_note}</p>
-      </section>
+        {tab === 'methods' && (
+          <article className="strategy-lab-panel" aria-labelledby="strategy-lab-title">
+            <div className="panel-heading strategy-lab-heading">
+              <h2 id="strategy-lab-title">The approaches that actually help you</h2>
+              <Brain />
+            </div>
+            <p className="strategy-lab-intro">{strategyLab.intro}</p>
 
-      <section className="diagnostic-lab">
-        <div className="diagnostic-copy">
-          <span className="eyebrow">MEGA-LITIGATION</span>
-          <h2>{performance.diagnostic ? 'Your performance anchor is set.' : 'Basically a full practice LSAT.'}</h2>
-          <p>{diagnosticSize} LR and RC questions in three blocks under a single {diagnosticMinutes}-minute clock, with results held to the end. It takes one sitting and there is no pause. Take one whenever you like — nothing in the firm waits on it.</p>
-          <ul><li>Above 70% promotes your firm a tier</li><li>Prerequisite upgrades unlocked free</li><li>Sets what your case runs practice</li><li>Pays nothing, prompts nothing, coaches nothing</li></ul>
-          <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>{diagnosticSession ? 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight /></button>
-        </div>
-        <div className="diagnostic-score">
-          {performance.diagnostic ? <><small>LAST FORM SCORE</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong><span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span><p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p></> : <><small>{diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small><strong>—</strong><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>Scaled-score projections remain withheld until a form has a validated conversion.</p></>}
-        </div>
-      </section>
+            {leadingStrategy ? (
+              <div className="strategy-leader-grid">
+                <div className="strategy-leader-copy">
+                  <span className={`strategy-evidence-badge ${leadingStrategy.verdict}`}>{leadingStrategy.verdict_label}</span>
+                  <h3>{leadingStrategy.plain_title}</h3>
+                  <p>{leadingStrategy.summary}</p>
+                  <small>{leadingStrategy.detail} {leadingStrategy.next_step}</small>
+                </div>
+                <div className="strategy-comparison" aria-label={`${leadingStrategy.plain_title}: with it compared with without it`}>
+                  <div><span>WITH IT</span><strong>{leadingStrategy.with_headline}</strong><small>{leadingStrategy.with_note}</small></div>
+                  <div><span>WITHOUT IT</span><strong>{leadingStrategy.without_headline}</strong><small>{leadingStrategy.without_note}</small></div>
+                  <div className={leadingStrategy.lift !== null && leadingStrategy.lift > 0 ? 'positive' : ''}><span>DIFFERENCE</span><strong>{leadingStrategy.difference_headline}</strong><small>{leadingStrategy.difference_note}</small></div>
+                </div>
+              </div>
+            ) : (
+              <div className="strategy-empty-state"><Activity /><div><strong>{strategyLab.empty_state.title}</strong><p>{strategyLab.empty_state.body}</p></div></div>
+            )}
 
-      <section className="focus-panel" aria-label="What practice is weighted toward">
-        <div className="panel-heading"><div><span>PRACTICE FOCUS</span><h2>{focus.types.length ? focus.types.join(' · ') : 'Weighted evenly across the test'}</h2></div><Target /></div>
-        <p>{focus.explanation}</p>
-        {focus.baseline_accuracy !== null && <small>Measured against your own {focus.baseline_accuracy}% on that form, not a fixed bar.</small>}
-      </section>
+            {strategyLab.results.length > 0 && (
+              <details className="strategy-results-detail">
+                <summary>Every approach you've tried <span>{strategyLab.strategies_tested} tried · {strategyLab.trials_completed} questions measured</span></summary>
+                <div className="strategy-results-table">
+                  <div className="header"><span>Approach</span><span>With it / without it</span><span>Difference</span><span>Where it stands</span></div>
+                  {strategyLab.results.map((strategy) => (
+                    <div key={strategy.key}>
+                      <strong>{strategy.plain_title}<small>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</small></strong>
+                      <span>{strategy.with_headline} / {strategy.without_headline}<small>{strategy.sample} with · {strategy.control_sample} without</small></span>
+                      <span>{strategy.difference_headline}</span>
+                      <span className={`strategy-evidence-badge ${strategy.verdict}`}>{strategy.verdict_label}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
 
-      <section className="evidence-class-panel" aria-label="Evidence coverage">
-        <div className="panel-heading"><div><span>COMPARISON READINESS</span><h2>{readiness.status === 'ready' ? 'Enough independent evidence to compare periods' : 'Still building a defensible sample'}</h2></div><ShieldAlert /></div>
-        <div className="readiness-grid">
-          <div><strong>{readiness.lr_samples}</strong><span>Timed LR</span><small>40 recommended</small></div>
-          <div><strong>{readiness.rc_samples}</strong><span>Timed RC</span><small>20 recommended</small></div>
-          <div><strong>{readiness.completed_diagnostics}</strong><span>Mega-litigations</span><small>1 recommended</small></div>
-        </div>
-        <details><summary>How evidence is separated</summary><p>A mega-litigation is a full practice LSAT, and the only thing that estimates test performance: it pays nothing, prompts nothing, and coaches nothing. Everything else is coached practice, reported separately. Repeated questions never inflate the headline.</p></details>
-      </section>
+            <details className="strategy-catalog-detail">
+              <summary>All 14 approaches and where they come from</summary>
+              <p>{strategyLab.catalog_note}</p>
+              <div className="strategy-catalog-grid">
+                {strategyLab.catalog.map((strategy) => <article key={strategy.key}><span>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</span><h3>{strategy.plain_title}</h3><em>{strategy.title}</em><p>{strategy.plain_line}</p><ol>{strategy.steps.map((step) => <li key={step}>{step}</li>)}</ol><small>Best for: {strategy.best_for}</small><div>{strategy.sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>{source.label}</a>)}</div></article>)}
+              </div>
+            </details>
+            <p className="strategy-lab-caveat"><ShieldAlert /> {strategyLab.evidence_note}</p>
+          </article>
+        )}
 
-      <section className="performance-grid">
-        <article className="trend-panel">
-          <div className="panel-heading"><div><span>PERFORMANCE LINE</span><h2>Accuracy by completed run</h2></div><BarChart3 /></div>
-          {trend.length > 1 ? (
-            <svg viewBox="0 0 600 180" role="img" aria-label="Accuracy trend across recent sessions">
-              {[35,70,105,140].map((y) => <line key={y} x1="20" x2="580" y1={y} y2={y} />)}
-              <polyline points={chartPoints} />
-              {trend.map((entry, index) => <circle key={entry.id} cx={20 + index * (560 / Math.max(1, trend.length - 1))} cy={160 - entry.accuracy * 1.25} r="5"><title>{entry.accuracy}% · {entry.kind}</title></circle>)}
-            </svg>
-          ) : <div className="empty-trend"><Activity /><strong>Complete two runs to reveal a trend.</strong><p>One result is a baseline, not improvement.</p></div>}
-        </article>
+        {tab === 'mega' && (
+          <article className="diagnostic-lab">
+            <div className="diagnostic-copy">
+              <h2>{performance.diagnostic ? 'Your performance anchor is set.' : 'Basically a full practice LSAT.'}</h2>
+              <p>{diagnosticSize} LR and RC questions in three blocks under a single {diagnosticMinutes}-minute clock, with results held to the end. It takes one sitting and there is no pause. Take one whenever you like — nothing in the firm waits on it.</p>
+              <ul><li>Above 70% promotes your firm a tier</li><li>Prerequisite upgrades unlocked free</li><li>Sets what your case runs practice</li><li>Pays nothing, prompts nothing, coaches nothing</li></ul>
+              <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>
+                {diagnosticSession ? 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight />
+              </button>
+            </div>
+            <div className="diagnostic-score">
+              {performance.diagnostic ? <><small>LAST FORM SCORE</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong><span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span><p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p></> : <><small>{diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small><strong>—</strong><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>Scaled-score projections remain withheld until a form has a validated conversion.</p></>}
+            </div>
+          </article>
+        )}
 
-        <article className="priority-panel">
-          <div className="panel-heading"><div><span>WEAKEST-LINK SIGNAL</span><h2>{performance.recommendation?.skill ?? 'Still collecting evidence'}</h2></div><Target /></div>
-          {performance.recommendation ? <><strong>{performance.recommendation.accuracy}% accuracy</strong><p>Recommended because it currently has the {performance.recommendation.reason}.</p><button className="focus-sprint-button" disabled={startFocus.isPending || Boolean(activePractice)} onClick={() => startFocus.mutate(performance.recommendation!.skill)}>{activePractice ? 'Finish current run first' : startFocus.isPending ? 'Building focus sprint…' : 'Run 3 focused questions'} <ArrowRight size={15} /></button><small>Experimental: this signal updates after every reviewed answer.</small></> : <><p>Run a few cases, or sit a mega-litigation, to identify the first training priority.</p><small>No weakness is inferred without evidence.</small></>}
-        </article>
-      </section>
+        {tab === 'evidence' && (
+          <>
+            <article className="trend-panel">
+              <div className="panel-heading"><h2>Accuracy by completed run</h2><BarChart3 /></div>
+              {trend.length > 1 ? (
+                <svg viewBox="0 0 600 180" role="img" aria-label="Accuracy trend across recent sessions">
+                  {[35,70,105,140].map((y) => <line key={y} x1="20" x2="580" y1={y} y2={y} />)}
+                  <polyline points={chartPoints} />
+                  {trend.map((entry, index) => <circle key={entry.id} cx={20 + index * (560 / Math.max(1, trend.length - 1))} cy={160 - entry.accuracy * 1.25} r="5"><title>{entry.accuracy}% · {entry.kind}</title></circle>)}
+                </svg>
+              ) : <div className="empty-trend"><Activity /><strong>Complete two runs to reveal a trend.</strong><p>One result is a baseline, not improvement.</p></div>}
+            </article>
 
-      <section className="skill-table-panel">
-        <div className="panel-heading"><div><span>SKILL MATRIX</span><h2>Where the points are actually moving</h2></div><Brain /></div>
-        {performance.skills.length ? <div className="skill-table"><div className="skill-row header"><span>Question type</span><span>Sample</span><span>Accuracy</span><span>Pace</span><span>Reasoning</span></div>{performance.skills.map((skill) => <div className="skill-row" key={skill.name}><strong>{skill.name}</strong><span>{skill.attempts}</span><span><i style={{ width: `${skill.accuracy}%` }} />{skill.accuracy}%</span><span>{skill.pace_adherence}%</span><span>{skill.reasoning === null ? '—' : `${skill.reasoning}%`}</span></div>)}</div> : <div className="empty-skills"><p>No skill claims yet. A mega-litigation creates the first evidence-backed matrix.</p></div>}
-      </section>
-        </div>
+            <div className="performance-metrics" aria-label="Supporting measures">
+              <article><div><Brain /><span>COACHED PRACTICE</span></div><strong>{performance.coached_practice.attempts ? `${performance.coached_practice.accuracy}%` : '—'}</strong><small>{performance.coached_practice.attempts} case{performance.coached_practice.attempts === 1 ? '' : 's'} · {performance.coached_practice.reasoning === null ? 'no grades yet' : `${performance.coached_practice.reasoning}% mean explanation`}</small></article>
+              <article><div><TimerReset /><span>PACE ADHERENCE</span></div><strong>{testMetrics.attempts ? `${testMetrics.pace_adherence}%` : '—'}</strong><small>Mega-litigation answers inside an even split of the clock</small></article>
+              <article><div><Gauge /><span>CONFIDENCE ERRORS</span></div><strong>{confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`}</strong><small>High-confidence misses across {confidenceMetrics.sample} rated answers</small></article>
+              <article><div><Activity /><span>REVIEW QUEUE</span></div><strong>{reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`}</strong><small>{reviewMetrics.due} due · {reviewMetrics.scheduled} scheduled · {reviewMetrics.mastered} mastered</small></article>
+            </div>
+
+            <article className="evidence-class-panel">
+              <div className="panel-heading"><h2>{readiness.status === 'ready' ? 'Enough independent evidence to compare periods' : 'Still building a defensible sample'}</h2><ShieldAlert /></div>
+              <div className="readiness-grid">
+                <div><strong>{readiness.lr_samples}</strong><span>Timed LR</span><small>40 recommended</small></div>
+                <div><strong>{readiness.rc_samples}</strong><span>Timed RC</span><small>20 recommended</small></div>
+                <div><strong>{readiness.completed_diagnostics}</strong><span>Mega-litigations</span><small>1 recommended</small></div>
+              </div>
+              <details><summary>How evidence is separated</summary><p>A mega-litigation is a full practice LSAT, and the only thing that estimates test performance: it pays nothing, prompts nothing, and coaches nothing. Everything else is coached practice, reported separately. Repeated questions never inflate the headline.</p></details>
+            </article>
+          </>
+        )}
       </div>
 
       {gateOpen && <MegaLitigationGate questions={diagnosticSize} minutes={diagnosticMinutes} pending={startDiagnostic.isPending} onConfirm={() => startDiagnostic.mutate()} onCancel={() => setGateOpen(false)} />}
@@ -912,12 +1002,56 @@ export function CasesLobbyPage() {
           <p>Some of this page could not be loaded, so a few sections may be missing or out of date.</p>
         </div>
       )}
+      <section className="practice-action" aria-label="Start practice">
+        <PixelStudyScenery variant="docket" className="practice-action-scenery" />
+        <h1>Practice</h1>
+
+        <div className="practice-action-client">
+          <ClientPortrait kind={workingClient.icon} name={workingClient.name} className="lobby-client-portrait" />
+          <div>
+            <small>{game.active_client.on_hold ? 'EFFECTIVE CLIENT' : 'ACTIVE CLIENT'}</small>
+            <strong>{workingClient.name}</strong>
+            <span className="practice-action-terms">
+              <b><Coins size={13} /> {formatMoney(workingClient.base_fee)} base fee</b>
+              <b><BriefcaseBusiness size={13} /> {game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} cases left`}</b>
+              <b><Flame size={13} /> {game.current_streak} validated streak</b>
+            </span>
+          </div>
+        </div>
+
+        <p className="practice-action-shape">{queueFull
+          ? `Queue full (${runs.length}/${queueCap}) — discard a run below to start another.`
+          : dueReviews
+            ? `10 questions with ${Math.min(5, dueReviews)} due repair${Math.min(5, dueReviews) === 1 ? '' : 's'} folded in. A written explanation on each one, then coaching after every answer.`
+            : '10 unseen questions. A written explanation on each one, then coaching after every answer.'}</p>
+
+        <button className="primary-button jumbo" onClick={() => startNewRun()} disabled={start.isPending || queueFull}>
+          <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : 'Start 10 cases'} <ArrowRight />
+        </button>
+
+        {/* The docket's own next step is only worth its own control when it
+            points somewhere other than a new run — otherwise it duplicates the
+            button above. */}
+        {daily && daily.next_action.kind !== 'start_cases' && (
+          <button
+            type="button"
+            className="practice-action-secondary"
+            onClick={runNextDocketStep}
+            disabled={start.isPending || daily.next_action.kind === 'done'}
+          >
+            {daily.next_action.kind === 'done' ? <CheckCircle2 size={15} /> : <ArrowRight size={15} />}
+            <span>{daily.next_action.kind === 'done' ? 'Today’s loop is complete' : daily.next_action.label}</span>
+            {daily.deep_brief.priority_count > 0 && <em>{daily.deep_brief.priority_count} to brief</em>}
+          </button>
+        )}
+        {start.error && <ErrorNotice error={start.error} />}
+      </section>
+
       {runs.length > 0 && (
         <section className="run-queue-panel" aria-label="Your practice run queue">
           <header className="run-queue-header">
             <div>
-              <span className="eyebrow">YOUR RUNS</span>
-              <h2>{runs.length} of {queueCap} queued</h2>
+              <h2>{runs.length} of {queueCap} runs queued</h2>
             </div>
             {queueFull && <span className="run-queue-full-flag"><ShieldAlert size={14} /> Queue full — discard a run to start another</span>}
           </header>
@@ -960,95 +1094,42 @@ export function CasesLobbyPage() {
           {queueError && <ErrorNotice error={queueError} />}
         </section>
       )}
-      <section className="mobile-practice-home" aria-label="Practice modes">
-        <header className="mobile-learning-header">
-          <div><span>PRACTICE</span><h1>Do cases.</h1></div>
-        </header>
+      {/* Everything explanatory on this page is stable — it says the same thing
+          on the first visit and the hundredth — so it collapses into one
+          drawer instead of three permanent sections. */}
+      <details className="practice-guide">
+        <summary><BookOpen size={15} /> How practice works</summary>
+        <div className="practice-guide-body">
+          <section>
+            <h2>Every run is the same shape</h2>
+            <p>Unseen questions with any due repairs folded in, a written explanation on each one, and coaching after every answer.</p>
+            <ol className="practice-loop">
+              <li><b>01</b><Scale /><div><h3>Answer</h3><p>The verified key—not AI—determines correctness.</p></div></li>
+              <li><b>02</b><BookOpen /><div><h3>Understand</h3><p>Every checked answer receives concise reasoning.</p></div></li>
+              <li><b>03</b><Brain /><div><h3>Repair</h3><p>Only uncertain, slow, or missed work enters review.</p></div></li>
+              <li><b>04</b><TrendingUp /><div><h3>Transfer</h3><p>Unseen questions prove that the method held.</p></div></li>
+            </ol>
+          </section>
 
-        <div className="mobile-practice-client">
-          <ClientPortrait kind={workingClient.icon} name={workingClient.name} />
-          <span><small>CURRENT CLIENT</small><strong>{workingClient.name}</strong><em>{game.active_client.on_hold ? 'Walk-in matters available' : `${game.active_client.cases_remaining} files remaining`}</em></span>
-          <b><Coins size={14} />{formatMoney(workingClient.base_fee, true)} base</b>
-        </div>
+          <section>
+            <h2>Your client</h2>
+            <p>{game.active_client.on_hold
+              ? `${game.active_client.name} is on hold until your Reputation recovers. Walk-in matters remain available at the fee above.`
+              : workingClient.description}</p>
+          </section>
 
-        {daily && (
-          <button
-            className="mobile-docket-next"
-            onClick={runNextDocketStep}
-            disabled={start.isPending || daily.next_action.kind === 'done' || (queueFull && daily.next_action.kind === 'start_cases')}
-          >
-            <span><small>TODAY’S DOCKET</small><strong>{daily.next_action.kind === 'done' ? 'Training loop complete' : daily.next_action.label}</strong><em>{daily.cases.repairs_due} repair{daily.cases.repairs_due === 1 ? '' : 's'} folded in · {daily.deep_brief.priority_count} to brief</em></span>
-            {daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}
-          </button>
-        )}
-
-        <div className="mobile-practice-selection">
-          <BriefcaseBusiness size={23} />
-          <div>
-            <strong>Cases</strong>
-            <p>{queueFull
-              ? `Queue full (${runs.length}/${queueCap}) — discard a run above to start another.`
-              : dueReviews
-                ? `10 questions, ${Math.min(5, dueReviews)} due repair${Math.min(5, dueReviews) === 1 ? '' : 's'} folded in. Explain every answer.`
-                : '10 unseen questions. Explain every answer and get coached on it.'}</p>
-          </div>
+          {daily && (
+            <section>
+              <h2>Today's docket · {daily.date}</h2>
+              <p>One measured loop, no busywork: do the cases — repairs are folded in — then brief only the decisions worth revisiting.</p>
+              <div className="daily-docket-track">
+                <article className={`state-${daily.cases.state}`}><b>01</b><div><span><BriefcaseBusiness /> CASES</span><strong>10 questions{daily.cases.repairs_due ? `, ${Math.min(5, daily.cases.repairs_due)} repairs folded in` : ''}</strong><small>Written explanation · graded · coaching after every answer</small></div><i>{daily.cases.state === 'complete' ? <Check /> : daily.cases.state === 'active' ? 'LIVE' : 'NOW'}</i></article>
+                <article className={`state-${daily.deep_brief.state}`}><b>02</b><div><span><Brain /> DEEP BRIEF</span><strong>{daily.deep_brief.priority_count ? `${daily.deep_brief.priority_count} decision${daily.deep_brief.priority_count === 1 ? '' : 's'} to audit` : 'Confirm what held'}</strong><small>Correct rule · selected trap · transfer cue</small></div><i>{daily.deep_brief.state === 'complete' ? <Check /> : daily.deep_brief.state === 'locked' ? <Lock /> : 'OPEN'}</i></article>
+              </div>
+            </section>
+          )}
         </div>
-        <button className="mobile-practice-start" onClick={() => startNewRun()} disabled={start.isPending || queueFull}>
-          {start.isPending ? 'Preparing run…' : queueFull ? 'Queue full' : 'Start 10 cases'} <ArrowRight />
-        </button>
-        {start.error && <ErrorNotice error={start.error} />}
-      </section>
-
-      <section className="docket-hero">
-        <PixelStudyScenery variant="docket" className="docket-scenery" />
-        <div className="docket-copy">
-          <span className="eyebrow gold">LSAT SPEEDRUN</span>
-          <h1>More questions.<br />Cleaner review.<br /><em>Measured improvement.</em></h1>
-          <p>Every run is the same shape: unseen questions with any due repairs folded in, a written explanation on each one, and coaching after every answer.</p>
-          <button
-            className="primary-button jumbo"
-            onClick={() => startNewRun()}
-            disabled={start.isPending || queueFull}
-          >
-            <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : 'Start 10 cases'} <ArrowRight />
-          </button>
-          {start.error && <ErrorNotice error={start.error} />}
-        </div>
-        <div className="case-brief-card">
-          <div className="brief-stamp">{game.active_client.on_hold ? 'EFFECTIVE CLIENT' : 'ACTIVE CLIENT'}</div>
-          <ClientPortrait kind={workingClient.icon} name={workingClient.name} className="lobby-client-portrait" />
-          <h2>{workingClient.name}</h2>
-          <p>{game.active_client.on_hold
-            ? `${game.active_client.name} is on hold until your Reputation recovers. Walk-in matters remain available at the fee below.`
-            : workingClient.description}</p>
-          <div className="brief-terms"><span><Coins /> Effective base fee<strong>{formatMoney(workingClient.base_fee)}</strong></span><span><BriefcaseBusiness /> Contract<strong>{game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} cases`}</strong></span><span><Flame /> Validated streak<strong>{game.current_streak}</strong></span></div>
-        </div>
-      </section>
-      {daily && <section className="daily-docket" aria-labelledby="daily-docket-title">
-        <header>
-          <div><span className="eyebrow">TODAY'S DOCKET · {daily.date}</span><h2 id="daily-docket-title">One measured loop. No busywork.</h2><p>Do the cases — repairs are folded in — then brief only the decisions worth revisiting.</p></div>
-          <button
-            className="daily-docket-action"
-            onClick={runNextDocketStep}
-            disabled={start.isPending || daily.next_action.kind === 'done' || (queueFull && daily.next_action.kind === 'start_cases')}
-          >
-            {daily.next_action.kind === 'done' ? <CheckCircle2 /> : <ArrowRight />}<span><small>NEXT ACTION</small><strong>{start.isPending ? 'Preparing docket…' : daily.next_action.label}</strong></span>
-          </button>
-        </header>
-        <div className="daily-docket-track">
-          <article className={`state-${daily.cases.state}`}><b>01</b><div><span><BriefcaseBusiness /> CASES</span><strong>10 questions{daily.cases.repairs_due ? `, ${Math.min(5, daily.cases.repairs_due)} repairs folded in` : ''}</strong><small>Written explanation · graded · coaching after every answer</small></div><i>{daily.cases.state === 'complete' ? <Check /> : daily.cases.state === 'active' ? 'LIVE' : 'NOW'}</i></article>
-          <article className={`state-${daily.deep_brief.state}`}><b>02</b><div><span><Brain /> DEEP BRIEF</span><strong>{daily.deep_brief.priority_count ? `${daily.deep_brief.priority_count} decision${daily.deep_brief.priority_count === 1 ? '' : 's'} to audit` : 'Confirm what held'}</strong><small>Correct rule · selected trap · transfer cue</small></div><i>{daily.deep_brief.state === 'complete' ? <Check /> : daily.deep_brief.state === 'locked' ? <Lock /> : 'OPEN'}</i></article>
-        </div>
-      </section>}
-      <section className="how-scoring-works">
-        <span className="eyebrow">THE LEARNING LOOP</span>
-        <div>
-          <article><span>01</span><Scale /><h3>Answer</h3><p>The verified key—not AI—determines correctness.</p></article>
-          <article><span>02</span><BookOpen /><h3>Understand</h3><p>Every checked answer receives concise reasoning.</p></article>
-          <article><span>03</span><Brain /><h3>Repair</h3><p>Only uncertain, slow, or missed work enters review.</p></article>
-          <article><span>04</span><TrendingUp /><h3>Transfer</h3><p>Unseen questions prove that the method held.</p></article>
-        </div>
-      </section>
+      </details>
     </div>
   )
 }
