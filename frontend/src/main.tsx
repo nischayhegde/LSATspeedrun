@@ -7,6 +7,7 @@ import { SoundProvider } from './sound'
 import './styles.css'
 import './art/art.css'
 import './mobile.css'
+import './markup.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {

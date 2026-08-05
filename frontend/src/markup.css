@@ -1,0 +1,170 @@
+/* ==========================================================================
+   CASE MARKUP
+
+   Ink over the case file. See markup.tsx for why the layer is a per-card SVG
+   sized by a zero-height sentinel rather than a canvas.
+
+   Imported last so these rules win over the `.answer-card > *` lift in
+   styles.css without needing inflated selectors; the parent-qualified layer
+   selector below makes that independent of import order anyway.
+   ========================================================================== */
+
+.answer-card > .markup-layer,
+.passage-card > .markup-layer {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  right: 0;
+  overflow: visible;
+  pointer-events: none;
+  /* Blend the whole layer with the paper beneath it. This is what makes the
+     highlighter read as a highlighter rather than a bar painted over the
+     words, and it leaves pen ink essentially unchanged on cream stock. */
+  mix-blend-mode: multiply;
+}
+
+/* Disarmed, the ink is a picture: it stays visible and every click underneath
+   reaches the answer choices. Armed, it takes the drag — and `touch-action`
+   has to go so a finger draws instead of scrolling the pane. Switching back to
+   Read (or pressing Escape) is how you scroll on a phone. */
+.answer-card > .markup-layer[data-armed],
+.passage-card > .markup-layer[data-armed] {
+  pointer-events: auto;
+  touch-action: none;
+}
+.markup-layer[data-tool="pen"],
+.markup-layer[data-tool="highlighter"] { cursor: crosshair; }
+.markup-layer[data-tool="eraser"] { cursor: cell; }
+
+/* Last in-flow child of the card, so its offsetTop is the content height. */
+.markup-extent { height: 0; margin: 0; padding: 0; pointer-events: none; }
+
+/* Prose and answer choices sit under the ink, because striking out a choice is
+   the point. Anything that commits an answer or captures text stays above it,
+   so drawing never has to be put away to submit, type or move on. */
+.answer-card > .reasoning-box,
+.answer-card > .confidence-check,
+.answer-card > .answer-actions,
+.answer-card > .continue-row,
+.answer-card > .coaching-error,
+.passage-card > .mobile-open-question { z-index: 3; }
+
+/* -------------------------------------------------------------- the tray -- */
+
+.markup-toolbar {
+  padding: 6px 8px 6px 12px;
+  position: fixed;
+  z-index: 40;
+  left: 50%;
+  bottom: 20px;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(230, 203, 151, .3);
+  border-radius: 10px;
+  color: #f8ead0;
+  background: rgba(14, 28, 34, .93);
+  box-shadow: 0 12px 30px rgba(6, 11, 14, .38);
+  backdrop-filter: blur(9px);
+}
+.markup-toolbar.is-armed {
+  border-color: rgba(240, 205, 131, .62);
+  box-shadow: 0 12px 30px rgba(6, 11, 14, .42), 0 0 0 1px rgba(240, 205, 131, .22);
+}
+.markup-toolbar-label { color: #9db0b2; font-size: 9.5px; font-weight: 900; letter-spacing: .16em; }
+
+.markup-tools { display: flex; gap: 3px; }
+.markup-tools button {
+  min-height: 34px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #cfdbd8;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  transition: color .15s, background .15s;
+}
+.markup-tools button em { font-style: normal; }
+.markup-tools button:hover { color: #f6e8cb; background: rgba(255, 255, 255, .07); }
+.markup-tools button.active { color: #17222c; border-color: #e6c987; background: #e0c170; }
+
+.markup-colors {
+  padding-left: 6px;
+  display: flex;
+  gap: 5px;
+  border-left: 1px solid rgba(232, 206, 152, .2);
+}
+.markup-color {
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3);
+}
+.markup-color:hover { border-color: rgba(240, 215, 154, .55); }
+.markup-color.active { border-color: #f0d79a; }
+
+.markup-history {
+  padding-left: 6px;
+  display: flex;
+  gap: 3px;
+  border-left: 1px solid rgba(232, 206, 152, .2);
+}
+.markup-history button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #cfdbd8;
+  background: transparent;
+}
+.markup-history button:hover:not(:disabled) { color: #f6e8cb; background: rgba(255, 255, 255, .07); }
+.markup-history button:disabled { opacity: .34; }
+
+/* The floating tray would sit over the action bar docked at the foot of each
+   mobile pane, so below 900px it joins the flow above the case documents
+   instead. At phone sizes `.question-layout` is a 100dvh flex column, which is
+   why the tray has to declare `flex: 0 0 auto` and give up its labels. */
+@media (max-width: 900px) {
+  .markup-toolbar {
+    width: 100%;
+    margin: 0 0 9px;
+    position: static;
+    translate: none;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: 9px;
+  }
+}
+
+@media (max-width: 640px) {
+  .markup-toolbar {
+    margin: 0;
+    padding: 5px 8px;
+    gap: 6px;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+  .markup-toolbar.is-armed { box-shadow: none; }
+  .markup-toolbar-label { display: none; }
+  .markup-tools button {
+    width: 38px;
+    padding: 0;
+    justify-content: center;
+  }
+  .markup-tools button em { display: none; }
+  .markup-history button { width: 30px; height: 30px; }
+}
