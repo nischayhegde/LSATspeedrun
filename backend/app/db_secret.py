@@ -16,6 +16,19 @@ So the password is supplied per connection instead. The secret is cached for the
 life of the process, costing nothing in steady state, and re-read the moment a
 connection is refused for bad credentials — which is precisely when it is stale.
 A rotation therefore costs one refused connection rather than an outage.
+
+One thing to know before testing this: Postgres never re-authenticates a
+connection that is already open, so a rotation breaks nothing until the pool
+turns over — `pool_recycle` above closes connections after five minutes. That is
+why the original outage began hours after the 03:27 rotation, and why hitting
+the health endpoint straight after a rotation proves nothing. To exercise this
+code, terminate the app's backends first:
+
+    SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+     WHERE usename = 'lsatapp' AND pid <> pg_backend_pid();
+
+then watch for "re-reading the secret" in the log while requests keep returning
+200. Verified that way against a live rotation on the sandbox.
 """
 
 from __future__ import annotations
