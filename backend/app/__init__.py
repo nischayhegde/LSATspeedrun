@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import gzip
-import json
 import os
 from pathlib import Path
 
@@ -10,42 +9,37 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_migrate import Migrate
-from sqlalchemy.engine import URL
 
 from .auth import init_auth
+from .db_secret import DatabaseSecret, attach_rotation_recovery
 from .extensions import db
 from .routes import api
 from .seed import seed_questions
 
 
-def _database_url() -> str:
+def _database_secret() -> DatabaseSecret | None:
+    """The rotating RDS credentials, or None when the URL is supplied directly."""
+
+    if os.getenv("DATABASE_URL", "").strip():
+        return None
+    secret_arn = os.getenv("DATABASE_SECRET_ARN", "").strip()
+    if not secret_arn:
+        return None
+    return DatabaseSecret(
+        secret_arn,
+        host=os.getenv("DATABASE_HOST"),
+        port=os.getenv("DATABASE_PORT"),
+        name=os.getenv("DATABASE_NAME"),
+    )
+
+
+def _database_url(secret: DatabaseSecret | None) -> str:
     configured = os.getenv("DATABASE_URL", "").strip()
     if configured:
         return configured
-    secret_arn = os.getenv("DATABASE_SECRET_ARN", "").strip()
-    if not secret_arn:
+    if secret is None:
         return "sqlite:///lsat_sherlock.db"
-
-    import boto3
-
-    arn_parts = secret_arn.split(":")
-    secret_region = arn_parts[3] if len(arn_parts) > 3 and arn_parts[3] else None
-    response = boto3.client("secretsmanager", region_name=secret_region).get_secret_value(SecretId=secret_arn)
-    secret = json.loads(response["SecretString"])
-    host = os.getenv("DATABASE_HOST") or secret.get("host")
-    port = int(os.getenv("DATABASE_PORT") or secret.get("port") or 5432)
-    name = os.getenv("DATABASE_NAME") or secret.get("dbname") or "lsatspeedrun"
-    if not host or not secret.get("username") or not secret.get("password"):
-        raise RuntimeError("The configured database secret is incomplete.")
-    return URL.create(
-        "postgresql+psycopg",
-        username=secret["username"],
-        password=secret["password"],
-        host=host,
-        port=port,
-        database=name,
-        query={"sslmode": "require"},
-    ).render_as_string(hide_password=False)
+    return secret.url()
 
 
 def create_app(test_config: dict | None = None, *, instance_path: str | None = None) -> Flask:
@@ -63,7 +57,8 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
     dev_auth_requested = os.getenv("DEV_AUTH_ENABLED", "false").lower() == "true"
     if is_production and dev_auth_requested:
         raise RuntimeError("DEV_AUTH_ENABLED must be false in production.")
-    database_url = _database_url()
+    database_secret = _database_secret()
+    database_url = _database_url(database_secret)
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
     elif database_url.startswith("postgresql://"):
@@ -118,6 +113,12 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     db.init_app(app)
+    # Only when the app really is talking to the rotating secret. A test or a
+    # local run that overrides the URI is pointed at SQLite, which has no
+    # password to supply and no dialect that would accept one.
+    if database_secret is not None and app.config["SQLALCHEMY_DATABASE_URI"] == database_url:
+        with app.app_context():
+            attach_rotation_recovery(db.engine, database_secret)
     Migrate(app, db)
     CORS(
         app,
