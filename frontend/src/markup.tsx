@@ -278,6 +278,21 @@ export function MarkupLayer({ markup, surface }: { markup: CaseMarkup; surface: 
     return () => observer.disconnect()
   }, [measure])
 
+  /* A phone pane is a fixed-height scroller, so text reflowing inside it moves
+     the sentinel without changing the card's own size — the observer above never
+     fires. Loading a web font does exactly that, and would otherwise leave the
+     layer sized to the fallback metrics and undrawable at the bottom. */
+  useEffect(() => {
+    if (!document.fonts) return
+    let cancelled = false
+    void document.fonts.ready.then(() => {
+      if (!cancelled) measure()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [measure])
+
   const pointFrom = (event: React.PointerEvent<SVGSVGElement>): Point => {
     const rect = event.currentTarget.getBoundingClientRect()
     return [event.clientX - rect.left, event.clientY - rect.top]

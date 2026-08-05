@@ -15,7 +15,11 @@
   z-index: 2;
   top: 0;
   left: 0;
-  right: 0;
+  /* An `<svg>` is a replaced element, so an absolutely positioned one with
+     `width: auto` takes SVG's 300px intrinsic width and ignores `right: 0` as
+     over-constrained — which left the ink covering only the left third of the
+     card. The width has to be stated. */
+  width: 100%;
   overflow: visible;
   pointer-events: none;
   /* Blend the whole layer with the paper beneath it. This is what makes the

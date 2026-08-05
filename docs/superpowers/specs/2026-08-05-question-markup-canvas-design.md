@@ -190,17 +190,51 @@ interaction rule.
 ## Verification
 
 There is no frontend test harness — `package.json` carries only lint, typecheck
-and build. The pure geometry (`strokePath`, `strokeHit`) was verified by bundling
-the real module with esbuild and exercising it in node across 21 assertions
-covering dot/line/curve path generation, coordinate rounding, pen versus
-highlighter reach, hits past a segment end, bent strokes, and custom radii.
+and build — so verification was done in three layers, all of which pass.
 
-`npm run typecheck`, `npm run lint` and `npm run build` all pass.
+**Geometry.** `strokePath` and `strokeHit` were exercised in node across 21
+assertions (dot/line/curve path generation, coordinate rounding, pen versus
+highlighter reach, hits past a segment end, bent strokes, custom radii) by
+bundling the real module with esbuild rather than copying the functions.
 
-The DOM-dependent behaviour — sentinel measurement, pointer capture, and z-order
-against the live cards — is not covered by automated checks and needs a look in
-a browser. Introducing a frontend test runner would make that coverable and is a
-separate decision.
+**The live app in Chromium.** Playwright drove the real stack — Flask on 5001,
+Vite on 5173, dev auth, a session pinned to a `Main Point` question so the RC
+two-pane reader is always covered. 54 checks on desktop and 32 on a 390×844
+phone viewport, each run four and three times respectively with identical
+results. Between them they cover: sentinel sizing against measured content
+height; the layer regrowing when the verdict mounts (1053px → 2552px, still
+matching the sentinel); pass-through to the choices when disarmed and
+interception when armed; striking out a choice; colour, highlighter width and
+opacity; undo; whole-stroke erase aimed at a stroke's real screen position;
+Escape disarming; the lifted controls staying clickable and typeable while
+armed; ink following the passage when its pane scrolls (100px scrolled, ink and
+text both moved 100px); and, on the phone, a real single-finger CDP touch drag,
+the tray sitting in flow, and ink surviving a pane swap that unmounts the card
+outright.
+
+**Repo gates.** `npm run typecheck`, `npm run lint` and `npm run build`.
+
+### Two defects the browser caught
+
+**The layer was 300px wide.** An `<svg>` is a replaced element, so an absolutely
+positioned one with `width: auto` takes SVG's intrinsic 300px and treats
+`right: 0` as over-constrained, ignoring it. The layer covered only the left
+third of a 615px card, and every stroke in the first test run happened to land
+inside that strip, so it looked correct. Striking out a full-width answer choice
+would have failed past the halfway mark. Fixed by stating `width: 100%`. The
+regression guard is a hit test at the far right of a choice, which must return
+the layer.
+
+**Content could reflow without re-measuring.** A phone pane is a fixed-height
+scroller, so text reflowing inside it moves the sentinel without changing the
+card's own size — the `ResizeObserver` on the card never fires, and a web font
+loading after first paint does exactly that. It would have left the layer sized
+to fallback metrics and undrawable at the bottom. Fixed by also re-measuring on
+`document.fonts.ready`.
+
+The browser suites live outside the repo, so they are not part of CI. Making
+them permanent would mean adopting a frontend test runner and a fixture for
+seeding a session, which is a separate decision.
 
 ## Out of scope
 
