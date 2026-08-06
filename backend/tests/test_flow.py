@@ -15,6 +15,10 @@ from app.game import (
     FINAL_CASE_KEY,
     FIRM_TIERS,
     TIER_GATED_ASSET_TYPES,
+    UNGRADED_CREDIT,
+    UNGRADED_MULTIPLIER,
+    WARDROBE_CATEGORY_KEYS,
+    WARDROBE_DEFAULTS,
     settle_upkeep,
 )
 from app.models import (
@@ -38,6 +42,7 @@ from app.models import (
     utcnow,
 )
 from app.seed import SOURCE_PREFIX, seed_questions
+from app.story import QUESTS, STORY_CHAPTERS
 
 
 def add_question(index: int, section: str) -> None:
@@ -95,6 +100,15 @@ def app():
             "PRACTICE_SESSION_SIZE": 3,
             "TFY_URL": "",
             "TFY_API_KEY": "",
+            # Tests drive the worker directly rather than through a background
+            # thread: an in-memory SQLite database is not visible to another
+            # connection, so the transport is always chosen explicitly here.
+            "AI_JOBS_MODE": "sync",
+            # These cases exercise the economy, coaching, and scheduling paths,
+            # where a strategy prompt is incidental scenery. Strategy gates get
+            # their own module (tests/test_enforcement.py) which runs at the
+            # production default instead of turning it off here.
+            "STRATEGY_ENFORCEMENT_ENABLED": False,
         }
     )
     with application.app_context():
@@ -205,6 +219,237 @@ def create_game(client, headers, gender: str = "female"):
     return response.json["game"]
 
 
+def test_declared_target_score_defaults_new_user_into_focus_mode(app):
+    """168+ sets Focus Mode automatically, but only while onboarding is open."""
+    client = app.test_client()
+    headers = login(client, "focus-declared@example.test")
+
+    response = client.patch("/v1/me", json={"target_score": 172}, headers=headers)
+    assert response.status_code == 200
+    assert response.json["user"]["target_score"] == 172
+    assert response.json["user"]["assistance_level"] == "focus"
+
+    # Onboarding is over now (a profile exists); a later target-score edit must
+    # not silently flip the toggle the student may have already set back.
+    create_game(client, headers)
+    client.patch("/v1/me", json={"assistance_level": "full"}, headers=headers)
+    response = client.patch("/v1/me", json={"target_score": 178}, headers=headers)
+    assert response.status_code == 200
+    assert response.json["user"]["assistance_level"] == "full"
+
+
+def test_declared_test_date_inside_eight_weeks_defaults_into_focus_mode(app):
+    client = app.test_client()
+    headers = login(client, "focus-date@example.test")
+    soon = (utcnow().date() + timedelta(weeks=4)).isoformat()
+    response = client.patch("/v1/me", json={"target_test_date": soon}, headers=headers)
+    assert response.status_code == 200
+    assert response.json["user"]["assistance_level"] == "focus"
+
+
+def test_a_modest_target_leaves_the_full_experience_on_by_default(app):
+    client = app.test_client()
+    headers = login(client, "focus-modest@example.test")
+    far_out = (utcnow().date() + timedelta(weeks=20)).isoformat()
+    response = client.patch("/v1/me", json={"target_score": 155, "target_test_date": far_out}, headers=headers)
+    assert response.status_code == 200
+    assert response.json["user"]["assistance_level"] == "full"
+
+
+def test_assistance_level_toggle_is_explicit_and_persists(app):
+    client = app.test_client()
+    headers = login(client, "focus-toggle@example.test")
+    create_game(client, headers)
+    response = client.patch("/v1/me", json={"assistance_level": "focus"}, headers=headers)
+    assert response.status_code == 200
+    assert response.json["user"]["assistance_level"] == "focus"
+    assert client.get("/v1/me", headers=headers).json["user"]["assistance_level"] == "focus"
+
+    invalid = client.patch("/v1/me", json={"assistance_level": "minimal"}, headers=headers)
+    assert invalid.status_code == 400
+    assert invalid.json["error"]["code"] == "invalid_assistance_level"
+
+
+def test_guided_tour_completion_is_recorded_on_the_account(app):
+    """Whether the tour was finished or skipped lives with the account, so clearing
+    browser storage or switching devices cannot force a player back through it."""
+    client = app.test_client()
+    headers = login(client, "tour-state@example.test")
+    assert client.get("/v1/me", headers=headers).json["user"]["guided_tour_completed"] is False
+
+    saved = client.patch("/v1/me", json={"guided_tour_completed": True}, headers=headers)
+    assert saved.status_code == 200
+    assert saved.json["user"]["guided_tour_completed"] is True
+
+    fresh = app.test_client()
+    revisit = login(fresh, "tour-state@example.test")
+    assert fresh.get("/v1/me", headers=revisit).json["user"]["guided_tour_completed"] is True
+
+    # Replaying the tour is a local action; a client cannot clear the account flag.
+    cleared = client.patch("/v1/me", json={"guided_tour_completed": False}, headers=headers)
+    assert cleared.json["user"]["guided_tour_completed"] is True
+
+
+def test_epilogue_acknowledgement_is_recorded_on_the_account(app):
+    """Reading the closing record is an account fact, not a browser fact — the
+    same policy as the guided tour above. A finished player who opens the app on
+    another device must not be handed the full-screen final record again."""
+    client = app.test_client()
+    headers = login(client, "epilogue-state@example.test")
+    create_game(client, headers)
+    assert client.get("/v1/game/story/epilogue", headers=headers).json["read"] is False
+
+    saved = client.post("/v1/game/story/epilogue/read", headers=headers)
+    assert saved.status_code == 200
+    assert saved.json["read"] is True
+
+    fresh = app.test_client()
+    revisit = login(fresh, "epilogue-state@example.test")
+    assert fresh.get("/v1/game/story/epilogue", headers=revisit).json["read"] is True
+
+    # Idempotent: closing it again does not move the recorded moment.
+    assert client.post("/v1/game/story/epilogue/read", headers=headers).json["read"] is True
+
+
+def test_epilogue_acknowledgement_requires_a_firm(app):
+    client = app.test_client()
+    headers = login(client, "epilogue-no-firm@example.test")
+    assert client.get("/v1/game/story/epilogue", headers=headers).json["read"] is False
+    blocked = client.post("/v1/game/story/epilogue/read", headers=headers)
+    assert blocked.status_code == 409
+    assert blocked.json["error"]["code"] == "onboarding_required"
+
+
+def test_wardrobe_starts_as_issued_and_saves_an_unlocked_choice(app):
+    client = app.test_client()
+    headers = login(client, "wardrobe-save@example.test")
+    created = create_game(client, headers, gender="male")
+    assert created["cosmetics"] == WARDROBE_DEFAULTS
+
+    catalog = client.get("/v1/game/cosmetics", headers=headers)
+    assert catalog.status_code == 200
+    assert catalog.json["cosmetics"]["selection"] == WARDROBE_DEFAULTS
+    assert [category["key"] for category in catalog.json["cosmetics"]["categories"]] == WARDROBE_CATEGORY_KEYS
+
+    saved = client.patch(
+        "/v1/game/cosmetics",
+        json={"selection": {"suit": "suit_charcoal", "eyewear": "eyewear_round"}},
+        headers=headers,
+    )
+    assert saved.status_code == 200
+    assert saved.json["cosmetics"]["selection"]["suit"] == "suit_charcoal"
+    assert saved.json["cosmetics"]["selection"]["eyewear"] == "eyewear_round"
+    # Categories the request did not name keep whatever they were wearing.
+    assert saved.json["cosmetics"]["selection"]["tie"] == WARDROBE_DEFAULTS["tie"]
+    assert saved.json["game"]["cosmetics"]["suit"] == "suit_charcoal"
+
+    # And it is the account's look, not the browser's.
+    fresh = app.test_client()
+    revisit = login(fresh, "wardrobe-save@example.test")
+    assert fresh.get("/v1/game", headers=revisit).json["game"]["cosmetics"]["suit"] == "suit_charcoal"
+
+
+def test_wardrobe_issues_the_female_cut_the_collar_she_has_always_worn(app):
+    """The two cuts are drawn differently, so their issued neckwear differs.
+
+    Both pieces are in the catalog for either character; only the one that
+    arrives unchosen follows the cut, which is what keeps a new account looking
+    exactly as it did before the wardrobe existed.
+    """
+    client = app.test_client()
+    headers = login(client, "wardrobe-collar@example.test")
+    created = create_game(client, headers, gender="female")
+    assert created["cosmetics"]["tie"] == "tie_open_collar"
+
+    catalog = client.get("/v1/game/cosmetics", headers=headers).json["cosmetics"]
+    neckwear = next(category for category in catalog["categories"] if category["key"] == "tie")
+    assert neckwear["default"] == "tie_open_collar"
+    assert neckwear["selected"] == "tie_open_collar"
+
+    # And she can still put the house tie on, which is the whole point of it
+    # being a catalog piece rather than a property of the cut.
+    worn = client.patch("/v1/game/cosmetics", json={"selection": {"tie": "tie_house_burgundy"}}, headers=headers)
+    assert worn.status_code == 200
+    assert worn.json["game"]["cosmetics"]["tie"] == "tie_house_burgundy"
+
+
+def test_wardrobe_refuses_pieces_the_player_has_not_earned(app):
+    client = app.test_client()
+    headers = login(client, "wardrobe-locked@example.test")
+    created = create_game(client, headers)
+
+    locked = client.patch("/v1/game/cosmetics", json={"selection": {"suit": "suit_forest"}}, headers=headers)
+    assert locked.status_code == 409
+    assert locked.json["error"]["code"] == "cosmetic_locked"
+    assert client.get("/v1/game", headers=headers).json["game"]["cosmetics"]["suit"] == WARDROBE_DEFAULTS["suit"]
+
+    unknown = client.patch("/v1/game/cosmetics", json={"selection": {"suit": "suit_of_armour"}}, headers=headers)
+    assert unknown.status_code == 404
+    assert unknown.json["error"]["code"] == "cosmetic_not_found"
+
+    # A real key filed under the wrong category is refused too, so the category
+    # a piece was authored in is the only place it can ever be worn.
+    misfiled = client.patch("/v1/game/cosmetics", json={"selection": {"tie": "suit_charcoal"}}, headers=headers)
+    assert misfiled.status_code == 404
+    assert misfiled.json["error"]["code"] == "cosmetic_not_found"
+
+    nonsense = client.patch("/v1/game/cosmetics", json={"selection": {"hat": "suit_charcoal"}}, headers=headers)
+    assert nonsense.status_code == 404
+    assert nonsense.json["error"]["code"] == "cosmetic_category_not_found"
+
+    # The same request succeeds once the firm has actually reached the tier.
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 3
+        db.session.commit()
+    earned = client.patch("/v1/game/cosmetics", json={"selection": {"suit": "suit_forest"}}, headers=headers)
+    assert earned.status_code == 200
+    assert earned.json["cosmetics"]["selection"]["suit"] == "suit_forest"
+
+
+def test_wardrobe_marks_progression_pieces_unlocked_as_the_campaign_advances(app):
+    client = app.test_client()
+    headers = login(client, "wardrobe-progress@example.test")
+    created = create_game(client, headers)
+
+    def state(key: str) -> bool:
+        payload = client.get("/v1/game/cosmetics", headers=headers).json["cosmetics"]
+        return next(
+            item
+            for category in payload["categories"]
+            for item in category["items"]
+            if item["key"] == key
+        )["unlocked"]
+
+    assert state("accessory_briefcase") is False
+    assert state("tie_cravat") is False
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.total_cases = 100
+        story = profile.story_state
+        story.seen_chapters_json = ["charter_of_counsel"]
+        db.session.commit()
+    assert state("accessory_briefcase") is True
+    assert state("tie_cravat") is True
+
+
+def test_wardrobe_requires_a_firm(app):
+    client = app.test_client()
+    headers = login(client, "wardrobe-no-firm@example.test")
+    assert client.get("/v1/game/cosmetics", headers=headers).status_code == 409
+    blocked = client.patch("/v1/game/cosmetics", json={"selection": {"suit": "suit_charcoal"}}, headers=headers)
+    assert blocked.status_code == 409
+    assert blocked.json["error"]["code"] == "onboarding_required"
+
+
+def test_target_score_out_of_range_is_rejected(app):
+    client = app.test_client()
+    headers = login(client, "focus-invalid@example.test")
+    response = client.patch("/v1/me", json={"target_score": 300}, headers=headers)
+    assert response.status_code == 400
+    assert response.json["error"]["code"] == "invalid_target_score"
+
+
 def coach_and_settle(app, monkeypatch, attempt_id: str, grade: int = 80) -> None:
     """Coach one attempt so its settlement lands, the way production does.
 
@@ -257,6 +502,54 @@ def test_office_rent_rates_are_systematic_and_one_active_day_settles_once(app):
 
         settle_upkeep(profile, now)
         assert LedgerEntry.query.filter_by(user_id=profile.user_id, kind="office_rent").count() == 1
+
+
+def test_daily_activity_streak_advances_resets_and_tracks_best(app):
+    """The calendar-day activity streak is distinct from the validated-win streak.
+
+    It advances once per new day the firm is visited (via `settle_upkeep`,
+    which every `/v1/game` fetch triggers), resets on a missed day, and
+    remembers the best run — independent of `current_streak`/`best_streak`.
+    """
+    client = app.test_client()
+    headers = login(client, "daily-streak@example.test")
+    created = create_game(client, headers)
+    assert created["daily_streak"] == 1
+    assert created["daily_streak_best"] == 1
+    # Pinned to noon so a same-day offset of a few hours can never cross a
+    # midnight boundary regardless of when the suite happens to run.
+    now = utcnow().replace(hour=12, minute=0, second=0, microsecond=0)
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.daily_streak_last_date = now.date()
+        db.session.commit()
+
+        # A second visit later the same day does not double-count.
+        settle_upkeep(profile, now + timedelta(hours=6))
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert profile.daily_streak_current == 1
+
+        # A visit exactly one calendar day later extends the streak.
+        next_day = now + timedelta(days=1)
+        settle_upkeep(profile, next_day)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert profile.daily_streak_current == 2
+        assert profile.daily_streak_best == 2
+
+        # Skipping a day resets the current streak but keeps the best one.
+        after_gap = next_day + timedelta(days=3)
+        settle_upkeep(profile, after_gap)
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert profile.daily_streak_current == 1
+        assert profile.daily_streak_best == 2
+
+        # Extending past the old best updates it again.
+        for extra_day in range(1, 3):
+            settle_upkeep(profile, after_gap + timedelta(days=extra_day))
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert profile.daily_streak_current == 3
+        assert profile.daily_streak_best == 3
 
 
 def test_mixed_active_and_offline_rent_and_inactivity_reputation_decay(app):
@@ -454,14 +747,10 @@ def test_firm_advance_is_blocked_until_every_prior_upgrade_hire_and_acquisition_
 
 
 def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
-    chosen_ids = []
-
-    def reverse_sample(values, k):
-        chosen = list(reversed(values))[:k]
-        chosen_ids.extend(question.id for question in chosen)
-        return chosen
-
-    monkeypatch.setattr("app.services.random.sample", reverse_sample)
+    # Practice now fills a run with whole passage blocks taken in shuffled
+    # order, so pinning the shuffle is what makes the run deterministic;
+    # `random.sample` is no longer the selector for the practice path.
+    monkeypatch.setattr("app.services.random.shuffle", lambda values: None)
     client = app.test_client()
     headers = login(client)
 
@@ -485,7 +774,6 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     session = response.json["session"]
     assert session["mode"] == "practice"
     assert session["total_items"] == 3
-    assert session["current_item"]["question"]["id"] == chosen_ids[0]
     assert session["current_item"]["case_terms"] == {
         "client_key": "walk_in",
         "client_name": "Walk-in client",
@@ -493,7 +781,11 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     }
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        assert [item.question_id for item in items] == chosen_ids
+        chosen_ids = [item.question_id for item in items]
+        # The item served first is position 0, and the run is three distinct
+        # questions drawn from the seeded bank.
+        assert session["current_item"]["question"]["id"] == chosen_ids[0]
+        assert len(set(chosen_ids)) == 3
         assert all(item.question.source.startswith(SOURCE_PREFIX) for item in items)
         assert all(not hasattr(item, "story_json") for item in items)
         assert all(item.requires_reasoning is True for item in items)
@@ -772,11 +1064,13 @@ def test_daily_docket_drives_cases_into_priority_deep_brief(app, monkeypatch):
 
 
 def test_scheduled_reviews_are_timezone_safe(app):
-    """A future-due row exercises SQLite's naive-timestamp behavior.
+    """A well-stabilized row exercises SQLite's naive-timestamp behavior.
 
     SQLite drops timezone information even on timezone-aware columns while
-    PostgreSQL preserves it, so a row scheduled for tomorrow must read back as
-    scheduled-but-not-due on both.
+    PostgreSQL preserves it, so the elapsed-days arithmetic behind
+    retrievability has to cope with both. A card reviewed an hour ago with a
+    fortnight of stability is nowhere near the retention target and must read
+    back as scheduled-but-not-due on either database.
     """
     client = app.test_client()
     headers = login(client, "infinite-review@example.test")
@@ -798,7 +1092,11 @@ def test_scheduled_reviews_are_timezone_safe(app):
     with app.app_context():
         profile = PlayerProfile.query.filter_by(id=created["id"]).one()
         row = ReviewQueueItem.query.filter_by(user_id=profile.user_id).one()
-        row.due_at = utcnow() + timedelta(days=1)
+        row.last_grade = 3
+        row.stability = 14.0
+        row.difficulty = 5.0
+        row.last_reviewed_at = utcnow() - timedelta(hours=1)
+        row.due_at = utcnow() + timedelta(days=10)
         db.session.commit()
 
     queue = client.get("/v1/reviews", headers=headers)
@@ -938,7 +1236,7 @@ def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monke
     assert coaching["reasoning_verdict"] == "mostly_correct"
     assert len(coaching["answer_analysis"]["choice_explanations"]) == 5
     assert {choice["label"] for choice in coaching["answer_analysis"]["choice_explanations"]} == set("ABCDE")
-    assert coaching["prompt_version"] == "coaching-v2-plain-language"
+    assert coaching["prompt_version"] == "coaching-v3-invalid-is-a-finding"
     assert captured["request"]["reasoning_effort"] == "xhigh"
     assert "one decisive bottom-line sentence" in captured["request"]["messages"][0]["content"]
     assert coaching_response.json["reward"]["explanation_grade"] == "Excellent"
@@ -1182,6 +1480,152 @@ def test_stale_ai_job_is_resent_and_redelivery_settles_once(app, monkeypatch):
         assert AttemptSettlement.query.filter_by(attempt_id=attempt.id).count() == 1
 
 
+def _answer_one_case(app, client, headers, key: str, *, selected: str = "C") -> dict:
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    result = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": selected,
+            "strategy_applied": True,
+            "reasoning": explanation(f"the step {key} turns on"),
+        },
+        headers={**headers, "Idempotency-Key": key},
+    ).json["result"]
+    return {"session_id": session["id"], "attempt_id": result["attempt_id"]}
+
+
+def test_local_mode_hands_coaching_to_a_background_worker(app, monkeypatch):
+    """The default transport keeps a 20-30 second grading call out of the request:
+    the POST returns a job immediately and the same durable AiJob row carries it."""
+    from app.jobs import process_ai_job
+
+    client = app.test_client()
+    headers = login(client, "local-worker@example.test")
+    create_game(client, headers)
+    answered = _answer_one_case(app, client, headers, "local-worker-answer")
+
+    started = []
+    monkeypatch.setitem(app.config, "TFY_URL", "https://truefoundry.example/v1")
+    monkeypatch.setitem(app.config, "TFY_API_KEY", "test-key")
+    monkeypatch.setitem(app.config, "AI_JOBS_MODE", "local")
+    # The real dispatcher would run this on a thread, which cannot see an
+    # in-memory SQLite database. Capture the handoff and drive it inline instead.
+    monkeypatch.setattr("app.jobs._start_local_job", lambda job: started.append(job.id))
+    coaching = {
+        "explanation_grade": 82,
+        "reasoning_verdict": "strong",
+        "reasoning_summary": "The decisive step was named.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+
+    accepted = client.post(f"/v1/attempts/{answered['attempt_id']}/coaching", headers=headers)
+    assert accepted.status_code == 202
+    assert accepted.json["job"]["status"] == "queued"
+    job_id = accepted.json["job"]["id"]
+    assert started == [job_id]
+    # No queue URL is needed for the local transport, unlike the SQS one.
+    assert client.get("/v1/health").json["async_jobs"] == {"mode": "local", "ready": True}
+
+    with app.app_context():
+        assert process_ai_job(job_id).status == "completed"
+    settled = client.post(f"/v1/attempts/{answered['attempt_id']}/coaching", headers=headers)
+    assert settled.json["status"] == "completed"
+    assert settled.json["reward"]["payout"] > 0
+
+
+def test_a_debrief_can_be_closed_while_grading_is_still_running(app, monkeypatch):
+    """The player is not held on the debrief for the grading call. Once grading has
+    been handed off, the next question opens and the case settles behind them."""
+    client = app.test_client()
+    headers = login(client, "nonblocking@example.test")
+    create_game(client, headers)
+    answered = _answer_one_case(app, client, headers, "nonblocking-answer")
+
+    monkeypatch.setitem(app.config, "TFY_URL", "https://truefoundry.example/v1")
+    monkeypatch.setitem(app.config, "TFY_API_KEY", "test-key")
+    monkeypatch.setitem(app.config, "AI_JOBS_MODE", "local")
+    monkeypatch.setattr("app.jobs._start_local_job", lambda _job: None)
+
+    # Nothing has been sent for grading yet, so the settlement gate still holds.
+    blocked = client.post(f"/v1/study-sessions/{answered['session_id']}/debrief/acknowledge", headers=headers)
+    assert blocked.status_code == 409
+    assert blocked.json["error"]["code"] == "settlement_required"
+
+    assert client.post(f"/v1/attempts/{answered['attempt_id']}/coaching", headers=headers).status_code == 202
+    moved_on = client.post(f"/v1/study-sessions/{answered['session_id']}/debrief/acknowledge", headers=headers)
+    assert moved_on.status_code == 200
+    assert moved_on.json["settlement_pending"] is True
+    assert moved_on.json["session"]["current_item"]["position"] == 1
+
+    coaching = {
+        "explanation_grade": 82,
+        "reasoning_verdict": "strong",
+        "reasoning_summary": "Graded after the player moved on.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+    with app.app_context():
+        from app.jobs import process_ai_job
+        from app.models import AiJob as AiJobModel
+        from app.services import run_attempt_coaching  # noqa: F401 - imported by the worker
+
+        job = AiJobModel.query.filter_by(dedup_key=f"coaching:{answered['attempt_id']}").one()
+        assert process_ai_job(job.id).status == "completed"
+        attempt = db.session.get(Attempt, answered["attempt_id"])
+        assert attempt.settlement is not None
+        assert attempt.settlement.payout > 0
+
+
+def test_grading_that_never_lands_still_settles_the_case_from_the_answer_key(app, monkeypatch):
+    """A provider outage must not leave a finished case unpaid. Correctness comes
+    from the verified key, so the case settles ungraded and says so."""
+    from app.coaching import CoachingProviderError
+    from app.jobs import process_ai_job
+    from app.models import AiJob as AiJobModel
+
+    client = app.test_client()
+    headers = login(client, "outage@example.test")
+    create_game(client, headers)
+    answered = _answer_one_case(app, client, headers, "outage-answer")
+
+    monkeypatch.setitem(app.config, "TFY_URL", "https://truefoundry.example/v1")
+    monkeypatch.setitem(app.config, "TFY_API_KEY", "test-key")
+    monkeypatch.setitem(app.config, "AI_JOBS_MODE", "local")
+    monkeypatch.setitem(app.config, "AI_JOB_MAX_ATTEMPTS", 1)
+    monkeypatch.setattr("app.jobs._start_local_job", lambda _job: None)
+
+    def always_down(_attempt):
+        raise CoachingProviderError("The AI coach could not produce valid feedback.")
+
+    monkeypatch.setattr("app.services.generate_attempt_coaching", always_down)
+    assert client.post(f"/v1/attempts/{answered['attempt_id']}/coaching", headers=headers).status_code == 202
+    with app.app_context():
+        job = AiJobModel.query.filter_by(dedup_key=f"coaching:{answered['attempt_id']}").one()
+        with pytest.raises(CoachingProviderError):
+            process_ai_job(job.id)
+        attempt = db.session.get(Attempt, answered["attempt_id"])
+        assert attempt.coaching_status == "failed"
+        # Correct answer, ungraded write-up: the thin-win path rather than $0.
+        assert attempt.settlement is not None
+        assert attempt.settlement.explanation_grade == "Invalid"
+        assert attempt.settlement.payout > 0
+        # No grade exists, so nothing was written to the explanation statistics.
+        assert attempt.explanation_score is None
+
+    unavailable = client.post(f"/v1/attempts/{answered['attempt_id']}/coaching", headers=headers)
+    assert unavailable.json["status"] == "unavailable"
+    assert unavailable.json["coaching"] is None
+    assert "verified key" in unavailable.json["notice"]
+    assert unavailable.json["reward"]["payout"] > 0
+    # And the debrief closes rather than trapping the player behind a dead call.
+    assert client.post(
+        f"/v1/study-sessions/{answered['session_id']}/debrief/acknowledge",
+        headers=headers,
+    ).status_code == 200
+
+
 def test_tycoon_scoring_gates_speed_and_reasoning():
     from app.game import _points
 
@@ -1264,7 +1708,7 @@ def test_case_settlement_and_ledger_are_exactly_once(app, monkeypatch):
         assert profile.total_cases == 1
 
 
-def test_invalid_reasoning_does_not_advance_cash_daily_goals(app, monkeypatch):
+def test_invalid_reasoning_on_a_correct_answer_pays_thin_and_skips_daily_goals(app, monkeypatch):
     client = app.test_client()
     headers = login(client, "invalid-daily@example.test")
     create_game(client, headers)
@@ -1294,10 +1738,91 @@ def test_invalid_reasoning_does_not_advance_cash_daily_goals(app, monkeypatch):
         profile = PlayerProfile.query.filter_by(user_id=attempt.user_id).one()
         daily = DailyProgress.query.filter_by(profile_id=profile.id).one()
         assert attempt.settlement.explanation_grade == "Invalid"
-        assert attempt.settlement.payout == 0
-        assert profile.cash == 250
+        # The letter was verified correct, so the case is a thin win rather than a
+        # total loss: a reduced fee lands (see THIN_WIN_MULTIPLIER)...
+        assert attempt.settlement.payout > 0
+        assert profile.cash == 250 + attempt.settlement.payout
         assert profile.total_cases == 1
+        # ...but the daily bonus goals still require a real written argument.
         assert daily.cases_completed == 0
+
+
+def test_grading_outage_on_a_correct_answer_builds_standing_instead_of_draining_it(app):
+    """A grading outage must not be scored as a bad write-up.
+
+    `settle_uncoached_attempt` settles with no grade at all, which fell through
+    to the Invalid band — the same verdict as prose a grader read and rejected.
+    Standing is a rolling mean of `validated_credit`, so while the coaching
+    provider was unreachable every correct answer paid 0.35 credit and dragged
+    reputation toward 35. Tier 3 needs 42 and the last tier needs 94, so a
+    player answering every question correctly was capped at tier 2 of 15 and
+    could not finish a single quest with a "validated" objective.
+    """
+    client = app.test_client()
+    headers = login(client, "outage-standing@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    submitted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "strategy_applied": True,
+            "reasoning": "The stimulus concludes from a correlation in the survey data, and only this choice supplies the causal premise the argument needs to bridge that gap.",
+        },
+        headers={**headers, "Idempotency-Key": "outage-standing-answer"},
+    ).json["result"]
+    with app.app_context():
+        from app.services import settle_uncoached_attempt
+
+        assert settle_uncoached_attempt(submitted["attempt_id"]) is True
+        attempt = db.session.get(Attempt, submitted["attempt_id"])
+        profile = PlayerProfile.query.filter_by(user_id=attempt.user_id).one()
+        daily = DailyProgress.query.filter_by(profile_id=profile.id).one()
+        settlement = attempt.settlement
+
+        # Correctness is verified by the answer key, so the case settles as a win.
+        assert settlement.validated_credit == UNGRADED_CREDIT
+        assert settlement.reputation_after > settlement.reputation_before
+        assert profile.reputation > 50
+        assert profile.total_validated_correct == 1
+        # The story runs on validated wins; an outage cannot make it unreachable.
+        assert profile.current_streak == 1
+        assert daily.cases_completed == 1
+        # It still pays less than a graded win would, so nobody prefers an outage.
+        assert settlement.score_multiplier_bps == round(UNGRADED_MULTIPLIER * 10_000)
+        assert UNGRADED_MULTIPLIER < 1.20
+
+
+def test_grading_outage_on_a_blank_explanation_stays_a_total_loss(app):
+    """The absence of a grade is only an outage when there was prose to grade."""
+    client = app.test_client()
+    headers = login(client, "outage-blank@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    with app.app_context():
+        item = db.session.get(SessionItem, session["current_item"]["id"])
+        attempt = Attempt(
+            user_id=item.session.user_id,
+            session_item_id=item.id,
+            idempotency_key="outage-blank-answer",
+            selected_label="C",
+            is_correct=True,
+            reasoning_text="",
+            server_elapsed_ms=140_000,
+            coaching_status="failed",
+        )
+        db.session.add(attempt)
+        item.completed_at = utcnow()
+        db.session.commit()
+        attempt_id = attempt.id
+
+        from app.services import settle_uncoached_attempt
+
+        settle_uncoached_attempt(attempt_id)
+        settled = db.session.get(Attempt, attempt_id)
+        assert settled.settlement.payout == 0
+        assert settled.settlement.validated_credit == 0.0
 
 
 def test_tycoon_review_cannot_skip_wrong_answer_settlement(app, monkeypatch):
@@ -1642,15 +2167,195 @@ def test_ethics_and_intel_reveal_and_fund_a_hidden_quest(app):
         profile.story_state.intel = 3
         db.session.commit()
 
+    # Ethics and Intel reveal the file, but the shadow track still starts behind
+    # the investigation that introduces the broker.
+    game = client.get("/v1/game").json["game"]
+    hidden = next(quest for quest in game["story"]["quests"] if quest["key"] == "market_whisper")
+    assert hidden["available"] is False
+    assert hidden["locked_by"] == ["The Missing Deed"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.story_state.quest_history_json = ["mercer_overflow", "harrow_missing_deed"]
+        db.session.commit()
+
     game = client.get("/v1/game").json["game"]
     hidden = next(quest for quest in game["story"]["quests"] if quest["key"] == "market_whisper")
     assert hidden["available"] is True
+    assert hidden["locked_by"] == []
     opened = client.post("/v1/game/quests/start", json={"quest_key": "market_whisper"}, headers=headers)
     assert opened.status_code == 200
-    assert opened.json["result"]["advance"] == 100_000
+    # Read the advance from the catalog rather than pinning a literal: it is
+    # priced in cases at the quest's tier and moves with the economy.
+    advance = next(quest for quest in QUESTS if quest["key"] == "market_whisper")["start"]["cash"]
+    assert opened.json["result"]["advance"] == advance
     assert opened.json["game"]["story"]["active_quest"]["key"] == "market_whisper"
     assert opened.json["game"]["story"]["heat"] == 10
-    assert opened.json["game"]["cash"] == created["cash"] + 100_000
+    assert opened.json["game"]["cash"] == created["cash"] + advance
+
+
+def test_pending_chapter_follows_the_headquarters_tier(app):
+    """A chapter becomes pending the moment its tier is reached and not before."""
+    client = app.test_client()
+    headers = login(client, "chapter-pacing@example.test")
+    created = create_game(client, headers)
+
+    story = client.get("/v1/game").json["game"]["story"]
+    assert story["pending_chapter"]["key"] == "one_light_on"
+
+    resolved = client.post(
+        "/v1/game/story/choice",
+        json={"chapter_key": "one_light_on", "choice_key": "open_door"},
+        headers=headers,
+    )
+    assert resolved.status_code == 200
+    # Act I belongs to headquarters 2, so nothing is waiting in the meantime.
+    assert resolved.json["game"]["story"]["pending_chapter"] is None
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 2
+        db.session.commit()
+
+    story = client.get("/v1/game").json["game"]["story"]
+    assert story["pending_chapter"]["key"] == "the_harrow_file"
+    assert story["pending_chapter"]["tier"] == 2
+    assert story["pending_chapter"]["act"] == "ACT I"
+
+
+def test_the_final_tier_does_not_open_the_whole_caseboard(app):
+    """Reaching tier 14 must not make every file startable at once."""
+    client = app.test_client()
+    headers = login(client, "caseboard-sequence@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 14
+        profile.reputation = 95
+        db.session.commit()
+
+    story = client.get("/v1/game").json["game"]["story"]
+    # The prologue has not been played, so even the first file is sealed.
+    assert [quest["key"] for quest in story["quests"] if quest["available"]] == []
+
+    client.post(
+        "/v1/game/story/choice",
+        json={"chapter_key": "one_light_on", "choice_key": "open_door"},
+        headers=headers,
+    )
+    story = client.get("/v1/game").json["game"]["story"]
+    assert [quest["key"] for quest in story["quests"] if quest["available"]] == ["mercer_overflow"]
+
+    final = next(quest for quest in story["quests"] if quest["key"] == FINAL_CASE_KEY)
+    assert final["available"] is False
+    assert final["locked_by"] == [
+        "FINALE: A Name in the Sky",
+        "The Far-Side Workers' Appeal",
+        "Signal From Hearing One",
+    ]
+
+    denied = client.post("/v1/game/quests/start", json={"quest_key": FINAL_CASE_KEY}, headers=headers)
+    assert denied.status_code == 409
+    assert denied.json["error"]["code"] == "quest_locked"
+
+
+def test_closing_a_file_opens_the_next_one_on_its_track(app):
+    client = app.test_client()
+    headers = login(client, "caseboard-chain@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 4
+        profile.story_state.seen_chapters_json = ["one_light_on", "the_harrow_file", "city_hall_cipher"]
+        profile.story_state.quest_history_json = ["mercer_overflow"]
+        db.session.commit()
+
+    quests = {quest["key"]: quest for quest in client.get("/v1/game").json["game"]["story"]["quests"]}
+    assert quests["innocence_archive"]["available"] is True
+    assert quests["clinic_coverup"]["available"] is False
+    assert quests["clinic_coverup"]["locked_by"] == ["The Innocence Archive"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.story_state.quest_history_json = ["mercer_overflow", "innocence_archive"]
+        db.session.commit()
+
+    quests = {quest["key"]: quest for quest in client.get("/v1/game").json["game"]["story"]["quests"]}
+    assert quests["clinic_coverup"]["available"] is True
+    assert quests["clinic_coverup"]["locked_by"] == []
+    opened = client.post("/v1/game/quests/start", json={"quest_key": "clinic_coverup"}, headers=headers)
+    assert opened.status_code == 200
+
+
+def test_a_file_stays_sealed_until_its_chapter_is_played(app):
+    client = app.test_client()
+    headers = login(client, "caseboard-chapter-gate@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 4
+        profile.story_state.seen_chapters_json = ["one_light_on", "the_harrow_file"]
+        profile.story_state.quest_history_json = ["mercer_overflow", "harrow_missing_deed"]
+        db.session.commit()
+
+    quests = {quest["key"]: quest for quest in client.get("/v1/game").json["game"]["story"]["quests"]}
+    assert quests["city_hall_trail"]["available"] is False
+    assert quests["city_hall_trail"]["locked_by"] == ["ACT II: The City Hall Cipher"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.story_state.seen_chapters_json = [*profile.story_state.seen_chapters_json, "city_hall_cipher"]
+        db.session.commit()
+
+    quests = {quest["key"]: quest for quest in client.get("/v1/game").json["game"]["story"]["quests"]}
+    assert quests["city_hall_trail"]["available"] is True
+
+
+def test_closing_the_final_charter_writes_an_epilogue(app):
+    client = app.test_client()
+    headers = login(client, "epilogue@example.test")
+    created = create_game(client, headers)
+    assert client.get("/v1/game").json["game"]["story"]["epilogue"] is None
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.office_tier = 14
+        profile.reputation = 92
+        profile.total_cases = 240
+        profile.total_correct = 198
+        profile.story_state.ethics = 88
+        profile.story_state.seen_chapters_json = [chapter["key"] for chapter in STORY_CHAPTERS]
+        profile.story_state.choices_json = {
+            "one_light_on": "open_door",
+            "name_in_the_sky": "give_constellation",
+        }
+        profile.story_state.quest_history_json = ["mercer_overflow", "market_whisper", FINAL_CASE_KEY]
+        db.session.commit()
+
+    game = client.get("/v1/game").json["game"]
+    epilogue = game["story"]["epilogue"]
+    assert epilogue["ending_key"] == "give_constellation"
+    assert epilogue["verdict"] == "CHARTERED IN PUBLIC TRUST"
+    assert len(epilogue["beats"]) == 4
+    assert epilogue["alignment"] == "Principled"
+    assert epilogue["promise"].startswith("On the first night you promised Ada")
+    assert epilogue["chapters_resolved"] == epilogue["chapters_total"] == len(STORY_CHAPTERS)
+    assert epilogue["quests_closed"] == 3
+    assert epilogue["shadow_files_closed"] == 1
+    assert epilogue["days_elapsed"] == 0
+    assert epilogue["completed_at"] and epilogue["opened_at"]
+    assert game["upkeep"]["completed"] is True
+
+    # The other ending is a different record, not the same text with a new stamp.
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.story_state.choices_json = {"name_in_the_sky": "rule_constellation"}
+        db.session.commit()
+
+    epilogue = client.get("/v1/game").json["game"]["story"]["epilogue"]
+    assert epilogue["ending_key"] == "rule_constellation"
+    assert epilogue["verdict"] == "HELD UNDER FIRM CONTROL"
+    assert epilogue["promise"] is None
 
 
 def test_rival_operation_reduces_the_real_purchase_price(app):
@@ -1663,6 +2368,7 @@ def test_rival_operation_reduces_the_real_purchase_price(app):
         profile.reputation = 80
         profile.office_tier = 2
         profile.story_state.influence = 5
+        profile.total_validated_correct = 12
         db.session.add(PlayerAsset(profile_id=profile.id, asset_key="local_bar", asset_type="connection", purchase_price=1))
         db.session.commit()
 
@@ -1687,6 +2393,64 @@ def test_rival_operation_reduces_the_real_purchase_price(app):
     with app.app_context():
         acquired = PlayerAsset.query.filter_by(asset_key="neighborhood_practice").one()
         assert acquired.purchase_price == discounted_cost
+
+
+def test_rival_operations_are_paid_for_with_validated_wins(app):
+    """The war room spends casework, so it cannot be played without practising."""
+    client = app.test_client()
+    headers = login(client, "rival-casework@example.test")
+    created = create_game(client, headers)
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = 1_000_000
+        profile.reputation = 80
+        profile.office_tier = 2
+        profile.story_state.influence = 5
+        # Every other requirement is met and the firm is rich. The only thing
+        # missing is the casework, which is the whole point of the gate.
+        profile.total_validated_correct = 1
+        db.session.add(PlayerAsset(profile_id=profile.id, asset_key="local_bar", asset_type="connection", purchase_price=1))
+        db.session.commit()
+
+    state = client.get("/v1/game", headers=headers)
+    assert state.json["game"]["story"]["casework"] == 1
+    target = next(item for item in state.json["game"]["story"]["rival_targets"] if item["key"] == "neighborhood_practice")
+    challenge = next(item for item in target["operations"] if item["key"] == "public_case_challenge")
+    assert challenge["casework"] == 2
+    assert challenge["available"] is False
+    assert "1 more validated wins" in challenge["missing"]
+
+    refused = client.post(
+        "/v1/game/rival-operations",
+        json={"rival_key": "neighborhood_practice", "operation_key": "public_case_challenge"},
+        headers=headers,
+    )
+    assert refused.status_code == 409
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.total_validated_correct = 4
+        db.session.commit()
+
+    operated = client.post(
+        "/v1/game/rival-operations",
+        json={"rival_key": "neighborhood_practice", "operation_key": "public_case_challenge"},
+        headers=headers,
+    )
+    assert operated.status_code == 200
+    assert operated.json["result"]["casework"] == 2
+    # Four wins earned, two committed, so two remain for the next operation.
+    assert operated.json["game"]["story"]["casework"] == 2
+    assert operated.json["game"]["story"]["casework_spent"] == 2
+
+    # Casework already committed to one rival is not available to another, so
+    # the discount ladder costs real practice all the way up.
+    second = client.post(
+        "/v1/game/rival-operations",
+        json={"rival_key": "neighborhood_practice", "operation_key": "forensic_complaint"},
+        headers=headers,
+    )
+    assert second.status_code == 409
 
 
 def test_pro_bono_win_and_caseboard_completion_change_the_settlement(app, monkeypatch):
@@ -1726,7 +2490,8 @@ def test_pro_bono_win_and_caseboard_completion_change_the_settlement(app, monkey
         run_attempt_coaching(attempt)
         settlement = attempt.settlement
         profile = PlayerProfile.query.filter_by(id=created["id"]).one()
-        assert settlement.quest_bonus == 650
+        # Mercer's overflow docket pays one extra client fee on completion.
+        assert settlement.quest_bonus == CLIENT_BY_KEY["eviction_defense_clinic"]["base_fee"]
         assert settlement.payout >= settlement.quest_bonus
         assert settlement.reputation_after >= settlement.reputation_before + 2
         assert profile.story_state.active_quest_key is None
@@ -1818,6 +2583,191 @@ def test_only_strong_reasoning_is_rewarded_on_a_wrong_answer(app, monkeypatch):
     assert excellent["payout"] > 0
     assert excellent["reputation"] > weak["reputation"]
     assert excellent["reputation"] > invalid["reputation"]
+
+
+def _settle_correct_answer(
+    app,
+    monkeypatch,
+    email: str,
+    grade: int,
+    *,
+    reasoning: str | None = None,
+    reputation: float | None = None,
+    prior_cases: int | None = None,
+) -> dict:
+    """Answer one case correctly (the key is always ``C``), coach it with the given
+    grade, settle, and report the resulting economy state.
+
+    ``prior_cases`` back-dates ``total_cases`` so the reputation warmup can be
+    isolated: it is the only thing that field feeds into a settlement.
+    """
+    client = app.test_client()
+    headers = login(client, email)
+    create_game(client, headers)
+    if reputation is not None or prior_cases is not None:
+        with app.app_context():
+            profile = PlayerProfile.query.join(PlayerProfile.user).filter(User.email == email).one()
+            if reputation is not None:
+                profile.reputation = reputation
+            if prior_cases is not None:
+                profile.total_cases = prior_cases
+            db.session.commit()
+
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    text = reasoning or explanation(f"the link {email} relies on")
+    submitted = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": session["current_item"]["id"],
+            "selected_label": "C",
+            "strategy_applied": True,
+            "reasoning": text,
+        },
+        headers={**headers, "Idempotency-Key": f"{email}-correct"},
+    ).json["result"]
+
+    coaching = {
+        "explanation_grade": grade,
+        "reasoning_verdict": "partial",
+        "reasoning_summary": "Graded for this test at a fixed band.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching, {}))
+    with app.app_context():
+        from app.services import run_attempt_coaching
+
+        attempt = db.session.get(Attempt, submitted["attempt_id"])
+        run_attempt_coaching(attempt)
+        profile = PlayerProfile.query.filter_by(user_id=attempt.user_id).one()
+        daily = DailyProgress.query.filter_by(profile_id=profile.id).one()
+        return {
+            "grade": attempt.settlement.explanation_grade,
+            "payout": attempt.settlement.payout,
+            "reputation_before": attempt.settlement.reputation_before,
+            "reputation_change": attempt.settlement.reputation_change,
+            "reputation": profile.reputation,
+            "daily_cases": daily.cases_completed,
+            "streak": profile.current_streak,
+        }
+
+
+def test_a_correct_answer_graded_invalid_is_paid_and_not_sharply_penalized(app, monkeypatch):
+    """The audited failure: a verified-correct answer whose write-up the grader
+    called Invalid used to pay nothing and take the full -4.0 reputation hit from
+    the 50.0 default. Solving the question is the signal the app teaches, so it is
+    now a thin win instead."""
+    result = _settle_correct_answer(
+        app,
+        monkeypatch,
+        "thin-win@example.test",
+        10,
+        reasoning=(
+            "I checked each choice against the gap between the evidence and the conclusion, "
+            "and only one of them closed that gap without smuggling in a new comparison."
+        ),
+    )
+    assert result["grade"] == "Invalid"
+    assert result["reputation_before"] == 50.0
+    assert result["payout"] > 0
+    # Previously -4.0 from one data point. It still costs standing, but under a
+    # point, and the drop is a fraction of what a careless miss costs.
+    assert -1.0 < result["reputation_change"] < 0
+    assert result["daily_cases"] == 0
+
+
+def test_a_reused_explanation_keeps_the_full_invalid_penalty(app, monkeypatch):
+    """The thin win only covers a judgment call about prose. Pasting the same
+    explanation onto a second case is decidable without a model, so it stays
+    unpaid even though the answer is correct."""
+    client = app.test_client()
+    headers = login(client, "reused-correct@example.test")
+    create_game(client, headers)
+    copied = (
+        "The conclusion depends on a link the credited choice makes explicit while "
+        "every other option widens the scope or swaps the term the argument needs."
+    )
+    coaching = {
+        "explanation_grade": 90,
+        "reasoning_verdict": "strong",
+        "reasoning_summary": "Graded Excellent by the model both times.",
+        "model": "test-model",
+    }
+    monkeypatch.setattr("app.services.generate_attempt_coaching", lambda _attempt: (coaching.copy(), {}))
+    session = client.post("/v1/study-sessions", headers=headers).json["session"]
+    settled = []
+    for index in range(2):
+        current = client.get(f"/v1/study-sessions/{session['id']}").json["session"]["current_item"]
+        submitted = client.post(
+            f"/v1/study-sessions/{session['id']}/attempts",
+            json={
+                "item_id": current["id"],
+                "selected_label": "C",
+                "strategy_applied": True,
+                "reasoning": copied,
+            },
+            headers={**headers, "Idempotency-Key": f"reused-{index}"},
+        ).json["result"]
+        with app.app_context():
+            from app.services import run_attempt_coaching
+
+            attempt = db.session.get(Attempt, submitted["attempt_id"])
+            run_attempt_coaching(attempt)
+            settled.append(
+                {"grade": attempt.settlement.explanation_grade, "payout": attempt.settlement.payout}
+            )
+        client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
+
+    assert settled[0]["grade"] == "Excellent" and settled[0]["payout"] > 0
+    assert settled[1]["grade"] == "Invalid" and settled[1]["payout"] == 0
+
+
+def test_written_reasoning_still_decides_what_a_correct_answer_is_worth(app, monkeypatch):
+    """Dampening the Invalid case must not flatten the incentive: every band above
+    it still pays strictly more and protects standing better."""
+    excellent = _settle_correct_answer(app, monkeypatch, "band-excellent@example.test", 90)
+    good = _settle_correct_answer(app, monkeypatch, "band-good@example.test", 65)
+    weak = _settle_correct_answer(app, monkeypatch, "band-weak@example.test", 40)
+    invalid = _settle_correct_answer(app, monkeypatch, "band-invalid@example.test", 10)
+
+    assert [excellent["grade"], good["grade"], weak["grade"], invalid["grade"]] == [
+        "Excellent",
+        "Good",
+        "Weak",
+        "Invalid",
+    ]
+    # Excellent and Good share a score-multiplier bucket when the answer lands
+    # instantly (no pace points), so only the weaker bands are strictly ordered.
+    assert excellent["payout"] >= good["payout"] > weak["payout"] > invalid["payout"] > 0
+    assert excellent["reputation"] >= good["reputation"] > weak["reputation"] > invalid["reputation"]
+    # A thin win is a win for the ledger but not for the streak or the daily goals.
+    assert excellent["streak"] == good["streak"] == 1
+    assert weak["streak"] == invalid["streak"] == 0
+
+
+def test_early_reputation_drops_are_dampened_and_reach_full_sensitivity(app):
+    from app.game import REPUTATION_WARMUP_CASES, _reputation_warmup
+
+    assert _reputation_warmup(0) < _reputation_warmup(1) < _reputation_warmup(REPUTATION_WARMUP_CASES)
+    assert _reputation_warmup(REPUTATION_WARMUP_CASES) == 1.0
+    assert _reputation_warmup(500) == 1.0
+    # Warmup only ever shrinks a drop, so it can never invert a guard or band cap.
+    assert 0 < _reputation_warmup(0) < 1
+
+
+def test_a_first_case_dents_reputation_less_than_the_same_case_later(app, monkeypatch):
+    """The same settlement, differing only in how much history precedes it. One
+    shaky case in the first hour cannot read as a career verdict."""
+    fresh = _settle_correct_answer(app, monkeypatch, "warmup-fresh@example.test", 10, reputation=60.0)
+    veteran = _settle_correct_answer(
+        app,
+        monkeypatch,
+        "warmup-veteran@example.test",
+        10,
+        reputation=60.0,
+        prior_cases=40,
+    )
+    assert fresh["grade"] == veteran["grade"] == "Invalid"
+    assert veteran["reputation_change"] < fresh["reputation_change"] < 0
 
 
 def test_completed_contract_auto_renews_so_a_client_can_be_replayed(app, monkeypatch):
@@ -2055,7 +3005,13 @@ def test_prompted_strategy_requires_a_decision_and_valid_prompt_time(app):
         assert attempt.strategy_prompt_ms == 2_400
 
 
-def test_strategy_dashboard_waits_for_supported_evidence_and_excludes_skips(app):
+def test_strategy_dashboard_uses_intention_to_treat_and_hedges_language(app):
+    """The estimator compares everyone *assigned* prompt vs. everyone assigned
+    control, regardless of self-reported `strategy_applied` — the fix for the
+    selection-bias bug in `research/11-measurement-implementation-spec.md` § 1.
+    It also never claims a personal verdict: no "confirmed", no "supported",
+    and no percentage-point lift below the fraction-display threshold.
+    """
     client = app.test_client()
     headers = login(client, "strategy-dashboard@example.test")
     create_game(client, headers)
@@ -2078,6 +3034,10 @@ def test_strategy_dashboard_waits_for_supported_evidence_and_excludes_skips(app)
         db.session.flush()
         for position in range(13):
             variant = "prompt" if position < 9 else "control"
+            # Position 8 is assigned to the prompt arm but the student later
+            # says they skipped it. Intention-to-treat still counts it in
+            # `sample` — this is exactly the case the old code got wrong by
+            # dropping it via a `strategy_applied.is_(True)` filter.
             applied = position < 8 if variant == "prompt" else None
             item = SessionItem(
                 session_id=session.id,
@@ -2113,32 +3073,355 @@ def test_strategy_dashboard_waits_for_supported_evidence_and_excludes_skips(app)
 
         snapshot = strategy_performance(user.id)
         result = snapshot["results"][0]
-        assert result["sample"] == 8
+        # ITT: all 9 prompt-arm attempts count, including the skipped one.
+        assert result["sample"] == 9
         assert result["control_sample"] == 4
+        assert result["applied"] == 8
         assert result["skipped"] == 1
-        assert result["accuracy"] == 75
+        assert result["accuracy"] == 67
         assert result["control_accuracy"] == 50
-        assert result["lift"] == 25
-        assert result["average_seconds"] == 95
-        assert result["status"] == "supported"
-        assert snapshot["strongest"]["key"] == "argument_core"
-        assert snapshot["trials_completed"] == 12
-
+        assert result["lift"] == 17
+        assert "status" not in result
+        assert snapshot["trials_completed"] == 13
         assert snapshot["leader"]["key"] == "argument_core"
-        assert result["verdict"] == "confirmed"
-        assert result["verdict_label"] == "confirmed"
+
+        # Never a binary verdict, regardless of sample size.
+        assert result["verdict"] == "measuring"
+        assert result["verdict_label"] == "measuring"
+        assert "confirmed" not in result["summary"].lower()
+        assert "supported" not in snapshot["evidence_note"].lower()
         assert result["plain_title"] == "Split the argument"
-        assert result["summary"] == "Splitting the argument is helping you."
-        assert result["detail"] == "You get 75% right with it and 50% right without it on similar questions."
-        assert result["with_headline"] == "75%"
-        assert result["with_note"] == "8 questions with it"
+        # Below the fraction-display threshold (30/arm): fractions, not a
+        # decimal-precision percentage, and no percentage-point difference.
+        assert result["with_headline"] == "6/9"
+        assert result["without_headline"] == "2/4"
+        assert result["with_note"] == "9 questions with it"
         assert result["without_note"] == "4 questions without it"
-        assert result["difference_headline"] == "+25 points"
-        assert result["difference_note"] == "95s average with it"
+        assert result["difference_headline"] == "—"
+        assert result["summary"] == "So far you're at 6/9 with it and 2/4 without it."
+        # The compliance rate — what strategy_applied is actually for now.
+        assert result["detail"] == "You said you used it on 8 of the 9 times it came up."
 
     response = client.get("/v1/performance", headers=headers)
     assert response.status_code == 200
-    assert response.json["performance"]["strategy_lab"]["strongest"]["key"] == "argument_core"
+    assert response.json["performance"]["strategy_lab"]["leader"]["key"] == "argument_core"
+
+
+def test_strategy_dashboard_shows_a_percentage_once_both_arms_are_large(app):
+    """Above the ~30-observation-per-arm threshold, and only then, a
+    percentage-point difference is shown instead of a raw fraction."""
+    with app.app_context():
+        user = User(email="strategy-large-sample@example.test", display_name="Large Sample")
+        db.session.add(user)
+        db.session.flush()
+        question = Question.query.order_by(Question.id).first()
+        session = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="deep",
+            feedback_policy="immediate",
+            target_minutes=35,
+            total_items=64,
+        )
+        db.session.add(session)
+        db.session.flush()
+        for position in range(64):
+            variant = "prompt" if position < 32 else "control"
+            is_correct = (position < 32 and position % 4 != 0) or (position >= 32 and position % 2 == 0)
+            item = SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=position,
+                requires_reasoning=True,
+                strategy_key="argument_core",
+                strategy_variant=variant,
+                target_time_seconds=150,
+            )
+            db.session.add(item)
+            db.session.flush()
+            db.session.add(
+                Attempt(
+                    user_id=user.id,
+                    session_item_id=item.id,
+                    idempotency_key=f"large-sample-{position}",
+                    selected_label="C" if is_correct else "A",
+                    is_correct=is_correct,
+                    reasoning_text="A concrete argument analysis.",
+                    confidence=4,
+                    strategy_key="argument_core",
+                    strategy_variant=variant,
+                    strategy_applied=True if variant == "prompt" else None,
+                    server_elapsed_ms=100_000,
+                )
+            )
+        db.session.commit()
+
+        from app.strategies import strategy_performance
+
+        result = next(entry for entry in strategy_performance(user.id)["results"] if entry["key"] == "argument_core")
+        assert result["sample"] == 32
+        assert result["control_sample"] == 32
+        assert result["with_headline"] == "75%"
+        assert result["without_headline"] == "50%"
+        assert result["difference_headline"] == "+25 points"
+        assert "not a proven effect" in result["difference_note"]
+
+
+def _seed_strategy_trials(
+    user: User,
+    question: Question,
+    *,
+    key: str,
+    prompt: tuple[int, int],
+    control: tuple[int, int],
+    tag: str,
+    applied: bool | None = True,
+    propensity: bool = True,
+) -> None:
+    """Give ``user`` a strategy trial record on ``question``.
+
+    ``prompt``/``control`` are (observations, correct) per arm. Everything lands
+    on one question deliberately: the section a trial is counted under comes off
+    that question, which is the property most of these tests are about.
+    """
+    session = StudySession(
+        user_id=user.id,
+        mode="practice",
+        practice_style="deep",
+        feedback_policy="immediate",
+        status="completed",
+        target_minutes=35,
+        total_items=prompt[0] + control[0],
+    )
+    db.session.add(session)
+    db.session.flush()
+    position = 0
+    for variant, (observations, correct) in (("prompt", prompt), ("control", control)):
+        for index in range(observations):
+            item = SessionItem(
+                session_id=session.id,
+                question_id=question.id,
+                position=position,
+                requires_reasoning=True,
+                strategy_key=key,
+                strategy_variant=variant,
+                target_time_seconds=150,
+                completed_at=utcnow(),
+            )
+            db.session.add(item)
+            db.session.flush()
+            db.session.add(
+                Attempt(
+                    user_id=user.id,
+                    session_item_id=item.id,
+                    idempotency_key=f"{tag}-{key}-{variant}-{position}",
+                    selected_label="C" if index < correct else "A",
+                    is_correct=index < correct,
+                    reasoning_text="A concrete analysis.",
+                    confidence=4,
+                    strategy_key=key,
+                    strategy_variant=variant,
+                    strategy_applied=applied if variant == "prompt" else None,
+                    strategy_propensity=(0.75 if variant == "prompt" else 0.25) if propensity else None,
+                    strategy_candidates_n=3,
+                    evidence_class="coached_practice",
+                    server_elapsed_ms=100_000,
+                )
+            )
+            position += 1
+    db.session.commit()
+
+
+def _sections(user: User) -> dict[str, dict]:
+    from app.strategies import strategy_performance
+
+    return {
+        reading["short_label"]: reading for reading in strategy_performance(user.id)["sections"]
+    }
+
+
+def test_strategy_sections_name_a_separate_leader_for_lr_and_rc(app):
+    """The two scored domains are measured apart, each off its own attempts.
+
+    An approach is only ever offered on questions from its own section, so a
+    single account-wide ranking is effectively a ranking of Logical Reasoning —
+    it has twice the items and therefore twice the trials. Each section gets its
+    own comparison here, and each is shrunk by its own evidence.
+    """
+    with app.app_context():
+        user = User(email="strategy-sections@example.test", display_name="Sections")
+        db.session.add(user)
+        db.session.flush()
+        lr = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).first()
+        rc = Question.query.filter_by(section="Reading Comprehension").order_by(Question.id).first()
+        # 20 against 20 is an effective comparison of exactly 10 a side, the
+        # smallest split that can carry a named approach.
+        _seed_strategy_trials(user, lr, key="argument_core", prompt=(20, 16), control=(20, 10), tag="s1")
+        _seed_strategy_trials(user, lr, key="prephrase", prompt=(20, 11), control=(20, 10), tag="s2")
+        _seed_strategy_trials(user, rc, key="passage_map", prompt=(20, 17), control=(20, 11), tag="s3")
+
+        sections = _sections(user)
+        assert set(sections) == {"LR", "RC"}
+        assert sections["LR"]["section"] == "Logical Reasoning"
+        assert sections["RC"]["section"] == "Reading Comprehension"
+
+        # Each section names its own approach, from its own trials only.
+        assert sections["LR"]["status"] == "leader"
+        assert sections["LR"]["leader"]["key"] == "argument_core"
+        assert sections["LR"]["trials"] == 80
+        assert sections["RC"]["status"] == "leader"
+        assert sections["RC"]["leader"]["key"] == "passage_map"
+        assert sections["RC"]["trials"] == 40
+        assert {result["key"] for result in sections["RC"]["results"]} == {"passage_map"}
+
+        # Shrinkage: the reported difference is strictly inside the raw one, and
+        # in the same direction. 80% against 50% is a raw 30 points; what the
+        # student is shown is smaller, because 20 a side is not 30 points of
+        # evidence.
+        leader = sections["LR"]["leader"]
+        assert leader["lift"] == 30
+        assert 0 < leader["adjusted_lift"] < leader["lift"]
+        assert sections["LR"]["lift_headline"] == "+20 pts"
+        assert sections["LR"]["evidence_label"] == "emerging"
+        assert sections["LR"]["minimum_contrast_sample"] == 10
+        assert leader["contrast_sample"] == 10.0
+
+        # Never a verdict, in either section.
+        for reading in sections.values():
+            for text in (reading["headline"], reading["summary"], reading["next_step"]):
+                assert "confirmed" not in text.lower()
+                assert "proves" not in text.lower()
+
+
+def test_a_thin_section_refuses_to_name_a_top_strategy(app):
+    """Below the bar the reading says what is missing instead of picking a winner.
+
+    The failure mode this exists to prevent: 12 prompted questions against 3
+    controls is a comparison worth 2.4 questions a side, and the approach on top
+    of it is noise. Naming it would be the same fiction the trial calendar
+    refuses to print.
+    """
+    with app.app_context():
+        user = User(email="strategy-thin@example.test", display_name="Thin")
+        db.session.add(user)
+        db.session.flush()
+        lr = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).first()
+        _seed_strategy_trials(user, lr, key="argument_core", prompt=(12, 12), control=(3, 0), tag="thin")
+
+        reading = _sections(user)["LR"]
+        # A perfect 12/12 against 0/3 — the most tempting shape there is.
+        assert reading["status"] == "insufficient"
+        assert reading["leader"] is None
+        assert reading["lift_headline"] == "—"
+        assert reading["evidence_label"] is None
+        assert not any(result["eligible"] for result in reading["results"])
+
+        # It still says which approach is nearest and by how much, rather than
+        # going silent — and it never states that approach as an answer.
+        assert reading["focus"]["key"] == "argument_core"
+        assert reading["headline"] == "Not enough LR evidence to name one"
+        assert "Split the argument" not in reading["headline"]
+        assert "12 questions with it and 3 without" in reading["summary"]
+        # Exact, not a rule of thumb: 12 with it can never reach an effective 10
+        # a side on its own, so both sides are quoted to the balanced solution.
+        assert "8 more with it and 17 more without it" in reading["next_step"]
+
+        # The account-wide panel is unchanged and still shows the running total.
+        from app.strategies import strategy_performance
+
+        assert strategy_performance(user.id)["leader"]["key"] == "argument_core"
+
+
+def test_a_section_with_no_trials_says_so_rather_than_borrowing_the_other(app):
+    with app.app_context():
+        user = User(email="strategy-one-section@example.test", display_name="One Section")
+        db.session.add(user)
+        db.session.flush()
+        lr = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).first()
+        _seed_strategy_trials(user, lr, key="argument_core", prompt=(20, 16), control=(20, 10), tag="one")
+
+        sections = _sections(user)
+        assert sections["LR"]["status"] == "leader"
+        assert sections["RC"]["status"] == "none"
+        assert sections["RC"]["trials"] == 0
+        assert sections["RC"]["results"] == []
+        assert sections["RC"]["leader"] is None
+        assert sections["RC"]["focus"] is None
+        # The Logical Reasoning answer must not leak across the split.
+        assert "Split the argument" not in sections["RC"]["summary"]
+
+
+def test_section_totals_follow_the_question_not_the_catalogue_label(app):
+    """A trial is counted where it happened, not where the approach belongs.
+
+    `_candidate_keys` only offers Reading Comprehension approaches on Reading
+    Comprehension questions, so the two almost always agree — but the catalogue
+    `section` is a statement about what an approach is *for*, and grouping on it
+    would be a display-time slice rather than a per-section statistic.
+    """
+    with app.app_context():
+        user = User(email="strategy-crossed@example.test", display_name="Crossed")
+        db.session.add(user)
+        db.session.flush()
+        rc = Question.query.filter_by(section="Reading Comprehension").order_by(Question.id).first()
+        # A Logical Reasoning approach, recorded entirely on RC questions.
+        _seed_strategy_trials(user, rc, key="argument_core", prompt=(20, 16), control=(20, 10), tag="cross")
+
+        sections = _sections(user)
+        assert sections["LR"]["trials"] == 0
+        assert sections["RC"]["trials"] == 40
+        assert sections["RC"]["leader"]["key"] == "argument_core"
+        # The catalogue label survives on the result, where it describes the
+        # approach; it is simply not what decided the grouping.
+        assert sections["RC"]["leader"]["section"] == "Logical Reasoning"
+
+
+def test_section_contrast_is_intention_to_treat_and_propensity_weighted(app):
+    """Assignment defines treatment, and the logged propensity does the weighting."""
+    with app.app_context():
+        user = User(email="strategy-itt-sections@example.test", display_name="ITT")
+        db.session.add(user)
+        db.session.flush()
+        lr = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).first()
+        # Every prompt-arm question is one the student said they did *not* use
+        # the approach on. Per-protocol would throw the whole arm away.
+        _seed_strategy_trials(
+            user, lr, key="argument_core", prompt=(20, 16), control=(20, 10), tag="itt", applied=False
+        )
+
+        reading = _sections(user)["LR"]
+        assert reading["status"] == "leader"
+        assert reading["leader"]["sample"] == 20
+        assert reading["leader"]["applied"] == 0
+        assert reading["leader"]["skipped"] == 20
+        assert reading["itt"]["basis"] == "intention-to-treat"
+        assert reading["itt"]["propensity_weighted"] is True
+        assert reading["itt"]["mean_candidates"] == 3.0
+        # And the student is told which of the two it is, in the panel.
+        assert "not by whether you said you used it" in reading["itt"]["note"]
+
+
+def test_arm_rate_weights_by_the_logged_propensity(app):
+    """Hájek weighting: a no-op at constant propensity, correct when it varies."""
+    from types import SimpleNamespace
+
+    from app.strategies import _arm_rate
+
+    def arm(*observations: tuple[bool, float | None]):
+        return [
+            SimpleNamespace(is_correct=correct, strategy_propensity=propensity)
+            for correct, propensity in observations
+        ]
+
+    # Constant propensity: the weights cancel and this is the plain mean.
+    assert _arm_rate(arm((True, 0.75), (True, 0.75), (False, 0.75), (False, 0.75))) == 0.5
+    # Missing propensity on legacy rows falls back to unit weight rather than
+    # dropping the observation, which would break intention-to-treat.
+    assert _arm_rate(arm((True, None), (False, None))) == 0.5
+    # Varying propensity: the rarely-assigned correct answer carries more.
+    # (1/0.25) / (1/0.25 + 1/0.75) = 0.75.
+    assert _arm_rate(arm((True, 0.25), (False, 0.75))) == pytest.approx(0.75)
+    assert _arm_rate([]) == 0.0
 
 
 def _replace_profile(app, client, headers, profile_id: str) -> dict:
@@ -2420,7 +3703,11 @@ def test_correct_answer_with_invalid_explanation_enters_the_review_queue(app):
         _graded_attempt(answered["attempt_id"], 0.10)
         row = ReviewQueueItem.query.one()
         assert row.reason_code == "unsupported_correct"
-        assert row.interval_index == 0
+        # Entering the queue is itself the card's first FSRS review, so it
+        # arrives with real memory state rather than parked on rung zero.
+        assert row.reps == 1
+        assert row.stability > 0
+        assert row.difficulty is not None
         assert row.grade_pending is False
 
 
@@ -2471,26 +3758,37 @@ def test_headline_counts_diagnostic_only_and_cases_get_their_own_panel(app):
     assert performance["coached_practice"]["accuracy"] == 100
 
 
-def test_review_recovery_reads_the_review_queue_flag(app):
+def test_review_recovery_reads_the_review_queue_flag(app, monkeypatch):
+    """Recovery counts only the repaired item, wherever interleaving placed it."""
     client = app.test_client()
     headers = login(client, "recovery-flag@example.test")
     create_game(client, headers)
     with app.app_context():
         user = User.query.filter_by(email="recovery-flag@example.test").one()
-        _queue_due_question(user.id, Question.query.order_by(Question.id).first().id)
+        repaired = Question.query.order_by(Question.id).first()
+        _queue_due_question(user.id, repaired.id)
+        repaired_id = repaired.id
 
     session = client.post("/v1/study-sessions", json={"size": 2}, headers=headers).json["session"]
-    client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={
-            "item_id": session["current_item"]["id"],
-            "selected_label": "C",
-            "strategy_applied": True,
-            "confidence": 3,
-            "reasoning": explanation("the recovered repair"),
-        },
-        headers={**headers, "Idempotency-Key": "recovery-repair"},
-    )
+    for index in range(2):
+        current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
+        item = current["current_item"]
+        result = client.post(
+            f"/v1/study-sessions/{session['id']}/attempts",
+            json={
+                "item_id": item["id"],
+                # Only the repaired question needs to come back correct; the
+                # fresh one is deliberately answered wrong so a bug that counted
+                # every attempt as a recovery would not read 100 either.
+                "selected_label": "C" if item["question"]["id"] == repaired_id else "A",
+                "strategy_applied": True,
+                "confidence": 3,
+                "reasoning": explanation("the recovered repair"),
+            },
+            headers={**headers, "Idempotency-Key": f"recovery-repair-{index}"},
+        ).json["result"]
+        coach_and_settle(app, monkeypatch, result["attempt_id"])
+        client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
 
     performance = client.get("/v1/performance", headers=headers).json["performance"]
     assert performance["review"]["recovery_rate"] == 100
@@ -2534,7 +3832,13 @@ def _queue_due_question(user_id: str, question_id: str) -> None:
     db.session.commit()
 
 
-def test_due_repairs_are_seeded_first_and_capped_at_half_a_run(app):
+def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
+    """Repairs fill at most half a run, spread through it rather than stacked.
+
+    Front-loading is what the old `repairs + fresh` concatenation did, and it
+    leaks the answer key: "the first three are the ones you got wrong" is a cue
+    the student reads before the stem. See `app/scheduling.interleave`.
+    """
     client = app.test_client()
     headers = login(client, "folded-repairs@example.test")
     create_game(client, headers)
@@ -2546,7 +3850,10 @@ def test_due_repairs_are_seeded_first_and_capped_at_half_a_run(app):
     session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        assert [item.from_review_queue for item in items] == [True, True, True, False, False, False]
+        origins = [item.from_review_queue for item in items]
+        assert sum(origins) == 3
+        assert origins != [True, True, True, False, False, False]
+        assert origins[0] is False
 
 
 def test_an_empty_review_queue_still_produces_a_full_run(app):
@@ -2612,121 +3919,158 @@ def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeyp
     session = client.post("/v1/study-sessions", json={"size": 2}, headers=headers).json["session"]
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        assert items[0].question_id == repaired_id
-        assert items[0].from_review_queue is True
-        assert items[1].from_review_queue is False
+        assert {item.from_review_queue for item in items} == {True, False}
+        repair_position = next(item.position for item in items if item.from_review_queue)
 
-    # Position 0 is the repair: a correct answer with a Good explanation advances it.
-    first = client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={
-            "item_id": session["current_item"]["id"],
-            "selected_label": "C",
-            "strategy_applied": True,
-            "confidence": 4,
-            "reasoning": explanation("the repaired question"),
-        },
-        headers={**headers, "Idempotency-Key": "mixed-repair"},
-    ).json["result"]
-    coach_and_settle(app, monkeypatch, first["attempt_id"], grade=65)
-    client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
+    # The repair: a correct answer with a Good explanation advances its memory
+    # state. The fresh item: a high-confidence miss must enter the queue.
+    for index in range(2):
+        current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
+        item = current["current_item"]
+        is_repair = item["position"] == repair_position
+        result = client.post(
+            f"/v1/study-sessions/{session['id']}/attempts",
+            json={
+                "item_id": item["id"],
+                "selected_label": "C" if is_repair else "A",
+                "strategy_applied": True,
+                "confidence": 4 if is_repair else 5,
+                "reasoning": explanation("the repaired question" if is_repair else "the fresh question"),
+            },
+            headers={**headers, "Idempotency-Key": f"mixed-{index}"},
+        ).json["result"]
+        coach_and_settle(app, monkeypatch, result["attempt_id"], grade=65)
+        client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
+        if not is_repair:
+            fresh_attempt_id = result["attempt_id"]
+
     with app.app_context():
         card = ReviewQueueItem.query.filter_by(question_id=repaired_id).one()
-        assert card.interval_index == 1
+        # Recalled, so it gained stability and is no longer relearning.
+        assert card.last_grade > 1
+        assert card.stability > 0
 
-    # Position 1 is fresh: a high-confidence miss must enter the queue at zero.
-    current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
-    second = client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={
-            "item_id": current["current_item"]["id"],
-            "selected_label": "A",
-            "strategy_applied": True,
-            "confidence": 5,
-            "reasoning": explanation("the fresh question"),
-        },
-        headers={**headers, "Idempotency-Key": "mixed-fresh"},
-    ).json["result"]
-    with app.app_context():
-        attempt = db.session.get(Attempt, second["attempt_id"])
+        attempt = db.session.get(Attempt, fresh_attempt_id)
         fresh_card = ReviewQueueItem.query.filter_by(
             question_id=attempt.session_item.question_id
         ).one()
         assert fresh_card.reason_code == "high_confidence_error"
-        assert fresh_card.interval_index == 0
+        assert fresh_card.last_grade == 1
+        assert fresh_card.lapses == 1
+
+
+def _advance_card(app, label: str, *, stability: float, score: float, is_correct: bool = True):
+    """Run one attempt through `_schedule_review` against a seeded card."""
+    user = User(email=f"advance-{label}@example.test", display_name="Advance")
+    db.session.add(user)
+    db.session.flush()
+    question = Question.query.first()
+    row = ReviewQueueItem(
+        user_id=user.id,
+        question_id=question.id,
+        status="due",
+        reason_code="incorrect",
+        interval_index=1,
+        due_at=utcnow(),
+        stability=stability,
+        difficulty=5.0,
+        reps=1,
+        last_grade=3,
+        last_reviewed_at=utcnow() - timedelta(days=stability),
+    )
+    db.session.add(row)
+    db.session.flush()
+
+    session = StudySession(
+        user_id=user.id,
+        mode="practice",
+        practice_style="cases",
+        feedback_policy="immediate",
+        target_minutes=10,
+        total_items=1,
+    )
+    db.session.add(session)
+    db.session.flush()
+    item = SessionItem(
+        session_id=session.id,
+        question_id=question.id,
+        position=0,
+        requires_reasoning=True,
+        # Memory state advances for items seeded from the queue, which is a
+        # property of the item rather than of the whole run.
+        from_review_queue=True,
+        target_time_seconds=150,
+    )
+    db.session.add(item)
+    db.session.flush()
+    attempt = Attempt(
+        user_id=user.id,
+        session_item_id=item.id,
+        idempotency_key=f"advance-{label}",
+        selected_label=question.correct_answer if is_correct else "zzz",
+        is_correct=is_correct,
+        reasoning_text="A written explanation long enough to be graded by the coach.",
+        confidence=4,
+        server_elapsed_ms=60_000,
+        explanation_score=score,
+    )
+    db.session.add(attempt)
+    db.session.flush()
+
+    from app.services import _schedule_review
+
+    _schedule_review(attempt)
+    db.session.commit()
+    return db.session.get(ReviewQueueItem, row.id)
 
 
 @pytest.mark.parametrize(
-    ("start_index", "score", "expected_index", "expected_status"),
+    ("label", "score", "expected_grade"),
     [
-        (1, 0.90, 3, "due"),        # Excellent -> +2
-        (1, 0.60, 2, "due"),        # Good      -> +1
-        (1, 0.30, 1, "due"),        # Weak      -> hold
-        (1, 0.10, 0, "due"),        # Invalid   -> reset
-        (3, 0.90, 4, "mastered"),   # Excellent -> +2 overshoots the ladder
+        ("excellent", 0.90, 4),
+        ("good", 0.60, 3),
+        ("weak", 0.20, 2),
     ],
 )
-def test_review_advance_depends_on_the_explanation_grade(app, start_index, score, expected_index, expected_status):
+def test_derived_grade_tracks_the_explanation_score(app, label, score, expected_grade):
+    """Explanation quality is the heaviest term in the derived FSRS grade.
+
+    Everything else about these three attempts is identical — same card, same
+    pace, same confidence, all correct — so the grade separates purely on how
+    well the student justified the answer.
+    """
     with app.app_context():
-        user = User(email=f"advance-{start_index}-{score}@example.test", display_name="Advance")
-        db.session.add(user)
-        db.session.flush()
-        question = Question.query.first()
-        row = ReviewQueueItem(
-            user_id=user.id,
-            question_id=question.id,
-            status="due",
-            reason_code="incorrect",
-            interval_index=start_index,
-            due_at=utcnow(),
-        )
-        db.session.add(row)
-        db.session.commit()
+        refreshed = _advance_card(app, label, stability=5.0, score=score)
+        assert refreshed.last_grade == expected_grade
+        assert refreshed.status == "due"
 
-        session = StudySession(
-            user_id=user.id,
-            mode="practice",
-            practice_style="cases",
-            feedback_policy="immediate",
-            target_minutes=10,
-            total_items=1,
-        )
-        db.session.add(session)
-        db.session.flush()
-        item = SessionItem(
-            session_id=session.id,
-            question_id=question.id,
-            position=0,
-            requires_reasoning=True,
-            # The ladder advances for items seeded from the queue, which is now
-            # a property of the item rather than of the whole run.
-            from_review_queue=True,
-            target_time_seconds=150,
-        )
-        db.session.add(item)
-        db.session.flush()
-        attempt = Attempt(
-            user_id=user.id,
-            session_item_id=item.id,
-            idempotency_key=f"advance-{start_index}-{score}",
-            selected_label=question.correct_answer,
-            is_correct=True,
-            reasoning_text="A written explanation long enough to be graded by the coach.",
-            confidence=4,
-            server_elapsed_ms=60_000,
-            explanation_score=score,
-        )
-        db.session.add(attempt)
-        db.session.flush()
 
-        from app.services import _schedule_review
+def test_a_recalled_card_gains_stability_and_a_missed_one_lapses(app):
+    with app.app_context():
+        from app.scheduling import interval_days
 
-        _schedule_review(attempt)
-        db.session.commit()
+        recalled = _advance_card(app, "recalled", stability=5.0, score=0.90)
+        assert recalled.stability > 5.0
+        assert recalled.lapses == 0
+        # Recalled after a full stability's worth of decay, so the next
+        # interval must be longer than the one just survived.
+        assert interval_days(recalled.stability) > 5.0
 
-        refreshed = db.session.get(ReviewQueueItem, row.id)
-        assert refreshed.interval_index == expected_index
-        assert refreshed.status == expected_status
+    with app.app_context():
+        missed = _advance_card(app, "missed", stability=5.0, score=0.90, is_correct=False)
+        # A lapse cannot come back with a longer interval than it had, and it
+        # is available for repair immediately rather than on a future date.
+        assert missed.stability < 5.0
+        assert missed.lapses == 1
+        assert missed.last_grade == 1
+        assert missed.status == "due"
+
+
+def test_a_card_stable_past_the_horizon_is_marked_mastered(app):
+    """Mastery is a statement about stability, not about surviving four rungs."""
+    with app.app_context():
+        refreshed = _advance_card(app, "mastered", stability=60.0, score=0.95)
+        assert refreshed.status == "mastered"
 
 
 def test_landing_grade_revises_the_provisional_schedule(app, monkeypatch):
@@ -3237,6 +4581,92 @@ def test_a_promotion_at_the_top_of_the_ladder_is_a_no_op(app):
         assert grant_mega_litigation_promotion(profile, "nowhere-left-to-go") is None
         assert PlayerProfile.query.filter_by(id=profile_id).one().office_tier == len(FIRM_TIERS) - 1
         assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 0
+
+
+def _clear_a_mega_litigation(client, headers, marker: str) -> dict:
+    """Sit a fresh form and clear the promotion bar. Returns its summary."""
+    started = client.post("/v1/diagnostics", headers=headers)
+    assert started.status_code == 201, started.json
+    session = started.json["session"]
+    cleared = int(0.70 * session["total_items"]) + 1
+    finished = _answer_mega_litigation(client, headers, session, cleared, marker)
+    assert finished["summary"]["form_accuracy"] > 70
+    return finished["summary"]
+
+
+def test_a_second_mega_litigation_the_same_day_promotes_nothing(app):
+    """The free tier is a daily windfall, not a ladder.
+
+    Per-session idempotency never stopped this: it only refuses to pay the same
+    form twice, and starting a brand new form was always one request away. A
+    fresh account could chain forms tier 0 -> tier 14 in an afternoon.
+    """
+    client = app.test_client()
+    headers = login(client, "mega-cooldown@example.test")
+    profile_id = create_game(client, headers)["id"]
+
+    assert _clear_a_mega_litigation(client, headers, "cooldown-one")["promotion"]["tier"] == 1
+
+    blocked = _clear_a_mega_litigation(client, headers, "cooldown-two")
+    assert "promotion" not in blocked
+    assert blocked["promotion_status"]["blocked_reason"] == "cooldown"
+    assert blocked["promotion_status"]["available"] is False
+    assert blocked["promotion_status"]["available_at"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        assert profile.office_tier == 1
+        assert profile.mega_litigation_promotions == 1
+        assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 1
+
+
+def test_a_mega_litigation_promotes_again_once_the_day_has_passed(app):
+    client = app.test_client()
+    headers = login(client, "mega-cooldown-elapsed@example.test")
+    profile_id = create_game(client, headers)["id"]
+
+    _clear_a_mega_litigation(client, headers, "elapsed-one")
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        profile.mega_litigation_promoted_at = utcnow() - timedelta(hours=25)
+        db.session.commit()
+
+    promotion = _clear_a_mega_litigation(client, headers, "elapsed-two")["promotion"]
+    assert promotion["tier"] == 2
+    assert promotion["allowance"]["used"] == 2
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        assert profile.office_tier == 2
+        assert profile.mega_litigation_promotions == 2
+        assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 2
+
+
+def test_free_promotions_stop_at_the_lifetime_allowance(app):
+    """Enough of a head start to feel like a windfall; never a route to the top."""
+    from app.game import MEGA_LITIGATION_PROMOTION_LIMIT
+
+    client = app.test_client()
+    headers = login(client, "mega-allowance@example.test")
+    profile_id = create_game(client, headers)["id"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        profile.mega_litigation_promotions = MEGA_LITIGATION_PROMOTION_LIMIT
+        db.session.commit()
+
+    spent = _clear_a_mega_litigation(client, headers, "allowance-spent")
+    assert "promotion" not in spent
+    assert spent["promotion_status"]["blocked_reason"] == "lifetime_limit"
+    assert spent["promotion_status"]["remaining"] == 0
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=profile_id).one()
+        # No cooldown left to wait out, and no free tier either.
+        assert profile.office_tier == 0
+        assert profile.mega_litigation_promoted_at is None
+        assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 0
+        assert MEGA_LITIGATION_PROMOTION_LIMIT < len(FIRM_TIERS) - 1
 
 
 def _completed_mega_litigation(user_id: str, results: list[tuple[Question, bool]]) -> StudySession:

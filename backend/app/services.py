@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import random
 from collections import defaultdict
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import current_app
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
 from .extensions import db
@@ -16,12 +17,35 @@ from .game import (
     explanation_band,
     grant_mega_litigation_promotion,
     lock_user_profile,
+    mega_litigation_promotion_state,
     serialize_settlement,
     settle_attempt,
     snapshot_case_context,
 )
-from .models import Attempt, Question, ReviewQueueItem, SessionItem, SkillProgress, StudySession, User, utcnow
+from . import enforcement, scheduling
+from .models import AiJob, Attempt, Question, ReviewQueueItem, SessionItem, SkillProgress, StudySession, User, utcnow
+from .scoring import (
+    FORM_ITEMS,
+    FORM_RC_ITEMS,
+    project_score,
+    projection_snapshot,
+    record_projection,
+)
 from .seed import SOURCE_PREFIX
+from .trial import trial_plan
+from .enforcement import (
+    ENFORCEMENT_VERSION,
+    GateRejection,
+    LEVEL_LIGHT,
+    LEVEL_NONE,
+    STATUS_ATTESTED,
+    STATUS_SATISFIED,
+    STATUS_SKIPPED,
+    STATUS_UNENFORCED,
+    assign_enforcement_level,
+    build_gate,
+    validate_artifact,
+)
 from .strategies import assign_strategy_trial, serialize_strategy, strategy_performance
 
 
@@ -31,8 +55,33 @@ EVIDENCE_CLASS = {
     "cases": "coached_practice",
     "diagnostic": "diagnostic",
 }
+# Retained for the seed scripts and for reading historical `interval_index`
+# values; scheduling itself is now `app/scheduling.py` (FSRS-6).
 REVIEW_INTERVAL_DAYS = (1, 3, 7, 21)
+# A card whose next FSRS interval already exceeds this is not going to be
+# forgotten before the student's test date, so it stops taking a review slot.
+# Not deleted: one lapse pulls it straight back into rotation.
+MASTERED_STABILITY_DAYS = 21
 REASONING_MIN_CHARS = 120
+ASSISTANCE_LEVELS = {"full", "focus"}
+MIN_TARGET_SCORE = 120
+MAX_TARGET_SCORE = 180
+# A declared target at or above this, or a test date inside this many weeks,
+# defaults a new user straight into Focus Mode — no office, map, or economy
+# chrome. Only ever applied once, at onboarding; the student's own toggle
+# always wins after that. [00-implementation-plan.md P0-4]
+FOCUS_MODE_TARGET_SCORE = 168
+FOCUS_MODE_WEEKS_OUT = 8
+
+
+def default_assistance_level(target_score: int | None, target_test_date: date | None) -> str:
+    if target_score is not None and target_score >= FOCUS_MODE_TARGET_SCORE:
+        return "focus"
+    if target_test_date is not None:
+        weeks_out = (target_test_date - date.today()).days / 7
+        if weeks_out < FOCUS_MODE_WEEKS_OUT:
+            return "focus"
+    return "full"
 # Clearing this share of the whole form — not of the questions reached — promotes
 # the firm one tier. See `finalize_diagnostic`.
 MEGA_LITIGATION_PROMOTION_ACCURACY = 0.70
@@ -92,15 +141,27 @@ def list_resumable_sessions(user: User) -> list[StudySession]:
 
 
 def find_resumable_session(user: User) -> StudySession | None:
-    """The single most-recently-started queued practice run, if any.
+    """The one queued practice run a single-run surface should treat as current.
 
     Kept for call sites that only ever cared about one representative active
     run (the `next_route` shortcut, the daily docket's "resume" action, the
-    Office/Training pages' one-tap continue). Those surfaces are unaffected by
-    the multi-run queue: picking the most recently started run is a sane
-    single answer even when several runs are queued.
+    Office/Training pages' one-tap continue, and the office's walk-in client
+    visualization).
+
+    `_pause_other_active_practice_sessions` guarantees at most one queued run
+    is ever `in_progress` at a time, and that is always the run the student is
+    actively working — created just now, or explicitly resumed from the run
+    queue. Falling back to "most recently *started*" here (as a plain
+    `started_at desc` sort would) picks the wrong run whenever an older,
+    already-in-progress run is resumed after a newer run was created: the
+    newer-but-now-paused run would keep winning, so the Office's walk-in
+    client would silently stay stuck on it instead of following whichever
+    case the student actually switched to.
     """
     sessions = list_resumable_sessions(user)
+    for session in sessions:
+        if session.status == "in_progress":
+            return session
     return sessions[0] if sessions else None
 
 
@@ -177,7 +238,65 @@ def serialize_user(user: User) -> dict:
         "next_route": next_route,
         "game_ready": bool(user.game_profile),
         "diagnostic_complete": diagnostic_complete,
+        "target_score": user.target_score,
+        "target_test_date": user.target_test_date.isoformat() if user.target_test_date else None,
+        "assistance_level": user.assistance_level,
+        # Authoritative "has this account been oriented?" so a cleared browser
+        # store, a second device, or a private window cannot re-block the app.
+        "guided_tour_completed": user.guided_tour_completed_at is not None,
     }
+
+
+def update_user_preferences(user: User, payload: dict) -> User:
+    """Handle the onboarding intent question and the always-visible Focus Mode toggle.
+
+    Declaring a target score/test date only ever *sets* `assistance_level` as a
+    side effect while onboarding is still in progress (no game profile yet) —
+    the cold-start lever from P0-4. Once onboarding is done, this function only
+    ever changes `assistance_level` when the caller asks for it explicitly, so
+    a returning user's own toggle is never silently overridden by an old
+    declared target score.
+    """
+    onboarding_stage = user.game_profile is None
+    touched_intent = False
+    if "target_score" in payload:
+        raw = payload["target_score"]
+        if raw is None:
+            user.target_score = None
+        else:
+            try:
+                score = int(raw)
+            except (TypeError, ValueError):
+                raise ValueError("invalid_target_score")
+            if score < MIN_TARGET_SCORE or score > MAX_TARGET_SCORE:
+                raise ValueError("invalid_target_score")
+            user.target_score = score
+        touched_intent = True
+    if "target_test_date" in payload:
+        raw = payload["target_test_date"]
+        if raw is None:
+            user.target_test_date = None
+        else:
+            try:
+                user.target_test_date = date.fromisoformat(str(raw))
+            except ValueError:
+                raise ValueError("invalid_target_test_date")
+        touched_intent = True
+    if "guided_tour_completed" in payload:
+        # Finishing and skipping are the same fact — the account has been offered
+        # the tour and does not need it forced again. Only ever set, never cleared
+        # by a client; replaying is a local action that leaves this alone.
+        if payload["guided_tour_completed"] and user.guided_tour_completed_at is None:
+            user.guided_tour_completed_at = utcnow()
+    if "assistance_level" in payload:
+        level = payload["assistance_level"]
+        if level not in ASSISTANCE_LEVELS:
+            raise ValueError("invalid_assistance_level")
+        user.assistance_level = level
+    elif touched_intent and onboarding_stage:
+        user.assistance_level = default_assistance_level(user.target_score, user.target_test_date)
+    db.session.commit()
+    return user
 
 
 def serialize_question(question: Question) -> dict:
@@ -295,6 +414,7 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
         "requires_reasoning": item.requires_reasoning,
         "reasoning_min_chars": reasoning_min_chars(item.session),
         "strategy_trial": ({**strategy_trial, "variant": "prompt"} if strategy_trial else None),
+        "strategy_gate": build_gate(item) if strategy_trial else None,
         "served_at": _iso_utc(item.served_at),
         "elapsed_ms": _elapsed_ms(item),
         "target_time_seconds": item.target_time_seconds,
@@ -391,9 +511,49 @@ def select_random_questions(
     eligible = [question for question in query.all() if question.id not in blocked]
     if not eligible:
         return []
-    unseen = [question for question in eligible if not user_id or question.id not in _seen_question_ids(user_id)]
+    # Hoisted out of the comprehension below: calling this once here instead of
+    # once per candidate question turned a single-query lookup into an N+1 that
+    # ran thousands of times per session creation on the full bank.
+    seen_ids = _seen_question_ids(user_id) if user_id else set()
+    unseen = [question for question in eligible if question.id not in seen_ids]
     pool = unseen if len(unseen) >= count else unseen + [question for question in eligible if question not in unseen]
     return _weight_toward_focus(pool, count, focus_types)
+
+
+def _passage_blocks(pool: list[Question]) -> list[list[Question]]:
+    """Group a candidate pool into the units a run may serve.
+
+    A Reading Comprehension question is not a question on its own — the passage
+    is most of the work — so passage-mates form one indivisible block and
+    everything else is a block of one. The mega-litigation path has always done
+    this; the practice path did not, which is how a student could be handed one
+    lone question that required reading 450 words. That both inflates the run's
+    length and corrupts the pace metrics the same run records, since the target
+    times assume the first question on a passage pays for the reading and the
+    rest do not.
+    """
+    grouped: dict[str, list[Question]] = defaultdict(list)
+    for question in pool:
+        grouped[question.passage_id or f"solo:{question.id}"].append(question)
+    return [sorted(block, key=lambda question: question.id) for block in grouped.values()]
+
+
+def _fill_blocks(blocks: list[list[Question]], budget: int, selected: list[list[Question]]) -> None:
+    """Add whole blocks to `selected` until `budget` questions are chosen.
+
+    Never overshoots and never splits a block, so a run comes out at the
+    requested size whenever the pool contains any single-question material to
+    round it out — which, with an LR bank in the thousands, is always.
+    """
+    chosen = {id(block) for block in selected}
+    total = sum(len(block) for block in selected)
+    for block in blocks:
+        if total >= budget:
+            return
+        if id(block) in chosen or total + len(block) > budget:
+            continue
+        selected.append(block)
+        total += len(block)
 
 
 def _weight_toward_focus(pool: list[Question], count: int, focus_types: list[str] | None) -> list[Question]:
@@ -404,23 +564,35 @@ def _weight_toward_focus(pool: list[Question], count: int, focus_types: list[str
     a majority share is enough to move the needle while practice still covers
     the whole test. Falls back to a plain sample when there is no focus, or too
     little focus material to reach the quota.
+
+    Selection happens over passage blocks rather than over questions, so the
+    focus bias can never separate passage-mates. A block counts as focus
+    material if any of its questions is a focus type, which is the only sensible
+    reading for a passage whose questions are of several types.
     """
-    take = min(count, len(pool))
+    if count <= 0:
+        return []
+    blocks = _passage_blocks(pool)
+    random.shuffle(blocks)
     wanted = set(focus_types or ())
-    if not wanted or take == 0:
-        return random.sample(pool, k=take)
-    preferred = [question for question in pool if question.question_type in wanted]
-    others = [question for question in pool if question.question_type not in wanted]
-    quota = min(len(preferred), round(take * FOCUS_FILL_RATIO))
-    selected = random.sample(preferred, k=quota)
-    remainder = random.sample(others, k=min(take - quota, len(others)))
-    selected.extend(remainder)
-    if len(selected) < take:
+    selected: list[list[Question]] = []
+    if wanted:
+        preferred = [block for block in blocks if any(question.question_type in wanted for question in block)]
+        preferred_ids = {id(block) for block in preferred}
+        others = [block for block in blocks if id(block) not in preferred_ids]
+        _fill_blocks(preferred, round(count * FOCUS_FILL_RATIO), selected)
+        _fill_blocks(others, count, selected)
         # Not enough off-focus material to round the run out; top up from focus.
-        leftover = [question for question in preferred if question not in selected]
-        selected.extend(random.sample(leftover, k=min(take - len(selected), len(leftover))))
+        _fill_blocks(preferred, count, selected)
+    else:
+        _fill_blocks(blocks, count, selected)
+    if not selected and blocks:
+        # The only material left is a passage longer than the whole run. Serving
+        # it whole and slightly long beats serving a fragment of it, and beats
+        # refusing to build a session at all.
+        selected.append(min(blocks, key=len))
     random.shuffle(selected)
-    return selected
+    return [question for block in selected for question in block]
 
 
 def select_diagnostic_questions(count: int) -> tuple[list[Question], list[int], list[dict]]:
@@ -431,31 +603,57 @@ def select_diagnostic_questions(count: int) -> tuple[list[Question], list[int], 
     like a real test, and give the results screen a per-block breakdown. Each
     block reports the `minutes` it would be worth on a real LSAT, which is what
     the whole-form budget is summed from.
+
+    The form is a **fixed length**, and getting there is the whole shape of this
+    function. It used to test `len(selected_rc) >= rc_target` *before* extending
+    by a whole passage, so the last passage always overshot and the negative
+    remainder clamped to zero: a nominally 75-item form came out at 76, 77, 78,
+    79, 80, 81, or 82 depending on how the passage sizes happened to land. That
+    is not a cosmetic wobble. The projected score converts against a fixed-size
+    reference form, and the practice panel promises the player the previous run's
+    count. So RC is chosen first, from whole passages only, up to its share of
+    the form; LR — which is single-item and therefore divisible — fills the exact
+    remainder. No passage is ever partially included.
     """
     eligible = Question.query.filter(Question.source.like(f"{SOURCE_PREFIX}%")).all()
     if not eligible:
         return [], [], []
     lr = [question for question in eligible if question.section == "Logical Reasoning"]
     rc = [question for question in eligible if question.section == "Reading Comprehension"]
-    lr_target = min(len(lr), max(1, round(count * 2 / 3)))
-    rc_target = min(len(rc), max(0, count - lr_target))
-    selected_lr = random.sample(lr, k=lr_target) if lr_target else []
+    target = min(count, len(eligible))
+    # The reference form's own mix (27 of 77 items) rather than a rounded
+    # two-thirds. RC lands within one passage of that share — passages run 4 to
+    # 16 questions in this bank and are indivisible — and LR, which is
+    # single-item, absorbs the difference so the *total* is exact. Measured over
+    # 200 seeds on the full bank: 77 items every time, 24-27 of them RC.
+    rc_share = min(len(rc), round(target * FORM_RC_ITEMS / FORM_ITEMS))
 
     passage_groups: dict[str, list[Question]] = defaultdict(list)
     for question in rc:
         passage_groups[question.passage_id or question.id].append(question)
-    groups = list(passage_groups.values())
+    groups = [sorted(group, key=lambda question: question.id) for group in passage_groups.values()]
     random.shuffle(groups)
-    selected_rc: list[Question] = []
-    for group in groups:
-        if len(selected_rc) >= rc_target:
-            break
-        selected_rc.extend(sorted(group, key=lambda question: question.id))
 
-    remaining_slots = max(0, min(count, len(eligible)) - len(selected_lr) - len(selected_rc))
-    if remaining_slots:
-        remaining = [question for question in eligible if question not in selected_lr and question not in selected_rc]
-        selected_lr.extend(random.sample(remaining, k=min(remaining_slots, len(remaining))))
+    selected_rc: list[Question] = []
+    taken: set[int] = set()
+    # Every group is offered, not just a prefix, so a short passage can still
+    # close a gap a long one would have overrun.
+    for index, group in enumerate(groups):
+        if len(selected_rc) + len(group) <= rc_share:
+            selected_rc.extend(group)
+            taken.add(index)
+    # A bank thin on LR is the one case where RC has to carry more than its
+    # share; whole passages still, and never past the target.
+    for index, group in enumerate(groups):
+        if index in taken or target - len(selected_rc) <= len(lr):
+            continue
+        if len(selected_rc) + len(group) <= target:
+            selected_rc.extend(group)
+            taken.add(index)
+    # If LR still cannot round the form out, the form is short by construction
+    # rather than padded with a fragment of a passage.
+    lr_needed = min(target - len(selected_rc), len(lr))
+    selected_lr = random.sample(lr, k=lr_needed) if lr_needed > 0 else []
 
     split = (len(selected_lr) + 1) // 2
     blocks = [selected_lr[:split], selected_rc, selected_lr[split:]]
@@ -484,17 +682,14 @@ def select_diagnostic_questions(count: int) -> tuple[list[Question], list[int], 
 
 
 def _questions_due_for_review(user_id: str, count: int) -> list[Question]:
-    due = (
-        ReviewQueueItem.query.filter(
-            ReviewQueueItem.user_id == user_id,
-            ReviewQueueItem.status == "due",
-            ReviewQueueItem.due_at <= utcnow(),
-        )
-        .order_by(ReviewQueueItem.due_at.asc())
-        .limit(count)
-        .all()
-    )
-    return [item.question for item in due]
+    """The weakest cards in this student's queue, ranked by retrievability.
+
+    Delegates to `scheduling.due_for_review`, which deliberately does not gate
+    on `due_at <= now`: a student who sits down to work at any hour is handed
+    the material they are closest to forgetting rather than an empty queue and
+    a date. See the module docstring in `app/scheduling.py`.
+    """
+    return scheduling.due_for_review(user_id, count)
 
 
 def _pause_other_active_practice_sessions(user_id: str, *, exclude_id: str | None = None) -> None:
@@ -545,20 +740,41 @@ def create_study_session(
     # into pure repetition. A type-filtered run is a focused drill; mixing
     # off-type repairs into it would defeat the filter the student asked for.
     repairs = [] if question_type else _questions_due_for_review(user.id, session_size // 2)
+    # Due passage-mates travel together so the run reads the passage once. Only
+    # the ones the scheduler already chose — see `cluster_passage_mates`.
+    repairs = scheduling.cluster_passage_mates(repairs)
     # A type-filtered run is the student overriding the weighting by hand, so the
     # last mega-litigation only steers an unfiltered one.
     focus_types = [] if question_type else diagnostic_focus(user.id)
+    repair_ids = {question.id for question in repairs}
+    # A fresh question sharing a passage with a review item would have the run
+    # read that passage twice, because reviews and fresh material are placed
+    # independently. Blocking the whole passage keeps one rule: inside a run, a
+    # passage is either served whole as fresh material or represented only by
+    # the review items the scheduler picked.
+    blocked_ids = set(repair_ids)
+    repair_passages = {question.passage_id for question in repairs if question.passage_id}
+    if repair_passages:
+        blocked_ids |= {
+            question_id
+            for (question_id,) in db.session.query(Question.id).filter(
+                Question.passage_id.in_(repair_passages)
+            )
+        }
     fresh = select_random_questions(
         session_size - len(repairs),
         question_type,
         user_id=user.id,
-        exclude_ids={question.id for question in repairs},
+        exclude_ids=blocked_ids,
         focus_types=focus_types,
     )
-    questions = repairs + fresh
+    # Genuine interleaving, not front-loading. Reviews are distributed through
+    # the run instead of stacked at the start, which is what the old
+    # `repairs + fresh` concatenation did — and which leaks "these first four
+    # are the ones you got wrong" before the student has read a word.
+    questions = scheduling.interleave(repairs, fresh, question_type=question_type)
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
-    repair_ids = {question.id for question in repairs}
 
     # A new run always starts in_progress (see the StudySession default), so
     # whatever else was ticking must be paused first — see
@@ -593,6 +809,15 @@ def create_study_session(
                 from_review_queue=question.id in repair_ids,
                 strategy_key=strategy_trial["key"] if strategy_trial else None,
                 strategy_variant=strategy_trial["variant"] if strategy_trial else None,
+                strategy_propensity=strategy_trial["propensity"] if strategy_trial else None,
+                strategy_candidates_n=strategy_trial["candidates_n"] if strategy_trial else None,
+                # Fixed here rather than at serve time so the gate a student
+                # meets is the one their history at session start earned. Only
+                # the prompt arm is ever enforced: leaving the control arm
+                # untouched is what keeps the trial a comparison between an
+                # offer and no offer instead of a comparison between two
+                # different interfaces. See app/enforcement.py.
+                strategy_enforcement_level=assign_enforcement_level(user.id, strategy_trial, "practice"),
                 target_time_seconds=target_time_seconds,
             )
         )
@@ -672,6 +897,11 @@ def finalize_diagnostic(session: StudySession, *, completed_at=None) -> dict:
     summary = calculate_session_summary(session)
     session.summary_json = summary
     db.session.commit()
+    # A sat form is the strongest evidence this app ever collects, so it always
+    # gets a snapshot — from here rather than from the read path, and reached
+    # from both the last answer and the deadline. Safe to arrive at twice: the
+    # throttle in `record_projection` collapses the second call.
+    record_projection(session.user)
 
     profile = session.user.game_profile
     if not profile:
@@ -686,7 +916,13 @@ def finalize_diagnostic(session: StudySession, *, completed_at=None) -> dict:
         session.summary_json = {**summary, "promotion": promotion}
         db.session.commit()
         return session.summary_json
-    return summary
+    # The form was cleared but the bonus was not on offer — the day's promotion
+    # is spent, the lifetime allowance is gone, or the firm is already at the
+    # top. Say which, so the results screen can explain the absence instead of
+    # leaving the student to conclude the score did not count.
+    session.summary_json = {**summary, "promotion_status": mega_litigation_promotion_state(profile)}
+    db.session.commit()
+    return session.summary_json
 
 
 def pause_study_session(session: StudySession) -> StudySession:
@@ -862,24 +1098,49 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
             "priority_count": priority_count,
         },
         "next_action": next_action,
+        # The docket is the one screen a learner opens with the intention of
+        # working, so it is where the trial calendar is worth a line. It rides
+        # along on a request that is already made rather than adding a fetch.
+        "trial": trial_plan_snapshot(user),
     }
 
 
+def trial_plan_snapshot(user: User) -> dict:
+    """The trial calendar, read off the account's existing target and projection."""
+    return trial_plan(
+        user,
+        projection=project_score(user),
+        profile=user.game_profile,
+    )
+
+
 def review_queue_snapshot(user: User) -> dict:
+    """Queue state for the dashboard, measured in retrievability rather than dates.
+
+    "Due" now means *has decayed below the retention target*, which is what the
+    scheduler actually serves on, instead of "its calendar date has passed".
+    The two agree most of the time; where they differ, the retrievability
+    reading is the one that matches what practice will hand the student next.
+    """
     rows = (
-        ReviewQueueItem.query.filter_by(user_id=user.id)
-        .order_by(ReviewQueueItem.due_at.asc())
+        ReviewQueueItem.query.options(joinedload(ReviewQueueItem.question))
+        .filter_by(user_id=user.id)
         .all()
     )
     now = utcnow()
-    due = [row for row in rows if row.status == "due" and _aware_utc(row.due_at) <= now]
+    ranked = sorted(
+        ((scheduling.card_retrievability(row, now), row) for row in rows),
+        key=lambda pair: pair[0],
+    )
+    active = [(value, row) for value, row in ranked if row.status != "mastered"]
+    due = [(value, row) for value, row in active if value < scheduling.DESIRED_RETENTION]
     return {
         "due": len(due),
-        "scheduled": sum(
-            row.status == "due" and _aware_utc(row.due_at) > now
-            for row in rows
-        ),
+        "scheduled": len(active) - len(due),
         "mastered": sum(row.status == "mastered" for row in rows),
+        "tracked": len(rows),
+        "desired_retention": scheduling.DESIRED_RETENTION,
+        "weakest_retrievability": round(ranked[0][0], 3) if ranked else None,
         "items": [
             {
                 "id": row.id,
@@ -888,9 +1149,10 @@ def review_queue_snapshot(user: User) -> dict:
                 "section": row.question.section,
                 "reason_code": row.reason_code,
                 "interval_index": row.interval_index,
+                "retrievability": round(value, 3),
                 "due_at": _iso_utc(row.due_at),
             }
-            for row in due[:12]
+            for value, row in due[:12]
         ],
     }
 
@@ -962,35 +1224,53 @@ def _entry_reason(attempt: Attempt, band: str | None) -> str | None:
     return None
 
 
-def _advance_review(existing: ReviewQueueItem, attempt: Attempt, band: str | None, from_index: int) -> None:
-    """Move a review card along the ladder according to answer and explanation."""
-    if not attempt.is_correct:
+def _advance_review(existing: ReviewQueueItem, attempt: Attempt) -> None:
+    """Advance one card's FSRS memory state from this attempt.
+
+    The grade is derived from the attempt itself (correctness, pace against the
+    item's target, confidence, explanation quality, whether the answer was
+    changed) — see `scheduling.derive_grade`. The student is never asked.
+
+    "Mastered" is now a statement about stability rather than about surviving
+    four rungs of a ladder: once a card's next interval exceeds
+    `MASTERED_STABILITY_DAYS`, the student is not going to forget it before
+    their test, and it stops occupying a review slot. It is not deleted, so a
+    lapse can still pull it straight back.
+    """
+    grade = scheduling.apply_review(existing, attempt)
+    if grade == scheduling.GRADE_AGAIN:
         existing.status = "due"
-        existing.interval_index = 0
         existing.reason_code = "repeat_error"
-        existing.due_at = utcnow()
         return
-    if band == "Invalid":
-        existing.status = "due"
-        existing.interval_index = 0
-        existing.reason_code = "unsupported_correct"
-        existing.due_at = utcnow()
-        return
-    if band == "Weak":
-        existing.status = "due"
-        existing.interval_index = from_index
-        existing.reason_code = "unsupported_correct"
-        existing.due_at = utcnow() + timedelta(days=1)
-        return
-    next_index = from_index + (2 if band == "Excellent" else 1)
-    if next_index > len(REVIEW_INTERVAL_DAYS):
+    if existing.stability and scheduling.interval_days(existing.stability) >= MASTERED_STABILITY_DAYS:
         existing.status = "mastered"
-        existing.interval_index = len(REVIEW_INTERVAL_DAYS)
-        existing.due_at = utcnow() + timedelta(days=REVIEW_INTERVAL_DAYS[-1])
     else:
         existing.status = "due"
-        existing.interval_index = next_index
-        existing.due_at = utcnow() + timedelta(days=REVIEW_INTERVAL_DAYS[next_index - 1])
+
+
+def _rewind_pending(existing: ReviewQueueItem) -> None:
+    """Undo a provisional pre-grade FSRS step so the graded one can replace it.
+
+    ``grade_pending`` means the stored ``pre_grade_*`` triple is the state this
+    card was in before the un-graded attempt moved it. Restoring that triple
+    lets the second pass apply exactly one transition instead of two.
+    """
+    if not existing.grade_pending:
+        return
+    existing.stability = existing.pre_grade_stability
+    existing.difficulty = existing.pre_grade_difficulty
+    existing.last_reviewed_at = existing.pre_grade_reviewed_at
+    existing.reps = max(0, (existing.reps or 0) - 1)
+    if existing.last_grade == scheduling.GRADE_AGAIN:
+        existing.lapses = max(0, (existing.lapses or 0) - 1)
+
+
+def _hold_pending(existing: ReviewQueueItem, pending: bool) -> None:
+    """Snapshot (or clear) the pre-grade memory state around a provisional step."""
+    existing.grade_pending = pending
+    existing.pre_grade_stability = existing.stability if pending else None
+    existing.pre_grade_difficulty = existing.difficulty if pending else None
+    existing.pre_grade_reviewed_at = existing.last_reviewed_at if pending else None
 
 
 def _schedule_review(attempt: Attempt) -> None:
@@ -998,8 +1278,8 @@ def _schedule_review(attempt: Attempt) -> None:
 
     Safe to call twice for the same attempt: once on submit, when the
     explanation grade is still missing, and again from ``run_attempt_coaching``
-    once the grade lands. The second call recomputes from
-    ``pre_grade_interval_index`` so the provisional advance is not compounded.
+    once the grade lands. The second call rewinds the provisional memory state
+    first, so the advance is recomputed rather than compounded.
     """
     band = _attempt_band(attempt)
     pending = band is None and attempt.session_item.requires_reasoning
@@ -1014,12 +1294,9 @@ def _schedule_review(attempt: Attempt) -> None:
         if not existing:
             return
         existing.last_attempt_id = attempt.id
-        from_index = existing.pre_grade_interval_index
-        if from_index is None:
-            from_index = existing.interval_index
-        existing.pre_grade_interval_index = from_index if pending else None
-        existing.grade_pending = pending
-        _advance_review(existing, attempt, band, from_index)
+        _rewind_pending(existing)
+        _hold_pending(existing, pending)
+        _advance_review(existing, attempt)
         return
 
     reason_code = _entry_reason(attempt, band)
@@ -1034,17 +1311,20 @@ def _schedule_review(attempt: Attempt) -> None:
             reason_code=reason_code,
             interval_index=0,
             due_at=utcnow(),
-            grade_pending=pending,
         )
         db.session.add(existing)
+        db.session.flush()
     else:
         existing.source_attempt_id = existing.source_attempt_id or attempt.id
         existing.last_attempt_id = attempt.id
-        existing.status = "due"
-        existing.reason_code = reason_code
-        existing.interval_index = 0
-        existing.due_at = utcnow()
-        existing.grade_pending = pending
+        _rewind_pending(existing)
+    existing.status = "due"
+    existing.reason_code = reason_code
+    _hold_pending(existing, pending)
+    # First contact with the memory model. A card entering the queue is by
+    # definition one the student did not have — the FSRS step gives it a real
+    # stability and difficulty instead of parking it on rung zero.
+    scheduling.apply_review(existing, attempt)
 
 
 def submit_attempt(
@@ -1102,6 +1382,10 @@ def submit_attempt(
         raise ValueError("invalid_confidence")
     strategy_applied = None
     strategy_prompt_ms = 0
+    strategy_gate_ms = 0
+    strategy_gate_status = None
+    strategy_artifact = None
+    enforcement_level = item.strategy_enforcement_level or LEVEL_NONE
     if item.strategy_key and item.strategy_variant == "prompt":
         raw_strategy_applied = payload.get("strategy_applied")
         if not isinstance(raw_strategy_applied, bool):
@@ -1109,8 +1393,35 @@ def submit_attempt(
         strategy_applied = raw_strategy_applied
         try:
             strategy_prompt_ms = max(0, min(int(payload.get("strategy_prompt_ms") or 0), 60_000))
+            strategy_gate_ms = max(0, min(int(payload.get("strategy_gate_ms") or 0), 10 * 60 * 1000))
         except (TypeError, ValueError):
             raise ValueError("invalid_strategy_prompt_time")
+        if enforcement_level == LEVEL_NONE:
+            strategy_gate_status = STATUS_UNENFORCED
+        elif not strategy_applied:
+            # Declining the approach is a legitimate answer, not a failure. It
+            # is also the accessibility escape hatch and the way out for anyone
+            # the gate is fighting rather than helping, so it never blocks and
+            # never costs anything beyond being recorded honestly.
+            strategy_gate_status = STATUS_SKIPPED
+            strategy_gate_ms = 0
+        else:
+            # `validate_artifact` raises `GateRejection`, which the route turns
+            # into per-field messages. The browser runs the same checks for
+            # instant feedback, but this is the copy that decides, because a
+            # gate enforced only in the client enforces nothing.
+            try:
+                strategy_artifact = validate_artifact(item, payload.get("strategy_artifact"), selected_label)
+                strategy_gate_status = STATUS_SATISFIED
+            except GateRejection:
+                if enforcement_level != LEVEL_LIGHT:
+                    raise
+                # A student who has already cleared this gate eight times is
+                # taken at their word. The prompt still shows, the steps are
+                # optional, and the attempt is marked so no analysis confuses
+                # an attestation with a demonstration.
+                strategy_gate_status = STATUS_ATTESTED
+                strategy_artifact = None
     elapsed_ms = max(1000, min(_elapsed_ms(item), 15 * 60 * 1000))
     is_correct = selected_label == item.question.correct_answer
     _update_skill(user.id, item.question, is_correct, elapsed_ms)
@@ -1128,6 +1439,13 @@ def submit_attempt(
         strategy_variant=item.strategy_variant,
         strategy_applied=strategy_applied,
         strategy_prompt_ms=strategy_prompt_ms,
+        strategy_gate_ms=strategy_gate_ms,
+        strategy_gate_status=strategy_gate_status,
+        strategy_enforcement_level=(enforcement_level if item.strategy_key else None),
+        strategy_enforcement_version=(ENFORCEMENT_VERSION if strategy_gate_status else None),
+        strategy_artifact_json=strategy_artifact or None,
+        strategy_propensity=item.strategy_propensity,
+        strategy_candidates_n=item.strategy_candidates_n,
         evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "coached_practice")),
         server_elapsed_ms=elapsed_ms,
         client_elapsed_ms=None,
@@ -1159,6 +1477,10 @@ def submit_attempt(
         # Answering the last question closes the form the same way the clock
         # does, promotion included.
         finalize_diagnostic(session)
+    elif session.status == "completed":
+        # The trend line gains a point when the evidence changes, not when the
+        # dashboard is opened — see `scoring.projection_snapshot`.
+        record_projection(session.user)
     return attempt, False
 
 
@@ -1221,6 +1543,10 @@ def run_attempt_coaching(attempt: Attempt) -> dict:
 
     settle_attempt(attempt, coaching)
 
+    # Deliberately after settlement. The rating is a note in the debrief and
+    # nothing downstream reads it, so it cannot cost a correct answer anything.
+    attempt.strategy_artifact_quality = enforcement.review_artifact(attempt)
+
     if coaching["explanation_grade"] is not None and not attempt.explanation_score_applied:
         normalized_score = coaching["explanation_grade"] / 100
         stat = SkillProgress.query.filter_by(
@@ -1247,6 +1573,50 @@ def run_attempt_coaching(attempt: Attempt) -> dict:
         session.summary_json = calculate_session_summary(session)
     db.session.commit()
     return coaching
+
+
+UNGRADED_COACHING_NOTICE = (
+    "The AI coach could not be reached for this case. Your answer was checked against the "
+    "verified key and the case was settled without a grade on your written reasoning."
+)
+
+
+def settle_uncoached_attempt(attempt_id: str) -> bool:
+    """Pay and close a case whose explanation grading gave up.
+
+    Correctness comes from the verified answer key, not from the coach, so an
+    outage must never strand a finished case unsettled — the player has already
+    moved on by then. The write-up simply goes ungraded: with no grade the band is
+    Invalid, which for a correct answer is the thin-win path and for a wrong one
+    is what an ungradable explanation was always worth. Nothing is written to
+    skill stats or the review schedule, because no grade exists to write.
+    """
+    attempt = db.session.get(Attempt, attempt_id)
+    if not attempt or attempt.settlement:
+        return False
+    if attempt.session_item.game_context_json is None:
+        return False
+    settlement = settle_attempt(attempt, {"explanation_grade": None, "model": None})
+    feedback = dict(attempt.feedback_json or {})
+    feedback["coaching_unavailable"] = UNGRADED_COACHING_NOTICE
+    attempt.feedback_json = feedback
+    attempt.coaching_status = "failed"
+    attempt.coaching_started_at = None
+    db.session.commit()
+    return settlement is not None
+
+
+def coaching_handed_off(attempt: Attempt) -> bool:
+    """True once explanation grading for this attempt has actually been requested.
+
+    The debrief can then be closed while the grade is still resolving: the
+    settlement lands on its own, from the worker or from the fallback above. What
+    stays blocked is closing a debrief for a case that was never sent for grading
+    at all, which is the API-level skip the settlement gate exists to prevent.
+    """
+    if attempt.coaching_status in {"processing", "completed", "failed"}:
+        return True
+    return AiJob.query.filter_by(dedup_key=f"coaching:{attempt.id}").first() is not None
 
 
 def _join_types(names: list[str]) -> str:
@@ -1342,6 +1712,9 @@ def performance_snapshot(user: User) -> dict:
     attempts = (
         Attempt.query.filter_by(user_id=user.id)
         .join(SessionItem)
+        .options(
+            joinedload(Attempt.session_item).joinedload(SessionItem.question),
+        )
         .order_by(Attempt.created_at.asc())
         .all()
     )
@@ -1497,11 +1870,16 @@ def performance_snapshot(user: User) -> dict:
         ),
     }
 
+    # The attempt list is handed over rather than re-read: this function has
+    # already paid for every row the projection needs.
+    projection = projection_snapshot(user, attempts=attempts)
     return {
         "overall": overall,
         "recent": recent,
         "skills": skills,
         "trend": trend,
+        "projection": projection,
+        "trial": trial_plan(user, projection=projection, profile=user.game_profile),
         "diagnostic": diagnostic,
         "test_performance": test_performance,
         "coached_practice": coached_practice,

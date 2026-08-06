@@ -1,3 +1,5 @@
+export type AssistanceLevel = 'full' | 'focus'
+
 export type User = {
   id: string
   email: string
@@ -6,6 +8,12 @@ export type User = {
   next_route: string
   game_ready: boolean
   diagnostic_complete: boolean
+  target_score: number | null
+  target_test_date: string | null
+  /** "focus" hides office/firm/world chrome for a leaner, high-score-focused view. Always user-overridable. */
+  assistance_level: AssistanceLevel
+  /** Set once the account has finished or skipped the guided tour, on any device. */
+  guided_tour_completed: boolean
 }
 
 export type CharacterGender = 'male' | 'female'
@@ -138,7 +146,29 @@ export type StoryQuest = {
   active: boolean
   completed: boolean
   available: boolean
+  /** Chapters and earlier files still standing between the firm and this one. */
+  locked_by: string[]
   progress: number
+}
+
+export type StoryEpilogue = {
+  ending_key: string
+  title: string
+  verdict: string
+  beats: string[]
+  closing: string
+  promise?: string | null
+  alignment: string
+  alignment_note: string
+  signature: string
+  opened_at?: string | null
+  completed_at?: string | null
+  days_elapsed?: number | null
+  chapters_resolved: number
+  chapters_total: number
+  quests_closed: number
+  quests_total: number
+  shadow_files_closed: number
 }
 
 export type RivalOperation = {
@@ -151,6 +181,8 @@ export type RivalOperation = {
   heat_surcharge_bps?: number
   intel?: number
   influence?: number
+  /** Validated case wins the operation consumes. See `story.casework`. */
+  casework?: number
   ethics_max?: number
   completed: boolean
   available: boolean
@@ -166,12 +198,120 @@ export type StoryState = {
   intel: number
   alignment: 'Principled' | 'Pragmatic' | 'Ruthless'
   pending_chapter?: StoryChapter | null
+  epilogue?: StoryEpilogue | null
   active_quest?: StoryQuest | null
   quests: StoryQuest[]
   chapters: Array<{ key: string; act: string; tier: number; title: string; scene: string; seen: boolean; choice?: string | null }>
   completed_quests: string[]
   rival_discounts: Record<string, number>
   rival_targets: RivalTarget[]
+  /** Validated case wins earned and not yet spent on rival operations. */
+  casework: number
+  casework_spent: number
+}
+
+/** The wardrobe categories the player's own 3D counsel is built from. */
+export type CosmeticCategoryKey = 'suit' | 'tie' | 'hair' | 'eyewear' | 'accessory'
+
+/** One piece of the player's look, per category. Always complete: the server
+ *  fills any category the player has not customized with that category's
+ *  "as issued" default, which renders exactly as the character always has. */
+export type CharacterCosmetics = Record<CosmeticCategoryKey, string>
+
+export type CosmeticItem = {
+  key: string
+  category: CosmeticCategoryKey
+  name: string
+  flavor: string
+  unlocked: boolean
+  /** Plain-language unlock condition, shown on locked pieces. */
+  requirement: string
+  unlock: { kind: 'start' | 'tier' | 'reputation' | 'cases' | 'chapter'; value?: number | string }
+}
+
+export type CosmeticCategory = {
+  key: CosmeticCategoryKey
+  name: string
+  blurb: string
+  default: string
+  selected: string
+  items: CosmeticItem[]
+}
+
+export type WardrobeCatalog = {
+  selection: CharacterCosmetics
+  categories: CosmeticCategory[]
+}
+
+/** One district the firm can hold a standing retainer over.
+ *
+ *  `landmark_key` is an optional join onto the 3D scene's own district
+ *  directory (`MapLandmark.key`). The backend owns this catalog, so a district
+ *  stays purchasable and legible even when the procedural planner lays the
+ *  region out differently or renames a place. */
+export type TerritoryDistrict = {
+  key: string
+  name: string
+  region: string
+  region_name: string
+  landmark_key: string | null
+  tier: number
+  reputation: number
+  retainer: string
+  description: string
+  cost: number
+  standing: number
+  rent_relief_bps: number
+  owned: boolean
+  locks: string[]
+  affordable: boolean
+  available: boolean
+}
+
+export type TerritoryState = {
+  districts: TerritoryDistrict[]
+  regions: Array<{
+    key: string
+    name: string
+    seat: string
+    total: number
+    held: number
+    swept: boolean
+    sweep_standing: number
+  }>
+  held: number
+  total: number
+  standing: number
+  standing_cap: number
+  /** Standing lifts the reputation floor only to here; the gates above it stay
+   *  payable in casework alone. */
+  standing_floor_ceiling: number
+  rent_relief_bps: number
+  daily_rent: number
+  relieved_daily_rent: number
+}
+
+export type TrialPlan = {
+  status: 'unscheduled' | 'passed' | 'no_evidence' | 'no_target' | 'on_plan' | 'tight' | 'accuracy_gap' | 'target_met'
+  test_date: string | null
+  target_score: number | null
+  days_remaining: number | null
+  weeks_remaining: number | null
+  phase: string | null
+  phase_note: string | null
+  headline: string
+  detail: string
+  streak: number
+  projected_score?: number
+  pace: {
+    weekly_target: number
+    recent_week: number
+    state: 'ahead' | 'on_track' | 'behind' | 'idle'
+    note: string
+    evidence_cases: number
+    gap_cases: number | null
+    case_weight: number
+  } | null
 }
 
 export type GameState = {
@@ -186,6 +326,10 @@ export type GameState = {
   office: FirmTier
   current_streak: number
   best_streak: number
+  /** Consecutive calendar days the firm has been visited — distinct from the
+   *  validated-win streak above. Advances at most once per day. */
+  daily_streak: number
+  daily_streak_best: number
   total_cases: number
   total_correct: number
   total_validated_correct: number
@@ -194,7 +338,11 @@ export type GameState = {
   owned_assets: string[]
   active_client: GameClient & { cases_remaining: number; effective_key: string }
   upkeep: {
+    /** What the lease actually costs after district retainers offset it. */
     daily_rent: number
+    /** Before that offset, so the reduction is showable rather than implied. */
+    list_daily_rent: number
+    rent_relief: number
     offline_daily_rent: number
     offline_multiplier: number
     active_window_hours: number
@@ -227,7 +375,11 @@ export type GameState = {
   }
   achievements: Array<{ key: string; name: string; description: string; unlocked: boolean }>
   next_milestone?: { kind: 'tier' | 'asset'; name: string; cost: number; reputation: number } | null
+  territory: TerritoryState
   story: StoryState
+  /** How the player's counsel is currently dressed. Travels with every game
+   *  payload because three separate 3D surfaces need it on first paint. */
+  cosmetics: CharacterCosmetics
   catalog: { assets: GameAsset[]; clients: GameClient[]; tiers: FirmTier[] }
 }
 
@@ -252,6 +404,84 @@ export type StrategyDefinition = {
 }
 
 export type StrategyTrial = StrategyDefinition & { variant: 'prompt' }
+
+/**
+ * One required operation inside a strategy gate. The server authors these, and
+ * the gate component renders whatever it is handed, so adding a strategy never
+ * touches the component. See backend/app/enforcement.py.
+ */
+export type StrategyGateField = {
+  key: string
+  kind:
+    | 'text'
+    | 'segment_pick'
+    | 'segment_label'
+    | 'segment_notes'
+    | 'choice_eliminate'
+    | 'choice_pick'
+    | 'select'
+    | 'rows'
+    | 'contrapositive'
+  /** `pre_answer` blocks the answer choices. `pre_submit` blocks only the submit. */
+  stage: 'pre_answer' | 'pre_submit'
+  label: string
+  help?: string
+  placeholder?: string
+  message?: string
+  segments?: string[]
+  options?: Array<{ value?: string; text?: string; id?: string; template?: string } | string>
+  min_words?: number
+  max_words?: number | null
+  min_chars?: number
+  single_sentence?: boolean
+  short_message?: string
+  copy_message?: string
+  source?: string
+  min?: number
+  max?: number | null
+  exclude_field?: string | null
+  count_message?: string
+  overlap_message?: string
+  exactly_one?: string | null
+  not_all_same?: boolean
+  missing_message?: string
+  exactly_one_message?: string
+  variety_message?: string
+  length_message?: string
+  duplicate_message?: string
+  min_eliminated?: number
+  reasons?: string[]
+  require_token?: boolean
+  choice_tokens?: Record<string, string[]>
+  reason_message?: string
+  token_message?: string
+  columns?: Array<{ key: string; label: string; kind: 'text' | 'select'; options: string[]; min_words: number }>
+  min_rows?: number
+  max_rows?: number
+  blank_message?: string
+  shared_term_message?: string
+  passage_name_message?: string
+  source_field?: string
+}
+
+export type StrategyGateSpec = {
+  version: string
+  strategy_key: string
+  kind: 'sequence_reveal' | 'annotate_source' | 'choice_elimination' | 'structured_input' | 'candidate_operation'
+  strength: 'strong' | 'moderate'
+  level: 'full' | 'light'
+  /** False once demonstrated mastery has retired the scaffolding. */
+  blocking: boolean
+  hides_choices: boolean
+  restricts_choices: boolean
+  instruction: string
+  confirm: string
+  fields: StrategyGateField[]
+  copy: Record<string, string>
+}
+
+/** What the gate posts alongside the answer. */
+export type StrategyArtifact = { fields: Record<string, unknown> }
 
 export type Question = {
   id: string
@@ -290,6 +520,7 @@ export type SessionItem = {
   requires_reasoning: boolean
   reasoning_min_chars: number
   strategy_trial?: StrategyTrial | null
+  strategy_gate?: StrategyGateSpec | null
   served_at: string
   elapsed_ms: number
   target_time_seconds: number
@@ -372,6 +603,26 @@ export type PracticeSummary = {
   confidence?: { average: number | null; high_confidence_errors: number; high_confidence_attempts: number }
   timing_compromised?: boolean
   promotion?: MegaLitigationPromotion
+  /**
+   * Present instead of `promotion` when the form cleared the bar but the free
+   * tier was not on offer. The server only sets it on that branch, so its mere
+   * presence means "you earned this and it was withheld" — see
+   * `finalize_diagnostic` in backend/app/services.py.
+   */
+  promotion_status?: MegaLitigationPromotionStatus
+}
+
+/** Whether a cleared mega-litigation would promote the firm, and why not. */
+export type MegaLitigationPromotionStatus = {
+  available: boolean
+  blocked_reason: 'cooldown' | 'lifetime_limit' | 'max_tier' | null
+  /** Free promotions already granted, out of `limit`. */
+  used: number
+  limit: number
+  remaining: number
+  cooldown_hours: number
+  /** ISO timestamp the cooldown lifts. Only set when `blocked_reason` is `cooldown`. */
+  available_at: string | null
 }
 
 export type MegaLitigationPromotion = {
@@ -409,11 +660,12 @@ export type StrategyResult = {
   explanation_mean: number | null
   control_explanation_mean: number | null
   explanation_lift: number | null
+  /** Of the prompt-arm sample, how many the student self-reported using. Shown as a compliance rate — never used to define the treatment arm. */
+  applied: number
   skipped: number
-  /** Internal three-tier evidence state. Prefer `verdict` for display. */
-  status: 'forming' | 'directional' | 'supported'
   ranking_score: number
-  verdict: 'checking' | 'confirmed'
+  /** Always "measuring" — there is deliberately no "confirmed"/"supported" binary. See `research/00-implementation-plan.md` P0-6. */
+  verdict: 'measuring'
   verdict_label: string
   summary: string
   detail: string
@@ -427,6 +679,7 @@ export type StrategyResult = {
 }
 
 export type PerformanceSnapshot = {
+  trial: TrialPlan
   overall: PerformanceMetric & {
   speedrun_index: number
   accuracy_delta: number | null
@@ -468,14 +721,15 @@ export type PerformanceSnapshot = {
   evidence_classes: Record<string, PerformanceMetric>
   readiness: { status: 'forming' | 'ready'; lr_samples: number; rc_samples: number; completed_diagnostics: number }
   review: ReviewQueue & { recovery_rate: number | null }
+  projection?: ScoreProjection
   confidence: { average: number | null; high_confidence_error_rate: number | null; sample: number }
   strategy_lab?: {
     catalog: StrategyDefinition[]
     results: StrategyResult[]
+    /** The approach with the most encouraging running total so far. Never a claim that it works — see `evidence_note`. */
     leader: StrategyResult | null
     trials_completed: number
     strategies_tested: number
-    strongest: StrategyResult | null
     intro: string
     empty_state: { title: string; body: string }
     catalog_note: string
@@ -496,8 +750,94 @@ export type ReviewQueue = {
   due: number
   scheduled: number
   mastered: number
-  items: Array<{ id: string; question_id: string; question_type: string; section: Question['section']; reason_code: string; interval_index: number; due_at: string }>
+  /** Every card the scheduler is tracking, mastered ones included. */
+  tracked?: number
+  /** The retention the scheduler aims to hold each card above. */
+  desired_retention?: number
+  /** Recall probability of the single weakest card right now, 0-1. */
+  weakest_retrievability?: number | null
+  items: Array<{
+    id: string
+    question_id: string
+    question_type: string
+    section: Question['section']
+    reason_code: string
+    interval_index: number
+    retrievability?: number
+    due_at: string
+  }>
 }
+
+/** One persisted point on the projected-score trend line. */
+export type ProjectionPoint = {
+  id: string
+  date: string
+  scaled_score: number
+  lower_bound: number
+  upper_bound: number
+  percentile: number | null
+  effective_sample: number
+  observed_attempts: number
+  evidence_grade: 'baseline' | 'emerging' | 'directional' | 'stable'
+}
+
+/**
+ * A projected LSAT score, always reported as a band rather than a point.
+ * `available: false` is the honest answer before any question is answered —
+ * there is no `scaled_score` on that branch, by design.
+ */
+export type ScoreProjection =
+  | {
+      available: false
+      reason: string
+      note: string
+      model_version: string
+      history: ProjectionPoint[]
+      target_score: number | null
+    }
+  | {
+      available: true
+      model_version: string
+      scaled_score: number
+      lower_bound: number
+      upper_bound: number
+      band_confidence: number
+      percentile: number | null
+      percentile_lower: number | null
+      percentile_upper: number | null
+      estimated_accuracy: number
+      projected_raw: number
+      form_items: number
+      form_lr_items: number
+      form_rc_items: number
+      effective_sample: number
+      observed_attempts: number
+      lr_attempts: number
+      rc_attempts: number
+      lr_accuracy: number
+      rc_accuracy: number
+      evidence_grade: 'baseline' | 'emerging' | 'directional' | 'stable'
+      missing_sections: string[]
+      uncertainty: {
+        sampling: number
+        lsat_sem: number
+        equating: number
+        bank_calibration: number
+        missing_section: number
+        total: number
+      }
+      method: {
+        conversion_table: string
+        percentile_table: string
+        sem_source: string
+        recency_half_life_days: number
+        evidence_weights: Record<string, number>
+      }
+      history: ProjectionPoint[]
+      target_score: number | null
+      target_gap?: number
+      target_within_band?: boolean
+    }
 
 export type DailyDocketState = 'locked' | 'clear' | 'ready' | 'active' | 'complete'
 
@@ -518,6 +858,86 @@ export type DailyDocket = {
     session_id?: string | null
     label: string
   }
+  trial: TrialPlan
+}
+
+/** One previously answered question, as the history grid renders it. */
+export type HistoryAttempt = {
+  attempt_id: string
+  session_id: string
+  position: number
+  question_id: string
+  question_type: string
+  section: Question['section']
+  is_correct: boolean
+  selected_label: string
+  correct_label: string
+  confidence: number | null
+  answer_changed: boolean
+  evidence_class: string
+  from_review_queue: boolean
+  elapsed_ms: number
+  target_time_seconds: number
+  over_target: boolean
+  pace_ratio: number | null
+  explanation_score: number | null
+  coaching_status: string
+  has_reasoning: boolean
+  created_at: string | null
+}
+
+/** The same row with everything needed to re-read the item and the coaching. */
+export type HistoryAttemptDetail = HistoryAttempt & {
+  question: Question & { difficulty?: number }
+  reasoning_text: string | null
+  feedback: AttemptResult['feedback'] | null
+  strategy_key: string | null
+  strategy_applied: boolean | null
+  session: { id: string; mode: StudySession['mode']; status: StudySession['status']; completed_at: string | null }
+}
+
+export type HistoryPage<T> = {
+  attempts: T[]
+  total: number
+  limit: number
+  offset: number
+  has_more: boolean
+  filters: {
+    correct: boolean | null
+    question_type: string | null
+    section: string | null
+    session_id: string | null
+    from_review_queue: boolean | null
+    evidence_class: string | null
+    since: string | null
+    until: string | null
+  }
+}
+
+export type HistorySession = {
+  id: string
+  mode: StudySession['mode']
+  practice_style: StudySession['practice_style']
+  status: StudySession['status']
+  started_at: string | null
+  completed_at: string | null
+  total_items: number
+  answered: number
+  correct: number
+  accuracy: number | null
+  elapsed_minutes: number
+  review_repeats: number
+  reviewable: boolean
+}
+
+export type HistoryFacets = {
+  question_types: Array<{ question_type: string; section: Question['section']; attempts: number; correct: number }>
+  sections: string[]
+  attempts: number
+  correct: number
+  incorrect: number
+  first_attempt_at: string | null
+  last_attempt_at: string | null
 }
 
 export type SessionReview = {

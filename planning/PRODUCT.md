@@ -1,6 +1,6 @@
-Lawyer Tycoon — Game Mechanics PRD
+LSAT Tycoon — Game Mechanics PRD
 1. Product summary
-Lawyer Tycoon is an LSAT practice game built around one simple activity: the player enters Do Cases, answers a randomly selected LSAT multiple-choice question, and submits a written explanation of their reasoning.
+LSAT Tycoon is an LSAT practice game built around one simple activity: the player enters Do Cases, answers a randomly selected LSAT multiple-choice question, and submits a written explanation of their reasoning.
 The verified answer key determines whether the answer is correct. An LLM grades the explanation and immediately teaches the player how the question should be solved, especially when the answer or reasoning is wrong.
 Each question is treated as one “case.” The player earns money based on:
 Whether the selected answer is correct

@@ -106,7 +106,7 @@ export type SoundControlsProps = {
 }
 
 
-export const SOUND_STORAGE_KEY = 'lawyer-tycoon:sound:v1'
+export const SOUND_STORAGE_KEY = 'lsat-tycoon:sound:v1'
 
 const DEFAULT_PREFERENCES: SoundPreferences = {
   muted: false,
@@ -117,7 +117,7 @@ const DEFAULT_PREFERENCES: SoundPreferences = {
 }
 
 const DEFAULT_PROFILE: SoundProfile = {
-  seed: 'lawyer-tycoon',
+  seed: 'lsat-tycoon',
   officeTier: 0,
   alignment: 'Pragmatic',
 }

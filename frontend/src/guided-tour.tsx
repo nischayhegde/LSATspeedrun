@@ -1,15 +1,32 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, BookOpen, BriefcaseBusiness, Building2, Check, Clock3, Map, Scale, Sparkles } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowRight, BookOpen, BriefcaseBusiness, Building2, Check, Clock3, Map, Scale, Sparkles, X } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import { api } from './api'
+import { useBlockingOverlay } from './overlays'
 import { useSound } from './sound'
 import { loadStylizedCharacter } from './art/scene-loaders'
+import { TOUR_REPLAY_EVENT } from './guided-tour-replay'
 import './guided-tour.css'
 
 const StylizedCharacter = lazy(() => loadStylizedCharacter().then((module) => ({ default: module.StylizedCharacter })))
 
-const TOUR_STORAGE_KEY = 'lawyer-speedrun:guided-tour:v5'
-const TOUR_REPLAY_EVENT = 'lawyer-speedrun:replay-tour'
+// v6 adds the exam primer. A student who completed v5 was never told what the
+// LSAT is, so this is new instruction rather than reworded copy.
+// Only ever a fast path: the account flag from the server is authoritative, so a
+// cleared store, a second browser, or a private window falls back to that rather
+// than replaying 21 steps over a fully progressed firm.
+const TOUR_STORAGE_KEY = 'lsat-tycoon:guided-tour:v6'
+
+/**
+ * Where the tour is allowed to start itself. A brand-new account is sent to
+ * /progress (see `serialize_user`), so that is where orientation belongs. Landing
+ * anywhere else — a deep link, a bookmark, a shared URL — is a deliberate
+ * destination and does not get interrupted; the header's help button replays the
+ * tour from any screen.
+ */
+const AUTO_START_ROUTES = new Set(['/progress'])
 
 type TourStep = {
   /** `feature` explains a mechanic that has no single element to point at. */
@@ -19,6 +36,8 @@ type TourStep = {
   body: string
   /** Short scannable specifics. Prose says why; these say what. */
   facts?: string[]
+  /** Diagram rendered under the body, where a shape explains faster than a sentence. */
+  visual?: 'loop' | 'form' | 'share' | 'types'
   target?: string
   route?: string
   cue?: string
@@ -36,6 +55,39 @@ const steps: TourStep[] = [
     eyebrow: 'THE TRAINING LOOP',
     title: 'Diagnose. Drill. Review. Transfer.',
     body: 'You will move quickly when fluency matters, slow down when an error needs repair, and prove improvement on unseen questions.',
+    visual: 'loop',
+  },
+  {
+    kind: 'premise',
+    eyebrow: 'THE EXAM ITSELF',
+    title: 'Four sections. Only three count.',
+    body: 'The LSAT is four 35-minute multiple-choice sections back to back, with one 10-minute break in the middle. The fourth section is unscored — it pilots questions for future tests, looks exactly like the others, and you are never told which one it is.',
+    visual: 'form',
+    facts: [
+      'Scored: two Logical Reasoning sections and one Reading Comprehension',
+      'Roughly 78 scored questions, converted to the 120–180 scale',
+      'Logic games were retired in August 2024 — this app never drills them',
+      'Argumentative Writing is separate, online, and unscored',
+    ],
+  },
+  {
+    kind: 'premise',
+    eyebrow: 'WHAT THE SCORE IS MADE OF',
+    title: 'Two questions in three are arguments.',
+    body: 'Logical Reasoning is scored twice and Reading Comprehension once, so LR carries about twice the weight. Every mega-litigation here is built on that same split, and a case is one real LSAT question either way.',
+    visual: 'share',
+    facts: [
+      'About 51 scored LR questions against 27 in RC',
+      'A mega-litigation is 75 questions in the form’s own order: LR I, RC, LR II',
+      'A run of cases is ten questions, untimed per question but paced against a target',
+    ],
+  },
+  {
+    kind: 'premise',
+    eyebrow: 'THE QUESTION TYPES',
+    title: 'A short list does most of the damage.',
+    body: 'Both sections reuse a small set of tasks. Name the task before you read the choices and most of the section stops being a reading exercise. These are the labels this app files every case under.',
+    visual: 'types',
   },
   {
     kind: 'spotlight',
@@ -52,7 +104,7 @@ const steps: TourStep[] = [
     title: 'Basically a full practice LSAT.',
     body: 'The one measurement that pays nothing, prompts nothing, and coaches nothing — which is exactly what makes it worth trusting. Sit one whenever you have the afternoon.',
     facts: [
-      '75 questions in three blocks under one clock, about 105 minutes',
+      '75 questions as LR I, RC, LR II — the real form’s shape, about 105 minutes',
       'One sitting: no pause, no save, and the clock runs if you close the tab',
       'Clear 70% of the form and your firm jumps a tier, prerequisites unlocked free',
       'Never required — nothing in the firm waits on one',
@@ -63,7 +115,7 @@ const steps: TourStep[] = [
     kind: 'spotlight',
     eyebrow: '03 · PRACTICE',
     title: 'The docket knows the next right move.',
-    body: 'One button always points at today’s work. Every run mixes unseen questions with whatever repairs have come due, so review happens without you scheduling it.',
+    body: 'One button always points at today’s work. A run is ten cases — ten real LSAT questions wrapped in a client and a fee — mixing unseen questions with whatever repairs have come due, so review happens without you scheduling it.',
     target: '[data-tour="nav-cases"]',
     route: '/cases',
     cue: 'Practice',
@@ -218,20 +270,28 @@ function findVisibleTarget(selector?: string) {
   }) ?? null
 }
 
-export function replayGuidedTour() {
-  window.dispatchEvent(new Event(TOUR_REPLAY_EVENT))
-}
-
-export function GuidedTour() {
+export function GuidedTour({ oriented }: { oriented: boolean }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const { play } = useSound()
-  const [open, setOpen] = useState(() => window.localStorage.getItem(TOUR_STORAGE_KEY) !== 'complete')
+  const [dismissed, setDismissed] = useState(() => window.localStorage.getItem(TOUR_STORAGE_KEY) === 'complete')
+  const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
   const [highlight, setHighlight] = useState<Highlight | null>(null)
   const [practiceChoice, setPracticeChoice] = useState<number | null>(null)
   const [practiceRevealed, setPracticeRevealed] = useState(false)
   const step = steps[index]
+  // Keeps the Escape listener stable while still calling the latest `close`.
+  const closeRef = useRef<(reason: 'finished' | 'skipped') => void>(() => {})
+  // Only one modal layer at a time; see overlays.tsx.
+  const visible = useBlockingOverlay('guided-tour', open)
+  const alreadyOriented = oriented || dismissed
+
+  const recordCompletion = useMutation({
+    mutationFn: () => api.updateMe({ guided_tour_completed: true }),
+    onSuccess: (data) => queryClient.setQueryData(['me'], data),
+  })
 
   useEffect(() => {
     const replay = () => {
@@ -244,12 +304,13 @@ export function GuidedTour() {
     return () => window.removeEventListener(TOUR_REPLAY_EVENT, replay)
   }, [])
 
+  // Start once, on the route a new account actually lands on. Latched open from
+  // then on, because the tour navigates between routes as part of its own steps.
   useEffect(() => {
-    if (!open) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = previousOverflow }
-  }, [open])
+    if (open || alreadyOriented) return
+    if (!AUTO_START_ROUTES.has(location.pathname)) return
+    setOpen(true)
+  }, [alreadyOriented, location.pathname, open])
 
   useEffect(() => {
     if (!open || !step) return
@@ -286,7 +347,30 @@ export function GuidedTour() {
   }, [location.pathname, open, step])
 
   const progress = useMemo(() => Math.round((index + 1) / steps.length * 100), [index])
-  if (!open || !step) return null
+
+  // Finishing and skipping close the tour the same way: both record on the
+  // account that this player has been offered orientation, so no device or
+  // browser ever forces it again. Declared before the visibility guard so the
+  // Escape listener below can use it.
+  const close = (reason: 'finished' | 'skipped') => {
+    window.localStorage.setItem(TOUR_STORAGE_KEY, 'complete')
+    setDismissed(true)
+    setOpen(false)
+    if (!oriented) recordCompletion.mutate()
+    void play(reason === 'finished' ? 'event' : 'paper', { seed: `tour:${reason}`, intensity: reason === 'finished' ? .46 : .3 })
+  }
+  closeRef.current = close
+
+  useEffect(() => {
+    if (!visible) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeRef.current('skipped')
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [visible, closeRef])
+
+  if (!visible || !step) return null
 
   const advance = () => {
     if (step.kind === 'practice' && !practiceRevealed) {
@@ -295,13 +379,12 @@ export function GuidedTour() {
       void play(practiceChoice === 1 ? 'verdict-correct' : 'verdict-repair', { seed: `tour-practice:${practiceChoice}`, intensity: .52 })
       return
     }
-    void play(step.kind === 'finish' ? 'event' : 'paper', { seed: `tour:${index}`, intensity: .46 })
     if (index === steps.length - 1) {
-      window.localStorage.setItem(TOUR_STORAGE_KEY, 'complete')
-      setOpen(false)
+      close('finished')
       navigate('/progress', { replace: true })
       return
     }
+    void play('paper', { seed: `tour:${index}`, intensity: .46 })
     setIndex((current) => current + 1)
   }
 
@@ -314,7 +397,7 @@ export function GuidedTour() {
   const placement = highlight && highlight.left + highlight.width / 2 > window.innerWidth * .55 ? 'left' : 'right'
 
   return (
-    <div className={`guided-tour guided-tour-mode-${step.kind}`} role="dialog" aria-modal="true" aria-label="Lawyer Speedrun guided introduction">
+    <div className={`guided-tour guided-tour-mode-${step.kind}`} role="dialog" aria-modal="true" aria-label="LSAT Tycoon guided introduction">
       {step.kind === 'premise' && (
         <div className="tour-cinematic" aria-hidden="true">
           <div className="tour-skyline"><i /><i /><i /><i /><i /></div>
@@ -350,15 +433,60 @@ export function GuidedTour() {
         <div className="tour-card-heading">
           <span>{step.eyebrow}</span>
           <small>{String(index + 1).padStart(2, '0')} / {String(steps.length).padStart(2, '0')}</small>
+          <button type="button" className="tour-dismiss" onClick={() => close('skipped')} aria-label="Close the guided tour">
+            <X size={15} />
+          </button>
         </div>
         <h2>{step.title}</h2>
         <p>{step.body}</p>
+        {step.visual === 'form' && (
+          <div className="tour-form" aria-label="One LSAT form: four 35-minute sections, three of them scored">
+            <ol>
+              {[
+                { label: 'LR', count: '25–26' },
+                { label: 'LR', count: '25–26' },
+                { label: 'RC', count: '27' },
+                { label: '?', count: '25–27', unscored: true },
+              ].map((block, blockIndex) => (
+                <li className={block.unscored ? 'is-unscored' : ''} key={`${block.label}-${blockIndex}`}>
+                  <b>{block.label}</b><span>{block.count}</span>
+                </li>
+              ))}
+            </ol>
+            <p>35 minutes each · the unscored section is LR or RC and can sit anywhere in the order</p>
+          </div>
+        )}
+        {step.visual === 'share' && (
+          <div className="tour-share" aria-label="Logical Reasoning is roughly two-thirds of the scored questions">
+            <div className="tour-share-bar">
+              <i className="is-lr" style={{ width: '65%' }}><span>Logical Reasoning</span></i>
+              <i className="is-rc" style={{ width: '35%' }}><span>RC</span></i>
+            </div>
+            <div className="tour-share-legend"><em>~51 questions · two sections</em><em>27 questions · one section</em></div>
+          </div>
+        )}
+        {step.visual === 'types' && (
+          <div className="tour-types">
+            <section>
+              <h3>Logical Reasoning <small>about 26 a section</small></h3>
+              <ul>
+                <li><b>Roughly half</b><span>Flaw · Assumption · Strengthen · Weaken</span></li>
+                <li><b>About a third</b><span>Inference · Principle · Paradox · Argument Structure</span></li>
+                <li><b>The rest</b><span>Main Conclusion · Parallel Reasoning</span></li>
+              </ul>
+            </section>
+            <section>
+              <h3>Reading Comprehension <small>27 in four sets</small></h3>
+              <p>Five to eight questions per passage set, asking for the Main Point, an Inference, the Author’s Perspective, the Function of a line, or an Analogy. A set is usually one passage; some forms include a comparative pair, and some now include none.</p>
+            </section>
+          </div>
+        )}
         {step.facts && (
           <ul className="tour-facts">
             {step.facts.map((fact) => <li key={fact}><Check size={14} /><span>{fact}</span></li>)}
           </ul>
         )}
-        {step.kind === 'premise' && index === 1 && (
+        {step.visual === 'loop' && (
           <div className="tour-loop" aria-label="The learning loop">
             <span><Scale /> Diagnose</span><i />
             <span><BriefcaseBusiness /> Practice</span><i />
@@ -408,6 +536,9 @@ export function GuidedTour() {
         )}
         <div className="tour-card-actions">
           <button type="button" className="tour-back" onClick={back} disabled={index === 0}>Back</button>
+          {step.kind !== 'finish' && (
+            <button type="button" className="tour-skip" onClick={() => close('skipped')}>Skip the tour</button>
+          )}
           {/* Moving focus into an aria-modal dialog on open is the intended
               dialog behaviour, not the stray page-load autofocus this rule
               guards against. */}
@@ -417,7 +548,7 @@ export function GuidedTour() {
             <ArrowRight />
           </button>
         </div>
-        <small className="tour-required">First-use orientation · complete once, replay any time from the header</small>
+        <small className="tour-required">Optional orientation · skip with Escape at any point, replay any time from the header</small>
       </section>
     </div>
   )

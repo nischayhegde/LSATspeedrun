@@ -1,20 +1,177 @@
 /* Measure comes from `.page-wrap`; this page no longer sets its own. */
-.performance-hero { position: relative; isolation: isolate; }
-.performance-hero > :not(.performance-hero-scenery) { position: relative; z-index: 1; }
-.performance-hero-scenery { width: min(420px, 43%); position: absolute; z-index: 0; right: 16%; bottom: -24px; opacity: .35; }
-.performance-hero { padding: clamp(24px,4vw,52px); display: grid; grid-template-columns: minmax(0,1.6fr) minmax(250px,.65fr); align-items: center; gap: 36px; overflow: hidden; border: 1px solid rgba(226,194,118,.3); border-radius: 22px; color: #f4ead2; background: radial-gradient(circle at 82% 32%,rgba(78,164,151,.19),transparent 26%),linear-gradient(135deg,#101c2a,#1b3040); box-shadow: 0 24px 55px rgba(5,10,17,.35); }
-.performance-hero h1 { max-width: 780px; margin: 9px 0 10px; color: #f6edda; font-family: var(--font-display); font-size: clamp(36px,4.7vw,67px); font-weight: 620; letter-spacing: -.025em; line-height: .98; }.performance-hero p { max-width: 680px; color: #b9b5a8; font-size: 15px; line-height: 1.6; }.performance-actions { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px; }.performance-actions button { min-height: 48px; display: inline-flex; align-items: center; gap: 9px; }
-.speedrun-index { padding: 20px; display: grid; justify-items: center; border: 1px solid rgba(226,194,118,.23); border-radius: 18px; background: rgba(6,14,23,.44); }.index-ring { --index: 0deg; width: 170px; height: 170px; padding: 13px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(#72d1bf var(--index),rgba(126,157,162,.16) 0); box-shadow: 0 0 40px rgba(87,198,178,.16); }.index-ring::before { content: ""; grid-area: 1/1; width: 100%; height: 100%; border-radius: 50%; background: #142533; box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }.index-ring > span { grid-area: 1/1; position: relative; text-align: center; }.index-ring strong,.index-ring small { display: block; }.index-ring strong { color: #f0d37f; font-family: var(--font-display); font-size: 58px; line-height: .9; }.index-ring small { margin-top: 5px; color: #85aaa7; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .14em; }.speedrun-index > small { margin-top: 14px; color: #70d0c1; font-family: var(--font-pixel); font-size: 9px; font-weight: 900; letter-spacing: .18em; }.speedrun-index > p { margin: 5px 0 0; color: #849496; font-size: 10px; text-align: center; }
+/* The dark "instrument panel" cards sit on the app's light parchment
+   background. A soft warm-to-navy glow behind them reads as a deliberate lit
+   panel rather than a hard-edged box dropped on the page. */
+.performance-page { position: relative; }
+.performance-page::before { content: ""; position: absolute; z-index: -1; top: -30px; left: 50%; width: min(1620px, 128%); height: 560px; transform: translateX(-50%); background: radial-gradient(48% 100% at 50% 18%, rgba(16,39,53,.14), rgba(16,39,53,.05) 45%, transparent 78%); filter: blur(2px); pointer-events: none; }
 
-.evidence-strip { margin: 12px 0; padding: 11px 14px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 15px; border: 1px solid rgba(106,199,184,.24); border-radius: 12px; color: #b9c3bd; background: rgba(18,41,48,.72); }.evidence-strip span { display: flex; align-items: center; gap: 7px; color: #7bd2c4; font-family: var(--font-pixel); font-size: 9px; font-weight: 900; letter-spacing: .12em; }.evidence-strip p { margin: 0; font-size: 11px; }.evidence-strip strong { color: #dfc87f; font-size: 11px; }
-.performance-metrics { margin: 12px 0; display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }.performance-metrics article { min-height: 133px; padding: 16px; border: 1px solid rgba(226,194,118,.2); border-radius: 14px; color: #eee5d1; background: linear-gradient(150deg,#172837,#111d2a); box-shadow: 0 10px 25px rgba(5,9,15,.2); }.performance-metrics article > div { display: flex; align-items: center; gap: 7px; color: #70cabb; }.performance-metrics article > div span { font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .13em; }.performance-metrics article > strong { display: block; margin-top: 13px; color: #f0d27f; font-family: var(--font-display); font-size: 33px; line-height: 1; }.performance-metrics article > small { display: block; margin-top: 7px; color: #91a0a0; font-size: 10px; line-height: 1.4; }
+/* ================================================================
+   THE DASHBOARD SUMMARY AND ITS TABS
+   ================================================================
+   One summary that is always on screen, then one tab per question a
+   student might have. Nothing below the summary is stacked: only the
+   open tab is mounted, so the page is roughly one viewport whichever
+   tab is open, instead of the four-thousand-pixel column it became
+   when every panel was appended to the bottom.
+   ================================================================ */
 
-.strategy-lab-panel { margin: 12px 0; padding: clamp(20px,3vw,34px); border: 1px solid rgba(108,199,183,.3); border-radius: 18px; color: #eee5d1; background: radial-gradient(circle at 90% 8%,rgba(91,174,158,.12),transparent 27%),linear-gradient(145deg,#132734,#101d29); box-shadow: 0 17px 38px rgba(4,9,15,.26); }
+.dash-summary {
+  padding: clamp(19px,3vw,30px);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  gap: 15px;
+  border: 1px solid rgba(226,194,118,.3);
+  border-radius: 20px;
+  color: #f4ead2;
+  background:
+    radial-gradient(circle at 88% 18%,rgba(78,164,151,.17),transparent 30%),
+    linear-gradient(135deg,#101c2a,#1b3040);
+  box-shadow:
+    0 0 0 6px #f2eee5,
+    0 0 0 7px rgba(200,155,75,.34),
+    0 24px 52px -18px rgba(5,10,17,.42);
+}
+.dash-summary > :not(.dash-summary-scenery) { position: relative; z-index: 1; }
+.dash-summary-scenery { width: min(300px,32%); position: absolute; z-index: 0; right: 4%; bottom: -26px; opacity: .17; }
+.dash-title { margin: 0; color: #f6edda; font: 620 clamp(27px,3.4vw,40px)/1 var(--font-display); letter-spacing: -.02em; }
+
+.dash-signal { display: grid; grid-template-columns: auto minmax(0,1fr) minmax(232px,.72fr); align-items: center; gap: 20px; }
+.dash-signal-copy > small { color: #70d0c1; font: 900 9px var(--font-pixel); letter-spacing: .16em; text-transform: uppercase; }
+.dash-signal-copy > p { max-width: var(--prose-measure); margin: 6px 0 0; color: #e2dac6; font-size: 14px; line-height: 1.5; }
+.dash-signal-copy > em { max-width: var(--prose-measure); margin-top: 9px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #93a6a3; font-size: 11.5px; font-style: normal; line-height: 1.5; }
+.dash-evidence-band { padding: 3px 8px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid rgba(106,199,184,.34); border-radius: 99px; color: #7bd2c4; background: rgba(18,41,48,.72); font: 900 8.5px var(--font-pixel); letter-spacing: .12em; text-transform: uppercase; }
+
+.dash-tiles { display: grid; gap: 7px; }
+.dash-tiles > div { padding: 9px 13px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(6,14,23,.44); }
+.dash-tiles span { color: #94a5a4; font-size: 11.5px; }
+.dash-tiles strong { color: #f0d37f; font: 600 21px/1 var(--font-display); }
+.dash-tiles strong.stat-empty { color: rgba(240,211,127,.4); font-size: 17px; }
+
+.dash-next { padding: 13px 15px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 14px; border: 1px solid rgba(113,208,192,.3); border-radius: 12px; background: rgba(20,45,52,.5); }
+.dash-next > svg { color: #74d3c1; }
+.dash-next span { color: #72b6ad; font: 900 8.5px var(--font-pixel); letter-spacing: .14em; }
+.dash-next strong { display: block; margin: 3px 0 2px; color: #f1d17b; font: 600 21px/1.1 var(--font-display); }
+.dash-next small { max-width: var(--prose-measure); display: block; color: #a9b3ad; font-size: 11.5px; line-height: 1.45; }
+.dash-next .focus-sprint-button { width: auto; margin: 0; white-space: nowrap; }
+
+.dash-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.dash-actions button { min-height: 48px; display: inline-flex; align-items: center; gap: 9px; }
+.dash-summary .active-run-chip { margin: 0; }
+
+/* The tab strip is the page's table of contents, so it reads as a control
+   rail rather than as another panel: a single inset track holding six keys. */
+/* The track is opaque rather than a translucent wash. Both pages that use it
+   sit on the cream page background, and a 60%-alpha navy over cream lands as
+   a pale olive that drops the resting labels close to 2:1 against it. */
+.dash-tabs { margin: 12px 0 10px; padding: 5px; display: grid; grid-template-columns: repeat(6,1fr); gap: 4px; border: 1px solid rgba(226,194,118,.2); border-radius: 12px; background: #0e1c28; }
+.dash-tabs button { min-height: 42px; padding: 9px 7px; border: 1px solid transparent; border-radius: 8px; color: #a7bcb8; background: none; font: 900 9.5px var(--font-pixel); letter-spacing: .09em; text-transform: uppercase; }
+.dash-tabs button:hover:not(.active) { color: #e2ece6; background: rgba(255,255,255,.06); }
+.dash-tabs button.active { border-color: rgba(113,208,192,.5); color: #eafaf4; background: rgba(66,156,143,.26); }
+
+/* One rule owns the gap between a tab's panels, so no panel inside a tab may
+   set an outer margin of its own — the same discipline `practice-lab.css`
+   applies to the Practice column. */
+.dash-panel { display: grid; gap: 10px; }
+.dash-panel > .dash-panel,
+.dash-panel > * { margin: 0; min-width: 0; }
+
+/* Twelve question types is a full screen of table on its own, and the panel
+   under it is the recommendation the table exists to justify — so the table
+   scrolls inside a capped pane rather than pushing that recommendation off
+   the fold. Nine rows is the whole set for most students and a clear "there
+   is more" edge for the rest. */
+.dash-panel .skill-table { max-height: 452px; padding-right: 4px; overflow-y: auto; overscroll-behavior: contain; }
+.dash-panel .skill-row.header { position: sticky; top: 0; z-index: 1; background: #142433; }
+.diagnostic-crosslink { max-width: var(--prose-measure); margin: 14px 0 0; color: #a4b0a9; font-size: 11.5px; line-height: 1.5; }
+.index-ring { --index: 0deg; width: 170px; height: 170px; padding: 13px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(#72d1bf var(--index),rgba(126,157,162,.16) 0); box-shadow: 0 0 40px rgba(87,198,178,.16); }.index-ring::before { content: ""; grid-area: 1/1; width: 100%; height: 100%; border-radius: 50%; background: #142533; box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }.index-ring > span { grid-area: 1/1; position: relative; display: grid; justify-items: center; text-align: center; }.index-ring strong,.index-ring small { display: block; }.index-ring strong { color: #f0d37f; font-family: var(--font-display); font-size: 58px; line-height: .9; }.index-ring small { margin-top: 5px; color: #85aaa7; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .14em; }
+/* An untaken mega-litigation has no accuracy to plot; a dim, glowless track
+   with a measurement-glyph reads as "not yet recorded" rather than a broken
+   version of the populated ring. */
+.index-ring.index-ring-empty { background: conic-gradient(rgba(126,157,162,.2) 0 100%); box-shadow: none; }
+.index-ring-glyph { width: 34px; height: 34px; color: rgba(240,211,127,.5); }
+.index-ring-empty small { margin-top: 8px; color: #6c8886; }
+
+.performance-metrics { margin: 16px 0 24px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+/* Each card is a full-width <button> ("trigger") so hover is decorative and
+   click/tap/Enter is the real affordance — the same control surfaces a mouse
+   and a phone thumb equally. */
+.metric-card { flex: 1 1 220px; border: 1px solid rgba(226,194,118,.2); border-radius: 14px; overflow: hidden; color: #eee5d1; background: linear-gradient(150deg,#172837,#111d2a); box-shadow: 0 14px 28px -10px rgba(5,9,15,.32), 0 6px 16px -8px rgba(154,108,40,.12); transition: border-color .18s ease, box-shadow .18s ease; }
+.metric-card.is-expanded { border-color: rgba(114,208,192,.5); box-shadow: 0 14px 28px -10px rgba(5,9,15,.32), 0 0 0 1px rgba(114,208,192,.18); }
+.metric-card-trigger { all: unset; display: block; box-sizing: border-box; width: 100%; min-height: 133px; padding: 16px; cursor: pointer; border-radius: inherit; }
+.metric-card-trigger:hover, .metric-card-trigger:focus-visible { background: rgba(114,208,192,.05); }
+.metric-card-trigger:focus-visible { outline: 2px solid rgba(114,208,192,.55); outline-offset: -2px; }
+.metric-card-trigger > div { display: flex; align-items: center; gap: 7px; color: #70cabb; }.metric-card-trigger > div span { font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .13em; }
+.metric-card-chevron { margin-left: auto; color: rgba(114,208,192,.55); transition: transform .18s ease; }
+.metric-card.is-expanded .metric-card-chevron { transform: rotate(180deg); }
+.metric-card-trigger > strong { display: block; margin-top: 13px; color: #f0d27f; font-family: var(--font-display); font-size: 33px; line-height: 1; text-align: left; }.metric-card-trigger > strong.stat-empty { color: rgba(240,211,127,.4); font-size: 22px; font-weight: 400; letter-spacing: .03em; }.metric-card-trigger > small { display: block; margin-top: 7px; color: #91a0a0; font-size: 10px; line-height: 1.4; text-align: left; }
+.metric-detail { padding: 0 16px 16px; border-top: 1px solid rgba(255,255,255,.08); animation: metric-detail-in .16s ease; }
+.metric-detail > p { margin: 12px 0 0; color: #c3cbc2; font-size: 12px; line-height: 1.5; }
+.metric-detail > small { display: block; margin-top: 8px; color: #8b9d99; font-size: 10.5px; line-height: 1.4; }
+.metric-detail .metric-trend-up { color: #79d0be; }.metric-detail .metric-trend-down { color: #e2ad6f; }
+@keyframes metric-detail-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.metric-breakdown { margin-top: 12px; display: grid; gap: 7px; }
+.metric-breakdown-row { all: unset; display: grid; box-sizing: border-box; grid-template-columns: minmax(0,1fr) auto 34px; align-items: center; gap: 9px; padding: 6px 7px; border-radius: 7px; cursor: pointer; color: #cbd3ca; font-size: 11px; }
+.metric-breakdown-row:hover, .metric-breakdown-row:focus-visible { background: rgba(255,255,255,.05); }
+.metric-breakdown-row.is-highlighted { background: rgba(114,208,192,.12); color: #eaf5f0; }
+.metric-breakdown-row > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.metric-breakdown-row > i { height: 6px; border-radius: 4px; background: #68c2b2; justify-self: stretch; }
+.metric-breakdown-row > b { color: #e9dec3; font-size: 10.5px; text-align: right; }
+.metric-breakdown-review { grid-template-columns: 1fr; }
+.metric-breakdown-review > div { display: grid; grid-template-columns: 70px 1fr 30px; align-items: center; gap: 9px; padding: 3px 0; color: #aeb6ad; font-size: 11px; }
+.metric-breakdown-review > div i { height: 6px; border-radius: 4px; background: #68c2b2; }
+.metric-breakdown-review > div b { color: #e9dec3; font-size: 11px; text-align: right; }
+.metric-detail-action { width: 100%; margin-top: 12px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(113,208,192,.4); border-radius: 9px; color: #dff5ee; background: rgba(66,156,143,.16); font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.metric-detail-action:hover:not(:disabled) { border-color: #74d3c1; background: rgba(66,156,143,.25); }
+/* A single-run "chip" on the dashboard itself, distinct from the fuller run
+   queue on the Cases tab — enough to pause without leaving the page. */
+.active-run-chip { margin-top: 14px; padding: 10px 13px; display: flex; align-items: center; gap: 11px; border: 1px solid rgba(114,208,192,.28); border-radius: 11px; color: #dfe6dd; background: rgba(8,19,27,.4); }
+.active-run-chip > svg { flex: none; color: #e9c982; }
+.active-run-chip > span { flex: 1; min-width: 0; display: block; }
+.active-run-chip strong { display: block; color: #eee5d1; font-size: 12.5px; font-weight: 700; }
+.active-run-chip small { display: block; margin-top: 2px; color: #8b9d99; font-size: 10.5px; }
+.active-run-pause { flex: none; display: flex; align-items: center; gap: 5px; padding: 7px 11px; border: 1px solid rgba(255,255,255,.25); border-radius: 8px; color: #dbe7e6; background: transparent; font-size: 11.5px; font-weight: 700; transition: border-color .16s ease, background .16s ease; }
+.active-run-pause:hover:not(:disabled) { border-color: rgba(255,255,255,.48); background: rgba(255,255,255,.06); }
+.active-run-pause:disabled { opacity: .5; cursor: not-allowed; }
+
+.strategy-lab-panel { margin: 20px 0; padding: clamp(20px,3vw,34px); border: 1px solid rgba(108,199,183,.3); border-radius: 18px; color: #eee5d1; background: radial-gradient(circle at 90% 8%,rgba(91,174,158,.12),transparent 27%),linear-gradient(145deg,#132734,#101d29); box-shadow: 0 17px 38px rgba(4,9,15,.26); }
 .strategy-lab-heading h2 { font-size: clamp(25px,3vw,36px); }.strategy-lab-intro { max-width: var(--prose-measure); margin: 8px 0 20px; color: #aebbb4; font-size: 13px; line-height: 1.6; }
 .strategy-leader-grid { padding: 18px; display: grid; grid-template-columns: minmax(230px,.8fr) minmax(480px,1.2fr); gap: 20px; border: 1px solid rgba(225,196,123,.22); border-radius: 13px; background: rgba(4,13,19,.28); }
 .strategy-leader-copy h3 { margin: 9px 0 3px; color: #f0d280; font: 600 30px/1.08 var(--font-display); }.strategy-leader-copy p { margin: 0; color: #d7d8cd; font-size: 12px; line-height: 1.45; }.strategy-leader-copy > small { max-width: 500px; margin-top: 10px; display: block; color: #93aaa5; font-size: 11px; line-height: 1.5; }
-.strategy-evidence-badge { width: max-content; padding: 4px 7px; display: inline-flex; align-items: center; border: 1px solid rgba(151,178,174,.35); border-radius: 99px; color: #a4bab6; background: rgba(149,175,171,.07); font: 850 9px var(--font-pixel); letter-spacing: .08em; text-transform: uppercase; }.strategy-evidence-badge.checking { border-color: rgba(222,190,111,.44); color: #dec779; background: rgba(222,190,111,.08); }.strategy-evidence-badge.confirmed { border-color: rgba(108,203,184,.5); color: #78d4c3; background: rgba(77,178,158,.11); }
-.strategy-comparison { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }.strategy-comparison > div { min-height: 116px; padding: 15px; display: grid; align-content: center; border: 1px solid rgba(255,255,255,.075); border-radius: 10px; background: rgba(255,255,255,.025); }.strategy-comparison span { color: #82a6a2; font: 850 9px var(--font-pixel); letter-spacing: .09em; }.strategy-comparison strong { margin-top: 6px; color: #ead394; font: 600 31px/1 var(--font-display); }.strategy-comparison small { margin-top: 6px; color: #90a09d; font-size: 11px; }.strategy-comparison .positive strong { color: #79d0be; }
+.strategy-evidence-badge { width: max-content; padding: 4px 7px; display: inline-flex; align-items: center; border: 1px solid rgba(151,178,174,.35); border-radius: 99px; color: #a4bab6; background: rgba(149,175,171,.07); font: 850 9px var(--font-pixel); letter-spacing: .08em; text-transform: uppercase; }.strategy-evidence-badge.measuring { border-color: rgba(222,190,111,.44); color: #dec779; background: rgba(222,190,111,.08); }
+/* Strength of the comparison behind a section reading, never of the claim.
+   `baseline` never reaches the chip — that grade is exactly the case where no
+   approach is named — so the scale here starts one step up. */
+.strategy-evidence-badge.emerging { border-color: rgba(222,190,111,.4); color: #dec779; background: rgba(222,190,111,.07); }
+.strategy-evidence-badge.directional { border-color: rgba(121,208,190,.45); color: #79d0be; background: rgba(121,208,190,.08); }
+/* Two rows in place of the old single-leader hero: one reading per scored
+   section, each closed to a single line until it is asked for. The panel is
+   shorter than the block it replaced, which is the point — the tab exists so
+   nobody has to scroll for this. */
+.strategy-sections { display: grid; gap: 8px; }
+.strategy-section-row { border: 1px solid rgba(225,196,123,.22); border-radius: 13px; background: rgba(4,13,19,.28); }
+.strategy-section-row.is-insufficient,.strategy-section-row.is-none { border-color: rgba(151,178,174,.22); }
+.strategy-section-row > summary { padding: 13px 15px; display: grid; grid-template-columns: 34px minmax(0,1fr) auto auto 14px; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+.strategy-section-row > summary::-webkit-details-marker { display: none; }
+.strategy-section-row > summary:hover { background: rgba(255,255,255,.02); border-radius: 12px; }
+.strategy-section-row > summary:focus-visible { outline: 2px solid rgba(120,201,187,.7); outline-offset: -2px; border-radius: 12px; }
+.strategy-section-tag { padding: 4px 0; display: block; border: 1px solid rgba(117,201,188,.4); border-radius: 6px; color: #75c9bc; background: rgba(117,201,188,.08); font: 900 9px var(--font-pixel); text-align: center; }
+.strategy-section-headline strong { display: block; color: #f0d280; font: 600 21px/1.15 var(--font-display); }
+.strategy-section-row.is-insufficient .strategy-section-headline strong,.strategy-section-row.is-none .strategy-section-headline strong,.strategy-section-row.is-level .strategy-section-headline strong { color: #cfd6cd; font-size: 17px; }
+.strategy-section-headline small { margin-top: 2px; display: block; color: #8ba39f; font-size: 11px; }
+.strategy-section-lift { color: #ead394; font: 600 20px/1 var(--font-display); white-space: nowrap; }
+.strategy-section-row.is-leader .strategy-section-lift { color: #79d0be; }
+/* A negative difference is a real reading and is printed, but it is not an
+   achievement, so it does not get the colour one. */
+.strategy-section-lift.is-behind { color: #a8b3af; }
+.strategy-section-chevron { color: #7fa09b; transition: transform var(--motion-quick,.18s) ease; }
+.strategy-section-row[open] .strategy-section-chevron { transform: rotate(180deg); }
+.strategy-section-detail { padding: 0 15px 15px; display: grid; gap: 11px; border-top: 1px solid rgba(255,255,255,.06); margin-top: 2px; padding-top: 14px; }
+.strategy-section-detail p { max-width: var(--prose-measure); margin: 0; color: #d7d8cd; font-size: 12.5px; line-height: 1.55; }
+.strategy-section-detail small { max-width: var(--prose-measure); color: #93aaa5; font-size: 11px; line-height: 1.5; }
+.strategy-sections-note { max-width: var(--prose-measure); margin: 4px 0 0; color: #869c98; font-size: 11px; line-height: 1.5; }
+.strategy-comparison { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }.strategy-comparison > div { min-height: 116px; padding: 15px; display: grid; align-content: center; border: 1px solid rgba(255,255,255,.075); border-radius: 10px; background: rgba(255,255,255,.025); }.strategy-comparison span { color: #82a6a2; font: 850 9px var(--font-pixel); letter-spacing: .09em; }.strategy-comparison strong { margin-top: 6px; color: #ead394; font: 600 31px/1 var(--font-display); }.strategy-comparison small { margin-top: 6px; color: #90a09d; font-size: 11px; }.strategy-comparison .positive strong { color: #79d0be; }.strategy-comparison .behind strong { color: #a8b3af; }
 .strategy-empty-state { min-height: 112px; padding: 20px; display: flex; align-items: center; justify-content: center; gap: 13px; border: 1px dashed rgba(121,196,184,.28); border-radius: 11px; color: #70cbbb; background: rgba(4,13,19,.2); }.strategy-empty-state strong { color: #e9d7aa; }.strategy-empty-state p { max-width: var(--prose-measure); margin: 3px 0 0; color: #9fada8; font-size: 12px; }
 .strategy-results-detail,.strategy-catalog-detail { margin-top: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(4,12,18,.23); }.strategy-results-detail > summary,.strategy-catalog-detail > summary { padding: 13px 15px; cursor: pointer; color: #dcca92; font-size: 12px; font-weight: 800; }.strategy-results-detail > summary span { margin-left: 8px; color: #819d99; font-size: 10px; font-weight: 500; }
 .strategy-results-table { padding: 0 14px 14px; overflow-x: auto; }.strategy-results-table > div { min-width: 560px; min-height: 51px; padding: 8px 6px; display: grid; grid-template-columns: minmax(190px,1.3fr) 150px 105px 115px; align-items: center; gap: 10px; border-top: 1px solid rgba(255,255,255,.065); color: #bdc6bf; font-size: 12px; }.strategy-results-table > div.header { min-height: 32px; color: #789a96; font: 850 8px var(--font-pixel); letter-spacing: .08em; }.strategy-results-table strong { color: #e8ddc3; }.strategy-results-table strong small { margin-left: 6px; color: #72bfb4; font: 800 8px var(--font-pixel); }.strategy-results-table span small { margin-top: 2px; display: block; color: #7f9692; font-size: 10px; }
@@ -24,10 +181,32 @@
 .strategy-catalog-grid { padding: 0 14px 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px; }.strategy-catalog-grid article { padding: 14px; border: 1px solid rgba(255,255,255,.07); border-radius: 8px; background: rgba(255,255,255,.02); }.strategy-catalog-grid article > span { color: #75c9bc; font: 900 9px var(--font-pixel); }.strategy-catalog-grid h3 { margin: 5px 0 2px; color: #e9d497; font: 600 20px/1.1 var(--font-display); }.strategy-catalog-grid em { display: block; margin-bottom: 6px; color: #86a09c; font-size: 10.5px; font-style: normal; letter-spacing: .02em; }.strategy-catalog-grid p,.strategy-catalog-grid li,.strategy-catalog-grid small { color: #b3bcb5; font-size: 11px; line-height: 1.5; }.strategy-catalog-grid p { margin: 0; }.strategy-catalog-grid ol { margin: 9px 0; padding-left: 19px; }.strategy-catalog-grid small { display: block; color: #8fa49f; }.strategy-catalog-grid article > div { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px 11px; }.strategy-catalog-grid a { color: #d7bd70; font-size: 10px; text-underline-offset: 2px; }
 .strategy-lab-caveat { max-width: var(--prose-measure); margin: 13px 0 0; display: flex; align-items: flex-start; gap: 7px; color: #879d99; font-size: 11px; line-height: 1.45; }.strategy-lab-caveat svg { width: 16px; flex: 0 0 16px; color: #cbb66f; }
 
-.diagnostic-lab { margin: 12px 0; padding: clamp(22px,3.5vw,42px); display: grid; grid-template-columns: minmax(0,1.4fr) minmax(250px,.6fr); gap: 36px; border: 1px solid rgba(230,198,120,.32); border-radius: 19px; color: #f2ead8; background: linear-gradient(120deg,rgba(93,66,39,.94),rgba(31,48,56,.97)); box-shadow: 0 18px 40px rgba(5,9,15,.3); }.diagnostic-copy h2 { margin: 7px 0; color: #f5df9e; font-family: var(--font-display); font-size: clamp(27px,3vw,42px); }.diagnostic-copy p { max-width: 720px; color: #d0c6ae; line-height: 1.55; }.diagnostic-copy ul { margin: 15px 0 20px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; list-style: none; }.diagnostic-copy li { padding: 7px 10px; border-left: 2px solid #73c9b9; color: #dcd1b9; background: rgba(9,19,25,.19); font-size: 11px; }.diagnostic-score { min-height: 230px; padding: 22px; display: grid; align-content: center; justify-items: center; border: 1px solid rgba(255,228,157,.24); border-radius: 16px; background: rgba(10,18,25,.38); text-align: center; }.diagnostic-score small { color: #72cfbf; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .14em; }.diagnostic-score strong { margin-top: 7px; color: #f2d27a; font-family: var(--font-display); font-size: clamp(42px,5vw,70px); line-height: .9; }.diagnostic-score span { margin-top: 8px; color: #f0e3c2; font-size: 12px; }.diagnostic-score p { max-width: 280px; margin: 13px 0 0; color: #aaa897; font-size: 10px; line-height: 1.5; }
+.diagnostic-lab { margin: 20px 0; padding: clamp(22px,3.5vw,42px); display: grid; grid-template-columns: minmax(0,1.4fr) minmax(250px,.6fr); gap: 36px; border: 1px solid rgba(230,198,120,.32); border-radius: 19px; color: #f2ead8; background: linear-gradient(120deg,rgba(93,66,39,.94),rgba(31,48,56,.97)); box-shadow: 0 18px 40px rgba(5,9,15,.3); }.diagnostic-copy h2 { margin: 7px 0; color: #f5df9e; font-family: var(--font-display); font-size: clamp(27px,3vw,42px); }.diagnostic-copy p { max-width: 720px; color: #d0c6ae; line-height: 1.55; }.diagnostic-copy ul { margin: 15px 0 20px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; list-style: none; }.diagnostic-copy li { padding: 7px 10px; border-left: 2px solid #73c9b9; color: #dcd1b9; background: rgba(9,19,25,.19); font-size: 11px; }.diagnostic-score { min-height: 230px; padding: 22px; display: grid; align-content: center; justify-items: center; border: 1px solid rgba(255,228,157,.24); border-radius: 16px; background: rgba(10,18,25,.38); text-align: center; }.diagnostic-score small { color: #72cfbf; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .14em; }.diagnostic-score strong { margin-top: 7px; color: #f2d27a; font-family: var(--font-display); font-size: clamp(42px,5vw,70px); line-height: .9; }.diagnostic-score span { margin-top: 8px; color: #f0e3c2; font-size: 12px; }.diagnostic-score p { max-width: 280px; margin: 13px 0 0; color: #aaa897; font-size: 10px; line-height: 1.5; }
+.diagnostic-score-empty { border-style: dashed; border-color: rgba(255,228,157,.2); background: rgba(10,18,25,.22); }.diagnostic-score-glyph { width: 38px; height: 38px; margin-top: 10px; color: rgba(242,210,122,.45); }.diagnostic-score-empty span { margin-top: 12px; }
 
-.performance-grid { margin: 12px 0; display: grid; grid-template-columns: minmax(0,1.5fr) minmax(270px,.6fr); gap: 10px; }.trend-panel,.priority-panel,.skill-table-panel { padding: 19px; border: 1px solid rgba(226,194,118,.21); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#162635,#101c29); box-shadow: 0 13px 29px rgba(4,9,15,.23); }.panel-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }.panel-heading > div > span { color: #70cabb; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .14em; }.panel-heading h2 { margin: 4px 0 0; color: #f0e4c8; font-family: var(--font-display); font-size: 23px; }.panel-heading > svg { color: #d6b969; }.trend-panel > svg { width: 100%; height: 190px; margin-top: 8px; overflow: visible; }.trend-panel line { stroke: rgba(164,185,184,.13); stroke-width: 1; }.trend-panel polyline { fill: none; stroke: #72d1bf; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 7px rgba(88,199,179,.45)); }.trend-panel circle { fill: #f0d17b; stroke: #112332; stroke-width: 3; }.empty-trend { min-height: 170px; display: grid; place-content: center; justify-items: center; color: #728f90; text-align: center; }.empty-trend strong { margin-top: 8px; color: #d7caa9; }.empty-trend p { margin: 3px 0; font-size: 11px; }.priority-panel > strong { display: block; margin-top: 24px; color: #f1d17b; font-family: var(--font-display); font-size: 31px; }.priority-panel > p { max-width: var(--prose-measure); color: #b7b3a3; font-size: 12px; line-height: 1.5; }.priority-panel > small { display: block; margin-top: 15px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.08); color: #72b6ad; font-size: 9px; line-height: 1.4; }.focus-sprint-button { width: 100%; margin: 8px 0 12px; padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(113,208,192,.4); border-radius: 9px; color: #dff5ee; background: rgba(66,156,143,.16); font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }.focus-sprint-button:hover:not(:disabled) { border-color: #74d3c1; background: rgba(66,156,143,.25); }
-.skill-table-panel { margin: 12px 0; }.skill-table { margin-top: 16px; display: grid; }.skill-row { min-height: 48px; padding: 8px 10px; display: grid; grid-template-columns: minmax(200px,1.5fr) repeat(4,minmax(80px,.6fr)); align-items: center; gap: 10px; border-top: 1px solid rgba(255,255,255,.07); font-size: 11px; }.skill-row.header { min-height: 32px; border: 0; color: #789a99; font-family: var(--font-pixel); font-size: 7.5px; font-weight: 900; letter-spacing: .1em; }.skill-row strong { color: #e9dec3; }.skill-row > span { position: relative; color: #aeb6ad; }.skill-row > span i { height: 3px; position: absolute; left: 0; right: auto; bottom: -5px; border-radius: 3px; background: #68c2b2; }.empty-skills { padding: 35px 10px; color: #929e99; text-align: center; }
+.trend-panel,.skill-table-panel { padding: 19px; border: 1px solid rgba(226,194,118,.21); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#162635,#101c29); box-shadow: 0 13px 29px rgba(4,9,15,.23); }.panel-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }.panel-heading > div > span { color: #70cabb; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .14em; }.panel-heading h2 { margin: 4px 0 0; color: #f0e4c8; font-family: var(--font-display); font-size: 23px; }.panel-heading > svg { color: #d6b969; }.trend-panel > svg { width: 100%; height: 190px; margin-top: 8px; overflow: visible; }.trend-panel line { stroke: rgba(164,185,184,.13); stroke-width: 1; }.trend-panel polyline { fill: none; stroke: #72d1bf; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 7px rgba(88,199,179,.45)); }.trend-panel circle { fill: #f0d17b; stroke: #112332; stroke-width: 3; }.empty-trend { min-height: 170px; display: grid; place-content: center; justify-items: center; color: #728f90; text-align: center; }.empty-trend strong { margin-top: 8px; color: #d7caa9; }.empty-trend p { margin: 3px 0; font-size: 11px; }.focus-sprint-button { width: 100%; margin: 8px 0 12px; padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(113,208,192,.4); border-radius: 9px; color: #dff5ee; background: rgba(66,156,143,.16); font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }.focus-sprint-button:hover:not(:disabled) { border-color: #74d3c1; background: rgba(66,156,143,.25); }
+.skill-table-panel { margin: 20px 0; }.skill-table { margin-top: 16px; display: grid; }.skill-row { min-height: 48px; padding: 8px 10px; display: grid; grid-template-columns: minmax(200px,1.5fr) repeat(4,minmax(80px,.6fr)); align-items: center; gap: 10px; border: 0; border-top: 1px solid rgba(255,255,255,.07); width: 100%; box-sizing: border-box; color: inherit; background: transparent; font: inherit; text-align: left; font-size: 11px; }.skill-row.header { min-height: 32px; border-top: 0; color: #789a99; font-family: var(--font-pixel); font-size: 7.5px; font-weight: 900; letter-spacing: .1em; }.skill-row strong { color: #e9dec3; }.skill-row > span { position: relative; color: #aeb6ad; }.skill-row > span i { height: 3px; position: absolute; left: 0; right: auto; bottom: -5px; border-radius: 3px; background: #68c2b2; }
+.skill-row-clickable { cursor: pointer; border-radius: 8px; transition: background .16s ease, border-color .16s ease; }
+.skill-row-clickable:hover, .skill-row-clickable:focus-visible { background: rgba(255,255,255,.04); }
+.skill-row-clickable:focus-visible { outline: 2px solid rgba(114,208,192,.5); outline-offset: -2px; }
+.skill-row-clickable.is-selected { background: rgba(114,208,192,.1); border-top-color: rgba(114,208,192,.4); }
+.skill-row-clickable.is-selected strong { color: #f0d27f; }
+.skill-table-hint { margin: 10px 0 0; color: #7f9692; font-size: 10.5px; }
+.skill-detail { margin-top: 12px; padding: 14px 15px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border: 1px solid rgba(226,194,118,.24); border-radius: 11px; background: rgba(6,14,23,.4); animation: metric-detail-in .16s ease; }
+.skill-detail strong { color: #f0d27f; font-family: var(--font-display); font-size: 19px; }
+.skill-detail p { max-width: 46ch; margin: 3px 0 0; color: #b7b3a3; font-size: 11.5px; line-height: 1.5; }
+.skill-detail .focus-sprint-button { width: auto; flex: 0 0 auto; margin: 0; }
+.skill-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+/* The quieter of the two: practising is the primary act, re-reading is the
+   supporting one, so it carries an outline rather than a fill. */
+.skill-detail-log-button { min-height: 40px; padding: 0 15px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(114,208,192,.42); border-radius: 9px; color: #cfeae2; background: transparent; font-size: 12px; font-weight: 680; font-family: inherit; cursor: pointer; transition: background .16s ease, border-color .16s ease; }
+.skill-detail-log-button:hover { border-color: #74d3c1; background: rgba(66,156,143,.16); }
+.skill-detail-log-button:focus-visible { outline: 2px solid rgba(114,208,192,.55); outline-offset: 1px; }
+
+/* Shown while a lazy dashboard panel's chunk is in flight. Sized close to the
+   real panel so the page does not jump when it lands. */
+.progress-panel-fallback { margin: 22px 0; min-height: 148px; padding: 20px; display: grid; place-items: center; border: 1px dashed rgba(226,194,118,.22); border-radius: 16px; color: #8fa19d; background: rgba(16,28,41,.5); font-size: 12px; }
+.empty-skills { min-height: 100px; margin-top: 16px; padding: 20px; display: flex; align-items: center; justify-content: center; gap: 13px; border: 1px dashed rgba(121,196,184,.28); border-radius: 11px; color: #70cbbb; background: rgba(4,13,19,.2); }.empty-skills svg { flex: 0 0 auto; }.empty-skills p { max-width: var(--prose-measure); margin: 0; color: #9fada8; font-size: 12px; text-align: left; }
 
 /* Every in-run mode banner shares one shape. The diagnostic only re-tints it so
    a baseline run reads as the same product as a practice run. */
@@ -36,7 +215,7 @@
 
 .training-focus-card,.training-evidence-card { padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid rgba(108,196,180,.27); color: #eee4cb; background: linear-gradient(145deg,#18303a,#142532); }.training-focus-card span,.training-evidence-card span { color: #70cbbb; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .12em; }.training-focus-card h3 { margin: 4px 0; font-family: var(--font-display); }.training-focus-card p { max-width: 280px; margin: 0; color: #9fa9a4; font-size: 10px; }.training-focus-card button,.training-evidence-card button { padding: 8px 10px; border: 1px solid #e9ca74; color: #172331; background: #e8ca76; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; }.training-evidence-card strong,.training-evidence-card small { display: block; }.training-evidence-card strong { margin: 3px 0; color: #efd17c; font-family: var(--font-display); font-size: 28px; }.training-evidence-card small { color: #9ca7a2; font-size: 9px; }
 
-.evidence-class-panel { margin: 12px 0; padding: 20px; border: 1px solid rgba(106,199,184,.22); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#152733,#101c28); box-shadow: 0 13px 29px rgba(4,9,15,.2); }
+.evidence-class-panel { margin: 20px 0; padding: 20px; border: 1px solid rgba(106,199,184,.22); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#152733,#101c28); box-shadow: 0 13px 29px rgba(4,9,15,.2); }
 .readiness-grid { margin-top: 17px; display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; }
 .readiness-grid > div { padding: 14px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 11px; border: 1px solid rgba(255,255,255,.08); border-radius: 11px; background: rgba(5,13,20,.28); }
 .readiness-grid strong { grid-row: 1/3; align-self: center; color: #efd17c; font: 600 32px/1 var(--font-display); }
@@ -46,7 +225,7 @@
 .evidence-class-panel summary { color: #79cdbf; cursor: pointer; font-weight: 750; }
 .evidence-class-panel details p { max-width: var(--prose-measure); margin: 8px 0 0; }
 
-.focus-panel { margin: 12px 0; padding: 20px; border: 1px solid rgba(232,205,137,.22); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#1a2a24,#101c28); box-shadow: 0 13px 29px rgba(4,9,15,.2); }
+.focus-panel { margin: 20px 0; padding: 20px; border: 1px solid rgba(232,205,137,.22); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#1a2a24,#101c28); box-shadow: 0 13px 29px rgba(4,9,15,.2); }
 .focus-panel p { max-width: var(--prose-measure); margin: 14px 0 0; color: #c3cbc2; font-size: 13px; line-height: 1.6; }
 .focus-panel small { display: block; margin-top: 9px; color: #8fa39f; font-size: 11px; }
 
@@ -122,24 +301,200 @@
 
 @media (max-width: 900px) {
   .daily-docket > header,.daily-docket-track { grid-template-columns: 1fr; }.daily-docket-action { width: 100%; min-width: 0; }
-  .performance-hero,.diagnostic-lab { grid-template-columns: 1fr; }.speedrun-index { grid-template-columns: auto 1fr; justify-items: start; }.index-ring { width: 125px; height: 125px; grid-row: 1/4; }.index-ring strong { font-size: 43px; }
-  .performance-metrics { grid-template-columns: 1fr 1fr; }.performance-grid { grid-template-columns: 1fr; }
+  .dash-signal { grid-template-columns: auto minmax(0,1fr); }
+  .dash-tiles { grid-column: 1/3; grid-template-columns: repeat(2,1fr); }
+  .dash-summary-scenery { width: 240px; right: 2%; bottom: -34px; opacity: .13; }
+  .dash-tabs { grid-template-columns: repeat(3,1fr); }
+  .diagnostic-lab { grid-template-columns: 1fr; }.index-ring { width: 125px; height: 125px; }.index-ring strong { font-size: 43px; }
+  .metric-card { flex-basis: calc(50% - 5px); }
   .strategy-leader-grid { grid-template-columns: 1fr; }.strategy-comparison { grid-template-columns: repeat(3,1fr); }
   .skill-row { grid-template-columns: minmax(150px,1.3fr) repeat(4,minmax(67px,.5fr)); overflow: hidden; }
-  .performance-hero-scenery { width: 280px; right: 12%; bottom: -38px; opacity: .16; }
+  .skill-detail { justify-content: flex-start; }.skill-detail .focus-sprint-button { flex-basis: 100%; }
   .review-signal-row { grid-template-columns: 1fr 1fr; }.answer-audit-shell { grid-template-columns: 200px minmax(0,1fr); }
 }
 @media (max-width: 620px) {
-  .performance-page { padding-inline: 10px; }.performance-hero { padding: 22px 17px; }.performance-hero h1 { font-size: 37px; }.performance-actions { display: grid; }.performance-actions button { width: 100%; justify-content: center; }
-  .speedrun-index { grid-template-columns: 105px 1fr; }.index-ring { width: 96px; height: 96px; }.index-ring strong { font-size: 35px; }
-  .evidence-strip { grid-template-columns: 1fr; gap: 4px; }.evidence-strip strong { display: none; }
-  .performance-metrics { grid-template-columns: 1fr 1fr; }.performance-metrics article { min-height: 115px; padding: 13px; }.performance-metrics article > strong { font-size: 27px; }
+  .performance-page { padding-inline: 10px; }
+  .dash-summary { padding: 18px 15px; }
+  .dash-actions { display: grid; }.dash-actions button { width: 100%; justify-content: center; }
+  .dash-tiles { grid-template-columns: 1fr; }
+  .dash-next { grid-template-columns: auto minmax(0,1fr); }
+  .dash-next .focus-sprint-button { width: 100%; grid-column: 1/3; justify-content: center; }
+  .dash-summary-scenery { display: none; }
+  .index-ring { width: 96px; height: 96px; }.index-ring strong { font-size: 35px; }
+  .metric-card { flex-basis: calc(50% - 5px); }.metric-card-trigger { min-height: 115px; padding: 13px; }.metric-card-trigger > strong { font-size: 27px; }
+  .active-run-chip { flex-wrap: wrap; }.active-run-pause { flex-basis: 100%; justify-content: center; }
   .strategy-lab-panel { padding: 18px 13px; }.strategy-comparison,.strategy-catalog-grid { grid-template-columns: 1fr; }.strategy-comparison > div { min-height: 92px; }.strategy-results-detail > summary span { margin: 4px 0 0; display: block; }
+  /* Three columns instead of five: the chevron goes (the row still opens on
+     tap) and the evidence chip drops to a second line under the headline
+     rather than being dropped, since it is what qualifies the number beside
+     it. */
+  .strategy-section-row > summary { grid-template-columns: 30px minmax(0,1fr) auto; gap: 8px 10px; padding: 12px; }
+  .strategy-section-chevron { display: none; }
+  .strategy-section-row > summary .strategy-evidence-badge { grid-column: 2/-1; }
+  .strategy-section-headline strong { font-size: 18px; }
+  .strategy-section-row.is-insufficient .strategy-section-headline strong,.strategy-section-row.is-none .strategy-section-headline strong,.strategy-section-row.is-level .strategy-section-headline strong { font-size: 15px; }
+  .strategy-section-lift { font-size: 17px; }
+  .strategy-section-detail { padding: 13px 12px 14px; }
   .diagnostic-lab { padding: 20px 16px; }.diagnostic-copy ul { grid-template-columns: 1fr; }.diagnostic-score { min-height: 190px; }
   .skill-table { overflow-x: auto; }.skill-row { min-width: 690px; }
   .learning-mode-banner { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; }.learning-mode-banner > strong { flex: 1 1 100%; font-size: 12px; line-height: 1.4; }
-  .performance-hero-scenery { display: none; }
   .readiness-grid,.review-summary-hero,.review-next-actions { grid-template-columns: 1fr; }.review-score { min-width: 0; }.review-signal-row { grid-template-columns: 1fr 1fr; }
   .answer-audit-shell { display: block; }.answer-audit-index { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.08); }.answer-audit-list { display: flex; overflow-x: auto; padding-bottom: 4px; }.answer-audit-list button { min-width: 112px; }
   .answer-audit-detail { padding: 19px 15px; }.audit-choices > div { grid-template-columns: 23px 1fr; }.audit-choices small { grid-column: 2; }.review-next-actions > div:nth-child(2) { justify-content: stretch; }.review-next-actions button { flex: 1; justify-content: center; }
+}
+
+/* ================================================================
+   INSTRUMENT MOTION
+   ================================================================
+   Everything below draws on the motion tokens defined at the end of
+   `styles.css` (--mo-1..4, --mo-out/in/spring/brass, --el-1..3). It
+   is appended rather than folded into the rules above so the two
+   concerns stay separable: what the panel looks like at rest, and
+   how it arrives and answers the hand.
+
+   The governing idea is that this page is a set of gauges. A gauge
+   does not blink for attention; it sweeps to its reading once and
+   then holds perfectly still. So nothing here loops, and every
+   animation is a single settle.
+   ================================================================ */
+
+/* ------------------------------------------------- the index ring */
+
+/* Registering the angle makes it an animatable type, which is what
+   lets the ring sweep to its reading instead of being stamped at it.
+   `--index` is used in exactly one place in the app, so the global
+   registration is safe. */
+@property --index {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes mo-index { from { --index: 0deg; } }
+/* One sweep from zero on arrival, and a sweep between readings
+   whenever the number later changes. The untaken state has no
+   reading to sweep to, so it is excluded rather than animated to a
+   value it does not have. */
+.index-ring:not(.index-ring-empty) {
+  animation: mo-index var(--mo-4) var(--mo-out) both;
+  transition: --index var(--mo-4) var(--mo-out);
+}
+
+/* --------------------------------------------------- measure bars */
+
+/* Every small bar on the page is a measurement, and a measurement
+   reads more honestly if you watch it extend from its origin than if
+   it is already there when you look. scaleX from the left leaves the
+   inline percentage width untouched, so this costs one composited
+   transform and no layout at all. */
+.metric-breakdown-row > i,
+.metric-breakdown-review > div i,
+.skill-row > span i {
+  transform-origin: left center;
+  animation: mo-measure var(--mo-4) var(--mo-out) both;
+}
+@keyframes mo-measure { from { transform: scaleX(0); } }
+
+/* ------------------------------------------------- the trend line */
+
+/* The trend draws itself, then its readings land on top. Splitting
+   the two is what makes it read as a plot being taken rather than an
+   image fading up. The dash length is a fixed over-estimate of the
+   path, which is all `stroke-dashoffset` needs to hide it. */
+.trend-panel polyline {
+  stroke-dasharray: 2400;
+  animation: mo-draw var(--mo-4) var(--mo-out) both;
+}
+@keyframes mo-draw { from { stroke-dashoffset: 2400; } }
+.trend-panel circle { animation: mo-fade var(--mo-3) calc(var(--mo-4) * .72) var(--mo-out) both; }
+
+/* --------------------------------------------------- metric cards */
+
+/* The card is one big button, so it should behave like one: it lifts
+   to meet the pointer and seats itself when pressed. --mo-brass is
+   slow to start and stops hard, which is what gives the press its
+   weight. The lift is 2px — enough to feel, not enough to make a row
+   of four cards look restless as the pointer crosses them. */
+.metric-card {
+  transition:
+    transform var(--mo-2) var(--mo-brass),
+    border-color var(--mo-2) var(--mo-out),
+    box-shadow var(--mo-2) var(--mo-out);
+}
+.metric-card:has(.metric-card-trigger:hover),
+.metric-card:has(.metric-card-trigger:focus-visible) {
+  transform: translateY(-2px);
+  border-color: rgba(114, 208, 192, .38);
+  box-shadow: var(--el-3), 0 6px 18px -10px rgba(154, 108, 40, .3);
+}
+.metric-card:has(.metric-card-trigger:active) { transform: translateY(0); box-shadow: var(--el-1); }
+.metric-card-trigger { transition: background var(--mo-1) linear; }
+.metric-card-chevron { transition: transform var(--mo-3) var(--mo-out); }
+.metric-detail,
+.skill-detail,
+.answer-log-detail { animation: mo-rise var(--mo-3) var(--mo-out) both; }
+
+/* ------------------------------------------------ rows and audits */
+
+.skill-row-clickable { transition: background var(--mo-1) linear, border-color var(--mo-2) var(--mo-out); }
+.answer-audit-list button { transition: transform var(--mo-2) var(--mo-out), border-color var(--mo-2) var(--mo-out), background var(--mo-1) linear; }
+.answer-audit-list button:active { transform: translateX(1px); }
+.metric-breakdown-row { transition: background var(--mo-1) linear; }
+
+/* --------------------------------------------------- the controls */
+
+/* The docket action is the page's committing control — the one that
+   starts work. It gets the same key travel as the global buttons so
+   that "this begins something" feels identical wherever it appears. */
+.daily-docket-action,
+.focus-sprint-button,
+.metric-detail-action,
+.skill-detail-log-button,
+.active-run-pause {
+  transition:
+    transform var(--mo-2) var(--mo-brass),
+    border-color var(--mo-2) var(--mo-out),
+    background var(--mo-1) linear,
+    box-shadow var(--mo-2) var(--mo-brass);
+}
+.daily-docket-action:hover:not(:disabled),
+.focus-sprint-button:hover:not(:disabled),
+.metric-detail-action:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--el-1); }
+.daily-docket-action:active:not(:disabled),
+.focus-sprint-button:active:not(:disabled),
+.metric-detail-action:active:not(:disabled),
+.skill-detail-log-button:active,
+.active-run-pause:active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
+
+/* -------------------------------------------------------- the tabs */
+
+/* A tab is a key on a rail, so it takes a press the way every other
+   key in the app does — brass in, hard stop, no travel on release.
+   It deliberately does not lift: the rail is inset into the page, and
+   a key that rose out of its own track would read as detached. */
+.dash-tabs button,
+.practice-tabs button {
+  transition:
+    color var(--mo-1) linear,
+    background var(--mo-1) linear,
+    border-color var(--mo-2) var(--mo-out),
+    transform var(--mo-2) var(--mo-brass);
+}
+.dash-tabs button:active,
+.practice-tabs button:active { transform: translateY(1px); }
+
+/* Switching tabs replaces the whole reading, so the arriving panel
+   settles in rather than being stamped in place — one rise for the
+   panel as a whole, keyed on the tab so it replays on every switch.
+   Its children are not staggered: a tab switch is one movement, and
+   six panels cascading in would make a click feel like a page load. */
+.dash-panel,
+.practice-panel { animation: mo-rise var(--mo-3) var(--mo-out) both; }
+
+/* On a phone there is no pointer to meet, so the lift is dead weight;
+   only the press survives, and it stays small. */
+@media (max-width: 620px) {
+  .metric-card:has(.metric-card-trigger:hover) { transform: none; box-shadow: var(--el-2); }
+  .daily-docket-action:hover:not(:disabled),
+  .focus-sprint-button:hover:not(:disabled),
+  .metric-detail-action:hover:not(:disabled) { transform: none; }
 }

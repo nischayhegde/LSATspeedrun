@@ -1,0 +1,370 @@
+/* The mega-litigation home on the Practice tab, and the results view for the
+ * ones already sat.
+ *
+ * Ships inside this route-split chunk, not the main stylesheet, because the
+ * whole section is below the fold on one tab. Everything it can borrow it
+ * borrows: the panel shell from `performance.css`, the breakdown bars from
+ * `.metric-breakdown`, and the answer wall and drill-down from
+ * `progress-history.css`, which this module imports for exactly that reason.
+ */
+
+/* Border, gradient, text colour and shadow are `.diagnostic-lab` verbatim —
+   the dashboard's own mega-litigation section. Only the radius and inset are
+   the Practice tab's, so this panel keeps step with its neighbours there. */
+.mega-panel {
+  padding: 20px;
+  border: 1px solid rgba(230,198,120,.32);
+  border-radius: 16px;
+  color: #f2ead8;
+  background: linear-gradient(120deg,rgba(93,66,39,.94),rgba(31,48,56,.97));
+  box-shadow: 0 18px 40px rgba(5,9,15,.3);
+}
+.mega-panel .panel-heading h2 { color: #f5df9e; font-size: 25px; }
+.mega-panel .panel-heading > svg { color: rgba(242,210,122,.5); }
+.mega-panel-body {
+  margin-top: 17px;
+  display: grid;
+  grid-template-columns: minmax(0,1.45fr) minmax(240px,.55fr);
+  gap: 18px;
+}
+.mega-panel-copy > p { max-width: var(--prose-measure); margin: 0; color: #d0c6ae; font-size: 13px; line-height: 1.6; }
+.mega-terms { margin: 15px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; list-style: none; }
+.mega-terms li {
+  padding: 9px 11px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 9px;
+  border-left: 2px solid #73c9b9;
+  border-radius: 0 9px 9px 0;
+  background: rgba(9,19,25,.28);
+}
+.mega-terms svg { width: 15px; margin-top: 1px; color: #e9c982; }
+.mega-terms strong { display: block; color: #f0e3c2; font-size: 12px; font-weight: 750; }
+.mega-terms small { display: block; margin-top: 2px; color: #a9b1a2; font-size: 10.5px; line-height: 1.45; }
+.mega-panel-actions { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 9px; }
+.mega-panel-actions button { min-height: 46px; display: inline-flex; align-items: center; gap: 9px; }
+.mega-start-button {
+  padding: 0 17px;
+  border: 1px solid rgba(113,208,192,.45);
+  border-radius: 10px;
+  color: #dff5ee;
+  background: rgba(66,156,143,.2);
+  font: 900 10.5px var(--font-pixel);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.mega-start-button:hover:not(:disabled) { border-color: #74d3c1; color: #eafaf4; background: rgba(66,156,143,.32); }
+.mega-resume-button {
+  padding: 0 15px;
+  border: 1px solid rgba(240,210,127,.5);
+  border-radius: 10px;
+  color: #10202b;
+  background: #f0d27f;
+  font-size: 12px;
+  font-weight: 800;
+}
+.mega-resume-button:hover:not(:disabled) { background: #f7e2a4; }
+.mega-panel-error { margin: 10px 0 0; color: #f0b785; font-size: 11.5px; }
+
+.mega-score {
+  min-height: 200px;
+  padding: 20px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  border: 1px solid rgba(255,228,157,.24);
+  border-radius: 14px;
+  background: rgba(10,18,25,.4);
+  text-align: center;
+}
+.mega-score.is-empty { border-style: dashed; border-color: rgba(255,228,157,.2); background: rgba(10,18,25,.22); }
+.mega-score > small { color: #72cfbf; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .16em; }
+.mega-score > strong { margin-top: 8px; color: #f2d27a; font: 620 clamp(38px,4.4vw,58px)/.9 var(--font-display); }
+.mega-score > span { margin-top: 9px; color: #f0e3c2; font-size: 12px; }
+.mega-score > p { max-width: 280px; margin: 12px 0 0; color: #a4a897; font-size: 10.5px; line-height: 1.5; }
+.mega-score-glyph { width: 36px; height: 36px; margin-top: 10px; color: rgba(242,210,122,.45); }
+
+/* ------------------------------------------------- withheld tier promotion */
+
+/* Deliberately not the gold of `.promotion-banner`: this is the shape of that
+   banner with the reward taken out of it, so it borrows the amber the app
+   already uses for "earned, held back" rather than the green-and-gold used for
+   "paid". */
+.mega-withheld {
+  margin-top: 17px;
+  padding: 15px 17px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(230,167,106,.45);
+  border-left-width: 3px;
+  border-radius: 3px 13px 13px 3px;
+  /* Opaque base under the wash: this renders on the Practice tab (dark panel)
+     and on the post-form review page (bare page, with the hero's glow bleeding
+     under it), and the two must not read as different components. */
+  background: linear-gradient(120deg,rgba(74,44,26,.55),rgba(16,26,34,.6)) #101a22;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
+}
+.mega-withheld-head { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 12px; }
+.mega-withheld-head > svg { width: 20px; height: 20px; margin-top: 3px; color: #f0ad6d; }
+.mega-withheld-head span {
+  display: block;
+  color: #f0ad6d;
+  font: 900 8px var(--font-pixel);
+  letter-spacing: .16em;
+}
+.mega-withheld-head strong {
+  display: block;
+  margin-top: 7px;
+  max-width: var(--prose-measure);
+  color: #f6e6cb;
+  font: 620 clamp(19px,2.1vw,25px)/1.15 var(--font-display);
+}
+.mega-withheld-head p { max-width: var(--prose-measure); margin: 6px 0 0; color: #e7c79c; font-size: 12.5px; font-weight: 700; }
+.mega-withheld-terms { margin: 0; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.mega-withheld-terms > div { padding: 10px 12px; border-radius: 9px; background: rgba(6,13,20,.42); }
+.mega-withheld-terms dt { color: #cf9a68; font: 900 7.5px var(--font-pixel); letter-spacing: .13em; }
+.mega-withheld-terms dd { margin: 6px 0 0; color: #d6cdb9; font-size: 11.5px; line-height: 1.5; }
+.mega-withheld > small { max-width: var(--prose-measure); color: #b6b3a0; font-size: 10.5px; line-height: 1.55; }
+
+@media (max-width: 760px) {
+  .mega-withheld-terms { grid-template-columns: 1fr; }
+}
+
+/* ------------------------------------------------------------ past results */
+
+.mega-history { margin-top: 17px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,.09); }
+.mega-history-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.mega-history-head span { color: #70cabb; font: 900 8px var(--font-pixel); letter-spacing: .14em; }
+.mega-history-head small { color: #9aa79f; font-size: 10.5px; }
+/* "Nothing sat yet" was a grey sentence floating under a heading, which is the
+   one shape in this panel that looks like something failed to load rather than
+   like a section that is genuinely still empty. It becomes a docket sheet with
+   an unstamped seal on a dashed plate: the same footprint a filled history row
+   occupies, so the panel keeps its shape, and a drawing that says "no sitting
+   has been sealed yet" without a second sentence explaining it. The sheet is a
+   90-byte inline data URI, not a request. */
+.mega-history-empty {
+  margin: 12px 0 0;
+  padding: 15px 14px 15px 62px;
+  position: relative;
+  border: 1px dashed rgba(255,255,255,.13);
+  border-radius: 10px;
+  background: rgba(5,13,20,.28);
+  color: #a4b0a8;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.mega-history-empty::before {
+  content: "";
+  width: 32px;
+  height: 36px;
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: .6;
+  background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 38' fill='none' stroke='%2372cfbf' stroke-width='1.6' stroke-linejoin='round'%3E%3Cpath d='M4 2h17l9 9v25H4z'/%3E%3Cpath d='M21 2v9h9'/%3E%3Cpath d='M9 18h16M9 23h11' opacity='.5'/%3E%3Ccircle cx='23' cy='29' r='4.6' stroke='%23f2d27a' stroke-dasharray='2 2.3'/%3E%3C/svg%3E");
+}
+
+.mega-history-list { margin-top: 12px; display: grid; gap: 6px; }
+.mega-history-row {
+  all: unset;
+  box-sizing: border-box;
+  min-height: 54px;
+  padding: 10px 13px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 78px 68px 74px auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 11px;
+  background: rgba(5,13,20,.3);
+  color: #cbd3ca;
+  cursor: pointer;
+  transition: border-color var(--mo-2) var(--mo-out), background var(--mo-1) linear, transform var(--mo-2) var(--mo-brass);
+}
+.mega-history-row:hover { border-color: rgba(114,208,192,.35); background: rgba(5,13,20,.5); }
+.mega-history-row:focus-visible { outline: 2px solid rgba(114,208,192,.55); outline-offset: 2px; }
+.mega-history-row.is-open { border-color: rgba(240,210,127,.5); background: rgba(240,210,127,.07); }
+.mega-history-row > b { min-width: 0; color: #e9dec3; font-size: 12.5px; font-weight: 750; }
+.mega-history-row > b small { display: block; margin-top: 2px; color: #8b9d99; font-size: 10.5px; font-weight: 500; }
+.mega-history-row > i { font-style: normal; color: #f0d27f; font: 600 19px/1 var(--font-display); }
+.mega-history-row > i small {
+  display: block;
+  margin-top: 5px;
+  color: #8b9d99;
+  font-family: var(--font-pixel);
+  font-size: 7.5px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.mega-history-row > span { color: #a9b8b2; font-size: 11.5px; }
+.mega-history-row > em {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #ecd79b;
+  background: rgba(226,194,118,.14);
+  box-shadow: inset 0 0 0 1px rgba(226,194,118,.36);
+  font: 900 8px var(--font-pixel);
+  font-style: normal;
+  letter-spacing: .12em;
+}
+.mega-history-row.is-complete > em { color: #8fdccb; background: rgba(116,210,191,.14); box-shadow: inset 0 0 0 1px rgba(116,210,191,.4); }
+.mega-history-row > svg { color: rgba(114,208,192,.6); transition: transform var(--mo-3) var(--mo-out); }
+.mega-history-row.is-open > svg { transform: rotate(180deg); }
+.mega-history-more {
+  margin-top: 10px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(113,208,192,.4);
+  border-radius: 9px;
+  color: #dff5ee;
+  background: rgba(66,156,143,.16);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.mega-result {
+  margin-top: 10px;
+  padding: 17px;
+  border: 1px solid rgba(226,194,118,.28);
+  border-radius: 13px;
+  background: rgba(6,14,23,.5);
+  animation: mo-rise var(--mo-3) var(--mo-out) both;
+}
+.mega-result-facts { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+.mega-result-facts > div { padding: 11px 13px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(255,255,255,.025); }
+.mega-result-facts span { display: block; color: #7fa29e; font: 900 8px var(--font-pixel); letter-spacing: .12em; }
+.mega-result-facts strong { display: block; margin-top: 6px; color: #ead394; font: 600 24px/1 var(--font-display); }
+.mega-result-facts strong.is-teal { color: #74d2bf; }
+.mega-result-facts strong.is-amber { color: #e5ab6a; }
+.mega-result-facts strong small { display: inline; margin: 0; color: #97a08d; font-size: .52em; }
+.mega-result-facts > div > small { display: block; margin-top: 5px; color: #86999a; font-size: 10px; }
+
+/* The dashboard sizes the bar's track with `auto`, which collapses to nothing
+   when the only thing in it is a percentage-width bar. A definite track gives
+   the same bars something to be a percentage of. */
+.mega-result .metric-breakdown-row { grid-template-columns: minmax(0,1fr) 110px 44px; }
+.mega-result .metric-breakdown-row > i { justify-self: start; min-width: 3px; }
+
+/* The section rows report; only the type rows filter. */
+.mega-result .metric-breakdown-row.is-static { cursor: default; }
+.mega-result .metric-breakdown-row.is-static:hover { background: none; }
+
+.mega-result-split { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mega-result-split > div > span,
+.mega-result-wall > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #6fc9ba;
+  font: 900 8px var(--font-pixel);
+  letter-spacing: .13em;
+}
+.mega-result-wall { margin-top: 15px; }
+.mega-result-wall .answer-log-grid { margin-top: 0; }
+.mega-result-scope { margin: 0 0 9px; display: flex; align-items: center; gap: 9px; color: #8fa19d; font-size: 10.5px; }
+.mega-result-scope .mega-history-more { margin-top: 0; min-height: 26px; padding: 0 10px; font-size: 9.5px; }
+.mega-result-loading,
+.mega-result-error { margin: 12px 0 0; color: #93a5a1; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .mega-panel-body { grid-template-columns: 1fr; }
+  .mega-history-row { grid-template-columns: minmax(0,1fr) 70px auto; }
+  .mega-history-row > span,
+  .mega-history-row > em { display: none; }
+  .mega-result-facts { grid-template-columns: repeat(2,1fr); }
+  .mega-result-split { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .mega-panel { padding: 16px 14px; }
+  .mega-terms { grid-template-columns: 1fr; }
+  .mega-panel-actions button { width: 100%; justify-content: center; }
+}
+
+/* ================================================================
+   OCCASION MOTION
+   ================================================================
+   Tokens from the end of `styles.css` (--mo-1..4, --mo-out/brass/
+   spring, --el-1). Appended rather than folded into the rules above,
+   so what the panel looks like at rest and how it arrives stay two
+   separable things.
+
+   A mega-litigation is the one thing here that is sat rather than
+   played, so its motion is staged as an occasion: the terms are laid
+   down, the score is sealed, and everything then holds still. Nothing
+   below can run while a form is on the clock — every rule here
+   belongs either to the panel that offers a form or to a sitting
+   already finished.
+   ================================================================ */
+
+/* The four terms are the contract being agreed to, so they are laid
+   down in reading order rather than appearing as a block. Capped at
+   three steps: a term nobody is waiting on should never feel late. */
+.mega-terms li { animation: mo-rise var(--mo-3) var(--mo-out) both; }
+.mega-terms li:nth-child(2) { animation-delay: var(--mo-step); }
+.mega-terms li:nth-child(3) { animation-delay: calc(var(--mo-step) * 2); }
+.mega-terms li:nth-child(4) { animation-delay: calc(var(--mo-step) * 3); }
+
+/* The plaque is the ceremony: one figure resolving over --mo-4, with
+   the score itself landing a beat later on `mo-seal` and the system's
+   only overshoot. That curve is spent here because a form score is
+   the most committed number in the product — it is the one reading
+   nothing coached and nothing paid for. The untaken plaque has no
+   `strong`, so an empty state cannot stamp a score it does not have. */
+.mega-score { animation: mo-rise var(--mo-4) var(--mo-out) both; }
+.mega-score > strong { animation: mo-seal var(--mo-4) calc(var(--mo-step) * 2) var(--mo-out) both; }
+
+/* One finished sitting, reopened. The four headline facts settle in
+   reading order, then each breakdown bar draws to its reading a beat
+   after the one above it, so the section split reads as a measurement
+   being taken rather than a table that was already there. The draw
+   itself is `performance.css`'s `mo-measure`, shared by every bar in
+   the app; only its place in the queue is set here. */
+.mega-result-facts > div { animation: mo-rise var(--mo-3) var(--mo-out) both; }
+.mega-result-facts > div:nth-child(2) { animation-delay: var(--mo-step); }
+.mega-result-facts > div:nth-child(3) { animation-delay: calc(var(--mo-step) * 2); }
+.mega-result-facts > div:nth-child(4) { animation-delay: calc(var(--mo-step) * 3); }
+.mega-result .metric-breakdown > :nth-child(2) > i { animation-delay: var(--mo-step); }
+.mega-result .metric-breakdown > :nth-child(3) > i { animation-delay: calc(var(--mo-step) * 2); }
+.mega-result .metric-breakdown > :nth-child(n+4) > i { animation-delay: calc(var(--mo-step) * 3); }
+
+/* A past sitting is a folder in a drawer: it comes forward under the
+   pointer and seats itself when opened. Two pixels, because a list of
+   them should not look restless as the pointer crosses it. */
+.mega-history-row:hover { transform: translateX(2px); }
+.mega-history-row:active { transform: translateX(0); }
+
+/* The controls that begin or reopen a sitting take the same key
+   travel as every other committing button in the app, so "this starts
+   something" feels identical wherever it is pressed. The arrow is the
+   one decorative move on the panel: it points at what the press does. */
+.mega-start-button,
+.mega-resume-button,
+.mega-history-more {
+  transition:
+    transform var(--mo-2) var(--mo-brass),
+    border-color var(--mo-2) var(--mo-out),
+    background var(--mo-1) linear,
+    color var(--mo-1) linear,
+    box-shadow var(--mo-2) var(--mo-brass);
+}
+.mega-start-button:hover:not(:disabled),
+.mega-resume-button:hover:not(:disabled),
+.mega-history-more:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--el-1); }
+.mega-start-button:active:not(:disabled),
+.mega-resume-button:active:not(:disabled),
+.mega-history-more:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
+.mega-history-more:hover:not(:disabled) { border-color: #74d3c1; background: rgba(66,156,143,.25); }
+.mega-panel-actions button > svg { transition: transform var(--mo-2) var(--mo-out); }
+.mega-panel-actions button:hover:not(:disabled) > svg { transform: translateX(2px); }
+
+@media (max-width: 620px) {
+  /* A row that slides out from under the finger is travel nobody
+     asked for, and a hover state that sticks after a tap reads as a
+     bug. The colour change carries the same information. */
+  .mega-history-row:hover { transform: none; }
+  .mega-panel-actions button:hover:not(:disabled) > svg { transform: none; }
+}

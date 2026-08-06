@@ -207,15 +207,35 @@ body {
   .header-right { gap: 6px; }
   .header-economy { min-width: 0; }
   .header-economy > span { min-width: 0; }
-  .icon-button { min-width: 40px; min-height: 40px; }
+  .icon-button { min-width: 44px; min-height: 44px; }
+  /* Focus Mode, tour replay, and sign out live in the slide-out sheet (same
+     grouping as the desktop account dropdown). No duplicate toggle in the
+     phone header — the sheet is one tap away and carries the description. */
 
   .header-right > [data-tour="sound"],
-  .header-right > .header-economy,
-  .header-right > .tour-replay-button,
   .header-right > .account-menu { display: none; }
+  /* Accuracy and question count are spelled out on the dashboard surface;
+     the streak is the only badge that can tick on a day you have not opened
+     the app, so it is the one header chip that stays visible on phones. */
+  .header-right > .header-economy {
+    display: flex;
+    min-width: 0;
+    gap: 0;
+  }
+  .header-economy > .standing-accuracy,
+  .header-economy > .standing-questions { display: none; }
+  .header-economy > .streak {
+    min-height: 44px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 12px;
+    font-size: 10.5px;
+  }
   .mobile-overflow-trigger {
     min-width: 48px;
-    min-height: 40px;
+    min-height: 44px;
     padding: 4px 7px;
     display: grid;
     place-items: center;
@@ -286,12 +306,20 @@ body {
   .mobile-site-menu-tools small { margin-top: 3px; color: #91a4a2; font-size: 9px; line-height: 1.3; }
   .mobile-site-menu-tools { display: grid; gap: 8px; }
   .mobile-site-menu-tools > button { width: 100%; grid-template-columns: 28px 1fr; }
-  .mobile-site-menu-tools > div { min-height: 56px; padding: 9px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(220, 192, 123, .2); border-radius: 10px; background: rgba(255,255,255,.025); }
-  .mobile-menu-sound.sound-controls { width: 190px; height: 40px; flex: 0 0 190px; }
+  /* Focus Mode was the one row in this sheet whose state you could only read by
+     reading it. It now lights the same warm brown the desktop toggle uses, so
+     "on" is the same colour in both places. */
+  .mobile-focus-toggle.is-on { color: #ffe1ad; border-color: rgba(232, 178, 138, .4); background: rgba(101, 58, 54, .55); }
+  .mobile-site-menu-tools > .mobile-focus-toggle.is-on > svg { color: #f2c75b; }
+  /* The audio row carries four controls. Squeezed beside the label they end up
+     around 30px each, so the label keeps the first line and the controls take
+     the full width of the second. */
+  .mobile-site-menu-tools > div { min-height: 56px; padding: 9px 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(220, 192, 123, .2); border-radius: 10px; background: rgba(255,255,255,.025); }
+  .mobile-menu-sound.sound-controls { width: 100%; height: 44px; flex: 1 0 100%; display: flex; align-items: center; gap: 6px; }
   .mobile-menu-sound .sound-volume-control,
   .mobile-menu-sound .sound-reduced-button,
   .mobile-menu-sound .sound-ambient-button {
-    height: 32px;
+    height: 44px;
     position: static;
     inset: auto;
     opacity: 1;
@@ -300,16 +328,19 @@ body {
     box-shadow: none;
     translate: none;
   }
-  .mobile-menu-sound .sound-volume-control { width: 78px; padding: 0 5px; }
+  .mobile-menu-sound .sound-mute-button { width: 44px; height: 44px; flex: 0 0 44px; }
+  /* The slider takes the slack so the three fixed buttons keep their size. */
+  .mobile-menu-sound .sound-volume-control { width: auto; flex: 1 1 auto; min-width: 72px; padding: 0 8px; }
+  .mobile-menu-sound .sound-volume-control input { min-height: 44px; }
   .mobile-menu-sound .sound-reduced-button,
-  .mobile-menu-sound .sound-ambient-button { width: 32px; }
+  .mobile-menu-sound .sound-ambient-button { width: 44px; flex: 0 0 44px; }
   .mobile-site-menu footer { margin-top: auto; padding-top: 12px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 9px; border-top: 1px solid rgba(221, 193, 127, .18); }
   .mobile-site-menu footer div { min-width: 0; }
   .mobile-site-menu footer strong,
   .mobile-site-menu footer small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-site-menu footer strong { font-size: 12px; }
   .mobile-site-menu footer small { margin-top: 2px; color: #8ea19f; font-size: 9px; }
-  .mobile-site-menu footer > button { min-height: 36px; padding: 0 9px; display: flex; align-items: center; gap: 5px; border: 1px solid rgba(221, 193, 127, .22); border-radius: 7px; color: #d9c89e; background: rgba(255,255,255,.04); font-size: 9px; }
+  .mobile-site-menu footer > button { min-height: 44px; padding: 0 11px; display: flex; align-items: center; gap: 5px; border: 1px solid rgba(221, 193, 127, .22); border-radius: 7px; color: #d9c89e; background: rgba(255,255,255,.04); font-size: 9px; }
 
   .header-sound-controls.sound-controls {
     width: 44px;
@@ -620,8 +651,6 @@ body {
   .performance-page { padding-inline: 0; }
   .performance-hero { padding: 22px 17px; }
   .performance-hero h1 { font-size: clamp(31px, 9.5vw, 38px); }
-  .performance-metrics { grid-template-columns: 1fr 1fr; }
-  .performance-metrics article { min-width: 0; }
   .strategy-results-detail { overflow: hidden; }
   .strategy-results-table { overflow-x: auto; padding-bottom: 5px; }
 
@@ -656,8 +685,6 @@ body {
   .office-upkeep-terms { grid-template-columns: repeat(4, minmax(118px, 1fr)); }
   .office-gamebar { margin-top: 14px; }
 
-  .empire-command-bar > div:last-child { width: 100%; }
-  .map-page .empire-command-bar { align-items: flex-start; }
   .uw-map-frame { min-height: 480px; }
   .uw-location-card { max-height: min(340px, calc(100% - 146px)); overflow: auto; overscroll-behavior: contain; }
 
@@ -695,7 +722,6 @@ body {
   .header-economy > span { padding-inline: 5px; }
   .header-economy > span svg { width: 14px; }
   .office-explorer { min-height: 410px; }
-  .performance-metrics { grid-template-columns: 1fr; }
   .story-resources { grid-template-columns: 1fr; }
 }
 
@@ -736,6 +762,31 @@ body {
   .world-zone,
   .uw-map-toolbar button,
   .uw-card-close { touch-action: manipulation; }
+
+  /* Firm management cards are dense on desktop by design. Their one action per
+     card still has to be a thumb-sized target. */
+  .purchase-row .primary-button,
+  .purchase-row .secondary-button,
+  .asset-card .purchase-row .primary-button,
+  .management-card .purchase-row .primary-button { min-height: 44px; }
+
+  /* Same logic for the story caseboard and rival-operation cards: one dense
+     dossier, one thumb-sized action at the bottom of it. */
+  .quest-grid button,
+  .operation-grid button { min-height: 44px; }
+
+  /* The partner tip, the run controls and the district guide are all
+     full-width rows whose only shortfall is height, so a minimum is enough. */
+  .strategy-tip-use,
+  .strategy-tip-skip,
+  .active-run-pause,
+  .focus-sprint-button,
+  .uw-district-guide-toggle { min-height: 44px; }
+
+  /* The map's client anchor is the one zone that opts out of the 44px sizing
+     the other zones pick up at this breakpoint. */
+  .world-zone.is-client-anchor { width: 44px; height: 44px; }
+  .world-zone.is-client-anchor > i { left: 17px; top: 17px; }
 }
 
 /* -------------------------------------------------------------------------
@@ -763,14 +814,19 @@ body {
   /* Controls remain compact without falling below a comfortable phone hit
      area. This also removes the last narrow-Safari exceptions found in the
      interaction audit. */
-  .app-header .brand,
   .app-header .brand-mark,
-  .app-header .icon-button,
   .header-sound-controls.sound-controls,
   .header-sound-controls .sound-mute-button,
   .header-sound-controls .sound-reduced-button {
     min-width: 38px;
     min-height: 38px;
+  }
+  /* The mark itself stays a 38px medallion; the link and the icon buttons
+     around it are what a thumb actually aims at, so they get the full target. */
+  .app-header .brand,
+  .app-header .icon-button {
+    min-width: 44px;
+    min-height: 44px;
   }
   .header-sound-controls.sound-controls { width: 42px; height: 42px; }
   .header-sound-controls .sound-mute-button { width: 38px; height: 38px; }
@@ -780,7 +836,13 @@ body {
   .catalog-toolbar label select,
   .firm-tabs button,
   .uw-scene-view-tabs button,
-  .uw-level-navigator-track button { min-height: 42px; }
+  .uw-level-navigator-track button { min-height: 44px; }
+  /* The toolbar's pixel-face label type is 9.5px, which is below the size iOS
+     Safari zooms into on focus. The select carries UI type instead. */
+  .catalog-toolbar label select { font-family: var(--font-ui); font-size: 16px; }
+  /* Short labels such as "All" leave the view filters narrower than they are
+     tall, so the padding alone does not reach a thumb-sized target. */
+  .catalog-view-buttons button { min-width: 44px; }
 
   .mobile-nav a {
     min-height: 54px;
@@ -987,7 +1049,6 @@ body {
      natural swipe affordance. */
   .daily-docket-track,
   .how-scoring-works > div,
-  .performance-metrics,
   .strategy-leader-grid,
   .office-gamebar,
   .achievement-grid,
@@ -1004,7 +1065,6 @@ body {
   }
   .daily-docket-track::-webkit-scrollbar,
   .how-scoring-works > div::-webkit-scrollbar,
-  .performance-metrics::-webkit-scrollbar,
   .strategy-leader-grid::-webkit-scrollbar,
   .office-gamebar::-webkit-scrollbar,
   .achievement-grid::-webkit-scrollbar,
@@ -1012,7 +1072,6 @@ body {
   .asset-management-grid::-webkit-scrollbar { display: none; }
   .daily-docket-track > *,
   .how-scoring-works > div > *,
-  .performance-metrics > *,
   .strategy-leader-grid > *,
   .office-gamebar > *,
   .achievement-grid > *,
@@ -1022,7 +1081,6 @@ body {
   }
   .daily-docket-track > *,
   .how-scoring-works > div > *,
-  .performance-metrics > *,
   .strategy-leader-grid > * { flex: 0 0 min(82vw, 330px); }
   .office-gamebar > *,
   .achievement-grid > *,
@@ -1038,7 +1096,6 @@ body {
   .client-grid::-webkit-scrollbar { display: none; }
   .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }
   .how-scoring-works > div > article { min-height: 190px; }
-  .performance-metrics { grid-template-columns: none; }
 
   .performance-hero { padding: 21px 17px; }
   .performance-hero h1,
@@ -1183,7 +1240,6 @@ body {
   .map-page .empire-command-bar { min-height: 66px; margin-bottom: 8px; }
   .empire-command-bar h1 { font-size: clamp(21px, 6vw, 25px); }
   .empire-command-bar .pixel-kicker { font-size: 9px; }
-  .map-page .empire-command-bar > div:last-child { min-width: 116px; padding: 7px 8px; }
   .uw-arc-navigation {
     margin: 0;
     padding: 4px;
@@ -1240,8 +1296,10 @@ body {
   .firm-heading-copy p { font-size: 13px; }
   .firm-tabs {
     display: flex;
+    flex-wrap: nowrap;
     gap: 7px;
     overflow-x: auto;
+    overflow-y: hidden;
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
@@ -1949,9 +2007,11 @@ body {
     position: sticky;
     z-index: 18;
     top: 58px;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 6px;
     overflow-x: auto;
+    overflow-y: hidden;
     border: 1px solid rgba(67, 45, 28, .35);
     border-radius: 14px;
     background: rgba(219, 197, 148, .94);
@@ -2180,14 +2240,6 @@ body {
   .speedrun-index > small { margin: 0; font-size: 8px; line-height: 1.45; }
   .speedrun-index > p { margin: 3px 0 0; font-size: 10.5px; text-align: left; }
   .evidence-strip { margin: 10px 0; padding: 12px; border-radius: 12px; }
-  .performance-metrics {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    overflow: visible;
-    scroll-snap-type: none;
-  }
-  .performance-metrics > * { min-width: 0; min-height: 112px; flex: initial; }
 
   /* Practice: centered headline and a compact client dossier. */
   .case-lobby {
@@ -2432,6 +2484,9 @@ body {
     color: #edf0e8;
     background: #0f1b27;
   }
+  /* `.mobile-training-home` below carries all five of these measures, so the
+     desktop hero, evidence strip, and metrics row are the ones that go — this
+     is the single authoritative rule for them at phone widths. */
   .performance-page > .performance-hero,
   .performance-page > .evidence-strip,
   .performance-page > .performance-metrics { display: none !important; }
@@ -2481,16 +2536,56 @@ body {
   .mobile-training-score span { margin: 0 0 3px 4px; color: #7fc9bc; font: 700 14px var(--font-pixel); }
   .mobile-training-signal > div:last-child small { color: #d6b96b; font: 700 9px var(--font-pixel); letter-spacing: .09em; }
   .mobile-training-signal p { margin: 6px 0 0; color: #aab9b7; font: 500 12px/1.45 var(--font-pixel); }
+  /* Six columns so the five measures split 3 + 2 into even rows. The three
+     headline numbers stay on one glanceable line; the two that need a sentence
+     of context get the wider cells underneath. */
   .mobile-training-metrics {
-    min-height: 88px;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     border-bottom: 1px solid rgba(224, 199, 135, .2);
   }
-  .mobile-training-metrics > div { padding: 16px 10px 14px 0; display: grid; align-content: center; }
-  .mobile-training-metrics > div + div { padding-left: 12px; border-left: 1px solid rgba(224, 199, 135, .14); }
-  .mobile-training-metrics span { color: #819693; font: 600 9px var(--font-pixel); }
-  .mobile-training-metrics strong { margin-top: 6px; color: #eef0e8; font: 700 19px var(--font-pixel); }
+  /* Cells are tappable <button>s (see `.metric-card-trigger` for the desktop
+     equivalent), so the reset lives on the shared `.mobile-metric-cell`
+     class rather than a bare `div` selector. */
+  .mobile-metric-cell {
+    all: unset;
+    box-sizing: border-box;
+    padding: 15px 10px 14px;
+    display: grid;
+    align-content: center;
+    grid-column: span 2;
+    border-left: 1px solid rgba(224, 199, 135, .14);
+    text-align: left;
+    cursor: pointer;
+  }
+  .mobile-metric-cell:nth-child(n + 4) { grid-column: span 3; border-top: 1px solid rgba(224, 199, 135, .14); }
+  .mobile-metric-cell:nth-child(1),
+  .mobile-metric-cell:nth-child(4) { padding-left: 0; border-left: 0; }
+  .mobile-metric-cell:active,
+  .mobile-metric-cell.is-expanded { background: rgba(224, 199, 135, .09); }
+  .mobile-metric-cell span { color: #819693; font: 600 9px var(--font-pixel); }
+  .mobile-metric-cell strong { margin-top: 6px; color: #eef0e8; font: 700 19px var(--font-pixel); }
+  .mobile-metric-cell strong.stat-empty { color: rgba(238, 240, 232, .42); font-weight: 400; }
+  .mobile-metric-cell small { margin-top: 5px; color: #7f918f; font: 500 9.5px/1.4 var(--font-pixel); }
+  .mobile-metric-detail {
+    margin: 0;
+    padding: 14px 16px 16px;
+    border-bottom: 1px solid rgba(224, 199, 135, .2);
+    background: rgba(8, 19, 27, .3);
+    color: #cbd3ca;
+    font-family: var(--font-pixel);
+    font-size: 11px;
+    line-height: 1.55;
+  }
+  .mobile-metric-detail p { margin: 0 0 8px; }
+  .mobile-metric-detail p:last-child { margin-bottom: 0; }
+  .mobile-metric-detail .metric-breakdown,
+  .mobile-metric-detail .metric-detail-action { font-family: var(--font-pixel); }
+  .mobile-metric-detail .metric-trend-up { color: #79d0be; }
+  .mobile-metric-detail .metric-trend-down { color: #e2ad6f; }
+  /* The dashboard's own active-run chip, shown above the primary actions
+     when a case run is already open. */
+  .mobile-training-home .active-run-chip { margin: 20px 0 0; }
   .mobile-training-priority {
     margin-top: 20px;
     padding: 15px 0;
@@ -2524,10 +2619,12 @@ body {
     color: #ded6bf;
     background: transparent;
   }
+  /* The dashboard is the dark "instrument panel" sub-theme end to end, so the
+     analysis deck stays on the same navy the training surface above it uses. */
   .performance-page .mobile-performance-deck {
     margin: 0;
     padding: 24px 0 0;
-    background: #d9cda9;
+    background: #0f1b27;
     scroll-margin-top: 58px;
   }
   .performance-page .mobile-performance-deck-heading { margin: 0 16px 12px; border: 0; box-shadow: none; }
@@ -2549,9 +2646,56 @@ body {
     color: #e9ecdf;
     background: #101b27;
   }
-  .case-lobby > .docket-hero,
-  .case-lobby > .daily-docket,
-  .case-lobby > .how-scoring-works { display: none !important; }
+  /* The full docket track is a desktop read of the same two steps the start
+     panel already offers as one tap, so the phone keeps the tap and drops the
+     track rather than scrolling past a restatement of itself. */
+  .case-lobby .daily-docket { display: none !important; }
+
+  /* Full-bleed on the page's own navy rather than a floating desktop card, and
+     no inner scroller: a capped list nested inside page scroll clips rows
+     mid-row on a phone and fights the momentum scroll. */
+  .run-queue-panel {
+    margin: 0;
+    padding: 22px 16px calc(24px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    background: #101b27;
+    box-shadow: none;
+  }
+  .run-queue-header { align-items: flex-start; }
+  .run-queue-header h2 { font-family: var(--font-pixel); font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+  .run-queue-full-flag { padding: 7px 10px; font-size: 10.5px; line-height: 1.3; text-align: left; }
+  .run-queue-list {
+    max-height: none;
+    margin-top: 14px;
+    padding-right: 0;
+    gap: 10px;
+    overflow: visible;
+  }
+  .run-queue-item {
+    padding: 13px 14px;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px 11px;
+    border-radius: 14px;
+  }
+  .run-queue-item-copy strong { font-family: var(--font-pixel); font-size: 14px; }
+  .run-queue-item-copy span { font-size: 11px; white-space: normal; }
+  .run-queue-item-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .run-queue-item-actions > button {
+    min-height: 44px;
+    padding-inline: 8px;
+    border-radius: 11px;
+    font-size: 11.5px;
+  }
+
   .mobile-practice-home {
     min-height: calc(100dvh - 58px - 70px - env(safe-area-inset-bottom));
     padding: 20px 16px 24px;
@@ -2700,9 +2844,13 @@ body {
     color: #eee5cf;
     background: #101c29;
   }
+  /* A mega-litigation swaps the pause button for a narrower "no pause" chip, so
+     the reserved band shrinks and the countdown gets the width back. */
+  .mobile-case-reader-header.is-form-sitting { --case-pause-gutter: 94px; }
   /* Only the top row sits beside the fixed pause control. Reserving that gutter
-     on the header itself also shortened the pane tabs below it. */
-  .mobile-case-reader-time { padding-right: var(--case-pause-gutter); }
+     on the header itself also shortened the pane tabs below it. A margin rather
+     than padding so variants of this chip keep the band without restating it. */
+  .mobile-case-reader-time { margin-right: var(--case-pause-gutter); }
   .mobile-case-reader-meta { display: flex; align-items: center; gap: 8px; }
   .mobile-case-reader-meta span {
     min-width: 29px;
@@ -2721,11 +2869,50 @@ body {
     align-items: center;
     justify-content: flex-end;
     gap: 5px;
-    color: #d8cdaF;
+    color: #d8cdaf;
     font-size: 10px;
     font-variant-numeric: tabular-nums;
   }
   .mobile-case-reader-time.over { color: #e3857e; }
+  /* The whole-sitting countdown is the one number a mega-litigation student
+     must be able to read at a glance, so it gets a chip of its own rather than
+     the muted treatment used for a single case's elapsed time. */
+  .mobile-case-reader-time.is-form-clock {
+    min-height: 30px;
+    padding: 0 10px;
+    gap: 6px;
+    border: 1px solid rgba(228, 197, 122, .34);
+    border-radius: 999px;
+    color: #f0d692;
+    background: rgba(228, 197, 122, .1);
+  }
+  .mobile-case-reader-time.is-form-clock span { font-size: 14px; font-weight: 750; letter-spacing: .01em; }
+  .mobile-case-reader-time.is-form-clock small { color: #9db0ad; font-size: 8.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .mobile-case-reader-time.is-form-clock.over {
+    border-color: rgba(226, 133, 126, .5);
+    color: #f2a49c;
+    background: rgba(226, 133, 126, .13);
+  }
+  .mobile-case-reader-time.is-form-clock.over small { color: #d69a94; }
+
+  /* The full sentence is wider than the gutter reserved beside the header
+     clock, so the phone chip carries the short form of the same rule. */
+  .app-shell.active-case .one-sitting-note {
+    padding: 0 11px;
+    display: grid;
+    place-items: center;
+    height: 40px;
+    border-color: rgba(229, 204, 145, .24);
+    border-radius: 11px;
+    color: #d9ceb4;
+    background: rgba(18, 31, 43, .92);
+    font: 750 9.5px var(--font-pixel);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .app-shell.active-case .one-sitting-note-long { display: none; }
+  .app-shell.active-case .one-sitting-note-short { display: block; }
   .mobile-case-pane-tabs {
     height: 38px;
     padding: 3px;
@@ -2860,7 +3047,10 @@ body {
     font: 700 11px var(--font-pixel);
   }
   .app-shell.active-case .reasoning-box { border-radius: 12px; }
-  .app-shell.active-case .reasoning-box textarea { font-size: 14px; }
+  /* The compact case view shrinks its prose, but not this: iOS Safari zooms the
+     whole page in when a focused field is under 16px, and the zoom persists
+     after blur, leaving the docked submit bar off-screen. */
+  .app-shell.active-case .reasoning-box textarea { font-size: 16px; }
   /* The label, the 1-5 scale and the readout do not fit on one line at 320px,
      so the readout is allowed to drop to a second row instead of overflowing. */
   .app-shell.active-case .confidence-check { align-items: center; flex-wrap: wrap; gap: 6px 10px; }
@@ -2868,6 +3058,20 @@ body {
   .app-shell.active-case .confidence-check > div,
   .app-shell.active-case .confidence-check > small { flex: 0 0 auto; }
   .app-shell.active-case .confidence-check > small { margin-left: auto; }
+  /* Five 44px stops cannot share a line with the label, so the scale takes a
+     row of its own and spreads across it. Ordered after the readout so the
+     caption stays with the label rather than stranded under the scale. */
+  .app-shell.active-case .confidence-check > div {
+    order: 1;
+    flex: 1 0 100%;
+    display: flex;
+  }
+  .app-shell.active-case .confidence-check button {
+    width: auto;
+    height: 44px;
+    flex: 1 1 0;
+    min-width: 44px;
+  }
   /* The desktop bar right-aligns its button. Reset that here, otherwise the
      single grid track stays content-sized and the docked action cannot reach
      full width however wide the button itself is told to be. */
@@ -2942,7 +3146,6 @@ body {
   /* These are sections in the middle of their page, not the end of it. Dock
      clearance here opened a blank band before the panels that follow. */
   .mobile-training-home { min-height: 0; padding-bottom: 8px; }
-  .performance-page .mobile-performance-deck { background: #0f1b27; }
 
   .mobile-practice-home {
     min-height: 0;
@@ -2978,7 +3181,7 @@ body {
   .mobile-case-reader-meta strong { display: block; font-family: var(--font-pixel); }
   .mobile-case-reader-meta small { overflow: hidden; color: #75bdb2; font-size: 8px; font-weight: 700; letter-spacing: .08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
   .mobile-case-reader-meta strong { margin-top: 2px; color: #d8e0d5; font-size: 10px; }
-  .mobile-case-reader-time { grid-column: 2; grid-row: 1; min-width: 50px; padding-right: var(--case-pause-gutter); color: #e1d4ad; }
+  .mobile-case-reader-time { grid-column: 2; grid-row: 1; min-width: 50px; margin-right: var(--case-pause-gutter); color: #e1d4ad; }
   .mobile-case-pane-tabs { grid-column: 1 / -1; grid-row: 2; margin-top: 1px; }
   .app-shell.active-case .passage-card,
   .app-shell.active-case .answer-card,
@@ -3071,4 +3274,458 @@ body {
   .audit-source summary,
   .audit-stimulus,
   .concise-rationale p { font-size: 14px; line-height: 1.6; }
+}
+
+/* ---------------------------------------------------------------------------
+   DESKTOP ADDITIONS SYNC — practice, case, dashboard, chrome, story
+   Loaded last so these rules always win over the presentation layers they
+   extend. practice-lab.css stands down below 640px; everything here owns
+   layout at phone widths only.
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  /* Streak welcome sits at overlay priority 150 — above the slide-out menu
+     and bottom nav, with safe-area padding so nothing clips on notched phones. */
+  .streak-welcome-overlay {
+    z-index: 150;
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      calc(76px + env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+    place-items: end center;
+  }
+  .streak-welcome-card {
+    width: min(100%, 390px);
+    max-height: min(520px, calc(100dvh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .streak-welcome-card .primary-button { min-height: 48px; }
+
+  /* Mega-litigation start gate: full-width actions and scroll room when the
+     keyboard is up on a small screen. */
+  .mega-gate-scrim {
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+  .mega-gate {
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mega-gate-actions > button { min-height: 48px; }
+}
+
+@media (max-width: 640px) {
+  /* ---- Dashboard: projected score + answer log ---------------------------
+     Both panels are lazy route chunks, so their own stylesheets are injected
+     into the document *after* this file rather than before it. The usual
+     "mobile.css is last, so it wins" assumption does not hold here: every rule
+     below has to out-specify its counterpart instead of just outranking it by
+     order, which is why each one is scoped to its panel. */
+  .performance-page .projection-panel {
+    margin: 0;
+    padding: 22px 16px;
+    border: 0;
+    border-radius: 0;
+    border-bottom: 1px solid rgba(224, 199, 135, .16);
+    box-shadow: none;
+  }
+  .performance-page .projection-panel .panel-heading h2 { font-size: 22px; }
+  .projection-panel .projection-headline { gap: 14px; }
+  .projection-panel .projection-band-figure { padding: 13px 14px; gap: 10px; }
+  .projection-panel .projection-midpoint strong { font-size: 40px; }
+  .projection-panel .projection-bound { font-size: 21px; }
+  .projection-panel .projection-method-toggle { min-height: 48px; }
+  .projection-panel .projection-trend figcaption { flex-direction: column; align-items: flex-start; gap: 4px; }
+  /* The trend points are hover targets on a pointer device; on touch they are
+     the only way to read a snapshot, so they get a real target. */
+  .projection-panel .projection-trend-hit { cursor: pointer; touch-action: manipulation; }
+  .projection-panel .projection-split { grid-template-columns: 1fr 1fr; }
+  .projection-panel .projection-split > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+  .performance-page .answer-log-panel {
+    margin: 0;
+    padding: 22px 16px calc(24px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .answer-log-panel .answer-log-tally { grid-template-columns: repeat(2, 1fr); }
+  .answer-log-panel .answer-log-tally > div { min-height: 72px; }
+  .answer-log-panel .answer-log-tally strong { font-size: 24px; }
+  .answer-log-panel .answer-log-scope {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    border-radius: 12px;
+    font-size: 11px;
+  }
+  .answer-log-panel .answer-log-scope button { min-height: 44px; }
+  .answer-log-panel .answer-log-outcome { width: 100%; }
+  .answer-log-panel .answer-log-outcome button { min-height: 44px; flex: 1 1 0; padding-inline: 11px; }
+  .answer-log-panel .answer-log-type { width: 100%; }
+  .answer-log-panel .answer-log-type select { width: 100%; min-height: 44px; font-size: 16px; }
+  /* The wall is a picture of the run first, but its own caption tells you to
+     tap a tile, so a tile is a control and gets a control's size. Seven or so
+     per row rather than fourteen is the cost of that being true. */
+  .answer-log-panel .answer-log-grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+  .answer-log-panel .answer-tile { min-height: 44px; min-width: 44px; touch-action: manipulation; }
+  .answer-log-panel .answer-tile:hover { transform: none; }
+  .answer-log-panel .answer-log-foot { flex-direction: column; align-items: stretch; gap: 10px; }
+  .answer-log-panel .answer-log-foot button { width: 100%; min-height: 48px; justify-content: center; }
+  .answer-log-panel .answer-log-detail { padding: 16px 14px; }
+  .answer-log-panel .answer-log-detail-facts { grid-template-columns: repeat(2, 1fr); }
+  .answer-log-panel .answer-log-detail-head button { width: 44px; height: 44px; }
+  .answer-log-panel .answer-log-passage summary { min-height: 44px; display: flex; align-items: center; }
+
+  /* Deck cards that embed the answer wall (mega past-results drill-down). */
+  .performance-page .mega-result-facts { grid-template-columns: repeat(2, 1fr); }
+  .performance-page .mega-result-split { grid-template-columns: 1fr; }
+  .performance-page .mega-history-row {
+    grid-template-columns: minmax(0, 1fr) 64px auto;
+    min-height: 56px;
+    padding: 12px;
+    touch-action: manipulation;
+  }
+  .performance-page .mega-history-row > span,
+  .performance-page .mega-history-row > em { display: none; }
+
+  /* ---- Practice: mega-litigation panel ----------------------------------- */
+  .case-lobby .mega-panel {
+    margin: 0;
+    padding: 22px 16px calc(24px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    border-top: 1px solid rgba(224, 199, 135, .16);
+    box-shadow: none;
+  }
+  .case-lobby .mega-panel .panel-heading h2 { font-size: 22px; }
+  .case-lobby .mega-panel-body { gap: 16px; }
+  .case-lobby .mega-score { min-height: 168px; padding: 18px 16px; }
+  .case-lobby .mega-score > strong { font-size: clamp(34px, 10vw, 48px); }
+  .case-lobby .mega-panel-actions { display: grid; gap: 8px; }
+  .case-lobby .mega-panel-actions button { width: 100%; min-height: 48px; justify-content: center; }
+  .case-lobby .mega-history-row {
+    grid-template-columns: minmax(0, 1fr) 62px auto;
+    min-height: 56px;
+    touch-action: manipulation;
+  }
+  .case-lobby .mega-history-row > span,
+  .case-lobby .mega-history-row > em { display: none; }
+  .case-lobby .mega-history-more { width: 100%; min-height: 44px; justify-content: center; }
+  .case-lobby .mega-result { padding: 14px; }
+  .case-lobby .mega-result-facts { grid-template-columns: repeat(2, 1fr); }
+  .case-lobby .mega-result-split { grid-template-columns: 1fr; }
+  .case-lobby .mega-result .metric-breakdown-row { grid-template-columns: minmax(0, 1fr) 72px 40px; }
+  .case-lobby .mega-result-scope { flex-wrap: wrap; }
+  .case-lobby .mega-result-scope .mega-history-more { min-height: 44px; }
+
+  /* ---- Case reader: run rail + strategy gates ---------------------------- */
+  .app-shell.active-case .case-run-rail {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 8px 12px 10px;
+    border: 0;
+    border-bottom: 1px solid rgba(229, 201, 137, .19);
+    border-radius: 0;
+    color: #eee5cf;
+    background: #101c29;
+    box-shadow: none;
+  }
+  .app-shell.active-case .case-run-rail-head span { font-size: 8px; }
+  .app-shell.active-case .case-run-rail-head strong { font-size: 11.5px; line-height: 1.35; }
+  .app-shell.active-case .case-run-rail-toggle {
+    min-height: 44px;
+    padding: 0 12px;
+    touch-action: manipulation;
+  }
+  .app-shell.active-case .case-run-strip { margin-top: 8px; gap: 3px; }
+  .app-shell.active-case .case-run-cell { height: 14px; min-width: 10px; border-radius: 4px; }
+  .app-shell.active-case .case-run-stats { grid-template-columns: 1fr; gap: 6px; }
+  .app-shell.active-case .case-run-stats > div { padding: 10px 11px; }
+  .app-shell.active-case .case-run-stats strong { font-size: 20px; }
+
+  /* Gates sit between the partner tip and the reading panes. Cap height and
+     scroll inside so a long elimination list does not shove choices off-screen;
+     the answer card reserves scroll padding so the docked submit bar stays
+     above the on-screen keyboard. */
+  .app-shell.active-case .gate {
+    flex: 0 1 auto;
+    /* Without a floor the gate is the first thing the column gives up when the
+       keyboard shrinks the viewport, and it collapses to a couple of rows of
+       its own scrollbar. The floor keeps a readable amount of it on screen;
+       the rest is reached by scrolling inside the panel. */
+    min-height: min(148px, 34dvh);
+    max-height: min(42dvh, 360px);
+    margin: 0;
+    padding: 14px 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  .app-shell.active-case .gate-segment,
+  .app-shell.active-case .gate-pill,
+  .app-shell.active-case .gate-strike,
+  .app-shell.active-case .gate-add { min-height: 44px; touch-action: manipulation; }
+  /* Pills carrying one or two characters (the negation scale) are otherwise
+     only as wide as their glyph. */
+  .app-shell.active-case .gate-pill { min-width: 44px; }
+  .app-shell.active-case .gate-text {
+    min-height: 88px;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .app-shell.active-case .gate-inline-label select,
+  .app-shell.active-case .gate-inline-label input { min-height: 44px; font-size: 16px; }
+  .app-shell.active-case .gate-choices li { padding: 11px 12px; }
+  .app-shell.active-case .answer-card,
+  .app-shell.active-case .question-content.with-passage .answer-card {
+    scroll-padding-bottom: calc(72px + env(keyboard-inset-height, 0px) + env(safe-area-inset-bottom));
+  }
+  .app-shell.active-case .answer-actions,
+  .app-shell.active-case .continue-row {
+    padding-bottom: calc(12px + env(keyboard-inset-height, 0px) + env(safe-area-inset-bottom));
+  }
+
+  /* The scrim dismisses this too, but the explicit control is the one a
+     student aims at, so it gets the size of a target rather than of a glyph. */
+  .streak-welcome-close.icon-button {
+    width: 44px;
+    height: 44px;
+    right: 4px;
+    top: 4px;
+  }
+
+  /* ---- Story: epilogue + chapter overlays on narrow screens -------------- */
+  .epilogue-scroll { padding-bottom: calc(34px + env(safe-area-inset-bottom)); }
+  .epilogue-actions { flex-direction: column; }
+  .epilogue-primary,
+  .epilogue-secondary { width: 100%; min-height: 48px; justify-content: center; }
+  .epilogue-standing { grid-template-columns: 1fr; }
+  .chapter-prompt-actions { flex-direction: column; }
+  .chapter-prompt-open,
+  .chapter-prompt-later { width: 100%; min-height: 44px; }
+}
+
+/* The panel-scoped selectors continue below: these narrow-width rules refine
+   the ones above and have to match their weight to reach them. */
+@media (max-width: 430px) {
+  .projection-panel .projection-midpoint strong { font-size: 36px; }
+  .projection-panel .projection-bound { font-size: 19px; }
+  .case-lobby .mega-panel .panel-heading h2 { font-size: 20px; }
+}
+
+@media (max-width: 360px) {
+  .header-economy > .streak { padding-inline: 8px; font-size: 10px; }
+  .projection-panel .projection-split { grid-template-columns: 1fr; }
+  .answer-log-panel .answer-log-tally { grid-template-columns: 1fr 1fr; }
+  .streak-welcome-count span { font-size: 40px; }
+}
+
+/* ================================================================
+   MOTION ON A PHONE
+   ================================================================
+   The motion tokens live at the end of `styles.css`. Rather than
+   re-tuning individual animations for narrow screens, this retunes
+   the tokens themselves once, and everything downstream follows.
+
+   Three things are different on a phone. It is the weaker device, so
+   the budget is smaller. There is no pointer, so every hover effect
+   is either dead weight or — worse on iOS, which latches :hover after
+   a tap — a state that sticks. And the viewport is short, so a 9px
+   entrance travels a visibly larger fraction of the screen than it
+   does on a desktop and reads as a lurch rather than a settle.
+   ================================================================ */
+
+@media (max-width: 620px) {
+  :root {
+    --mo-3: 200ms;
+    --mo-4: 340ms;
+    /* A phone shows fewer cards per row, so the same per-item delay
+       would make a two-up grid finish sooner than a four-up one and
+       the page would feel inconsistent between breakpoints. Shorter
+       step, same total. */
+    --mo-step: 34ms;
+    --mo-rise-y: 6px;
+  }
+
+  /* iOS keeps :hover asserted on the last-tapped element until the
+     next tap elsewhere, so a hover lift becomes a card that is stuck
+     in the air. Presses are the only pointer state a phone really
+     has, so they are the only one kept. */
+  .practice-lab .case-brief-card:hover,
+  .practice-lab .run-queue-item:hover,
+  .how-scoring-works article:hover { transform: none; }
+
+  /* 44px minimum targets are load-bearing here: a press effect that
+     shrinks or offsets a control must never shrink its hit area, so
+     every press below is a transform, which moves the paint without
+     touching the box the finger is aiming at. */
+  .mobile-nav a,
+  .mobile-docket-next,
+  .mobile-site-menu button {
+    transition: transform var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
+  }
+  .mobile-nav a:active,
+  .mobile-docket-next:active,
+  .mobile-site-menu button:active { transform: translateY(1px) scale(.985); }
+
+  /* The dock is fixed and always on screen. Anything continuous here
+     would run for the whole session, so it gets a press and nothing
+     else. */
+  .mobile-nav { transition: box-shadow var(--mo-3) var(--mo-out); }
+}
+
+/* The narrowest phones get the shortest travel of all — at 360px a
+   6px rise is already most of a line of body text. */
+@media (max-width: 380px) {
+  :root { --mo-rise-y: 4px; --mo-step: 28ms; }
+}
+
+/* A cleared strategy gate marks itself with a second rule drawn inside
+   its left rail — the double rule of a signed page, and deliberately a
+   change of *shape* rather than only the gold-to-green colour swap, so
+   the cleared state survives a reader who cannot separate the two hues.
+   In a case on a phone that marker is lost twice over: the rule just
+   above strips the gate's side borders (`border-width: 0 0 1px`) so
+   there is no rail to draw inside, and the gate becomes its own scroll
+   pane, so an absolutely positioned hairline is laid out against the
+   scrollable content and slides away with it.
+   An element's own background is painted against its border box and
+   does not scroll with its content, so drawing the double rule as two
+   background bars pins it to the visible edge and restores the marker
+   at no layout cost. */
+@media (max-width: 640px) {
+  .app-shell.active-case .gate.is-done::before { display: none; }
+  .app-shell.active-case .gate.is-done {
+    background-image:
+      linear-gradient(var(--green), var(--green)),
+      linear-gradient(var(--green), var(--green));
+    background-size: 3px 100%, 2px 100%;
+    background-position: 0 0, 6px 0;
+    background-repeat: no-repeat;
+  }
+}
+
+/* ==========================================================================
+   Tabbed dashboard and practice pages on a phone
+
+   Both pages are now a fixed head, a tab strip, and one panel. That shape is
+   what makes them survive a 360px viewport: the head is the only thing that
+   is always on screen, and everything else is a deliberate choice the student
+   made by tapping a tab, so nothing arrives underneath them uninvited.
+
+   The strip itself is the one piece that cannot simply be narrowed. Six
+   dashboard tabs will not fit across 360px at a legible size, so it becomes a
+   horizontally scrolling rail with snap points rather than a wrapped grid —
+   wrapping to three rows would cost more vertical space than the panel it is
+   labelling. Every tab keeps a 44px target regardless.
+   ========================================================================== */
+@media (max-width: 900px) {
+  .dash-tabs,
+  .practice-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .dash-tabs::-webkit-scrollbar,
+  .practice-tabs::-webkit-scrollbar { display: none; }
+  .dash-tabs button,
+  .practice-tabs button {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding-inline: 14px;
+    scroll-snap-align: start;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Dashboard ------------------------------------------------------------ */
+  .performance-page {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 0 var(--mobile-dock-clearance) !important;
+    gap: 0;
+    background: #101b27;
+  }
+  .performance-page .dash-summary {
+    margin: 0;
+    padding: 20px 16px 22px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .performance-page .dash-title { font-size: clamp(29px, 8.4vw, 36px); }
+  /* The ring stays beside its sentence rather than stacking above it: at 96px
+     it is shorter than the sentence is tall, so stacking spends a hundred
+     pixels to gain nothing. The tiles keep their full-width row underneath. */
+  .performance-page .dash-signal { grid-template-columns: auto minmax(0, 1fr); gap: 14px; }
+  .performance-page .dash-tiles { grid-column: 1 / -1; grid-template-columns: repeat(2, 1fr); }
+  .performance-page .dash-actions { display: grid; grid-auto-flow: row; }
+  .performance-page .dash-actions > * { width: 100%; min-height: 48px; justify-content: center; }
+
+  /* The strip is the page's primary control once you are past the head, so
+     it sticks under the app bar instead of scrolling away and forcing a
+     swipe back up to change what you are looking at. */
+  .performance-page .dash-tabs,
+  .case-lobby .practice-tabs {
+    position: sticky;
+    top: 58px;
+    z-index: 4;
+    margin: 0;
+    padding: 8px 16px;
+    border-radius: 0;
+    border-width: 1px 0;
+    background: #0d1823;
+  }
+  .performance-page .dash-panel,
+  .case-lobby .practice-panel {
+    margin: 0;
+    padding: 18px 0 0;
+    gap: 18px;
+  }
+  .performance-page .dash-panel > *,
+  .case-lobby .practice-panel > * {
+    margin: 0;
+    border-radius: 0;
+    border-width: 0 0 1px;
+    box-shadow: none;
+  }
+
+  /* Practice ------------------------------------------------------------- */
+  .case-lobby .practice-action {
+    margin: 0;
+    padding: 20px 16px 22px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .case-lobby .practice-action-client { gap: 13px; }
+  .case-lobby .practice-action-client .lobby-client-portrait { width: 54px; height: 62px; }
+  .case-lobby .practice-action-client > div > strong { font-size: 20px; }
+  .case-lobby .practice-run { padding: 18px 16px 22px; }
+  .case-lobby .practice-run > .primary-button.jumbo,
+  .case-lobby .practice-action-secondary { width: 100%; min-height: 52px; justify-content: center; }
+
+  .case-lobby .practice-guide {
+    margin: 0;
+    border-radius: 0;
+    border-width: 1px 0 0;
+    box-shadow: none;
+  }
+  .case-lobby .practice-guide > summary { min-height: 52px; padding-inline: 16px; }
+  .case-lobby .practice-guide-body { padding: 0 16px 22px; }
+  .practice-loop { grid-template-columns: 1fr; }
 }

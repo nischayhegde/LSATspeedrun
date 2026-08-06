@@ -1,4 +1,4 @@
-# Lawyer Tycoon — AI-Generated Art & Animation Redesign
+# LSAT Tycoon — AI-Generated Art & Animation Redesign
 
 Date: 2026-07-23
 Status: Approved for implementation (user directive; autonomous session)

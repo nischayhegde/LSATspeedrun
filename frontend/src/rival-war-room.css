@@ -1,0 +1,158 @@
+/* The war room reads as a lit operations board bolted onto the pixel theme:
+   hard 3px ink borders, offset drop shadows instead of blur, and the pixel face
+   for every label. It deliberately runs darker than the parchment catalog
+   around it, because this is the one screen where the firm is doing something
+   to somebody else. Colours come from the --pixel-* block in styles.css so it
+   stays in step if the theme moves. */
+
+.rival-war-room {
+  margin: 4px 0 26px;
+  padding: 26px 24px 24px;
+  display: grid;
+  gap: 18px;
+  border: var(--pixel-border);
+  color: #d8dbd2;
+  background:
+    radial-gradient(120% 90% at 82% -10%, rgba(101, 201, 194, .16), transparent 58%),
+    linear-gradient(170deg, var(--pixel-blue), var(--pixel-night) 62%);
+  box-shadow: inset 0 0 0 2px #2c4358, 6px 7px var(--pixel-shadow);
+}
+
+.wr-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pixel-cyan);
+  font: 800 9px var(--font-pixel);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.wr-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: start; }
+.wr-heading h2 { margin: 9px 0 8px; color: var(--pixel-paper); font-family: var(--font-display); font-size: clamp(25px, 3.3vw, 34px); line-height: 1.02; }
+.wr-heading p { max-width: 64ch; margin: 0; color: #9fb0b4; font-size: 13.5px; line-height: 1.62; }
+.wr-tally { padding: 11px 15px; display: grid; gap: 3px; justify-items: center; border: 3px solid var(--pixel-ink); background: #16283a; box-shadow: inset -3px -3px #0d1a26; }
+.wr-tally span { color: var(--pixel-gold); font-family: var(--font-display); font-size: 26px; line-height: 1; }
+.wr-tally small { color: #7f9298; font: 800 8.5px var(--font-pixel); letter-spacing: .1em; }
+
+/* Casework is the study link, so it sits above the targets rather than beside
+   the money: the first thing the screen says is what practice bought you. */
+.wr-casework { padding: 13px 16px; display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 3px 14px; align-items: center; border: 3px solid var(--pixel-ink); background: #14252f; box-shadow: inset -3px -3px #0b151d; }
+.wr-casework .wr-kicker { grid-row: 1; }
+.wr-casework strong { grid-row: 1; color: var(--pixel-gold); font-family: var(--font-display); font-size: 27px; line-height: 1; }
+.wr-casework-bar { grid-row: 1; height: 9px; overflow: hidden; border: 2px solid #0a1219; background: #0e1a22; }
+.wr-casework-bar i { height: 100%; display: block; background: repeating-linear-gradient(90deg, var(--pixel-cyan) 0 6px, #4ba59f 6px 9px); transition: width .3s steps(8); }
+.wr-casework small { grid-column: 1 / 4; margin-top: 4px; color: #8c9ea3; font-size: 12px; line-height: 1.5; }
+.wr-casework.is-empty strong { color: var(--pixel-red); }
+.wr-casework.is-empty .wr-casework-bar i { background: #3a2630; }
+
+.wr-target-strip { padding: 9px; display: flex; gap: 8px; overflow-x: auto; border: 3px solid #0a121b; background: #132330; scrollbar-width: thin; }
+.wr-target { flex: 0 0 auto; width: 158px; padding: 6px; display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-rows: auto auto auto; gap: 1px 8px; align-items: center; border: 3px solid #0a0f16; color: #a4b6b9; background: #1c2c39; box-shadow: inset -3px -3px #101c27; text-align: left; cursor: pointer; }
+.wr-target-art { grid-row: 1 / 4; position: relative; width: 52px; height: 50px; overflow: hidden; border: 2px solid #0a0f16; background: #0f1a22; }
+.wr-target-art-fallback { position: absolute; inset: 0; background: linear-gradient(118deg, #16242f 12%, #263c46 48%, #16242f 80%); }
+.wr-target span { color: inherit; font: 800 9.5px var(--font-pixel); line-height: 1.45; }
+.wr-target small { color: #74898f; font-size: 10.5px; }
+.wr-target b { font: 800 8px var(--font-pixel); letter-spacing: .09em; }
+.wr-target:hover:not(:disabled) { border-color: #3d6070; background: #223644; }
+.wr-target.is-active { color: var(--pixel-gold); border-color: var(--pixel-gold-dark); background: #27414f; }
+.wr-target-held { opacity: .78; cursor: default; }
+.wr-target-held b { color: var(--pixel-green); }
+.wr-target-contested b { color: var(--pixel-gold); }
+.wr-target-standing b { color: #7f9298; }
+.wr-target-unreachable { opacity: .6; }
+.wr-target-unreachable b { color: var(--pixel-red); }
+
+.wr-valuation { display: grid; grid-template-columns: minmax(0, 1fr) minmax(268px, 330px); border: 3px solid #0a121b; background: #1b2b36; }
+.wr-valuation-copy { padding: 20px 22px; }
+.wr-valuation-copy h3 { margin: 8px 0 7px; color: var(--pixel-paper); font-family: var(--font-display); font-size: 27px; line-height: 1.05; }
+.wr-valuation-copy p { margin: 0; max-width: 58ch; color: #9aabaf; font-size: 13px; line-height: 1.6; }
+.wr-standing { margin-top: 14px; padding: 8px 11px; display: grid; gap: 3px; border-left: 4px solid #3d6070; background: #16242e; }
+.wr-standing b { font: 800 8.5px var(--font-pixel); letter-spacing: .1em; }
+.wr-standing small { color: #8b9da2; font-size: 11.5px; }
+.wr-standing[data-standing="held"] { border-left-color: var(--pixel-green); }
+.wr-standing[data-standing="held"] b { color: var(--pixel-green); }
+.wr-standing[data-standing="contested"] { border-left-color: var(--pixel-gold); }
+.wr-standing[data-standing="contested"] b { color: var(--pixel-gold); }
+.wr-standing[data-standing="unreachable"] { border-left-color: var(--pixel-red); }
+.wr-standing[data-standing="unreachable"] b { color: var(--pixel-red); }
+
+.wr-valuation-price { padding: 18px 20px; display: grid; align-content: start; gap: 2px; border-left: 3px solid #0a121b; background: #16242e; }
+.wr-valuation-price small { color: #74898f; font: 800 8.5px var(--font-pixel); letter-spacing: .1em; }
+.wr-valuation-price small + small { margin-top: 10px; }
+.wr-valuation-price del { color: #7c8b8f; font-family: var(--font-display); font-size: 19px; text-decoration-thickness: 2px; }
+.wr-valuation-price strong { color: var(--pixel-gold); font-family: var(--font-display); font-size: 33px; line-height: 1.05; }
+.wr-valuation-price b { margin-top: 4px; color: #7f9298; font: 800 9px var(--font-pixel); letter-spacing: .07em; }
+.wr-valuation-price b.has-discount { color: var(--pixel-cyan); }
+
+.wr-acquire, .wr-locate, .wr-operation button {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 3px solid var(--pixel-ink);
+  font: 800 9.5px var(--font-pixel);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.wr-acquire { margin-top: 14px; color: #17222d; background: var(--pixel-gold); box-shadow: inset -3px -3px var(--pixel-gold-dark), 4px 4px var(--pixel-shadow); }
+.wr-acquire:hover:not(:disabled) { background: #f8d97e; }
+.wr-acquire:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: inset -3px -3px var(--pixel-gold-dark), 2px 2px var(--pixel-shadow); }
+.wr-acquire:disabled { color: #6c7a80; background: #22333d; box-shadow: inset -3px -3px #16242c; cursor: not-allowed; }
+.wr-locate { margin-top: 7px; min-height: 32px; color: #9fb6bb; background: #1c2f3a; box-shadow: inset -2px -2px #12222b; }
+.wr-locate:hover { color: var(--pixel-paper); background: #26414f; }
+
+.wr-operation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); gap: 11px; }
+.wr-operation { padding: 14px 15px 15px; display: grid; align-content: start; gap: 8px; border: 3px solid #0a121b; background: #1a2a34; box-shadow: inset -3px -3px #101c24; }
+.wr-operation header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wr-operation header span { display: inline-flex; align-items: center; gap: 5px; font: 800 8.5px var(--font-pixel); letter-spacing: .1em; text-transform: uppercase; }
+.wr-operation header strong { color: var(--pixel-cyan); font-family: var(--font-display); font-size: 20px; }
+.wr-operation h4 { margin: 0; color: var(--pixel-paper); font-family: var(--font-display); font-size: 18px; line-height: 1.15; }
+.wr-operation p { margin: 0; color: #93a5aa; font-size: 12.5px; line-height: 1.55; }
+.wr-operation-costs { margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; list-style: none; }
+.wr-operation-costs li { padding: 3px 7px; display: inline-flex; align-items: center; gap: 4px; border: 2px solid #0b141b; color: #a9bbbf; background: #14232c; font: 800 9px var(--font-pixel); }
+.wr-operation-costs .wr-cost-casework { color: #17222d; background: var(--pixel-cyan); border-color: #0b141b; }
+.wr-operation-costs .wr-cost-heat { color: #efb4a6; background: #3a2027; }
+.wr-operation-missing { color: #d59a8f; font-size: 11.5px; font-style: normal; }
+
+.wr-operation-clean header span { color: var(--pixel-green); }
+.wr-operation-gray header span { color: var(--pixel-gold); }
+.wr-operation-sabotage header span { color: var(--pixel-red); }
+.wr-operation-sabotage { background: #26202a; box-shadow: inset -3px -3px #1a151e; }
+
+.wr-operation button { margin-top: 2px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #17222d; background: #8fc4bd; box-shadow: inset -3px -3px #4e8781; }
+.wr-operation-gray button { background: #d9b566; box-shadow: inset -3px -3px #96762f; }
+.wr-operation-sabotage button { background: #c07a72; box-shadow: inset -3px -3px #7c3f3c; }
+.wr-operation button:hover:not(:disabled) { filter: brightness(1.1); }
+.wr-operation button:active:not(:disabled) { transform: translate(1px, 1px); }
+.wr-operation button:disabled { color: #6c7a80; background: #22333d; box-shadow: inset -3px -3px #16242c; cursor: not-allowed; }
+.wr-operation.is-complete { opacity: .72; }
+.wr-operation.is-complete h4 { color: #9fb6bb; }
+
+.wr-cleared { padding: 40px 24px; display: grid; gap: 9px; justify-items: center; text-align: center; }
+.wr-cleared svg { color: var(--pixel-gold); }
+.wr-cleared h3 { margin: 0; color: var(--pixel-paper); font-family: var(--font-display); font-size: 25px; }
+.wr-cleared p { margin: 0; max-width: 52ch; color: #94a6ab; font-size: 13px; line-height: 1.6; }
+
+.wr-error { margin: 0; padding: 9px 12px; border: 3px solid #4a2229; color: #f0bdb4; background: #2b1a1e; font-size: 12.5px; }
+
+/* The map overlay gets the same board with the browsing furniture removed: no
+   heading, no target strip, because the world itself is the target strip. */
+.rival-war-room.is-compact { margin: 0; padding: 15px 15px 16px; gap: 12px; box-shadow: inset 0 0 0 2px #2c4358; }
+.rival-war-room.is-compact .wr-valuation { grid-template-columns: 1fr; }
+.rival-war-room.is-compact .wr-valuation-copy { padding: 14px 15px 12px; }
+.rival-war-room.is-compact .wr-valuation-copy h3 { font-size: 21px; }
+.rival-war-room.is-compact .wr-valuation-copy p { display: none; }
+.rival-war-room.is-compact .wr-valuation-price { padding: 13px 15px 15px; border-left: 0; border-top: 3px solid #0a121b; }
+.rival-war-room.is-compact .wr-valuation-price strong { font-size: 26px; }
+.rival-war-room.is-compact .wr-operation-grid { grid-template-columns: 1fr; gap: 8px; }
+.rival-war-room.is-compact .wr-operation { padding: 11px 12px 12px; gap: 6px; }
+.rival-war-room.is-compact .wr-operation p { display: none; }
+.rival-war-room.is-compact .wr-operation h4 { font-size: 15px; }
+.rival-war-room.is-compact .wr-casework { padding: 10px 12px; }
+.rival-war-room.is-compact .wr-casework strong { font-size: 22px; }
+.rival-war-room.is-compact .wr-casework small { display: none; }
+
+@media (max-width: 1080px) {
+  .wr-heading { grid-template-columns: 1fr; }
+  .wr-valuation { grid-template-columns: 1fr; }
+  .wr-valuation-price { border-left: 0; border-top: 3px solid #0a121b; }
+}

@@ -1,0 +1,124 @@
+/* The trial calendar.
+
+   Both surfaces it appears on -- the dashboard summary and the practice
+   header -- are the deep navy panels, so it is built as one of their inset
+   tiles rather than as a pale card dropped onto them. The only place it
+   raises its voice is the left accent, which carries the pacing state, and
+   even "behind" is a warm gold rather than a red alarm: the learner is being
+   reminded, not scolded. */
+
+.trial-calendar {
+  margin: 0;
+  display: grid;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-left: 3px solid #cfa74d;
+  border-radius: 12px;
+  color: #e6ddc7;
+  background: rgba(6, 14, 23, .44);
+  overflow: hidden;
+}
+.trial-calendar.is-ahead { border-left-color: #74d3c1; }
+.trial-calendar.is-on_track { border-left-color: #71d0c0; }
+.trial-calendar.is-behind { border-left-color: #f0d37f; }
+.trial-calendar.is-idle,
+.trial-calendar.is-unset { border-left-color: #7d8a87; }
+
+.trial-calendar-strip {
+  width: 100%;
+  padding: 11px 15px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.trial-calendar-strip:hover { background: rgba(255, 255, 255, .04); }
+.trial-count { display: flex; align-items: baseline; gap: 7px; }
+.trial-count svg { align-self: center; color: #cfa74d; }
+.trial-count strong { color: #f0d37f; font: 600 22px/1 var(--font-display); }
+.trial-count small { color: #94a5a4; font: 900 8.5px var(--font-pixel); letter-spacing: .14em; text-transform: uppercase; }
+.trial-phase { min-width: 0; display: grid; gap: 2px; }
+.trial-phase b { color: #72b6ad; font: 900 8.5px var(--font-pixel); letter-spacing: .14em; text-transform: uppercase; }
+.trial-phase em { color: #dcd4c0; font-size: 12.5px; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trial-pace { display: grid; justify-items: end; gap: 2px; }
+.trial-pace b { color: #f0d37f; font: 600 19px/1 var(--font-display); }
+.trial-pace em { color: #94a5a4; font: 900 7.5px var(--font-pixel); letter-spacing: .1em; font-style: normal; text-transform: uppercase; }
+.trial-chevron { color: #cfa74d; transition: rotate .18s ease; }
+.trial-calendar.is-open .trial-chevron { rotate: 180deg; }
+
+.trial-calendar-detail {
+  padding: 3px 15px 14px;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+}
+.trial-calendar-detail p { max-width: var(--prose-measure); margin: 0; color: #d3cdbc; font-size: 12.5px; line-height: 1.55; }
+.trial-phase-note { color: #93a6a3 !important; font-style: italic; }
+.trial-method { color: #8b9a97 !important; font-size: 11.5px !important; }
+
+.trial-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.trial-figures > div { padding: 9px 12px; display: grid; gap: 3px; border: 1px solid rgba(255, 255, 255, .07); border-radius: 10px; background: rgba(6, 14, 23, .5); }
+.trial-figures span { color: #72b6ad; font: 900 8px var(--font-pixel); letter-spacing: .13em; text-transform: uppercase; }
+.trial-figures strong { color: #f0d37f; font: 600 17px/1.1 var(--font-display); }
+.trial-figures small { color: #94a5a4; font-size: 11px; line-height: 1.4; }
+
+.trial-reschedule {
+  justify-self: start;
+  min-height: 34px;
+  padding: 5px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(226, 194, 118, .34);
+  border-radius: 8px;
+  color: #f0d99a;
+  background: rgba(224, 195, 119, .1);
+  font: 900 8.5px var(--font-pixel);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.trial-reschedule:hover { border-color: rgba(226, 194, 118, .6); background: rgba(224, 195, 119, .18); }
+.trial-date-field { display: flex; align-items: flex-end; gap: 9px; flex-wrap: wrap; }
+.trial-date-field label { display: grid; gap: 4px; }
+.trial-date-field label span { color: #72b6ad; font: 900 8px var(--font-pixel); letter-spacing: .13em; text-transform: uppercase; }
+.trial-date-field input {
+  min-height: 38px;
+  padding: 4px 10px;
+  border: 1px solid rgba(211, 185, 120, .34);
+  border-radius: 8px;
+  color: #f1e5c7;
+  background: #142530;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.trial-date-field button {
+  min-height: 38px;
+  padding: 5px 15px;
+  border: 1px solid rgba(226, 194, 118, .5);
+  border-radius: 8px;
+  color: #0f1c26;
+  background: #e6c069;
+  font: 900 8.5px var(--font-pixel);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.trial-date-error { width: 100%; color: #e39b8f; font-size: 11.5px; font-style: normal; }
+
+/* The practice header carries the same strip one size down: the client it
+   sits under is the headline there, not the calendar. */
+.trial-calendar.is-compact .trial-calendar-strip { padding: 9px 13px; gap: 13px; }
+.trial-calendar.is-compact .trial-count strong { font-size: 19px; }
+.trial-calendar.is-compact .trial-pace b { font-size: 17px; }
+
+@media (max-width: 720px) {
+  /* The chevron is the least informative thing on the strip, and the strip is
+     a button in its entirety, so the phone drops it rather than the pace. */
+  .trial-calendar-strip { grid-template-columns: auto minmax(0, 1fr) auto; gap: 11px; padding: 10px 12px; }
+  .trial-chevron { display: none; }
+  .trial-phase em { font-size: 11.5px; }
+  .trial-figures { grid-template-columns: 1fr; }
+  .trial-calendar-detail { padding: 3px 12px 12px; }
+}

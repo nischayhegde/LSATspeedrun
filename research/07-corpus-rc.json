@@ -1,0 +1,402 @@
+{
+  "section": "rc",
+  "n_items": 2366,
+  "malformed_records": 0,
+  "lengths_chars": {
+    "context": {
+      "n": 2366,
+      "mean": 2961.98,
+      "sd": 183.61,
+      "min": 2618.0,
+      "p5": 2734.0,
+      "p25": 2860.0,
+      "p50": 2950.0,
+      "p75": 3043.0,
+      "p95": 3213.0,
+      "max": 5065.0
+    },
+    "stem": {
+      "n": 2366,
+      "mean": 113.59,
+      "sd": 43.56,
+      "min": 34.0,
+      "p5": 49.0,
+      "p25": 83.0,
+      "p50": 108.0,
+      "p75": 137.0,
+      "p95": 189.75,
+      "max": 417.0
+    },
+    "answer_choice": {
+      "n": 11830,
+      "mean": 102.45,
+      "sd": 50.34,
+      "min": 4.0,
+      "p5": 28.0,
+      "p25": 68.0,
+      "p50": 96.0,
+      "p75": 131.0,
+      "p95": 198.0,
+      "max": 347.0
+    }
+  },
+  "lengths_words": {
+    "context": {
+      "n": 2366,
+      "mean": 459.37,
+      "sd": 23.72,
+      "min": 422.0,
+      "p5": 435.0,
+      "p25": 448.0,
+      "p50": 457.0,
+      "p75": 468.0,
+      "p95": 490.0,
+      "max": 784.0
+    },
+    "stem": {
+      "n": 2366,
+      "mean": 18.67,
+      "sd": 6.97,
+      "min": 6.0,
+      "p5": 9.0,
+      "p25": 14.0,
+      "p50": 18.0,
+      "p75": 23.0,
+      "p95": 31.0,
+      "max": 66.0
+    },
+    "answer_choice": {
+      "n": 11830,
+      "mean": 15.82,
+      "sd": 7.95,
+      "min": 1.0,
+      "p5": 4.0,
+      "p25": 10.0,
+      "p50": 15.0,
+      "p75": 20.0,
+      "p95": 31.0,
+      "max": 56.0
+    }
+  },
+  "length_bias": {
+    "correct_mean_chars": 103.5,
+    "distractor_mean_chars": 102.19,
+    "cohens_d": 0.026,
+    "pick_longest_accuracy": 0.1796,
+    "pick_longest_accuracy_incl_ties": 0.1957,
+    "chance": 0.2,
+    "correct_answer_length_rank": {
+      "rank_0": 463,
+      "rank_1": 518,
+      "rank_2": 522,
+      "rank_3": 456,
+      "rank_4": 407
+    }
+  },
+  "answer_key_balance": {
+    "counts": {
+      "0": 464,
+      "1": 492,
+      "2": 467,
+      "3": 503,
+      "4": 440
+    },
+    "proportions": {
+      "0": 0.1961,
+      "1": 0.2079,
+      "2": 0.1974,
+      "3": 0.2126,
+      "4": 0.186
+    },
+    "chi_square": 5.213,
+    "df": 4,
+    "critical_0.05": 9.488,
+    "critical_0.01": 13.277,
+    "rejects_uniform_at_0.05": false
+  },
+  "quantifiers": {
+    "mean_terms_per_correct_answer": 0.302,
+    "mean_terms_per_distractor": 0.312,
+    "isolation_events": 2633,
+    "isolation_predicts_correct_rate": 0.1884,
+    "extreme_isolation_events": 1067,
+    "extreme_isolation_predicts_correct_rate": 0.1631,
+    "isolation_chance": 0.2,
+    "top_terms_correct": {
+      "some": 119,
+      "may": 78,
+      "many": 48,
+      "most": 47,
+      "no": 35,
+      "only": 34,
+      "likely": 34,
+      "all": 34,
+      "any": 32,
+      "several": 24,
+      "cannot": 24,
+      "each": 23,
+      "often": 21,
+      "must": 21,
+      "could": 19
+    },
+    "top_terms_distractor": {
+      "most": 387,
+      "some": 282,
+      "only": 252,
+      "many": 209,
+      "all": 176,
+      "any": 148,
+      "no": 139,
+      "often": 120,
+      "likely": 118,
+      "may": 103,
+      "must": 102,
+      "cannot": 101,
+      "several": 85,
+      "generally": 85,
+      "could": 82
+    }
+  },
+  "negation_stems": {
+    "count": 110,
+    "rate": 0.0465
+  },
+  "question_types": {
+    "distribution": {
+      "unclassified": 749,
+      "inference": 479,
+      "main_idea": 335,
+      "structure": 255,
+      "detail": 226,
+      "attitude": 165,
+      "analogy": 65,
+      "strengthen_weaken": 55,
+      "vocabulary": 37
+    },
+    "proportions": {
+      "unclassified": 0.3166,
+      "inference": 0.2025,
+      "main_idea": 0.1416,
+      "structure": 0.1078,
+      "detail": 0.0955,
+      "attitude": 0.0697,
+      "analogy": 0.0275,
+      "strengthen_weaken": 0.0232,
+      "vocabulary": 0.0156
+    },
+    "classified": 1617,
+    "classified_rate": 0.6834
+  },
+  "stem_templates": {
+    "distinct_normalized_stems": 1944,
+    "top_50_coverage": 0.1741,
+    "top_30": [
+      {
+        "template": "which one of the following most accurately expresses the main point of the passage?",
+        "count": 74
+      },
+      {
+        "template": "the primary purpose of the passage is to",
+        "count": 41
+      },
+      {
+        "template": "which one of the following most accurately states the main point of the passage?",
+        "count": 31
+      },
+      {
+        "template": "which one of the following best expresses the main idea of the passage?",
+        "count": 24
+      },
+      {
+        "template": "it can be inferred from the passage that the author would be most likely to agree with which one of the follow",
+        "count": 17
+      },
+      {
+        "template": "which one of the following best describes the organization of the passage?",
+        "count": 15
+      },
+      {
+        "template": "which one of the following best states the main idea of the passage?",
+        "count": 15
+      },
+      {
+        "template": "which one of the following most accurately describes the organization of the passage?",
+        "count": 14
+      },
+      {
+        "template": "the authors primary purpose in the passage is to",
+        "count": 12
+      },
+      {
+        "template": "which one of the following most accurately expresses the main idea of the passage?",
+        "count": 11
+      },
+      {
+        "template": "which one of the following best summarizes the main idea of the passage?",
+        "count": 8
+      },
+      {
+        "template": "which one of the following statements best expresses the main idea of the passage?",
+        "count": 8
+      },
+      {
+        "template": "which one of the following most accurately states the main idea of the passage?",
+        "count": 8
+      },
+      {
+        "template": "in the passage, the author is primarily concerned with",
+        "count": 6
+      },
+      {
+        "template": "the passage is primarily concerned with",
+        "count": 6
+      },
+      {
+        "template": "in the passage, the author is primarily concerned with doing which one of the following?",
+        "count": 6
+      },
+      {
+        "template": "the author of the passage is primarily concerned with",
+        "count": 5
+      },
+      {
+        "template": "which one of the following best expresses the main point of the passage?",
+        "count": 5
+      },
+      {
+        "template": "the author of the passage would be most likely to agree with which one of the following statements?",
+        "count": 5
+      },
+      {
+        "template": "both passages are concerned with answering which one of the following questions?",
+        "count": 5
+      },
+      {
+        "template": "the passage suggests that the author would be most likely to agree with which one of the following statements ",
+        "count": 4
+      },
+      {
+        "template": "the primary function of the first paragraph of the passage is to",
+        "count": 4
+      },
+      {
+        "template": "it can be inferred from the passage that the author would most likely agree with which one of the following st",
+        "count": 4
+      },
+      {
+        "template": "the main purpose of the passage is to",
+        "count": 4
+      },
+      {
+        "template": "which one of the following most accurately summarizes the main point of the passage?",
+        "count": 4
+      },
+      {
+        "template": "with which one of the following statements would the author of the passage be most likely to agree?",
+        "count": 4
+      },
+      {
+        "template": "which one of the following is most strongly supported by the passage?",
+        "count": 4
+      },
+      {
+        "template": "which one of the following best states the main point of the passage?",
+        "count": 3
+      },
+      {
+        "template": "which one of the following best describes the organization of the third paragraph?",
+        "count": 3
+      },
+      {
+        "template": "the authors primary purpose is to",
+        "count": 3
+      }
+    ]
+  },
+  "readability": {
+    "type_token_ratio": 0.0136,
+    "distinct_words": 14771,
+    "total_words": 1086865,
+    "words_per_sentence": {
+      "n": 2366,
+      "mean": 29.09,
+      "sd": 9.03,
+      "min": 17.1,
+      "p5": 20.12,
+      "p25": 24.58,
+      "p50": 28.25,
+      "p75": 31.8,
+      "p95": 38.92,
+      "max": 146.33
+    },
+    "flesch_kincaid_grade": {
+      "n": 2366,
+      "mean": 16.95,
+      "sd": 3.68,
+      "min": 9.82,
+      "p5": 12.78,
+      "p25": 15.04,
+      "p50": 16.75,
+      "p75": 18.51,
+      "p95": 21.04,
+      "max": 61.18
+    }
+  },
+  "coverage": {
+    "administrations": 85,
+    "unknown_id_format": 77,
+    "items_per_administration": {
+      "n": 85,
+      "mean": 26.93,
+      "sd": 0.55,
+      "min": 26.0,
+      "p5": 26.0,
+      "p25": 27.0,
+      "p50": 27.0,
+      "p75": 27.0,
+      "p95": 28.0,
+      "max": 28.0
+    },
+    "by_year": {
+      "1991": 3,
+      "1992": 4,
+      "1993": 3,
+      "1994": 4,
+      "1995": 4,
+      "1996": 4,
+      "1997": 4,
+      "1998": 3,
+      "1999": 4,
+      "2000": 4,
+      "2001": 3,
+      "2002": 3,
+      "2003": 3,
+      "2004": 3,
+      "2005": 3,
+      "2006": 3,
+      "2007": 3,
+      "2008": 3,
+      "2009": 3,
+      "2010": 3,
+      "2011": 3,
+      "2012": 3,
+      "2013": 3,
+      "2014": 3,
+      "2015": 3,
+      "2016": 3
+    },
+    "distinct_passages": 349,
+    "items_per_passage": {
+      "n": 349,
+      "mean": 6.78,
+      "sd": 1.2,
+      "min": 4.0,
+      "p5": 5.0,
+      "p25": 6.0,
+      "p50": 7.0,
+      "p75": 7.0,
+      "p95": 8.0,
+      "max": 16.0
+    }
+  }
+}

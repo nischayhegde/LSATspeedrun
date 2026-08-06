@@ -1,0 +1,86 @@
+/* The interstitial a Focus Mode route shows instead of the screen it hides.
+ *
+ * Lives beside `App.tsx` rather than in `styles.css` because it belongs to the
+ * routing layer, not to any page. Colours and type are the app's pixel theme
+ * (see the `--pixel-*` block and `.docket-hero` in styles.css) so it reads as
+ * part of the game rather than as a browser error.
+ */
+
+.focus-gate {
+  min-height: 60vh;
+  padding: 40px 22px 60px;
+  display: grid;
+  place-items: center;
+}
+
+.focus-gate > div {
+  width: min(560px, 100%);
+  padding: 32px 30px 30px;
+  border: 4px solid #080c13;
+  background-color: #172a3b;
+  background-image:
+    linear-gradient(90deg, rgba(101,201,194,.06) 2px, transparent 2px),
+    linear-gradient(rgba(101,201,194,.06) 2px, transparent 2px);
+  background-size: 20px 20px, 20px 20px;
+  box-shadow: inset 0 0 0 3px #385064, 9px 9px #080c13;
+}
+
+.focus-gate-mark {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 3px solid #080c13;
+  color: #ffe1ad;
+  background: #653a36;
+  box-shadow: inset -3px -3px #4a2a27;
+}
+.focus-gate-mark svg { width: 22px; height: 22px; }
+
+.focus-gate span.eyebrow {
+  display: block;
+  margin-top: 18px;
+  color: #6fc9ba;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+
+.focus-gate h1 {
+  margin: 10px 0 0;
+  color: #f6e6cb;
+  font-family: var(--font-pixel);
+  font-size: clamp(20px, 3vw, 27px);
+  font-weight: 900;
+  line-height: 1.25;
+  text-transform: uppercase;
+  text-shadow: 4px 4px #080c13;
+}
+
+.focus-gate p {
+  max-width: var(--prose-measure);
+  margin: 15px 0 0;
+  color: #bdd0d4;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.focus-gate-actions { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px; }
+.focus-gate-actions .primary-button,
+.focus-gate-actions .secondary-button { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
+
+.focus-gate > div > small {
+  display: block;
+  margin-top: 16px;
+  color: #8fa3a8;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+@media (max-width: 620px) {
+  .focus-gate { padding: 26px 12px 46px; }
+  .focus-gate > div { padding: 24px 20px; box-shadow: inset 0 0 0 3px #385064, 6px 6px #080c13; }
+  .focus-gate-actions .primary-button,
+  .focus-gate-actions .secondary-button { width: 100%; justify-content: center; }
+}

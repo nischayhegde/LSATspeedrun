@@ -10,3 +10,30 @@ frontend/dist/
 .DS_Store
 /output/
 /tmp/
+node_modules/
+
+# Throwaway agent scratch: screenshots, probe scripts and measurement runs.
+# These are regenerated on demand and were large enough to threaten the disk.
+.bundle-ab/
+.map-plan/
+.map-verify/
+.perf/
+.perf-office/
+.qa-shots/
+.rig-qa-shots/
+.rig-verify/
+.strategy-shots/
+.tabs-shots/
+.ui2d/
+.wardrobe-shots/
+mapqa/
+qa-shots/
+zpolish-shots/
+zqa-shots/
+frontend/.rig-evidence/
+frontend/.rig-qa-shots/
+frontend/scratch-*.mjs
+/qa_*.py
+/zfix_*.py
+/zpolish_*.py
+/zqa_*.py

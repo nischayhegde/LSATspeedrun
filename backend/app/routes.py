@@ -9,6 +9,8 @@ from google.oauth2 import id_token
 
 from .auth import clear_auth_cookies, issue_auth_cookies, issue_mobile_token, require_auth
 from .coaching import CoachingProviderError, provider_ready
+from .enforcement import GateRejection
+from . import history
 from .extensions import db
 from .game import (
     activate_quest,
@@ -20,12 +22,16 @@ from .game import (
     pending_review_attempts,
     purchase_asset,
     run_rival_operation,
+    secure_district,
     select_client,
+    set_wardrobe,
     settle_upkeep,
     serialize_game,
     serialize_settlement,
+    serialize_wardrobe,
     update_profile,
 )
+from .history import attempt_detail, attempt_history, history_facets, session_history
 from .jobs import (
     JobQueueError,
     async_jobs_enabled,
@@ -34,10 +40,14 @@ from .jobs import (
     serialize_job,
 )
 from .models import AiJob, Attempt, Question, SessionItem, StudySession, User, utcnow
+from .scoring import projection_snapshot
 from .seed import SOURCE_PREFIX
+from .story import ensure_story_state
 from .services import (
     abandon_study_session,
+    UNGRADED_COACHING_NOTICE,
     calculate_session_summary,
+    coaching_handed_off,
     create_diagnostic_session,
     create_study_session,
     daily_docket_snapshot,
@@ -55,6 +65,8 @@ from .services import (
     session_review,
     serialize_user,
     submit_attempt,
+    trial_plan_snapshot,
+    update_user_preferences,
 )
 
 
@@ -255,6 +267,23 @@ def me():
     return jsonify({"user": serialize_user(g.current_user)})
 
 
+@api.patch("/me")
+@require_auth
+def update_me():
+    payload = request.get_json(silent=True) or {}
+    try:
+        user = update_user_preferences(g.current_user, payload)
+    except ValueError as exc:
+        code = str(exc)
+        messages = {
+            "invalid_target_score": "Enter a target score between 120 and 180.",
+            "invalid_target_test_date": "Enter a valid test date.",
+            "invalid_assistance_level": "Assistance level must be 'full' or 'focus'.",
+        }
+        return error(code, messages.get(code, "Those preferences could not be saved."), 400)
+    return jsonify({"user": serialize_user(user)})
+
+
 def _game_profile():
     profile = g.current_user.game_profile
     if profile:
@@ -321,15 +350,33 @@ def _game_error(code: str):
         "quest_not_found": "That caseboard file does not exist.",
         "quest_already_active": "Finish the active caseboard file before opening another.",
         "quest_already_completed": "That caseboard file has already been closed.",
-        "quest_locked": "The firm has not discovered that caseboard file yet.",
+        "quest_locked": "That caseboard file is still sealed. Play its chapter and close the file before it to open it.",
         "insufficient_intel": "The firm needs more Intel to open that shadow file.",
         "operation_not_found": "That rival operation does not exist.",
         "operation_already_completed": "That operation has already been used against this rival.",
         "operation_requirements_not_met": "The firm does not meet this operation's cash or intelligence requirements.",
         "rival_not_found": "That rival firm does not exist.",
         "rival_already_owned": "That rival has already joined your firm.",
+        "cosmetic_not_found": "That wardrobe piece does not exist.",
+        "cosmetic_category_not_found": "That wardrobe category does not exist.",
+        "cosmetic_locked": "Your counsel has not earned that piece yet.",
+        "invalid_cosmetic": "Send a wardrobe category and the piece to wear.",
+        "district_not_found": "That district is not on the map.",
+        "district_already_held": "Your firm already holds that district's retainer.",
+        "district_locked": "That district will not sign with a firm of this standing yet.",
     }
-    status = 404 if code in {"asset_not_found", "client_not_found", "quest_not_found", "rival_not_found", "operation_not_found"} else 409
+    status = 404 if code in {
+        "asset_not_found",
+        "client_not_found",
+        "quest_not_found",
+        "rival_not_found",
+        "operation_not_found",
+        "cosmetic_not_found",
+        "cosmetic_category_not_found",
+        "district_not_found",
+    } else 409
+    if code == "invalid_cosmetic":
+        status = 400
     return error(code, messages.get(code, "That game action could not be completed."), status)
 
 
@@ -345,6 +392,51 @@ def buy_game_asset():
     except ValueError as exc:
         return _game_error(str(exc))
     return jsonify({"game": serialize_game(profile)})
+
+
+@api.post("/game/territory")
+@require_auth
+def secure_game_district():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before taking on districts.", 409)
+    district_key = str((request.get_json(silent=True) or {}).get("district_key") or "")
+    try:
+        result = secure_district(profile, district_key)
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"retainer": result, "game": serialize_game(profile)})
+
+
+@api.get("/trial")
+@require_auth
+def trial_calendar():
+    return jsonify(trial_plan_snapshot(g.current_user))
+
+
+@api.get("/game/cosmetics")
+@require_auth
+def game_cosmetics():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before opening the wardrobe.", 409)
+    return jsonify({"cosmetics": serialize_wardrobe(profile)})
+
+
+@api.patch("/game/cosmetics")
+@require_auth
+def edit_game_cosmetics():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before opening the wardrobe.", 409)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _game_error("invalid_cosmetic")
+    try:
+        set_wardrobe(profile, payload.get("selection") if isinstance(payload.get("selection"), dict) else payload)
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"cosmetics": serialize_wardrobe(profile), "game": serialize_game(profile)})
 
 
 @api.post("/game/advance")
@@ -416,6 +508,37 @@ def choose_game_story():
     return jsonify({"result": result, "game": serialize_game(profile)})
 
 
+@api.get("/game/story/epilogue")
+@require_auth
+def get_game_epilogue_acknowledgement():
+    """Whether this account has already read the closing record.
+
+    Additive and deliberately tiny: the epilogue is a full-screen once-ever
+    layer, and the frontend used to remember "already read" in localStorage
+    alone, so a finished player met the whole final record again on a second
+    device or after clearing site data. This is the same policy the guided tour
+    already follows with `users.guided_tour_completed_at`, kept out of the game
+    serializer so the change stays confined to these two endpoints.
+    """
+    profile = _game_profile()
+    state = profile.story_state if profile else None
+    return jsonify({"read": bool(state and state.epilogue_read_at)})
+
+
+@api.post("/game/story/epilogue/read")
+@require_auth
+def mark_game_epilogue_read():
+    """Record that the closing record has been read. Idempotent; first read wins."""
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before closing the campaign.", 409)
+    state = ensure_story_state(profile)
+    if state.epilogue_read_at is None:
+        state.epilogue_read_at = utcnow()
+    db.session.commit()
+    return jsonify({"read": True})
+
+
 @api.post("/game/quests/start")
 @require_auth
 def start_game_quest():
@@ -460,6 +583,81 @@ def _owned_session(session_id: str) -> StudySession | None:
 @require_auth
 def get_performance():
     return jsonify({"performance": performance_snapshot(g.current_user)})
+
+
+@api.get("/projection")
+@require_auth
+def get_projection():
+    """The projected 120-180 score, its band, and the snapshot trend behind it.
+
+    Read-only. Snapshots are written when a run completes, not when this is
+    polled — `?record=1` is kept for a caller that explicitly wants to pin a
+    point, and nothing in the client uses it.
+    """
+    record = str(request.args.get("record") or "").strip().lower() in {"1", "true", "yes"}
+    return jsonify({"projection": projection_snapshot(g.current_user, record=record)})
+
+
+@api.get("/history/sessions")
+@require_auth
+def get_session_history():
+    """Every past run, newest first. Paginated — a heavy account has hundreds."""
+    try:
+        payload = session_history(
+            g.current_user,
+            limit=request.args.get("limit", 20),
+            offset=request.args.get("offset", 0),
+        )
+    except history.InvalidHistoryParameter as exc:
+        return error("invalid_parameter", str(exc), 400)
+    return jsonify(payload)
+
+
+@api.get("/history/attempts")
+@require_auth
+def get_attempt_history():
+    """Previously answered questions, filterable and paginated.
+
+    `detail=1` returns the whole question, the student's written reasoning, and
+    the stored coaching alongside each row; the page ceiling drops accordingly.
+
+    A parameter that cannot be understood is a 400 rather than a 200 with the
+    default silently substituted — see `history.InvalidHistoryParameter`.
+    """
+    try:
+        payload = attempt_history(
+            g.current_user,
+            limit=request.args.get("limit", history.DEFAULT_PAGE_SIZE),
+            offset=request.args.get("offset", 0),
+            correct=request.args.get("correct"),
+            question_type=(request.args.get("question_type") or "").strip()[:100] or None,
+            section=(request.args.get("section") or "").strip()[:60] or None,
+            session_id=(request.args.get("session_id") or "").strip()[:36] or None,
+            from_review_queue=request.args.get("from_review_queue"),
+            evidence_class=(request.args.get("evidence_class") or "").strip()[:32] or None,
+            since=request.args.get("since"),
+            until=request.args.get("until"),
+            detail=request.args.get("detail"),
+        )
+    except history.InvalidHistoryParameter as exc:
+        return error("invalid_parameter", str(exc), 400)
+    return jsonify(payload)
+
+
+@api.get("/history/attempts/<attempt_id>")
+@require_auth
+def get_attempt_detail(attempt_id: str):
+    payload = attempt_detail(g.current_user, attempt_id)
+    if not payload:
+        return error("not_found", "That answer is not in your history.", 404)
+    return jsonify({"attempt": payload})
+
+
+@api.get("/history/facets")
+@require_auth
+def get_history_facets():
+    """Which filters this account has data for, so the UI offers no dead ends."""
+    return jsonify(history_facets(g.current_user))
 
 
 @api.get("/diagnostics/current")
@@ -722,19 +920,27 @@ def acknowledge_answer_review(session_id: str):
     if not session:
         return error("session_not_found", "That practice session was not found.", 404)
     pending_attempt = db.session.get(Attempt, session.pending_attempt_id) if session.pending_attempt_id else None
+    settlement_pending = False
     if (
         pending_attempt
         and pending_attempt.session_item.game_context_json is not None
         and not pending_attempt.settlement
     ):
-        return error(
-            "settlement_required",
-            "Finish the case review and settlement before continuing.",
-            409,
-        )
+        # Explanation grading takes 20-30 seconds and is not on the answer's
+        # critical path: once it has been handed off, the case settles on its own
+        # and the player may move to the next question. Only a debrief whose case
+        # was never sent for grading is still blocked here.
+        if not coaching_handed_off(pending_attempt):
+            return error(
+                "settlement_required",
+                "Finish the case review and settlement before continuing.",
+                409,
+            )
+        settlement_pending = True
     completed_batch = session.status == "completed"
     session.pending_attempt_id = None
     db.session.commit()
+    pending_payload = {"settlement_pending": True, "pending_attempt_id": pending_attempt.id} if settlement_pending else {}
     if completed_batch:
         if session.mode == "diagnostic":
             summary = session.summary_json or calculate_session_summary(session)
@@ -744,10 +950,11 @@ def acknowledge_answer_review(session_id: str):
                     "diagnostic_complete": True,
                     "summary": summary,
                     "promotion": summary.get("promotion"),
+                    **pending_payload,
                 }
             )
-        return jsonify({"session": serialize_session(session, False), "run_complete": True})
-    return jsonify({"session": serialize_session(session)})
+        return jsonify({"session": serialize_session(session, False), "run_complete": True, **pending_payload})
+    return jsonify({"session": serialize_session(session), **pending_payload})
 
 
 @api.post("/study-sessions/<session_id>/attempts")
@@ -762,6 +969,22 @@ def create_attempt(session_id: str):
         return error("invalid_idempotency_key", "The request identifier is too long.")
     try:
         attempt, duplicate = submit_attempt(g.current_user, session, payload, idempotency_key)
+    except GateRejection as rejection:
+        # The student opted into an approach and the required work is not done.
+        # Field-level messages come back so the interface can point at the box
+        # that failed instead of showing one generic refusal.
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "strategy_gate_unsatisfied",
+                        "message": "Finish the approach you chose, or drop it and answer without it.",
+                        "fields": rejection.errors,
+                    }
+                }
+            ),
+            409,
+        )
     except ValueError as exc:
         code = str(exc)
         messages = {
@@ -798,6 +1021,19 @@ def coach_attempt(attempt_id: str):
             {
                 "status": "completed",
                 "coaching": saved,
+                "reward": serialize_settlement(attempt.settlement),
+                "game": serialize_game(g.current_user.game_profile) if g.current_user.game_profile else None,
+            }
+        )
+    if attempt.coaching_status == "failed" and attempt.settlement:
+        # Grading is out of retries but the case was settled from the verified
+        # answer key anyway (see `settle_uncoached_attempt`). This is a terminal
+        # state, so the client stops polling and explains itself instead.
+        return jsonify(
+            {
+                "status": "unavailable",
+                "coaching": None,
+                "notice": (attempt.feedback_json or {}).get("coaching_unavailable") or UNGRADED_COACHING_NOTICE,
                 "reward": serialize_settlement(attempt.settlement),
                 "game": serialize_game(g.current_user.game_profile) if g.current_user.game_profile else None,
             }

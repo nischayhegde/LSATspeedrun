@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import timezone
 
 from flask import current_app
@@ -18,12 +19,31 @@ class JobLeaseActive(JobQueueError):
     """Tell the SQS handler to retain a duplicate delivery until the lease resolves."""
 
 
+# "sqs" hands each job to a durable queue drained by the Lambda worker. "local"
+# runs the same `process_ai_job` on a daemon thread inside this process — no
+# broker, no extra deployment unit, and the same AiJob row driving status and
+# retries, which is what keeps a 20-30 second grading call off the player's
+# critical path in a single-process deployment. "sync" is the legacy in-request
+# path, kept because it makes request-level tracing trivial.
+ASYNC_MODES = {"sqs", "local"}
+
+
+def _mode() -> str:
+    return current_app.config.get("AI_JOBS_MODE") or "sync"
+
+
 def async_jobs_enabled() -> bool:
-    return current_app.config.get("AI_JOBS_MODE") == "sqs"
+    return _mode() in ASYNC_MODES
+
+
+def local_worker_enabled() -> bool:
+    return _mode() == "local"
 
 
 def queue_ready() -> bool:
-    return bool(async_jobs_enabled() and current_app.config.get("AI_JOB_QUEUE_URL"))
+    if local_worker_enabled():
+        return True
+    return bool(_mode() == "sqs" and current_app.config.get("AI_JOB_QUEUE_URL"))
 
 
 def serialize_job(job: AiJob) -> dict:
@@ -61,9 +81,64 @@ def _send_job_message(job: AiJob) -> None:
     db.session.commit()
 
 
+def _run_local_job(app, job_id: str) -> None:
+    """Drain one job to a terminal state on this thread.
+
+    There is no broker here, so a retryable failure (which `process_ai_job` puts
+    back in `queued`) has nothing to redeliver it — this thread makes the next
+    attempt itself. `attempt_count` still bounds the total, so a provider outage
+    ends in a terminal `failed` rather than a loop.
+    """
+    with app.app_context():
+        try:
+            for _ in range(max(1, int(app.config.get("AI_JOB_MAX_ATTEMPTS", 3)))):
+                try:
+                    job = process_ai_job(job_id)
+                except JobLeaseActive:
+                    return
+                except Exception:
+                    # process_ai_job has already recorded the outcome, including
+                    # settling the case from the verified answer key when the
+                    # failure is terminal. Nothing awaits this thread's return.
+                    app.logger.exception("Local AI job %s failed", job_id)
+                    job = db.session.get(AiJob, job_id, populate_existing=True)
+                if not job or job.status != "queued":
+                    return
+        finally:
+            db.session.remove()
+
+
+def _start_local_job(job: AiJob) -> None:
+    """Hand the job to a daemon thread in this process.
+
+    Daemon on purpose: a shutdown mid-grade should not hold the process open. The
+    job's `processing` lease then expires (see `_lease_is_current`) and the next
+    request for that attempt reclaims it, so nothing is permanently stuck.
+    """
+    # Stands in for the SQS message id, so the "already handed off" checks in
+    # `_enqueue` work identically and a polling client cannot spawn a thread per
+    # poll. Committed before the thread starts so the worker reads a settled row.
+    job.queue_message_id = f"local:{job.id}"
+    db.session.commit()
+    thread = threading.Thread(
+        target=_run_local_job,
+        args=(current_app._get_current_object(), job.id),
+        name=f"ai-job-{job.id[:8]}",
+        daemon=True,
+    )
+    thread.start()
+
+
+def _dispatch(job: AiJob) -> None:
+    if local_worker_enabled():
+        _start_local_job(job)
+        return
+    _send_job_message(job)
+
+
 def _send_or_fail(job: AiJob) -> None:
     try:
-        _send_job_message(job)
+        _dispatch(job)
     except JobQueueError:
         job.status = "failed"
         job.error_message = "The AI coaching request could not be queued. Please retry."
@@ -189,7 +264,16 @@ def process_ai_job(job_id: str) -> AiJob | None:
         failed_job.status = "failed" if final_failure else "queued"
         failed_job.error_message = "AI coaching failed. Please retry." if final_failure else None
         failed_job.started_at = None
+        resource_id = failed_job.resource_id
         db.session.commit()
+        if final_failure:
+            # Grading is out of retries, and the player has very likely already
+            # moved on to the next case. The answer key is verified independently
+            # of the coach, so the case is settled from it rather than left
+            # unpaid and unsettled forever.
+            from .services import settle_uncoached_attempt
+
+            settle_uncoached_attempt(resource_id)
         raise
 
     completed_job = db.session.get(

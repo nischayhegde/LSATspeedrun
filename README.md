@@ -1,6 +1,6 @@
-# LSAT Speedrun
+# LSAT Tycoon
 
-LSAT Speedrun is an LSAT learning platform wrapped in a persistent lawyer-tycoon world. Verified answer keys determine correctness; coaching explains the reasoning but cannot override the result. Learning evidence, rewards, purchases, rent, and reputation are settled by the server.
+LSAT Tycoon is an LSAT learning platform wrapped in a persistent lawyer-tycoon world. Verified answer keys determine correctness; coaching explains the reasoning but cannot override the result. Learning evidence, rewards, purchases, rent, and reputation are settled by the server.
 
 ## Current experience
 
@@ -102,7 +102,7 @@ npx expo-doctor
 The guarded AWS sandbox workflow validates, commits, pushes, migrates, deploys, and smoke-tests the current `main` branch:
 
 ```powershell
-.\deploy-sandbox.ps1 -CommitMessage "Deploy LSAT Speedrun updates"
+.\deploy-sandbox.ps1 -CommitMessage "Deploy LSAT Tycoon updates"
 ```
 
 It requires the existing sandbox stack, GitHub access, AWS CLI, and managed sandbox credentials. Review `git status` first because the command includes all non-ignored workspace changes.

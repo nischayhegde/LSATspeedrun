@@ -1316,7 +1316,7 @@ def seed_demo(email: str) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Seed the local LSAT Speedrun demo account.")
+    parser = argparse.ArgumentParser(description="Seed the local LSAT Tycoon demo account.")
     parser.add_argument("--email", default=DEFAULT_EMAIL)
     parser.add_argument("--apply", action="store_true", help="Write the demo state. Without this flag nothing changes.")
     parser.add_argument("--no-backup", action="store_true", help="Skip the automatic pre-seed database copy.")

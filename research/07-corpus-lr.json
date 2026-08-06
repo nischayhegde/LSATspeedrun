@@ -1,0 +1,418 @@
+{
+  "section": "lr",
+  "n_items": 4520,
+  "malformed_records": 0,
+  "lengths_chars": {
+    "context": {
+      "n": 4520,
+      "mean": 409.8,
+      "sd": 131.23,
+      "min": 79.0,
+      "p5": 205.95,
+      "p25": 319.0,
+      "p50": 401.0,
+      "p75": 491.0,
+      "p95": 651.05,
+      "max": 829.0
+    },
+    "stem": {
+      "n": 4520,
+      "mean": 91.91,
+      "sd": 29.96,
+      "min": 23.0,
+      "p5": 53.0,
+      "p25": 74.0,
+      "p50": 88.0,
+      "p75": 104.0,
+      "p95": 147.05,
+      "max": 311.0
+    },
+    "answer_choice": {
+      "n": 22600,
+      "mean": 117.54,
+      "sd": 50.89,
+      "min": 3.0,
+      "p5": 54.0,
+      "p25": 83.0,
+      "p50": 108.0,
+      "p75": 140.0,
+      "p95": 216.0,
+      "max": 463.0
+    }
+  },
+  "lengths_words": {
+    "context": {
+      "n": 4520,
+      "mean": 65.31,
+      "sd": 20.74,
+      "min": 13.0,
+      "p5": 33.0,
+      "p25": 51.0,
+      "p50": 64.0,
+      "p75": 78.0,
+      "p95": 105.0,
+      "max": 130.0
+    },
+    "stem": {
+      "n": 4520,
+      "mean": 15.08,
+      "sd": 4.96,
+      "min": 4.0,
+      "p5": 9.0,
+      "p25": 12.0,
+      "p50": 14.0,
+      "p75": 17.0,
+      "p95": 24.0,
+      "max": 51.0
+    },
+    "answer_choice": {
+      "n": 22600,
+      "mean": 19.15,
+      "sd": 8.7,
+      "min": 1.0,
+      "p5": 9.0,
+      "p25": 13.0,
+      "p50": 18.0,
+      "p75": 23.0,
+      "p95": 36.0,
+      "max": 79.0
+    }
+  },
+  "length_bias": {
+    "correct_mean_chars": 122.19,
+    "distractor_mean_chars": 116.37,
+    "cohens_d": 0.1144,
+    "pick_longest_accuracy": 0.2192,
+    "pick_longest_accuracy_incl_ties": 0.2327,
+    "chance": 0.2,
+    "correct_answer_length_rank": {
+      "rank_0": 1052,
+      "rank_1": 1139,
+      "rank_2": 941,
+      "rank_3": 771,
+      "rank_4": 617
+    }
+  },
+  "answer_key_balance": {
+    "counts": {
+      "0": 848,
+      "1": 943,
+      "2": 909,
+      "3": 965,
+      "4": 855
+    },
+    "proportions": {
+      "0": 0.1876,
+      "1": 0.2086,
+      "2": 0.2011,
+      "3": 0.2135,
+      "4": 0.1892
+    },
+    "chi_square": 11.951,
+    "df": 4,
+    "critical_0.05": 9.488,
+    "critical_0.01": 13.277,
+    "rejects_uniform_at_0.05": true
+  },
+  "quantifiers": {
+    "mean_terms_per_correct_answer": 0.632,
+    "mean_terms_per_distractor": 0.655,
+    "isolation_events": 9326,
+    "isolation_predicts_correct_rate": 0.1853,
+    "extreme_isolation_events": 4632,
+    "extreme_isolation_predicts_correct_rate": 0.1833,
+    "isolation_chance": 0.2,
+    "top_terms_correct": {
+      "some": 303,
+      "no": 259,
+      "only": 255,
+      "most": 242,
+      "any": 212,
+      "all": 178,
+      "likely": 141,
+      "many": 129,
+      "must": 118,
+      "cannot": 114,
+      "could": 104,
+      "may": 84,
+      "each": 73,
+      "tend": 63,
+      "often": 58
+    },
+    "top_terms_distractor": {
+      "most": 1160,
+      "some": 1124,
+      "only": 1084,
+      "no": 1003,
+      "all": 899,
+      "any": 864,
+      "many": 687,
+      "likely": 523,
+      "must": 454,
+      "cannot": 400,
+      "could": 291,
+      "each": 278,
+      "often": 262,
+      "never": 253,
+      "generally": 222
+    }
+  },
+  "negation_stems": {
+    "count": 186,
+    "rate": 0.0412
+  },
+  "question_types": {
+    "distribution": {
+      "unclassified": 1408,
+      "flaw": 380,
+      "inference": 320,
+      "assumption_other": 298,
+      "assumption_necessary": 297,
+      "strengthen": 295,
+      "weaken": 259,
+      "parallel": 237,
+      "principle": 229,
+      "paradox": 160,
+      "method": 154,
+      "main_point": 143,
+      "point_at_issue": 126,
+      "assumption_sufficient": 83,
+      "complete": 61,
+      "parallel_flaw": 54,
+      "evaluate": 16
+    },
+    "proportions": {
+      "unclassified": 0.3115,
+      "flaw": 0.0841,
+      "inference": 0.0708,
+      "assumption_other": 0.0659,
+      "assumption_necessary": 0.0657,
+      "strengthen": 0.0653,
+      "weaken": 0.0573,
+      "parallel": 0.0524,
+      "principle": 0.0507,
+      "paradox": 0.0354,
+      "method": 0.0341,
+      "main_point": 0.0316,
+      "point_at_issue": 0.0279,
+      "assumption_sufficient": 0.0184,
+      "complete": 0.0135,
+      "parallel_flaw": 0.0119,
+      "evaluate": 0.0035
+    },
+    "classified": 3112,
+    "classified_rate": 0.6885
+  },
+  "stem_templates": {
+    "distinct_normalized_stems": 3204,
+    "top_50_coverage": 0.1969,
+    "top_30": [
+      {
+        "template": "which one of the following is an assumption on which the argument depends?",
+        "count": 86
+      },
+      {
+        "template": "which one of the following, if true, most strengthens the argument?",
+        "count": 66
+      },
+      {
+        "template": "which one of the following, if true, most seriously weakens the argument?",
+        "count": 51
+      },
+      {
+        "template": "which one of the following is most strongly supported by the information above?",
+        "count": 51
+      },
+      {
+        "template": "which one of the following is an assumption required by the argument?",
+        "count": 50
+      },
+      {
+        "template": "the statements above, if true, most strongly support which one of the following?",
+        "count": 33
+      },
+      {
+        "template": "which one of the following most logically completes the argument?",
+        "count": 32
+      },
+      {
+        "template": "the reasoning in the argument is flawed because the argument",
+        "count": 30
+      },
+      {
+        "template": "which one of the following, if true, most weakens the argument?",
+        "count": 26
+      },
+      {
+        "template": "the reasoning in the argument is most vulnerable to criticism on the grounds that the argument",
+        "count": 22
+      },
+      {
+        "template": "the conclusion of the argument follows logically if which one of the following is assumed?",
+        "count": 22
+      },
+      {
+        "template": "if the statements above are true, which one of the following must also be true?",
+        "count": 17
+      },
+      {
+        "template": "which one of the following arguments is most similar in its reasoning to the argument above?",
+        "count": 17
+      },
+      {
+        "template": "the argument is most vulnerable to criticism on the grounds that it",
+        "count": 17
+      },
+      {
+        "template": "which one of the following, if true, most helps to resolve the apparent discrepancy in the information above?",
+        "count": 17
+      },
+      {
+        "template": "which one of the following most accurately expresses the main conclusion of the argument?",
+        "count": 17
+      },
+      {
+        "template": "the argument proceeds by",
+        "count": 16
+      },
+      {
+        "template": "the argument depends on assuming which one of the following?",
+        "count": 16
+      },
+      {
+        "template": "which one of the following statements, if true, most seriously weakens the argument?",
+        "count": 15
+      },
+      {
+        "template": "the reasoning in the argument is flawed in that the argument",
+        "count": 15
+      },
+      {
+        "template": "which one of the following is an assumption on which the argument relies?",
+        "count": 13
+      },
+      {
+        "template": "which one of the following can be properly inferred from the statements above?",
+        "count": 13
+      },
+      {
+        "template": "the conclusion drawn above follows logically if which one of the following is assumed?",
+        "count": 13
+      },
+      {
+        "template": "which one of the following, if true, would most strengthen the argument?",
+        "count": 11
+      },
+      {
+        "template": "which one of the following can be properly inferred from the passage?",
+        "count": 10
+      },
+      {
+        "template": "each of the following, if true, weakens the argument except:",
+        "count": 10
+      },
+      {
+        "template": "which one of the following, if true, most helps to resolve the apparent discrepancy described above?",
+        "count": 10
+      },
+      {
+        "template": "the arguments reasoning is flawed because the argument",
+        "count": 10
+      },
+      {
+        "template": "the conclusion above follows logically if which one of the following is assumed?",
+        "count": 10
+      },
+      {
+        "template": "the conclusion follows logically if which one of the following is assumed?",
+        "count": 10
+      }
+    ]
+  },
+  "readability": {
+    "type_token_ratio": 0.0614,
+    "distinct_words": 18116,
+    "total_words": 295221,
+    "words_per_sentence": {
+      "n": 4520,
+      "mean": 22.54,
+      "sd": 7.48,
+      "min": 5.0,
+      "p5": 13.0,
+      "p25": 17.6,
+      "p50": 21.5,
+      "p75": 26.0,
+      "p95": 35.5,
+      "max": 84.0
+    },
+    "flesch_kincaid_grade": {
+      "n": 4520,
+      "mean": 13.42,
+      "sd": 3.47,
+      "min": 0.63,
+      "p5": 8.2,
+      "p25": 11.14,
+      "p50": 13.22,
+      "p75": 15.4,
+      "p95": 19.08,
+      "max": 36.7
+    }
+  },
+  "coverage": {
+    "administrations": 85,
+    "unknown_id_format": 227,
+    "items_per_administration": {
+      "n": 85,
+      "mean": 50.51,
+      "sd": 0.76,
+      "min": 49.0,
+      "p5": 49.0,
+      "p25": 50.0,
+      "p50": 51.0,
+      "p75": 51.0,
+      "p95": 52.0,
+      "max": 52.0
+    },
+    "by_year": {
+      "1991": 3,
+      "1992": 4,
+      "1993": 3,
+      "1994": 4,
+      "1995": 4,
+      "1996": 4,
+      "1997": 4,
+      "1998": 3,
+      "1999": 4,
+      "2000": 4,
+      "2001": 3,
+      "2002": 3,
+      "2003": 3,
+      "2004": 3,
+      "2005": 3,
+      "2006": 3,
+      "2007": 3,
+      "2008": 3,
+      "2009": 3,
+      "2010": 3,
+      "2011": 3,
+      "2012": 3,
+      "2013": 3,
+      "2014": 3,
+      "2015": 3,
+      "2016": 3
+    },
+    "distinct_passages": 4242,
+    "items_per_passage": {
+      "n": 4242,
+      "mean": 1.07,
+      "sd": 0.26,
+      "min": 1.0,
+      "p5": 1.0,
+      "p25": 1.0,
+      "p50": 1.0,
+      "p75": 1.0,
+      "p95": 2.0,
+      "max": 3.0
+    }
+  }
+}

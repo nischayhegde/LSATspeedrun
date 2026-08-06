@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 
 import type { GameAsset } from '../types'
+import { IllustratedRenderPass } from './render-style'
 
 type RenderAsset = Pick<GameAsset, 'art' | 'key' | 'name' | 'tier' | 'type'>
 
@@ -12,6 +13,7 @@ const renderCache = new Map<string, string>()
 const pendingRenders = new Map<string, Promise<string>>()
 let renderQueue: Promise<unknown> = Promise.resolve()
 let sharedRenderer: THREE.WebGLRenderer | null = null
+let sharedStylePass: IllustratedRenderPass | null = null
 
 const palettes = [
   { wall: 0x231a18, floor: 0x2c201b, wood: 0x6f4933, brass: 0xc29a52, steel: 0x27333c, glow: 0x73c6bb },
@@ -36,6 +38,25 @@ function renderer() {
   next.shadowMap.type = THREE.PCFShadowMap
   sharedRenderer = next
   return next
+}
+
+/**
+ * The thumbnails have to carry the same contours as the rooms they depict,
+ * because they sit in the catalog directly beside the office they are previews
+ * of. One pass is enough: the renderer is shared and fixed at WIDTH x HEIGHT,
+ * so the target never resizes.
+ */
+function stylePass() {
+  if (sharedStylePass) return sharedStylePass
+  sharedStylePass = new IllustratedRenderPass(renderer(), {
+    exposure: 1.16,
+    inkStrength: .72,
+    normalEdge: .9,
+    bands: 10,
+    flatten: .34,
+    saturation: 1.18,
+  })
+  return sharedStylePass
 }
 
 function material(color: number, roughness = .5, metalness = .08, emissive = 0, emissiveIntensity = 0) {
@@ -217,6 +238,317 @@ function addCampus(group: THREE.Object3D, p: typeof palettes[number], ocean = fa
     for (let row = 0; row < Math.floor(h / .38); row += 1) box(group, [.58, .08, .025], material(p.glow, .2, .35, p.glow, .55), [Math.cos(a) * 2.05, .65 + row * .38, .58 + Math.sin(a) * 1.35], [0, -a, 0], .01)
   }
   addGlobe(group, p, .62, [0, 2.0, .15])
+}
+
+/* ------------------------------------------------ rival headquarters */
+
+/* Rivals were the last catalog type still served by the old flat raster set in
+   /public/art/site, which is why they read as a different game beside every
+   other card. They are exteriors rather than interiors, so they cannot reuse
+   `addRoom` — but everything that actually carries the house style is the
+   renderer itself: the same palettes, the same key/rim/warm lighting rig, the
+   same ACES exposure and the same camera. `addStreet` is the exterior
+   counterpart to `addRoom`, and each architecture family below is a real
+   massing rather than a tinted box, so a gothic chamber and an orbital ring
+   are told apart by their silhouette instead of by a CSS class. */
+
+function addStreet(scene: THREE.Scene, p: typeof palettes[number], water = false) {
+  const street = new THREE.Group()
+  scene.add(street)
+  const ground = add(street, new THREE.PlaneGeometry(46, 34), material(water ? 0x16323d : p.floor, water ? .22 : .88, water ? .32 : .04), [0, 0, 2], [-Math.PI / 2, 0, 0])
+  ground.castShadow = false
+  if (!water) {
+    const apron = add(street, new THREE.PlaneGeometry(15, 4.4), material(0x2a3037, .8), [0, .012, 4.4], [-Math.PI / 2, 0, 0])
+    apron.castShadow = false
+    for (let slab = 0; slab < 7; slab += 1) box(street, [1.9, .07, 4.2], material(slab % 2 ? 0x333a41 : 0x2d343a, .84), [-5.7 + slab * 1.9, .03, 4.4], undefined, .01)
+  }
+  // A silhouetted party wall on either flank stops the subject reading as a
+  // model on a turntable and gives the massing something to be scaled against.
+  for (const side of [-1, 1]) {
+    for (let neighbour = 0; neighbour < 3; neighbour += 1) {
+      const height = 2.6 + ((neighbour * 5 + (side > 0 ? 2 : 0)) % 4) * 1.15
+      box(street, [2.5, height, 3.2], material(0x1a2027, .92), [side * (6.4 + neighbour * 2.55), height / 2, -2.2 - neighbour * .5], [0, side * .04 * neighbour, 0], .04)
+    }
+  }
+  return street
+}
+
+function litBand(group: THREE.Object3D, p: typeof palettes[number], width: number, y: number, z: number, count: number, intensity = .7) {
+  const glass = material(0x14313a, .2, .3, p.glow, intensity)
+  for (let bay = 0; bay < count; bay += 1) {
+    const x = (bay - (count - 1) / 2) * (width / Math.max(1, count))
+    const pane = box(group, [width / count * .58, .34, .05], glass, [x, y, z], undefined, .015)
+    pane.castShadow = false
+  }
+}
+
+function addSignage(group: THREE.Object3D, p: typeof palettes[number], y: number, z: number, neon = false) {
+  const plate = material(neon ? 0x4a1c46 : 0x1a2128, .3, .6, neon ? 0xc85cb5 : p.brass, neon ? 1.1 : .22)
+  box(group, [3.1, .62, .16], plate, [0, y, z], undefined, .05)
+  for (let glyph = 0; glyph < 5; glyph += 1) {
+    const bar = box(group, [.26, .3, .05], material(neon ? 0x69e1d4 : p.brass, .22, .74, neon ? 0x69e1d4 : p.brass, neon ? 1.4 : .4), [-1.02 + glyph * .51, y, z + .1], undefined, .01)
+    bar.castShadow = false
+  }
+}
+
+function addRivalHeadquarters(group: THREE.Object3D, architecture: string, tier: number, p: typeof palettes[number]) {
+  const stone = material(0x6d6a60, .78, .04)
+  const paleStone = material(0x9d9789, .7, .03)
+  const brick = material(0x6d3f34, .88, .02)
+  const slate = material(0x2c3238, .74, .12)
+  const steel = material(p.steel, .34, .72)
+  const brass = material(p.brass, .26, .82)
+  const glass = material(0x2a5f6e, .16, .42, p.glow, .34)
+
+  if (architecture === 'brick-house') {
+    box(group, [6.2, 3.5, 4.2], brick, [0, 1.75, 0], undefined, .06)
+    add(group, new THREE.ConeGeometry(4.6, 2.1, 4), slate, [0, 4.6, 0], [0, Math.PI / 4, 0])
+    box(group, [.8, 1.5, .8], brick, [1.9, 4.6, -.7], undefined, .04)
+    box(group, [1.4, 2.1, .22], material(0x3a2b22, .7), [0, 1.05, 2.2], undefined, .04)
+    add(group, new THREE.SphereGeometry(.09, 12, 8), brass, [.45, 1.05, 2.36])
+    litBand(group, p, 4.6, 2.5, 2.16, 3, .55)
+    litBand(group, p, 4.6, 1.3, 2.16, 2, .35)
+    for (const side of [-1, 1]) add(group, new THREE.SphereGeometry(.5, 18, 12), material(0x35543f, .92), [side * 2.5, .5, 2.7]).scale.set(1, .8, 1)
+    return
+  }
+
+  if (architecture === 'art-deco') {
+    for (let setback = 0; setback < 4; setback += 1) {
+      const width = 6.4 - setback * 1.25
+      const height = 2.5 - setback * .28
+      box(group, [width, height, width * .62], paleStone, [0, 1.25 + setback * 2.3, 0], undefined, .05)
+      for (let pier = 0; pier < 5; pier += 1) box(group, [.2, height * .92, .16], brass, [(pier - 2) * (width / 5.4), 1.25 + setback * 2.3, width * .32], undefined, .02)
+      litBand(group, p, width * .78, 1.25 + setback * 2.3, width * .315, 4 - setback, .62)
+    }
+    add(group, new THREE.ConeGeometry(.62, 2.4, 12), brass, [0, 10.6, 0])
+    addSignage(group, p, .9, 2.1)
+    return
+  }
+
+  if (architecture === 'northstar') {
+    box(group, [5.6, 7.4, 4.0], paleStone, [0, 3.7, 0], undefined, .06)
+    box(group, [6.6, .3, 1.8], brass, [0, 2.5, 2.4], undefined, .05)
+    for (const x of [-2.6, 2.6]) add(group, new THREE.CylinderGeometry(.09, .09, 2.4, 12), brass, [x, 1.2, 2.4])
+    for (let floor = 0; floor < 5; floor += 1) litBand(group, p, 4.8, 1.9 + floor * 1.28, 2.02, 4, .68)
+    const star = add(group, new THREE.OctahedronGeometry(.7), material(p.brass, .2, .88, p.brass, .8), [0, 8.4, 0])
+    star.scale.set(1, 1.5, 1)
+    return
+  }
+
+  if (architecture === 'mega-tower') {
+    box(group, [4.4, 13.5, 3.6], material(0x1e3038, .18, .5), [0, 6.75, 0], undefined, .08)
+    for (let floor = 0; floor < 11; floor += 1) litBand(group, p, 4.0, 1.3 + floor * 1.18, 1.84, 5, floor % 3 ? .8 : .35)
+    for (const x of [-2.24, 2.24]) box(group, [.16, 13.5, 3.7], steel, [x, 6.75, 0], undefined, .02)
+    box(group, [5.4, .5, 4.6], steel, [0, 13.7, 0], undefined, .06)
+    add(group, new THREE.CylinderGeometry(.05, .12, 3.2, 10), steel, [0, 15.5, 0])
+    const beacon = add(group, new THREE.SphereGeometry(.18, 14, 10), material(0xd35347, .3, .2, 0xd35347, 2.2), [0, 17.1, 0])
+    beacon.castShadow = false
+    box(group, [7.2, 1.0, 1.2], material(0x16222a, .3, .55), [0, .5, 2.6], undefined, .1)
+    return
+  }
+
+  if (architecture === 'gothic') {
+    const darkStone = material(0x4b4452, .82, .03)
+    box(group, [6.0, 5.6, 4.2], darkStone, [0, 2.8, 0], undefined, .04)
+    for (const x of [-3.1, 3.1]) {
+      box(group, [.9, 7.2, .9], darkStone, [x, 3.6, 1.4], undefined, .03)
+      add(group, new THREE.ConeGeometry(.78, 2.6, 8), material(0x3a3243, .7), [x, 8.5, 1.4])
+      // Flying buttresses are what make a chamber read as gothic rather than
+      // as a dark tower, so they get real angled members instead of a stripe.
+      box(group, [.28, 3.4, .3], darkStone, [x * .84, 3.2, -1.5], [0, 0, x > 0 ? -.42 : .42], .03)
+    }
+    add(group, new THREE.ConeGeometry(3.9, 3.4, 3), material(0x35303f, .72), [0, 7.3, 0], [0, Math.PI / 6, 0])
+    for (let lancet = 0; lancet < 4; lancet += 1) {
+      const x = -2.0 + lancet * 1.33
+      const pane = box(group, [.62, 2.3, .06], material(0x53306a, .28, .2, 0xa068c8, .85), [x, 3.1, 2.14], undefined, .3)
+      pane.castShadow = false
+      add(group, new THREE.ConeGeometry(.34, .8, 3), darkStone, [x, 4.5, 2.12])
+    }
+    const rose = add(group, new THREE.CircleGeometry(.95, 24), material(0x6b3a58, .3, .18, 0xc06898, .9), [0, 5.4, 2.16])
+    rose.castShadow = false
+    add(group, new THREE.TorusGeometry(.97, .11, 10, 26), darkStone, [0, 5.4, 2.16])
+    return
+  }
+
+  if (architecture === 'neon') {
+    box(group, [6.4, 6.2, 4.0], material(0x3d2447, .58, .18), [0, 3.1, 0], undefined, .07)
+    for (let strip = 0; strip < 4; strip += 1) {
+      const band = box(group, [6.5, .16, 4.1], material(0xc85cb5, .2, .4, 0xc85cb5, 1.6), [0, 1.5 + strip * 1.45, 0], undefined, .02)
+      band.castShadow = false
+    }
+    for (let floor = 0; floor < 4; floor += 1) litBand(group, p, 5.4, 2.15 + floor * 1.45, 2.04, 5, 1.1)
+    for (const x of [-3.5, 3.5]) {
+      add(group, new THREE.CylinderGeometry(.11, .11, 8.2, 10), material(0x69e1d4, .2, .5, 0x69e1d4, 1.5), [x, 4.1, 1.6])
+    }
+    addSignage(group, p, 7.1, 1.9, true)
+    const spill = new THREE.PointLight(0xc85cb5, 12, 14, 1.8)
+    spill.position.set(0, 4.4, 4.2)
+    group.add(spill)
+    return
+  }
+
+  if (architecture === 'glass-arc') {
+    const arc = add(group, new THREE.TorusGeometry(4.6, 1.05, 18, 44, Math.PI), material(0x2f6f80, .14, .46, p.glow, .38), [0, .2, 0], [0, 0, 0])
+    arc.scale.set(1, 1.15, .62)
+    for (let mullion = 0; mullion < 11; mullion += 1) {
+      const a = mullion / 10 * Math.PI
+      add(group, new THREE.CylinderGeometry(.075, .075, 2.6, 8), steel, [Math.cos(a) * 4.6, .2 + Math.sin(a) * 5.3, 0], [Math.PI / 2, 0, 0])
+    }
+    add(group, new THREE.TorusGeometry(4.6, .12, 10, 48, Math.PI), steel, [0, .2, .68])
+    add(group, new THREE.TorusGeometry(4.6, .12, 10, 48, Math.PI), steel, [0, .2, -.68])
+    box(group, [8.4, 1.6, 3.2], paleStone, [0, .8, 0], undefined, .08)
+    litBand(group, p, 7.0, 1.0, 1.66, 7, .7)
+    return
+  }
+
+  if (architecture === 'command') {
+    box(group, [8.6, 2.6, 5.4], material(0x3d2f31, .74, .18), [0, 1.3, 0], undefined, .1)
+    box(group, [6.2, 2.0, 4.2], material(0x4c3a3a, .68, .22), [0, 3.6, 0], undefined, .12)
+    box(group, [3.4, 1.4, 3.0], steel, [0, 5.3, 0], undefined, .14)
+    litBand(group, p, 5.4, 3.6, 2.14, 5, 1.0)
+    for (const side of [-1, 1]) {
+      const dish = add(group, new THREE.SphereGeometry(1.05, 22, 12, 0, Math.PI * 2, 0, Math.PI / 2), material(0xb9bcb4, .42, .38), [side * 2.9, 4.9, -.6], [side * .5, 0, side * -.6])
+      dish.scale.y = .5
+      add(group, new THREE.CylinderGeometry(.07, .07, 1.3, 8), steel, [side * 2.9, 4.4, -.6])
+    }
+    add(group, new THREE.CylinderGeometry(.06, .1, 4.2, 8), steel, [0, 8.1, 0])
+    for (let ring = 0; ring < 3; ring += 1) add(group, new THREE.TorusGeometry(.3 + ring * .16, .035, 8, 20), material(0xd35347, .3, .4, 0xd35347, 1.4), [0, 7.2 + ring * .7, 0], [Math.PI / 2, 0, 0])
+    return
+  }
+
+  if (architecture === 'citadel') {
+    box(group, [8.0, 4.6, 5.2], stone, [0, 2.3, 0], undefined, .05)
+    for (const x of [-4.2, 4.2]) {
+      add(group, new THREE.CylinderGeometry(1.15, 1.35, 7.2, 12), stone, [x, 3.6, 0])
+      add(group, new THREE.ConeGeometry(1.4, 1.6, 12), material(0x7d6338, .6, .3), [x, 8.0, 0])
+      for (let merlon = 0; merlon < 8; merlon += 1) {
+        const a = merlon / 8 * Math.PI * 2
+        box(group, [.3, .5, .3], stone, [x + Math.cos(a) * 1.1, 7.4, Math.sin(a) * 1.1], [0, -a, 0], .02)
+      }
+    }
+    for (let merlon = 0; merlon < 9; merlon += 1) box(group, [.5, .6, 5.3], stone, [-3.2 + merlon * .8, 4.9, 0], undefined, .03)
+    box(group, [2.0, 3.0, .3], material(0x2f2820, .72), [0, 1.5, 2.62], undefined, .5)
+    add(group, new THREE.CylinderGeometry(.05, .05, 3.0, 8), brass, [0, 6.3, 1.4])
+    const flag = box(group, [1.5, .9, .04], material(p.brass, .5, .3, p.brass, .3), [.78, 7.3, 1.4], undefined, .01)
+    flag.castShadow = false
+    return
+  }
+
+  if (architecture === 'campus') {
+    add(group, new THREE.CylinderGeometry(7.2, 7.4, .3, 40), material(0x2f3a34, .84), [0, .15, 0])
+    for (let pavilion = 0; pavilion < 6; pavilion += 1) {
+      const a = pavilion / 6 * Math.PI * 2 + .35
+      const height = 2.2 + (pavilion % 3) * .95
+      // Each pavilion is its own group so its glazing turns with it, rather
+      // than being written straight into world space and facing the wrong way.
+      const wing = new THREE.Group()
+      wing.position.set(Math.cos(a) * 4.5, 0, Math.sin(a) * 3.1)
+      wing.rotation.y = -a
+      group.add(wing)
+      box(wing, [2.3, height, 2.0], pavilion % 2 ? paleStone : material(0x466b5b, .66, .1), [0, .3 + height / 2, 0], undefined, .08)
+      litBand(wing, p, 1.8, .3 + height * .55, 1.04, 3, .62)
+    }
+    add(group, new THREE.CylinderGeometry(2.0, 2.2, .5, 32), paleStone, [0, .5, 0])
+    addGlobe(group, p, 1.35, [0, 2.5, 0])
+    for (let tree = 0; tree < 5; tree += 1) {
+      const a = tree / 5 * Math.PI * 2 + 1.1
+      add(group, new THREE.CylinderGeometry(.12, .16, 1.1, 8), material(0x53402f, .9), [Math.cos(a) * 6.1, .85, Math.sin(a) * 4.1])
+      add(group, new THREE.SphereGeometry(.95, 16, 12), material(0x35633f, .92), [Math.cos(a) * 6.1, 2.0, Math.sin(a) * 4.1]).scale.set(1, .82, 1)
+    }
+    return
+  }
+
+  if (architecture === 'ocean') {
+    for (const x of [-3.4, 0, 3.4]) for (const z of [-1.8, 1.8]) add(group, new THREE.CylinderGeometry(.55, .55, 2.2, 14), material(0x2a3c42, .6, .3), [x, .4, z])
+    box(group, [9.4, .55, 5.6], material(0x37474d, .7, .16), [0, 1.75, 0], undefined, .06)
+    box(group, [5.2, 3.4, 4.0], material(0x2e6b7c, .38, .3), [-1.0, 3.7, 0], undefined, .1)
+    box(group, [3.0, 1.8, 3.0], material(0x35798a, .3, .35), [-1.0, 6.3, 0], undefined, .12)
+    litBand(group, p, 4.4, 3.5, 2.04, 4, .85)
+    litBand(group, p, 2.4, 6.2, 1.54, 3, .95)
+    add(group, new THREE.CylinderGeometry(.16, .2, 6.4, 10), material(0xb4703a, .62, .28), [3.4, 5.2, -.6])
+    box(group, [4.6, .26, .3], material(0xb4703a, .62, .28), [4.9, 8.2, -.6], [0, 0, -.16], .04)
+    add(group, new THREE.CylinderGeometry(.03, .03, 2.4, 6), steel, [6.6, 6.9, -.6])
+    box(group, [1.0, .7, .8], material(0x2b3a40, .6, .2), [6.6, 5.5, -.6], undefined, .06)
+    for (let buoy = 0; buoy < 3; buoy += 1) {
+      const b = add(group, new THREE.SphereGeometry(.28, 14, 10), material(0xc4562f, .5, .12, 0xc4562f, .5), [-6.5 + buoy * 1.6, .1, 3.9 + buoy * .5])
+      b.castShadow = false
+    }
+    return
+  }
+
+  if (architecture === 'orbital') {
+    const ring = add(group, new THREE.TorusGeometry(4.2, .78, 20, 60), material(0x8d949c, .32, .68), [0, 4.6, 0], [Math.PI / 2.35, 0, 0])
+    ring.scale.z = 1
+    for (let spoke = 0; spoke < 6; spoke += 1) {
+      const a = spoke / 6 * Math.PI * 2
+      add(group, new THREE.CylinderGeometry(.14, .14, 4.2, 8), steel, [Math.cos(a) * 2.1, 4.6 - Math.sin(a) * 1.6, Math.sin(a) * 2.1], [Math.PI / 2, 0, -a + Math.PI / 2])
+    }
+    add(group, new THREE.CylinderGeometry(1.15, 1.15, 2.6, 20), material(0xa8aeb4, .3, .62), [0, 4.6, 0])
+    for (let port = 0; port < 14; port += 1) {
+      const a = port / 14 * Math.PI * 2
+      const light = add(group, new THREE.SphereGeometry(.16, 10, 8), material(p.glow, .2, .3, p.glow, 1.4), [Math.cos(a) * 4.2, 4.6 - Math.sin(a) * 3.05, Math.sin(a) * 2.9])
+      light.castShadow = false
+    }
+    for (const side of [-1, 1]) {
+      const panel = box(group, [4.4, .1, 2.4], material(0x1d3c66, .26, .5, 0x2f5f9e, .5), [side * 6.6, 4.6, 0], [0, 0, side * .12], .03)
+      panel.castShadow = false
+      add(group, new THREE.CylinderGeometry(.09, .09, 2.4, 8), steel, [side * 4.6, 4.6, 0], [0, 0, Math.PI / 2])
+    }
+    add(group, new THREE.CylinderGeometry(.9, 1.4, 3.4, 16), material(0x4d545c, .5, .5), [0, 1.7, 0])
+    return
+  }
+
+  if (architecture === 'lunar') {
+    const regolith = add(group, new THREE.CylinderGeometry(8.5, 8.8, .5, 44), material(0x6f6a63, .95), [0, .25, 0])
+    regolith.castShadow = false
+    for (let crater = 0; crater < 5; crater += 1) {
+      const a = crater / 5 * Math.PI * 2 + .8
+      const dent = add(group, new THREE.CircleGeometry(.7 + (crater % 3) * .3, 20), material(0x5c584f, .96), [Math.cos(a) * 6.2, .51, Math.sin(a) * 4.3], [-Math.PI / 2, 0, 0])
+      dent.castShadow = false
+    }
+    for (const [x, z, r] of [[-2.6, .4, 2.1], [1.9, -.9, 1.5], [3.4, 1.9, 1.1]] as const) {
+      const dome = add(group, new THREE.SphereGeometry(r, 26, 16, 0, Math.PI * 2, 0, Math.PI / 2), material(0xcfd4d2, .28, .24, p.glow, .16), [x, .5, z])
+      dome.scale.y = .82
+      add(group, new THREE.TorusGeometry(r, .1, 10, 34), steel, [x, .55, z], [Math.PI / 2, 0, 0])
+      for (let port = 0; port < 6; port += 1) {
+        const a = port / 6 * Math.PI * 2
+        const light = add(group, new THREE.CircleGeometry(r * .17, 14), material(p.glow, .2, .3, p.glow, 1.1), [x + Math.cos(a) * r * .99, .5 + r * .42, z + Math.sin(a) * r * .99], [0, a, 0])
+        light.castShadow = false
+      }
+    }
+    add(group, new THREE.CylinderGeometry(.3, .3, 2.4, 12), steel, [-.4, 1.7, .4], [0, 0, Math.PI / 2])
+    add(group, new THREE.CylinderGeometry(.04, .04, 3.6, 6), steel, [-5.4, 2.3, 2.4])
+    const flag = box(group, [1.4, .85, .04], material(p.brass, .48, .3, p.brass, .35), [-4.68, 3.7, 2.4], undefined, .01)
+    flag.castShadow = false
+    return
+  }
+
+  // nexus, and any future rival that is a network rather than a building
+  add(group, new THREE.CylinderGeometry(6.6, 6.9, .4, 46), material(0x1d2140, .6, .3), [0, .2, 0])
+  const core = add(group, new THREE.IcosahedronGeometry(1.9, 1), material(0x353661, .3, .5, p.glow, .5), [0, 4.2, 0])
+  core.castShadow = false
+  add(group, new THREE.CylinderGeometry(.7, 1.5, 3.8, 18), material(0x2b2d55, .44, .44), [0, 2.0, 0])
+  for (let node = 0; node < 7; node += 1) {
+    const a = node / 7 * Math.PI * 2 + .3
+    const x = Math.cos(a) * 4.6
+    const z = Math.sin(a) * 3.2
+    const height = 1.6 + (node % 3) * .8
+    box(group, [1.0, height, 1.0], material(0x2f3160, .4, .44), [x, .4 + height / 2, z], [0, -a, 0], .1)
+    const cap = add(group, new THREE.OctahedronGeometry(.42), material(p.glow, .2, .4, p.glow, 1.2), [x, .4 + height + .5, z])
+    cap.castShadow = false
+    // The beams are what say "network": each outpost is tied to the core, so
+    // the silhouette is a constellation rather than a ring of sheds.
+    const span = Math.hypot(x, z, 4.2 - (.4 + height + .5))
+    const beam = add(group, new THREE.CylinderGeometry(.045, .045, span, 6), material(p.glow, .2, .3, p.glow, .8), [x / 2, (.4 + height + .5 + 4.2) / 2, z / 2])
+    beam.castShadow = false
+    beam.lookAt(0, 4.2, 0)
+    beam.rotateX(Math.PI / 2)
+  }
+  for (let ring = 0; ring < 2; ring += 1) {
+    const halo = add(group, new THREE.TorusGeometry(2.5 + ring * .55, .05, 10, 60), material(ring ? p.brass : p.glow, .2, .7, ring ? p.brass : p.glow, .7), [0, 4.2, 0], [Math.PI / 2 + ring * .5, ring * .7, 0])
+    halo.castShadow = false
+  }
+  if (tier >= 14) addGlobe(group, p, .9, [0, 7.4, 0])
 }
 
 /**
@@ -484,6 +816,13 @@ function buildSubject(asset: RenderAsset, p: typeof palettes[number]) {
   const key = asset.key
   const art = asset.art ?? ''
 
+  if (asset.type === 'rival') {
+    // `art` carries the architecture family for rivals ('gothic', 'neon', …),
+    // which is the only thing that decides the massing.
+    addRivalHeadquarters(subject, art || 'mega-tower', asset.tier, p)
+    return subject
+  }
+
   if (asset.type === 'cosmetic') {
     addCosmetic(subject, asset, p)
     return subject
@@ -515,12 +854,42 @@ function buildSubject(asset: RenderAsset, p: typeof palettes[number]) {
   return subject
 }
 
+const FRAME_BOX = new THREE.Box3()
+const FRAME_SIZE = new THREE.Vector3()
+const FRAME_CENTRE = new THREE.Vector3()
+
+/**
+ * Rival headquarters range from a two-storey brick terrace to a thirteen-tier
+ * orbital ring, so the fixed interior camera that frames every other card would
+ * crop most of them. Fitting the camera to the subject's own bounds keeps the
+ * whole massing in shot at a consistent three-quarter angle.
+ */
+function frameSubject(camera: THREE.PerspectiveCamera, subject: THREE.Object3D) {
+  FRAME_BOX.setFromObject(subject)
+  if (FRAME_BOX.isEmpty()) return
+  FRAME_BOX.getSize(FRAME_SIZE)
+  FRAME_BOX.getCenter(FRAME_CENTRE)
+  const radius = Math.max(FRAME_SIZE.x, FRAME_SIZE.y * 1.12, FRAME_SIZE.z) * .5
+  const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
+  const distance = (radius / Math.min(vertical, vertical * camera.aspect)) * 1.5 + radius
+  camera.position.set(
+    FRAME_CENTRE.x + distance * .62,
+    FRAME_CENTRE.y + Math.max(1.6, FRAME_SIZE.y * .34) + distance * .22,
+    FRAME_CENTRE.z + distance * .78,
+  )
+  camera.lookAt(FRAME_CENTRE.x, FRAME_CENTRE.y + FRAME_SIZE.y * .04, FRAME_CENTRE.z)
+  camera.far = distance * 4 + 40
+  camera.updateProjectionMatrix()
+}
+
 function renderThumbnail(asset: RenderAsset) {
   const p = palettes[Math.min(palettes.length - 1, Math.floor(Math.max(0, asset.tier) / 4))]
+  const rival = asset.type === 'rival'
   const scene = new THREE.Scene()
-  scene.background = new THREE.Color(asset.type === 'connection' ? 0x101c25 : 0x111821)
-  scene.fog = new THREE.FogExp2(scene.background, .026)
-  addRoom(scene, asset, p)
+  scene.background = new THREE.Color(rival ? 0x0d151d : asset.type === 'connection' ? 0x101c25 : 0x111821)
+  scene.fog = new THREE.FogExp2(scene.background, rival ? .011 : .026)
+  if (rival) addStreet(scene, p, asset.art === 'ocean')
+  else addRoom(scene, asset, p)
   const subject = buildSubject(asset, p)
   scene.add(subject)
 
@@ -542,8 +911,27 @@ function renderThumbnail(asset: RenderAsset) {
   const camera = new THREE.PerspectiveCamera(34, WIDTH / HEIGHT, .1, 70)
   camera.position.set(6.6, 4.55, 8.2)
   camera.lookAt(0, 1.55, .05)
+  if (rival) {
+    frameSubject(camera, subject)
+    // A big exterior needs the key light and its shadow frustum to grow with
+    // it, or a tower is lit as if it were a desk lamp and casts no shadow.
+    FRAME_BOX.getSize(FRAME_SIZE)
+    const reach = Math.max(9, FRAME_SIZE.length() * .8)
+    key.position.set(-reach * .5, reach * .95, reach * .8)
+    key.shadow.camera.left = -reach; key.shadow.camera.right = reach
+    key.shadow.camera.top = reach; key.shadow.camera.bottom = -reach * .3
+    key.shadow.camera.far = reach * 4
+    key.shadow.camera.updateProjectionMatrix()
+    rim.distance = reach * 3
+    rim.intensity = 4.2 * Math.max(1, reach / 8)
+    rim.position.set(reach * .7, reach * .7, reach * .35)
+    rim.target.position.copy(FRAME_CENTRE)
+    warm.distance = reach * 1.4
+    warm.intensity = 2.1 * Math.max(1, reach / 9)
+    warm.position.set(-reach * .45, FRAME_CENTRE.y, reach * .4)
+  }
   const webgl = renderer()
-  webgl.render(scene, camera)
+  stylePass().render(scene, camera)
   const dataUrl = webgl.domElement.toDataURL('image/webp', .9)
 
   scene.traverse((object) => {
@@ -556,7 +944,7 @@ function renderThumbnail(asset: RenderAsset) {
 }
 
 function requestThumbnail(asset: RenderAsset) {
-  const cacheKey = `catalog-3d-v2:${asset.type}:${asset.key}:${asset.tier}`
+  const cacheKey = `catalog-3d-v3:${asset.type}:${asset.key}:${asset.tier}`
   const cached = renderCache.get(cacheKey)
   if (cached) return Promise.resolve(cached)
   const pending = pendingRenders.get(cacheKey)
@@ -579,7 +967,7 @@ function requestThumbnail(asset: RenderAsset) {
 
 export function CatalogAssetRender({ asset, fallbackSrc }: { asset: RenderAsset; fallbackSrc: string }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
-  const [src, setSrc] = useState(() => renderCache.get(`catalog-3d-v2:${asset.type}:${asset.key}:${asset.tier}`) ?? '')
+  const [src, setSrc] = useState(() => renderCache.get(`catalog-3d-v3:${asset.type}:${asset.key}:${asset.tier}`) ?? '')
 
   useEffect(() => {
     const root = rootRef.current

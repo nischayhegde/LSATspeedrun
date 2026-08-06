@@ -1,4 +1,4 @@
-# LSAT Speedrun Mobile
+# LSAT Tycoon Mobile
 
 The Expo application is a lightweight native shell around the production React application. It renders the same routes and source code as desktop, including the Three.js office, Three.js world map, case runner, tutorial, sound system, progression, fonts, and account state.
 

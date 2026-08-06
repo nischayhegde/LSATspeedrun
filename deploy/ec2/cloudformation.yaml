@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: LSAT Speedrun sandbox with EC2 web, PostgreSQL, SQS, and Lambda AI workers.
+Description: LSAT Tycoon sandbox with EC2 web, PostgreSQL, SQS, and Lambda AI workers.
 
 Parameters:
   SourceCidr:
@@ -280,7 +280,7 @@ Resources:
   WebSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: HTTP access to the LSAT Speedrun sandbox
+      GroupDescription: HTTP access to the LSAT Tycoon sandbox
       VpcId: !Ref Vpc
       SecurityGroupIngress:
         - Description: Web application
@@ -306,7 +306,7 @@ Resources:
   LambdaSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Egress for LSAT Speedrun Lambda workers
+      GroupDescription: Egress for LSAT Tycoon Lambda workers
       VpcId: !Ref Vpc
       SecurityGroupEgress:
         - IpProtocol: "-1"
@@ -357,7 +357,7 @@ Resources:
   DatabaseSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
-      DBSubnetGroupDescription: Private subnets for LSAT Speedrun PostgreSQL
+      DBSubnetGroupDescription: Private subnets for LSAT Tycoon PostgreSQL
       SubnetIds:
         - !Ref PrivateSubnetA
         - !Ref PrivateSubnetB
@@ -511,7 +511,7 @@ Resources:
   AiWorker:
     Type: AWS::Lambda::Function
     Properties:
-      Description: Processes LSAT Speedrun AI generation jobs outside web requests.
+      Description: Processes LSAT Tycoon AI generation jobs outside web requests.
       Runtime: python3.11
       Architectures:
         - x86_64
@@ -716,7 +716,7 @@ Resources:
 
               cat > /etc/systemd/system/lsat-speedrun.service <<'SERVICE'
               [Unit]
-              Description=LSAT Speedrun Flask API
+              Description=LSAT Tycoon Flask API
               After=network-online.target
               Wants=network-online.target
 
@@ -806,7 +806,7 @@ Resources:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
-        Comment: LSAT Speedrun sandbox HTTPS entrypoint
+        Comment: LSAT Tycoon sandbox HTTPS entrypoint
         Enabled: true
         HttpVersion: http2and3
         IPV6Enabled: true

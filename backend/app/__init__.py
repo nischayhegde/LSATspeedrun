@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import sqlite3
 from pathlib import Path
 
 import click
@@ -10,12 +11,53 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_migrate import Migrate
+from sqlalchemy import event
 from sqlalchemy.engine import URL
+from sqlalchemy.engine import Engine
 
 from .auth import init_auth
 from .extensions import db
 from .routes import api
+from .scoring import FORM_ITEMS
 from .seed import seed_questions
+
+
+@event.listens_for(Engine, "connect")
+def _sqlite_concurrency_pragmas(dbapi_connection, _connection_record):
+    """Put SQLite in WAL mode. Postgres connections are left untouched.
+
+    The local default is the rollback journal, which takes an exclusive lock on
+    the whole database for the duration of every write and gives readers no way
+    through it. That is survivable for a single-threaded server and it is not
+    what this app runs: with `AI_JOBS_MODE=local` the 20-30 second explanation
+    grading happens on background threads *in the same process*, so a grader
+    committing while the player answers the next question is the normal case
+    rather than the exception. QA saw `database is locked` 500s out of exactly
+    that overlap. WAL lets readers proceed against the last committed snapshot
+    while a writer is active, which removes the collision instead of waiting it
+    out, and `busy_timeout` still covers writer-versus-writer.
+
+    Registered against the `Engine` class rather than one engine because
+    Flask-SQLAlchemy builds its engines lazily, and at module scope so repeated
+    `create_app` calls (every test module) do not stack duplicate listeners.
+    `synchronous=NORMAL` is the documented companion setting for WAL: durable
+    across process crashes, and only at risk in a power loss on a dev machine.
+    """
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        # An in-memory database has no journal file to write and reports back
+        # "memory"; asking is harmless and keeps the branch out of here.
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+    except sqlite3.DatabaseError:
+        # A read-only or otherwise locked file cannot be switched. Losing the
+        # optimisation is not a reason to fail the connection.
+        pass
+    finally:
+        cursor.close()
 
 
 def _database_url() -> str:
@@ -90,7 +132,31 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         # request is rejected with "queue_full". Diagnostics are unaffected;
         # they keep the single-active-run rule enforced separately.
         PRACTICE_QUEUE_MAX=max(1, int(os.getenv("PRACTICE_QUEUE_MAX", "8"))),
-        DIAGNOSTIC_SESSION_SIZE=max(6, int(os.getenv("DIAGNOSTIC_SESSION_SIZE", "75"))),
+        # Whether choosing a suggested approach also commits the student to
+        # doing it (see app/enforcement.py). On by default. This is a kill
+        # switch rather than an experiment knob: enforcement changes what the
+        # prompt arm of a live strategy trial actually *is*, so a deployment
+        # has to be able to stop producing the new treatment without a code
+        # change, and every attempt records the version it was collected under.
+        STRATEGY_ENFORCEMENT_ENABLED=os.getenv("STRATEGY_ENFORCEMENT_ENABLED", "true").lower() == "true",
+        # `DIAGNOSTIC_SIZE` is the name every .env file has always documented,
+        # while the code only ever read `DIAGNOSTIC_SESSION_SIZE` — so the
+        # documented setting silently did nothing and every mega-litigation ran
+        # at the hard-coded default. Both names are honoured now, the sibling of
+        # PRACTICE_SESSION_SIZE first, so existing deployments keep working
+        # whichever one they set.
+        #
+        # The default is `scoring.FORM_ITEMS`, not the 75 it used to be. Those
+        # were two different numbers describing one thing: the mega-litigation is
+        # what the projected score anchors on, and the projection converts a raw
+        # score against a 77-item reference form (two LR sections of 25 and one
+        # RC of 27). A 75-item form scored against a 77-item table is a quiet
+        # two-item handicap, so the form size is now the reference form size by
+        # construction and `select_diagnostic_questions` hits it exactly.
+        DIAGNOSTIC_SESSION_SIZE=max(
+            6,
+            int(os.getenv("DIAGNOSTIC_SESSION_SIZE") or os.getenv("DIAGNOSTIC_SIZE") or str(FORM_ITEMS)),
+        ),
         HUGGINGFACE_REQUEST_INTERVAL_SECONDS=max(
             0.0,
             float(os.getenv("HUGGINGFACE_REQUEST_INTERVAL_SECONDS", "1.1")),
@@ -108,13 +174,33 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         TFY_URL=os.getenv("TFY_URL", "").strip().strip('"'),
         COACHING_MODEL="gpt-5.6-luna",
         COACHING_REASONING_EFFORT="xhigh",
-        AI_JOBS_MODE=os.getenv("AI_JOBS_MODE", "sync").strip().lower(),
+        # Explanation grading is a 20-30 second frontier-model call. Running it
+        # inside the request blocks the player's next question on it, so a single
+        # process defaults to the in-process background worker ("local"): same
+        # AiJob row, same retries, no broker to deploy. Production is left as it
+        # was — it declares "sqs" (durable, multi-instance) or "worker" explicitly
+        # — because a request-scoped thread is the wrong shape for a serverless
+        # container that may be frozen the moment the response is written.
+        AI_JOBS_MODE=os.getenv("AI_JOBS_MODE", "sync" if is_production else "local").strip().lower(),
         AI_JOB_QUEUE_URL=os.getenv("AI_JOB_QUEUE_URL", "").strip(),
         AI_JOB_MAX_ATTEMPTS=max(1, int(os.getenv("AI_JOB_MAX_ATTEMPTS", "3"))),
         SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True, "pool_recycle": 300},
     )
     if test_config:
         app.config.update(test_config)
+
+    if app.config["DIAGNOSTIC_SESSION_SIZE"] != FORM_ITEMS:
+        # Deliberately loud rather than silent. A short form still scores
+        # correctly — the projection converts a *rate* reweighted to form
+        # composition, not a raw count — but "the mega-litigation is a
+        # {FORM_ITEMS}-item form" stops being true, and the two numbers
+        # disagreeing without anyone noticing is what this warning exists for.
+        app.logger.warning(
+            "DIAGNOSTIC_SESSION_SIZE is %s but the scoring reference form is %s items; "
+            "the mega-litigation is a short form.",
+            app.config["DIAGNOSTIC_SESSION_SIZE"],
+            FORM_ITEMS,
+        )
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     db.init_app(app)

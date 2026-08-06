@@ -1,9 +1,15 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 
-import type { GameState } from '../types'
+import { api } from '../api'
+import { formatMoney } from '../components'
+import type { GameState, TerritoryDistrict } from '../types'
 import { useAmbientMusic, useSound } from '../sound'
 import type {
+  MapCameraAction,
+  MapLandmark,
+  MapLandmarkKind,
   MapRegionKey,
   MapSceneEvent,
   MapScenePoint,
@@ -11,7 +17,9 @@ import type {
   MapSceneTier,
   MapViewMode,
 } from './map-three-scene'
+import { applyPlayerCosmetics } from './player-cosmetics'
 import { loadMapScene } from './scene-loaders'
+import { STANDING_COPY, rivalFirmName, rivalStanding } from '../rival-war-room'
 import './unified-empire-map.css'
 
 const MapThreeScene = lazy(() => loadMapScene().then((module) => ({ default: module.MapThreeScene })))
@@ -31,13 +39,10 @@ const regions: Array<{
   { key: 'orbit', number: '05', name: 'Global Compact', short: 'Worldwide counsel', range: [12, 14], character: 'An international chamber surrounded by the final offices.' },
 ]
 
-const rivalRegions: MapRegionKey[] = [
-  'city', 'city', 'city', 'city',
-  'nation', 'nation',
-  'ocean', 'ocean', 'ocean',
-  'continent', 'continent',
-  'orbit', 'orbit', 'orbit',
-]
+/* Rival sites used to be assigned by their index in the catalog, which put a
+   tier-5 firm in the Old Quarter and a tier-3 chamber out at sea. A rival now
+   sits in whichever region its own tier belongs to, the same rule the career
+   route uses, so "this firm is in my way" and "this firm is where I am" agree. */
 
 const worldEvents = [
   { key: 'docket', name: 'Morning docket', detail: 'A municipal hearing is assembling outside the courthouse.', minTier: 0 },
@@ -50,6 +55,114 @@ const worldEvents = [
   { key: 'vote', name: 'High-court calendar', detail: 'The international assembly is entering session.', minTier: 14 },
 ]
 
+const landmarkTag: Record<MapLandmarkKind, string> = {
+  civic: 'CIV',
+  transit: 'TRN',
+  market: 'MKT',
+  green: 'GRN',
+  water: 'WTR',
+  industry: 'IND',
+  housing: 'HSG',
+  monument: 'MON',
+}
+
+/* Standing retainers, surfaced in the region they belong to.
+ *
+ * This is coverage, not conquest: signing a district's institutions to a
+ * standing retainer makes your firm the default counsel there. It buys no
+ * payout multiplier and absorbs no competitor, which is what keeps it from
+ * treading on the rival acquisitions the same map already carries — those are
+ * discrete moves against named firms, priced at a full five cases each.
+ *
+ * Collapsed by default, and it stays a strip on the left rail beside the
+ * district guide rather than becoming a board the map has to wear. */
+function RetainerBoard({ game, regionKey, regionName, onTravel }: {
+  game: GameState
+  regionKey: MapRegionKey
+  regionName: string
+  onTravel: (landmarkKey: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const { play } = useSound()
+  const [open, setOpen] = useState(false)
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const secure = useMutation({
+    mutationFn: (districtKey: string) => api.secureDistrict(districtKey),
+    onSuccess: ({ game: next, retainer }) => {
+      queryClient.setQueryData(['game'], { game: next })
+      void queryClient.invalidateQueries({ queryKey: ['game'] })
+      void play(retainer.region_swept ? 'bonus' : 'purchase', { seed: retainer.district, intensity: .55 })
+      setPendingKey(null)
+    },
+    onError: () => setPendingKey(null),
+  })
+
+  const districts = game.territory.districts.filter((district) => district.region === regionKey)
+  const region = game.territory.regions.find((entry) => entry.key === regionKey)
+  if (!districts.length || !region) return null
+  const openable = districts.some((district) => district.available && district.affordable)
+
+  const sign = (district: TerritoryDistrict) => {
+    setPendingKey(district.key)
+    secure.mutate(district.key)
+    if (district.landmark_key) onTravel(district.landmark_key)
+  }
+
+  return (
+    <aside className={`uw-retainer-board ${open ? 'is-open' : ''} ${openable ? 'has-offer' : ''}`} aria-label={`${regionName} standing retainers`}>
+      <button type="button" className="uw-retainer-toggle" aria-expanded={open} onClick={() => setOpen((was) => !was)}>
+        <small>STANDING RETAINERS</small>
+        <strong>{region.held} of {region.total} districts</strong>
+        <i aria-hidden="true">{open ? '−' : '+'}</i>
+      </button>
+      {open && (
+        <>
+          <p className="uw-retainer-intro">
+            Sign a district&apos;s institutions and every routine matter there arrives at your door.
+            Standing holds your reputation up; a branch you are already paid to keep offsets the lease.
+          </p>
+          <div className="uw-retainer-list">
+            {districts.map((district) => (
+              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}`} key={district.key}>
+                {/* Not a <header>: inside the mobile Explore sheet a bare
+                    header element inherits that sheet's own title styling. */}
+                <div className="uw-retainer-head">
+                  <strong>{district.name}</strong>
+                  <b>{district.owned ? 'HELD' : formatMoney(district.cost, true)}</b>
+                </div>
+                <em>Retains {district.retainer}</em>
+                {district.owned
+                  ? <small>+{district.standing.toFixed(2)} standing · {(district.rent_relief_bps / 100).toFixed(1)}% of the lease</small>
+                  : district.locks.length
+                    ? <small className="uw-retainer-lock">{district.locks.join(' · ')}</small>
+                    : (
+                      <button
+                        type="button"
+                        disabled={!district.affordable || secure.isPending}
+                        onClick={() => sign(district)}
+                      >
+                        {pendingKey === district.key && secure.isPending
+                          ? 'Signing…'
+                          : district.affordable ? 'Sign the retainer' : 'Not enough cash'}
+                      </button>
+                    )}
+              </article>
+            ))}
+          </div>
+          <p className="uw-retainer-foot">
+            {region.swept
+              ? `Every district in ${regionName} is retained. +${region.sweep_standing.toFixed(1)} standing for the sweep.`
+              : `Hold all ${region.total} for a further +${region.sweep_standing.toFixed(1)} standing.`}
+            {' '}Firm-wide: {game.territory.standing.toFixed(1)} of {game.territory.standing_cap.toFixed(1)} standing,
+            {' '}{(game.territory.rent_relief_bps / 100).toFixed(0)}% of the lease covered.
+          </p>
+          {secure.error && <p className="uw-retainer-error">That retainer could not be signed. Try again.</p>}
+        </>
+      )}
+    </aside>
+  )
+}
+
 function regionForTier(tier: number) {
   return regions.find((region) => tier >= region.range[0] && tier <= region.range[1]) ?? regions[0]
 }
@@ -61,27 +174,55 @@ function tierState(tier: number, officeTier: number): MapSceneTier['state'] {
   return 'locked'
 }
 
-export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage: (tab: 'upgrades' | 'rivals') => void }) {
+export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel }: {
+  game: GameState
+  /** A rival key handed over from the firm tab's "Show on the map". */
+  focusRival?: string | null
+  onManage: (tab: 'upgrades' | 'rivals') => void
+  empireValueLabel: string
+}) {
   const { play } = useSound()
   const navigate = useNavigate()
   const currentRegion = regionForTier(game.office_tier)
-  const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>(currentRegion.key)
-  const [selectedKey, setSelectedKey] = useState('')
-  const [viewMode, setViewMode] = useState<MapViewMode>('career')
+  const focusAsset = focusRival ? game.catalog.assets.find((asset) => asset.key === focusRival && asset.type === 'rival') : undefined
+  const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>((focusAsset ? regionForTier(focusAsset.tier) : currentRegion).key)
+  const [selectedKey, setSelectedKey] = useState(focusAsset ? `rival-${focusAsset.key}` : '')
+  const [viewMode, setViewMode] = useState<MapViewMode>(focusAsset ? 'rivals' : 'career')
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false)
-  const [cameraCommand, setCameraCommand] = useState<{ id: number; action: 'in' | 'out' | 'home' | 'focus' }>({ id: 0, action: 'focus' })
+  const [cameraCommand, setCameraCommand] = useState<{ id: number; action: MapCameraAction; landmark?: string }>({ id: 0, action: 'focus' })
+  const [landmarks, setLandmarks] = useState<MapLandmark[]>([])
+  const [activeLandmark, setActiveLandmark] = useState<MapLandmark | null>(null)
+  const [landmarkTip, setLandmarkTip] = useState<{ landmark: MapLandmark; x: number; y: number } | null>(null)
+  // Collapsed by default. The district's places are discoverable in the world
+  // itself (hover a building, click it); this is the index for someone who
+  // wants to travel somewhere by name, not a panel the map has to wear.
+  const [guideOpen, setGuideOpen] = useState(false)
   const activeRegion = regions.find((region) => region.key === activeRegionKey) ?? currentRegion
   useAmbientMusic(activeRegionKey)
+
+  // The map's counsel figure is built inside the three.js scene, with no React
+  // props reaching it, so the character builder reads the player's wardrobe
+  // from a module registry instead. Filling that registry means loading the
+  // builder's chunk, which is asynchronous, so the scene is held back one tick
+  // until it is filled — otherwise the very first visit after a change would
+  // build the figure in last session's suit.
+  const cosmeticsKey = JSON.stringify(game.cosmetics ?? null)
+  const [dressed, setDressed] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void applyPlayerCosmetics(JSON.parse(cosmeticsKey) as GameState['cosmetics'] | null).then(() => {
+      if (!cancelled) setDressed(true)
+    })
+    return () => { cancelled = true }
+  }, [cosmeticsKey])
 
   const points = useMemo<MapScenePoint[]>(() => {
     const tiers: MapSceneTier[] = game.catalog.tiers
       .filter((tier) => regionForTier(tier.tier).key === activeRegionKey)
       .map((tier) => ({ key: `tier-${tier.tier}`, kind: 'tier', data: tier, state: tierState(tier.tier, game.office_tier) }))
     const rivals: MapSceneRival[] = game.catalog.assets
-      .filter((asset) => asset.type === 'rival')
-      .map((asset, index) => ({ key: `rival-${asset.key}`, kind: 'rival' as const, data: asset, locked: !asset.owned && !asset.available, region: rivalRegions[index] ?? 'orbit' }))
-      .filter((point) => point.region === activeRegionKey)
-      .map(({ region: _region, ...point }) => point)
+      .filter((asset) => asset.type === 'rival' && regionForTier(asset.tier).key === activeRegionKey)
+      .map((asset) => ({ key: `rival-${asset.key}`, kind: 'rival' as const, data: asset, locked: !asset.owned && !asset.available }))
     const events: MapSceneEvent[] = worldEvents
       .filter((event) => regionForTier(event.minTier).key === activeRegionKey)
       .map((event) => ({ key: `event-${event.key}`, kind: 'event', data: event, locked: game.office_tier < event.minTier }))
@@ -105,7 +246,12 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
     setSelectedKey(key)
     const point = points.find((candidate) => candidate.key === key)
     const locked = point?.kind === 'tier' ? point.state === 'locked' : point?.locked
-    if (point?.kind === 'tier' && !locked) setCameraCommand((command) => ({ id: command.id + 1, action: 'focus' }))
+    // A rival headquarters is a place before it is a menu entry, so selecting
+    // one flies to it exactly like an office; the operations it offers arrive
+    // with the location card rather than in a board of their own.
+    if (!locked && (point?.kind === 'tier' || point?.kind === 'rival')) {
+      setCameraCommand((command) => ({ id: command.id + 1, action: 'focus' }))
+    }
     void play(locked ? 'error' : 'select', { seed: key, intensity: locked ? .38 : .58 })
   }, [play, points])
 
@@ -113,6 +259,9 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
     setActiveRegionKey(key)
     setSelectedKey('')
     setViewMode('career')
+    setLandmarks([])
+    setActiveLandmark(null)
+    setLandmarkTip(null)
     setCameraCommand((command) => ({ id: command.id + 1, action: 'focus' }))
     void play('map', { seed: `arc:${key}`, scene: key, intensity: .44 })
   }
@@ -125,7 +274,37 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
     void play('map', { seed: `headquarters:${game.office_tier}`, scene: currentRegion.key, intensity: .46 })
   }
 
-  const sendCameraCommand = (action: 'in' | 'out' | 'home' | 'focus') => {
+  // The scene reports its own district directory once it has been built, so
+  // the guide always matches whatever the procedural planner actually laid out.
+  const handleLandmarks = useCallback((next: MapLandmark[]) => {
+    setLandmarks(next)
+    setActiveLandmark(null)
+    setLandmarkTip(null)
+  }, [])
+  const handleLandmarkHover = useCallback((landmark: MapLandmark | null, client: { x: number; y: number } | null) => {
+    setLandmarkTip(landmark && client ? { landmark, x: client.x, y: client.y } : null)
+  }, [])
+  const handleLandmarkSelect = useCallback((landmark: MapLandmark) => {
+    setActiveLandmark(landmark)
+    void play('select', { seed: `landmark:${landmark.key}`, intensity: .4 })
+  }, [play])
+  const travelToLandmark = (landmark: MapLandmark) => {
+    setActiveLandmark(landmark)
+    setCameraCommand((command) => ({ id: command.id + 1, action: 'landmark', landmark: landmark.key }))
+    void play('map', { seed: `travel:${landmark.key}`, scene: activeRegionKey, intensity: .38 })
+  }
+  // Districts carry an optional `landmark_key` naming the place they are
+  // retained over. The catalog is owned by the backend and the scene builds
+  // its own directory procedurally, so the join is best-effort: when the
+  // planner has laid that place out, signing its retainer flies there; when it
+  // has not, the purchase simply happens where you are.
+  const travelToLandmarkKey = useCallback((key: string) => {
+    const landmark = landmarks.find((candidate) => candidate.key === key)
+    if (landmark) travelToLandmark(landmark)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landmarks])
+
+  const sendCameraCommand = (action: MapCameraAction) => {
     setCameraCommand((command) => ({ id: command.id + 1, action }))
     void play('select', { seed: `camera:${action}`, intensity: .24 })
   }
@@ -148,17 +327,27 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
 
   return (
     <div className="unified-empire">
+      {/* One panel for every headquarters vital instead of two stacked cards
+          repeating the same office name and level in different words — the
+          progress bar's fraction *is* the "headquarters established" count,
+          so that number only needs to appear once. */}
       <header className="uw-world-ledger">
-        <div>
-          <small>YOUR PRACTICE · LIVING CAREER ATLAS</small>
+        <div className="uw-ledger-hq">
+          <small>YOUR PRACTICE</small>
           <strong>{game.office.name}</strong>
-          <span>Level {game.office_tier + 1} of {game.catalog.tiers.length}</span>
+          <div className="uw-world-progress" aria-label={`Level ${game.office_tier + 1} of ${game.catalog.tiers.length}, ${established} headquarters established`}>
+            <span><i style={{ width: `${established / Math.max(1, game.catalog.tiers.length) * 100}%` }} /></span>
+            <small>Level {game.office_tier + 1} of {game.catalog.tiers.length}</small>
+          </div>
         </div>
-        <div className="uw-world-progress" aria-label={`${established} of ${game.catalog.tiers.length} headquarters established`}>
-          <span><i style={{ width: `${established / Math.max(1, game.catalog.tiers.length) * 100}%` }} /></span>
-          <small>{established} headquarters established</small>
+        <div className="uw-ledger-value">
+          <small>Empire value</small>
+          <strong>{empireValueLabel}</strong>
         </div>
-        <button type="button" onClick={focusHeadquarters}><b>⌂</b><span>My headquarters<small>{currentRegion.name}</small></span></button>
+        <button type="button" className="uw-ledger-jump" onClick={focusHeadquarters} aria-label={`Jump to headquarters — ${currentRegion.name}`}>
+          <b>⌂</b>
+          <span>{currentRegion.name}</span>
+        </button>
       </header>
 
       <nav className="uw-arc-navigation" aria-label="Career environments">
@@ -184,7 +373,8 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
 
       <section className="uw-map-frame" data-webgl-surface aria-label={`${activeRegion.name} living career scene`}>
         <Suspense fallback={<div className="uw-three-loading"><i /><span>Building {activeRegion.name}</span></div>}>
-          <MapThreeScene
+          {!dressed && <div className="uw-three-loading"><i /><span>Building {activeRegion.name}</span></div>}
+          {dressed && <MapThreeScene
             region={activeRegionKey}
             points={points}
             selectedKey={selectedKey}
@@ -195,7 +385,10 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
             playerGender={game.character_gender}
             playerTier={game.office_tier}
             playerName={game.lawyer_name}
-          />
+            onLandmarks={handleLandmarks}
+            onLandmarkHover={handleLandmarkHover}
+            onLandmarkSelect={handleLandmarkSelect}
+          />}
         </Suspense>
 
         <div className="uw-mobile-scene-summary" aria-hidden="true">
@@ -254,6 +447,15 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
                 ))}
               </select>
             </label>
+            {/* On phones the map frame is the whole screen and its foot belongs
+                to the tab bar, so the retainer board rides in the Explore sheet
+                rather than in the desktop left rail. */}
+            <RetainerBoard
+              game={game}
+              regionKey={activeRegionKey}
+              regionName={activeRegion.name}
+              onTravel={(key) => { travelToLandmarkKey(key); setMobileControlsOpen(false) }}
+            />
             <div className="uw-mobile-camera-actions">
               <button type="button" onClick={() => { sendCameraCommand('focus'); setMobileControlsOpen(false) }}>Find counsel</button>
               <button type="button" onClick={() => { sendCameraCommand('home'); setMobileControlsOpen(false) }}>Reset view</button>
@@ -327,6 +529,53 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
 
         <div className="uw-map-instructions"><b>SELECT AN OFFICE TO MOVE COUNSEL</b><i /><span>Drag to survey</span><i /><span>Scroll to zoom</span></div>
 
+        {/* The left rail: what is here (the scene's own place index) and what
+            of it your firm holds. Both are collapsed strips, so the map stays
+            the map until one of them is asked for. */}
+        <div className="uw-map-rail">
+          {landmarks.length > 0 && (
+            <aside className={`uw-district-guide ${guideOpen ? 'is-open' : ''}`} aria-label={`${activeRegion.name} district guide`}>
+              <button type="button" className="uw-district-guide-toggle" aria-expanded={guideOpen} onClick={() => setGuideOpen((open) => !open)}>
+                <small>DISTRICT GUIDE</small>
+                <strong>{landmarks.length} places</strong>
+                <i aria-hidden="true">{guideOpen ? '−' : '+'}</i>
+              </button>
+              {guideOpen && (
+                <>
+                  <div className="uw-district-guide-list">
+                    {landmarks.map((landmark) => (
+                      <button
+                        type="button"
+                        className={activeLandmark?.key === landmark.key ? 'is-active' : ''}
+                        key={landmark.key}
+                        onClick={() => travelToLandmark(landmark)}
+                        onMouseEnter={() => setActiveLandmark(landmark)}
+                      >
+                        <b>{landmarkTag[landmark.kind]}</b>
+                        <span>{landmark.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {activeLandmark && <p className="uw-district-guide-detail">{activeLandmark.detail}</p>}
+                </>
+              )}
+            </aside>
+          )}
+          <RetainerBoard
+            game={game}
+            regionKey={activeRegionKey}
+            regionName={activeRegion.name}
+            onTravel={travelToLandmarkKey}
+          />
+        </div>
+
+        {landmarkTip && (
+          <div className="uw-landmark-tip" style={{ left: landmarkTip.x, top: landmarkTip.y }} aria-hidden="true">
+            <b>{landmarkTag[landmarkTip.landmark.kind]}</b>
+            <span>{landmarkTip.landmark.name}</span>
+          </div>
+        )}
+
         {selected && (
           <aside className={`uw-location-card kind-${selected.kind}`} aria-live="polite">
             <button type="button" className="uw-card-close" onClick={() => setSelectedKey('')} aria-label="Close location card">×</button>
@@ -337,12 +586,32 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
                   ? selected.data.owned ? 'ACQUIRED OFFICE' : 'RIVAL OFFICE'
                   : selected.locked ? `LOCKED · LEVEL ${selected.data.minTier + 1}` : 'LIVE DISTRICT DOCKET'}
             </small>
-            <strong>{selected.data.name.replace('Acquire ', '')}</strong>
+            <strong>{selected.kind === 'rival' ? rivalFirmName(selected.data) : selected.data.name}</strong>
             <p>{selected.kind === 'tier' ? selected.data.short : selected.kind === 'rival' ? selected.data.description : selected.data.detail}</p>
-            {selected.kind !== 'event' && <div className="uw-card-cost"><span>${selected.data.cost.toLocaleString()}</span><span>★ {selected.data.reputation}</span>{selected.kind === 'tier' && <span>LEASE ${selected.data.rent_daily.toLocaleString()}/DAY</span>}</div>}
+            {/* The territorial mechanic, surfaced at the place it applies to.
+                This is the map's slice of the war room — where this firm stands
+                and what it would cost today — not the board itself, which lives
+                on the firm tab and is one button away. */}
+            {selected.kind === 'rival' && (() => {
+              const standing = rivalStanding(selected.data)
+              const discount = (selected.data.discount_bps ?? 0) / 100
+              const list = selected.data.list_cost ?? selected.data.cost
+              return (
+                <div className={`uw-card-standing is-${standing}`}>
+                  <span className="uw-standing-chip">{STANDING_COPY[standing].label}</span>
+                  <em>{STANDING_COPY[standing].blurb}</em>
+                  <div className="uw-standing-price">
+                    {discount > 0 && <del>${list.toLocaleString()}</del>}
+                    <strong>${selected.data.cost.toLocaleString()}</strong>
+                    {discount > 0 && <b>{discount.toFixed(0)}% off list</b>}
+                  </div>
+                </div>
+              )
+            })()}
+            {selected.kind !== 'event' && <div className="uw-card-cost">{selected.kind === 'tier' && <span>${selected.data.cost.toLocaleString()}</span>}<span>★ {selected.data.reputation}</span>{selected.kind === 'tier' && <span>LEASE ${selected.data.rent_daily.toLocaleString()}/DAY</span>}</div>}
             {selected.kind !== 'event' && (
               <button type="button" className="uw-card-action" disabled={pointLocked(selected)} onClick={() => onManage(selected.kind === 'tier' ? 'upgrades' : 'rivals')}>
-                {pointLocked(selected) ? 'Route not yet earned' : selected.kind === 'tier' ? 'Manage headquarters' : 'Open acquisition file'} <i>{pointLocked(selected) ? '×' : '›'}</i>
+                {pointLocked(selected) ? 'Route not yet earned' : selected.kind === 'tier' ? 'Manage headquarters' : 'Run an operation'} <i>{pointLocked(selected) ? '×' : '›'}</i>
               </button>
             )}
             {selected.kind === 'event' && <div className={`uw-signal-state ${selected.locked ? '' : 'live'}`}>{selected.locked ? `Reach level ${selected.data.minTier + 1} to open this docket.` : selected.data.detail}</div>}

@@ -11,7 +11,7 @@ const INJECT_NATIVE_CONTEXT = `
   (function () {
     document.documentElement.dataset.nativeApp = 'true';
     document.documentElement.classList.add('native-app-shell');
-    window.__LSAT_SPEEDRUN_NATIVE__ = true;
+    window.__LSAT_TYCOON_NATIVE__ = true;
     var reportRoute = function () {
       window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
         type: 'lsat-route-change',
@@ -115,7 +115,7 @@ export function WebApp() {
 
   return (
     <SafeAreaView edges={sceneLandscape ? [] : ['top', 'bottom']} style={styles.safeArea}>
-      <StatusBar hidden={sceneLandscape} style="light" backgroundColor="#101725" />
+      <StatusBar hidden={sceneLandscape} style="light" backgroundColor="#111a29" />
       <WebView
         ref={webView}
         source={{ uri: WEB_APP_URL }}
@@ -136,7 +136,7 @@ export function WebApp() {
         contentInsetAdjustmentBehavior="never"
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
-        applicationNameForUserAgent="LSATSpeedrunMobile/1.0"
+        applicationNameForUserAgent="LSATTycoonMobile/1.0"
         injectedJavaScriptBeforeContentLoaded={INJECT_NATIVE_CONTEXT}
         onMessage={handleMessage}
         onNavigationStateChange={handleNavigation}
@@ -160,12 +160,12 @@ export function WebApp() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#101725' },
-  webViewContainer: { flex: 1, backgroundColor: '#101725' },
-  webView: { flex: 1, backgroundColor: '#101725' },
-  loading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 15, backgroundColor: '#101725' },
+  safeArea: { flex: 1, backgroundColor: '#111a29' },
+  webViewContainer: { flex: 1, backgroundColor: '#111a29' },
+  webView: { flex: 1, backgroundColor: '#111a29' },
+  loading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 15, backgroundColor: '#111a29' },
   loadingLabel: { color: '#f2c75b', fontFamily: Platform.select({ ios: 'Courier New', android: 'monospace' }), fontSize: 10, fontWeight: '800', letterSpacing: 1.8 },
-  error: { ...StyleSheet.absoluteFillObject, padding: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#101725' },
+  error: { ...StyleSheet.absoluteFillObject, padding: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111a29' },
   errorKicker: { color: '#f2c75b', fontFamily: Platform.select({ ios: 'Courier New', android: 'monospace' }), fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
   errorTitle: { marginTop: 10, color: '#f6e7bf', fontFamily: Platform.select({ ios: 'Georgia', android: 'serif' }), fontSize: 28, textAlign: 'center' },
   errorCopy: { maxWidth: 360, marginTop: 10, color: '#b4c9ce', fontSize: 14, lineHeight: 21, textAlign: 'center' },

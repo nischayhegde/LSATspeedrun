@@ -1,0 +1,528 @@
+/* Strategy gates. Colocated with strategy-enforcement.tsx so the whole feature
+   is one drop-in pair, and scoped under .gate so nothing here can reach the
+   rest of the case file. */
+
+.gate {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--gold);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin: 0 0 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.gate.is-done {
+  border-left-color: var(--green);
+}
+
+.gate.is-advisory {
+  border-left-color: var(--line);
+}
+
+.gate-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: .01em;
+  color: var(--ink);
+}
+
+.gate-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+.gate-fields {
+  display: grid;
+  gap: 18px;
+}
+
+.gate-field {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.gate-field > legend {
+  padding: 0;
+  font-weight: 600;
+  font-size: .92rem;
+  color: var(--ink);
+}
+
+.gate-field[disabled] {
+  opacity: .55;
+}
+
+.gate-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+.gate-count {
+  margin: 0;
+  font-size: .78rem;
+  color: var(--muted);
+}
+
+.gate-error {
+  margin: 0;
+  font-size: .85rem;
+  line-height: 1.45;
+  color: var(--red);
+  background: var(--red-soft);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.gate-error b {
+  margin-right: 4px;
+}
+
+.gate-foot {
+  margin: 0;
+  font-size: .8rem;
+  color: var(--muted);
+}
+
+.gate-text,
+.gate-inline-label input,
+.gate-inline-label select {
+  width: 100%;
+  font: inherit;
+  font-size: .9rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 11px;
+}
+
+.gate-text {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.gate-field.has-error .gate-text,
+.gate-field.has-error select,
+.gate-field.has-error input {
+  border-color: var(--red);
+}
+
+.gate-text:focus-visible,
+.gate-segment:focus-visible,
+.gate-pill:focus-visible,
+.gate-strike:focus-visible,
+.gate-add:focus-visible,
+.gate-inline-label select:focus-visible,
+.gate-inline-label input:focus-visible {
+  outline: 3px solid var(--gold-dark);
+  outline-offset: 2px;
+}
+
+/* -- Source annotation ---------------------------------------------------- */
+
+.gate-segments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.gate-segment {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  font: inherit;
+  font-size: .88rem;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 11px;
+  cursor: pointer;
+}
+
+.gate-segment.is-on {
+  background: var(--gold-soft);
+  border-color: var(--gold-dark);
+}
+
+.gate-segment-mark {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: .72rem;
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.gate-segments.is-labelled li,
+.gate-segments.is-noted li {
+  display: grid;
+  gap: 6px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 11px;
+}
+
+.gate-segment-text {
+  margin: 0;
+  font-size: .86rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.gate-inline-label {
+  display: grid;
+  gap: 4px;
+}
+
+.gate-column-label {
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+
+.gate-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* -- Elimination ---------------------------------------------------------- */
+
+.gate-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.gate-choices li {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 11px;
+  background: var(--paper);
+  display: grid;
+  gap: 8px;
+}
+
+.gate-choices li.is-struck {
+  background: var(--red-soft);
+  border-color: var(--red);
+}
+
+.gate-choices li.is-struck .gate-choice-text {
+  text-decoration: line-through;
+  opacity: .7;
+}
+
+.gate-choice-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.gate-choice-text {
+  font-size: .86rem;
+  line-height: 1.5;
+}
+
+.gate-choice-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gate-choice-detail .gate-inline-label {
+  flex: 1 1 160px;
+}
+
+.gate-strike {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+
+.gate-choices li.is-struck .gate-strike {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* -- Pills and rows ------------------------------------------------------- */
+
+.gate-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gate-pills.is-stacked {
+  flex-direction: column;
+}
+
+.gate-pill {
+  font: inherit;
+  font-size: .85rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.gate-pill.is-wide {
+  flex: 1 1 200px;
+}
+
+.gate-pill.is-on {
+  background: var(--gold-soft);
+  border-color: var(--gold-dark);
+  font-weight: 600;
+}
+
+.gate-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.gate-rows li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 11px;
+  background: var(--paper);
+}
+
+.gate-rows li .gate-inline-label {
+  flex: 1 1 160px;
+}
+
+.gate-add {
+  justify-self: start;
+  font: inherit;
+  font-size: .8rem;
+  color: var(--gold-dark);
+  background: none;
+  border: 1px dashed var(--gold-dark);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+/* -- Withheld choices ----------------------------------------------------- */
+
+.gate-locked {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 22px 18px;
+  text-align: center;
+  background: var(--paper);
+}
+
+.gate-locked p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .88rem;
+}
+
+/* Applied to the real answer buttons in the question view. A struck choice
+   stays readable and stays in the tab order as a disabled control, so nobody
+   loses their place, but it cannot be picked until it is brought back. */
+.choice.gate-struck {
+  opacity: .45;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+@media (max-width: 640px) {
+  .gate {
+    padding: 14px 15px;
+  }
+
+  .gate-choice-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ================================================================
+   RESISTANCE AND RELEASE
+   ================================================================
+   Tokens from the end of `styles.css`. A gate is friction on purpose,
+   so it should not move like a frictionless control: everything here
+   is weighted on the way in (--mo-brass, slow to start and hard to
+   stop) and settled on the way out (--mo-out), and the system's one
+   overshoot is spent on the moment a required step is accepted.
+
+   Nothing below animates the gate's own prose. The heading, the help
+   and the error are what a blocked student reads in order to get
+   unblocked, so they hold perfectly still — the error is allowed to
+   fade, and nothing more.
+   ================================================================ */
+
+/* Each control in a gate is a small brass key: it takes the pointer
+   with a border and seats itself under a press. The hover border is
+   an affordance these did not previously have — several of them are
+   buttons that read as plain boxes until you happen to click one. */
+.gate-segment,
+.gate-pill,
+.gate-strike,
+.gate-add {
+  transition:
+    transform var(--mo-2) var(--mo-brass),
+    border-color var(--mo-2) var(--mo-out),
+    background var(--mo-1) linear,
+    color var(--mo-1) linear;
+}
+.gate-segment:hover:not(:disabled),
+.gate-pill:hover:not(:disabled),
+.gate-strike:hover:not(:disabled) {
+  border-color: var(--gold-dark);
+}
+.gate-segment:active:not(:disabled),
+.gate-pill:active:not(:disabled),
+.gate-strike:active:not(:disabled),
+.gate-add:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* Marking a line is a commitment, so the numbered chip lands rather
+   than merely changing colour. It is 20px across and moves nothing
+   around it, which is exactly why an overshoot is affordable here and
+   nowhere else in the gate. */
+.gate-segment-mark {
+  transition: border-color var(--mo-2) var(--mo-out), background var(--mo-1) linear;
+}
+.gate-segment.is-on .gate-segment-mark {
+  animation: gate-commit var(--mo-3) var(--mo-spring) both;
+}
+@keyframes gate-commit {
+  from { transform: scale(.62); }
+}
+
+/* Release. When the last required step is accepted the rail turns
+   from gold to green, and a colour swap on its own is not a state
+   change every student can see. A second hairline draws down inside
+   the rail over --mo-4 and then stays: the double rule of a signed
+   page, and a permanent non-colour mark of the cleared state. It is
+   absolutely positioned, so it costs no layout and cannot shift a
+   single word of the instruction the student is still reading. */
+.gate {
+  position: relative;
+  transition: border-left-color var(--mo-3) var(--mo-out);
+}
+.gate.is-done::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 3px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--green);
+  transform-origin: top center;
+  animation: gate-release var(--mo-4) var(--mo-out) both;
+}
+@keyframes gate-release {
+  from { transform: scaleY(0); }
+}
+
+/* A submitted question locks its gate, and a fieldset dropping to 55%
+   the instant an answer lands looks like a rendering fault. Given a
+   duration it reads as the gate standing down. */
+.gate-field { transition: opacity var(--mo-2) var(--mo-out); }
+
+/* The plate standing in for withheld choices is the only place the
+   gate states its refusal visually, so it is allowed one considered
+   move: down, on the weighted curve, like a shutter coming over the
+   answers rather than a card fading up. */
+.gate-locked {
+  --gate-drop: -7px;
+  animation: gate-shutter var(--mo-3) var(--mo-brass) both;
+}
+@keyframes gate-shutter {
+  from { opacity: 0; transform: translate3d(0, var(--gate-drop), 0); }
+}
+
+/* An error is the one thing a stuck student must read at once, so it
+   arrives with no travel at all. A shake here would be the app
+   raising its voice at someone it has already stopped. */
+.gate-error {
+  animation: mo-fade var(--mo-2) var(--mo-out) both;
+}
+
+/* Striking a choice. In the gate's own list the row is given a
+   duration so the strike reads as something the student just did; on
+   the real answer button it also recoils a few pixels as it goes out
+   of play — struck, not merely dimmed. The recoil fires once per
+   strike and cannot fire on hover, because a struck choice is
+   rendered disabled and the hover rule excludes those. */
+.gate-choices li { transition: border-color var(--mo-2) var(--mo-out), background var(--mo-1) linear; }
+.gate-choices li .gate-choice-text { transition: opacity var(--mo-2) var(--mo-out); }
+.choice.gate-struck {
+  --gate-recoil: -3px;
+  transition: opacity var(--mo-2) var(--mo-out);
+  animation: gate-struck-land var(--mo-2) var(--mo-brass) both;
+}
+@keyframes gate-struck-land {
+  from { transform: translate3d(0, 0, 0); }
+  55% { transform: translate3d(var(--gate-recoil), 0, 0); }
+}
+
+@media (max-width: 640px) {
+  /* The gate lives inside a scroll pane on a phone and sits closer to
+     the eye, so both travels are roughly halved. */
+  .gate-locked { --gate-drop: -4px; }
+  .choice.gate-struck { --gate-recoil: -2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate,
+  .gate-segment,
+  .gate-pill {
+    transition: none;
+  }
+}

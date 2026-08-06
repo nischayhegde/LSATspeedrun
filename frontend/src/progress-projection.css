@@ -1,0 +1,91 @@
+/* The projected-score panel. Same dark instrument-panel language as the rest
+   of the dashboard (navy card, gold display type, teal eyebrows); the only new
+   idea is that the *band* is the primary object and the midpoint sits inside
+   it, which is the whole argument the panel is making. */
+
+.projection-panel { margin: 22px 0; padding: 20px; border: 1px solid rgba(226,194,118,.24); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#172837,#101c29); box-shadow: 0 15px 32px rgba(4,9,15,.26); }
+.projection-panel.is-empty { background: linear-gradient(150deg,#152230,#101a25); }
+.projection-note { max-width: var(--prose-measure); margin: 12px 0 0; color: #a9b8b2; font-size: 12.5px; line-height: 1.65; }
+
+.projection-headline { margin-top: 17px; display: grid; grid-template-columns: minmax(260px,auto) minmax(0,1fr); align-items: center; gap: 22px; }
+/* Lower bound, midpoint, upper bound as one object with a connecting rule:
+   reads as a range at a glance instead of as three separate statistics. */
+.projection-band-figure { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px 18px; border: 1px solid rgba(240,210,127,.26); border-radius: 14px; background: rgba(5,13,20,.4); }
+.projection-band-figure::before { content: ""; position: absolute; left: 18px; right: 18px; top: 50%; height: 3px; border-radius: 3px; background: linear-gradient(90deg, rgba(116,210,191,.15), rgba(116,210,191,.5), rgba(116,210,191,.15)); }
+.projection-bound { position: relative; color: #74d2bf; font: 600 25px/1 var(--font-display); }
+.projection-midpoint { position: relative; padding: 0 13px; text-align: center; background: #12202c; }
+.projection-midpoint strong { display: block; color: #f0d27f; font: 620 54px/1 var(--font-display); letter-spacing: -.02em; }
+.projection-midpoint small { display: block; margin-top: 4px; color: #7f9c98; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .16em; }
+
+.projection-headline-copy p { margin: 0; max-width: var(--prose-measure); color: #c2cdc6; font-size: 13px; line-height: 1.6; }
+.projection-headline-copy small { display: block; margin-top: 7px; color: #8fa19d; font-size: 11.5px; line-height: 1.5; }
+.projection-evidence-badge { display: inline-block; margin-top: 11px; padding: 3px 9px; border-radius: 999px; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .14em; }
+.projection-evidence-badge.is-baseline { color: #f0c98a; background: rgba(226,173,111,.16); box-shadow: inset 0 0 0 1px rgba(226,173,111,.4); }
+.projection-evidence-badge.is-emerging { color: #ecd79b; background: rgba(226,194,118,.14); box-shadow: inset 0 0 0 1px rgba(226,194,118,.36); }
+.projection-evidence-badge.is-directional,
+.projection-evidence-badge.is-stable { color: #8fdccb; background: rgba(116,210,191,.14); box-shadow: inset 0 0 0 1px rgba(116,210,191,.4); }
+
+/* The full 120-180 scale, not a zoom. "Your band covers this much of the
+   LSAT" is the point; a zoomed axis would make three points look like a mile. */
+.projection-ruler { margin-top: 16px; }
+.projection-ruler-track { position: relative; height: 12px; border-radius: 999px; background: rgba(5,13,20,.5); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+.projection-ruler-band { position: absolute; top: 0; bottom: 0; border-radius: 999px; background: linear-gradient(90deg, rgba(116,210,191,.45), rgba(116,210,191,.75), rgba(116,210,191,.45)); }
+.projection-ruler-point { position: absolute; top: -3px; width: 3px; height: 18px; margin-left: -1.5px; border-radius: 2px; background: #f0d27f; box-shadow: 0 0 8px rgba(240,210,127,.6); }
+.projection-ruler-target { position: absolute; top: -19px; margin-left: -7px; color: #e5ab6a; }
+.projection-ruler-scale { margin-top: 5px; display: flex; justify-content: space-between; color: #7c8f8c; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .1em; }
+
+.projection-target { margin: 14px 0 0; padding: 9px 12px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(229,171,106,.3); border-radius: 10px; color: #e2cfa8; background: rgba(229,171,106,.09); font-size: 12px; line-height: 1.5; }
+.projection-target.is-within { border-color: rgba(116,210,191,.35); color: #bfe6dc; background: rgba(116,210,191,.09); }
+.projection-target > svg { flex: none; }
+
+.projection-trend { margin: 18px 0 0; }
+.projection-trend svg { width: 100%; height: auto; overflow: visible; }
+.projection-trend-grid line { stroke: rgba(255,255,255,.07); stroke-width: 1; }
+.projection-trend-grid text { fill: #6f8b88; font-family: var(--font-pixel); font-size: 9px; }
+/* The band is the figure and the line is an annotation on it, so the fill
+   carries the weight and the stroke stays thin. */
+.projection-trend-band { fill: rgba(116,210,191,.17); stroke: rgba(116,210,191,.32); stroke-width: 1; }
+.projection-trend-line { fill: none; stroke: #f0d27f; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.projection-trend-dot { fill: #f0d27f; stroke: #12202c; stroke-width: 2; transition: r .12s ease; }
+.projection-trend-dot.is-active { fill: #fff0c2; }
+.projection-trend-hit { fill: transparent; cursor: pointer; }
+.projection-trend-axis { fill: #6f8b88; font-family: var(--font-pixel); font-size: 8px; }
+.projection-trend figcaption { margin-top: 9px; display: flex; align-items: baseline; gap: 9px; color: #8fa19d; font-size: 11.5px; line-height: 1.5; }
+.projection-trend figcaption strong { color: #f0d27f; font: 600 21px/1 var(--font-display); }
+.projection-trend-empty { margin-top: 18px; padding: 15px; display: flex; align-items: flex-start; gap: 12px; border: 1px dashed rgba(255,255,255,.13); border-radius: 12px; background: rgba(5,13,20,.26); }
+.projection-trend-empty > svg { flex: none; margin-top: 2px; color: rgba(116,210,191,.6); }
+.projection-trend-empty strong { display: block; color: #e6dcc4; font-size: 13px; }
+.projection-trend-empty p { margin: 5px 0 0; color: #8fa19d; font-size: 11.5px; line-height: 1.5; }
+
+.projection-split { margin-top: 17px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 9px; }
+.projection-split > div { padding: 12px 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 11px; background: rgba(5,13,20,.3); }
+.projection-split span { display: block; color: #6fc9ba; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .13em; }
+.projection-split strong { display: block; margin-top: 8px; color: #f0d27f; font: 600 27px/1 var(--font-display); }
+.projection-split small { display: block; margin-top: 6px; color: #8b9d99; font-size: 10.5px; line-height: 1.45; }
+
+.projection-method-toggle { margin-top: 15px; width: 100%; min-height: 42px; padding: 0 13px; display: flex; align-items: center; gap: 9px; border: 1px solid rgba(255,255,255,.11); border-radius: 10px; color: #bcd0ca; background: rgba(5,13,20,.3); font-size: 12px; font-weight: 650; font-family: inherit; cursor: pointer; transition: border-color .16s ease, background .16s ease; }
+.projection-method-toggle:hover { border-color: rgba(114,208,192,.4); background: rgba(114,208,192,.07); }
+.projection-method-toggle:focus-visible { outline: 2px solid rgba(114,208,192,.55); outline-offset: 1px; }
+.projection-method-toggle > svg:last-child { margin-left: auto; transition: transform .18s ease; }
+.projection-method-toggle > svg.is-open { transform: rotate(180deg); }
+
+.projection-method { margin-top: 12px; padding: 15px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(5,13,20,.26); animation: projection-method-in .16s ease; }
+@keyframes projection-method-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.projection-method > p { margin: 0; max-width: var(--prose-measure); color: #b6c4bd; font-size: 12px; line-height: 1.65; }
+.projection-uncertainty { margin-top: 13px; display: grid; gap: 7px; }
+.projection-uncertainty > div { display: grid; grid-template-columns: minmax(0,190px) minmax(0,1fr) 44px; align-items: center; gap: 10px; color: #a9bab5; font-size: 11px; }
+.projection-uncertainty span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.projection-uncertainty i { height: 6px; border-radius: 4px; background: linear-gradient(90deg,#4c9d90,#74d2bf); justify-self: stretch; }
+.projection-uncertainty b { color: #e9dec3; font-size: 11px; text-align: right; }
+.projection-quadrature { display: block; margin-top: 10px; color: #859995; font-size: 10.5px; line-height: 1.5; }
+.projection-sources { margin: 13px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.projection-sources li { color: #92a5a0; font-size: 10.5px; line-height: 1.5; }
+.projection-sources strong { display: inline-block; min-width: 88px; color: #6fc9ba; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
+.projection-warning { margin: 13px 0 0; padding: 10px 12px; border-left: 3px solid rgba(229,171,106,.65); border-radius: 0 8px 8px 0; color: #ddc8a2; background: rgba(229,171,106,.09); font-size: 11.5px; line-height: 1.55; }
+
+@media (max-width: 760px) {
+  .projection-headline { grid-template-columns: 1fr; gap: 15px; }
+  .projection-midpoint strong { font-size: 44px; }
+  .projection-uncertainty > div { grid-template-columns: minmax(0,1fr) 44px; }
+  .projection-uncertainty i { display: none; }
+}

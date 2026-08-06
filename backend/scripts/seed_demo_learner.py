@@ -66,6 +66,15 @@ def _wrong_label(item: SessionItem) -> str:
     return labels[(correct_index + 1) % len(labels)]
 
 
+def _strategy_applied_for_seed(item: SessionItem) -> bool:
+    """Bulk seeding skips full enforcement gates — artifacts are per-question."""
+    if not item.strategy_key or item.strategy_variant != "prompt":
+        return True
+    if (item.strategy_enforcement_level or "none") == "full":
+        return False
+    return True
+
+
 def _reasoning(item: SessionItem) -> str:
     question = item.question
     correct = next(choice for choice in question.choices if choice.label == question.correct_answer)
@@ -325,6 +334,9 @@ def _answer_finite_session(
                 "reasoning": _reasoning(item) if requires_reasoning else None,
                 "confidence": confidence,
                 "answer_changed": position % 9 == 0,
+                # Prompted items need a strategy decision; full gates need artifacts
+                # the bulk seeder does not synthesize, so those are recorded as skipped.
+                "strategy_applied": _strategy_applied_for_seed(item),
             },
             f"{DEMO_VERSION}:{label}:{position}",
         )
@@ -338,6 +350,13 @@ def _answer_finite_session(
 
 
 def _normalize_review_queue(user: User) -> None:
+    """Give the demo queue a believable spread of FSRS memory states.
+
+    The scheduler reads stability and last-review time, not `interval_index`,
+    so a seeded queue has to carry real memory state or every card reads as
+    maximally weak. Three cohorts: five slipping (recently lapsed), six holding
+    comfortably, and four stable past the mastery horizon.
+    """
     rows = ReviewQueueItem.query.filter_by(user_id=user.id).order_by(ReviewQueueItem.question_id.asc()).all()
     now = utcnow()
     keep = rows[:15]
@@ -345,18 +364,89 @@ def _normalize_review_queue(user: User) -> None:
         db.session.delete(row)
     for index, row in enumerate(keep):
         if index < 5:
+            # Missed on the last look: relearning, and available right now.
             row.status = "due"
-            row.interval_index = 0
-            row.due_at = now - timedelta(days=1, hours=index)
+            row.interval_index = 1
+            row.stability = 0.6 + index * 0.1
+            row.difficulty = 7.4 - index * 0.2
+            row.reps = 2 + index
+            row.lapses = 1 + index % 2
+            row.last_grade = 1
+            row.last_reviewed_at = now - timedelta(days=1, hours=index)
+            row.due_at = row.last_reviewed_at
         elif index < 11:
             row.status = "due"
             row.interval_index = 2
+            row.stability = 9.0 + index
+            row.difficulty = 5.2
+            row.reps = 3
+            row.lapses = 0
+            row.last_grade = 3
+            row.last_reviewed_at = now - timedelta(days=2 + index - 5)
             row.due_at = now + timedelta(days=3 + index - 5)
         else:
             row.status = "mastered"
             row.interval_index = 4
+            row.stability = 74.0 + index
+            row.difficulty = 3.4
+            row.reps = 5
+            row.lapses = 0
+            row.last_grade = 4
+            row.last_reviewed_at = now - timedelta(days=6)
             row.due_at = now + timedelta(days=21)
     db.session.commit()
+
+
+def _seed_projection_history(user: User) -> int:
+    """Reconstruct the projected-score trend this history would have produced.
+
+    One snapshot per completed run, computed from only the attempts that
+    existed at the time and dated to that run's completion — so the demo's
+    trend chart shows a real narrowing band rather than a straight line of
+    identical points stamped today.
+    """
+    from app.models import ScoreProjection
+    from app.scoring import project_score
+
+    ScoreProjection.query.filter_by(user_id=user.id).delete()
+    attempts = (
+        Attempt.query.join(SessionItem, Attempt.session_item_id == SessionItem.id)
+        .join(StudySession, SessionItem.session_id == StudySession.id)
+        .filter(Attempt.user_id == user.id, StudySession.completed_at.isnot(None))
+        .order_by(StudySession.completed_at.asc(), Attempt.created_at.asc())
+        .all()
+    )
+    boundaries: dict[datetime, int] = {}
+    for index, attempt in enumerate(attempts, start=1):
+        boundaries[attempt.session_item.session.completed_at] = index
+
+    written = 0
+    for completed_at, cutoff in sorted(boundaries.items()):
+        moment = completed_at if completed_at.tzinfo else completed_at.replace(tzinfo=timezone.utc)
+        projection = project_score(user, attempts=attempts[:cutoff], now=moment)
+        if not projection.get("available"):
+            continue
+        db.session.add(
+            ScoreProjection(
+                user_id=user.id,
+                scaled_score=projection["scaled_score"],
+                lower_bound=projection["lower_bound"],
+                upper_bound=projection["upper_bound"],
+                percentile=projection["percentile"],
+                estimated_accuracy=projection["estimated_accuracy"],
+                effective_sample=projection["effective_sample"],
+                observed_attempts=projection["observed_attempts"],
+                lr_attempts=projection["lr_attempts"],
+                rc_attempts=projection["rc_attempts"],
+                evidence_grade=projection["evidence_grade"],
+                model_version=projection["model_version"],
+                detail_json={"uncertainty": projection["uncertainty"], "projected_raw": projection["projected_raw"]},
+                created_at=moment,
+            )
+        )
+        written += 1
+    db.session.commit()
+    return written
 
 
 def _verify(user: User) -> dict:
@@ -373,6 +463,9 @@ def _verify(user: User) -> dict:
         raise RuntimeError("The demo review history did not produce retention evidence.")
     if not performance["recommendation"]:
         raise RuntimeError("The demo history did not produce a recommendation signal.")
+    projection = performance.get("projection") or {}
+    if not projection.get("available") or len(projection.get("history") or []) < 2:
+        raise RuntimeError("The demo history did not produce a projected-score trend.")
     if game["office_tier"] != 2 or game["total_cases"] < 8 or not game["owned_assets"]:
         raise RuntimeError("The demo firm did not reach the intended progression state.")
     if StudySession.query.filter_by(user_id=user.id, status="in_progress").count():
@@ -393,6 +486,12 @@ def _verify(user: User) -> dict:
             "recovery_rate": performance["review"]["recovery_rate"],
         },
         "confidence": performance["confidence"],
+        "projection": {
+            "scaled_score": projection["scaled_score"],
+            "band": [projection["lower_bound"], projection["upper_bound"]],
+            "evidence_grade": projection["evidence_grade"],
+            "snapshots": len(projection["history"]),
+        },
         "recommendation": performance["recommendation"],
         "trend_sessions": len(performance["trend"]),
         "firm": {
@@ -470,6 +569,7 @@ def seed_demo_learner(email: str, *, replace: bool) -> dict:
     )
 
     _normalize_review_queue(user)
+    _seed_projection_history(user)
     daily = DailyProgress.query.filter_by(profile_id=user.game_profile.id, activity_date=utcnow().date()).first()
     if daily:
         daily.cases_completed = 4

@@ -7,32 +7,35 @@
   color: var(--uw-ink);
 }
 
+/* One consolidated headquarters panel: office + level progress, empire value,
+   and a jump-to-HQ action, side by side instead of stacked separate cards. */
 .uw-world-ledger {
-  min-height: 76px;
+  min-height: 68px;
   margin-bottom: 10px;
-  padding: 12px 15px;
+  padding: 12px 16px;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.5fr) auto;
+  grid-template-columns: minmax(200px, 1.3fr) auto minmax(140px, auto);
   align-items: center;
-  gap: 20px;
+  gap: 18px;
   border: 1px solid rgba(208, 176, 101, .3);
   border-radius: 12px;
   background: linear-gradient(112deg, rgba(12, 27, 31, .98), rgba(27, 45, 45, .97));
   box-shadow: 0 14px 30px rgba(4, 13, 16, .24), inset 0 1px rgba(240, 220, 170, .08);
 }
-.uw-world-ledger > div:first-child { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 9px; }
-.uw-world-ledger > div:first-child small { grid-column: 1 / 3; color: #79b6aa; font-family: var(--font-pixel); font-size: 9px; font-weight: 900; letter-spacing: .13em; }
-.uw-world-ledger > div:first-child strong { color: #f1dfb0; font-family: var(--font-display); font-size: clamp(19px, 2vw, 25px); }
-.uw-world-ledger > div:first-child span { color: #aab9b4; font-size: 12px; }
-.uw-world-ledger > button { min-width: 176px; padding: 9px 12px; display: flex; align-items: center; gap: 9px; border: 1px solid rgba(207, 178, 106, .28); border-radius: 9px; color: #dbe5df; background: rgba(255, 255, 255, .035); text-align: left; }
-.uw-world-ledger > button:hover { border-color: rgba(222, 192, 112, .58); background: rgba(255, 255, 255, .07); transform: translateY(-1px); }
-.uw-world-ledger > button b { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; color: #fff7df; background: #47736a; }
-.uw-world-ledger > button span { display: grid; font-family: var(--font-display); font-size: 14px; font-weight: 700; }
-.uw-world-ledger > button small { color: #94a6a1; font-family: var(--font-ui); font-size: 10px; font-weight: 500; }
-.uw-world-progress { display: grid; gap: 5px; }
-.uw-world-progress > span { height: 7px; overflow: hidden; border-radius: 99px; background: rgba(5, 14, 17, .58); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .45); }
+.uw-ledger-hq { display: grid; gap: 5px; min-width: 0; }
+.uw-ledger-hq > small { color: #79b6aa; font-family: var(--font-pixel); font-size: 9px; font-weight: 900; letter-spacing: .13em; }
+.uw-ledger-hq > strong { overflow: hidden; color: #f1dfb0; font-family: var(--font-display); font-size: clamp(17px, 1.8vw, 21px); text-overflow: ellipsis; white-space: nowrap; }
+.uw-ledger-value { min-width: 108px; padding-left: 18px; display: grid; gap: 4px; border-left: 1px solid rgba(207, 178, 106, .22); }
+.uw-ledger-value > small { color: #79b6aa; font-family: var(--font-pixel); font-size: 9px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.uw-ledger-value > strong { color: #f1c65b; font-family: var(--font-display); font-size: clamp(17px, 1.8vw, 21px); }
+.uw-ledger-jump { min-width: 128px; padding: 9px 12px; display: flex; align-items: center; gap: 9px; border: 1px solid rgba(207, 178, 106, .28); border-radius: 9px; color: #dbe5df; background: rgba(255, 255, 255, .035); text-align: left; }
+.uw-ledger-jump:hover { border-color: rgba(222, 192, 112, .58); background: rgba(255, 255, 255, .07); transform: translateY(-1px); }
+.uw-ledger-jump b { width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: #fff7df; background: #47736a; font-style: normal; }
+.uw-ledger-jump span { overflow: hidden; font-family: var(--font-display); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.uw-world-progress { display: grid; grid-template-columns: minmax(60px, 1fr) auto; align-items: center; gap: 9px; }
+.uw-world-progress > span { height: 6px; overflow: hidden; border-radius: 99px; background: rgba(5, 14, 17, .58); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .45); }
 .uw-world-progress > span i { height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg, #2f8077, #d4aa54); box-shadow: 0 0 12px rgba(49, 130, 119, .28); transition: width .45s ease; }
-.uw-world-progress small { color: #9eaea8; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .09em; text-align: right; }
+.uw-world-progress small { color: #9eaea8; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .09em; white-space: nowrap; }
 
 .uw-arc-navigation {
   margin-bottom: 10px;
@@ -94,6 +97,21 @@
 .uw-map-instructions b { color: #e1c276; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .1em; }
 .uw-map-instructions i { width: 3px; height: 3px; border-radius: 50%; background: #6b8f88; }
 
+.uw-district-guide { width: 204px; position: absolute; z-index: 9; left: 16px; top: 150px; display: grid; border: 1px solid rgba(225, 204, 151, .38); border-radius: 9px; background: rgba(11, 24, 28, .88); box-shadow: 0 10px 25px rgba(4, 10, 12, .25); backdrop-filter: blur(10px); overflow: hidden; }
+.uw-district-guide-toggle { width: 100%; padding: 7px 9px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; border: 0; background: transparent; text-align: left; }
+.uw-district-guide-toggle small { color: #cdb475; font-family: var(--font-pixel); font-size: 7px; letter-spacing: .12em; }
+.uw-district-guide-toggle strong { grid-column: 1; color: #9fb0ab; font-family: var(--font-ui); font-size: 9px; font-weight: 400; }
+.uw-district-guide-toggle i { grid-row: 1 / span 2; grid-column: 2; width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid rgba(220, 199, 145, .34); border-radius: 5px; color: #e2c67f; font-size: 11px; font-style: normal; }
+.uw-district-guide-list { max-height: 168px; padding: 0 5px 5px; display: grid; gap: 2px; overflow-y: auto; }
+.uw-district-guide-list button { padding: 5px 6px; display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 6px; color: #c2ccc8; background: transparent; font-family: var(--font-ui); font-size: 10px; text-align: left; }
+.uw-district-guide-list button:hover, .uw-district-guide-list button.is-active { border-color: rgba(229, 197, 117, .55); color: #f0e4c4; background: rgba(224, 195, 119, .1); }
+.uw-district-guide-list button b { padding: 2px 0; border-radius: 4px; color: #8fd3c4; background: rgba(143, 211, 196, .12); font-family: var(--font-pixel); font-size: 7px; letter-spacing: .04em; text-align: center; }
+.uw-district-guide-list button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uw-district-guide-detail { margin: 0; padding: 7px 9px 9px; border-top: 1px solid rgba(220, 199, 145, .16); color: #93a59f; font-size: 10px; line-height: 1.4; }
+
+.uw-landmark-tip { padding: 5px 8px; position: fixed; z-index: 20; display: flex; align-items: center; gap: 6px; translate: 14px -50%; border: 1px solid rgba(143, 211, 196, .42); border-radius: 6px; color: #eae4d1; background: rgba(9, 21, 25, .93); box-shadow: 0 8px 20px rgba(3, 9, 11, .34); font-family: var(--font-ui); font-size: 10px; white-space: nowrap; pointer-events: none; }
+.uw-landmark-tip b { color: #8fd3c4; font-family: var(--font-pixel); font-size: 7px; letter-spacing: .06em; }
+
 .uw-mobile-scene-summary,
 .uw-mobile-scene-menu-toggle,
 .uw-mobile-scene-menu { display: none; }
@@ -154,6 +172,11 @@
   .uw-map-toolbar,
   .uw-level-navigator,
   .uw-map-instructions { display: none; }
+  /* The guide moves to the foot of the frame on phones, where the left rail
+     is taken by the mobile summary. */
+  .uw-district-guide { width: calc(100% - 18px); left: 9px; top: auto; bottom: 9px; }
+  .uw-district-guide-list { max-height: 108px; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .uw-district-guide-detail { display: none; }
   .uw-location-card { right: 8px; bottom: 8px; }
   .uw-mobile-scene-summary {
     padding: 8px 10px;
@@ -229,4 +252,87 @@
 
 @media (prefers-reduced-motion: reduce) {
   .uw-three-canvas, .uw-location-card, .uw-three-loading i { animation: none !important; }
+}
+
+/* ============================================================
+   The territorial mechanic, at the location it applies to.
+
+   A persistent war-room board docked over the scene meant the map was mostly
+   not the map. The mechanic now arrives with the location card when a rival
+   headquarters is selected in the world: where the firm stands, what it costs
+   today, and one way through to the full board on the firm tab.
+   ============================================================ */
+
+.uw-card-standing { margin: 7px 0 0; padding: 7px 8px; display: grid; gap: 4px; border-left: 3px solid #8d7f5c; border-radius: 0 6px 6px 0; background: rgba(255, 255, 255, .04); }
+.uw-card-standing.is-held { border-left-color: #7fd0ac; }
+.uw-card-standing.is-contested { border-left-color: #e6c069; }
+.uw-card-standing.is-standing { border-left-color: #cf9184; }
+.uw-card-standing.is-unreachable { border-left-color: #6f7a78; }
+.uw-standing-chip { justify-self: start; font-family: var(--font-pixel); font-size: 7.5px; letter-spacing: .12em; }
+.uw-card-standing.is-held .uw-standing-chip { color: #7fd0ac; }
+.uw-card-standing.is-contested .uw-standing-chip { color: #e6c069; }
+.uw-card-standing.is-standing .uw-standing-chip { color: #cf9184; }
+.uw-card-standing.is-unreachable .uw-standing-chip { color: #8d9997; }
+.uw-card-standing em { color: #9aaba6; font-size: 10px; font-style: normal; line-height: 1.35; }
+.uw-standing-price { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.uw-standing-price del { color: #7d8a87; font-size: 10px; }
+.uw-standing-price strong { color: #f0d99a; font-family: var(--font-display); font-size: 16px; }
+.uw-standing-price b { color: #8fd3c4; font-family: var(--font-pixel); font-size: 7px; letter-spacing: .06em; }
+
+/* Collapsed to a chip until asked for. */
+.uw-district-guide:not(.is-open) { width: auto; }
+.uw-district-guide:not(.is-open) .uw-district-guide-toggle { grid-template-columns: auto auto; gap: 2px 7px; }
+
+/* ------------------------------------------------------------
+   Standing retainers.
+
+   Same left rail, same collapsed-strip behaviour as the district guide: the
+   map's job is to be the map. `has-offer` puts a single gold dot on the strip
+   when a district in this region is both unlocked and affordable, which is the
+   only nagging this mechanic does.
+   ------------------------------------------------------------ */
+
+/* The rail only exists on desktop. Below the breakpoint it dissolves so the
+   district guide keeps the foot-of-frame placement it has always had, and the
+   retainer board moves into the Explore sheet instead of fighting the tab bar
+   for the bottom of the screen. */
+.uw-map-rail { display: contents; }
+@media (min-width: 901px) {
+  .uw-map-rail { position: absolute; z-index: 9; left: 16px; top: 150px; display: grid; justify-items: start; gap: 8px; max-height: calc(100% - 168px); }
+  .uw-map-rail .uw-district-guide { position: static; left: auto; top: auto; }
+}
+
+.uw-retainer-board { width: 204px; display: grid; border: 1px solid rgba(225, 204, 151, .38); border-radius: 9px; background: rgba(11, 24, 28, .88); box-shadow: 0 10px 25px rgba(4, 10, 12, .25); backdrop-filter: blur(10px); overflow: hidden; }
+.uw-retainer-board:not(.is-open) { width: auto; }
+.uw-retainer-toggle { width: 100%; padding: 7px 9px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; border: 0; background: transparent; text-align: left; }
+.uw-retainer-board:not(.is-open) .uw-retainer-toggle { grid-template-columns: auto auto; gap: 2px 7px; }
+.uw-retainer-toggle small { position: relative; color: #cdb475; font-family: var(--font-pixel); font-size: 7px; letter-spacing: .12em; }
+.uw-retainer-board.has-offer .uw-retainer-toggle small::after { content: ''; margin-left: 5px; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #f2c75b; vertical-align: middle; }
+.uw-retainer-toggle strong { grid-column: 1; color: #9fb0ab; font-family: var(--font-ui); font-size: 9px; font-weight: 400; }
+.uw-retainer-toggle i { grid-row: 1 / span 2; grid-column: 2; width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid rgba(220, 199, 145, .34); border-radius: 5px; color: #e2c67f; font-size: 11px; font-style: normal; }
+
+.uw-retainer-intro { margin: 0; padding: 0 9px 7px; color: #8ea19c; font-size: 9.5px; line-height: 1.45; }
+.uw-retainer-list { max-height: 214px; padding: 0 5px 5px; display: grid; gap: 4px; overflow-y: auto; overscroll-behavior: contain; }
+.uw-retainer-row { padding: 6px 7px; display: grid; gap: 3px; border: 1px solid rgba(255, 255, 255, .06); border-left: 3px solid #6f7a78; border-radius: 0 6px 6px 0; background: rgba(255, 255, 255, .035); }
+.uw-retainer-row.is-held { border-left-color: #7fd0ac; }
+.uw-retainer-row.is-open { border-left-color: #e6c069; }
+.uw-retainer-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.uw-retainer-head strong { color: #ece2c8; font-family: var(--font-ui); font-size: 10.5px; }
+.uw-retainer-head b { color: #f0d99a; font-family: var(--font-pixel); font-size: 7.5px; letter-spacing: .04em; white-space: nowrap; }
+.uw-retainer-row.is-held .uw-retainer-head b { color: #7fd0ac; }
+.uw-retainer-row em { color: #8fa39d; font-size: 9.5px; font-style: normal; line-height: 1.35; }
+.uw-retainer-row small { color: #7fd0ac; font-family: var(--font-pixel); font-size: 6.5px; letter-spacing: .05em; line-height: 1.5; }
+.uw-retainer-row small.uw-retainer-lock { color: #96a19f; }
+.uw-retainer-row button { min-height: 26px; padding: 3px 7px; border: 1px solid rgba(229, 197, 117, .5); border-radius: 5px; color: #f2e2ba; background: rgba(224, 195, 119, .12); font-family: var(--font-pixel); font-size: 7px; letter-spacing: .06em; }
+.uw-retainer-row button:disabled { border-color: rgba(150, 161, 159, .3); color: #8b9795; background: transparent; }
+.uw-retainer-foot { margin: 0; padding: 7px 9px 9px; border-top: 1px solid rgba(220, 199, 145, .16); color: #93a59f; font-size: 9.5px; line-height: 1.45; }
+.uw-retainer-error { margin: 0; padding: 0 9px 9px; color: #e39b8f; font-size: 9.5px; }
+
+@media (max-width: 900px) {
+  .uw-map-rail > .uw-retainer-board { display: none; }
+  .uw-mobile-scene-menu .uw-retainer-board,
+  .uw-mobile-scene-menu .uw-retainer-board:not(.is-open) { width: 100%; border-color: rgba(211, 185, 120, .32); background: rgba(255, 255, 255, .04); }
+  .uw-mobile-scene-menu .uw-retainer-toggle { min-height: 44px; grid-template-columns: minmax(0, 1fr) auto; }
+  .uw-mobile-scene-menu .uw-retainer-list { max-height: 208px; }
+  .uw-mobile-scene-menu .uw-retainer-intro { display: none; }
 }

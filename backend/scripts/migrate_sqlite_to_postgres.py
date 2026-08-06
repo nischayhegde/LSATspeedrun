@@ -66,7 +66,7 @@ def validate_target_revision(target_connection, alembic_version_table) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Copy an existing LSAT Speedrun SQLite database into an empty, migrated PostgreSQL database."
+        description="Copy an existing LSAT Tycoon SQLite database into an empty, migrated PostgreSQL database."
     )
     parser.add_argument("--dry-run", action="store_true", help="Validate both databases without copying rows.")
     args = parser.parse_args()

@@ -1,0 +1,396 @@
+/* ------------------------------------------------------------------
+   Wardrobe
+
+   The player's own character customization, opened from the "YOUR LAWYER"
+   plaque on the office page. It borrows the app's established modal shape
+   (`.mega-gate-scrim`) and the hard-edged pixel plating the office command
+   bar uses, so it reads as part of the firm rather than as a settings sheet
+   bolted onto it. */
+
+.wardrobe-launch {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 9px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 2px solid #4a6076;
+  border-radius: 0;
+  color: #ffe9a6;
+  background: #16283c;
+  box-shadow: inset -3px -3px #0c1727;
+  font-family: var(--font-pixel);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+.wardrobe-launch:hover { color: #fff6d4; background: #1e364e; }
+.wardrobe-launch:active { transform: translate(1px, 1px); box-shadow: inset -1px -1px #0c1727; }
+.wardrobe-launch:focus-visible { outline: 2px solid var(--pixel-gold); outline-offset: 2px; }
+.wardrobe-launch > svg { flex: none; }
+
+/* The phone's office brief carries its own way in, on a row of its own so the
+   three navigation buttons above it keep their even thirds. */
+.office-mobile-brief-sheet > nav > .wardrobe-brief-action { grid-column: 1 / -1; }
+
+.wardrobe-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 62;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 9, 13, .74);
+  backdrop-filter: blur(3px);
+}
+
+.wardrobe {
+  width: min(940px, 100%);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(238, 203, 130, .42);
+  border-radius: 18px;
+  color: #f2ead8;
+  background: linear-gradient(140deg, #12303b, #17252f 58%, #1b2a35);
+  box-shadow: 0 26px 60px rgba(3, 7, 11, .5);
+}
+
+.wardrobe-head {
+  padding: 20px 22px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid rgba(238, 203, 130, .2);
+}
+.wardrobe-head small {
+  display: block;
+  color: #72cfbf;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+.wardrobe-head h2 {
+  margin: 8px 0 5px;
+  color: #f5df9e;
+  font-family: var(--font-display);
+  font-size: clamp(21px, 3vw, 29px);
+  line-height: 1.08;
+}
+.wardrobe-head p {
+  margin: 0;
+  max-width: 56ch;
+  color: #c4bda9;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.wardrobe-close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 11px;
+  color: #dbe7e6;
+  background: transparent;
+  font-size: 21px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wardrobe-close:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+.wardrobe-close:focus-visible { outline: 2px solid var(--pixel-gold); outline-offset: 2px; }
+
+.wardrobe-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 0;
+}
+
+/* ------------------------------------------------------- live preview */
+
+.wardrobe-preview {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 14px 14px;
+  border-right: 1px solid rgba(238, 203, 130, .16);
+  background:
+    radial-gradient(120% 74% at 50% 12%, rgba(255, 232, 178, .12), transparent 62%),
+    linear-gradient(180deg, rgba(9, 20, 27, .3), rgba(6, 13, 19, .5));
+}
+.wardrobe-figure {
+  flex: 1;
+  min-height: 260px;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  border: 2px solid #33506a;
+  box-shadow: inset -3px -3px #0b1622;
+  background:
+    radial-gradient(85% 58% at 50% 82%, rgba(255, 226, 163, .16), transparent 70%),
+    linear-gradient(180deg, #16303f, #0d1c27);
+}
+.wardrobe-figure .stylized-character { width: 100%; height: 100%; }
+.wardrobe-figure-loading {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: rgba(231, 215, 172, .6);
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.wardrobe-preview-note {
+  margin: 10px 0 0;
+  min-height: 30px;
+  color: #9fd8cf;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  line-height: 1.5;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------ picker */
+
+.wardrobe-picker {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 4px;
+}
+.wardrobe-status {
+  margin: 0;
+  color: #b3ab98;
+  font-size: 12.5px;
+}
+.wardrobe-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wardrobe-tabs > button {
+  min-height: 44px;
+  padding: 8px 13px;
+  border: 2px solid #3c5265;
+  border-radius: 0;
+  color: #9fc0cb;
+  background: #14222f;
+  box-shadow: inset -3px -3px #0d1826;
+  font-family: var(--font-pixel);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color .16s ease, background .16s ease, border-color .16s ease;
+}
+.wardrobe-tabs > button:hover { color: #e6f2f0; background: #1b2f40; }
+.wardrobe-tabs > button.is-active {
+  color: #1a1305;
+  border-color: #f0cb74;
+  background: var(--pixel-gold);
+  box-shadow: inset -3px -3px #a67c26;
+}
+.wardrobe-tabs > button:focus-visible { outline: 2px solid var(--pixel-gold); outline-offset: 2px; }
+
+.wardrobe-blurb {
+  margin: 11px 0 9px;
+  color: #b3ab98;
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* A column of flex items rather than a grid: a `<button>` sitting in a grid
+   track contributes its `min-height` and not its wrapped text to the track's
+   size, so on a narrow screen — where each row stacks its name, flavour and
+   status — the rows stayed 56px tall and their text ran over the row below. */
+.wardrobe-items {
+  flex: 1;
+  min-height: 0;
+  padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.wardrobe-item {
+  flex: none;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  border: 2px solid #34495c;
+  border-left: 3px solid #46708a;
+  border-radius: 0;
+  color: inherit;
+  background: rgba(8, 17, 23, .5);
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease;
+}
+.wardrobe-item:hover:not(:disabled) { border-color: #6f9bb3; background: rgba(20, 42, 55, .7); }
+.wardrobe-item:focus-visible { outline: 2px solid var(--pixel-gold); outline-offset: 2px; }
+.wardrobe-item.is-worn {
+  border-color: rgba(242, 199, 91, .6);
+  border-left-color: var(--pixel-gold);
+  background: rgba(60, 46, 15, .45);
+}
+.wardrobe-item.is-locked {
+  border-left-color: #4d4436;
+  background: rgba(8, 12, 16, .55);
+  cursor: not-allowed;
+  opacity: .82;
+}
+.wardrobe-item-copy { display: grid; gap: 3px; }
+.wardrobe-item-copy strong {
+  color: #f0e3c2;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 620;
+}
+.wardrobe-item.is-locked .wardrobe-item-copy strong { color: #9e9382; }
+.wardrobe-item-copy em {
+  color: #a9a291;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+}
+.wardrobe-item-state {
+  flex: none;
+  padding: 6px 9px;
+  color: #6fc7bb;
+  border: 1px solid rgba(114, 207, 191, .34);
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+.wardrobe-item.is-worn .wardrobe-item-state {
+  color: #1a1305;
+  border-color: transparent;
+  background: var(--pixel-gold);
+}
+.wardrobe-item-lock {
+  flex: none;
+  max-width: 42%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #d0a86a;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  line-height: 1.4;
+  text-align: right;
+}
+.wardrobe-item-lock > svg { flex: none; }
+
+/* ----------------------------------------------------------- actions */
+
+.wardrobe-error { padding: 0 16px; }
+.wardrobe-actions {
+  padding: 13px 16px;
+  display: flex;
+  gap: 10px;
+  border-top: 1px solid rgba(238, 203, 130, .2);
+  background: rgba(6, 13, 19, .4);
+}
+.wardrobe-actions > button {
+  flex: 1;
+  min-height: 46px;
+  padding: 11px 16px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wardrobe-cancel {
+  border: 1px solid rgba(255, 255, 255, .2);
+  color: #dbe7e6;
+  background: transparent;
+}
+.wardrobe-cancel:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+.wardrobe-confirm {
+  border: 1px solid #f0cb74;
+  color: #1a1305;
+  background: linear-gradient(180deg, #f7d685, var(--pixel-gold));
+}
+.wardrobe-confirm:hover:not(:disabled) { background: linear-gradient(180deg, #ffe49b, #f4cf68); }
+.wardrobe-confirm:disabled { border-color: rgba(255, 255, 255, .16); color: #8c9698; background: rgba(255, 255, 255, .07); cursor: not-allowed; }
+.wardrobe-actions > button:focus-visible { outline: 2px solid var(--pixel-gold); outline-offset: 2px; }
+
+/* -------------------------------------------------------- responsive */
+
+@media (max-width: 1100px) {
+  .wardrobe-body { grid-template-columns: 240px 1fr; }
+}
+
+@media (max-width: 860px) {
+  .wardrobe-scrim { padding: 0; place-items: stretch; }
+  .wardrobe {
+    width: 100%;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  .wardrobe-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .wardrobe-preview {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(238, 203, 130, .16);
+  }
+  .wardrobe-figure { flex: 0 0 132px; min-height: 172px; height: 172px; }
+  .wardrobe-preview-note { margin: 0; text-align: left; }
+  .wardrobe-picker { padding: 12px 12px 4px; }
+  .wardrobe-items { padding-bottom: 10px; }
+}
+
+@media (max-width: 560px) {
+  .wardrobe-head { padding: 14px 14px 12px; }
+  .wardrobe-head p { display: none; }
+  .wardrobe-item { flex-direction: column; align-items: stretch; gap: 8px; }
+  .wardrobe-item-lock { max-width: none; text-align: left; }
+  .wardrobe-item-state { align-self: flex-start; }
+  .wardrobe-figure { flex: 0 0 108px; min-height: 152px; height: 152px; }
+}
+
+/* The scrim covers the notch and the home indicator on a phone, so its own
+   padding has to keep the panel's chrome clear of both. */
+@supports (padding: max(0px)) {
+  @media (max-width: 860px) {
+    .wardrobe-head { padding-top: max(14px, env(safe-area-inset-top)); }
+    .wardrobe-actions { padding-bottom: max(13px, env(safe-area-inset-bottom)); }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wardrobe-launch,
+  .wardrobe-item,
+  .wardrobe-tabs > button { transition: none; }
+}

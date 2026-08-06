@@ -1,0 +1,489 @@
+/* ================================================================
+   NARRATIVE LAYER — chapter surfacing and the closing record
+   One stacking order for every story surface:
+   chapter marker (120) < chapter prompt (130) < cutscene (300)
+   < epilogue (400) < guided tour (10000).
+   ================================================================ */
+
+/* An escape hatch matters now that a chapter can open on any screen. */
+.cutscene-defer {
+  margin-top: 18px;
+  padding: 9px 12px;
+  border: 2px solid #2b3a48;
+  color: #8ea6ad;
+  background: transparent;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+  letter-spacing: .1em;
+}
+.cutscene-defer:hover { color: #f2d383; border-color: #6d5a30; }
+
+/* ------------------------------------------------------ chapter dock */
+
+/* The shell's in-flow slot for the waiting-chapter prompt (see overlays.tsx).
+   Empty for the whole game except while a chapter is pending, so it collapses
+   to nothing rather than reserving a permanent gap. */
+.chapter-dock:empty { display: none; }
+.chapter-dock {
+  padding: 14px clamp(14px, 3vw, 44px) 0;
+}
+
+/* Docked, the prompt is a banner across the page rather than a card over it:
+   the same content, laid out along the row it now owns. Nothing is stacked on
+   top of the dashboard, so nothing can intercept a click meant for a card. */
+.chapter-dock .chapter-prompt {
+  width: auto;
+  position: static;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "seal eyebrow actions"
+    "seal title   actions"
+    "seal body    actions";
+  align-items: center;
+  column-gap: 20px;
+  padding: 15px 20px;
+}
+.chapter-dock .chapter-prompt-seal { grid-area: seal; position: static; }
+.chapter-dock .chapter-prompt-eyebrow { grid-area: eyebrow; padding-right: 0; }
+.chapter-dock .chapter-prompt h2 { grid-area: title; margin: 3px 0 2px; font-size: 22px; }
+.chapter-dock .chapter-prompt p { grid-area: body; font-size: 12.5px; }
+.chapter-dock .chapter-prompt-actions { grid-area: actions; margin-top: 0; }
+/* "Not now" is on the same row and does exactly what the corner ✕ does, so the
+   docked form drops the duplicate rather than crowding the border with it. */
+.chapter-dock .chapter-prompt-close { display: none; }
+/* The collapsed form is a chip on the same row, so "not now" still costs the
+   page a single slim line instead of pinning a pulsing badge over a card. */
+.chapter-dock .chapter-marker { position: static; }
+.chapter-dock:has(.chapter-marker) { display: flex; justify-content: flex-end; }
+
+/* ------------------------------------------------------ chapter prompt */
+
+/* The floating form below is the fallback for anything rendering the narrative
+   layer without the shell around it (the gate harness, a standalone story). */
+.chapter-prompt {
+  width: min(370px, calc(100vw - 32px));
+  padding: 22px 22px 20px;
+  position: fixed;
+  z-index: 130;
+  right: 24px;
+  bottom: 24px;
+  border: 3px solid #171d28;
+  color: #2a2418;
+  background: linear-gradient(148deg, #f7ebc9, #eadcb4);
+  box-shadow: inset 0 0 0 2px #c9ad6e, 7px 8px 0 #14202b, 0 26px 60px rgba(6, 11, 18, .38);
+  animation: chapter-prompt-in .38s cubic-bezier(.2, 1.2, .4, 1) both;
+}
+.chapter-prompt-seal {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  position: absolute;
+  left: -14px;
+  top: -14px;
+  border: 3px solid #171d28;
+  border-radius: 50%;
+  color: #241c0e;
+  background: #e8bd51;
+  box-shadow: 3px 3px 0 #14202b;
+}
+.chapter-prompt-close {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  padding: 4px;
+  border: 0;
+  color: #8b7c58;
+  background: transparent;
+  line-height: 0;
+}
+.chapter-prompt-close:hover { color: #7c3f34; }
+.chapter-prompt-eyebrow {
+  display: block;
+  padding-right: 22px;
+  color: #8a6c2b;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+.chapter-prompt h2 {
+  margin: 9px 0 7px;
+  color: #1f3341;
+  font-family: var(--font-display);
+  font-size: 27px;
+  line-height: 1.02;
+}
+.chapter-prompt p {
+  margin: 0;
+  color: #5f5a4d;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.chapter-prompt-actions { margin-top: 17px; display: flex; gap: 8px; }
+.chapter-prompt-open {
+  flex: 1;
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 3px solid #161a1d;
+  color: #f5dc92;
+  background: #294957;
+  box-shadow: inset -3px -3px #172c34;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+}
+.chapter-prompt-open:hover { background: #33606f; }
+.chapter-prompt-later {
+  min-height: 39px;
+  padding: 0 13px;
+  border: 3px solid #a99873;
+  color: #7a705c;
+  background: transparent;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+}
+.chapter-prompt-later:hover { color: #3d4a52; border-color: #6f7b7f; }
+
+/* ------------------------------------------------------ standing marker */
+
+.chapter-marker {
+  padding: 9px 13px;
+  position: fixed;
+  z-index: 120;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 3px solid #171d28;
+  color: #241c0e;
+  background: #e8bd51;
+  box-shadow: 4px 5px 0 #14202b;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  animation: chapter-marker-pulse 2.4s steps(2) infinite;
+}
+.chapter-marker:hover { background: #f4cf6c; translate: 1px -1px; }
+
+@keyframes chapter-prompt-in {
+  from { opacity: 0; transform: translateY(18px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes chapter-marker-pulse {
+  50% { box-shadow: 4px 5px 0 #14202b, 0 0 0 6px rgba(232, 189, 81, .22); }
+}
+
+@media (max-width: 760px) {
+  .chapter-prompt, .chapter-marker { right: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .chapter-prompt { left: 12px; width: auto; padding: 18px 16px 16px; }
+  .chapter-prompt h2 { font-size: 23px; }
+  /* One column: a phone has no room for a side-by-side banner. */
+  .chapter-dock { padding: 10px 12px 0; }
+  .chapter-dock .chapter-prompt {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "seal eyebrow"
+      "seal title"
+      "seal body"
+      "actions actions";
+    padding: 16px 16px 15px;
+  }
+  .chapter-dock .chapter-prompt-actions { margin-top: 14px; }
+}
+
+/* --------------------------------------------- entry points on the pages */
+
+/* The caseboard keeps its own way into a waiting chapter, so the corner prompt
+   is a reminder rather than the only door. */
+.chapter-play-button {
+  width: 100%;
+  min-height: 33px;
+  margin-top: 11px;
+  border: 3px solid #161a1d;
+  color: #f5dc92;
+  background: #294957;
+  box-shadow: inset -3px -3px #172c34;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+}
+.chapter-play-button:hover { background: #33606f; }
+
+.quest-sequence {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  color: #8a6c2b !important;
+}
+.quest-grid article.sequence-locked { filter: saturate(.45); opacity: .82; }
+.quest-shelf-shadow .quest-grid article.sequence-locked .quest-sequence { color: #b08f6a !important; }
+
+.story-epilogue-link, .office-epilogue-button {
+  min-height: 40px;
+  margin-top: 18px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 3px solid #161a1d;
+  color: #16222c;
+  background: #e8bd51;
+  box-shadow: inset -3px -3px #a1762f, 4px 4px 0 #0c1119;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+}
+.story-epilogue-link:hover, .office-epilogue-button:hover { background: #f4cf6c; }
+.office-epilogue-button { margin-top: 12px; }
+
+/* ------------------------------------------------------ the ending */
+
+.epilogue-overlay {
+  position: fixed;
+  z-index: 400;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr) 40px;
+  color: #f4e8c6;
+  background:
+    radial-gradient(circle at 50% 8%, rgba(199, 181, 255, .16), transparent 46%),
+    radial-gradient(circle at 82% 74%, rgba(242, 199, 91, .1), transparent 40%),
+    #05080d;
+  font-family: var(--font-pixel);
+  animation: epilogue-in .7s ease both;
+}
+.epilogue-letterbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #020306;
+  color: #7d7259;
+  font-size: 9px;
+  letter-spacing: .22em;
+}
+.epilogue-letterbox.top { border-bottom: 1px solid #241f18; }
+.epilogue-letterbox.bottom { border-top: 1px solid #241f18; }
+.epilogue-scroll { min-height: 0; overflow-y: auto; padding: 34px 20px 44px; }
+
+.epilogue-sheet {
+  width: min(880px, 100%);
+  margin: 0 auto;
+  padding: 54px clamp(24px, 5vw, 62px) 46px;
+  position: relative;
+  border: 4px solid #12171f;
+  color: #2b2a20;
+  background: linear-gradient(168deg, #f8efd8, #ece0c0 78%);
+  box-shadow: inset 0 0 0 3px #cbb27e, 10px 12px 0 #0c1119, 0 40px 90px rgba(0, 0, 0, .55);
+}
+.epilogue-sheet::after {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border: 1px solid rgba(63, 49, 28, .22);
+  pointer-events: none;
+}
+
+.epilogue-head { position: relative; }
+.epilogue-stamp {
+  width: max-content;
+  padding: 8px 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 3px double #7c5b2a;
+  color: #7c5b2a;
+  background: rgba(232, 189, 81, .14);
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  transform: rotate(-1.4deg);
+}
+.epilogue-eyebrow {
+  display: block;
+  margin-top: 22px;
+  color: #8a6c2b;
+  font-size: 9.5px;
+  letter-spacing: .12em;
+}
+.epilogue-sheet h1 {
+  margin: 12px 0 0;
+  color: #1c3040;
+  font-family: var(--font-display);
+  font-size: clamp(38px, 6vw, 68px);
+  font-weight: 700;
+  line-height: .94;
+  letter-spacing: -.02em;
+}
+
+.epilogue-beats {
+  max-width: 64ch;
+  margin-top: 34px;
+  padding-top: 26px;
+  border-top: 3px solid #cdb98a;
+}
+.epilogue-beats p {
+  margin: 0 0 17px;
+  color: #4d4739;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.66;
+}
+.epilogue-beats p:first-child::first-letter {
+  float: left;
+  margin: 6px 10px 0 0;
+  color: #8a6229;
+  font-family: var(--font-display);
+  font-size: 58px;
+  line-height: .78;
+}
+
+.epilogue-promise {
+  margin: 30px 0 0;
+  padding: 18px 20px;
+  display: flex;
+  gap: 13px;
+  border-left: 5px solid #c79a3c;
+  background: rgba(232, 189, 81, .14);
+}
+.epilogue-promise svg { flex: none; margin-top: 3px; color: #8a6229; }
+.epilogue-promise p {
+  margin: 0;
+  color: #4a4335;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.6;
+}
+
+.epilogue-ledger {
+  margin-top: 38px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.epilogue-ledger > div {
+  padding: 17px 16px 14px;
+  border: 3px solid #1b2027;
+  background: #16283a;
+  box-shadow: inset 0 0 0 2px #38536a;
+}
+.epilogue-ledger h2 {
+  margin: 0 0 12px;
+  color: #6fd0c5;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: .14em;
+}
+.epilogue-ledger dl { margin: 0; display: grid; gap: 9px; }
+.epilogue-ledger dl > div { display: grid; gap: 3px; }
+.epilogue-ledger dt {
+  color: #93a9b0;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+}
+.epilogue-ledger dd {
+  margin: 0;
+  color: #f2cd6b;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 660;
+  line-height: 1.15;
+}
+
+.epilogue-standing {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+.epilogue-standing > div {
+  padding: 16px;
+  border: 3px solid #21231d;
+  background: #e6d9b6;
+  box-shadow: 4px 5px 0 #b09a6b;
+}
+.epilogue-standing span {
+  color: #8a6c2b;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+.epilogue-standing strong {
+  display: block;
+  margin: 6px 0 5px;
+  color: #24384a;
+  font-family: var(--font-display);
+  font-size: 26px;
+}
+.epilogue-standing small {
+  color: #6b6455;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.epilogue-closing {
+  max-width: 58ch;
+  margin: 40px 0 0;
+  color: #223444;
+  font-family: var(--font-display);
+  font-size: clamp(21px, 2.6vw, 29px);
+  font-weight: 620;
+  line-height: 1.28;
+}
+.epilogue-signature {
+  margin: 22px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #8a6c2b;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+  letter-spacing: .14em;
+}
+
+.epilogue-actions {
+  margin-top: 34px;
+  padding-top: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-top: 3px solid #cdb98a;
+}
+.epilogue-primary, .epilogue-secondary {
+  min-height: 44px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 3px solid #161a1d;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+}
+.epilogue-primary {
+  color: #16222c;
+  background: #e8bd51;
+  box-shadow: inset -3px -3px #a1762f, 4px 4px 0 #0c1119;
+}
+.epilogue-primary:hover { background: #f4cf6c; }
+.epilogue-secondary {
+  color: #f5dc92;
+  background: #294957;
+  box-shadow: inset -3px -3px #172c34, 4px 4px 0 #0c1119;
+}
+.epilogue-secondary:hover { background: #33606f; }
+
+@keyframes epilogue-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 760px) {
+  .epilogue-overlay { grid-template-rows: 26px minmax(0, 1fr) 26px; }
+  .epilogue-scroll { padding: 16px 10px 30px; }
+  .epilogue-sheet { padding: 34px 20px 32px; }
+  .epilogue-ledger { grid-template-columns: 1fr; }
+  .epilogue-beats p { font-size: 15px; }
+}

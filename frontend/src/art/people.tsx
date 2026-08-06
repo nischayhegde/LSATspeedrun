@@ -24,6 +24,14 @@ const castGenders: Record<string, CharacterGender> = {
   sovereign_rival: 'female',
   continental_rival: 'male',
   orbital_rival: 'female',
+  // Without an entry here a bust falls back to `seed % 2`, which is fine for an
+  // anonymous walk-in but not for a rival: these owners are named in the card
+  // beside their own portrait, so the two have to agree.
+  media_law_collective: 'female',
+  global_crisis_firm: 'female',
+  oceanic_rival: 'male',
+  lunar_rival: 'female',
+  planetary_rival: 'male',
 }
 
 function castHash(value: string) {

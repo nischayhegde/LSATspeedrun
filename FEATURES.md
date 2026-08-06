@@ -1,4 +1,4 @@
-# LSAT Speedrun — Feature Overview
+# LSAT Tycoon — Feature Overview
 
 This document is an orientation map of the whole product: what each feature is, why it exists, and how it
 connects to everything else. It is written to be read start to finish before presenting the app. Every claim
@@ -9,7 +9,7 @@ implementation. Where something is ambiguous or half-built, it says so.
 
 ## 1. What the product is
 
-LSAT Speedrun is an LSAT practice platform wrapped in a persistent lawyer-tycoon game. The learning system is
+LSAT Tycoon is an LSAT practice platform wrapped in a persistent lawyer-tycoon game. The learning system is
 the real product; the game is retention scaffolding built around it.
 
 The core loop is short and deliberately one-directional:
@@ -432,9 +432,9 @@ the last five explanations as `recent_reasoning_samples` so it can catch generic
 
 ### 4.3 Sync and async paths
 
-`AI_JOBS_MODE` selects between two execution paths for the same work.
+`AI_JOBS_MODE` selects between three execution paths for the same work.
 
-**Sync (`sync`, the default and local mode).** `POST /v1/attempts/<id>/coaching` calls `run_attempt_coaching`
+**Sync (`sync`, the production default until a queue is declared).** `POST /v1/attempts/<id>/coaching` calls `run_attempt_coaching`
 in-request. That function takes a soft lease — it marks the attempt `processing`, records
 `coaching_started_at`, and refuses concurrent duplicate work for 150 seconds — then calls the provider, settles
 the game reward, applies the explanation score to skill stats exactly once (guarded by
@@ -449,6 +449,20 @@ processing lease is left alone, a queued job without a message ID is re-publishe
 reclaimed and re-queued (with the attempt counter reset on a previous failure). Jobs retry up to
 `AI_JOB_MAX_ATTEMPTS` (default 3), and deterministic errors fail immediately instead of retrying. The client
 polls `GET /v1/jobs/<id>` for up to eight minutes.
+
+**Local worker (`local`, the default outside production).** Grading is a 20–30 second frontier-model call, so
+running it in-request would hold the learner on the debrief for that long, every case. This mode creates the
+same `AiJob` row and returns HTTP 202 immediately, but drains it on a daemon thread inside the process instead
+of publishing to SQS — no broker and no second deployment unit. The thread carries out its own retries up to
+`AI_JOB_MAX_ATTEMPTS` (nothing else would redeliver the job), and a shutdown mid-grade simply lets the
+processing lease expire so the next request for that attempt reclaims it.
+
+Because grading is no longer on the critical path, `POST /v1/study-sessions/<id>/debrief/acknowledge` accepts a
+debrief whose grade is still resolving (it returns `settlement_pending: true`) rather than answering
+`409 settlement_required`; only a case that was never sent for grading is still refused. Correctness comes from
+the verified answer key, not from the coach, so if grading fails terminally `settle_uncoached_attempt` settles
+the case from the key alone, marks the write-up ungraded, and the endpoint reports `status: "unavailable"` so
+the client stops polling and says so instead of spinning.
 
 Either way the coaching is stored on the attempt, so it is generated once and re-read forever.
 

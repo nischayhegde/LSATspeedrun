@@ -207,7 +207,7 @@ function Invoke-SsmCommandAndWait {
         [int]$TimeoutSeconds
     )
     $parameters = @{ commands = @($Commands) } | ConvertTo-Json -Compress
-    $parametersPath = Join-Path ([IO.Path]::GetTempPath()) ("lawyer-tycoon-ssm-" + [guid]::NewGuid().ToString("N") + ".json")
+    $parametersPath = Join-Path ([IO.Path]::GetTempPath()) ("lsat-tycoon-ssm-" + [guid]::NewGuid().ToString("N") + ".json")
     try {
         [IO.File]::WriteAllText($parametersPath, $parameters, (New-Object Text.UTF8Encoding $false))
         $sent = Get-AwsJson -ArgumentList @(
@@ -807,7 +807,7 @@ try {
     $commitCheck = 'test "$(git -C /opt/lsat-speedrun rev-parse HEAD)" = "' + $commitSha + '"'
     $bootstrapCommandParameters = @{
         InstanceId = $instanceId
-        Comment = "Verify Lawyer Tycoon bootstrap"
+        Comment = "Verify LSAT Tycoon bootstrap"
         TimeoutSeconds = $BootstrapTimeoutMinutes * 60
         Commands = @(
             "set -euo pipefail",
@@ -834,8 +834,8 @@ try {
         throw "The deployed API is not fully configured."
     }
     $indexResponse = Invoke-WebRequest -Uri $applicationUrl -UseBasicParsing -TimeoutSec 30
-    if ($indexResponse.StatusCode -ne 200 -or $indexResponse.Content -notmatch '<title>Lawyer Tycoon</title>') {
-        throw "CloudFront is not serving the Lawyer Tycoon frontend."
+    if ($indexResponse.StatusCode -ne 200 -or $indexResponse.Content -notmatch '<title>LSAT Tycoon</title>') {
+        throw "CloudFront is not serving the LSAT Tycoon frontend."
     }
     $authConfig = Invoke-RestMethod -Uri "$($applicationUrl.TrimEnd('/'))/v1/auth/config" -TimeoutSec 30
     if (-not $authConfig.google_client_id -or $authConfig.dev_auth_enabled) {
@@ -856,8 +856,8 @@ try {
     ) {
         throw "Lambda is not active with the artifact built by this deployment."
     }
-    $lambdaResponsePath = Join-Path ([IO.Path]::GetTempPath()) ("lawyer-tycoon-lambda-" + [guid]::NewGuid().ToString("N") + ".json")
-    $lambdaRequestPath = Join-Path ([IO.Path]::GetTempPath()) ("lawyer-tycoon-lambda-request-" + [guid]::NewGuid().ToString("N") + ".json")
+    $lambdaResponsePath = Join-Path ([IO.Path]::GetTempPath()) ("lsat-tycoon-lambda-" + [guid]::NewGuid().ToString("N") + ".json")
+    $lambdaRequestPath = Join-Path ([IO.Path]::GetTempPath()) ("lsat-tycoon-lambda-request-" + [guid]::NewGuid().ToString("N") + ".json")
     $lambdaProbePayload = '{"Records":[{"messageId":"deployment-cold-start","body":"{\"job_id\":\"00000000-0000-0000-0000-000000000000\"}"}]}'
     try {
         [IO.File]::WriteAllText($lambdaRequestPath, $lambdaProbePayload, (New-Object Text.UTF8Encoding $false))

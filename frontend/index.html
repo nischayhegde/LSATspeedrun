@@ -2,9 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- `interactive-widget=resizes-content` makes the on-screen keyboard shrink
+         the layout viewport, so the dvh units and the docked submit bars in the
+         case view stay above the keyboard instead of behind it. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#102735" />
-    <meta name="description" content="Lawyer Tycoon — master LSAT reasoning and build a legal empire one case at a time." />
+    <meta name="description" content="LSAT Tycoon — master LSAT reasoning and build a legal empire one case at a time." />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23102735' stroke='%23c89b4b' stroke-width='3'/%3E%3Cpath d='M32 14v34M20 22h24M17 22 10 36h14L17 22Zm30 0-7 14h14l-7-14ZM23 49h18' fill='none' stroke='%23f5e8c8' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -21,7 +24,37 @@
     <noscript>
       <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap" rel="stylesheet" />
     </noscript>
-    <title>Lawyer Tycoon</title>
+    <title>LSAT Tycoon</title>
+    <!-- Every protected screen blocks on the same two calls before it can draw
+         anything at all, and until now the first of them did not leave the
+         browser until the application bundle had been downloaded, parsed and
+         executed — several hundred milliseconds into the navigation on a modest
+         laptop, all of it dead time on the server side. Starting them here puts
+         those round trips underneath the bundle parse instead of after it.
+         `src/api.ts` adopts whatever is waiting here on its first call and
+         falls back to a normal fetch when there is nothing (a reload, a second
+         call, or a build served with an absolute VITE_API_URL). -->
+    <script>
+      (function () {
+        try {
+          var path = location.pathname.replace(/\/$/, '') || '/'
+          var wanted = path === '/login' ? ['/auth/config'] : ['/me', '/game']
+          var pending = {}
+          for (var i = 0; i < wanted.length; i++) {
+            (function (p) {
+              pending[p] = fetch('/v1' + p, { credentials: 'include', headers: { Accept: 'application/json' } })
+                .then(function (r) {
+                  return r.json().catch(function () { return {} }).then(function (body) {
+                    return { ok: r.ok, status: r.status, body: body }
+                  })
+                })
+                .catch(function () { return null })
+            })(wanted[i])
+          }
+          window.__lsatBootstrap = pending
+        } catch (e) { /* a missing prefetch only costs the old behaviour */ }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

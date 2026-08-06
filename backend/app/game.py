@@ -15,10 +15,12 @@ from .models import (
     PlayerAsset,
     PlayerClientContract,
     PlayerProfile,
+    PlayerTerritory,
     SessionItem,
     utcnow,
 )
 from .story import (
+    CHAPTER_BY_KEY,
     advance_quest,
     ensure_story_state,
     execute_rival_operation,
@@ -30,11 +32,46 @@ from .story import (
 )
 
 
-RULE_VERSION = "lawyer-tycoon-v4"
+RULE_VERSION = "lsat-tycoon-v4"
 STARTING_CASH = 250
 DAILY_REWARD_MULTIPLIERS = {5: 1, 10: 3, 20: 8}
-TARGET_CASES_PER_MILESTONE = 4
-FIRM_TIER_COST_MULTIPLIER = 2
+# Every price in the catalog is quoted in *cases*: `_case_target_for_tier`
+# converts one solid, well-argued win into cash, and each headquarters costs
+# `TARGET_CASES_PER_MILESTONE * FIRM_TIER_COST_MULTIPLIER * _tier_effort_scale`
+# of them while each upgrade, hire, or acquisition costs three to five.
+#
+# Those two quotes have to stay within a factor of two of each other or no
+# single effort scale can hold both inside one band, which is why the
+# headquarters multiplier is 1 rather than the 2 it carried while offices were
+# meant to be the rare, expensive rung.
+TARGET_CASES_PER_MILESTONE = 5
+FIRM_TIER_COST_MULTIPLIER = 1
+# How much longer a purchase costs at tier `t` than the same purchase would at
+# the bottom of the ladder.
+#
+# This used to run 0.8 -> 9.2 across the ladder, on the theory that late tiers
+# should be multi-week climbs. Measured against a realistic player (72%
+# accuracy, ordinary prose grades) that produced 3.6 cases for an early
+# purchase and 33.7 for a late one, and a 1,944-case, 144-hour campaign: the
+# ladder got longer every rung while the reward for climbing it stayed a single
+# case.
+#
+# The target is 8-12 cases per purchase at every rung — about 35-55 minutes of
+# play for an upgrade, a ~940-case, ~70-hour campaign, and a month to two months
+# of study depending on whether the player works ten cases a day or twenty. The
+# scale is therefore close to flat, drifting up around 36% across fifteen tiers
+# so a late purchase still costs visibly more work than an early one without the
+# curve running away. Both figures come from simulating the real catalog against
+# that player rather than from the nominal budget, which flatters itself by
+# assuming every case is a solid win.
+#
+# A slightly lower base (1.85) lands nearer 900 cases but drops the first rung
+# to about seven cases; holding the whole ladder inside the band is worth the
+# extra forty cases. What the scale cannot fix is the spread *within* a tier —
+# a purchase costs three to five cases by design, so which assets happen to sit
+# at a tier moves that tier's average by more than a step of this size does.
+TIER_EFFORT_BASE = 1.95
+TIER_EFFORT_STEP = 0.05
 FINAL_CASE_KEY = "constellation_charter"
 ACTIVE_RENT_WINDOW = timedelta(hours=24)
 REPUTATION_GRACE_PERIOD = timedelta(hours=48)
@@ -47,19 +84,19 @@ SECONDS_PER_DAY = 24 * 60 * 60
 FIRM_TIERS = [
     {"tier": 0, "name": "Wooden Shack", "cost": 0, "reputation": 0, "region": "Old Quarter", "feature": "Street-level practice", "short": "A one-desk practice with a lot to prove."},
     {"tier": 1, "name": "Shared Office", "cost": 6_000, "reputation": 20, "region": "Old Quarter", "feature": "Client intake suite", "short": "A real address, a repaired roof, and room for help."},
-    {"tier": 2, "name": "Neighborhood Firm", "cost": 36_000, "reputation": 32, "region": "Market Ward", "feature": "Community courtroom", "short": "A storefront practice trusted by local businesses."},
-    {"tier": 3, "name": "Downtown Firm", "cost": 180_000, "reputation": 42, "region": "Civic Center", "feature": "Trial strategy floor", "short": "A polished suite overlooking the city docket."},
-    {"tier": 4, "name": "City Power Firm", "cost": 800_000, "reputation": 50, "region": "Financial District", "feature": "Predictive jury theater", "short": "A landmark office for high-stakes clients."},
-    {"tier": 5, "name": "Regional Headquarters", "cost": 3_600_000, "reputation": 56, "region": "Harbor Exchange", "feature": "Branch command center", "short": "A waterfront headquarters coordinating offices across the state."},
-    {"tier": 6, "name": "National Firm", "cost": 16_000_000, "reputation": 62, "region": "Midtown Crown", "feature": "National litigation grid", "short": "Coast-to-coast branches and a national client book."},
-    {"tier": 7, "name": "International Practice", "cost": 70_000_000, "reputation": 68, "region": "Embassy Row", "feature": "Live translation cloud", "short": "Diplomatic reach and cross-border teams working around the clock."},
-    {"tier": 8, "name": "Global Legal Empire", "cost": 300_000_000, "reputation": 74, "region": "Skyline Heights", "feature": "Global crisis command", "short": "A worldwide practice whose crest changes skylines."},
-    {"tier": 9, "name": "Sovereign Counsel Tower", "cost": 1_200_000_000, "reputation": 79, "region": "Sovereign Enclave", "feature": "Treaty negotiation chamber", "short": "Governments and institutions bring their defining disputes here."},
-    {"tier": 10, "name": "Continental Justice Campus", "cost": 4_000_000_000, "reputation": 83, "region": "Innovation Arc", "feature": "Autonomous case campus", "short": "An entire district built around research, advocacy, and legal technology."},
-    {"tier": 11, "name": "Oceanic Law Citadel", "cost": 12_000_000_000, "reputation": 86, "region": "Azure Coast", "feature": "Floating arbitration forum", "short": "A self-sustaining coastal citadel for planet-scale matters."},
-    {"tier": 12, "name": "Orbital Arbitration Ring", "cost": 30_000_000_000, "reputation": 89, "region": "Aerospace Basin", "feature": "Zero-gravity hearing rooms", "short": "The first legal headquarters with a permanent orbital docket."},
-    {"tier": 13, "name": "Lunar Embassy of Law", "cost": 70_000_000_000, "reputation": 92, "region": "Lunar Gate", "feature": "Interworld treaty vault", "short": "A moon-linked embassy settling disputes beyond national borders."},
-    {"tier": 14, "name": "Planetary Justice Nexus", "cost": 160_000_000_000, "reputation": 94, "region": "Celestial Crown", "feature": "Justice constellation", "short": "A legendary network that coordinates law across an entire civilization."},
+    {"tier": 2, "name": "Neighborhood Firm", "cost": 18_000, "reputation": 32, "region": "Market Ward", "feature": "Community courtroom", "short": "A storefront practice trusted by local businesses."},
+    {"tier": 3, "name": "Downtown Firm", "cost": 50_000, "reputation": 42, "region": "Civic Center", "feature": "Trial strategy floor", "short": "A polished suite overlooking the city docket."},
+    {"tier": 4, "name": "City Power Firm", "cost": 130_000, "reputation": 50, "region": "Financial District", "feature": "Predictive jury theater", "short": "A landmark office for high-stakes clients."},
+    {"tier": 5, "name": "Regional Headquarters", "cost": 320_000, "reputation": 56, "region": "Harbor Exchange", "feature": "Branch command center", "short": "A waterfront headquarters coordinating offices across the state."},
+    {"tier": 6, "name": "National Firm", "cost": 750_000, "reputation": 62, "region": "Midtown Crown", "feature": "National litigation grid", "short": "Coast-to-coast branches and a national client book."},
+    {"tier": 7, "name": "International Practice", "cost": 1_700_000, "reputation": 68, "region": "Embassy Row", "feature": "Live translation cloud", "short": "Diplomatic reach and cross-border teams working around the clock."},
+    {"tier": 8, "name": "Global Legal Empire", "cost": 3_600_000, "reputation": 74, "region": "Skyline Heights", "feature": "Global crisis command", "short": "A worldwide practice whose crest changes skylines."},
+    {"tier": 9, "name": "Sovereign Counsel Tower", "cost": 7_500_000, "reputation": 79, "region": "Sovereign Enclave", "feature": "Treaty negotiation chamber", "short": "Governments and institutions bring their defining disputes here."},
+    {"tier": 10, "name": "Continental Justice Campus", "cost": 15_000_000, "reputation": 83, "region": "Innovation Arc", "feature": "Autonomous case campus", "short": "An entire district built around research, advocacy, and legal technology."},
+    {"tier": 11, "name": "Oceanic Law Citadel", "cost": 30_000_000, "reputation": 86, "region": "Azure Coast", "feature": "Floating arbitration forum", "short": "A self-sustaining coastal citadel for planet-scale matters."},
+    {"tier": 12, "name": "Orbital Arbitration Ring", "cost": 60_000_000, "reputation": 89, "region": "Aerospace Basin", "feature": "Zero-gravity hearing rooms", "short": "The first legal headquarters with a permanent orbital docket."},
+    {"tier": 13, "name": "Lunar Embassy of Law", "cost": 120_000_000, "reputation": 92, "region": "Lunar Gate", "feature": "Interworld treaty vault", "short": "A moon-linked embassy settling disputes beyond national borders."},
+    {"tier": 14, "name": "Planetary Justice Nexus", "cost": 240_000_000, "reputation": 94, "region": "Celestial Crown", "feature": "Justice constellation", "short": "A legendary network that coordinates law across an entire civilization."},
 ]
 
 # Office rent scales predictably with the headquarters investment. The starter
@@ -269,23 +306,29 @@ RIVALS = [
 
 # Cosmetics are the only purchases with no mechanical effect. They exist so a
 # player can furnish the office to taste, so they are deliberately cheaper than
-# the functional asset at the same tier, never gate a headquarters advance, and
-# are excluded from the economy rebalance that prices everything else in cases.
+# the functional asset at the same tier and never gate a headquarters advance.
+#
+# Their prices are quoted in cases (`decor_cases`) like everything else rather
+# than in dollars. They were authored in dollars until the ladder was rescaled
+# for pacing, at which point the most extravagant decoration in the game cost a
+# twentieth of a single late case — the failure mode the pro bono fees already
+# ran into once. The share each piece carries is the one it had when these were
+# hand-priced, so the relative indulgence is unchanged; only the anchor moved.
 COSMETICS = [
-    _asset("bar_certificate", "cosmetic", "Framed bar certificate", 400, 0, 0, "Decor · hangs beside the desk", "The document that started all of this, finally out of the drawer and under glass.", art="decor-frame"),
-    _asset("banker_lamp", "cosmetic", "Brass banker's lamp", 950, 0, 0, "Decor · sits on the partner desk", "A green glass shade and a warm pool of light for the hours after everyone leaves.", requires=("repaired_desk",), art="decor-lamp"),
-    _asset("persian_rug", "cosmetic", "Hand-knotted Persian rug", 3_400, 20, 1, "Decor · covers the client floor", "Deep madder and indigo underfoot; the first thing a nervous client notices.", art="decor-rug"),
-    _asset("fig_tree", "cosmetic", "Potted fig tree", 5_200, 20, 1, "Decor · fills the window corner", "Something alive in the room, kept carefully in the light from the window.", art="decor-plant"),
-    _asset("chesterfield", "cosmetic", "Leather chesterfield", 19_000, 32, 2, "Decor · client reading corner", "Buttoned oxblood leather that makes waiting feel like being taken seriously.", art="decor-seating"),
-    _asset("reporter_wall", "cosmetic", "Wall of bound reporters", 27_000, 32, 2, "Decor · reading shelf beside the library", "Gilt spines from a century of decisions, arranged the way a partner actually reads them.", requires=("legal_library",), art="decor-books"),
-    _asset("grandfather_clock", "cosmetic", "Grandfather clock", 90_000, 42, 3, "Decor · stands against the window wall", "Walnut, brass, and a quarter chime that keeps the room honest about billable hours.", art="decor-clock"),
-    _asset("skyline_painting", "cosmetic", "Commissioned skyline painting", 140_000, 42, 3, "Decor · hangs above the reception storage", "The city you argue in, painted by someone who clearly loves the courthouse dome.", art="decor-art"),
-    _asset("trophy_shelf", "cosmetic", "Advocacy trophy shelf", 480_000, 50, 4, "Decor · lit shelf behind the desk", "Advocacy prizes and bar honors, lit well enough to be read from the doorway.", art="decor-trophy"),
-    _asset("justice_bust", "cosmetic", "Marble bust of Justice", 1_900_000, 56, 5, "Decor · plinth near the entry", "Carrara marble on a black plinth, blindfold intact, watching the whole floor.", art="decor-bust"),
-    _asset("globe_bar", "cosmetic", "Antique globe bar", 8_000_000, 62, 6, "Decor · beside the client seating", "A hollow terrestrial globe that opens into crystal and a very good decanter.", art="decor-globe"),
-    _asset("stained_glass", "cosmetic", "Stained-glass jurisprudence panel", 32_000_000, 68, 7, "Decor · set into the window wall", "Scales, oath, and open book in leaded glass, throwing colour across the floor at dusk.", art="decor-glass"),
-    _asset("charter_vitrine", "cosmetic", "First-charter vitrine", 480_000_000, 79, 9, "Decor · sealed case by the archive", "The firm's founding charter under museum glass, inert gas, and its own quiet light.", requires=("vault_archive",), art="decor-vitrine"),
-    _asset("orchid_wall", "cosmetic", "Living orchid wall", 3_000_000_000, 86, 11, "Decor · planted wall on the rear wall", "A tended vertical garden that keeps a planet-scale practice breathing like a place people work.", art="decor-living-wall"),
+    _asset("bar_certificate", "cosmetic", "Framed bar certificate", 500, 0, 0, "Decor · hangs beside the desk", "The document that started all of this, finally out of the drawer and under glass.", art="decor-frame", decor_cases=.55),
+    _asset("banker_lamp", "cosmetic", "Brass banker's lamp", 1_200, 0, 0, "Decor · sits on the partner desk", "A green glass shade and a warm pool of light for the hours after everyone leaves.", requires=("repaired_desk",), art="decor-lamp", decor_cases=1.3),
+    _asset("persian_rug", "cosmetic", "Hand-knotted Persian rug", 1_200, 20, 1, "Decor · covers the client floor", "Deep madder and indigo underfoot; the first thing a nervous client notices.", art="decor-rug", decor_cases=.75),
+    _asset("fig_tree", "cosmetic", "Potted fig tree", 1_900, 20, 1, "Decor · fills the window corner", "Something alive in the room, kept carefully in the light from the window.", art="decor-plant", decor_cases=1.2),
+    _asset("chesterfield", "cosmetic", "Leather chesterfield", 2_600, 32, 2, "Decor · client reading corner", "Buttoned oxblood leather that makes waiting feel like being taken seriously.", art="decor-seating", decor_cases=.85),
+    _asset("reporter_wall", "cosmetic", "Wall of bound reporters", 3_800, 32, 2, "Decor · reading shelf beside the library", "Gilt spines from a century of decisions, arranged the way a partner actually reads them.", requires=("legal_library",), art="decor-books", decor_cases=1.2),
+    _asset("grandfather_clock", "cosmetic", "Grandfather clock", 5_600, 42, 3, "Decor · stands against the window wall", "Walnut, brass, and a quarter chime that keeps the room honest about billable hours.", art="decor-clock", decor_cases=.9),
+    _asset("skyline_painting", "cosmetic", "Commissioned skyline painting", 8_800, 42, 3, "Decor · hangs above the reception storage", "The city you argue in, painted by someone who clearly loves the courthouse dome.", art="decor-art", decor_cases=1.4),
+    _asset("trophy_shelf", "cosmetic", "Advocacy trophy shelf", 13_000, 50, 4, "Decor · lit shelf behind the desk", "Advocacy prizes and bar honors, lit well enough to be read from the doorway.", art="decor-trophy", decor_cases=1.05),
+    _asset("justice_bust", "cosmetic", "Marble bust of Justice", 23_000, 56, 5, "Decor · plinth near the entry", "Carrara marble on a black plinth, blindfold intact, watching the whole floor.", art="decor-bust", decor_cases=.95),
+    _asset("globe_bar", "cosmetic", "Antique globe bar", 44_000, 62, 6, "Decor · beside the client seating", "A hollow terrestrial globe that opens into crystal and a very good decanter.", art="decor-globe", decor_cases=.9),
+    _asset("stained_glass", "cosmetic", "Stained-glass jurisprudence panel", 77_000, 68, 7, "Decor · set into the window wall", "Scales, oath, and open book in leaded glass, throwing colour across the floor at dusk.", art="decor-glass", decor_cases=.85),
+    _asset("charter_vitrine", "cosmetic", "First-charter vitrine", 290_000, 79, 9, "Decor · sealed case by the archive", "The firm's founding charter under museum glass, inert gas, and its own quiet light.", requires=("vault_archive",), art="decor-vitrine", decor_cases=.95),
+    _asset("orchid_wall", "cosmetic", "Living orchid wall", 810_000, 86, 11, "Decor · planted wall on the rear wall", "A tended vertical garden that keeps a planet-scale practice breathing like a place people work.", art="decor-living-wall", decor_cases=.8),
 ]
 
 ASSETS = UPGRADES + STAFF + CONNECTIONS + RIVALS + COSMETICS
@@ -305,6 +348,247 @@ def _tier_required_asset_keys(target_tier: int) -> list[str]:
 
 def _missing_tier_assets(target_tier: int, owned: set[str]) -> list[str]:
     return [key for key in _tier_required_asset_keys(target_tier) if key not in owned]
+
+
+# --------------------------------------------------------------- wardrobe
+#
+# How the player's own counsel is dressed, as distinct from `COSMETICS` above,
+# which furnishes the room. Nothing here is bought: the office decor ladder is
+# already the game's cash sink, and a second one competing with it for the same
+# balance would make the wardrobe a tax on the upgrades that actually pay. Each
+# piece is instead earned by playing — a headquarters reached, a reputation
+# band held, a number of cases settled, a chapter resolved — so opening the
+# wardrobe is a record of the campaign rather than a shop.
+#
+# Every category opens with an "as issued" default that applies no override at
+# all, which is what keeps a brand-new account looking exactly as it did before
+# this catalog existed.
+
+WARDROBE_UNLOCK_START = {"kind": "start"}
+
+
+def _wardrobe_tier(tier: int) -> dict:
+    return {"kind": "tier", "value": tier}
+
+
+def _wardrobe_reputation(value: int) -> dict:
+    return {"kind": "reputation", "value": value}
+
+
+def _wardrobe_cases(value: int) -> dict:
+    return {"kind": "cases", "value": value}
+
+
+def _wardrobe_chapter(key: str) -> dict:
+    return {"kind": "chapter", "value": key}
+
+
+def _wardrobe(key: str, category: str, name: str, flavor: str, unlock: dict) -> dict:
+    return {"key": key, "category": category, "name": name, "flavor": flavor, "unlock": unlock}
+
+
+WARDROBE_CATEGORIES = [
+    {
+        "key": "suit",
+        "name": "Suit",
+        "blurb": "The cloth the whole room reads first.",
+    },
+    {
+        "key": "tie",
+        "name": "Neckwear",
+        "blurb": "Six inches of silk that decides how formal you look.",
+    },
+    {
+        "key": "hair",
+        "name": "Hair",
+        "blurb": "How you wear it into chambers.",
+    },
+    {
+        "key": "eyewear",
+        "name": "Eyewear",
+        "blurb": "For reading the paragraph nobody else read.",
+    },
+    {
+        "key": "accessory",
+        "name": "Accessory",
+        "blurb": "One deliberate detail. Never two.",
+    },
+]
+
+WARDROBE = [
+    # Suits. The default keeps the tier-driven navy that deepens as the firm
+    # climbs; every other colourway is a fixed cloth the player has chosen.
+    _wardrobe("suit_house_navy", "suit", "Firm navy", "House cloth. Its indigo deepens with every headquarters you take.", WARDROBE_UNLOCK_START),
+    _wardrobe("suit_charcoal", "suit", "Charcoal worsted", "The suit that has never once been the most interesting thing in the room.", WARDROBE_UNLOCK_START),
+    _wardrobe("suit_slate", "suit", "Slate grey", "Cool, unhurried, and impossible to read across a negotiating table.", _wardrobe_reputation(35)),
+    _wardrobe("suit_forest", "suit", "Forest green", "Deep bottle green with a countryside confidence the city never quite trusts.", _wardrobe_tier(3)),
+    _wardrobe("suit_oxblood", "suit", "Oxblood", "A hundred and fifty files in, you have earned one suit that argues first.", _wardrobe_cases(150)),
+    _wardrobe("suit_cream_linen", "suit", "Cream linen", "Cut for a jurisdiction where the courthouse has ceiling fans.", _wardrobe_tier(6)),
+    _wardrobe("suit_pinstripe", "suit", "Chalk pinstripe", "The cloth Sterling wears. Wearing it back is its own kind of answer.", _wardrobe_chapter("sterling_invitation")),
+    # Neckwear.
+    _wardrobe("tie_house_burgundy", "tie", "House burgundy", "Standard issue since the first shingle went up in the rain.", WARDROBE_UNLOCK_START),
+    _wardrobe("tie_open_collar", "tie", "Open collar", "No tie. The privilege of counsel whose work speaks before the collar does.", WARDROBE_UNLOCK_START),
+    _wardrobe("tie_regimental", "tie", "Regimental stripe", "Diagonal navy and gold, worn by every advocate who has survived a first docket.", _wardrobe_cases(25)),
+    _wardrobe("tie_gold_foulard", "tie", "Gold foulard", "Warm gold silk that photographs well on courthouse steps.", _wardrobe_reputation(60)),
+    _wardrobe("tie_bow", "tie", "Black bow tie", "Hand-tied. Appellate counsel and nobody else can carry it in daylight.", _wardrobe_tier(5)),
+    _wardrobe("tie_cravat", "tie", "Ivory cravat", "Chartered counsel, formal dress. Ada would have found it ridiculous and worn it anyway.", _wardrobe_chapter("charter_of_counsel")),
+    # Hair.
+    _wardrobe("hair_signature", "hair", "Signature cut", "However you wore it the day you were sworn in.", WARDROBE_UNLOCK_START),
+    _wardrobe("hair_cropped", "hair", "Cropped", "Short, exact, and no longer a decision you make in the morning.", WARDROBE_UNLOCK_START),
+    _wardrobe("hair_full", "hair", "Full volume", "More of it than the job strictly allows.", WARDROBE_UNLOCK_START),
+    _wardrobe("hair_distinguished", "hair", "Distinguished silver", "Eight headquarters will do this to anybody's temples.", _wardrobe_tier(8)),
+    # Eyewear.
+    _wardrobe("eyewear_as_issued", "eyewear", "As issued", "Whatever you happened to have on when the first client walked in.", WARDROBE_UNLOCK_START),
+    _wardrobe("eyewear_none", "eyewear", "None", "Nothing between you and the exhibit.", WARDROBE_UNLOCK_START),
+    _wardrobe("eyewear_round", "eyewear", "Round wire frames", "Thin gold wire. Reads as scholarly until you start cross-examining.", WARDROBE_UNLOCK_START),
+    _wardrobe("eyewear_rectangular", "eyewear", "Rectangular frames", "Fifty files of small print earned a pair built for small print.", _wardrobe_cases(50)),
+    _wardrobe("eyewear_tortoiseshell", "eyewear", "Tortoiseshell", "Warm amber acetate. Expensive in a way only other lawyers notice.", _wardrobe_reputation(45)),
+    # Accessories. Exactly one at a time, on purpose.
+    _wardrobe("accessory_as_issued", "accessory", "As issued", "Whatever the firm handed you on the first morning.", WARDROBE_UNLOCK_START),
+    _wardrobe("accessory_none", "accessory", "None", "Nothing on the lapel. Let the argument be the ornament.", WARDROBE_UNLOCK_START),
+    _wardrobe("accessory_lapel_pin", "accessory", "Brass lapel pin", "The firm's crest, small enough that a client has to lean in to read it.", WARDROBE_UNLOCK_START),
+    _wardrobe("accessory_pocket_square", "accessory", "Pocket square", "Folded once. A neighborhood firm's first small extravagance.", _wardrobe_tier(2)),
+    _wardrobe("accessory_wristwatch", "accessory", "Gold wristwatch", "It keeps billable time and says you no longer need to.", _wardrobe_reputation(55)),
+    _wardrobe("accessory_briefcase", "accessory", "Oxhide briefcase", "A hundred cases of scuffs. The clasp still shuts on the first try.", _wardrobe_cases(100)),
+]
+
+WARDROBE_BY_KEY = {item["key"]: item for item in WARDROBE}
+WARDROBE_CATEGORY_KEYS = [category["key"] for category in WARDROBE_CATEGORIES]
+# The first entry authored in each category is that category's "as issued"
+# default, and every default applies no override to the rig.
+WARDROBE_DEFAULTS = {
+    category: next(item["key"] for item in WARDROBE if item["category"] == category)
+    for category in WARDROBE_CATEGORY_KEYS
+}
+
+
+def _wardrobe_default(category: str, profile: PlayerProfile) -> str:
+    """The "as issued" piece for one category on this character.
+
+    Neckwear is the one category whose issued piece depends on the character:
+    the female cut has always been drawn with an open shirt collar and the male
+    cut with the house four-in-hand. Making the default follow the character is
+    what lets "House burgundy" mean an actual burgundy tie for everyone, rather
+    than meaning "whatever your cut is issued".
+    """
+
+    if category == "tie" and profile.character_gender == "female":
+        return "tie_open_collar"
+    return WARDROBE_DEFAULTS[category]
+
+
+def _wardrobe_requirement(unlock: dict) -> str:
+    kind = unlock["kind"]
+    if kind == "tier":
+        tier = FIRM_TIERS[int(unlock["value"])]
+        return f"Reach the {tier['name']} (HQ tier {tier['tier']})"
+    if kind == "reputation":
+        return f"Hold {int(unlock['value'])} reputation"
+    if kind == "cases":
+        return f"Settle {int(unlock['value'])} cases"
+    if kind == "chapter":
+        chapter = CHAPTER_BY_KEY.get(str(unlock["value"]))
+        return f"Resolve “{chapter['title']}”" if chapter else "Resolve the chapter"
+    return "Available from your first day"
+
+
+def _wardrobe_unlocked(item: dict, profile: PlayerProfile) -> bool:
+    unlock = item["unlock"]
+    kind = unlock["kind"]
+    if kind == "start":
+        return True
+    if kind == "tier":
+        return profile.office_tier >= int(unlock["value"])
+    if kind == "reputation":
+        return profile.reputation >= float(unlock["value"])
+    if kind == "cases":
+        return profile.total_cases >= int(unlock["value"])
+    if kind == "chapter":
+        state = profile.story_state
+        return bool(state) and str(unlock["value"]) in set(state.seen_chapters_json or [])
+    return False
+
+
+def wardrobe_selection(profile: PlayerProfile) -> dict[str, str]:
+    """The player's effective look, one entry per category.
+
+    Stored choices are re-validated on read rather than trusted. A player can
+    lose reputation, so an item that was unlocked when it was chosen may not be
+    now; rather than silently dressing them in something they no longer have,
+    the category falls back to its default until they meet the condition again.
+    """
+
+    stored = profile.cosmetics_json or {}
+    selection = {}
+    for category in WARDROBE_CATEGORY_KEYS:
+        chosen = WARDROBE_BY_KEY.get(str(stored.get(category) or ""))
+        usable = chosen and chosen["category"] == category and _wardrobe_unlocked(chosen, profile)
+        selection[category] = chosen["key"] if usable else _wardrobe_default(category, profile)
+    return selection
+
+
+def serialize_wardrobe(profile: PlayerProfile) -> dict:
+    selection = wardrobe_selection(profile)
+    return {
+        "selection": selection,
+        "categories": [
+            {
+                **category,
+                "default": _wardrobe_default(category["key"], profile),
+                "selected": selection[category["key"]],
+                "items": [
+                    {
+                        "key": item["key"],
+                        "category": item["category"],
+                        "name": item["name"],
+                        "flavor": item["flavor"],
+                        "unlocked": _wardrobe_unlocked(item, profile),
+                        "requirement": _wardrobe_requirement(item["unlock"]),
+                        "unlock": item["unlock"],
+                    }
+                    for item in WARDROBE
+                    if item["category"] == category["key"]
+                ],
+            }
+            for category in WARDROBE_CATEGORIES
+        ],
+    }
+
+
+def set_wardrobe(profile: PlayerProfile, payload: dict) -> dict[str, str]:
+    """Apply a partial wardrobe change.
+
+    Only the categories named in ``payload`` move, so a client that knows about
+    four categories cannot clear a fifth it has never heard of. Every named key
+    has to exist, sit in the category it was filed under, and be unlocked for
+    this profile — the client's own view of what is unlocked is never consulted.
+    """
+
+    if not isinstance(payload, dict):
+        raise ValueError("invalid_cosmetic")
+    updates: dict[str, str] = {}
+    for category, value in payload.items():
+        if category not in WARDROBE_DEFAULTS:
+            raise ValueError("cosmetic_category_not_found")
+        item = WARDROBE_BY_KEY.get(str(value or ""))
+        if not item or item["category"] != category:
+            raise ValueError("cosmetic_not_found")
+        if not _wardrobe_unlocked(item, profile):
+            raise ValueError("cosmetic_locked")
+        updates[category] = item["key"]
+    stored = dict(profile.cosmetics_json or {})
+    stored.update(updates)
+    # Defaults are the absence of a choice, not a choice: dropping them keeps
+    # the stored mapping honest about what the player has actually customized
+    # and keeps an untouched account's column empty.
+    profile.cosmetics_json = {
+        category: key
+        for category, key in stored.items()
+        if category in WARDROBE_DEFAULTS and key != _wardrobe_default(category, profile)
+    }
+    db.session.commit()
+    return wardrobe_selection(profile)
+
 
 CLIENTS = [
     {"key": "walk_in", "name": "Walk-in client", "base_fee": 100, "reputation": 0, "tier": 0, "length": 8, "icon": "briefcase", "region": "Old Quarter", "description": "Everyday people who need a sharp advocate."},
@@ -376,6 +660,14 @@ CLIENTS += [
 # Public-interest matters trade some immediate cash for unusually strong career
 # standing. Their loss protection keeps a difficult LSAT question from making
 # service-minded play feel punitive.
+#
+# The fee is this share of the market rate for the same tier. Priced with every
+# other client rather than authored by hand, because a hand-authored figure
+# silently stops meaning anything the moment the economy is rescaled: these
+# clients were the highest-paying matters on the board at every tier until this
+# became a derived number, which made "take the best-paying client" and "take
+# the pro bono client" the same instruction.
+PRO_BONO_FEE_SHARE = .55
 CLIENTS += [
     {"key": "eviction_defense_clinic", "name": "Eviction Defense Clinic", "base_fee": 650, "reputation": 8, "tier": 0, "length": 5, "icon": "home", "region": "Old Quarter", "archetype": "Pro bono housing defense", "matter_type": "pro_bono", "reputation_win_bonus": 2, "reputation_loss_cap": .5, "reputation_guard": 3.5, "special": "PRO BONO · +2 Reputation on a win · losses capped at −0.5", "description": "Ada Mercer's overflow list begins with families facing lockouts before their hearings."},
     {"key": "youth_record_project", "name": "Second-Chance Youth Project", "base_fee": 3_200, "reputation": 22, "tier": 1, "length": 6, "icon": "civic", "region": "Old Quarter", "archetype": "Pro bono record clearing", "matter_type": "pro_bono", "reputation_win_bonus": 3, "reputation_loss_cap": .5, "reputation_guard": 3.5, "special": "PRO BONO · +3 Reputation on a win · protected loss", "description": "Young adults seek to clear old records before a mistake becomes a lifetime sentence."},
@@ -404,15 +696,61 @@ def _format_game_money(value: int) -> str:
     return f"{value:,}"
 
 
+def _tier_effort_scale(tier: int) -> float:
+    """Case-cost multiplier applied to everything bought at ``tier``.
+
+    See TIER_EFFORT_BASE: this is the single knob that decides how long the
+    campaign runs, and it is deliberately the same knob for headquarters and
+    catalog purchases so the two never drift apart.
+    """
+    return TIER_EFFORT_BASE + TIER_EFFORT_STEP * tier
+
+
 def _case_target_for_tier(tier: int) -> int:
     """Expected cash from one solid correct case at the current firm tier."""
     if tier < len(FIRM_TIERS) - 1:
         tier_cost = FIRM_TIERS[tier + 1]["cost"]
     else:
-        tier_cost = FIRM_TIERS[-1]["cost"]
-    # Headquarters now cost twice as much without inflating case fees or every
-    # mandatory catalog purchase along with them.
-    return round(tier_cost / (TARGET_CASES_PER_MILESTONE * FIRM_TIER_COST_MULTIPLIER))
+        # There is no "next" milestone past the last defined firm tier, so
+        # extrapolate using the same growth rate as the final known jump.
+        # Reusing FIRM_TIERS[-1]["cost"] outright made this tier's target
+        # identical to the prior tier's, which flattened (and could even
+        # invert) client fees right at the top of the progression.
+        last_cost = FIRM_TIERS[-1]["cost"]
+        prior_cost = FIRM_TIERS[-2]["cost"] if len(FIRM_TIERS) > 1 else last_cost
+        growth_ratio = (last_cost / prior_cost) if prior_cost else 1
+        tier_cost = last_cost * growth_ratio
+    # Headquarters cost twice as much without inflating case fees or every
+    # mandatory catalog purchase along with them, and the effort scale is what
+    # makes a late headquarters a campaign rather than an afternoon.
+    milestone_cases = (
+        TARGET_CASES_PER_MILESTONE * FIRM_TIER_COST_MULTIPLIER * _tier_effort_scale(tier)
+    )
+    return round(tier_cost / milestone_cases)
+
+
+def _expected_firm_multiplier(tier: int) -> float:
+    """The payout multiplier a player realistically fights a tier-``tier`` case with.
+
+    Client fees were priced against ``1 + tier * .06`` alone, as if the office
+    were the only thing that paid. It is not: every upgrade, hire, and
+    acquisition also adds a payout percentage, and tier advancement *requires*
+    owning all of them from earlier tiers. By the top of the ladder the real
+    multiplier is around 6.4x rather than the assumed 1.8x, so late clients paid
+    three to four times what the catalog thought they did and each tier funded
+    the next several times over — the compounding that collapsed the whole
+    progression. Earlier tiers' assets are certainly owned; this tier's are
+    bought across the tier, so they count half.
+    """
+    total = 1 + tier * .06
+    for item in ASSETS:
+        if item["type"] in UNBALANCED_ASSET_TYPES:
+            continue
+        if item["tier"] < tier:
+            total += float(item.get("payout_mult", 0))
+        elif item["tier"] == tier:
+            total += float(item.get("payout_mult", 0)) * .5
+    return total
 
 
 def _replace_case_payout_benefit(item: dict, percentage: int) -> None:
@@ -425,6 +763,12 @@ def _rebalance_asset_catalog() -> None:
     """Give every purchase durable value and price it in successful cases."""
     for item in ASSETS:
         if item["type"] in UNBALANCED_ASSET_TYPES:
+            # Decor carries no effects to balance, but it still has to be priced
+            # against the tier it sits in or it stops being a choice.
+            if "decor_cases" in item:
+                item["cost"] = _round_game_amount(
+                    _case_target_for_tier(item["tier"]) * float(item["decor_cases"])
+                )
             continue
         tier = item["tier"]
         original_payout = float(item.get("payout_mult", 0))
@@ -463,23 +807,24 @@ def _rebalance_asset_catalog() -> None:
         target_questions = min(5.0, 3.0 + strength_premium + secondary_effects * .32)
         if item["type"] == "rival":
             target_questions = 5.0
-        item["cost"] = _round_game_amount(target * target_questions)
+        item["cost"] = _round_game_amount(target * target_questions * _tier_effort_scale(tier))
 
 
 def _rebalance_client_catalog() -> None:
     """Equalize expected commercial value while preserving client play styles."""
     solid_score_multiplier = 1.20
     for client in CLIENTS:
-        if client.get("matter_type") == "pro_bono":
-            continue
         tier = client["tier"]
-        firm_multiplier = 1 + tier * .06
+        firm_multiplier = _expected_firm_multiplier(tier)
         contract_multiplier = 2 + float(client.get("contract_bonus_mult", 0))
         average_value_factor = (
             solid_score_multiplier * firm_multiplier * float(client.get("payout_mult", 1))
             + contract_multiplier / max(1, client["length"])
         )
-        client["base_fee"] = _round_game_amount(_case_target_for_tier(tier) / average_value_factor)
+        share = PRO_BONO_FEE_SHARE if client.get("matter_type") == "pro_bono" else 1
+        client["base_fee"] = _round_game_amount(
+            _case_target_for_tier(tier) * share / average_value_factor
+        )
 
 
 _rebalance_asset_catalog()
@@ -488,6 +833,148 @@ CLIENTS.sort(key=lambda client: (client["tier"], client["base_fee"], client["nam
 
 ASSET_BY_KEY = {item["key"]: item for item in ASSETS}
 CLIENT_BY_KEY = {item["key"]: item for item in CLIENTS}
+
+
+# ---------------------------------------------------------------------------
+# Standing retainers (map districts)
+# ---------------------------------------------------------------------------
+#
+# A firm does not buy land, it buys a book of business. Taking a district means
+# signing its institutions -- the courthouse's duty roster, a market's traders,
+# a port authority -- to a standing retainer, so every routine matter in that
+# district arrives at your door by default. That is a real thing law firms
+# compete over and it explains both benefits below without inventing physics:
+# being the district's default counsel is what a reputation floor *is*, and a
+# branch presence you are already paid to keep is what offsets the lease.
+#
+# This deliberately does not overlap the rival system. A rival acquisition is a
+# discrete, story-gated move against a *named competitor* that transfers their
+# payout multiplier and passive income to you and is priced at a full five
+# cases. A retainer is ambient, cheap, and buys no payout at all: it buys
+# standing and overhead relief. One is conquest, the other is coverage.
+
+TERRITORY_REGIONS: list[dict] = [
+    {"key": "city", "name": "Old Quarter", "tiers": (0, 4), "seat": "the Quarter Courthouse"},
+    {"key": "nation", "name": "The Circuit", "tiers": (5, 6), "seat": "the county seat"},
+    {"key": "ocean", "name": "Treaty Sea", "tiers": (7, 9), "seat": "the free harbour court"},
+    {"key": "continent", "name": "Sovereign Arc", "tiers": (10, 11), "seat": "the sovereign assembly"},
+    {"key": "orbit", "name": "Global Compact", "tiers": (12, 14), "seat": "the compact registry"},
+]
+TERRITORY_REGION_BY_KEY = {region["key"]: region for region in TERRITORY_REGIONS}
+
+# Total standing every district in the game is worth between them, plus the
+# per-region bonus for a clean sweep. Both numbers are small on purpose: see
+# `_career_floor` for the ceiling that stops standing reaching the last rungs.
+TERRITORY_STANDING_POOL = 13.0
+TERRITORY_REGION_SWEEP_STANDING = 1.0
+TERRITORY_STANDING_CAP = TERRITORY_STANDING_POOL + TERRITORY_REGION_SWEEP_STANDING * len(TERRITORY_REGIONS)
+# Standing may lift the reputation floor to here and no further. Everything
+# above it -- the 91-reputation pro bono work and the 94-reputation final
+# headquarters -- stays payable only in casework.
+TERRITORY_STANDING_FLOOR_CEILING = 90.0
+# Holding every district retires the office lease entirely. Rent is a small
+# sink (a fraction of one case per day), so this is a legible reward rather
+# than an economic lever.
+TERRITORY_RENT_RELIEF_POOL_BPS = 10_000
+
+# What the entire retainer board costs, in successful cases, and therefore the
+# only number that decides how much this mechanic lengthens the campaign.
+# `test_the_whole_campaign_is_priced_in_weeks_of_study` puts buying the core
+# catalog out at ~950 solid cases and ~69 engaged hours; 34 is 3.6% on top of
+# that, about three and a half hours, and it buys nothing the ladder requires.
+# Districts are priced *out* of this budget rather than each being priced on
+# its own, so the mechanic's total cost cannot drift as districts are added.
+TERRITORY_TOTAL_CASE_BUDGET = 34.0
+
+# `cases` is a relative weight, not a price. Costs are apportioned out of
+# TERRITORY_TOTAL_CASE_BUDGET below, scaled by tier effort so a late district
+# still reads as a larger commitment than an early one.
+_DISTRICTS: list[dict] = [
+    # -- Old Quarter (tiers 0-4) ------------------------------------------
+    {"key": "chancery_row", "region": "city", "name": "Chancery Row", "landmark": "city-highstreet", "tier": 0, "reputation": 0, "cases": .40, "retainer": "the shopkeepers' association", "description": "Two rows of trade counters that have never had counsel of their own. Every lease dispute on the street starts here."},
+    {"key": "coopers_market", "region": "city", "name": "Cooper's Market", "landmark": "city-market", "tier": 0, "reputation": 14, "cases": .45, "retainer": "the market traders", "description": "Weights, licences, and standing feuds. Dull work, but it is the first place in the Quarter that says your name without prompting."},
+    {"key": "quarter_courthouse", "region": "city", "name": "Quarter Courthouse", "landmark": "city-court", "tier": 1, "reputation": 22, "cases": .70, "retainer": "the duty roster", "description": "A seat on the duty roster means the clerk hands you the day's unassigned matters. Nothing else in the Quarter carries the same weight."},
+    {"key": "wool_hall_yard", "region": "city", "name": "Wool Hall Yard", "landmark": "city-wool-hall", "tier": 1, "reputation": 24, "cases": .50, "retainer": "the exchange floor", "description": "The old cloth exchange still arbitrates its own contracts. Sit in the corner long enough and it becomes your corner."},
+    {"key": "guild_schoolhouse", "region": "city", "name": "Guild Schoolhouse", "landmark": "city-school", "tier": 2, "reputation": 32, "cases": .50, "retainer": "the apprenticeship board", "description": "Indentures, disputes, and the occasional expulsion appeal. It also puts your name in front of everyone the Quarter will be run by in a decade."},
+    {"key": "quarter_halt", "region": "city", "name": "Old Quarter Halt", "landmark": "city-station", "tier": 2, "reputation": 34, "cases": .55, "retainer": "the stationmaster", "description": "Freight claims, injured porters, and a schedule nobody can read. Steady, unglamorous, and always there."},
+    {"key": "millrace_wharf", "region": "city", "name": "Millrace Wharf", "landmark": "city-wharf", "tier": 3, "reputation": 42, "cases": .65, "retainer": "the wharfingers", "description": "Where the Quarter's goods actually change hands, and where its contracts actually get broken."},
+    {"key": "coal_yard", "region": "city", "name": "The Coal Yard", "landmark": "city-goods", "tier": 3, "reputation": 43, "cases": .50, "retainer": "the haulage co-operative", "description": "Nobody wants the coal yard. That is precisely why holding it makes people assume you hold everything else."},
+    {"key": "millrace_canal", "region": "city", "name": "Millrace Canal", "landmark": "city-canal", "tier": 4, "reputation": 50, "cases": .65, "retainer": "the navigation trust", "description": "Water rights predate every other claim in the Quarter and outrank most of them. The trust has needed proper counsel for thirty years."},
+    {"key": "quarter_green", "region": "city", "name": "The Quarter Green", "landmark": "city-green", "tier": 4, "reputation": 50, "cases": .45, "retainer": "the parish board", "description": "Public land, public tempers, public record. Every hearing here is attended by people who talk."},
+    {"key": "ward_gardens", "region": "city", "name": "Ward Gardens", "landmark": "city-ward-green", "tier": 4, "reputation": 52, "cases": .45, "retainer": "the ward committee", "description": "The last address in the Quarter that still asks who your family is before it asks what you charge."},
+    # -- The Circuit (tiers 5-6) ------------------------------------------
+    {"key": "fenwick_turnpike", "region": "nation", "name": "Fenwick Turnpike", "landmark": "nation-turnpike", "tier": 5, "reputation": 56, "cases": .60, "retainer": "the road trust", "description": "Every matter on the circuit travels this road, and the trust that maintains it is sued twice a season."},
+    {"key": "fenwick_seat", "region": "nation", "name": "Fenwick County Seat", "landmark": "nation-seat", "tier": 5, "reputation": 57, "cases": .80, "retainer": "the county register", "description": "The register decides which firm the county calls first. There is exactly one such office on the circuit."},
+    {"key": "fenwick_halt", "region": "nation", "name": "Fenwick Halt", "landmark": "nation-halt", "tier": 5, "reputation": 57, "cases": .50, "retainer": "the branch line", "description": "Two trains a day and a great deal of freight liability between them."},
+    {"key": "marlow_crossing", "region": "nation", "name": "Marlow Crossing", "landmark": "nation-marlow", "tier": 5, "reputation": 58, "cases": .60, "retainer": "the parish of Marlow", "description": "A crossroads village that has been arguing about the same boundary since before the county existed."},
+    {"key": "fenwick_green", "region": "nation", "name": "Fenwick Green", "landmark": "nation-green", "tier": 6, "reputation": 62, "cases": .45, "retainer": "the assizes committee", "description": "The circuit court sits here twice a year, and the committee that seats it never forgets who turned up."},
+    {"key": "ashgate_village", "region": "nation", "name": "Ashgate", "landmark": "nation-ashgate", "tier": 6, "reputation": 62, "cases": .50, "retainer": "the village council", "description": "Small, stubborn, and entirely capable of funding a decade of litigation out of spite."},
+    {"key": "ashgate_fair", "region": "nation", "name": "Ashgate Fair", "landmark": "nation-fair", "tier": 6, "reputation": 63, "cases": .50, "retainer": "the fair charter", "description": "A chartered fair still runs its own summary court. Whoever advises it advises half the county for one week a year."},
+    {"key": "marlow_ford", "region": "nation", "name": "Marlow Ford", "landmark": "nation-ford", "tier": 6, "reputation": 63, "cases": .45, "retainer": "the ferry rights", "description": "Ancient crossing rights, modern insurers, and a permanent disagreement between them."},
+    {"key": "marlow_mill_pond", "region": "nation", "name": "Marlow Mill Pond", "landmark": "nation-pond", "tier": 6, "reputation": 64, "cases": .40, "retainer": "the millers", "description": "Water, again. It is always water. The millers pay late but they pay every year."},
+    {"key": "ellery_farms", "region": "nation", "name": "Ellery Farms", "landmark": "nation-farm", "tier": 6, "reputation": 64, "cases": .45, "retainer": "the tenant holdings", "description": "Tenancy, succession, and drainage. The least interesting file on the circuit and the one that never closes."},
+    # -- Treaty Sea (tiers 7-9) -------------------------------------------
+    {"key": "diplomatic_quay", "region": "ocean", "name": "The Diplomatic Quay", "landmark": None, "tier": 7, "reputation": 68, "cases": .65, "retainer": "the harbour authority", "description": "Where delegations come ashore. The authority wants one firm on call for everything that goes wrong before the talks begin."},
+    {"key": "bonded_roads", "region": "ocean", "name": "The Bonded Roads", "landmark": None, "tier": 7, "reputation": 69, "cases": .60, "retainer": "the bonded warehouses", "description": "Cargo that is legally nowhere until someone signs for it. An entire practice lives in that gap."},
+    {"key": "chandlers_row", "region": "ocean", "name": "Chandler's Row", "landmark": None, "tier": 8, "reputation": 74, "cases": .60, "retainer": "the ships' agents", "description": "Every agent on the row keeps a lawyer's name in a drawer for the day a master refuses to sail."},
+    {"key": "lantern_light", "region": "ocean", "name": "The Lantern Light", "landmark": None, "tier": 8, "reputation": 75, "cases": .50, "retainer": "the pilots' board", "description": "Pilotage is compulsory, which means pilotage is litigated. The board has never had counsel who understood both."},
+    {"key": "treaty_anchorage", "region": "ocean", "name": "Treaty Anchorage", "landmark": None, "tier": 9, "reputation": 79, "cases": .70, "retainer": "the anchorage compact", "description": "Neutral water by agreement only. The agreement is the practice."},
+    {"key": "free_harbour_court", "region": "ocean", "name": "Free Harbour Court", "landmark": None, "tier": 9, "reputation": 80, "cases": .80, "retainer": "the admiralty roll", "description": "The sea's own courthouse. A place on the roll is the closest thing the Treaty Sea has to a permanent address."},
+    # -- Sovereign Arc (tiers 10-11) --------------------------------------
+    {"key": "concord_rondpoint", "region": "continent", "name": "Concord Rond-Point", "landmark": "continent-rondpoint", "tier": 10, "reputation": 83, "cases": .65, "retainer": "the quarter's chambers", "description": "Six embassies on one circle, each convinced the other five are in breach."},
+    {"key": "sovereign_assembly", "region": "continent", "name": "The Sovereign Assembly", "landmark": "continent-assembly", "tier": 10, "reputation": 84, "cases": .85, "retainer": "the standing committee", "description": "Advising the committee that drafts the rules is not the same as arguing under them. It is considerably better."},
+    {"key": "union_terminus", "region": "continent", "name": "Union Terminus", "landmark": "continent-transit", "tier": 10, "reputation": 84, "cases": .60, "retainer": "the transit union", "description": "Four jurisdictions meet under one roof, and the union has a grievance in every one of them."},
+    {"key": "wall_ring", "region": "continent", "name": "The Wall Ring", "landmark": "continent-ring", "tier": 11, "reputation": 86, "cases": .65, "retainer": "the boundary commission", "description": "A commission that redraws lines for a living and is sued for every one it draws."},
+    {"key": "north_quarter", "region": "continent", "name": "The North Quarter", "landmark": "continent-quarter", "tier": 11, "reputation": 87, "cases": .70, "retainer": "the residents' syndicate", "description": "Old money that has outlasted three constitutions and intends to outlast a fourth."},
+    # -- Global Compact (tiers 12-14) -------------------------------------
+    {"key": "compact_concourse", "region": "orbit", "name": "The Compact Concourse", "landmark": None, "tier": 12, "reputation": 89, "cases": .70, "retainer": "the delegations' desk", "description": "Every signatory keeps a bench here. Being the desk's standing counsel means being in the room before the room convenes."},
+    {"key": "hearing_chamber_one", "region": "orbit", "name": "Hearing Chamber One", "landmark": None, "tier": 12, "reputation": 90, "cases": .85, "retainer": "the chamber list", "description": "The list decides who is heard and in what order. Nothing in this game is worth more and costs less to hold."},
+    {"key": "registry_vault", "region": "orbit", "name": "The Registry Vault", "landmark": None, "tier": 13, "reputation": 92, "cases": .70, "retainer": "the compact registry", "description": "Where every treaty in force is actually kept. Custody is a duty, and duties are retained."},
+    {"key": "far_side_landing", "region": "orbit", "name": "Far-Side Landing", "landmark": None, "tier": 13, "reputation": 92, "cases": .65, "retainer": "the landing authority", "description": "The furthest place a writ has ever been served, and the authority would rather it were served by you."},
+    {"key": "assembly_gallery", "region": "orbit", "name": "The Assembly Gallery", "landmark": None, "tier": 14, "reputation": 94, "cases": .80, "retainer": "the gallery secretariat", "description": "Public seats at a private negotiation. The secretariat needs someone who can say no to the powerful in writing."},
+    {"key": "founders_reading_room", "region": "orbit", "name": "The Founders' Reading Room", "landmark": None, "tier": 14, "reputation": 95, "cases": .65, "retainer": "the charter trustees", "description": "Nine chairs and the original charter. There is no larger room to be invited into."},
+]
+
+
+def _price_district_catalog() -> list[dict]:
+    """Price, weight, and finalise the district catalog.
+
+    Standing and rent relief are apportioned by the same share of the budget
+    that sets the price, so a district is never a better deal in standing per
+    case than any other and there is no ordering to optimise -- only the gates
+    decide what is reachable.
+    """
+    weights = {
+        item["key"]: float(item["cases"]) * _tier_effort_scale(int(item["tier"]))
+        for item in _DISTRICTS
+    }
+    total_weight = sum(weights.values())
+    catalog: list[dict] = []
+    for item in _DISTRICTS:
+        tier = int(item["tier"])
+        share = weights[item["key"]] / total_weight
+        catalog.append(
+            {
+                **item,
+                "case_price": round(TERRITORY_TOTAL_CASE_BUDGET * share, 2),
+                "cost": _round_game_amount(
+                    _case_target_for_tier(tier) * TERRITORY_TOTAL_CASE_BUDGET * share
+                ),
+                "standing": round(TERRITORY_STANDING_POOL * share, 2),
+                "rent_relief_bps": round(TERRITORY_RENT_RELIEF_POOL_BPS * share),
+                "region_name": TERRITORY_REGION_BY_KEY[item["region"]]["name"],
+            }
+        )
+    catalog.sort(key=lambda district: (district["tier"], district["reputation"], district["name"]))
+    return catalog
+
+
+DISTRICTS = _price_district_catalog()
+DISTRICT_BY_KEY = {item["key"]: item for item in DISTRICTS}
+DISTRICT_KEYS_BY_REGION = {
+    region["key"]: [item["key"] for item in DISTRICTS if item["region"] == region["key"]]
+    for region in TERRITORY_REGIONS
+}
 
 
 def _iso_utc(value) -> str | None:
@@ -505,6 +992,133 @@ def _owned_keys(profile: PlayerProfile) -> set[str]:
         .filter_by(profile_id=profile.id)
         .all()
     }
+
+
+def _held_district_keys(profile: PlayerProfile) -> set[str]:
+    return {
+        district_key
+        for (district_key,) in PlayerTerritory.query.with_entities(PlayerTerritory.district_key)
+        .filter_by(profile_id=profile.id)
+        .all()
+    }
+
+
+def _territory_totals(held: set[str]) -> dict:
+    """Standing and rent relief earned by a set of held districts."""
+    standing = sum(DISTRICT_BY_KEY[key]["standing"] for key in held if key in DISTRICT_BY_KEY)
+    relief_bps = sum(DISTRICT_BY_KEY[key]["rent_relief_bps"] for key in held if key in DISTRICT_BY_KEY)
+    swept = [
+        region["key"]
+        for region in TERRITORY_REGIONS
+        if DISTRICT_KEYS_BY_REGION[region["key"]]
+        and all(key in held for key in DISTRICT_KEYS_BY_REGION[region["key"]])
+    ]
+    standing += TERRITORY_REGION_SWEEP_STANDING * len(swept)
+    return {
+        "standing": round(min(TERRITORY_STANDING_CAP, standing), 2),
+        "relief_bps": min(TERRITORY_RENT_RELIEF_POOL_BPS, int(relief_bps)),
+        "swept_regions": swept,
+        "held": len(held & set(DISTRICT_BY_KEY)),
+    }
+
+
+def territory_standing(profile: PlayerProfile, held: set[str] | None = None) -> float:
+    held = held if held is not None else _held_district_keys(profile)
+    return _territory_totals(held)["standing"]
+
+
+def _relieved_daily_rent(profile: PlayerProfile, held: set[str] | None = None) -> int:
+    """Office rent after the branch offices the firm is already paid to keep."""
+    daily_rent = int(FIRM_TIERS[profile.office_tier]["rent_daily"])
+    relief_bps = _territory_totals(held if held is not None else _held_district_keys(profile))["relief_bps"]
+    return max(0, daily_rent - daily_rent * relief_bps // 10_000)
+
+
+def _district_locks(profile: PlayerProfile, district: dict) -> list[str]:
+    locks: list[str] = []
+    if profile.office_tier < district["tier"]:
+        locks.append(f"Requires a {FIRM_TIERS[district['tier']]['name']}")
+    if profile.reputation < district["reputation"]:
+        locks.append(f"Requires {district['reputation']} reputation")
+    return locks
+
+
+def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dict:
+    """The full retainer board: every district, its gate, and what it is worth."""
+    held = held if held is not None else _held_district_keys(profile)
+    totals = _territory_totals(held)
+    daily_rent = int(FIRM_TIERS[profile.office_tier]["rent_daily"])
+    districts = []
+    for district in DISTRICTS:
+        owned = district["key"] in held
+        locks = [] if owned else _district_locks(profile, district)
+        districts.append(
+            {
+                "key": district["key"],
+                "name": district["name"],
+                "region": district["region"],
+                "region_name": district["region_name"],
+                "landmark_key": district["landmark"],
+                "tier": district["tier"],
+                "reputation": district["reputation"],
+                "retainer": district["retainer"],
+                "description": district["description"],
+                "cost": district["cost"],
+                "standing": district["standing"],
+                "rent_relief_bps": district["rent_relief_bps"],
+                "owned": owned,
+                "locks": locks,
+                "affordable": profile.cash >= district["cost"],
+                "available": not owned and not locks,
+            }
+        )
+    regions = []
+    for region in TERRITORY_REGIONS:
+        keys = DISTRICT_KEYS_BY_REGION[region["key"]]
+        regions.append(
+            {
+                "key": region["key"],
+                "name": region["name"],
+                "seat": region["seat"],
+                "total": len(keys),
+                "held": sum(1 for key in keys if key in held),
+                "swept": region["key"] in totals["swept_regions"],
+                "sweep_standing": TERRITORY_REGION_SWEEP_STANDING,
+            }
+        )
+    return {
+        "districts": districts,
+        "regions": regions,
+        "held": totals["held"],
+        "total": len(DISTRICTS),
+        "standing": totals["standing"],
+        "standing_cap": round(TERRITORY_STANDING_CAP, 2),
+        "standing_floor_ceiling": TERRITORY_STANDING_FLOOR_CEILING,
+        "rent_relief_bps": totals["relief_bps"],
+        "daily_rent": daily_rent,
+        "relieved_daily_rent": _relieved_daily_rent(profile, held),
+    }
+
+
+def _career_floor(correct: int, validated: int, standing: float = 0.0) -> float:
+    """The reputation a body of work guarantees, whatever the last 30 cases did.
+
+    The rolling mean alone would gate the top of the ladder on keeping 28 of
+    the last 30 cases validated -- that is, on an LLM's opinion of the player's
+    prose, not on LSAT accuracy. This floor is what makes a body of work count,
+    and it is capped just above the highest requirement in the catalog (94, the
+    final headquarters) rather than exactly on it, so the last rung is not lost
+    to a single bad case the moment it is met.
+
+    District standing is the only thing money can add to it, and
+    TERRITORY_STANDING_FLOOR_CEILING is where money stops counting. Being the
+    district's default counsel is a real reason your standing does not collapse
+    on a bad fortnight; it is not a reason anyone hands you the final
+    headquarters. Everything above that line is payable in casework alone.
+    """
+    casework = 50 + correct * .55 + validated * .70
+    with_standing = min(TERRITORY_STANDING_FLOOR_CEILING, casework + standing)
+    return min(96.0, max(casework, with_standing))
 
 
 def _lock_profile(profile: PlayerProfile) -> PlayerProfile:
@@ -562,11 +1176,14 @@ def _reputation_decay_state(profile: PlayerProfile, owned: set[str] | None = Non
 
 def _upkeep_state(profile: PlayerProfile, owned: set[str] | None = None) -> dict:
     tier = FIRM_TIERS[profile.office_tier]
-    daily_rent = int(tier["rent_daily"])
+    list_rent = int(tier["rent_daily"])
+    daily_rent = _relieved_daily_rent(profile)
     decay = _reputation_decay_state(profile, owned)
     completed = _game_complete(profile)
     return {
         "daily_rent": daily_rent,
+        "list_daily_rent": list_rent,
+        "rent_relief": list_rent - daily_rent,
         "offline_daily_rent": round(daily_rent * OFFLINE_RENT_NUMERATOR / OFFLINE_RENT_DENOMINATOR),
         "offline_multiplier": OFFLINE_RENT_NUMERATOR / OFFLINE_RENT_DENOMINATOR,
         "active_window_hours": round(ACTIVE_RENT_WINDOW.total_seconds() / 3600),
@@ -635,11 +1252,30 @@ def _pay_rent_arrears(
     return paid
 
 
+def _touch_daily_streak(profile: PlayerProfile, now) -> None:
+    """Advance the one calendar-day activity streak; a no-op after the first visit each day.
+
+    This is deliberately the only "streak" concept tied to calendar days — it
+    counts consecutive days the firm was visited at all, which already covers
+    every day a practice question gets answered. It does not touch
+    `current_streak`/`best_streak`, which track consecutive validated case
+    wins for the payout bonus and are a different mechanic entirely.
+    """
+    today = now.date()
+    last = profile.daily_streak_last_date
+    if last == today:
+        return
+    profile.daily_streak_current = profile.daily_streak_current + 1 if last is not None and (today - last).days == 1 else 1
+    profile.daily_streak_best = max(profile.daily_streak_best, profile.daily_streak_current)
+    profile.daily_streak_last_date = today
+
+
 def _settle_upkeep_locked(profile: PlayerProfile, now=None) -> dict:
     """Accrue rent and inactivity loss through ``now`` on an already locked profile."""
     now = _as_utc(now or utcnow())
     settled_at = _as_utc(profile.upkeep_settled_at) or now
     last_active_at = _as_utc(profile.last_active_at) or settled_at
+    _touch_daily_streak(profile, now)
 
     if _game_complete(profile):
         profile.game_completed_at = profile.game_completed_at or now
@@ -652,7 +1288,7 @@ def _settle_upkeep_locked(profile: PlayerProfile, now=None) -> dict:
         profile.last_active_at = now
         return _upkeep_state(profile)
 
-    daily_rent = int(FIRM_TIERS[profile.office_tier]["rent_daily"])
+    daily_rent = _relieved_daily_rent(profile)
     active_until = last_active_at + ACTIVE_RENT_WINDOW
     active_end = min(now, active_until)
     active_micros = _rent_segment_micros(daily_rent, settled_at, active_end)
@@ -811,6 +1447,7 @@ def _public_asset(item: dict, profile: PlayerProfile, owned: set[str]) -> dict:
     private_effects = {
         "payout_mult", "staff_flat", "passive_hourly", "storage_hours",
         "streak_bonus_cap", "contract_bonus_mult", "reputation_guard",
+        "decor_cases",
     }
     public = {key: value for key, value in item.items() if key not in private_effects}
     if item["type"] == "rival":
@@ -924,6 +1561,8 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
         "office": FIRM_TIERS[profile.office_tier],
         "current_streak": profile.current_streak,
         "best_streak": profile.best_streak,
+        "daily_streak": profile.daily_streak_current,
+        "daily_streak_best": profile.daily_streak_best,
         "total_cases": profile.total_cases,
         "total_correct": profile.total_correct,
         "total_validated_correct": profile.total_validated_correct,
@@ -936,6 +1575,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
             "effective_key": active_client["key"] if active_client_public["unlocked"] else "walk_in",
         },
         "upkeep": _upkeep_state(profile, owned),
+        "territory": territory_state(profile),
         "passive_income": _passive_state(profile, owned),
         "daily": {
             "date": daily.activity_date.isoformat(),
@@ -954,6 +1594,10 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
         "achievements": _achievement_state(profile, owned),
         "next_milestone": _next_milestone(profile, owned),
         "story": story,
+        # The effective look travels with every game payload because the 3D rig
+        # needs it on first paint, on three different screens. The full catalog
+        # is a separate request: only the wardrobe panel ever wants it.
+        "cosmetics": wardrobe_selection(profile),
     }
     if include_catalog:
         payload["catalog"] = {
@@ -1002,6 +1646,9 @@ def create_profile(user, payload: dict) -> PlayerProfile:
         last_passive_collected_at=opened_at,
         upkeep_settled_at=opened_at,
         last_active_at=opened_at,
+        daily_streak_current=1,
+        daily_streak_best=1,
+        daily_streak_last_date=opened_at.date(),
     )
     db.session.add(profile)
     db.session.flush()
@@ -1111,6 +1758,58 @@ def purchase_asset(profile: PlayerProfile, asset_key: str) -> PlayerAsset:
     return asset
 
 
+def secure_district(profile: PlayerProfile, district_key: str) -> dict:
+    """Sign a district's institutions to a standing retainer."""
+    district = DISTRICT_BY_KEY.get(district_key)
+    if not district:
+        raise ValueError("district_not_found")
+    profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
+    held = _held_district_keys(profile)
+    if district_key in held:
+        raise ValueError("district_already_held")
+    if _district_locks(profile, district):
+        raise ValueError("district_locked")
+    _collect_passive_locked(profile)
+    price = int(district["cost"])
+    if profile.cash < price:
+        raise ValueError("insufficient_cash")
+    standing_before = _territory_totals(held)["standing"]
+    profile.cash -= price
+    profile.lifetime_spending += price
+    db.session.add(
+        PlayerTerritory(
+            profile_id=profile.id,
+            district_key=district_key,
+            region_key=district["region"],
+            purchase_price=price,
+        )
+    )
+    held = held | {district_key}
+    totals = _territory_totals(held)
+    _ledger(
+        profile,
+        "district_retainer",
+        district_key,
+        -price,
+        {
+            "name": district["name"],
+            "region": district["region"],
+            "standing": district["standing"],
+            "rent_relief_bps": district["rent_relief_bps"],
+        },
+    )
+    db.session.commit()
+    return {
+        "district": district_key,
+        "name": district["name"],
+        "price": price,
+        "standing_gained": round(totals["standing"] - standing_before, 2),
+        "region_swept": district["region"] in totals["swept_regions"],
+        "territory": territory_state(profile, held),
+    }
+
+
 def choose_story(profile: PlayerProfile, chapter_key: str, choice_key: str) -> dict:
     profile = _lock_profile(profile)
     _settle_upkeep_locked(profile)
@@ -1182,6 +1881,44 @@ def advance_firm(profile: PlayerProfile, target_tier: int) -> None:
 
 MEGA_LITIGATION_LEDGER_KIND = "mega_litigation_promotion"
 
+# The promotion hands over a whole tier — its price, its reputation floor, and
+# every prerequisite purchase — for nothing but a good morning's test. That is
+# a windfall only while it stays rare. Without these two limits the diagnostic
+# button was the fastest route through the entire game: nothing stopped a
+# student starting a fresh form the moment the last one finalized, so fourteen
+# consecutive sittings took a new account from the Wooden Shack to the
+# Planetary Justice Nexus without spending a dollar or writing a word of
+# reasoning. A day between promotions is what the game already promises the
+# player, and the lifetime allowance keeps the free route to a fifth of a
+# fifteen-tier ladder: a real head start, never a way of playing.
+MEGA_LITIGATION_PROMOTION_COOLDOWN = timedelta(hours=24)
+MEGA_LITIGATION_PROMOTION_LIMIT = 3
+
+
+def mega_litigation_promotion_state(profile: PlayerProfile, now=None) -> dict:
+    """Whether a cleared mega-litigation would promote the firm, and why not."""
+    now = _as_utc(now) or utcnow()
+    used = int(profile.mega_litigation_promotions or 0)
+    last = _as_utc(profile.mega_litigation_promoted_at)
+    available_at = last + MEGA_LITIGATION_PROMOTION_COOLDOWN if last else None
+    if profile.office_tier + 1 >= len(FIRM_TIERS):
+        blocked_reason = "max_tier"
+    elif used >= MEGA_LITIGATION_PROMOTION_LIMIT:
+        blocked_reason = "lifetime_limit"
+    elif available_at and available_at > now:
+        blocked_reason = "cooldown"
+    else:
+        blocked_reason = None
+    return {
+        "available": blocked_reason is None,
+        "blocked_reason": blocked_reason,
+        "used": used,
+        "limit": MEGA_LITIGATION_PROMOTION_LIMIT,
+        "remaining": max(0, MEGA_LITIGATION_PROMOTION_LIMIT - used),
+        "cooldown_hours": round(MEGA_LITIGATION_PROMOTION_COOLDOWN.total_seconds() / 3600),
+        "available_at": _iso_utc(available_at) if blocked_reason == "cooldown" else None,
+    }
+
 
 def grant_mega_litigation_promotion(profile: PlayerProfile, session_id: str) -> dict | None:
     """Promote the firm one tier for winning a mega-litigation.
@@ -1193,7 +1930,8 @@ def grant_mega_litigation_promotion(profile: PlayerProfile, session_id: str) -> 
     normally, so a student who skips ahead still has to earn the next one.
 
     Returns None when there is nothing to grant: the firm is already at the top,
-    or this run has already paid out. Idempotency is real rather than advisory —
+    this run has already paid out, the daily cooldown has not elapsed, or the
+    lifetime allowance is spent. Idempotency is real rather than advisory —
     `uq_ledger_source` spans (user_id, kind, source_id) and the source is the
     session, so a second finalization of the same run cannot double-promote.
     """
@@ -1209,6 +1947,11 @@ def grant_mega_litigation_promotion(profile: PlayerProfile, session_id: str) -> 
         source_id=_scoped_source(profile, session_id),
     ).first()
     if already_paid:
+        db.session.commit()
+        return None
+    granted_at = utcnow()
+    allowance = mega_litigation_promotion_state(profile, granted_at)
+    if not allowance["available"]:
         db.session.commit()
         return None
 
@@ -1230,6 +1973,8 @@ def grant_mega_litigation_promotion(profile: PlayerProfile, session_id: str) -> 
     if profile.reputation < tier["reputation"]:
         profile.reputation = float(tier["reputation"])
     profile.office_tier = next_tier_number
+    profile.mega_litigation_promoted_at = granted_at
+    profile.mega_litigation_promotions = allowance["used"] + 1
     detail = {
         "name": tier["name"],
         "tier": next_tier_number,
@@ -1237,6 +1982,7 @@ def grant_mega_litigation_promotion(profile: PlayerProfile, session_id: str) -> 
         "waived_cost": tier["cost"],
         "reputation_before": round(reputation_before, 1),
         "reputation_after": round(profile.reputation, 1),
+        "allowance": mega_litigation_promotion_state(profile, granted_at),
     }
     _ledger(profile, MEGA_LITIGATION_LEDGER_KIND, session_id, 0, detail)
     db.session.commit()
@@ -1375,6 +2121,55 @@ EFFORT_MISS_MULTIPLIER = {"Good": 0.15, "Excellent": 0.25}
 EFFORT_MISS_CREDIT = {"Good": 0.20, "Excellent": 0.30}
 EFFORT_MISS_DROP_CAP = {"Good": 2.5, "Excellent": 1.5}
 
+# The mirror case: a *correct* answer whose write-up was graded Invalid. The
+# answer key is verified, so the student demonstrably solved the question; the
+# Invalid band is one model's judgment of prose, and the same argument rewritten
+# can land in a different band. Zeroing the fee and taking a full reputation hit
+# on top of that reads as arbitrary, and it lands hardest on beginners who reason
+# correctly but write formulaically. So a correct answer settles as a *thin win*
+# instead: a reduced consultation fee, partial standing, and a capped drop.
+#
+# The deterministic failures are deliberately excluded and keep the full Invalid
+# consequences, because they are findings rather than judgments: no explanation
+# at all, and an explanation repeated verbatim from an earlier case
+# (`_is_reused_reasoning`). A thin win also stays worse than a correct answer
+# with a merely Weak write-up on every axis, so writing a real argument is still
+# what pays.
+THIN_WIN_MULTIPLIER = 0.35
+THIN_WIN_CREDIT = 0.35
+CORRECT_DROP_CAP = 1.5
+
+# A third case the two above do not cover: the write-up was never graded at all.
+# `services.settle_uncoached_attempt` settles a finished case with
+# `explanation_grade: None` when the coaching provider is unreachable, and a
+# missing grade fell through `explanation_band` to "Invalid" — the same verdict
+# as prose a grader read and rejected. That is the difference between a failed
+# exam and an exam that was never marked, and scoring them alike made the game
+# unwinnable during an outage: standing is a rolling mean of `validated_credit`,
+# so a run of ungraded-but-correct answers converged reputation on 35 while the
+# career floor below (which only lifts a *reward-eligible* case) never applied.
+# Tier 3 needs 42. A player answering every question correctly was capped at
+# tier 2 of 15, and every quest with a "validated" objective — most of the
+# story — was unreachable.
+#
+# So an ungraded answer is settled on the strength of what is actually known:
+# the answer key is verified, the prose is unknown. Correctness carries most of
+# the credit and the withheld remainder is the part the grader would have
+# supplied, which keeps a working grader strictly the better outcome and gives
+# nobody a reason to prefer an outage. Deliberately excluded are the two cases
+# where the *absence* of a grade is itself a finding rather than an outage: an
+# empty explanation, and one repeated verbatim from an earlier case.
+UNGRADED_MULTIPLIER = 0.75
+UNGRADED_CREDIT = 0.85
+
+# Reputation is a rolling average over the last thirty settled cases, so with
+# almost no history one case moves it several points — the 50.0 default can swing
+# 8% on a single data point. Ease the per-case drop ceiling in over the first ten
+# cases instead. This scales the ceiling, so every ordering the guards and band
+# caps establish is preserved; only the magnitude of an early dent changes.
+REPUTATION_WARMUP_CASES = 10
+REPUTATION_WARMUP_FLOOR = 0.55
+
 
 def _score_multiplier(score: int) -> float:
     # Sloppy or rushed correct answers (weak/thin explanations land here) earn a
@@ -1404,6 +2199,7 @@ def _points(
     elapsed_seconds: int,
     target_seconds: int,
     time_eligible: bool = True,
+    raw_elapsed_seconds: int | None = None,
 ) -> tuple[int, int, int, int]:
     answer_points = 4 if is_correct else 1
     if is_correct:
@@ -1424,7 +2220,7 @@ def _points(
         elif ratio <= 1.5:
             time_points = 1
     total = answer_points + explanation_points + time_points
-    if elapsed_seconds < target_seconds * .25:
+    if (raw_elapsed_seconds if raw_elapsed_seconds is not None else elapsed_seconds) < target_seconds * .25:
         total = min(total, 8)
     return answer_points, explanation_points, time_points, min(20, total)
 
@@ -1494,6 +2290,20 @@ def _new_reputation(user_id: str, current_attempt_id: str, credit: float) -> flo
     return round(max(0, min(100, 100 * weighted_points / max(1, weight))), 1)
 
 
+def _reputation_warmup(settled_cases: int) -> float:
+    """Scale a per-case reputation drop down while the record is still thin.
+
+    Returns REPUTATION_WARMUP_FLOOR on the very first case and reaches 1.0 (full
+    sensitivity) at REPUTATION_WARMUP_CASES. Applied as a multiplier on the
+    already-capped ceiling so guards, band caps, and pro bono protection keep
+    their relative ordering.
+    """
+    if settled_cases >= REPUTATION_WARMUP_CASES:
+        return 1.0
+    span = 1.0 - REPUTATION_WARMUP_FLOOR
+    return REPUTATION_WARMUP_FLOOR + span * (max(0, settled_cases) / REPUTATION_WARMUP_CASES)
+
+
 def serialize_settlement(settlement: AttemptSettlement | None) -> dict | None:
     if not settlement:
         return None
@@ -1548,6 +2358,8 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     if existing:
         return existing
 
+    # A grade of None is an outage, not a verdict — see UNGRADED_MULTIPLIER.
+    graded = coaching.get("explanation_grade") is not None
     raw_score = int(coaching.get("explanation_grade") or 0)
     reused = _is_reused_reasoning(locked_attempt)
     band = explanation_band(raw_score, bool(locked_attempt.reasoning_text), reused)
@@ -1558,25 +2370,54 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
         coaching["reasoning_summary"] = "This explanation repeats reasoning used on an earlier case, so it cannot validate this answer."
 
     elapsed_seconds = max(1, round(locked_attempt.server_elapsed_ms / 1000))
+    # Time spent inside an enforced strategy gate is scaffolding, not
+    # deliberation, and charging it against the pace target would make choosing
+    # to use an approach cost money. The raw clock is still what the "too fast
+    # to have read it" floor looks at, because that guard is about whether the
+    # student was in the question at all.
+    scored_seconds = max(1, elapsed_seconds - round((locked_attempt.strategy_gate_ms or 0) / 1000))
     target_seconds = locked_attempt.session_item.target_time_seconds or 150
     answer_points, explanation_points, time_points, total_score = _points(
         locked_attempt.is_correct,
         band,
-        elapsed_seconds,
+        scored_seconds,
         target_seconds,
         time_eligible=not locked_attempt.session_item.timer_compromised,
+        raw_elapsed_seconds=elapsed_seconds,
     )
-    reward_eligible = locked_attempt.is_correct and band != "Invalid"
+    # A correct answer whose write-up never reached a grader (see
+    # UNGRADED_MULTIPLIER). Verified correctness is enough to settle the case as
+    # a win; only the prose portion of the reward is withheld.
+    ungraded_win = (
+        not graded
+        and locked_attempt.is_correct
+        and bool(locked_attempt.reasoning_text)
+        and not reused
+    )
+    reward_eligible = locked_attempt.is_correct and (band != "Invalid" or ungraded_win)
     # A wrong answer with a Good/Excellent explanation is a well-reasoned miss:
     # it earns a small consultation fee instead of nothing (see EFFORT_MISS_*).
     effort_eligible = (not locked_attempt.is_correct) and band in EFFORT_MISS_MULTIPLIER
-    paid_case = reward_eligible or effort_eligible
+    # A right answer whose write-up a grader read and rejected — neither blank
+    # nor a verbatim repeat: a thin win rather than a total loss (see THIN_WIN_*).
+    thin_win = (
+        locked_attempt.is_correct
+        and band == "Invalid"
+        and not ungraded_win
+        and bool(locked_attempt.reasoning_text)
+        and not reused
+    )
+    paid_case = reward_eligible or effort_eligible or thin_win
     owned = _owned_keys(profile)
     context = locked_attempt.session_item.game_context_json
     if context is None:
         return None
-    if reward_eligible:
+    if ungraded_win:
+        score_mult = max(UNGRADED_MULTIPLIER, int(context.get("minimum_score_multiplier_bps") or 0) / 10_000)
+    elif reward_eligible:
         score_mult = max(_score_multiplier(total_score), int(context.get("minimum_score_multiplier_bps") or 0) / 10_000)
+    elif thin_win:
+        score_mult = THIN_WIN_MULTIPLIER
     elif effort_eligible:
         score_mult = EFFORT_MISS_MULTIPLIER[band]
     else:
@@ -1588,7 +2429,9 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     # consultation fee so accuracy stays clearly the more valuable outcome.
     staff_bonus = round(int(context.get("staff_flat") or 0) * score_mult) if reward_eligible else 0
 
-    validated = locked_attempt.is_correct and band in {"Good", "Excellent"}
+    # An ungraded win counts as validated: quest objectives, casework, and the
+    # streak all key off this, and an outage must not make the story unreachable.
+    validated = locked_attempt.is_correct and (band in {"Good", "Excellent"} or ungraded_win)
     if not locked_attempt.is_correct:
         profile.current_streak = 0
     elif validated:
@@ -1622,8 +2465,10 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     standard_payout = max(1, core_payout + streak_bonus + staff_bonus + contract_bonus) if paid_case else 0
 
     credit = 0.0
-    if locked_attempt.is_correct:
-        credit = 1.0 if band in {"Good", "Excellent"} else .5 if band == "Weak" else 0.0
+    if ungraded_win:
+        credit = UNGRADED_CREDIT
+    elif locked_attempt.is_correct:
+        credit = 1.0 if band in {"Good", "Excellent"} else .5 if band == "Weak" else THIN_WIN_CREDIT if thin_win else 0.0
     elif effort_eligible:
         # Partial standing for a well-argued wrong answer lifts the rolling
         # average, so a thoughtful miss dents reputation far less than a guess.
@@ -1635,15 +2480,23 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     reputation_guard = int(context.get("client_reputation_guard_bps") or 0) / 10_000
     reputation_guard += sum(float(ASSET_BY_KEY[key].get("reputation_guard", 0)) for key in owned if key in ASSET_BY_KEY)
     maximum_drop = max(.5, 4 - reputation_guard)
+    if locked_attempt.is_correct:
+        # Solving the question is the signal the app is actually teaching. However
+        # the write-up reads, a verified-correct answer never moves standing the
+        # way a miss can (see CORRECT_DROP_CAP).
+        maximum_drop = min(maximum_drop, CORRECT_DROP_CAP)
     if effort_eligible:
         # A genuinely well-reasoned miss should never collapse a reputation the
         # way a careless one can, regardless of how thin the rolling average is.
         maximum_drop = min(maximum_drop, EFFORT_MISS_DROP_CAP[band])
     if context.get("client_matter_type") == "pro_bono":
         maximum_drop = min(maximum_drop, int(context.get("client_reputation_loss_cap_bps") or 5_000) / 10_000)
+    maximum_drop *= _reputation_warmup(profile.total_cases)
     reputation_after = round(max(reputation_after, reputation_before - maximum_drop), 1)
     if reward_eligible:
-        career_floor = min(94.0, 50 + projected_correct * .55 + projected_validated * .70)
+        career_floor = _career_floor(
+            projected_correct, projected_validated, territory_standing(profile)
+        )
         reputation_after = round(max(reputation_after, career_floor), 1)
         reputation_after = min(100, round(reputation_after + int(context.get("client_reputation_win_bonus_bps") or 0) / 10_000, 1))
 
@@ -1670,7 +2523,10 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     profile.total_correct += int(locked_attempt.is_correct)
     profile.total_validated_correct += int(validated)
     daily = _daily(profile)
-    if paid_case:
+    if reward_eligible or effort_eligible:
+        # A thin win is paid but deliberately does not tick a daily goal: the
+        # daily bonuses are the one place where writing a real argument, not just
+        # picking the right letter, still has to be earned.
         daily.cases_completed += 1
 
     settlement = AttemptSettlement(

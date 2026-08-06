@@ -2,16 +2,21 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import type { ActiveOfficeCase, CharacterGender, GameAsset, GameState } from './types'
 import { Bust, Person, type Mood } from './art/people'
-import { SiteArt } from './art/structures'
 import { OfficeRoom } from './art/office'
+// Splitting this out of the entry bundle was tried and reverted: it saves ~16 kB
+// there, and costs the world route a whole extra round trip, because the shell
+// owns the `Suspense` boundary the scene sits behind and so has to land before
+// the scene is even requested. Measured on a 4G profile that trade lost by a
+// wide margin (warm navigation to the map, canvas creation +113%).
 import { UnifiedEmpireMap } from './art/unified-empire-map'
 import { useSound } from './sound'
 import { MOTION_TIMING } from './motion'
 import {
-  connectionArt, keyHash, playerStage, upgradeArt, cutsceneArt,
+  connectionArt, keyHash, playerStage, upgradeArt, cutsceneArt, rivalSiteArt,
 } from './art/assets'
 import { loadStylizedCharacter } from './art/scene-loaders'
 import { officeEnvironmentFor, officeStaffStationFor, officeVisualFor, ownedOfficeAssets } from './art/office-manifest'
+import { WardrobeLauncher } from './wardrobe'
 
 const StylizedCharacter = lazy(() => loadStylizedCharacter().then((module) => ({ default: module.StylizedCharacter })))
 const CatalogAssetRender = lazy(() => import('./art/catalog-asset-render').then((module) => ({ default: module.CatalogAssetRender })))
@@ -199,6 +204,7 @@ export function CutsceneArtwork({ scene, game }: { scene: string; game: GameStat
             tier={game.office_tier}
             mode="scene"
             direction="left"
+            cosmetics={game.cosmetics}
             label={game.lawyer_name}
           />
         </Suspense>
@@ -226,9 +232,18 @@ export function PixelAssetArtwork({ asset }: { asset: GameAsset }) {
             : <Person identity={asset.key} tier={asset.tier} label={asset.name} activity={state === 'owned' ? 'working' : 'briefing'} className="av-vignette-person" />}
         </div>
       ) : asset.type === 'rival' && profile ? (
+        /* Rivals were the last catalog type still drawn from the old flat
+           raster site set, which is why they read as a different game beside
+           an upgrade or a connection. They now go through the same live 3D
+           card renderer as everything else, with `art` selecting a real
+           headquarters massing rather than a tinted CSS box. */
         <>
-          <div className="av-vignette-site">
-            <SiteArt kind="rival" tier={asset.tier} architecture={profile.architecture} mark={profile.mark} owned={asset.owned} />
+          <div className="av-card-frame av-card-frame-site">
+            <Suspense fallback={<div className="av-card-render-placeholder" aria-hidden="true"><i /><i /><i /></div>}>
+              <CatalogAssetRender asset={asset} fallbackSrc={rivalSiteArt(profile.architecture)} />
+            </Suspense>
+            <i className="av-card-sheen" />
+            {profile.mark && <b className="av-card-mark">{profile.mark}</b>}
           </div>
           <div className="av-vignette-owner">
             <Bust identity={asset.key} tier={asset.tier} backdrop="none" />
@@ -308,9 +323,15 @@ export function ClientPortrait({
   className?: string
 }) {
   const profile = clientPortraits[kind] ?? clientPortraits.briefcase
+  // `identity` seeds every visual trait (skin, hair, build, accessories) below,
+  // so it must be unique per-client. `kind` is a shared icon *category* (dozens
+  // of clients share e.g. "briefcase" or "lunar"), which collapsed most of the
+  // roster onto a handful of identical-looking faces. `name` is unique per
+  // client in the catalog, giving each one its own deterministic appearance.
+  const identity = `${kind}:${name}`
   return (
     <div className={`client-portrait av-portrait client-${kind} mood-${mood} ${className}`} aria-label={`${name}, ${profile.title.toLowerCase()}, ${mood}`} role="img">
-      <Bust identity={kind} backdrop={profile.bg} mood={mood} />
+      <Bust identity={identity} backdrop={profile.bg} mood={mood} />
       <b>{['globe', 'orbit', 'lunar', 'nexus', 'quantum'].includes(kind) ? '✦' : name.slice(0, 1)}</b>
       <small>{profile.title}</small>
     </div>
@@ -421,10 +442,15 @@ export function OfficeScene(props: OfficeSceneProps) {
 /* ---------------------------------------------------- character panel */
 
 const stageTitles = ['Street Counsel', 'Rising Associate', 'Downtown Advocate', 'Power Partner', 'Global Magnate', 'Celestial Counsel']
-// Automatic entrances favor restrained professional gestures. The grounded
-// heel-click remains available to the shared character system, but does not
-// interrupt every Office visit with a theatrical movement.
-const officeEntranceActivities = ['professional-wave', 'courtroom-bow'] as const
+// Automatic entrances favor restrained professional gestures.
+//
+// This used to be a coin flip between a wave and a bow, which meant the app's
+// largest and most-looked-at character opened with a wave half the time. Both
+// remaining beats are grounded: a courteous acknowledgment, and the formal
+// courtroom bow. Whichever fires, it lands over a continuing idle rather than
+// replacing it, so the body is breathing throughout and settles back into the
+// ambient repertoire instead of switching off.
+const officeEntranceActivities = ['greeting', 'courtroom-bow'] as const
 type OfficeEntranceActivity = (typeof officeEntranceActivities)[number]
 
 export function CharacterPanel({ game }: { game: GameState }) {
@@ -464,6 +490,7 @@ export function CharacterPanel({ game }: { game: GameState }) {
               gender={game.character_gender}
               tier={game.office_tier}
               mode="hero"
+              cosmetics={game.cosmetics}
               activity={characterActivity}
               onReady={beginEntranceTimer}
             />
@@ -478,6 +505,7 @@ export function CharacterPanel({ game }: { game: GameState }) {
         <strong>{game.lawyer_name}</strong>
         <span>{stageTitles[stage]}</span>
         <em>★ {game.reputation} REPUTATION</em>
+        <WardrobeLauncher game={game} />
       </div>
     </aside>
   )
@@ -608,6 +636,6 @@ export function ExplorableOffice({
 
 /* ------------------------------------------------------- empire map */
 
-export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: (tab: 'upgrades' | 'rivals') => void }) {
-  return <UnifiedEmpireMap game={game} onManage={onManage} />
+export function EmpireWorldMap({ game, focusRival, onManage, empireValueLabel }: { game: GameState; focusRival?: string | null; onManage: (tab: 'upgrades' | 'rivals') => void; empireValueLabel: string }) {
+  return <UnifiedEmpireMap game={game} focusRival={focusRival} onManage={onManage} empireValueLabel={empireValueLabel} />
 }

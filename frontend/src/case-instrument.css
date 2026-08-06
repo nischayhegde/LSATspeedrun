@@ -1,0 +1,531 @@
+/* The live case view, in the Progress dashboard's instrument-panel language.
+ *
+ * Nothing here invents a look. Every value is lifted from `performance.css`,
+ * and specifically from `.answer-audit-*` — the dashboard already renders a
+ * question, its choices, the credited answer and the coaching, so the live
+ * question surface is styled as the same object seen earlier in its life
+ * rather than as a second, parchment-coloured reading surface.
+ *
+ * Loaded from `main.tsx` immediately after `styles.css` so these rules land
+ * after the legacy case-file styling and before `mobile.css`, whose narrow
+ * width media queries must keep the last word.
+ */
+
+.question-layout.case-instrument {
+  --ci-line: rgba(224,192,115,.22);
+  --ci-hair: rgba(255,255,255,.08);
+  --ci-gold: #f0d27f;
+  --ci-teal: #74d2bf;
+  --ci-amber: #e5ab6a;
+  --ci-ink: #eee5d0;
+  --ci-body: #bfc7be;
+  --ci-mute: #8b9d99;
+  --ci-panel: linear-gradient(150deg,#162635,#101c29);
+  --ci-gap: 12px;
+}
+
+/* --------------------------------------------------------- instrument head */
+
+/* Banner and topbar carry different facts but are one object: the banner is
+   the cap and the topbar is its readout, joined by a hairline instead of
+   floating as two separate slabs with a gutter between them. */
+.case-instrument .active-matter-banner {
+  margin: 0;
+  padding: 15px 18px;
+  border: 1px solid var(--ci-line);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  color: var(--ci-ink);
+  background: radial-gradient(circle at 88% 12%,rgba(109,183,167,.1),transparent 27%),var(--ci-panel);
+  box-shadow: none;
+}
+/* The giant "ACTIVE FILE" watermark was legible against the old teal banner at
+   12% opacity; on this panel it reads as a heading competing with the fee. */
+.case-instrument .active-matter-banner::after { display: none; }
+.case-instrument .active-matter-copy > span,
+.case-instrument .active-matter-fee > span,
+.case-instrument .counsel-copy > span {
+  color: #70cabb;
+  font: 900 8px var(--font-pixel);
+  letter-spacing: .14em;
+}
+.case-instrument .active-matter-copy > strong,
+.case-instrument .counsel-copy > strong {
+  color: #e9dec3;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.case-instrument .active-matter-copy > small,
+.case-instrument .counsel-copy > small { color: var(--ci-mute); font-size: 10.5px; }
+.case-instrument .active-matter-fee strong {
+  color: var(--ci-gold);
+  font: 600 27px/1 var(--font-display);
+  letter-spacing: -.01em;
+  text-transform: none;
+}
+.case-instrument .active-matter-fee small { color: var(--ci-mute); font-size: 10.5px; }
+.case-instrument .counsel-bubble {
+  color: #dfe6dd;
+  background: rgba(5,13,20,.62);
+  border-color: var(--ci-hair);
+}
+
+.case-instrument .case-file-topbar {
+  margin: 0;
+  padding: 11px 18px;
+  border: 1px solid var(--ci-line);
+  border-top: 1px solid var(--ci-hair);
+  border-radius: 0 0 16px 16px;
+  color: var(--ci-ink);
+  background: rgba(6,14,23,.44);
+  box-shadow: 0 13px 29px rgba(4,9,15,.23);
+  backdrop-filter: none;
+}
+/* A diagnostic has no client banner above it, so the topbar is the whole head. */
+.case-instrument .learning-mode-banner + .case-file-topbar { border-radius: 0 0 16px 16px; }
+.case-instrument .learning-mode-banner {
+  margin: 0;
+  border: 1px solid var(--ci-line);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  box-shadow: none;
+}
+.case-instrument .matter-tag > span {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(114,208,192,.32);
+  border-radius: 9px;
+  color: #8fdccb;
+  background: rgba(116,210,191,.12);
+  font: 900 9px var(--font-pixel);
+  letter-spacing: .06em;
+}
+.case-instrument .matter-tag small { color: #70cabb; font: 900 8px var(--font-pixel); letter-spacing: .14em; }
+.case-instrument .matter-tag strong { color: #e9dec3; font-size: 12.5px; font-weight: 750; }
+.case-instrument .question-progress { gap: 3px; }
+.case-instrument .question-progress strong { color: var(--ci-gold); font: 600 17px/1 var(--font-display); }
+.case-instrument .question-progress span { color: var(--ci-mute); font-size: 10.5px; font-weight: 500; letter-spacing: 0; }
+.case-instrument .case-timer { color: #e9dec3; }
+.case-instrument .case-timer svg { color: var(--ci-teal); }
+.case-instrument .case-timer span { color: var(--ci-gold); font: 600 21px/1 var(--font-display); }
+.case-instrument .case-timer small { color: var(--ci-mute); font-size: 10px; }
+.case-instrument .case-timer.over span { color: var(--ci-amber); }
+
+/* The dashboard's projection ruler, reused as the run's own progress rail. */
+.case-instrument .progress-track {
+  height: 8px;
+  margin: 9px 0 var(--ci-gap);
+  border-radius: 999px;
+  background: rgba(5,13,20,.5);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+}
+.case-instrument .progress-track span { background: linear-gradient(90deg,#4c9d90,var(--ci-teal)); }
+
+/* ------------------------------------------------------------- the run rail */
+
+.case-run-rail {
+  margin: 0 0 var(--ci-gap);
+  padding: 12px 15px;
+  border: 1px solid rgba(226,194,118,.21);
+  border-radius: 14px;
+  color: var(--ci-ink);
+  background: var(--ci-panel);
+  box-shadow: 0 13px 29px rgba(4,9,15,.23);
+}
+.case-run-rail-head { display: flex; align-items: center; gap: 14px; }
+.case-run-rail-head > div { min-width: 0; flex: 1; }
+.case-run-rail-head span { display: block; color: #70cabb; font: 900 8px var(--font-pixel); letter-spacing: .14em; }
+.case-run-rail-head strong { display: block; margin-top: 4px; color: #e9dec3; font-size: 12.5px; font-weight: 700; }
+.case-run-rail-toggle {
+  flex: none;
+  min-height: 30px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 8px;
+  color: #bcd0ca;
+  background: rgba(5,13,20,.3);
+  font-size: 11px;
+  font-weight: 650;
+  transition:
+    transform var(--mo-2) var(--mo-brass),
+    border-color var(--mo-2) var(--mo-out),
+    background var(--mo-1) linear;
+}
+.case-run-rail-toggle:hover { border-color: rgba(114,208,192,.4); background: rgba(114,208,192,.07); }
+/* The chevron turns at panel speed, not control speed: it is reporting the
+   disclosure below it, so the two have to read as one gesture. */
+.case-run-rail-toggle svg { transition: transform var(--mo-3) var(--mo-out); }
+.case-run-rail-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+/* One cell per question in the run — the dashboard's answer wall at run
+   scale, so "how is this run going" is the same picture in both places. */
+.case-run-strip { margin: 11px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; list-style: none; }
+.case-run-cell {
+  width: 100%;
+  max-width: 26px;
+  min-width: 9px;
+  flex: 1 1 14px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: rgba(255,255,255,.055);
+}
+.case-run-cell.is-correct { color: #0d2a26; border-color: rgba(116,210,191,.55); background: rgba(116,210,191,.75); }
+.case-run-cell.is-wrong { color: #2e1d0c; border-color: rgba(229,171,106,.55); background: rgba(229,171,106,.72); }
+.case-run-cell.is-answered { border-color: rgba(116,210,191,.4); background: rgba(116,210,191,.24); }
+.case-run-cell.is-current { border-color: var(--ci-gold); background: rgba(240,210,127,.22); box-shadow: 0 0 0 2px rgba(240,210,127,.35); }
+.case-run-cell.is-repeat { box-shadow: inset 0 0 0 2px rgba(11,26,35,.55); }
+
+.case-run-stats {
+  margin-top: 12px;
+  padding-top: 11px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(150px,1fr));
+  gap: 8px;
+  border-top: 1px solid var(--ci-hair);
+}
+.case-run-stats > div { padding: 9px 11px; border: 1px solid var(--ci-hair); border-radius: 10px; background: rgba(5,13,20,.3); }
+.case-run-stats span { display: block; color: #6fc9ba; font: 900 8px var(--font-pixel); letter-spacing: .13em; }
+.case-run-stats strong { display: block; margin-top: 6px; color: var(--ci-gold); font: 600 22px/1 var(--font-display); }
+.case-run-stats strong.is-teal { color: var(--ci-teal); }
+.case-run-stats strong.is-amber { color: var(--ci-amber); }
+.case-run-stats strong small { display: inline; margin: 0; color: var(--ci-mute); font-size: .5em; }
+.case-run-stats > div > small { display: block; margin-top: 5px; color: var(--ci-mute); font-size: 10.5px; line-height: 1.4; }
+.case-run-rail-note { margin: 10px 0 0; color: var(--ci-mute); font-size: 10.5px; line-height: 1.45; }
+
+/* ------------------------------------------------------------ partner tip */
+
+.case-instrument .strategy-tip {
+  margin: 0 0 var(--ci-gap);
+  padding: 15px 18px;
+  border: 1px solid rgba(226,194,118,.24);
+  border-radius: 14px;
+  color: var(--ci-ink);
+  background: radial-gradient(circle at 90% 8%,rgba(91,174,158,.12),transparent 27%),var(--ci-panel);
+  box-shadow: 0 13px 29px rgba(4,9,15,.23);
+}
+.case-instrument .strategy-tip h2 { margin: 6px 0 3px; color: var(--ci-gold); font: 600 22px/1.08 var(--font-display); }
+.case-instrument .strategy-tip > p { color: #c2cdc6; font-size: 12.5px; }
+.case-instrument .strategy-tip li { border-radius: 9px; background: rgba(5,13,20,.3); color: #cbd3ca; }
+.case-instrument .strategy-tip li b { border-radius: 6px; }
+.case-instrument .strategy-tip-use {
+  border: 1px solid rgba(113,208,192,.4);
+  border-radius: 9px;
+  color: #dff5ee;
+  background: rgba(66,156,143,.16);
+  font: 900 10px var(--font-pixel);
+}
+.case-instrument .strategy-tip-use:hover { border-color: #74d3c1; background: rgba(66,156,143,.25); }
+.case-instrument .strategy-tip-use.active { color: #10202b; background: var(--ci-teal); border-color: var(--ci-teal); box-shadow: none; }
+
+/* ------------------------------------------------------- the reading surface */
+
+.case-instrument .question-content { gap: 12px; }
+/* The paper affordances (clip, inner rule, page skew) belong to the parchment
+   card. On a lit panel they read as artefacts, so they come off. */
+.case-instrument .paperclip { display: none; }
+.case-instrument .answer-card::before,
+.case-instrument .passage-card::before { display: none; }
+.case-instrument .passage-card,
+.case-instrument .answer-card {
+  border: 1px solid var(--ci-line);
+  border-radius: 17px;
+  color: var(--ci-body);
+  box-shadow: 0 18px 39px rgba(4,9,15,.28);
+  transform: none;
+}
+.case-instrument .passage-card {
+  top: 20px;
+  padding: 20px 22px;
+  max-height: calc(100vh - 60px);
+  background: var(--ci-panel);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(114,208,192,.4) rgba(255,255,255,.05);
+}
+/* Both reading surfaces take the dashboard's panel gradient rather than a flat
+   fill: against the case view's own dark backdrop a flat card of nearly the
+   same value loses its edge, and the lit top-left corner is what gives every
+   panel on the dashboard its shape. */
+.case-instrument .answer-card {
+  padding: clamp(20px,3vw,38px);
+  background: radial-gradient(circle at 85% 8%,rgba(109,183,167,.08),transparent 29%),var(--ci-panel);
+}
+.case-instrument .answer-card.case-won { border-color: rgba(106,201,183,.42); }
+.case-instrument .answer-card.case-lost { border-color: rgba(224,168,106,.4); }
+.case-instrument .document-heading {
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--ci-hair);
+  color: #70cabb;
+  font: 900 8px var(--font-pixel);
+  letter-spacing: .14em;
+}
+.case-instrument .passage-text { margin-top: 16px; color: #d4d4c7; font-size: 15px; line-height: 1.72; }
+/* Same left-ruled block the dashboard uses for a re-read stimulus. */
+.case-instrument .stimulus {
+  margin: 0 0 18px;
+  padding: 0 0 0 15px;
+  border: 0;
+  border-left: 2px solid rgba(115,203,186,.54);
+  color: #d4d4c7;
+  font-size: 15px;
+  line-height: 1.72;
+}
+.case-instrument .question-label { color: #77c9bc; font: 900 8px var(--font-pixel); letter-spacing: .14em; }
+.case-instrument .answer-card h1 {
+  margin: 9px 0 15px;
+  color: #f0e6d2;
+  font: 600 clamp(19px,2.2vw,27px)/1.28 var(--font-display);
+  letter-spacing: -.01em;
+}
+.case-instrument .mobile-open-question {
+  border: 1px solid rgba(113,208,192,.4);
+  border-radius: 9px;
+  color: #dff5ee;
+  background: rgba(66,156,143,.16);
+}
+
+.case-instrument .choices { gap: 7px; }
+.case-instrument .choice {
+  min-height: 52px;
+  padding: 11px 13px;
+  grid-template-columns: 26px 1fr auto;
+  gap: 11px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 9px;
+  color: var(--ci-body);
+  background: rgba(6,13,19,.25);
+  font-size: 13.5px;
+  line-height: 1.5;
+  box-shadow: none;
+}
+.case-instrument .choice:hover:not(:disabled) { transform: translateX(2px); border-color: rgba(116,207,191,.35); background: rgba(116,210,191,.06); }
+.case-instrument .choice.selected { border: 1px solid rgba(240,210,127,.55); color: #f3ead4; background: rgba(240,210,127,.1); }
+.case-instrument .choice.correct { border-color: rgba(106,201,183,.48); color: #e5eee7; background: rgba(74,160,145,.12); }
+.case-instrument .choice.incorrect { border-color: rgba(224,168,106,.45); color: #f0e0cb; background: rgba(180,111,61,.1); }
+.case-instrument .choice-label {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 7px;
+  color: #dccb9b;
+  background: rgba(255,255,255,.04);
+  font: 700 12px var(--font-display);
+}
+.case-instrument .choice.selected .choice-label { color: #10202b; border-color: var(--ci-gold); background: var(--ci-gold); }
+.case-instrument .choice.correct .choice-label { color: #0d2a26; border-color: var(--ci-teal); background: var(--ci-teal); }
+.case-instrument .choice.incorrect .choice-label { color: #2e1d0c; border-color: var(--ci-amber); background: var(--ci-amber); }
+.case-instrument .choice-status { color: var(--ci-teal); }
+.case-instrument .choice.incorrect .choice-status { color: var(--ci-amber); }
+/* The enforcement gate's struck state has to stay legible against the dark
+   card; `strategy-enforcement.css` sets the strike itself, this only keeps
+   the contrast it assumed. */
+.case-instrument .choice.gate-struck { color: #7f8d88; background: rgba(6,13,19,.5); }
+
+.case-instrument .reasoning-box {
+  margin-top: 18px;
+  padding: 15px;
+  border: 1px solid rgba(111,202,185,.24);
+  border-radius: 11px;
+  background: rgba(18,39,47,.55);
+}
+.case-instrument .reasoning-heading label { color: #e9dec3; font-size: 13px; font-weight: 750; }
+.case-instrument .reasoning-heading label b { border-radius: 5px; color: #2e1d0c; background: var(--ci-amber); }
+.case-instrument .reasoning-heading > span { color: var(--ci-mute); font-size: 11px; }
+.case-instrument .reasoning-box textarea {
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 9px;
+  color: #dfe6dd;
+  background: rgba(5,13,20,.4);
+  font-size: 13px;
+}
+.case-instrument .reasoning-box textarea::placeholder { color: #6f8b88; }
+.case-instrument .reasoning-box textarea:focus { outline: 2px solid rgba(114,208,192,.45); border-color: rgba(114,208,192,.45); }
+.case-instrument .reasoning-box > p { color: var(--ci-mute); font-size: 10.5px; }
+
+/* The dashboard's segmented control (`.answer-log-outcome`), at five stops. */
+.case-instrument .confidence-check {
+  margin-top: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--ci-hair);
+  border-radius: 11px;
+  background: rgba(5,13,20,.3);
+}
+.case-instrument .confidence-check > span { color: #6fc9ba; font: 900 8px var(--font-pixel); letter-spacing: .13em; }
+.case-instrument .confidence-check > div { gap: 3px; padding: 3px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(5,13,20,.34); }
+.case-instrument .confidence-check button {
+  width: 32px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  color: #93a5a2;
+  background: transparent;
+  font: 750 12px inherit;
+}
+.case-instrument .confidence-check button:hover:not(:disabled) { color: #dfe9e4; background: rgba(255,255,255,.05); }
+.case-instrument .confidence-check button.active { color: #10202b; background: var(--ci-teal); box-shadow: none; }
+.case-instrument .confidence-check small { color: var(--ci-mute); font-size: 11px; }
+
+.case-instrument .answer-actions,
+.case-instrument .continue-row { margin-top: 16px; }
+.case-instrument .verdict-button,
+.case-instrument .next-case-button {
+  min-height: 46px;
+  border: 1px solid rgba(113,208,192,.45);
+  border-radius: 10px;
+  color: #dff5ee;
+  background: rgba(66,156,143,.2);
+  box-shadow: none;
+  font: 900 10.5px var(--font-pixel);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.case-instrument .verdict-button:hover:not(:disabled),
+.case-instrument .next-case-button:hover:not(:disabled) {
+  transform: none;
+  border-color: #74d3c1;
+  color: #eafaf4;
+  background: rgba(66,156,143,.32);
+}
+
+/* --------------------------------------------------------------- the verdict */
+
+.case-instrument .judge-review,
+.case-instrument .coaching-panel,
+.case-instrument .compact-reasoning,
+.case-instrument .client-settlement,
+.case-instrument .case-score-card,
+.case-instrument .grading-pending {
+  border: 1px solid var(--ci-line);
+  border-radius: 13px;
+  background: rgba(6,14,23,.46);
+  box-shadow: none;
+}
+.case-instrument .judge-speech { border-radius: 11px; }
+.case-instrument .verdict-stamp span { border-radius: 8px; }
+
+@media (max-width: 900px) {
+  .case-instrument .passage-card { top: 14px; }
+}
+/* Below this width `mobile.css` owns the case reader outright; nothing here
+   should fight the phone layout, only supply its colour. */
+@media (max-width: 620px) {
+  .case-instrument .active-matter-banner,
+  .case-instrument .case-file-topbar,
+  .case-instrument .learning-mode-banner { border-radius: 12px; }
+  .case-instrument .active-matter-banner { border-bottom: 1px solid var(--ci-line); }
+  .case-run-rail { padding: 10px 12px; }
+  .case-instrument .answer-card,
+  .case-instrument .passage-card { border-radius: 12px; }
+}
+
+/* ================================================================
+   CASE MOTION
+   ================================================================
+   The same tokens as every other surface (--mo-1..4, --mo-out/brass),
+   and deliberately less of them than any other surface uses.
+
+   A student is reading under a clock here, so every millisecond of
+   motion on this page is competing with the passage. The rule is that
+   motion is only permitted where it reports something the student just
+   did: a choice committed, a question closed, a control taking a
+   press. The reading surfaces never move, and the run strip is never
+   allowed to draw the eye back off the page it is reporting on.
+   ================================================================ */
+
+/* The hover nudge was declared with no transition of its own, so a
+   choice snapped sideways under the pointer. Same 2px, now weighted —
+   and the press seats it back flush, which is the same lift-then-seat
+   grammar the metric cards and the header tabs already use. */
+.case-instrument .choice {
+  transition:
+    transform var(--mo-2) var(--mo-out),
+    border-color var(--mo-2) var(--mo-out),
+    background var(--mo-1) linear,
+    color var(--mo-1) linear;
+}
+.case-instrument .choice:active:not(:disabled) { transform: translateX(0); }
+
+/* Choosing is the only commitment on this screen, so it is the only
+   place the overshooting curve is earned — and it is confined to the
+   26px letter badge. Sealing the whole row would move choice text a
+   reader is mid-sentence in, which is the one thing this surface may
+   never do. Correct and incorrect use the same seal on purpose: the
+   verdict is the same act of marking, only in a different ink. */
+.case-instrument .choice.selected .choice-label,
+.case-instrument .choice.correct .choice-label,
+.case-instrument .choice.incorrect .choice-label {
+  animation: mo-seal var(--mo-3) var(--mo-out) both;
+}
+
+/* Five stops whose fill switches instantly read as a radio click. At
+   --mo-1 the same switch reads as a needle settling on a reading,
+   which is what the control is actually for. */
+.case-instrument .confidence-check button {
+  transition: color var(--mo-1) linear, background var(--mo-1) linear;
+}
+
+/* The strip is the run's only running commentary, so a cell fills like
+   ink spreading into the box rather than switching. A transition and
+   not an animation on purpose: transitions do not fire on first paint,
+   so a half-finished run never replays its whole history every time
+   the rail mounts.
+   --mo-3 rather than the --mo-1 a hover tint gets, because this is a
+   result resolving and not a pointer being acknowledged: a student who
+   glances up a beat after submitting still has to catch the cell in the
+   act of changing, or the strip may as well have been redrawn. */
+.case-run-cell {
+  transition:
+    background-color var(--mo-3) var(--mo-out),
+    border-color var(--mo-3) var(--mo-out);
+}
+/* The open question is marked by one square arriving at its place —
+   scale only, so nothing in the strip's layout moves, and exactly once.
+   A marker that pulsed would pull the eye off the passage on every
+   glance back at the clock, which is the whole reason it is not one. */
+.case-run-cell.is-current { animation: ci-cell-mark var(--mo-2) var(--mo-out) both; }
+@keyframes ci-cell-mark { from { transform: scale(.78); } }
+
+/* Detail is disclosed rather than revealed, so it arrives as one panel.
+   The note rises with the stats instead of being staggered behind them:
+   a stagger here would be three separate things each asking to be
+   read, on a page where the reading is elsewhere. */
+.case-run-stats,
+.case-run-rail-note { animation: mo-rise var(--mo-3) var(--mo-out) both; }
+.case-run-rail-toggle:active { transform: translateY(1px); }
+
+/* The two committing controls in the case view. This surface strips the
+   pixel key's offset shadow, so the seat is the entire press signal,
+   and --mo-brass is what makes seating read as weight rather than as a
+   jump. Twice the travel of the rail toggle, because these two end a
+   question and the toggle only opens a drawer.
+   The press also has to restate `box-shadow: none`: the global pixel-key
+   press outranks this panel's flat rest style, so without it a gold
+   inner bevel from a button shape this surface does not use flashed on
+   every submit. */
+.case-instrument .verdict-button,
+.case-instrument .next-case-button {
+  transition:
+    transform var(--mo-2) var(--mo-brass),
+    border-color var(--mo-2) var(--mo-out),
+    color var(--mo-1) linear,
+    background var(--mo-1) linear;
+}
+.case-instrument .verdict-button:active:not(:disabled),
+.case-instrument .next-case-button:active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
+
+/* A phone fires :hover on tap and then holds it, which left a tapped
+   choice nudged 2px out of the column it belongs to for as long as the
+   question stayed open. On a touch surface the nudge belongs to the
+   press instead. */
+@media (max-width: 620px) {
+  .case-instrument .choice:hover:not(:disabled) { transform: none; }
+  .case-instrument .choice:active:not(:disabled) { transform: translateX(2px); }
+}

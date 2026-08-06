@@ -1,28 +1,61 @@
 import type {
+  AssistanceLevel,
   AttemptReward,
+  CharacterCosmetics,
   CharacterGender,
   CoachingFeedback,
   DailyDocket,
   GameResponse,
   GameState,
+  HistoryAttempt,
+  HistoryAttemptDetail,
+  HistoryFacets,
+  HistoryPage,
+  HistorySession,
   PerformanceSnapshot,
   PracticeSummary,
   ReviewQueue,
+  ScoreProjection,
   SessionReview,
   StudySession,
+  TerritoryState,
+  TrialPlan,
   User,
+  WardrobeCatalog,
 } from './types'
+
+/** What `POST /game/territory` reports back about the district just signed. */
+export type SecuredDistrict = {
+  district: string
+  name: string
+  price: number
+  standing_gained: number
+  region_swept: boolean
+  territory: TerritoryState
+}
 
 const API_URL = import.meta.env.VITE_API_URL || '/v1'
 
 export class ApiError extends Error {
   status: number
   code: string
+  /**
+   * Per-field messages, when the endpoint sends any. Only the strategy gate
+   * does so far: a refused gate has to point at the box that failed rather
+   * than showing one generic sentence for six required operations.
+   */
+  fields?: Array<{ field: string | null; message: string }>
 
-  constructor(message: string, status: number, code = 'request_failed') {
+  constructor(
+    message: string,
+    status: number,
+    code = 'request_failed',
+    fields?: Array<{ field: string | null; message: string }>,
+  ) {
     super(message)
     this.status = status
     this.code = code
+    this.fields = fields
   }
 }
 
@@ -34,8 +67,46 @@ function readCookie(name: string) {
   return value ? decodeURIComponent(value) : undefined
 }
 
+type BootstrapResult = { ok: boolean; status: number; body: unknown }
+type BootstrapMap = Record<string, Promise<BootstrapResult | null> | undefined>
+
+/**
+ * `index.html` starts the first GETs a protected screen needs before this
+ * bundle has even been parsed. Each one is worth exactly one adoption: after
+ * that the answer is stale and the caller wants the network. Adoption is only
+ * safe when this build talks to the same-origin proxy the inline script used.
+ */
+function takeBootstrapped(path: string): Promise<BootstrapResult | null> | null {
+  if (API_URL !== '/v1') return null
+  const pending = (window as Window & { __lsatBootstrap?: BootstrapMap }).__lsatBootstrap
+  const inflight = pending?.[path]
+  if (!inflight) return null
+  delete pending![path]
+  return inflight
+}
+
+function unwrap<T>(result: BootstrapResult): T {
+  const data = (result.body ?? {}) as { error?: { message?: string; code?: string; fields?: Array<{ field: string | null; message: string }> } }
+  if (!result.ok) {
+    throw new ApiError(
+      data?.error?.message || 'The request could not be completed.',
+      result.status,
+      data?.error?.code,
+      data?.error?.fields,
+    )
+  }
+  return result.body as T
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = init.method || 'GET'
+  if (method.toUpperCase() === 'GET' && !init.body) {
+    const bootstrapped = takeBootstrapped(path)
+    if (bootstrapped) {
+      const result = await bootstrapped
+      if (result) return unwrap<T>(result)
+    }
+  }
   const headers = new Headers(init.headers)
   if (init.body) headers.set('Content-Type', 'application/json')
   if (!['GET', 'HEAD'].includes(method.toUpperCase())) {
@@ -45,7 +116,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { ...init, headers, credentials: 'include' })
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new ApiError(data?.error?.message || 'The request could not be completed.', response.status, data?.error?.code)
+    throw new ApiError(
+      data?.error?.message || 'The request could not be completed.',
+      response.status,
+      data?.error?.code,
+      data?.error?.fields,
+    )
   }
   return data as T
 }
@@ -58,22 +134,58 @@ type AsyncJob<T> = {
   error?: string
 }
 
-const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+/**
+ * What one look at an attempt's explanation grading found.
+ *
+ * `pending` is a real answer, not an error: grading is a 20-30 second call that
+ * runs on a background worker, so a caller polls this instead of holding a
+ * request open and holding the player still. `unavailable` is terminal — grading
+ * gave up, and the case was settled from the verified answer key instead.
+ */
+export type CoachingSnapshot = {
+  status: 'completed' | 'pending' | 'unavailable'
+  coaching?: CoachingFeedback
+  reward?: AttemptReward | null
+  game?: GameState | null
+  notice?: string
+}
 
-async function waitForJob<T>(jobId: string): Promise<T> {
-  const deadline = Date.now() + 8 * 60_000
-  while (Date.now() < deadline) {
-    const { job } = await request<{ job: AsyncJob<T> }>(`/jobs/${jobId}`)
-    if (job.status === 'completed' && job.result !== undefined) return job.result
-    if (job.status === 'failed') throw new ApiError(job.error || 'AI coaching failed. Please retry.', 502, 'ai_job_failed')
-    await wait(1200)
+export type HistoryQuery = {
+  limit?: number
+  offset?: number
+  correct?: boolean
+  question_type?: string
+  section?: string
+  session_id?: string
+  from_review_queue?: boolean
+  evidence_class?: string
+  since?: string
+  until?: string
+  detail?: boolean
+}
+
+/** Drop unset filters rather than sending `?correct=undefined`. */
+function historyQuery(params: Record<string, string | number | boolean | undefined>) {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === '') continue
+    search.set(key, String(value))
   }
-  throw new ApiError('AI coaching is taking longer than expected. Please retry.', 504, 'ai_job_timeout')
+  const query = search.toString()
+  return query ? `?${query}` : ''
 }
 
 export const api = {
   authConfig: () => request<{ google_client_id?: string | null; dev_auth_enabled: boolean }>('/auth/config'),
   me: () => request<{ user: User }>('/me'),
+  updateMe: (
+    body: Partial<{
+      target_score: number | null
+      target_test_date: string | null
+      assistance_level: AssistanceLevel
+      guided_tour_completed: boolean
+    }>,
+  ) => request<{ user: User }>('/me', { method: 'PATCH', body: JSON.stringify(body) }),
   googleLogin: (credential: string) =>
     request<{ user: User }>('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) }),
   devLogin: () =>
@@ -87,8 +199,22 @@ export const api = {
     request<GameResponse>('/game/profile', { method: 'POST', body: JSON.stringify(body) }),
   updateGame: (body: Partial<{ lawyer_name: string; firm_name: string; character_gender: CharacterGender }>) =>
     request<{ game: GameState }>('/game/profile', { method: 'PATCH', body: JSON.stringify(body) }),
+  cosmetics: () => request<{ cosmetics: WardrobeCatalog }>('/game/cosmetics'),
+  /** Partial by design: only the categories named here move, so the panel can
+   *  save one change without restating a look it may not fully know about. */
+  saveCosmetics: (selection: Partial<CharacterCosmetics>) =>
+    request<{ cosmetics: WardrobeCatalog; game: GameState }>('/game/cosmetics', {
+      method: 'PATCH',
+      body: JSON.stringify({ selection }),
+    }),
   purchase: (assetKey: string) =>
     request<{ game: GameState }>('/game/purchases', { method: 'POST', body: JSON.stringify({ asset_key: assetKey }) }),
+  secureDistrict: (districtKey: string) =>
+    request<{ retainer: SecuredDistrict; game: GameState }>('/game/territory', {
+      method: 'POST',
+      body: JSON.stringify({ district_key: districtKey }),
+    }),
+  trialPlan: () => request<TrialPlan>('/trial'),
   advanceFirm: (targetTier: number) =>
     request<{ game: GameState }>('/game/advance', { method: 'POST', body: JSON.stringify({ target_tier: targetTier }) }),
   selectClient: (clientKey: string) =>
@@ -101,6 +227,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ chapter_key: chapterKey, choice_key: choiceKey }),
     }),
+  // "I have read the ending" is an account fact, not a browser fact, so it is
+  // stored with the campaign rather than only in localStorage — the same policy
+  // the guided tour already follows. See `overlays.tsx` for the full policy.
+  epilogueAcknowledgement: () => request<{ read: boolean }>('/game/story/epilogue'),
+  acknowledgeEpilogue: () => request<{ read: boolean }>('/game/story/epilogue/read', { method: 'POST' }),
   startQuest: (questKey: string) =>
     request<{ result: { quest: string; advance: number }; game: GameState }>('/game/quests/start', {
       method: 'POST',
@@ -140,9 +271,23 @@ export const api = {
   sessionReview: (id: string) => request<{ review: SessionReview }>(`/study-sessions/${id}/review`),
   acknowledgeSessionReview: (id: string) =>
     request<{ session: StudySession; brief_complete: boolean }>(`/study-sessions/${id}/review/acknowledge`, { method: 'POST' }),
+  sessionHistory: (params: { limit?: number; offset?: number } = {}) =>
+    request<{ sessions: HistorySession[]; total: number; limit: number; offset: number; has_more: boolean }>(
+      `/history/sessions${historyQuery(params)}`,
+    ),
+  /** Compact rows for the answer grid. Paginated; a heavy account has thousands. */
+  attemptHistory: (params: HistoryQuery = {}) =>
+    request<HistoryPage<HistoryAttempt>>(`/history/attempts${historyQuery(params)}`),
+  attemptDetail: (attemptId: string) =>
+    request<{ attempt: HistoryAttemptDetail }>(`/history/attempts/${attemptId}`),
+  historyFacets: () => request<HistoryFacets>('/history/facets'),
+  projection: () => request<{ projection: ScoreProjection }>('/projection'),
   reviewQueue: () => request<{ review_queue: ReviewQueue }>('/reviews'),
   acknowledgeReview: (id: string) =>
-    request<{ session: StudySession }>(`/study-sessions/${id}/debrief/acknowledge`, { method: 'POST' }),
+    request<{ session: StudySession; settlement_pending?: boolean }>(
+      `/study-sessions/${id}/debrief/acknowledge`,
+      { method: 'POST' },
+    ),
   saveDraft: (sessionId: string, itemId: string, draft: { selected_label?: string; reasoning: string }) =>
     request<{ saved: boolean }>(`/study-sessions/${sessionId}/items/${itemId}/draft`, {
       method: 'PATCH',
@@ -158,6 +303,9 @@ export const api = {
       answer_changed?: boolean
       strategy_applied?: boolean
       strategy_prompt_ms?: number
+      /** Time spent inside the strategy gate, held apart from the answer clock. */
+      strategy_gate_ms?: number
+      strategy_artifact?: import('./types').StrategyArtifact
     },
     idempotencyKey: string,
   ) =>
@@ -166,17 +314,25 @@ export const api = {
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(body),
     }),
-  coaching: async (attemptId: string) => {
+  coaching: async (attemptId: string): Promise<CoachingSnapshot> => {
     const response = await request<{
       status: string
-      coaching?: CoachingFeedback
+      coaching?: CoachingFeedback | null
       job?: AsyncJob<CoachingFeedback>
       reward?: AttemptReward | null
       game?: GameState | null
+      notice?: string
     }>(`/attempts/${attemptId}/coaching`, { method: 'POST' })
-    const coaching = response.coaching ?? await waitForJob<CoachingFeedback>(response.job!.id)
-    if (response.reward && response.game) return { coaching, reward: response.reward, game: response.game }
+    if (response.status === 'unavailable') {
+      return { status: 'unavailable', notice: response.notice, reward: response.reward, game: response.game }
+    }
+    // Handed to a worker and still running. Returning immediately is the whole
+    // point: the caller re-polls this while the player keeps moving.
+    if (!response.coaching) return { status: 'pending' }
+    if (response.reward && response.game) {
+      return { status: 'completed', coaching: response.coaching, reward: response.reward, game: response.game }
+    }
     const settled = await request<{ reward: AttemptReward | null; game: GameState | null }>(`/attempts/${attemptId}/reward`)
-    return { coaching, reward: settled.reward, game: settled.game }
+    return { status: 'completed', coaching: response.coaching, reward: settled.reward, game: settled.game }
   },
 }

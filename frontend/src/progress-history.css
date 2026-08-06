@@ -1,0 +1,143 @@
+/* The answer log: one tile per answered question, plus its drill-down.
+   Shares the dashboard's dark instrument-panel language (navy card, gold
+   display type, teal eyebrows) rather than introducing a second look. */
+
+.answer-log-panel { margin: 20px 0; padding: 19px; border: 1px solid rgba(226,194,118,.21); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#162635,#101c29); box-shadow: 0 13px 29px rgba(4,9,15,.23); }
+.answer-log-intro { max-width: var(--prose-measure); margin: 12px 0 0; color: #aebbb4; font-size: 12.5px; line-height: 1.6; }
+
+.answer-log-tally { margin-top: 15px; display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+.answer-log-tally > div { padding: 11px 13px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(5,13,20,.3); }
+.answer-log-tally strong { display: block; color: #efd17c; font: 600 27px/1 var(--font-display); }
+.answer-log-tally span { display: block; margin-top: 5px; color: #90a4a0; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; }
+.answer-log-tally .is-correct strong { color: #74d2bf; }
+.answer-log-tally .is-wrong strong { color: #e5ab6a; }
+
+.answer-log-tally-note { margin: 8px 0 0; color: #7f9490; font-size: 10.5px; }
+
+/* Set when the skill matrix drilled in from above, so the student can see why
+   the wall suddenly got shorter — and undo it in one click. */
+.answer-log-scope { margin-top: 13px; padding: 7px 8px 7px 12px; display: inline-flex; align-items: center; gap: 12px; border: 1px solid rgba(240,210,127,.35); border-radius: 999px; color: #f0d9a4; background: rgba(240,210,127,.09); font-size: 11.5px; }
+.answer-log-scope button { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 10px; border: 0; border-radius: 999px; color: #10202b; background: #f0d27f; font-size: 10.5px; font-weight: 750; cursor: pointer; }
+.answer-log-scope button:hover { background: #f7e2a4; }
+
+.answer-log-filters { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.answer-log-outcome { display: inline-flex; padding: 3px; gap: 3px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(5,13,20,.34); }
+.answer-log-outcome button { min-height: 32px; padding: 0 13px; border: 0; border-radius: 7px; color: #93a5a2; background: transparent; font-size: 11.5px; font-weight: 750; cursor: pointer; transition: background .16s ease, color .16s ease; }
+.answer-log-outcome button:hover { color: #dfe9e4; background: rgba(255,255,255,.05); }
+.answer-log-outcome button.is-active { color: #10202b; background: #74d2bf; }
+.answer-log-type { position: relative; display: inline-flex; align-items: center; }
+.answer-log-type select { min-height: 38px; padding: 0 30px 0 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; color: #d8e0da; background: rgba(5,13,20,.34); font-size: 11.5px; font-family: inherit; appearance: none; cursor: pointer; }
+.answer-log-type select:focus-visible { outline: 2px solid rgba(114,208,192,.55); outline-offset: 1px; }
+.answer-log-type > svg { position: absolute; right: 10px; color: rgba(114,208,192,.6); pointer-events: none; }
+
+/* auto-fill rather than a fixed count: the wall should get denser on a wide
+   screen instead of leaving a gutter, and a phone still gets ~14 per row. */
+.answer-log-grid { margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr)); gap: 5px; }
+.answer-tile { position: relative; aspect-ratio: 1; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 6px; cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
+.answer-tile:hover { transform: translateY(-2px); box-shadow: 0 5px 12px rgba(4,9,15,.4); }
+.answer-tile:focus-visible { outline: 2px solid rgba(240,210,127,.8); outline-offset: 1px; }
+.answer-tile.is-correct { color: #0d2a26; border-color: rgba(116,210,191,.55); background: rgba(116,210,191,.75); }
+.answer-tile.is-wrong { color: #2e1d0c; border-color: rgba(229,171,106,.55); background: rgba(229,171,106,.72); }
+/* A repeat the scheduler served back is still right or wrong; the dashed ring
+   marks it as second-look evidence without recolouring the outcome. */
+.answer-tile.is-repeat { box-shadow: inset 0 0 0 2px rgba(11,26,35,.55); }
+.answer-tile.is-open { border-color: #f0d27f; box-shadow: 0 0 0 2px rgba(240,210,127,.55); }
+.answer-tile-slow { position: absolute; right: 1px; bottom: 1px; opacity: .62; }
+
+.answer-log-foot { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.answer-log-foot small { color: #829894; font-size: 11px; }
+.answer-log-foot button { min-height: 36px; padding: 0 14px; border: 1px solid rgba(113,208,192,.4); border-radius: 9px; color: #dff5ee; background: rgba(66,156,143,.16); font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.answer-log-foot button:hover:not(:disabled) { border-color: #74d3c1; background: rgba(66,156,143,.25); }
+.answer-log-empty { margin: 18px 0 0; padding: 22px; border: 1px dashed rgba(121,196,184,.28); border-radius: 11px; color: #9fada8; background: rgba(4,13,19,.2); font-size: 12.5px; }
+
+.answer-log-detail { margin-top: 14px; padding: 18px; border: 1px solid rgba(226,194,118,.28); border-radius: 13px; background: rgba(6,14,23,.46); animation: metric-detail-in .16s ease; }
+.answer-log-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.answer-log-detail-head span { display: block; color: #74c9bc; font-size: 10px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.answer-log-detail-head strong { display: block; margin-top: 3px; color: #e9dec3; font-size: 13px; }
+.answer-log-detail-head button { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid rgba(255,255,255,.16); border-radius: 8px; color: #cdd7d2; background: transparent; }
+.answer-log-detail-head button:hover { border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.06); }
+.answer-log-detail-facts { margin-top: 14px; display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+.answer-log-detail-facts > div { padding: 10px 12px; border: 1px solid rgba(255,255,255,.08); border-radius: 9px; background: rgba(255,255,255,.025); }
+.answer-log-detail-facts span { display: block; color: #7fa29e; font-size: 9px; font-weight: 850; letter-spacing: .1em; }
+.answer-log-detail-facts strong { display: block; margin-top: 5px; color: #ead394; font: 600 20px/1 var(--font-display); }
+.answer-log-detail-facts strong.is-correct { color: #74d2bf; }
+.answer-log-detail-facts strong.is-wrong { color: #e5ab6a; }
+.answer-log-detail-facts small { display: block; margin-top: 4px; color: #86999a; font-size: 10px; }
+.answer-log-detail-flag { margin: 11px 0 0; display: flex; align-items: center; gap: 7px; color: #dcbd79; font-size: 11.5px; }
+.answer-log-detail-empty { margin: 14px 0 0; color: #93a5a1; font-size: 12px; }
+.answer-log-passage { margin-top: 15px; padding: 11px 13px; border: 1px solid rgba(255,255,255,.08); border-radius: 9px; background: rgba(5,12,18,.26); }
+.answer-log-passage summary { color: #dfcb91; cursor: pointer; font-size: 12px; font-weight: 750; }
+.answer-log-passage p { margin: 9px 0 0; color: #b4beb6; font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+.answer-log-stimulus { margin: 16px 0 12px; padding-left: 14px; border-left: 2px solid rgba(115,203,186,.54); color: #d4d4c7; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+.answer-log-detail h4 { margin: 14px 0 11px; color: #f0e6d2; font: 600 19px/1.3 var(--font-display); }
+.answer-log-choices { margin: 0; padding: 0; display: grid; gap: 6px; list-style: none; }
+.answer-log-choices li { padding: 9px 11px; display: grid; grid-template-columns: 22px 1fr auto; align-items: start; gap: 8px; border: 1px solid rgba(255,255,255,.07); border-radius: 8px; color: #bfc7be; background: rgba(6,13,19,.25); font-size: 12.5px; line-height: 1.5; }
+.answer-log-choices b { color: #dccb9b; }
+.answer-log-choices small { color: #8fa5a1; font-size: 9.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.answer-log-choices li.credited { border-color: rgba(106,201,183,.48); color: #e5eee7; background: rgba(74,160,145,.12); }
+.answer-log-choices li.credited small { color: #79d0be; }
+.answer-log-choices li.picked-wrong { border-color: rgba(224,168,106,.45); background: rgba(180,111,61,.1); }
+.answer-log-choices li.picked-wrong small { color: #e2ad6f; }
+.answer-log-reasoning,.answer-log-coaching { margin-top: 14px; padding: 14px; border: 1px solid rgba(111,202,185,.24); border-radius: 10px; background: rgba(18,39,47,.55); }
+.answer-log-reasoning > span,.answer-log-coaching > span { color: #78d0c1; font-size: 9.5px; font-weight: 850; letter-spacing: .1em; }
+.answer-log-reasoning p,.answer-log-coaching p { margin: 8px 0 0; color: #c8d1c9; font-size: 12.5px; line-height: 1.6; }
+.answer-log-coaching h5 { margin: 13px 0 0; color: #edd28a; font-size: 12px; }
+.answer-log-next-step { color: #dcc78c !important; }
+
+@media (max-width: 900px) {
+  .answer-log-tally,.answer-log-detail-facts { grid-template-columns: repeat(2,1fr); }
+}
+@media (max-width: 620px) {
+  .answer-log-panel { padding: 16px 13px; }
+  .answer-log-grid { grid-template-columns: repeat(auto-fill, minmax(24px, 1fr)); gap: 4px; }
+  .answer-log-filters { display: grid; }
+  .answer-log-type select { width: 100%; }
+  .answer-log-choices li { grid-template-columns: 20px 1fr; }
+  .answer-log-choices small { grid-column: 2; }
+}
+
+/* ================================================================
+   ANSWER WALL MOTION
+   ================================================================
+   On the motion tokens from the end of `styles.css`.
+
+   The wall is deliberately the one grid on the dashboard with no
+   entrance animation. It can hold several hundred tiles, and giving
+   each its own animation would mean hundreds of simultaneous
+   compositor layers on load for an effect no one would read as
+   anything but a shimmer. The tiles are already the smallest objects
+   on the page; the honest treatment is to let them simply be there,
+   and spend the motion budget on the one tile the reader touches.
+   ================================================================ */
+
+.answer-tile {
+  transition:
+    transform var(--mo-2) var(--mo-out),
+    box-shadow var(--mo-2) var(--mo-out),
+    border-color var(--mo-2) var(--mo-out);
+}
+.answer-tile:hover { transform: translateY(-2px); box-shadow: var(--el-1); }
+/* A tile is a stiff little key: it goes down and stops, rather than
+   easing back, so a rapid scan across the wall stays crisp. */
+.answer-tile:active { transform: translateY(0) scale(.94); transition-duration: var(--mo-1); }
+/* The opened tile is the one thing on the wall that should look
+   picked up rather than pressed in, since its detail panel is now
+   showing below. */
+.answer-tile.is-open { transform: translateY(-2px); }
+
+.answer-log-outcome button { transition: background var(--mo-1) linear, color var(--mo-1) linear; }
+.answer-log-outcome button:active { transform: translateY(1px); }
+.answer-log-scope button,
+.answer-log-foot button,
+.answer-log-detail-head button {
+  transition: transform var(--mo-2) var(--mo-brass), background var(--mo-1) linear, border-color var(--mo-2) var(--mo-out);
+}
+.answer-log-scope button:active,
+.answer-log-foot button:active:not(:disabled),
+.answer-log-detail-head button:active { transform: translateY(1px); }
+
+/* No pointer to meet on a phone, so only the press survives. */
+@media (max-width: 620px) {
+  .answer-tile:hover { transform: none; box-shadow: none; }
+  .answer-tile.is-open { transform: none; }
+}

@@ -12,7 +12,7 @@ app = create_app(
     # Lambda mounts deployment code read-only under /var/task. Flask's default
     # instance directory lives beside that code, so use Lambda's writable
     # scratch volume for any framework-managed runtime files.
-    instance_path=os.path.join("/tmp", "lsat-speedrun-instance"),
+    instance_path=os.path.join("/tmp", "lsat-tycoon-instance"),
 )
 
 

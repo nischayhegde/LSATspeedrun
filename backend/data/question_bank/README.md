@@ -1,6 +1,6 @@
 # Repository question snapshot
 
-This directory contains the complete question-only snapshot used by LSAT Speedrun. It includes all train,
+This directory contains the complete question-only snapshot used by LSAT Tycoon. It includes all train,
 validation, and test rows from `tasksource/lsat-lr` and `tasksource/lsat-rc`. Each JSONL line is one unchanged
 upstream row; `manifest.json` records source revisions, row counts, and SHA-256 checksums.
 

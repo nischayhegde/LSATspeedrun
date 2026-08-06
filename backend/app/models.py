@@ -27,6 +27,20 @@ class User(db.Model):
     target_minutes = db.Column(db.Integer, nullable=False, default=20)
     onboarding_complete = db.Column(db.Boolean, nullable=False, default=False)
     story_intro_seen = db.Column(db.Boolean, nullable=False, default=False)
+    # Onboarding's one extra question. Both nullable: a user can decline to
+    # answer, and declining is itself informative (never defaulted to a guess).
+    target_score = db.Column(db.Integer, nullable=True)
+    target_test_date = db.Column(db.Date, nullable=True)
+    # "full" is every current default: office, map, story, and economy chrome
+    # visible. "focus" hides that chrome and lands the user on the practice
+    # dashboard. Declared intent (168+ or a test inside 8 weeks) only ever sets
+    # this once, at onboarding — the user's own toggle always wins afterwards.
+    assistance_level = db.Column(db.String(16), nullable=False, default="full")
+    # The guided tour is first-use orientation, so "already seen" has to live with
+    # the account rather than in one browser's localStorage: clearing storage,
+    # switching devices, or opening a private window must not re-block a player's
+    # server-persisted progress screens behind 21 steps.
+    guided_tour_completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
@@ -137,6 +151,19 @@ class SessionItem(db.Model):
     from_review_queue = db.Column(db.Boolean, nullable=False, default=False)
     strategy_key = db.Column(db.String(80), nullable=True, index=True)
     strategy_variant = db.Column(db.String(20), nullable=True)
+    # Propensity of landing in the *observed* arm, and how many candidate
+    # approaches were competing for this question — logged at assignment time
+    # because adaptive allocation makes both unrecoverable after the fact. See
+    # P0-8 / assign_strategy_trial.
+    strategy_propensity = db.Column(db.Float, nullable=True)
+    strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # How hard the strategy gate on this question will be: "full" blocks the
+    # answer until the approach's operations are done, "light" keeps the prompt
+    # but stops blocking once the student has demonstrated the approach enough
+    # times, and "none" is every control-arm and untrialled question. Fixed at
+    # serve time so a mid-question mastery change cannot move the goalposts.
+    # See app/enforcement.py.
+    strategy_enforcement_level = db.Column(db.String(12), nullable=False, default="none")
     target_time_seconds = db.Column(db.Integer, nullable=False, default=150)
     game_context_json = db.Column(db.JSON, nullable=True)
     timer_compromised = db.Column(db.Boolean, nullable=False, default=False)
@@ -177,6 +204,31 @@ class Attempt(db.Model):
     strategy_variant = db.Column(db.String(20), nullable=True)
     strategy_applied = db.Column(db.Boolean, nullable=True)
     strategy_prompt_ms = db.Column(db.Integer, nullable=False, default=0)
+    strategy_propensity = db.Column(db.Float, nullable=True)
+    strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # --- Enforced strategy use (see app/enforcement.py) ----------------------
+    # `strategy_applied` above is a self-report about a private mental act.
+    # These columns are the observable version of the same claim. `satisfied`
+    # means the student cleared the gate for the strategy they opted into,
+    # `skipped` means they declined it or dropped it partway, `attested` means
+    # a mastery-relaxed gate took their word for it, and `unenforced` means no
+    # gate was armed at all.
+    strategy_gate_status = db.Column(db.String(20), nullable=True, index=True)
+    strategy_enforcement_level = db.Column(db.String(12), nullable=True)
+    # Which revision of the gates produced this artifact. An analysis must not
+    # pool observations taken under different required operations, because that
+    # is a different treatment rather than more of the same one.
+    strategy_enforcement_version = db.Column(db.String(30), nullable=True)
+    strategy_artifact_json = db.Column(db.JSON, nullable=True)
+    # Time inside the gate, held apart from `server_elapsed_ms` for the same
+    # reason `strategy_prompt_ms` is: enforcement steps inflate per-question
+    # time, and a pace comparison that counts them is comparing the scaffolding
+    # rather than the reasoning.
+    strategy_gate_ms = db.Column(db.Integer, nullable=False, default=0)
+    # Advisory only. A model's read on the artifact's quality, written back by
+    # the coaching pipeline when it is configured. Never blocks a submission,
+    # never reaches the economy, never turns a correct answer into a penalty.
+    strategy_artifact_quality = db.Column(db.Float, nullable=True)
     evidence_class = db.Column(db.String(32), nullable=False, default="coached_practice", index=True)
     explanation_score = db.Column(db.Float, nullable=True)
     server_elapsed_ms = db.Column(db.Integer, nullable=False)
@@ -202,7 +254,7 @@ class Attempt(db.Model):
 
 
 class PlayerProfile(db.Model):
-    """Account-bound state for the Lawyer Tycoon layer."""
+    """Account-bound state for the LSAT Tycoon layer."""
 
     __tablename__ = "player_profiles"
     __table_args__ = (
@@ -211,6 +263,10 @@ class PlayerProfile(db.Model):
         CheckConstraint("reputation >= 0 and reputation <= 100", name="ck_profile_reputation_range"),
         CheckConstraint("office_tier >= 0 and office_tier <= 14", name="ck_profile_office_tier_range"),
         CheckConstraint("current_streak >= 0 and best_streak >= 0", name="ck_profile_streak_nonnegative"),
+        CheckConstraint(
+            "daily_streak_current >= 0 and daily_streak_best >= 0",
+            name="ck_profile_daily_streak_nonnegative",
+        ),
     )
 
     id = db.Column(db.String(36), primary_key=True, default=new_id)
@@ -229,6 +285,14 @@ class PlayerProfile(db.Model):
     office_tier = db.Column(db.Integer, nullable=False, default=0)
     current_streak = db.Column(db.Integer, nullable=False, default=0)
     best_streak = db.Column(db.Integer, nullable=False, default=0)
+    # Distinct from `current_streak`/`best_streak` above, which only count
+    # consecutive *validated wins* for the payout bonus. This pair tracks
+    # consecutive *calendar days* the account has been active at all (visiting
+    # the firm counts; it is not gated on winning, or even on playing a case),
+    # advanced once per day in `game.settle_upkeep`.
+    daily_streak_current = db.Column(db.Integer, nullable=False, default=0)
+    daily_streak_best = db.Column(db.Integer, nullable=False, default=0)
+    daily_streak_last_date = db.Column(db.Date, nullable=True)
     total_cases = db.Column(db.Integer, nullable=False, default=0)
     total_correct = db.Column(db.Integer, nullable=False, default=0)
     total_validated_correct = db.Column(db.Integer, nullable=False, default=0)
@@ -245,11 +309,29 @@ class PlayerProfile(db.Model):
     upkeep_settled_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     last_active_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     game_completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # A cleared mega-litigation hands over a whole tier for free. Per-session
+    # idempotency only ever stopped one form paying twice, so these two columns
+    # are what make the bonus occasional: when the last one landed, and how many
+    # of the lifetime allowance have been spent.
+    mega_litigation_promoted_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    mega_litigation_promotions = db.Column(db.Integer, nullable=False, default=0)
+    # The player's chosen wardrobe, as ``{category: item_key}``. Only categories
+    # the player has actually changed appear here: an empty mapping means "wear
+    # the firm's issue", which is the look every existing account already has,
+    # so no backfill is needed and the 3D rig keeps its seed-derived defaults.
+    # Keys are validated against `game.WARDROBE_BY_KEY` on write, so nothing
+    # unowned or unknown can reach storage.
+    cosmetics_json = db.Column(db.JSON, nullable=False, default=dict)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
     user = db.relationship("User", back_populates="game_profile")
     assets = db.relationship("PlayerAsset", back_populates="profile", cascade="all, delete-orphan")
+    territories = db.relationship(
+        "PlayerTerritory",
+        back_populates="profile",
+        cascade="all, delete-orphan",
+    )
     client_contracts = db.relationship(
         "PlayerClientContract",
         back_populates="profile",
@@ -272,6 +354,7 @@ class PlayerStoryState(db.Model):
         CheckConstraint("heat >= 0 and heat <= 100", name="ck_story_heat_range"),
         CheckConstraint("influence >= 0 and intel >= 0", name="ck_story_resources_nonnegative"),
         CheckConstraint("quest_progress >= 0", name="ck_story_quest_progress_nonnegative"),
+        CheckConstraint("casework_spent >= 0", name="ck_story_casework_nonnegative"),
     )
 
     id = db.Column(db.String(36), primary_key=True, default=new_id)
@@ -293,6 +376,19 @@ class PlayerStoryState(db.Model):
     quest_history_json = db.Column(db.JSON, nullable=False, default=list)
     rival_discounts_json = db.Column(db.JSON, nullable=False, default=dict)
     operations_json = db.Column(db.JSON, nullable=False, default=list)
+    # Rival operations are bought with casework, not with time. This is the
+    # high-water mark of `PlayerProfile.total_validated_correct` already spent
+    # on them, so the balance available to the war room is the number of cases
+    # the student has actually won with a valid write-up and not yet committed.
+    # Storing the mark rather than a balance means the two counters can never
+    # drift: casework cannot be granted by anything except settling a case.
+    casework_spent = db.Column(db.Integer, nullable=False, default=0)
+    # "The player has read the closing record." Kept with the account for the
+    # same reason as `users.guided_tour_completed_at`: the epilogue is a
+    # full-screen, once-ever layer, so a browser-local marker meant a finished
+    # player was handed the whole final record again on a second device or after
+    # clearing site data.
+    epilogue_read_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
@@ -325,6 +421,40 @@ class PlayerAsset(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
     profile = db.relationship("PlayerProfile", back_populates="assets")
+
+
+class PlayerTerritory(db.Model):
+    """One district the firm holds a standing retainer over.
+
+    Deliberately its own table rather than another `asset_type` on
+    `PlayerAsset`. `game._owned_keys` reads every asset row into one namespace
+    that requirement checks, payout multipliers, reputation guards, and the
+    tier-advance prerequisite list all consult, and a district belongs in none
+    of them: it pays no payout multiplier, gates no headquarters, and is never
+    a prerequisite for anything in the asset catalog. Keeping the two apart is
+    what stops a retainer quietly becoming an eligible answer to "does this
+    firm own everything tier N requires".
+    """
+
+    __tablename__ = "player_territories"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "district_key", name="uq_profile_territory"),
+        CheckConstraint("purchase_price >= 0", name="ck_player_territory_price"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    profile_id = db.Column(
+        db.String(36),
+        db.ForeignKey("player_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    district_key = db.Column(db.String(80), nullable=False, index=True)
+    region_key = db.Column(db.String(30), nullable=False, index=True)
+    purchase_price = db.Column(db.BigInteger, nullable=False)
+    secured_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
+
+    profile = db.relationship("PlayerProfile", back_populates="territories")
 
 
 class PlayerClientContract(db.Model):
@@ -466,10 +596,73 @@ class ReviewQueueItem(db.Model):
     grade_pending = db.Column(db.Boolean, nullable=False, default=False)
     pre_grade_interval_index = db.Column(db.Integer, nullable=True)
     due_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    # --- FSRS memory state (see app/scheduling.py) ---------------------------
+    # Stability is the interval, in days, at which recall probability falls to
+    # the algorithm's desired retention; difficulty is the item's 1-10 intrinsic
+    # hardness for this student. Both are null until the card's first graded
+    # review, which is what tells `scheduling` to use the initial-state formulas
+    # rather than the update ones. `interval_index` above is kept so the older
+    # ladder-based rows stay readable and so nothing that reads it breaks.
+    stability = db.Column(db.Float, nullable=True)
+    difficulty = db.Column(db.Float, nullable=True)
+    reps = db.Column(db.Integer, nullable=False, default=0)
+    lapses = db.Column(db.Integer, nullable=False, default=0)
+    last_grade = db.Column(db.Integer, nullable=True)
+    last_reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # The memory state as it stood *before* the pending attempt was applied.
+    # An answer is scheduled twice — provisionally on submit, then again when
+    # the explanation grade lands 20-30 seconds later — and the second pass has
+    # to recompute from the same starting point rather than compound on top of
+    # the first. Exactly the role `pre_grade_interval_index` played for the old
+    # ladder; `grade_pending` is still the flag that says these are live.
+    pre_grade_stability = db.Column(db.Float, nullable=True)
+    pre_grade_difficulty = db.Column(db.Float, nullable=True)
+    pre_grade_reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
     question = db.relationship("Question")
+
+
+class ScoreProjection(db.Model):
+    """One dated estimate of where this student's LSAT score currently sits.
+
+    Persisted rather than recomputed on demand because the point of the number
+    is the *line* it draws: an estimate taken today is evidence about today, and
+    recomputing history from the current model would erase the fact that the
+    estimate itself moved. `model_version` is what makes an old row still
+    interpretable after the projection math changes.
+    """
+
+    __tablename__ = "score_projections"
+    __table_args__ = (
+        CheckConstraint("scaled_score >= 120 and scaled_score <= 180", name="ck_projection_scaled_range"),
+        CheckConstraint("lower_bound <= scaled_score and scaled_score <= upper_bound", name="ck_projection_band_order"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # The point estimate and the honest band around it. The band is the whole
+    # product: a single number from a partial-form sample would be a lie about
+    # precision the evidence does not support.
+    scaled_score = db.Column(db.Integer, nullable=False)
+    lower_bound = db.Column(db.Integer, nullable=False)
+    upper_bound = db.Column(db.Integer, nullable=False)
+    percentile = db.Column(db.Float, nullable=True)
+    # Recency- and evidence-weighted proportion correct, and the effective
+    # sample size that weighting bought. `effective_sample` is deliberately a
+    # float: 40 heavily discounted old attempts are not 40 attempts of evidence.
+    estimated_accuracy = db.Column(db.Float, nullable=False)
+    effective_sample = db.Column(db.Float, nullable=False)
+    observed_attempts = db.Column(db.Integer, nullable=False, default=0)
+    lr_attempts = db.Column(db.Integer, nullable=False, default=0)
+    rc_attempts = db.Column(db.Integer, nullable=False, default=0)
+    evidence_grade = db.Column(db.String(20), nullable=False, default="baseline")
+    model_version = db.Column(db.String(30), nullable=False)
+    detail_json = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+
+    user = db.relationship("User")
 
 
 class AiJob(db.Model):

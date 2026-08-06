@@ -9,7 +9,7 @@ from flask import current_app
 from .models import Attempt, Question
 
 
-PROMPT_VERSION = "coaching-v2-plain-language"
+PROMPT_VERSION = "coaching-v3-invalid-is-a-finding"
 ERROR_CODES = {
     "misread_stem",
     "missed_conclusion",
@@ -75,6 +75,12 @@ def _chat(system: str, data: dict, max_tokens: int = 5000) -> tuple[dict, dict]:
             headers={
                 "Authorization": f"Bearer {current_app.config['TFY_API_KEY']}",
                 "Content-Type": "application/json",
+                # Every request carries a student's own written reasoning. Ask the
+                # gateway to opt out of logging/retention on its side regardless of
+                # its default tenant configuration; this is a defense-in-depth
+                # header, not a substitute for a signed zero-retention DPA with
+                # whichever provider TFY_URL actually points at in this deployment.
+                "X-TFY-LOGGING-CONFIG": json.dumps({"enabled": False}),
             },
             json=body,
             timeout=120,
@@ -188,7 +194,7 @@ def _validate_coaching(raw: dict, attempt: Attempt) -> dict:
 
 def generate_attempt_coaching(attempt: Attempt) -> tuple[dict, dict]:
     question = attempt.session_item.question
-    system = """You are the Lawyer Tycoon LSAT reasoning coach. Return one JSON object and nothing else.
+    system = """You are the LSAT Tycoon reasoning coach. Return one JSON object and nothing else.
 
 The application's verified answer key has already determined correctness. You MUST NOT independently change or dispute verified_correct_label or selected_is_correct. Your job is explanation grading and instruction.
 
@@ -209,7 +215,17 @@ Make the response easy to scan:
 - next_step_hint: one memorable, actionable if/then rule, at most 24 words.
 - debrief: a two-sentence synthesis with no new claims.
 
-Grade substance, never length. Use these exact score bands: 0–24 Invalid (blank, irrelevant, copied, generic, reused, or no question-specific reasoning); 25–49 Weak (an attempt that misses the central logical issue); 50–79 Good (mostly correct and question-specific with a gap); 80–100 Excellent (clearly identifies and explains the decisive reasoning). If recent_reasoning_samples shows the same generic explanation reused for this question, grade it Invalid. Incorrect answers can still have Good reasoning, but the explanation can never change the verified answer key.
+Grade substance, never length, and never style. Use these exact score bands:
+- 0–24 Invalid. Reserved for reasoning that engages with nothing in THIS question. Award it only when at least one of these is plainly true: the field is blank or filler; it discusses a different question or topic; it is copied text from the stimulus, stem, or a choice with no reasoning added; it is the same explanation as one in recent_reasoning_samples; or it gives no reason at all beyond asserting the answer ("it felt right", "the others looked wrong", "this is correct because it is correct").
+- 25–49 Weak. A real but thin attempt: it says something true about this question yet misses the central logical issue, or eliminates choices without naming the property that decides them.
+- 50–79 Good. Mostly correct and specific to this question, with a gap.
+- 80–100 Excellent. Clearly identifies and explains the decisive reasoning.
+
+Two rules on borderline calls, because the same argument written twice must land in the same band:
+- A formulaic voice is not a defect. Repeated sentence shapes, a checklist walkthrough of the choices, textbook phrasing, or plainly imitating a worked example are all fine. If the reasoning names this question's actual task, claim, gap, or choice-distinguishing property, it is at least Weak — even if it paraphrases rather than quotes, and even if a dozen other students would write it the same way. Beginners have not developed a voice yet; grade what they identified.
+- When you are genuinely torn between Invalid and Weak, choose Weak. Invalid is a factual finding that there is no question-specific reasoning present, not an impression that the prose is unremarkable.
+
+Incorrect answers can still have Good reasoning, but the explanation can never change the verified answer key.
 
 Return exactly these fields:
 {

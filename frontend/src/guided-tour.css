@@ -42,7 +42,9 @@
 }
 .guided-tour-card.place-left { left: clamp(22px, 5vw, 76px); }
 .guided-tour-card.place-right { right: clamp(22px, 5vw, 76px); }
-.guided-tour-mode-premise .guided-tour-card { right: clamp(26px, 8vw, 120px); top: 50%; translate: 0 -50%; }
+/* The primer steps carry a diagram, so a premise card has to be able to run
+   out of vertical room without spilling off the viewport. */
+.guided-tour-mode-premise .guided-tour-card { width: min(512px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow-y: auto; right: clamp(26px, 8vw, 120px); top: 50%; translate: 0 -50%; }
 .guided-tour-mode-finish .guided-tour-card { left: 50%; top: 50%; translate: -50% -50%; text-align: center; }
 .guided-tour-mode-practice .guided-tour-card { width: min(760px, calc(100vw - 40px)); left: 50%; top: 50%; translate: -50% -50%; }
 /* A feature step points at nothing, so it reads centred like the premise. */
@@ -55,7 +57,7 @@
 .tour-card-progress i { height: 100%; display: block; background: linear-gradient(90deg, #318b80, #e1ad49); transition: width .45s ease; }
 .tour-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .tour-card-heading > span { color: #26766f; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .15em; }
-.tour-card-heading > small { color: #796f5a; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .08em; }
+.tour-card-heading > small { margin-left: auto; color: #796f5a; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .08em; }
 .guided-tour-card h2 { max-width: 420px; margin: 12px 0 11px; color: #1b3640; font-family: var(--font-display); font-size: clamp(28px, 3vw, 39px); font-weight: 600; line-height: 1.04; letter-spacing: -.025em; }
 .guided-tour-mode-finish .guided-tour-card h2 { margin-inline: auto; }
 .guided-tour-card > p { margin: 0; color: #53635f; font-size: 15px; line-height: 1.62; }
@@ -68,6 +70,16 @@
 .tour-next:active { translate: 0 3px; box-shadow: 0 2px 0 #153d3b; }
 .tour-next:disabled { cursor: not-allowed; opacity: .48; filter: grayscale(.3); translate: none; box-shadow: 0 3px 0 #435a56; }
 .tour-next svg { width: 17px; }
+/* Orientation is optional, so leaving it has to be as reachable as advancing:
+   the corner control, the text button beside Next, and the Escape key. */
+.tour-skip { min-width: 92px; border: 1px dashed rgba(52, 75, 73, .34); color: #6a7d78; background: transparent; }
+.tour-skip:hover { color: #2f4b47; border-color: rgba(52, 75, 73, .6); background: rgba(255,255,255,.4); }
+.tour-dismiss {
+  width: 27px; height: 27px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(52, 75, 73, .26); border-radius: 7px;
+  color: #5c716c; background: rgba(255,255,255,.55); cursor: pointer;
+}
+.tour-dismiss:hover { color: #23423e; border-color: rgba(52, 75, 73, .55); background: #fff; }
 .tour-required { margin-top: 17px; display: block; color: #857c68; font-size: 10px; line-height: 1.4; text-align: center; }
 
 .guided-tour-spotlight {
@@ -116,6 +128,38 @@
 .tour-loop span { display: grid; justify-items: center; gap: 5px; color: #355e59; font-family: var(--font-pixel); font-size: 8px; line-height: 1.25; text-align: center; }
 .tour-loop svg { width: 17px; height: 17px; }
 .tour-loop > i { width: 12px; height: 1px; background: #9d8d68; }
+/* One form, four sections. The unscored block is deliberately unreadable —
+   a student cannot identify it on test day either. */
+.tour-form { margin-top: 18px; }
+.tour-form ol { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; list-style: none; }
+.tour-form li { padding: 11px 4px; display: grid; justify-items: center; gap: 4px; border: 1px solid rgba(52, 75, 73, .28); border-radius: 7px; background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.16)); }
+.tour-form li b { color: #1b3f47; font-family: var(--font-pixel); font-size: 12px; letter-spacing: .04em; }
+.tour-form li span { color: #6d7d78; font-family: var(--font-pixel); font-size: 8px; }
+.tour-form li.is-unscored { border-style: dashed; border-color: rgba(154, 108, 40, .45); background: rgba(200, 155, 75, .1); }
+.tour-form li.is-unscored b { color: #9a6c28; }
+.tour-form > p { margin: 9px 0 0; color: #6f7c77; font-size: 11.5px; line-height: 1.45; }
+
+/* Two sections scored against one: the bar is the argument for where the
+   study hours go, so it is sized from the real question counts. */
+.tour-share { margin-top: 18px; }
+.tour-share-bar { display: flex; overflow: hidden; border: 1px solid rgba(52, 75, 73, .26); border-radius: 7px; }
+.tour-share-bar i { min-width: 0; padding: 12px 6px; display: grid; place-items: center; font-style: normal; }
+.tour-share-bar i span { overflow: hidden; color: #fdf8ea; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .06em; white-space: nowrap; text-overflow: ellipsis; }
+.tour-share-bar .is-lr { background: linear-gradient(180deg, #337e76, #235e5a); }
+.tour-share-bar .is-rc { background: linear-gradient(180deg, #c89b4b, #9a6c28); }
+.tour-share-legend { margin-top: 7px; display: flex; justify-content: space-between; gap: 10px; }
+.tour-share-legend em { color: #6f7c77; font-family: var(--font-pixel); font-size: 8px; font-style: normal; line-height: 1.4; }
+.tour-share-legend em:last-child { text-align: right; }
+
+.tour-types { margin: 17px 0 0; padding: 15px 17px; display: grid; gap: 14px; border: 1px solid rgba(52, 75, 73, .18); border-radius: 9px; background: rgba(255,255,255,.36); }
+.tour-types h3 { margin: 0 0 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: #26766f; font-family: var(--font-pixel); font-size: 9px; font-weight: 900; letter-spacing: .1em; }
+.tour-types h3 small { color: #857c68; font-weight: 400; letter-spacing: .04em; }
+.tour-types ul { margin: 0; padding: 0; display: grid; gap: 6px; list-style: none; }
+.tour-types li { display: grid; grid-template-columns: 92px 1fr; align-items: baseline; gap: 10px; }
+.tour-types li b { color: #9a6c28; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .03em; }
+.tour-types li span, .tour-types section > p { color: #435450; font-size: 12.5px; line-height: 1.45; }
+.tour-types section > p { margin: 0; }
+
 .tour-promise { margin-top: 20px; padding: 14px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(56,81,77,.2); border-radius: 8px; color: #4c625e; background: rgba(255,255,255,.25); text-align: left; }
 .tour-promise svg { flex: 0 0 auto; color: #a57931; }
 .tour-promise strong { display: block; color: #244540; }
@@ -178,6 +222,9 @@
   .guided-tour-card:has(.tour-guide-avatar) > p { padding-right: 70px; }
   .tour-loop { grid-template-columns: 1fr 1fr; }
   .tour-loop > i { display: none; }
+  .tour-types { padding: 13px 14px; }
+  .tour-types li { grid-template-columns: 76px 1fr; gap: 8px; }
+  .tour-share-legend em { font-size: 7.5px; }
   .tour-finish-seal { top: 28px; width: 130px; height: 130px; }
 }
 
