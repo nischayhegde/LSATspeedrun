@@ -2819,6 +2819,7 @@ export function MapThreeScene({
   playerName: string
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const canvasMountRef = useRef<HTMLDivElement | null>(null)
   const commandRef = useRef(cameraCommand)
   const selectedRef = useRef(selectedKey)
   const selectRef = useRef(onSelect)
@@ -2830,7 +2831,9 @@ export function MapThreeScene({
 
   useEffect(() => {
     const host = hostRef.current
-    if (!host) return
+    const canvasMount = canvasMountRef.current
+    if (!host || !canvasMount) return
+    host.classList.remove('is-preview-ready', 'is-ready')
     const definition = ARC[region]
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4
@@ -2853,7 +2856,7 @@ export function MapThreeScene({
     renderer.shadowMap.needsUpdate = true
     renderer.domElement.className = 'uw-three-canvas'
     renderer.domElement.setAttribute('aria-label', `${definition.title} interactive three-dimensional career map`)
-    host.replaceChildren(renderer.domElement)
+    canvasMount.replaceChildren(renderer.domElement)
 
     const scene = new THREE.Scene()
     scene.fog = new THREE.FogExp2(definition.fog, definition.fogDensity)
@@ -2894,6 +2897,16 @@ export function MapThreeScene({
         ? new THREE.Group()
         : box([220, .28, 180], groundMaterial(definition.ground), [0, -.18, 0])
     world.add(ground)
+
+    // Put a cheap sky-and-ground frame in the drawing buffer before generating
+    // and compiling the complete district. Once the synchronous authoring pass
+    // yields, the user sees a real environment instead of a blank WebGL canvas
+    // while the full shader set compiles asynchronously.
+    renderer.shadowMap.enabled = false
+    renderer.render(scene, camera)
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.needsUpdate = true
+    host.classList.add('is-preview-ready')
 
     const routeCurve = curveFrom(definition.route, region === 'orbit' ? .5 : .09)
     world.add(createNativeCareerRoute(region, routeCurve))
@@ -3744,7 +3757,11 @@ export function MapThreeScene({
     // the driver link each program in turn while the main thread waits, which
     // is the bulk of the delay before the district appears. `compileAsync`
     // links them in parallel instead, so the first frame only has to draw.
-    void renderer.compileAsync(scene, camera).then(() => {
+    void renderer.compileAsync(scene, camera).catch(() => {
+      // Some older WebKit GPU drivers reject parallel shader compilation even
+      // though normal rendering remains available. The first render below is a
+      // safe synchronous fallback rather than leaving the loading state stuck.
+    }).then(() => {
       if (disposed) return
       // Full-scene pass first: it captures the static world shadow map while
       // every caster is still visible. Culling may only run afterwards.
@@ -3752,6 +3769,7 @@ export function MapThreeScene({
       renderer.shadowMap.needsUpdate = false
       updatePerformanceCulling()
       ready = true
+      host.classList.add('is-ready')
       if (!surfaceVisible || document.hidden) return
       previousFrame = performance.now()
       animationFrame = requestAnimationFrame(animate)
@@ -3776,7 +3794,8 @@ export function MapThreeScene({
       disposeScene(scene)
       renderer.dispose()
       renderer.forceContextLoss()
-      if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement)
+      host.classList.remove('is-preview-ready', 'is-ready')
+      if (canvasMount.contains(renderer.domElement)) canvasMount.removeChild(renderer.domElement)
     }
   }, [activity, playerGender, playerName, playerTier, points, region])
 
@@ -3784,6 +3803,7 @@ export function MapThreeScene({
   return (
     <div className={`uw-three-scene uw-three-scene-${region}`} ref={hostRef} style={style}>
       <div className="uw-three-loading" aria-hidden="true"><i /><span>Building {ARC[region].title}</span></div>
+      <div className="uw-three-canvas-host" ref={canvasMountRef} />
     </div>
   )
 }

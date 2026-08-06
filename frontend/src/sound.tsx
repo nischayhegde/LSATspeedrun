@@ -816,7 +816,6 @@ export function useAmbientMusic(scene: AmbientScene | null) {
   const { ambientEnabled, muted, startAmbient, stopAmbient, unlocked } = useSound()
   useEffect(() => {
     if (!scene || !unlocked || muted || !ambientEnabled) {
-      stopAmbient()
       return
     }
     startAmbient(scene)

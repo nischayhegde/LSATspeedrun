@@ -42,6 +42,33 @@ export function preloadDockArt(pathname: string) {
   void loadMapScene()
 }
 
+/**
+ * Warm the two persistent scene tabs without making authentication or a case
+ * reader compete with Three.js. Safari/WKWebView still does not consistently
+ * expose requestIdleCallback, so the timeout path is required on iOS rather
+ * than being an optional nicety.
+ */
+export function scheduleDockArtPreload(pathname: string) {
+  let cancelled = false
+  const preload = () => {
+    if (!cancelled) preloadDockArt(pathname)
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    const idle = window.requestIdleCallback(preload, { timeout: 900 })
+    return () => {
+      cancelled = true
+      window.cancelIdleCallback(idle)
+    }
+  }
+
+  const timer = window.setTimeout(preload, 250)
+  return () => {
+    cancelled = true
+    window.clearTimeout(timer)
+  }
+}
+
 export function preloadArtForRoute(pathname: string) {
   if (pathname === '/office' || pathname === '/login' || pathname === '/onboarding') {
     void loadStylizedCharacter()

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import type { GameState } from '../types'
@@ -61,7 +61,7 @@ function tierState(tier: number, officeTier: number): MapSceneTier['state'] {
   return 'locked'
 }
 
-export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage: (tab: 'upgrades' | 'rivals') => void }) {
+export function UnifiedEmpireMap({ game, active = true, onManage }: { game: GameState; active?: boolean; onManage: (tab: 'upgrades' | 'rivals') => void }) {
   const { play } = useSound()
   const navigate = useNavigate()
   const currentRegion = regionForTier(game.office_tier)
@@ -71,7 +71,14 @@ export function UnifiedEmpireMap({ game, onManage }: { game: GameState; onManage
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false)
   const [cameraCommand, setCameraCommand] = useState<{ id: number; action: 'in' | 'out' | 'home' | 'focus' }>({ id: 0, action: 'focus' })
   const activeRegion = regions.find((region) => region.key === activeRegionKey) ?? currentRegion
-  useAmbientMusic(activeRegionKey)
+  const previousHeadquartersRegion = useRef(currentRegion.key)
+  useEffect(() => {
+    if (previousHeadquartersRegion.current === currentRegion.key) return
+    previousHeadquartersRegion.current = currentRegion.key
+    setActiveRegionKey(currentRegion.key)
+    setSelectedKey('')
+  }, [currentRegion.key])
+  useAmbientMusic(active ? activeRegionKey : null)
 
   const points = useMemo<MapScenePoint[]>(() => {
     const tiers: MapSceneTier[] = game.catalog.tiers

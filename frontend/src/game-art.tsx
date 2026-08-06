@@ -608,6 +608,6 @@ export function ExplorableOffice({
 
 /* ------------------------------------------------------- empire map */
 
-export function EmpireWorldMap({ game, onManage }: { game: GameState; onManage: (tab: 'upgrades' | 'rivals') => void }) {
-  return <UnifiedEmpireMap game={game} onManage={onManage} />
+export function EmpireWorldMap({ game, active = true, onManage }: { game: GameState; active?: boolean; onManage: (tab: 'upgrades' | 'rivals') => void }) {
+  return <UnifiedEmpireMap game={game} active={active} onManage={onManage} />
 }

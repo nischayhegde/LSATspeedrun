@@ -2242,6 +2242,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const startedAt = performance.now()
     let frame = 0
     let disposed = false
+    let shadersReady = false
     let surfaceVisible = true
     let previousFrame = startedAt
     let elapsed = 0
@@ -2621,13 +2622,22 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       canvas.classList.add('is-ready')
       if (!reduced && !disposed && surfaceVisible && !document.hidden) frame = window.requestAnimationFrame(draw)
     }
-    draw()
+    // Link the office shader set in parallel where the browser supports it.
+    // A direct first render serializes shader compilation on the main thread,
+    // which is especially visible in WKWebView. The loading layer remains in
+    // place until draw() has produced the first complete frame.
+    void renderer.compileAsync(scene, camera).catch(() => {
+      // Normal rendering is still a valid fallback on older GPU drivers.
+    }).then(() => {
+      shadersReady = true
+      if (!disposed) draw()
+    })
     const surfaceObserver = new IntersectionObserver(([entry]) => {
       surfaceVisible = Boolean(entry?.isIntersecting)
       if (!surfaceVisible && frame) {
         window.cancelAnimationFrame(frame)
         frame = 0
-      } else if (surfaceVisible && !document.hidden && !reduced && !frame) {
+      } else if (shadersReady && surfaceVisible && !document.hidden && !reduced && !frame) {
         previousFrame = performance.now()
         frame = window.requestAnimationFrame(draw)
       }
@@ -2637,7 +2647,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       if (document.hidden && frame) {
         window.cancelAnimationFrame(frame)
         frame = 0
-      } else if (!document.hidden && surfaceVisible && !reduced && !frame) {
+      } else if (shadersReady && !document.hidden && surfaceVisible && !reduced && !frame) {
         previousFrame = performance.now()
         frame = window.requestAnimationFrame(draw)
       }

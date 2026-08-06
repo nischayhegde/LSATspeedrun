@@ -230,7 +230,10 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .office-three-canvas.is-ready { opacity: 1; }
 .office-three-canvas.is-dragging-furniture { cursor: grabbing !important; }
 .office-three-canvas.is-looking-around { cursor: grabbing !important; }
-.office-three-loading { position: absolute; inset: 0; background: radial-gradient(ellipse at 48% 42%,#20394a,#07111a 72%); }
+.office-three-loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 9px; color: rgba(231,215,172,.66); background: radial-gradient(ellipse at 48% 42%,#20394a,#07111a 72%); font-family: var(--font-pixel); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
+.office-three-loading i { width: 30px; height: 30px; border: 3px solid rgba(231,215,172,.16); border-top-color: rgba(231,215,172,.72); border-radius: 50%; animation: office-three-spin .9s linear infinite; }
+.office-three-canvas.is-ready ~ .office-three-loading { display: none; }
+@keyframes office-three-spin { to { transform: rotate(1turn); } }
 .av-room-glass-grade { position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(108deg,transparent 31%,rgba(224,206,164,.045) 47%,transparent 62%),radial-gradient(ellipse at 28% 41%,rgba(93,158,181,.07),transparent 31%); mix-blend-mode: screen; }
 .office-night { fill: #0b121d; }
 .office-ceiling { fill: #142333; }

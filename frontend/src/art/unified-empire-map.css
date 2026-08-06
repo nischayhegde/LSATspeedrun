@@ -68,9 +68,12 @@
 }
 .uw-map-frame::after { content: ""; position: absolute; z-index: 4; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.06), transparent 32%, rgba(13,28,30,.08)); box-shadow: inset 0 0 85px rgba(23, 42, 43, .13); }
 .uw-three-scene { position: absolute; z-index: 0; inset: 0; overflow: hidden; background: #aebfba; }
+.uw-three-canvas-host { position: absolute; z-index: 0; inset: 0; }
 .uw-three-canvas { width: 100%; height: 100%; display: block; touch-action: none; animation: uw-scene-arrive .65s ease both; }
 .uw-three-canvas.is-grabbing { cursor: grabbing !important; }
-.uw-three-loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 9px; color: #294a48; background: linear-gradient(#b7c9c1, #d8d2bd); font-family: var(--font-pixel); font-size: 9px; letter-spacing: .12em; }
+.uw-three-loading { position: absolute; z-index: 2; inset: 0; display: grid; place-content: center; justify-items: center; gap: 9px; color: #294a48; background: linear-gradient(#b7c9c1, #d8d2bd); font-family: var(--font-pixel); font-size: 9px; letter-spacing: .12em; transition: opacity .16s ease-out, visibility .16s; }
+.uw-three-scene.is-preview-ready .uw-three-loading { opacity: 0; visibility: hidden; }
+.uw-three-scene.is-preview-ready .uw-three-loading i { animation: none; }
 .uw-three-loading i { width: 32px; height: 32px; border: 3px solid rgba(41,74,72,.2); border-top-color: #836d3d; border-radius: 50%; animation: uw-spin .9s linear infinite; }
 @keyframes uw-scene-arrive { from { opacity: .25; filter: saturate(.5) blur(4px); transform: scale(1.015); } }
 @keyframes uw-spin { to { transform: rotate(1turn); } }

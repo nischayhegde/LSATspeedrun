@@ -224,7 +224,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         {game && !isActiveCase && (
           <nav className="desktop-nav" aria-label="Primary navigation">
             {navItems.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForRoute(to)} onFocus={() => preloadArtForRoute(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
+              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForRoute(to)} onPointerDown={() => preloadArtForRoute(to)} onFocus={() => preloadArtForRoute(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
                 <Icon size={17} /><span>{label}</span>
               </NavLink>
             ))}
@@ -309,7 +309,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
             </header>
             <nav aria-label="Secondary navigation">
               <NavLink to="/firm" data-sound="navigate" data-sound-seed="/firm"><LayoutGrid /><span><strong>Manage firm</strong><small>Upgrades, staff, clients, and assets</small></span><ArrowRight /></NavLink>
-              <NavLink to="/map" data-sound="navigate" data-sound-seed="/map"><Map /><span><strong>Career world</strong><small>Levels, rivals, and district dockets</small></span><ArrowRight /></NavLink>
+              <NavLink to="/map" onPointerDown={() => preloadArtForRoute('/map')} data-sound="navigate" data-sound-seed="/map"><Map /><span><strong>Career world</strong><small>Levels, rivals, and district dockets</small></span><ArrowRight /></NavLink>
             </nav>
             <div className="mobile-site-menu-tools">
               <button type="button" onClick={() => { replayGuidedTour(); setMobileMenuOpen(false) }}><HelpCircle /><span><strong>Replay tutorial</strong><small>Tour the current learning workflow</small></span></button>
@@ -326,7 +326,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
           {mobileNavItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForRoute(to)} onFocus={() => preloadArtForRoute(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
+            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForRoute(to)} onPointerDown={() => preloadArtForRoute(to)} onFocus={() => preloadArtForRoute(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
               <Icon size={20} /><span>{label}</span>
             </NavLink>
           ))}

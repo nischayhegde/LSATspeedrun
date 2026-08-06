@@ -29,9 +29,13 @@ export function OfficeRoom({
       className={`av-room av-room-three theme-${roomTheme(tier)} tier-${tier}`}
       style={{ ['--amb' as string]: Math.min(1, ownedAssets.length / 24) }}
     >
-      <Suspense fallback={<div className="office-three-loading" aria-hidden="true" />}>
+      <Suspense fallback={null}>
         <OfficeThreeScene tier={tier} ownedAssets={ownedAssets} layoutKey={layoutKey} activeCase={activeCase} />
       </Suspense>
+      {/* This remains behind the transparent canvas until its first real frame;
+          Suspense alone disappears as soon as the JS module downloads, which
+          previously exposed a blank gap during procedural scene construction. */}
+      <div className="office-three-loading" aria-hidden="true"><i /><span>Preparing office</span></div>
       <div className="av-room-glass-grade" aria-hidden="true" />
     </div>
   )

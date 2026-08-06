@@ -719,10 +719,10 @@ export function OnboardingPage() {
 }
 
 
-export function OfficePage() {
+export function OfficePage({ active: routeActive = true }: { active?: boolean } = {}) {
   const navigate = useNavigate()
   const { play } = useSound()
-  useAmbientMusic('office')
+  useAmbientMusic(routeActive ? 'office' : null)
   const [mobileBriefOpen, setMobileBriefOpen] = useState(false)
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
@@ -1604,7 +1604,7 @@ export function FirmPage() {
 }
 
 
-export function ProgressionMapPage() {
+export function ProgressionMapPage({ active = true }: { active?: boolean } = {}) {
   const navigate = useNavigate()
   const gameQuery = useGame()
   if (gameQuery.isLoading) return <LoadingScreen />
@@ -1615,7 +1615,7 @@ export function ProgressionMapPage() {
         <div><span className="pixel-kicker">FIVE LIVING ENVIRONMENTS · {game.catalog.tiers.length} HEADQUARTERS LEVELS</span><h1>Your legal empire</h1><p>Enter each career arc as a complete district, with every headquarters built directly into its streets.</p></div>
         <div><small>EMPIRE VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><span>HQ · {game.office.name}</span></div>
       </section>
-      <EmpireWorldMap game={game} onManage={(tab) => navigate(`/firm?tab=${tab}`)} />
+      <EmpireWorldMap game={game} active={active} onManage={(tab) => navigate(`/firm?tab=${tab}`)} />
     </div>
   )
 }
