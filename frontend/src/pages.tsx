@@ -211,8 +211,8 @@ export function PerformancePage() {
     ? trend.map((entry, index) => `${20 + index * (560 / Math.max(1, trend.length - 1))},${160 - entry.accuracy * 1.25}`).join(' ')
     : ''
   const diagnosticSession = diagnostic.session
-  const diagnosticSize = diagnosticSession?.total_items || performance.diagnostic?.raw_total || performance.diagnostic?.summary.questions_completed || 75
-  const diagnosticMinutes = diagnosticSession?.target_minutes || 105
+  const diagnosticSize = (diagnosticSession?.mode === 'diagnostic' ? diagnosticSession.total_items : undefined) || performance.diagnostic?.form_total || performance.diagnostic?.raw_total || performance.diagnostic?.summary.questions_completed || 75
+  const diagnosticMinutes = (diagnosticSession?.mode === 'diagnostic' ? diagnosticSession.target_minutes : undefined) || performance.diagnostic?.time_limit_minutes || 105
   const activePractice = current.data?.session
   const evidenceCopy = {
     baseline: 'Fewer than 10 questions. Treat every signal as provisional.',
@@ -233,7 +233,7 @@ export function PerformancePage() {
   }
   const focus = performance.focus ?? { types: [], session_id: null, completed_at: null, baseline_accuracy: null, explanation: '' }
   const megaLitigationLabel = diagnosticSession
-    ? 'Resume mega-litigation'
+    ? diagnosticSession.mode === 'blind_review' ? 'Resume blind review' : diagnosticSession.status === 'completed' ? 'Start blind review' : 'Resume mega-litigation'
     : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'
 
   return (
@@ -414,7 +414,7 @@ export function PerformancePage() {
               <p>{diagnosticSize} LR and RC questions in three blocks under a single {diagnosticMinutes}-minute clock, with results held to the end. It takes one sitting and there is no pause. Take one whenever you like — nothing in the firm waits on it.</p>
               <ul><li>Above 70% promotes your firm a tier</li><li>Prerequisite upgrades unlocked free</li><li>Sets what your case runs practice</li><li>Pays nothing, prompts nothing, coaches nothing</li></ul>
               <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>
-                {diagnosticSession ? 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight />
+                {diagnosticSession ? diagnosticSession.mode === 'blind_review' ? 'Return to the blind review' : diagnosticSession.status === 'completed' ? 'Start blind review' : 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight />
               </button>
             </div>
             <div className="diagnostic-score">
@@ -1150,11 +1150,12 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
   const reviewQuery = useQuery({ queryKey: ['session-review', sessionId], queryFn: () => api.sessionReview(sessionId) })
   const queueQuery = useQuery({ queryKey: ['review-queue'], queryFn: api.reviewQueue })
   const review = reviewQuery.data?.review
+  const isBlindReview = review?.session.mode === 'blind_review'
   const priorityRank = { high_confidence_miss: 0, miss: 1, low_confidence_correct: 2, slow_correct: 3 } as const
   const priorityItems = (review?.items ?? [])
     .filter((item) => item.priority_reason)
     .sort((a, b) => priorityRank[a.priority_reason!] - priorityRank[b.priority_reason!])
-  const visibleItems = priorityOnly && priorityItems.length ? priorityItems : review?.items ?? []
+  const visibleItems = !isBlindReview && priorityOnly && priorityItems.length ? priorityItems : review?.items ?? []
   const selected = visibleItems.find((item) => item.position === selectedPosition) ?? visibleItems[0]
   const coaching = useQuery({
     queryKey: ['coaching', selected?.attempt_id],
@@ -1193,11 +1194,15 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
 
   const summary = review.summary
   const isDiagnostic = review.session.mode === 'diagnostic'
+  const isAssessment = isDiagnostic || isBlindReview
   const highConfidenceErrors = review.items.filter((item) => !item.is_correct && (item.confidence ?? 0) >= 4).length
   // Every completed practice run gets a brief. Gating this on a style that no
   // longer exists would leave the brief permanently unacknowledgeable, which
   // would strand the daily docket at "brief ready" forever.
-  const isBrief = !isDiagnostic
+  const isBrief = !isAssessment
+  const diagnosticResult = review.comparison?.diagnostic
+  const blindReviewResult = review.comparison?.blind_review
+  const promotion = isAssessment ? diagnosticResult?.summary.promotion : summary.promotion
   const correctChoice = selected?.question.choices.find((choice) => choice.label === selected.correct_label)
   const selectedChoice = selected?.question.choices.find((choice) => choice.label === selected.selected_label)
   const rationale = coaching.data?.coaching
@@ -1206,24 +1211,29 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
     <div className="session-review-page page-wrap">
       <section className="review-summary-hero">
         <div>
-          <span className="eyebrow">{isDiagnostic ? 'MEGA-LITIGATION COMPLETE' : 'DEEP BRIEF'}</span>
-          <h1>{priorityItems.length ? 'Brief the decisions that can change your next run.' : 'Clean run. Confirm what held.'}</h1>
-          <p>{isDiagnostic ? 'A full practice LSAT pays no fees and moves no streak — only the tier promotion above 70%. Open any question for a concise rationale; only mistakes and uncertainty enter repair.' : 'Results are separated from firm currency and rank. Open any question for a concise rationale; only mistakes and uncertainty enter repair.'}</p>
+          <span className="eyebrow">{isBlindReview ? 'BLIND REVIEW COMPLETE' : isDiagnostic ? 'MEGA-LITIGATION COMPLETE' : 'DEEP BRIEF'}</span>
+          <h1>{isBlindReview ? 'Now compare what changed without the clock.' : priorityItems.length ? 'Brief the decisions that can change your next run.' : 'Clean run. Confirm what held.'}</h1>
+          <p>{isBlindReview ? 'Your timed diagnostic and untimed blind review are shown side by side. Answers and concise rationales are now unlocked.' : isDiagnostic ? 'Your timed result and blind-review result are both final. Open any question for a concise rationale; only mistakes and uncertainty enter repair.' : 'Results are separated from firm currency and rank. Open any question for a concise rationale; only mistakes and uncertainty enter repair.'}</p>
         </div>
-        <div className="review-score"><strong>{isDiagnostic && summary.form_accuracy !== undefined ? summary.form_accuracy : summary.accuracy}%</strong><span>{summary.correct} of {summary.questions_completed} correct</span><small>{summary.elapsed_minutes} minutes</small></div>
+        {isAssessment && diagnosticResult ? (
+          <div className="review-score-pair" aria-label="Diagnostic and blind review results">
+            <div className="review-score"><small>DIAGNOSTIC</small><strong>{diagnosticResult.summary.form_accuracy ?? diagnosticResult.summary.accuracy}%</strong><span>{diagnosticResult.summary.correct} of {diagnosticResult.summary.questions_completed + (diagnosticResult.summary.omitted ?? 0)} on the form</span></div>
+            {blindReviewResult && <div className="review-score"><small>BLIND REVIEW · UNTIMED</small><strong>{blindReviewResult.summary.accuracy}%</strong><span>{blindReviewResult.summary.correct} of {blindReviewResult.summary.questions_completed} corrected</span></div>}
+          </div>
+        ) : <div className="review-score"><strong>{isDiagnostic && summary.form_accuracy !== undefined ? summary.form_accuracy : summary.accuracy}%</strong><span>{summary.correct} of {summary.questions_completed} correct</span><small>{summary.elapsed_minutes} minutes</small></div>}
       </section>
 
-      {summary.promotion && (
+      {promotion && (
         <section className="promotion-banner" aria-label="Firm promotion">
-          <div><span>THE FIRM MOVED UP</span><strong>{summary.promotion.name}</strong><p>Clearing 70% of the form promoted you to tier {summary.promotion.tier}. Reputation was raised to {summary.promotion.reputation_after}.</p></div>
-          {summary.promotion.granted_assets.length > 0 && <ul>{summary.promotion.granted_assets.map((asset) => <li key={asset.key}>{asset.name}</li>)}</ul>}
-          <small>{summary.promotion.granted_assets.length ? `${summary.promotion.granted_assets.length} prerequisite ${summary.promotion.granted_assets.length === 1 ? 'upgrade was' : 'upgrades were'} unlocked free — ${formatMoney(summary.promotion.waived_cost)} waived.` : 'You already owned every prerequisite for this tier.'}</small>
+          <div><span>THE FIRM MOVED UP</span><strong>{promotion.name}</strong><p>Clearing 70% of the form promoted you to tier {promotion.tier}. Reputation was raised to {promotion.reputation_after}.</p></div>
+          {promotion.granted_assets.length > 0 && <ul>{promotion.granted_assets.map((asset) => <li key={asset.key}>{asset.name}</li>)}</ul>}
+          <small>{promotion.granted_assets.length ? `${promotion.granted_assets.length} prerequisite ${promotion.granted_assets.length === 1 ? 'upgrade was' : 'upgrades were'} unlocked free — ${formatMoney(promotion.waived_cost)} waived.` : 'You already owned every prerequisite for this tier.'}</small>
         </section>
       )}
 
       <section className="review-signal-row" aria-label="Run signals">
         <article><Target /><span>Accuracy</span><strong>{summary.accuracy}%</strong></article>
-        <article><Clock3 /><span>Elapsed</span><strong>{summary.elapsed_minutes}m</strong></article>
+        <article><Clock3 /><span>{isBlindReview ? 'Timing' : 'Elapsed'}</span><strong>{isBlindReview ? 'Untimed' : `${summary.elapsed_minutes}m`}</strong></article>
         <article><ShieldAlert /><span>Confident misses</span><strong>{highConfidenceErrors}</strong></article>
         <article><Brain /><span>Priority repairs</span><strong>{priorityItems.length}</strong></article>
       </section>
@@ -1231,7 +1241,7 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
       <section className="answer-audit-shell">
         <aside className="answer-audit-index" aria-label="Questions in this run">
           <div><span>{isBrief ? 'DEEP BRIEF' : 'ANSWER AUDIT'}</span><small>{priorityOnly && priorityItems.length ? `${priorityItems.length} priority decisions` : `All ${review.items.length} questions`}</small></div>
-          {priorityItems.length > 0 && <div className="brief-filter" role="group" aria-label="Brief scope"><button className={priorityOnly ? 'active' : ''} onClick={() => setPriorityOnly(true)}>Priority</button><button className={!priorityOnly ? 'active' : ''} onClick={() => setPriorityOnly(false)}>All {review.items.length}</button></div>}
+          {!isBlindReview && priorityItems.length > 0 && <div className="brief-filter" role="group" aria-label="Brief scope"><button className={priorityOnly ? 'active' : ''} onClick={() => setPriorityOnly(true)}>Priority</button><button className={!priorityOnly ? 'active' : ''} onClick={() => setPriorityOnly(false)}>All {review.items.length}</button></div>}
           <div className="answer-audit-list">
             {visibleItems.map((item) => (
               <button key={item.attempt_id} className={`${item.position === selected?.position ? 'active' : ''} ${item.is_correct ? 'correct' : 'repair'}`} onClick={() => setSelectedPosition(item.position)}>
@@ -1248,6 +1258,7 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
           {selected.question.passage && <details className="audit-source"><summary>Read passage</summary><p>{selected.question.passage.text}</p></details>}
           {selected.question.stimulus && <p className="audit-stimulus">{selected.question.stimulus}</p>}
           <h3>{selected.question.stem}</h3>
+          {isAssessment && selected.blind_review_selected_label && <p className="blind-review-comparison"><strong>Timed diagnostic: {selected.diagnostic_selected_label}</strong><ArrowRight size={15} /><strong>Blind review: {selected.blind_review_selected_label}</strong><span>{selected.blind_review_is_correct ? 'corrected' : 'still missed'}</span></p>}
           <div className="audit-choices">
             {selected.question.choices.map((choice) => <div key={choice.label} className={`${choice.label === selected.correct_label ? 'correct' : ''} ${choice.label === selected.selected_label && !selected.is_correct ? 'selected-wrong' : ''}`}><b>{choice.label}</b><span>{choice.text}</span>{choice.label === selected.correct_label && <small>credited</small>}{choice.label === selected.selected_label && <small>your answer</small>}</div>)}
           </div>
@@ -1275,6 +1286,50 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
           <button className="secondary-button" onClick={() => navigate('/progress')}>View progress</button>
         </div>
         {(startRepair.error || finishBrief.error) && <ErrorNotice error={startRepair.error || finishBrief.error} />}
+      </section>
+    </div>
+  )
+}
+
+
+function BlindReviewIntro({ diagnostic }: { diagnostic: StudySession }) {
+  useRestoredChrome()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { play } = useSound()
+  const stage = diagnostic.blind_review
+  const start = useMutation({
+    mutationFn: () => api.startBlindReview(diagnostic.id),
+    onSuccess: ({ session }) => {
+      void queryClient.invalidateQueries({ queryKey: ['diagnostic'] })
+      void queryClient.invalidateQueries({ queryKey: ['session', diagnostic.id] })
+      if (session) {
+        void play('file-open', { seed: `blind-review:${session.id}`, intensity: .58 })
+        navigate(`/cases/${session.id}`, { replace: true })
+      }
+    },
+  })
+  const continueExisting = stage?.state === 'in_progress' || stage?.state === 'paused' ? stage.session_id : null
+
+  return (
+    <div className="blind-review-intro page-wrap">
+      <section>
+        <div className="blind-review-icon"><Eye /></div>
+        <span className="eyebrow">DIAGNOSTIC ANSWERS ARE STILL SEALED</span>
+        <h1>Time for a blind review.</h1>
+        <p>Retry the questions you got wrong without seeing the answer.</p>
+        <div className="blind-review-facts">
+          <span><FileSearch /> {stage?.total_items ?? 0} missed question{stage?.total_items === 1 ? '' : 's'}</span>
+          <span><TimerReset /> No time limit</span>
+          <span><Lock /> Answers unlock when you finish</span>
+        </div>
+        <button className="primary-button" disabled={start.isPending} onClick={() => {
+          if (continueExisting) navigate(`/cases/${continueExisting}`)
+          else start.mutate()
+        }}>
+          {start.isPending ? 'Preparing blind review…' : continueExisting ? 'Continue blind review' : 'Start blind review'} <ArrowRight />
+        </button>
+        {start.error && <ErrorNotice error={start.error} />}
       </section>
     </div>
   )
@@ -1335,6 +1390,9 @@ export function CaseSessionPage() {
   if (sessionQuery.error) return <CaseSessionError error={sessionQuery.error} />
   const session = sessionQuery.data!.session
   if (session.status === 'paused') return <PausedCasePage sessionId={session.id} />
+  if (session.mode === 'diagnostic' && session.status === 'completed' && ['ready', 'in_progress', 'paused'].includes(session.blind_review?.state ?? '')) {
+    return <BlindReviewIntro diagnostic={session} />
+  }
   if (session.status === 'completed' && !session.pending_result) return <CompletedSessionReview sessionId={session.id} />
   return (
     <div className="session-page">

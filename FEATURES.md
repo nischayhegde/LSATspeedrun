@@ -99,12 +99,14 @@ form cannot narrow practice into a self-reinforcing rut.
 
 ### 2.3 The practice mode
 
-There is one practice mode plus the diagnostic, which is a separate session `mode` rather than a practice style:
+There is one practice mode plus two assessment stages, which are separate session `mode` values rather than
+practice styles:
 
 | Style (API) | UI name | Feedback | Reasoning required | Evidence class | Purpose |
 | --- | --- | --- | --- | --- | --- |
 | `cases` | Cases | Immediate | **Yes**, 120 characters | `coached_practice` | Written reasoning, full AI coaching, a strategy trial on every question, and game settlement |
 | `diagnostic` (mode) | Mega-litigation | Delayed to end | No | `diagnostic` | Sectioned neutral baseline |
+| `blind_review` (mode) | Blind review | Delayed to end | No | `blind_review` | Untimed retry of that diagnostic's incorrect answers before answer release |
 
 Every run is the same shape. Due repairs from the spaced-review queue fill up to half the run and occupy the
 first positions; unseen questions fill the rest. A `question_type`-filtered run seeds no repairs, because mixing
@@ -166,6 +168,17 @@ needed. There is no pause: `pause_session` and `resume_session` raise `diagnosti
 returns as a 409, and the clock keeps running whether or not the tab is open. The client counts down between
 polls purely for display and re-anchors on `remaining_ms` at every refetch.
 
+**Blind review before answer release.** A newly created diagnostic carries `blind_review_required = True`. When
+the form closes, `blind_review_status` counts only answered questions that were incorrect; omitted questions are
+not presented as mistakes. If there are misses, the result screen becomes an interstitial saying “Time for a
+blind review” and `create_blind_review_session` creates one linked `mode = "blind_review"` child containing those
+questions in their original order. The child has delayed feedback, no deadline, no reasoning or strategy prompt,
+no game context, and compromised timing by construction so however long the learner takes never becomes pace
+evidence. Both the diagnostic audit and per-attempt coaching remain sealed until the child is complete. The final
+audit then reports the timed diagnostic and untimed blind-review scores side by side, including each original and
+revised choice. A perfect form skips the empty stage. The migration opts completed historical forms out while
+opting in any form that was still underway at deploy time.
+
 **Clearing it promotes the firm.** `finalize_diagnostic` compares correct answers against
 `MEGA_LITIGATION_PROMOTION_ACCURACY` (0.70) of `total_items` — the whole form, not just the answered part, so
 answering four questions correctly and walking away qualifies for nothing. Above the bar,
@@ -189,8 +202,9 @@ note that "a scaled score is withheld until the form has a validated conversion.
 fake a 120–180 score from an unvalidated question set, and it is worth saying out loud when presenting, because
 it is the kind of restraint competitors don't show.
 
-**It gates nothing.** A mega-litigation can be sat at any time and is never required; nothing in the firm waits
-on one, no route redirects to one, and no banner nags about it. It is still one of three inputs to the
+**It gates no firm progression.** A mega-litigation can be sat at any time and is never required; nothing in the
+firm waits on one. Once a learner chooses to sit one, its own answer release waits on the blind review above. The
+diagnostic is still one of three inputs to the
 dashboard's `readiness` label, alongside 40 LR and 20 RC first attempts in the timed/diagnostic evidence classes
 — but that label only decides whether the dashboard is willing to compare time periods, and the UI presents all
 three as recommendations rather than requirements.

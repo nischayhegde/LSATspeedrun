@@ -585,10 +585,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const item = session.pending_item || session.current_item
   const result = session.pending_result
   const isDiagnostic = session.mode === 'diagnostic'
+  const isBlindReview = session.mode === 'blind_review'
+  const isAssessment = isDiagnostic || isBlindReview
   const requiresReasoning = Boolean(item?.requires_reasoning)
   // Every practice run is a paid, fully coached case now, so the only banner
   // and panel split left is diagnostic versus everything else.
-  const learningOnly = isDiagnostic
+  const learningOnly = isAssessment
   const [selected, setSelected] = useState(item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
   const minChars = item?.reasoning_min_chars ?? 0
@@ -832,7 +834,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
   const clientKind = caseClient?.icon
   const clientSatisfied = Boolean(result?.is_correct && reward && ['Good', 'Excellent'].includes(reward.explanation_grade))
-  const mobileSessionLabel = isDiagnostic ? 'Mega-litigation' : 'Cases'
+  const mobileSessionLabel = isBlindReview ? 'Blind review' : isDiagnostic ? 'Mega-litigation' : 'Cases'
 
   const counsel = counselFor(session.id)
   const counselRattled = Boolean(result?.is_correct)
@@ -843,13 +845,13 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   return (
     <div className="question-layout">
       <CasePageTurn active={pageTurning} spread={Boolean(question.passage)} />
-      {isDiagnostic ? (
+      {isAssessment ? (
         <section
           className="learning-mode-banner diagnostic-session-banner"
-          aria-label="Mega-litigation in progress"
+          aria-label={isBlindReview ? 'Blind review in progress' : 'Mega-litigation in progress'}
         >
-          <div><Target size={20} /><span>MEGA-LITIGATION</span></div>
-          <strong>A full practice LSAT · one sitting, one clock · no fees, reputation, or streak until the verdict</strong>
+          <div><Target size={20} /><span>{isBlindReview ? 'BLIND REVIEW' : 'MEGA-LITIGATION'}</span></div>
+          <strong>{isBlindReview ? 'Retrying missed questions · answers still hidden · no time limit' : 'A full practice LSAT · one sitting, one clock · no fees, reputation, or streak until the verdict'}</strong>
         </section>
       ) : <section className="active-matter-banner" aria-label={`Current case for ${clientName}`}>
         <ClientPortrait kind={clientKind} name={clientName} />
@@ -877,10 +879,16 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <div><small>{learningOnly ? 'QUESTION TYPE' : 'ACTIVE MATTER'}</small><strong>{question.question_type}</strong></div>
         </div>
         <div className="question-progress">
-          <strong>{isDiagnostic ? 'Question' : 'Case'} {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
+          <strong>{isAssessment ? 'Question' : 'Case'} {Math.min(item.position + 1, session.total_items)} / {session.total_items}</strong>
           {item.case_terms && <span>{item.case_terms.client_name} · {formatMoney(item.case_terms.base_fee)} base fee</span>}
         </div>
-        {formRemaining == null ? (
+        {isBlindReview ? (
+          <div className="case-timer untimed" aria-label="No time limit">
+            <Clock3 size={17} />
+            <span>Untimed</span>
+            <small>take the time you need</small>
+          </div>
+        ) : formRemaining == null ? (
           <div className={`case-timer ${timerRatio > 1 ? 'over' : ''}`}>
             <Clock3 size={17} />
             <span>{formatTime(elapsed)}</span>
@@ -909,7 +917,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
             <button type="button" role="tab" aria-selected={mobileCasePane === 'question'} className={mobileCasePane === 'question' ? 'active' : ''} onClick={() => { setMobileCasePane('question'); void play('tab', { seed: `${item.id}:question`, intensity: .22 }) }}>Question</button>
           </div>
         )}
-        <div className={`mobile-case-reader-time ${timerRatio > 1 ? 'over' : ''}`}><Clock3 size={14} /><span>{formatTime(elapsed)}</span></div>
+        <div className={`mobile-case-reader-time ${!isBlindReview && timerRatio > 1 ? 'over' : ''}`}><Clock3 size={14} /><span>{isBlindReview ? 'Untimed' : formatTime(elapsed)}</span></div>
       </div>
 
       {strategyTrial && (
@@ -1043,7 +1051,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               <button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button>
             </div>
           )}
-          {coachingFeedback && (isDiagnostic
+          {coachingFeedback && (isAssessment
             ? <CompactReasoningPanel coaching={coachingFeedback} selectedLabel={result?.feedback?.selected_label} />
             : <CoachingPanel coaching={coachingFeedback} reward={reward} selectedLabel={result?.feedback?.selected_label} />)}
           {reward && (

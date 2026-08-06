@@ -6,7 +6,7 @@ LSAT Speedrun is an LSAT learning platform wrapped in a persistent lawyer-tycoon
 
 The learning loop separates distinct kinds of evidence instead of treating every answer alike:
 
-- **Diagnostic** establishes a neutral, sectioned baseline with test-like timing and delayed results.
+- **Diagnostic** establishes a neutral, sectioned baseline, then unlocks results after an untimed blind review of missed questions.
 - **Sprint** delivers 10 timed, answer-only questions with feedback held until the run ends.
 - **Deep Practice / Method Lab** requires explicit reasoning and gives immediate coaching.
 - **Infinite** continues until the learner ends the run, with a concise post-answer explanation.
