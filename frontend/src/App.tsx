@@ -7,6 +7,7 @@ import { api, ApiError } from './api'
 import { AppShell, ErrorNotice, LoadingScreen } from './components'
 import { FocusMark } from './art-2d/marks'
 import { preloadArtForRoute, preloadDockArt } from './art/scene-loaders'
+import { routes } from './routes'
 import './focus-mode-gate.css'
 
 /**
@@ -17,16 +18,23 @@ import './focus-mode-gate.css'
  * whole module, so every route paid for all nine. Wrapping *those* imports in
  * `lazy()` changes nothing — the module is still one unit. Splitting the file
  * is what makes the dynamic import real.
+ *
+ * They live in `routes.tsx` because the entry file and the nav both need to
+ * start a screen's module before the router asks for it, and because a route
+ * whose module is already resident has to be able to render without suspending
+ * — see the note there for why `lazy()` cannot do that on its own.
  */
-const PerformancePage = lazy(() => import('./pages/dashboard-page').then((m) => ({ default: m.PerformancePage })))
-const LoginPage = lazy(() => import('./pages/login-page').then((m) => ({ default: m.LoginPage })))
-const OnboardingPage = lazy(() => import('./pages/onboarding-page').then((m) => ({ default: m.OnboardingPage })))
-const OfficePage = lazy(() => import('./pages/office-page').then((m) => ({ default: m.OfficePage })))
-const CasesLobbyPage = lazy(() => import('./pages/cases-page').then((m) => ({ default: m.CasesLobbyPage })))
-const CaseSessionPage = lazy(() => import('./pages/case-session-page').then((m) => ({ default: m.CaseSessionPage })))
-const FirmPage = lazy(() => import('./pages/firm-page').then((m) => ({ default: m.FirmPage })))
-const ProgressionMapPage = lazy(() => import('./pages/map-page').then((m) => ({ default: m.ProgressionMapPage })))
-const StoryPage = lazy(() => import('./pages/story-page').then((m) => ({ default: m.StoryPage })))
+const {
+  login: LoginPage,
+  onboarding: OnboardingPage,
+  office: OfficePage,
+  progress: PerformancePage,
+  cases: CasesLobbyPage,
+  caseSession: CaseSessionPage,
+  firm: FirmPage,
+  story: StoryPage,
+  map: ProgressionMapPage,
+} = routes
 
 /**
  * The narrative layer interrupts a screen; it never opens one. Loading it

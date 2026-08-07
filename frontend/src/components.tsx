@@ -23,6 +23,7 @@ import { SoundControls, useSound, useSoundProfile } from './sound'
 import { replayGuidedTour } from './guided-tour-replay'
 import { CHAPTER_DOCK_ID, clearOverlayNote, readOverlayNote, useBlockingOverlay, writeOverlayNote } from './overlays'
 import { preloadArtForIntent } from './art/scene-loaders'
+import { routeForPath } from './routes'
 import type { GameState, User } from './types'
 
 /* The app shell and the small pieces every route shares. The case run itself
@@ -36,6 +37,18 @@ import type { GameState, User } from './types'
 // moment it costs a first paint nothing, and a tour that opens a beat after the
 // page has settled is the same tour.
 const GuidedTour = lazy(() => import('./guided-tour').then((module) => ({ default: module.GuidedTour })))
+
+/**
+ * A pointer settling on a nav item is enough warning to fetch the screen behind
+ * it, not just its artwork. Arriving with the module already resident is what
+ * lets that screen render on the first commit instead of putting a Suspense
+ * fallback in front of it — the same trick `main.tsx` plays for the route the
+ * reader loads cold, extended to the ones they walk to.
+ */
+function preloadIntent(to: string) {
+  preloadArtForIntent(to)
+  void routeForPath(to)?.preload()
+}
 
 function useIdleMount() {
   const [ready, setReady] = useState(false)
@@ -395,7 +408,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
         {game && !isActiveCase && (
           <nav className="desktop-nav" aria-label="Primary navigation">
             {visibleNavItems.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForIntent(to)} onFocus={() => preloadArtForIntent(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
+              <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadIntent(to)} onFocus={() => preloadIntent(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
                 <Icon size={17} /><span>{label}</span>
               </NavLink>
             ))}
@@ -557,7 +570,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
       {game && !isActiveCase && (
         <nav className="mobile-nav" aria-label="Primary navigation">
           {visibleMobileNavItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadArtForIntent(to)} onFocus={() => preloadArtForIntent(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
+            <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'active' : ''} onPointerEnter={() => preloadIntent(to)} onFocus={() => preloadIntent(to)} data-sound="navigate" data-sound-seed={to} data-tour={`nav-${to.slice(1)}`}>
               <Icon size={20} /><span>{label}</span>
             </NavLink>
           ))}
