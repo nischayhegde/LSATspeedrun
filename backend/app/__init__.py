@@ -232,6 +232,24 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
             FORM_ITEMS,
         )
 
+    if is_production and not os.getenv("AI_JOBS_MODE") and app.config["AI_JOBS_MODE"] == "sync":
+        # Falling back to "sync" is correct — it needs no broker and no worker —
+        # but it puts a 20-30 second frontier-model call inside the request the
+        # player is waiting on. Every deployment under `deploy/` names the mode
+        # explicitly, so reaching this line means a new one has not, and the
+        # symptom (every answered question takes half a minute) is a long way
+        # from the cause. Warn rather than choose: "local" is wrong for a
+        # serverless container that may be frozen once the response is written,
+        # and "sqs" without a consumer would leave explanations ungraded forever,
+        # so which mode is safe is a property of the deployment, not of the code.
+        app.logger.warning(
+            "AI_JOBS_MODE is not set, so explanation grading will run inside the "
+            "request and block it for 20-30 seconds. Set AI_JOBS_MODE=sqs together "
+            "with AI_JOB_QUEUE_URL when a worker drains the queue, or "
+            "AI_JOBS_MODE=local to grade on a background thread in a long-lived "
+            "server process."
+        )
+
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     db.init_app(app)
     Migrate(app, db)
