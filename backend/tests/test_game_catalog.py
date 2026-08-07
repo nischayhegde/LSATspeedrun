@@ -34,14 +34,25 @@ from app.game import (
 from app.models import PlayerClientContract, PlayerProfile, PlayerStoryState
 from app.story import CHAPTER_BY_KEY, QUESTS, STORY_CHAPTERS
 from scripts.simulate_economy_curve import (
+    FALLBACK_SECONDS_PER_CASE,
     MINUTES_PER_CASE,
-    TARGET_BAND,
     TARGET_HOURS_PER_UPGRADE,
     Player,
     curve,
     fee_inversions,
     total_campaign,
     upgrade_band,
+)
+
+# Derived from the documented fallback instead of imported. The module-level
+# `TARGET_BAND` divides by `SECONDS_PER_CASE`, which `seconds_per_case()` reads
+# out of backend/instance/lsat_sherlock.db — so a dev server answering questions
+# in the background moves this band while the suite runs. It drifted across the
+# measured floor mid-release once, failing a catalog that had not changed. The
+# catalog these tests guard is a fixed artifact, so the band that judges it has
+# to be fixed too.
+TARGET_BAND = tuple(
+    hours * 3600 / FALLBACK_SECONDS_PER_CASE for hours in TARGET_HOURS_PER_UPGRADE
 )
 
 # 79 tier-gated assets plus 14 headquarters. Nothing else has to be bought to
