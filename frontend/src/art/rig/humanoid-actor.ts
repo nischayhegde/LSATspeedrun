@@ -469,6 +469,25 @@ const REST_RATE_DRIFT_RATE = Math.PI * 2 / 37.3
 
 /** How far one full front-crawl stroke carries the body, in hip-heights. */
 const SWIM_STROKE_BODY_LENGTHS = 2.15
+/**
+ * Fastest the stroke may be driven, as a multiple of its authored rate.
+ *
+ * A ceiling exists so that a consumer feeding a speed the clip cannot represent
+ * gets a fast swimmer rather than a blur. Where it sits is a measurement, not a
+ * taste: the Treaty Sea traversal cruises counsel at 1.90 world units per
+ * second against a natural swim speed of 0.617, so it demands 3.08, and at the
+ * old ceiling of 2.0 the stroke accounted for only 64% of the travel — the
+ * swimmer was being towed by the traversal curve. Set from the fastest thing
+ * that actually swims on any map, with headroom for the ramp either side of the
+ * cruise, so the clamp no longer binds in normal play.
+ *
+ * Raising it is the right half of the fix to reach for. The alternative, a
+ * larger `SWIM_STROKE_BODY_LENGTHS`, would make the same ratio read 1.0 by
+ * asserting each stroke carries the body further, while the arms kept turning
+ * over at exactly the rate that looked towed: that improves the number and not
+ * the animation. 2.15 hip-heights is a real front crawl and stays.
+ */
+const SWIM_RATE_CEILING = 3.6
 
 export class HumanoidActor {
   readonly skeleton: HumanoidSkeleton
@@ -978,7 +997,7 @@ export class HumanoidActor {
     const swim = this.action('swim')
     const naturalSwim = this.naturalSwimSpeed
     if (swim && naturalSwim > 0) {
-      const scale = THREE.MathUtils.clamp(Math.abs(speed) / naturalSwim, .4, 2.0)
+      const scale = THREE.MathUtils.clamp(Math.abs(speed) / naturalSwim, .4, SWIM_RATE_CEILING)
       swim.setEffectiveTimeScale(scale * this.rateJitter)
     }
   }
