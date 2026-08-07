@@ -54,6 +54,7 @@ FEEDBACK_POLICIES = {"immediate", "delayed"}
 EVIDENCE_CLASS = {
     "cases": "coached_practice",
     "diagnostic": "diagnostic",
+    "blind_review": "blind_review",
 }
 # Retained for the seed scripts and for reading historical `interval_index`
 # values; scheduling itself is now `app/scheduling.py` (FSRS-6).
@@ -92,7 +93,7 @@ FOCUS_FILL_RATIO = 0.6
 
 def reasoning_min_chars(session: StudySession) -> int:
     """Characters of written explanation a session demands before an answer counts."""
-    if session.mode == "diagnostic":
+    if session.mode != "practice":
         return 0
     return REASONING_MIN_CHARS
 
@@ -176,6 +177,43 @@ def diagnostic_remaining_ms(session: StudySession) -> int | None:
     return max(0, int((_aware_utc(session.deadline_at) - utcnow()).total_seconds() * 1000))
 
 
+def _blind_review_record(diagnostic: StudySession) -> StudySession | None:
+    return StudySession.query.filter_by(diagnostic_session_id=diagnostic.id).first()
+
+
+def blind_review_status(diagnostic: StudySession) -> dict:
+    """Describe the answer-release stage attached to a completed diagnostic."""
+    if diagnostic.mode != "diagnostic" or diagnostic.status != "completed":
+        return {"state": "unavailable", "session_id": None, "total_items": 0}
+    if not diagnostic.blind_review_required:
+        return {"state": "not_required", "session_id": None, "total_items": 0}
+
+    missed = (
+        Attempt.query.join(SessionItem)
+        .filter(SessionItem.session_id == diagnostic.id, Attempt.is_correct.is_(False))
+        .count()
+    )
+    if not missed:
+        return {"state": "not_needed", "session_id": None, "total_items": 0}
+
+    review = _blind_review_record(diagnostic)
+    if not review:
+        return {"state": "ready", "session_id": None, "total_items": missed}
+    state = "ready" if review.status == "abandoned" else review.status
+    return {"state": state, "session_id": review.id, "total_items": review.total_items}
+
+
+def answers_available(session: StudySession) -> bool:
+    """Whether a delayed-feedback attempt may reveal its answer or coaching."""
+    if session.feedback_policy == "immediate":
+        return True
+    if session.status != "completed":
+        return False
+    if session.mode == "diagnostic":
+        return blind_review_status(session)["state"] in {"completed", "not_needed", "not_required"}
+    return True
+
+
 def enforce_diagnostic_deadline(session: StudySession) -> bool:
     """Close out a mega-litigation whose clock has run out.
 
@@ -200,7 +238,7 @@ def find_active_diagnostic(user: User) -> StudySession | None:
     session = (
         StudySession.query.filter(
             StudySession.user_id == user.id,
-            StudySession.mode == "diagnostic",
+            StudySession.mode.in_(["diagnostic", "blind_review"]),
             or_(
                 StudySession.status.in_(["in_progress", "paused"]),
                 StudySession.pending_attempt_id.isnot(None),
@@ -209,11 +247,27 @@ def find_active_diagnostic(user: User) -> StudySession | None:
         .order_by(StudySession.started_at.desc())
         .first()
     )
-    if session and enforce_diagnostic_deadline(session):
+    if session and session.mode == "diagnostic" and enforce_diagnostic_deadline(session):
         # The clock decided this run is over. It is no longer the active one, and
-        # the student is free to start another.
-        return None
-    return session
+        # the diagnostic's blind-review state now decides what comes next.
+        session = None
+    if session:
+        return session
+
+    pending_diagnostics = (
+        StudySession.query.filter_by(
+            user_id=user.id,
+            mode="diagnostic",
+            status="completed",
+            blind_review_required=True,
+        )
+        .order_by(StudySession.completed_at.desc())
+        .all()
+    )
+    return next(
+        (diagnostic for diagnostic in pending_diagnostics if blind_review_status(diagnostic)["state"] == "ready"),
+        None,
+    )
 
 
 def serialize_user(user: User) -> dict:
@@ -365,7 +419,7 @@ def _is_unfinished_current_item(item: SessionItem) -> bool:
 def _freeze_current_case(item: SessionItem, user: User) -> bool:
     """Adopt only the visible unfinished case into the tycoon economy."""
     if (
-        item.session.mode == "diagnostic"
+        item.session.mode != "practice"
         or item.game_context_json is not None
         or not user.game_profile
         or not _is_unfinished_current_item(item)
@@ -442,6 +496,7 @@ def serialize_session(session: StudySession, include_item: bool = True) -> dict:
     payload = {
         "id": session.id,
         "mode": session.mode,
+        "diagnostic_session_id": session.diagnostic_session_id,
         "practice_style": session.practice_style,
         "feedback_policy": session.feedback_policy,
         "status": session.status,
@@ -461,6 +516,8 @@ def serialize_session(session: StudySession, include_item: bool = True) -> dict:
         "time_limit_seconds": session.target_minutes * 60 if session.deadline_at else None,
         "completed_at": _iso_utc(session.completed_at),
     }
+    if session.mode == "diagnostic" and session.status == "completed":
+        payload["blind_review"] = blind_review_status(session)
     if session.pending_attempt_id:
         pending_attempt = db.session.get(Attempt, session.pending_attempt_id)
         if pending_attempt:
@@ -846,6 +903,7 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
         mode="diagnostic",
         practice_style="diagnostic",
         feedback_policy="delayed",
+        blind_review_required=True,
         accommodation_multiplier=accommodation_multiplier,
         # The blocks keep their labels and boundaries but lose their minutes:
         # under one whole-form clock a per-section budget would be a number the
@@ -876,6 +934,66 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
                 section_index=section_indexes[position],
                 requires_reasoning=False,
                 target_time_seconds=per_question_seconds,
+            )
+        )
+    db.session.commit()
+    return session
+
+
+def create_blind_review_session(user: User, diagnostic: StudySession) -> StudySession | None:
+    """Create the diagnostic's one untimed retry set from incorrect answers."""
+    if not lock_user_profile(user.id):
+        raise ValueError("onboarding_required")
+    if diagnostic.user_id != user.id or diagnostic.mode != "diagnostic":
+        raise ValueError("diagnostic_not_found")
+    if diagnostic.status != "completed":
+        raise ValueError("diagnostic_in_progress")
+    if not diagnostic.blind_review_required:
+        raise ValueError("blind_review_not_required")
+
+    existing = _blind_review_record(diagnostic)
+    if existing:
+        if existing.status == "abandoned":
+            existing.status = "in_progress"
+            existing.ended_by_user = False
+            db.session.commit()
+        return existing
+
+    missed_attempts = (
+        Attempt.query.join(SessionItem)
+        .filter(SessionItem.session_id == diagnostic.id, Attempt.is_correct.is_(False))
+        .order_by(SessionItem.position.asc())
+        .all()
+    )
+    if not missed_attempts:
+        return None
+
+    session = StudySession(
+        user_id=user.id,
+        diagnostic_session_id=diagnostic.id,
+        mode="blind_review",
+        practice_style="blind_review",
+        feedback_policy="delayed",
+        target_minutes=0,
+        total_items=len(missed_attempts),
+        section_plan_json=[],
+    )
+    db.session.add(session)
+    db.session.flush()
+    for position, attempt in enumerate(missed_attempts):
+        original_item = attempt.session_item
+        db.session.add(
+            SessionItem(
+                session_id=session.id,
+                question_id=original_item.question_id,
+                position=position,
+                section_index=original_item.section_index,
+                requires_reasoning=False,
+                from_review_queue=True,
+                target_time_seconds=original_item.target_time_seconds,
+                # A blind review is deliberately untimed. We still retain
+                # elapsed time for continuity, but it is never pace evidence.
+                timer_compromised=True,
             )
         )
     db.session.commit()
@@ -994,15 +1112,59 @@ def abandon_study_session(session: StudySession) -> StudySession:
 def session_review(session: StudySession) -> dict:
     if session.status != "completed":
         raise ValueError("session_in_progress")
+    if session.mode == "diagnostic" and not answers_available(session):
+        raise ValueError("blind_review_required")
     attempts = (
         Attempt.query.join(SessionItem)
         .filter(SessionItem.session_id == session.id)
         .order_by(SessionItem.position.asc())
         .all()
     )
+
+    diagnostic = session.diagnostic_session if session.mode == "blind_review" else session if session.mode == "diagnostic" else None
+    blind_review = _blind_review_record(diagnostic) if diagnostic else None
+    diagnostic_attempts = (
+        Attempt.query.join(SessionItem)
+        .filter(SessionItem.session_id == diagnostic.id)
+        .all()
+        if diagnostic
+        else []
+    )
+    blind_attempts = (
+        Attempt.query.join(SessionItem)
+        .filter(SessionItem.session_id == blind_review.id)
+        .all()
+        if blind_review and blind_review.status == "completed"
+        else []
+    )
+    diagnostic_by_question = {
+        attempt.session_item.question_id: attempt for attempt in diagnostic_attempts
+    }
+    blind_by_question = {
+        attempt.session_item.question_id: attempt for attempt in blind_attempts
+    }
+
     return {
         "session": serialize_session(session, False),
         "summary": session.summary_json or calculate_session_summary(session),
+        "comparison": (
+            {
+                "diagnostic": {
+                    "session_id": diagnostic.id,
+                    "summary": diagnostic.summary_json or calculate_session_summary(diagnostic),
+                },
+                "blind_review": (
+                    {
+                        "session_id": blind_review.id,
+                        "summary": blind_review.summary_json or calculate_session_summary(blind_review),
+                    }
+                    if blind_review and blind_review.status == "completed"
+                    else None
+                ),
+            }
+            if diagnostic
+            else None
+        ),
         "items": [
             {
                 "position": attempt.session_item.position,
@@ -1028,6 +1190,21 @@ def session_review(session: StudySession) -> dict:
                 "evidence_class": attempt.evidence_class,
                 "feedback": attempt.feedback_json,
                 "coaching_status": attempt.coaching_status,
+                "diagnostic_selected_label": (
+                    diagnostic_by_question[attempt.session_item.question_id].selected_label
+                    if attempt.session_item.question_id in diagnostic_by_question
+                    else None
+                ),
+                "blind_review_selected_label": (
+                    blind_by_question[attempt.session_item.question_id].selected_label
+                    if attempt.session_item.question_id in blind_by_question
+                    else None
+                ),
+                "blind_review_is_correct": (
+                    blind_by_question[attempt.session_item.question_id].is_correct
+                    if attempt.session_item.question_id in blind_by_question
+                    else None
+                ),
             }
             for attempt in attempts
         ],

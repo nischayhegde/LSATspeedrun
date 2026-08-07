@@ -114,6 +114,13 @@ class StudySession(db.Model):
 
     id = db.Column(db.String(36), primary_key=True, default=new_id)
     user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    diagnostic_session_id = db.Column(
+        db.String(36),
+        db.ForeignKey("study_sessions.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     mode = db.Column(db.String(20), nullable=False, index=True)
     practice_style = db.Column(db.String(24), nullable=False, default="deep", index=True)
     feedback_policy = db.Column(db.String(20), nullable=False, default="immediate")
@@ -132,9 +139,13 @@ class StudySession(db.Model):
     # A whole-form clock, set only for the mega-litigation. Null means the run has
     # no deadline of its own and is paced question by question.
     deadline_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # False on historical completed diagnostics so deploying blind review never
+    # puts an already-reviewed form back in front of a learner.
+    blind_review_required = db.Column(db.Boolean, nullable=False, default=False)
     completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     user = db.relationship("User")
+    diagnostic_session = db.relationship("StudySession", remote_side=[id], uselist=False)
     items = db.relationship("SessionItem", back_populates="session", cascade="all, delete-orphan", order_by="SessionItem.position")
 
 

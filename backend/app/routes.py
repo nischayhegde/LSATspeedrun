@@ -46,8 +46,10 @@ from .story import ensure_story_state
 from .services import (
     abandon_study_session,
     UNGRADED_COACHING_NOTICE,
+    answers_available,
     calculate_session_summary,
     coaching_handed_off,
+    create_blind_review_session,
     create_diagnostic_session,
     create_study_session,
     daily_docket_snapshot,
@@ -575,7 +577,7 @@ def _owned_session(session_id: str) -> StudySession | None:
     return StudySession.query.filter(
         StudySession.id == session_id,
         StudySession.user_id == g.current_user.id,
-        StudySession.mode.in_(["practice", "diagnostic"]),
+        StudySession.mode.in_(["practice", "diagnostic", "blind_review"]),
     ).first()
 
 
@@ -700,6 +702,30 @@ def start_diagnostic():
         if str(exc) == "invalid_accommodation":
             return error("invalid_accommodation", "Choose standard, 1.5×, or 2× diagnostic timing.")
         raise
+    return jsonify({"session": serialize_session(session)}), 201
+
+
+@api.post("/diagnostics/<diagnostic_id>/blind-review")
+@require_auth
+def start_blind_review(diagnostic_id: str):
+    diagnostic = StudySession.query.filter_by(
+        id=diagnostic_id,
+        user_id=g.current_user.id,
+        mode="diagnostic",
+    ).first()
+    if not diagnostic:
+        return error("diagnostic_not_found", "That diagnostic was not found.", 404)
+    try:
+        session = create_blind_review_session(g.current_user, diagnostic)
+    except ValueError as exc:
+        code = str(exc)
+        messages = {
+            "diagnostic_in_progress": "Finish the diagnostic before starting its blind review.",
+            "blind_review_not_required": "This diagnostic does not require a blind review.",
+        }
+        return error(code, messages.get(code, "The blind review could not be started."), 409)
+    if session is None:
+        return jsonify({"session": None, "blind_review_complete": True})
     return jsonify({"session": serialize_session(session)}), 201
 
 
@@ -882,7 +908,13 @@ def get_session_review(session_id: str):
             session.results_seen_at = utcnow()
             db.session.commit()
         return jsonify({"review": review})
-    except ValueError:
+    except ValueError as exc:
+        if str(exc) == "blind_review_required":
+            return error(
+                "blind_review_required",
+                "Finish the blind review before revealing the diagnostic answers.",
+                409,
+            )
         return error("session_in_progress", "Finish the run before opening its review.", 409)
 
 
@@ -1013,6 +1045,12 @@ def coach_attempt(attempt_id: str):
     attempt = Attempt.query.filter_by(id=attempt_id, user_id=g.current_user.id).first()
     if not attempt:
         return error("attempt_not_found", "That answer was not found.", 404)
+    if not answers_available(attempt.session_item.session):
+        return error(
+            "answers_withheld",
+            "Answers stay hidden until this diagnostic and its blind review are complete.",
+            409,
+        )
     saved = (attempt.feedback_json or {}).get("coaching")
     if attempt.coaching_status == "completed" and saved:
         if not attempt.settlement:

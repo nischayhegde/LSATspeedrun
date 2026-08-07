@@ -254,6 +254,9 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ accommodation_multiplier: accommodationMultiplier }),
   }),
+  startBlindReview: (diagnosticId: string) => request<{ session: StudySession | null; blind_review_complete?: boolean }>(`/diagnostics/${diagnosticId}/blind-review`, {
+    method: 'POST',
+  }),
   startPractice: (options?: {
     size?: number
     question_type?: string

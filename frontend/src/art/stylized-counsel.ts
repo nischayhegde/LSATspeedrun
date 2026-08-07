@@ -345,51 +345,155 @@ function addLine(parent: THREE.Object3D, points: THREE.Vector3[], radius: number
   return addMesh(parent, geometry, material)
 }
 
-function referenceHairGeometry(gender: CharacterGender) {
+/* ------------------------------------------------------------------ hair
+ *
+ * Why the old shell read as a swim cap, since the shape below is a direct
+ * answer to it.
+ *
+ * It was a hemisphere scaled to .485 x .465 x .41 and parked on a skull of
+ * .46 x .53 x .405. That is five millimetres of clearance at the front of the
+ * head and twenty-five at the widest point — a skin of paint, not a mass of
+ * hair — so the silhouette it produced was the skull's own silhouette. Worse,
+ * its theta sweep ended at a constant polar angle, which puts the cut edge at
+ * one fixed height all the way around the head: a horizontal band just above
+ * the eyes, running through the temples and across the back at the same
+ * altitude. A horizontal band around the skull at eye level is the definition
+ * of a bathing cap. The `hairlineCurve` term that was meant to break it moved
+ * the edge by two and a half millimetres.
+ *
+ * So the shell is now described by the two things that actually make hair read
+ * as hair at this size: how far it stands off the skull, which is uneven, and
+ * where it stops, which is a curve rather than a height. Everything is written
+ * against the skull's own semi-axes, so the clearance is legible as "this much
+ * hair" rather than as a magic number.
+ */
+
+const HEAD_X = .46
+const HEAD_Y = .53
+const HEAD_Z = .405
+
+type HairProfile = {
+  /** Standoff from the skull, as a fraction of the skull's radius: over the
+   *  crown, at the temples and ears, and around the back. Uneven on purpose —
+   *  a constant offset is exactly what makes a shell look moulded. */
+  crown: number
+  sides: number
+  nape: number
+  /** Where the hair ends, in the head's own units. `rimFront` is the hairline
+   *  across the forehead (the brow sits at ~.21, the crown at .53), `rimSide`
+   *  is where it finishes past the ear, `rimBack` is the nape. */
+  rimFront: number
+  rimSide: number
+  rimBack: number
+  /** How hard the mass sweeps to one side, and how much height the parting
+   *  lifts off the crown. Zero on both is a centre-weighted round cut. */
+  sweep: number
+  lift: number
+}
+
+/**
+ * Distinct silhouettes, not one silhouette at three sizes.
+ *
+ * The old variants were scale multipliers on a single shell, so all three read
+ * as the same object and the difference was legible only as "bigger". These
+ * differ in the two terms the eye actually reads at a distance: where the hair
+ * stops, and where its bulk sits.
+ */
+const HAIR_PROFILES: Record<string, HairProfile> = {
+  // Signature: a side parting with the mass carried over one temple, sides
+  // finishing halfway down the ear, back running to the nape.
+  'male:0': { crown: .17, sides: .085, nape: .15, rimFront: .275, rimSide: -.045, rimBack: -.15, sweep: .55, lift: .055 },
+  // Cropped: a genuine taper. Almost nothing at the sides — the silhouette
+  // there is the skull's — with the hair finishing above the ear and the
+  // remaining volume kept on top, which is what a short back and sides is.
+  'male:1': { crown: .12, sides: .05, nape: .075, rimFront: .30, rimSide: .085, rimBack: .01, sweep: .28, lift: .03 },
+  // Full: standing volume everywhere, over the ears and down past the nape.
+  'male:2': { crown: .30, sides: .175, nape: .265, rimFront: .245, rimSide: -.115, rimBack: -.26, sweep: .35, lift: .10 },
+  // The female cuts are longer at the sides and back so the mass frames the
+  // face, and hold the same forehead hairline so the face stays clear.
+  'female:0': { crown: .175, sides: .165, nape: .215, rimFront: .265, rimSide: -.20, rimBack: -.34, sweep: .32, lift: .05 },
+  // A jaw-length bob: blunt, level, and noticeably shorter than the other two.
+  'female:1': { crown: .145, sides: .175, nape: .175, rimFront: .285, rimSide: -.145, rimBack: -.20, sweep: .18, lift: .035 },
+  // Long and full, well past the jaw.
+  'female:2': { crown: .275, sides: .225, nape: .315, rimFront: .245, rimSide: -.30, rimBack: -.50, sweep: .30, lift: .095 },
+}
+
+function hairProfile(gender: CharacterGender, variant: number) {
+  return HAIR_PROFILES[`${gender}:${variant}`] ?? HAIR_PROFILES[`${gender}:0`]
+}
+
+function referenceHairGeometry(gender: CharacterGender, variant: number) {
   // The displacement below pulls this shell down onto the skull, so its unit
   // radius says nothing about how big it ends up. It is a haircut: size it as
   // the head it sits on.
   const [radial, height] = sphereSegments(.95 * renderScale)
-  return sharedGeometry(`reference-hair:${gender}:${radial}:${height}`, () => {
-    // The male cut is a genuine open cap: no lower front surface can drift over
-    // the face and read as a second, detached fringe. The female shell extends
-    // around the back while lower front vertices tuck behind the cheeks.
-    const geometry = new THREE.SphereGeometry(1, Math.min(28, radial), Math.min(18, height), 0, Math.PI * 2, 0, gender === 'male' ? 1.68 : 2.50)
+  return sharedGeometry(`reference-hair:${gender}:${variant}:${radial}:${height}`, () => {
+    const profile = hairProfile(gender, variant)
+    // One generous sweep for every cut. The rim below decides where the hair
+    // actually ends; anything past it is tucked inside the skull and never
+    // seen, so the sweep only has to be long enough for the longest profile
+    // rather than tuned per cut.
+    const geometry = new THREE.SphereGeometry(1, Math.min(28, radial), Math.min(18, height), 0, Math.PI * 2, 0, Math.PI * .86)
     const positions = geometry.getAttribute('position') as THREE.BufferAttribute
     for (let index = 0; index < positions.count; index += 1) {
-      const x = positions.getX(index)
-      const y = positions.getY(index)
-      const z = positions.getZ(index)
-      const side = Math.abs(x)
-      const left = Math.max(0, -x)
-      const upper = Math.max(0, y)
-      const lower = Math.max(0, -y)
-      const front = Math.max(0, z)
-      const back = Math.max(0, -z)
-      if (gender === 'male') {
-        // A restrained side part: a broad, low lift over the left temple and a
-        // round crown. The former narrow/high crest produced the hard wedge
-        // visible in the full-height lawyer panel.
-        const part = Math.exp(-Math.pow((x + .18) / .58, 2))
-        const crown = Math.pow(upper, .68)
-        const curl = Math.exp(-Math.pow((x + .63) / .21, 2) - Math.pow((y - .48) / .36, 2))
-        const templeLift = left * (.024 + upper * .018)
-        const hairlineCurve = front * Math.max(0, 1 - side * 1.75) * .025
-        positions.setXYZ(
-          index,
-          x * (.485 + upper * .02) - .01 - crown * part * .01 - curl * .055,
-          y * .465 + .19 + templeLift + crown * (.042 + part * .052) + curl * .085 - side * .012 - back * .02 + hairlineCurve,
-          z * (.41 + upper * .022 + back * .03) - .05 + front * crown * (.024 + part * .014) + curl * .028,
-        )
-      } else {
-        const centerFront = Math.max(0, 1 - side * 1.8)
-        positions.setXYZ(
-          index,
-          x * (.49 + lower * .15) - .012,
-          y * .52 + .13 + left * .035 - side * lower * .018,
-          z * (.39 + upper * .025) - .06 - front * lower * .42 * centerFront - back * lower * .02,
-        )
+      const nx = positions.getX(index)
+      const ny = positions.getY(index)
+      const nz = positions.getZ(index)
+      const upper = Math.max(0, ny)
+      const left = Math.max(0, -nx)
+      // The compass direction this vertex faces, taken in the horizontal plane
+      // so that a point near the crown still has a well-defined "front" — the
+      // raw z of a near-polar vertex is almost zero and cannot be used for it.
+      const horizontal = Math.max(1e-4, Math.hypot(nx, nz))
+      const facing = nz / horizontal
+      const frontward = Math.pow(Math.max(0, facing), 1.5)
+      const backward = Math.pow(Math.max(0, -facing), 1.5)
+      const sideward = Math.max(0, 1 - frontward - backward)
+
+      // Thickness, blended between the three authored standoffs and swelling
+      // over the crown, so the mass sits where hair has mass.
+      const standoff = profile.sides * sideward + profile.crown * frontward * .55 + profile.nape * backward
+        + profile.crown * Math.pow(upper, 1.4)
+      // The parting: a broad rise over one temple rather than a narrow crest,
+      // which is what the previous crest term got wrong and why it wedged.
+      const parting = Math.exp(-Math.pow((nx + .22) / .62, 2)) * Math.pow(upper, .8)
+      // Floored, because the skull this sits on is not always the size this
+      // shell was written against: `faceWidthVariance` scales the head by up to
+      // four percent per character, and a tapered cut thinner than that would
+      // let the temples push through the hair on the widest faces.
+      const thickness = Math.max(.075, standoff * (1 + profile.sweep * parting * .5))
+
+      let px = nx * HEAD_X * (1 + thickness)
+      let py = ny * HEAD_Y * (1 + thickness)
+      let pz = nz * HEAD_Z * (1 + thickness)
+
+      // Where this cut ends, as a curve around the head rather than a height.
+      // The forehead hairline sits well above the brow, the sides run past the
+      // ear, the back drops to the nape, and the whole line is a little higher
+      // on one side so the parting has somewhere to come from.
+      const rim = profile.rimSide * sideward + profile.rimFront * frontward + profile.rimBack * backward
+        + frontward * nx * .045
+      const below = rim - py
+      if (below > 0) {
+        // Tucked inside the skull rather than deleted, which is what gives a
+        // clean silhouette edge without needing a second piece of geometry or
+        // a hole in this one. At full fade the radial factor lands at .86 of
+        // the skull whatever the local thickness was, so the tuck is always
+        // decisively inside and never grazes the face.
+        const fade = Math.min(1, below / .17)
+        const factor = ((1 + thickness) - fade * (thickness + .14)) / (1 + thickness)
+        px *= factor
+        py *= factor
+        pz *= factor
       }
+
+      // The crown lifts, the mass settles back off the forehead, and the whole
+      // cut leans very slightly to one side. Small numbers, but they are what
+      // stop the top being a hemisphere of revolution.
+      py += profile.lift * Math.pow(upper, 1.6) + parting * profile.lift * .55
+      pz -= backward * profile.nape * .08
+      px -= left * profile.sweep * .012
+      positions.setXYZ(index, px, py, pz)
     }
     positions.needsUpdate = true
     geometry.computeVertexNormals()
@@ -449,54 +553,42 @@ const SALT_FACE_H = 0x9e6b7f1b
 const SALT_ACCESSORY = 0x2545f491
 const SALT_STANCE = 0x7feb352d
 
-/** Three distinct silhouettes reusing the same reference geometry and
- *  primitives everywhere else in this file — no new heavy geometry, just
- *  different scale/placement of what already exists. */
+/**
+ * Three cuts per character, each a shape of its own.
+ *
+ * The shell above already differs per variant, so nothing here scales one mesh
+ * into three. What is left is the accent that finishes each silhouette: the
+ * swept fringe that a parting throws across the forehead, and the gathered
+ * mass at the back of the fuller cuts. Both reuse primitives this file already
+ * cuts, so no variant costs new heavy geometry.
+ */
 function addHair(head: THREE.Group, gender: CharacterGender, hair: THREE.Material, variant: number) {
+  addMesh(head, referenceHairGeometry(gender, variant), hair)
   if (variant === 1) {
-    // Cropped: a tighter, shorter cut with the front sweep scaled down to match.
-    addMesh(head, referenceHairGeometry(gender), hair, [0, 0, 0], [0, 0, 0], gender === 'male' ? [1.02, .70, .86] : [.95, .78, .90])
+    // Cropped. A short front only, sitting close: the whole point of this cut
+    // is that there is nothing to sweep.
     if (gender === 'male') {
-      addMesh(
-        head,
-        capsuleGeometry(.13, .43, 8, 20),
-        hair,
-        [-.075, .40, .30],
-        [0, 0, -2.25],
-        [.82, .78, .58],
-      )
+      addMesh(head, capsuleGeometry(.115, .30, 8, 20), hair, [-.05, .375, .295], [0, 0, -2.32], [.74, .70, .52])
     }
     return
   }
   if (variant === 2) {
-    // Voluminous: fuller coverage, plus a swept-back volume/bun for a
-    // silhouette that reads distinctly from the default at a glance.
-    addMesh(head, referenceHairGeometry(gender), hair, [0, 0, 0], [0, 0, 0], gender === 'male' ? [1.06, 1.08, 1.05] : [1.02, 1.10, 1.0])
+    // Full. A heavier fringe across the brow and a gathered mass at the back,
+    // which is the silhouette break that reads first at office distance.
     if (gender === 'male') {
-      addMesh(
-        head,
-        capsuleGeometry(.13, .43, 8, 20),
-        hair,
-        [-.075, .455, .345],
-        [0, 0, -2.25],
-        [1.14, 1.05, .78],
-      )
+      addMesh(head, capsuleGeometry(.13, .43, 8, 20), hair, [-.085, .44, .315], [0, 0, -2.22], [1.16, 1.02, .80])
+      ellipsoid(head, hair, [0, .045, -.44], [.22, .215, .13], 18)
     } else {
-      ellipsoid(head, hair, [0, .10, -.40], [.155, .175, .15], 18)
+      ellipsoid(head, hair, [0, .085, -.47], [.185, .215, .155], 18)
     }
     return
   }
-  // Variant 0: the original reference cut, unchanged.
-  addMesh(head, referenceHairGeometry(gender), hair)
+  // Signature: the side parting's own fringe, laid across the forehead on the
+  // same side the shell's mass is carried.
   if (gender === 'male') {
-    addMesh(
-      head,
-      capsuleGeometry(.13, .43, 8, 20),
-      hair,
-      [-.075, .455, .345],
-      [0, 0, -2.25],
-      [1.06, 1, .72],
-    )
+    addMesh(head, capsuleGeometry(.13, .43, 8, 20), hair, [-.075, .425, .315], [0, 0, -2.25], [1.02, .94, .70])
+  } else {
+    addMesh(head, capsuleGeometry(.11, .34, 8, 20), hair, [-.10, .405, .30], [0, 0, -2.38], [.92, .82, .62])
   }
 }
 
