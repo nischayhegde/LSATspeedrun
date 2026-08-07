@@ -95,28 +95,41 @@
 .practice-lab .practice-run {
   padding: var(--lab-pad);
   display: grid;
-  gap: 12px;
+  gap: 18px;
   justify-items: start;
   border: 1px solid var(--lab-line);
   border-radius: var(--lab-radius);
   color: var(--lab-ink);
   background: var(--lab-panel);
-  box-shadow: var(--lab-shadow);
+  /* Same inset bevel used on the dashboard's dark instrument panels
+     (active-matter-banner, office-upkeep-strip), so this card reads as
+     part of the same engraved-plate family rather than a flat box. */
+  box-shadow: var(--lab-shadow), inset 0 0 0 1px rgba(255,255,255,.035);
 }
 .practice-action-shape { max-width: var(--prose-measure); margin: 0; color: #bfd0d7; font-size: 14px; line-height: 1.6; }
 .practice-lab .practice-run .primary-button.jumbo { min-height: 52px; }
 /* The run shape is the primary button's caption, so it sits with the button
    rather than floating above the pair. */
-.practice-run-start { justify-self: stretch; display: grid; gap: 8px; justify-items: start; }
+.practice-run-start { justify-self: stretch; display: grid; gap: 10px; justify-items: start; }
 .practice-run-start .practice-action-shape { font-size: 13px; }
 /* The docket action is the alternative to starting fresh, not a second equal
-   button. The "or" is what makes the default readable at a glance. */
-.practice-run-alt { justify-self: stretch; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
-.practice-run-or { color: #8aa0aa; font-family: var(--font-pixel, inherit); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.practice-action-secondary { padding: 11px 14px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(226,187,101,.4); border-radius: 10px; color: #f4ead4; background: rgba(226,187,101,.09); font-size: 13px; font-weight: 600; text-align: left; }
-.practice-action-secondary:hover:not(:disabled) { background: rgba(226,187,101,.17); }
-.practice-action-secondary:disabled { opacity: .72; }
-.practice-action-secondary > svg { flex: none; color: var(--lab-gold); }
+   button. The "or" is what makes the default readable at a glance, and the
+   button is sized to its own label (justify-items: start) rather than
+   stretched across the row, so it stays the lighter option rather than a
+   second CTA fighting the gold button above it for width. */
+.practice-run-alt { justify-self: stretch; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; justify-items: start; gap: 14px; }
+.practice-run-or { display: inline-flex; align-items: center; gap: 8px; color: #7f959b; font-family: var(--font-pixel, inherit); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.practice-run-or::before,
+.practice-run-or::after { content: ""; width: 14px; height: 1px; background: rgba(244,234,212,.18); }
+/* Ghost pill rather than a filled bar: an outline this size read as a
+   second button of equal weight to the gold CTA even though its own fill
+   was faint, because it spanned the same row at the same height. Sized to
+   its label and unfilled by default, it recedes until hovered. */
+.practice-action-secondary { padding: 10px 18px; display: inline-flex; align-items: center; gap: 9px; border: 1px solid rgba(244,234,212,.22); border-radius: 999px; color: #d7e2de; background: transparent; font-size: 13px; font-weight: 600; text-align: left; transition: border-color .16s ease, background-color .16s ease, color .16s ease; }
+.practice-action-secondary:hover:not(:disabled) { border-color: rgba(240,210,127,.55); color: #f4ead4; background: rgba(240,210,127,.07); }
+.practice-action-secondary:disabled { opacity: .6; }
+.practice-action-secondary > svg { flex: none; color: #9fb0ac; transition: color .16s ease; }
+.practice-action-secondary:hover:not(:disabled) > svg { color: var(--lab-gold); }
 .practice-action-secondary > span { flex: 1; min-width: 0; }
 .practice-action-secondary em { flex: none; color: #c8a85d; font-size: 11px; font-style: normal; font-weight: 800; }
 
