@@ -127,6 +127,26 @@ export type HumanoidProportions = {
   legLength: number
 }
 
+/**
+ * Which part of a character's resting stance an offset belongs to.
+ *
+ * `torso` is identity - the head tilt, the ribcage lean - and applies to any
+ * pose. `arms` and `legs` describe how this character stands about doing
+ * nothing, which a pose that commits the limbs to a task must be able to
+ * decline.
+ */
+export type RestOffsetGroup = 'torso' | 'arms' | 'legs'
+
+export const REST_OFFSET_GROUPS: readonly RestOffsetGroup[] = ['torso', 'arms', 'legs']
+
+const REST_OFFSET_GROUP: Record<HumanoidBone, RestOffsetGroup> = {
+  hips: 'torso', spine: 'torso', chest: 'torso', head: 'torso',
+  leftShoulder: 'arms', leftElbow: 'arms', leftHand: 'arms',
+  rightShoulder: 'arms', rightElbow: 'arms', rightHand: 'arms',
+  leftHip: 'legs', leftKnee: 'legs', leftFoot: 'legs',
+  rightHip: 'legs', rightKnee: 'legs', rightFoot: 'legs',
+}
+
 export type HumanoidSkeleton = {
   root: THREE.Object3D
   bones: Record<HumanoidBone, THREE.Object3D>
@@ -141,8 +161,19 @@ export type HumanoidSkeleton = {
    * clips animate a canonical rest pose and these deltas are re-applied after
    * the mixer writes, so the shared clip library stays shared and every
    * character keeps the exact resting posture the art defines.
+   *
+   * They are grouped because they are not all the same kind of thing, and a
+   * pose that is right for one group can be wrong for another. What
+   * `buildStylizedCounsel` authors is a *standing* contrapposto: weight on one
+   * leg, the free knee soft, the arms hanging with the shoulders rolled in so
+   * the palms face the thighs. Re-applying the torso part of that keeps a
+   * character recognisably itself in any pose. Re-applying the leg part to a
+   * body sitting at a desk adds a standing weight-shift to a folded leg, and
+   * re-applying the arm part to a body typing rotates both forearms outward by
+   * nineteen degrees. Grouping lets a pose say which parts of its owner's
+   * resting stance still apply to it.
    */
-  restOffsets: Array<{ bone: THREE.Object3D; offset: THREE.Quaternion }>
+  restOffsets: Array<{ bone: THREE.Object3D; offset: THREE.Quaternion; group: RestOffsetGroup }>
 }
 
 /**
@@ -285,7 +316,7 @@ export function bindHumanoidSkeleton(rig: BindableRig): HumanoidSkeleton {
     const offset = node.quaternion.clone().multiply(canonicalRestQuaternion(bone).invert())
     // Skip identity offsets so the per-frame pass only touches joints that
     // actually differ from canonical.
-    if (1 - Math.abs(offset.w) > 1e-6) restOffsets.push({ bone: node, offset })
+    if (1 - Math.abs(offset.w) > 1e-6) restOffsets.push({ bone: node, offset, group: REST_OFFSET_GROUP[bone] })
   }
 
   // Limb lengths are measured between joints in the bind pose rather than read

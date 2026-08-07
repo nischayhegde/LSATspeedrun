@@ -41,6 +41,7 @@ import './art/unified-empire-map.css'
 import './styles.css'
 import './art/art.css'
 import './case-instrument.css'
+import './markup.css'
 import './practice-lab.css'
 import './mobile.css'
 

@@ -3,20 +3,17 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 
 import type { ActiveOfficeCase, CharacterGender, GameAsset } from '../types'
-import { officeEnvironmentFor, officeLayoutFor, officeStaffStationFor, officeVisualFor, type OfficeStaffStation, type OfficeVisualZone } from './office-manifest'
+import { clientCastSeed } from './assets'
+import { OFFICE_ASSET_MANIFEST, officeEnvironmentFor, officeLayoutFor, officeStaffStationFor, officeVisualFor, type OfficeStaffStation, type OfficeVisualZone } from './office-manifest'
 import { IllustratedRenderPass } from './render-style'
 import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
 import {
   HumanoidActor,
   HumanoidBehaviorDirector,
-  NavAgent,
-  NavField,
   assignHumanoidLod,
-  scanObstacleRects,
   warmHumanoidClips,
   type BehaviorRole,
   type HumanoidState,
-  type NavPoint,
 } from './rig'
 
 type OfficeThreeProps = { tier: number; ownedAssets: GameAsset[]; layoutKey?: string; activeCase?: ActiveOfficeCase | null }
@@ -86,14 +83,19 @@ const easeTo = (current: number, target: number, rate: number, dt: number, snap:
   snap ? target : THREE.MathUtils.damp(current, target, rate, dt)
 
 /**
- * What a staff member is currently doing with their feet.
+ * A member of staff at their desk.
  *
- * `rising` and `seating` exist so a body never teleports out of a chair: the
- * errand pauses while the stand-up and sit-down clips play, which is both the
- * anticipation before the walk and the settle after it.
+ * Staff do not walk. The office is composed as a set of seated tableaux, and
+ * this type is deliberately small as a result: a body, the clip driving it,
+ * where it sits, and which of the four desk tasks it is doing. The errand
+ * state machine, the steering agent, the route, the anchor reservation, the
+ * yielding and stall-recovery counters and the gait-rate measurement that used
+ * to live here all went with the walking.
+ *
+ * Nothing here is a position that changes. A staff actor is placed once at
+ * build time and never moves again, which is why there is no velocity, no
+ * heading and no goal on it.
  */
-type ErrandPhase = 'settled' | 'rising' | 'leaving' | 'away' | 'returning' | 'seating'
-
 type OfficeStaffActor = {
   rig: StylizedCounselRig
   actor: THREE.Group
@@ -102,55 +104,14 @@ type OfficeStaffActor = {
   humanoid: HumanoidActor
   phase: number
   station: OfficeStaffStation
+  /** Which of the four desk tasks this character is doing, fixed at build. */
+  task: HumanoidState
   home: THREE.Vector3
-  /** The nearest point to `home` a route can actually end at. Identical to
-   *  `home` for a standing station; beside the chair for a seated one. */
-  navHome: NavPoint
   homeRotation: number
-  canWalk: boolean
-  /** True when this station's settled state is a seated one. */
-  seated: boolean
-  /** Steering body on the shared navigation field. */
-  agent: NavAgent
-  radius: number
-  errand: ErrandPhase
-  /** Seconds until the current phase ends. */
-  errandTimer: number
-  /** Where this errand is headed, and which way to face on arrival. */
-  errandGoal: NavPoint
-  errandFacing: number
-  /** Index into the errand anchor list this body currently holds, or -1. A
-   *  held anchor is off the menu for everyone else until it is given back. */
-  anchorIndex: number
-  /** The route planned when the destination was chosen. Kept so the choice of
-   *  destination and the proof that it is reachable are the same act. */
-  errandRoute: NavPoint[]
-  /** Which repertoire the ambient director is currently running for this body,
-   *  and whether the errand has taken the body off the director entirely. */
+  /** Which repertoire the ambient director is running for this body. */
   behaviorRole: BehaviorRole
-  directorHeld: boolean
-  /** Seconds this body has spent standing still with somebody who is trying to
-   *  get somewhere pressed up against it. */
-  blockedFor: number
-  /** Seconds left of a deliberate step out of someone else's way. The errand
-   *  is suspended, not abandoned, for the duration. */
-  yieldTimer: number
-  /** Seconds this body has spent on a route without getting any nearer to the
-   *  end of it, and the closest it has come to that end so far. */
-  stalled: number
-  stallBest: number
-  /** How many times this journey has been replanned around a blockage. */
-  stallRetries: number
   /** Deterministic per-actor RNG state, so a reload replays identically. */
   randomState: number
-  /** Ground speed measured this frame; drives the gait rate. */
-  measuredSpeed: number
-  walking: boolean
-  /** Eased 0-1 "is turning on the spot" weight, for the anticipation lean. */
-  turnLean: number
-  /** Signed heading change per second, smoothed, for the banking lean. */
-  turnRate: number
-  previousHeading: number
 }
 
 /** Which ambient repertoire each workstation draws on. */
@@ -163,35 +124,33 @@ const STATION_BEHAVIOR: Record<OfficeStaffStation, BehaviorRole> = {
   leadership: 'diplomatic',
 }
 
+
 /**
- * The repertoire a station draws on while its occupant is away from it.
+ * What each station's occupant is doing at their desk.
  *
- * The desk repertoires are seated, and a seated repertoire played by a body
- * standing in the middle of the floor is a character folded at the hips and
- * knees in mid-air. Standing stations keep their own repertoire, because those
- * are already written for a body on its feet.
+ * Four tasks exist and no others - writing, typing, reading, sorting - and
+ * every seated body in the room is doing exactly one of them. Each station
+ * lists the ones that make sense for the work it does, in preference order,
+ * and a character picks from its own list by hash.
+ *
+ * Listing several per station rather than one is the content half of keeping a
+ * room from pulsing. Phase and rate decorrelation stop two people doing the
+ * same thing in step; giving neighbouring desks different things to do stops
+ * them doing the same thing at all. A wing of three all typing is a chorus
+ * line however carefully its phases are offset.
  */
-const AWAY_BEHAVIOR: Record<OfficeStaffStation, BehaviorRole> = {
-  casework: 'reception',
-  technology: 'reception',
-  reception: 'reception',
-  investigation: 'investigation',
-  diplomatic: 'diplomatic',
-  leadership: 'diplomatic',
+const STATION_TASKS: Record<OfficeStaffStation, readonly HumanoidState[]> = {
+  casework: ['deskWrite', 'deskRead', 'deskType'],
+  technology: ['deskType', 'deskRead'],
+  reception: ['deskSort', 'deskType', 'deskWrite'],
+  investigation: ['deskRead', 'deskSort', 'deskWrite'],
+  diplomatic: ['deskRead', 'deskWrite'],
+  leadership: ['deskWrite', 'deskRead', 'deskSort'],
 }
 
-/** The state a station settles into the moment it stops walking, before the
- *  ambient director starts varying it. */
-/** What someone stood away from their own desk plausibly does while there. */
-const AWAY_STATES: readonly HumanoidState[] = ['idle', 'idleWeightShift', 'idleRelaxed', 'confer', 'reviewDocument']
-
-const STATION_SETTLED: Record<OfficeStaffStation, HumanoidState> = {
-  casework: 'seatedType',
-  technology: 'seatedType',
-  reception: 'idle',
-  investigation: 'presentBoard',
-  diplomatic: 'confer',
-  leadership: 'idleWeightShift',
+const deskTaskFor = (station: OfficeStaffStation, hash: number): HumanoidState => {
+  const tasks = STATION_TASKS[station]
+  return tasks[hash % tasks.length]
 }
 
 type OfficeClientActor = {
@@ -209,17 +168,18 @@ type OfficeCatActor = {
   eyes: Array<{ white: THREE.Mesh; pupil: THREE.Mesh }>
   legs: THREE.Group[]
   tail: THREE.Group
+  /** The authored patrol circuit, now used only for its first point: where the
+   *  cat settles. Kept as a list because the art picks that spot per layout. */
   waypoints: THREE.Vector3[]
   waypointIndex: number
   previousWaypointIndex: number
-  /** Steering body, so the patrol routes around furniture like everyone else. */
-  agent: NavAgent
   pauseRemaining: number
   randomState: number
   lastElapsed: number
-  // Eases 0-1 toward "currently walking" so the gait amplitude fades in/out
-  // instead of the whole body popping into its idle pose the instant the cat
-  // reaches a waypoint (see its use in the animation loop below).
+  // Eases 0-1 toward "currently walking", which is now always zero. Kept
+  // rather than removed because every pose term below is written as a blend
+  // between a resting formula and a moving one, and collapsing that by hand
+  // would rewrite the cat's whole performance to save one multiply.
   walkBlend: number
 }
 
@@ -447,11 +407,26 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const level = Math.max(0, Math.min(14, Math.round(tierOverride ? Number(tierOverride) : tier)))
     const environment = officeEnvironmentFor(level)
     const layoutFamily = officeLayoutFor(level)
+    // The purchase set is the other half of what decides a layout, and like the
+    // shift it is an accident of play. `officeAssets` names an explicit list and
+    // `officeAll` owns the entire catalogue, so the maximum-furnishing case can
+    // be rendered and looked at rather than argued about.
+    const ownedKeys = (() => {
+      if (devQuery?.get('officeAll') === '1') return Object.keys(OFFICE_ASSET_MANIFEST)
+      const explicit = devQuery?.get('officeAssets')?.split(',').filter(Boolean)
+      return explicit?.length ? explicit : null
+    })()
+    const devAsset = (key: string, index: number, type: string) => (
+      { key, type, level: 1, name: key, quantity: 1, id: -1000 - index, owned: true } as unknown as GameAsset
+    )
     const staffOverride = devQuery?.get('officeStaff')?.split(',').filter(Boolean)
+      ?? ownedKeys?.filter((key) => officeVisualFor(key)?.zone === 'staff-floor')
     const staffAssets = staffOverride?.length
-      ? staffOverride.map((key, index) => ({ key, type: 'staff', level: 1, name: key, quantity: 1, id: -1 - index } as unknown as GameAsset))
+      ? staffOverride.map((key, index) => devAsset(key, index, 'staff'))
       : ownedAssets.filter((asset) => asset.type === 'staff')
-    const visualAssets = ownedAssets.filter((asset) => officeVisualFor(asset.key))
+    const visualAssets = ownedKeys
+      ? ownedKeys.filter((key) => officeVisualFor(key)).map((key, index) => devAsset(key, index, 'upgrade'))
+      : ownedAssets.filter((asset) => officeVisualFor(asset.key))
     const assetsByZone = new Map<OfficeVisualZone, GameAsset[]>()
     visualAssets.forEach((asset) => {
       const visual = officeVisualFor(asset.key)
@@ -557,7 +532,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     let ambientYawOffset = 0
     let ambientPitchOffset = 0
     const noteLook = () => { lastLookAt = performance.now() }
-    const cameraOrbitRadius = rustic ? 2.08 : 2.30
+    // Adjusted once the shift is known; see the framing block after the bays
+    // are placed, which is the first point at which how many people are in
+    // this room is a fact rather than a guess.
+    let cameraOrbitHome = rustic ? 2.08 : 2.30
+    const cameraPivotHome = cameraPivot.clone()
+    let cameraOrbit = cameraOrbitHome
 
     const positionCamera = () => {
       // The ambient sway is kept out of `cameraYaw` itself and added here. Held
@@ -571,7 +551,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         Math.sin(pitch),
         -Math.cos(yaw) * Math.cos(pitch),
       ).normalize()
-      camera.position.copy(cameraPivot).addScaledVector(cameraLookDirection, -cameraOrbitRadius)
+      camera.position.copy(cameraPivot).addScaledVector(cameraLookDirection, -cameraOrbit)
       cameraLookTarget.copy(camera.position).addScaledVector(cameraLookDirection, 8)
       camera.lookAt(cameraLookTarget)
     }
@@ -584,16 +564,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const focusHalos: THREE.Object3D[] = []
     const staffRigs: OfficeStaffActor[] = []
     const staffDirector = new HumanoidBehaviorDirector()
-    // Reused every frame by the separation pass; never reallocated.
-    // `moving` is not used by the steering, which only needs a footprint; it is
-    // read by the bodies that are *not* moving, so one of them can notice it is
-    // standing in someone's way.
-    const navNeighbours: { x: number; z: number; radius: number; moving: boolean }[] = []
     // Read before the characters are built, because an actor created for a
     // reduced-motion viewer settles straight into a held pose rather than
     // starting a mixer it will never advance.
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let activeClientActor: OfficeClientActor | null = null
+    /** Focus register key for the consulting client, set when one is built. */
+    let clientFocusKey = ''
+    /** Scratch for the client's look-at, rewritten each frame it is selected. */
+    const clientLookTarget = new THREE.Vector3()
     let focusedTarget: { object: THREE.Object3D; halo: THREE.Object3D } | null = null
     let focusedUntil = 0
 
@@ -1067,11 +1046,25 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     chairAnchor.position.set(0, 1.25, .15)
     chair.add(chairAnchor)
 
-    if (activeCase) {
+    // A consultation only exists when the player has a matter open, which
+    // makes the one character with click-to-look behaviour the hardest one in
+    // the scene to get in front of a harness. Same reasoning as the tier and
+    // staff overrides above, and compiled out of production the same way.
+    const devCase = devQuery?.get('officeClient') === '1'
+      ? { sessionId: 'dev', clientKey: 'dev-client', clientName: 'Dev Client', baseFee: 1000 } as unknown as ActiveOfficeCase
+      : null
+    const consultation = activeCase ?? devCase
+    if (consultation) {
+      const activeCase = consultation
       // An active matter becomes a physical consultation in the office. The
       // station remains beside the partner desk at every tier, rather than
       // borrowing a staff workstation or leaving the client in an aisle.
-      const seed = castHash(`${activeCase.sessionId}:${activeCase.clientKey}`)
+      // Seeded from the client's name and nothing else, because the contract
+      // card's portrait seeds from exactly that too — this figure and that
+      // portrait are the same client and have to be the same person. Session
+      // and client key were unique per *matter*, which is how the two ended up
+      // as two different faces. See `clientCastSeed`.
+      const seed = clientCastSeed(activeCase.clientName)
       const clientStation = new THREE.Group()
       clientStation.position.set(rustic ? -2.32 : -2.62, 0, rustic ? .12 : .08)
       clientStation.rotation.y = rustic ? .18 : .12
@@ -1187,6 +1180,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       // `medium` also spares the two world-matrix rebuilds it would do first.
       clientHumanoid.setLod('medium')
       staffDirector.add(clientHumanoid, 'seatedGuest', seed)
+      // The client is the one character in the room worth selecting, so it
+      // joins the same focus register everything else clickable uses rather
+      // than getting a selection mechanism of its own. Being in there is what
+      // makes it a valid `office-focus-asset` target and what gives it a halo;
+      // the look-at in the frame loop then keys off the same focus state, so
+      // "selected" means exactly one thing in this scene.
+      const clientHalo = attachFocus([], clientStation, .74, .02)
+      clientFocusKey = activeCase.clientKey
+      focusTargets.set(clientFocusKey, { object: rig.root, halo: clientHalo })
       activeClientActor = { rig, humanoid: clientHumanoid, phase: (seed % 97) / 9, folder, mug }
     }
 
@@ -1316,9 +1318,6 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       waypoints: catWaypoints,
       waypointIndex: 0,
       previousWaypointIndex: catWaypoints.length - 1,
-      // A cat is small and turns tightly, so it gets a smaller body and a
-      // higher turn rate than the people do.
-      agent: new NavAgent({ radius: .3, maxSpeed: .52, acceleration: 1.9, turnRate: 4.6 }),
       pauseRemaining: 1.8 + seeded(castHash(layoutKey ?? 'office-cat')) * 2.2,
       randomState: castHash(`${layoutKey ?? 'office'}:cat-route`),
       lastElapsed: 0,
@@ -2111,15 +2110,41 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     ;[...staffAssets].reverse().forEach((asset) => {
       if (activeStaff.length < shiftSize && !activeStaff.includes(asset)) activeStaff.push(asset)
     })
-    // The authored inset puts the bays close enough to the side walls that the
-    // strip behind them - the only route out of a wing, because the desks form
-    // an unbroken run - is about a metre wide. One body fits in a metre. Two do
-    // not, and neither does one body plus the colleague sitting in the next
-    // chair along, so a wing with more than one person in it deadlocks: whoever
-    // stands up walks into a seated back and stops there. Pulling the run in by
-    // half a metre buys a service aisle a person can actually pass another
-    // person in, and the room is wide enough that nothing else moves.
-    const stationWingX = Math.max(5.05, roomHalf - layoutFamily.stationInset - .82)
+    // Where the wings sit is now a question about the camera, not the walls.
+    //
+    // This used to be measured inward from the side wall, which sounds right
+    // and is the wrong way round. The room widens with tier - fifteen units at
+    // tier zero, twenty at tier four and above - while the camera's orbit
+    // radius does not, so bays pinned to the wall walked steadily out of frame
+    // as the firm grew. At the top tier the outermost desks sat seven to eight
+    // units off centre and were simply not on screen: the reward for hiring
+    // was staff you could not see.
+    //
+    // So the run is placed at a distance chosen for the view and then pulled
+    // *in* as the tier rises, which is the opposite of what it did before and
+    // the reason a full house now reads as a full house. Two adjustments on
+    // top of that:
+    //
+    // The tier term closes the wings by up to 0.7 units as the roster grows,
+    // so five people at tier twelve are framed as tightly as two at tier one.
+    //
+    // The crowd term handles the other end. One person on an otherwise empty
+    // floor, parked against the far wing, reads as somebody sent to sit in the
+    // corner - which is exactly how tier zero looked. With fewer than three on
+    // shift the room closes up around whoever is actually in it.
+    //
+    // Both are bounded, and both leave far more room behind the desks than the
+    // old placement did: the service strip behind a wing is now around three
+    // units rather than the metre that used to be there.
+    // A lone hire gets a much larger pull than the linear term would give it.
+    // Tier zero seats exactly one person, and at the authored wing distance
+    // they sat outside the opening frame entirely, in the unlit corner of a
+    // room whose whole lighting budget is a hearth and a lantern - which is
+    // the "dark and off to the side" that a single hire has always looked
+    // like. There is no competition for floor when there is one person on it,
+    // so they may as well sit where the camera already is.
+    const crowdPull = activeStaff.length <= 1 ? 1.5 : Math.max(0, 3 - activeStaff.length) * .34
+    const stationWingX = 4.55 - Math.min(.7, level * .06) - crowdPull
     const stationSlots = {
       // Workstations live along the side wings and face into the office. The
       // family cant is a subtle authored offset from that inward orientation,
@@ -2266,68 +2291,34 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       root.add(actor)
       const halo = attachFocus([asset.key], bay, 1.02, .03)
       focusTargets.set(asset.key, { object: rig.root, halo })
-      // Everyone leaves their desk sometimes. Desk-bound stations used to be
-      // excluded because there was no way to get them out of a chair without
-      // teleporting; now that standing up and sitting down are played as
-      // clips, the whole room circulates.
-      const canWalk = true
       // Bind after the character is in the scene graph: the skeleton measures
       // its own limb lengths from the bind pose in world space, and this rig is
       // scaled down by its parent.
       actor.updateWorldMatrix(true, true)
+      const task = deskTaskFor(station, hash)
       const humanoid = new HumanoidActor(rig, {
         seed: hash,
-        state: STATION_SETTLED[station],
+        state: task,
         reduced,
       })
+      // Start each character at a different point in its own loop. Without
+      // this, five people who all happen to draw `deskType` begin on the same
+      // frame and strike the same key together for as long as anyone watches.
+      // Rate jitter would eventually pull them apart, but "eventually" is not
+      // good enough for the first thing a player sees when the scene opens.
+      humanoid.advance(((hash % 97) / 97) * 9 + index * 1.7)
       staffDirector.add(humanoid, STATION_BEHAVIOR[station], hash)
-      // Body radius is measured from the rig's own shoulder width rather than
-      // guessed, so it stays right at every tier's character scale.
-      const radius = Math.max(.26, humanoid.skeleton.proportions.shoulderWidth
-        * rig.root.getWorldScale(new THREE.Vector3()).x * .62)
-      const agent = new NavAgent({
-        radius,
-        // Office pace, not a march. Each body gets its own so a group crossing
-        // the floor never moves in lockstep.
-        maxSpeed: .82 + (hash % 23) / 23 * .34,
-        acceleration: 1.5 + (hash % 11) / 11 * .7,
-        turnRate: 2.5 + (hash % 7) / 7 * 1.1,
-      })
-      agent.place(home.x, home.z, slot.rotation)
       staffRigs.push({
         rig,
         actor,
         humanoid,
-        walking: false,
         phase: index * 1.37 + (hash % 17) * .11,
         station,
+        task,
         home,
-        // Resolved against the clearance field once every obstacle is in it.
-        navHome: { x: home.x, z: home.z },
         homeRotation: slot.rotation,
-        canWalk,
-        seated: STATION_SETTLED[station] === 'seatedType' || STATION_SETTLED[station] === 'seatedIdle',
-        agent,
-        radius,
-        errand: 'settled',
-        // Stagger the first departure so the room does not empty at once.
-        errandTimer: 4 + (hash % 19) * .7 + index * 2.1,
-        errandGoal: { x: home.x, z: home.z },
-        errandFacing: slot.rotation,
-        anchorIndex: -1,
-        errandRoute: [],
         behaviorRole: STATION_BEHAVIOR[station],
-        directorHeld: false,
-        blockedFor: 0,
-        yieldTimer: 0,
-        stalled: 0,
-        stallBest: Infinity,
-        stallRetries: 0,
         randomState: hash || 1,
-        measuredSpeed: 0,
-        turnLean: 0,
-        turnRate: 0,
-        previousHeading: slot.rotation,
       })
     }
 
@@ -2341,11 +2332,40 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     ;[-1, 1].forEach((side) => {
       const wing = occupiedWings.filter((slot) => Math.sign(slot.x) === side)
       if (!wing.length) return
-      const light = new THREE.PointLight(0xffdaa0, rustic ? .3 : .48, 7.4, 1.5)
+      // Tier zero is a timber shack lit by a hearth and a lantern, and it was
+      // dark enough that its single hire was not merely unflattered but
+      // genuinely not visible in the opening frame. Raised to the point where
+      // a body at a desk reads, and no further: the gloom is the tier's whole
+      // character and the reward for climbing out of it.
+      const light = new THREE.PointLight(0xffdaa0, rustic ? .52 : .48, 7.4, 1.5)
       light.position.set(wing[0].x, 2.85, wing.reduce((sum, slot) => sum + slot.z, 0) / wing.length)
       light.castShadow = false
       root.add(light)
     })
+
+    // Open on the room the player actually has.
+    //
+    // The home framing was authored around the principal desk and then never
+    // moved, so as the firm filled up the opening view stayed a close-up of
+    // one workstation with the entire staff floor outside the frame. Backing
+    // the camera off with headcount is the other half of pulling the bays in:
+    // the bays close the gap from their end, this closes it from the camera's,
+    // and between them a full shift is in shot at every tier.
+    //
+    // The pivot drops and moves back as the camera retreats, so the extra
+    // distance is spent on floor and desks rather than on ceiling. An office
+    // with nobody in it is left exactly as it was.
+    // The step per head is small on purpose. The orbit pivot sits inside the
+    // room, so radius buys view only up to the point where the camera reaches
+    // the front wall and starts rendering the inside of it - measured, a 0.46
+    // step put a black slab across the left half of the frame at a full shift.
+    // 0.16 stays inside the shell at every tier and headcount.
+    const shiftFraming = Math.min(activeStaff.length, 5)
+    cameraOrbitHome += shiftFraming * .16
+    cameraPivotHome.y -= shiftFraming * .05
+    cameraPivotHome.z += shiftFraming * .05
+    cameraOrbit = cameraOrbitHome
+    cameraPivot.copy(cameraPivotHome)
 
     // Renovations read as architectural improvements, not loose reward props.
     if (!rustic) {
@@ -2541,6 +2561,36 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       lookPointerId = null
       canvas.classList.remove('is-looking-around')
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+
+      // A press that never became a drag is a click, and a click picks out
+      // whoever is under it.
+      //
+      // This rides on the orbit handler rather than adding a third pointer
+      // listener, because up until the pointer moves the two gestures are
+      // indistinguishable. Deciding between them on release, by how far the
+      // pointer actually travelled, is what stops the small wobble in a tap
+      // from being read as an attempt to turn the camera - and what stops a
+      // deliberate orbit that happens to end over the client from selecting
+      // them.
+      //
+      // The result goes out as the same `office-focus-asset` event the rest of
+      // the UI already uses, so there is exactly one notion of what is
+      // selected in this scene and the halo, the camera framing and the look
+      // below all read it from the same place.
+      const travelled = Math.hypot(event.clientX - lookStartX, event.clientY - lookStartY)
+      if (travelled > 6 || draggingChair || !activeClientActor) return
+      const bounds = canvas.getBoundingClientRect()
+      dragPointer.set(
+        (event.clientX - bounds.left) / bounds.width * 2 - 1,
+        -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+      )
+      raycaster.setFromCamera(dragPointer, camera)
+      const hitClient = raycaster.intersectObject(activeClientActor.rig.root, true).length > 0
+      surface?.dispatchEvent(new CustomEvent('office-focus-asset', {
+        // A key nothing is registered under is how this scene already says
+        // "nothing is selected": the lookup misses and the focus clears.
+        detail: { key: hitClient ? clientFocusKey : 'office-none' },
+      }))
     }
     const onLookKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'ArrowLeft') cameraYawTarget -= Math.PI / 4
@@ -2564,7 +2614,11 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         return
       }
       focusedTarget = target
-      focusedUntil = performance.now() + 4_800
+      // Selecting a person is not the same act as pinging a piece of
+      // furniture. A prop's halo is a "here it is" that has done its job in a
+      // few seconds; the client turns to face you and should still be doing so
+      // long enough for that to read as attention rather than a twitch.
+      focusedUntil = performance.now() + (key === clientFocusKey ? 20_000 : 4_800)
       target.halo.visible = true
       scene.updateMatrixWorld(true)
       target.object.getWorldPosition(focusedWorldPosition)
@@ -2610,200 +2664,29 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     observer.observe(canvas)
     resize()
 
-    // ---------------------------------------------------------------------
-    // Navigable floor.
+    // The navigable floor is gone, and so is everything that used it.
     //
-    // Characters used to cross the room by interpolating between two authored
-    // points. The line between them was a line, and whether a desk happened to
-    // be on it was nobody's problem - which is why staff walked through
-    // furniture. Worse, the authored points could not possibly stay correct:
-    // the room widens with tier, the bays are placed from whichever staff the
-    // player has hired, and the player can drag furniture around at runtime.
+    // This scene used to derive a walkable surface from its own geometry every
+    // time it was built: a bounding-box scan of every mesh in the shin-to-chest
+    // slab, a clearance grid over the result, a connectivity probe to find a
+    // radius at which the room was actually traversable, a set of errand
+    // anchors snapped onto reachable floor with a reservation table over them,
+    // and a per-body steering agent on top. It was careful work and it is all
+    // deleted, because the office is now composed as a set of seated tableaux
+    // and there is nobody left to walk on it.
     //
-    // So the walkable surface is derived from the geometry that actually
-    // exists. Every mesh whose bounding box intersects the slab a body passes
-    // through becomes an obstacle; everything above head height (ceiling
-    // lights, wall art, the clock) or below shin height (the rug, the floor)
-    // is ignored, as is anything tagged `navIgnore` - the characters
-    // themselves, and the focus halos that appear under them.
-    // ---------------------------------------------------------------------
+    // Worth being plain about what this did and did not buy. It is not a
+    // performance win: measured before the change, path planning and steering
+    // together came to about 0.04 ms of a 14 ms CPU frame, which is 0.3% and
+    // below the run-to-run noise on this machine. The reasons are the ones the
+    // change was asked for - a room of people who stay at their desks composes
+    // deliberately, where a room of people wandering through it composed
+    // itself differently every second and never quite well - plus the several
+    // hundred lines of state machine, stall recovery and anchor arbitration
+    // that no longer have to be correct.
     root.updateWorldMatrix(true, true)
-    const floorY = root.position.y
     phase('lights')
-    const obstacleRects = scanObstacleRects(root as unknown as Parameters<typeof scanObstacleRects>[0], {
-      // Shin to chest. Low enough to catch a chair seat and a desk pedestal,
-      // high enough to catch a shelf a body would walk its shoulder into.
-      minY: floorY + .16,
-      maxY: floorY + 1.55,
-      minFootprint: .06,
-      accept: (object) => object.userData?.navIgnore !== true,
-    })
-    const navField = new NavField({
-      bounds: {
-        minX: -roomHalf + .35,
-        maxX: roomHalf - .35,
-        minZ: -4.1 + .35,
-        maxZ: rearWallZ - .35,
-      },
-      obstacles: obstacleRects,
-      cell: .16,
-      preferredClearance: .3,
-    })
-
-    // Find a radius at which this particular room is actually walkable.
-    //
-    // The bays, the wall shelves and the aisle between them are all placed
-    // from the player's purchases, so aisle width is a property of the save.
-    // Measured at tier nine, a wall shelf pinches the west aisle to 0.38
-    // units: wide enough for a body of radius 0.19 and not for one of 0.32,
-    // which is what a character's shoulders measure. The floor duly split into
-    // seven pockets, one per bay, and since every errand destination lay in a
-    // pocket its owner could not reach, nobody ever walked anywhere. That is
-    // the honest reason this room looked frozen.
-    //
-    // So the room reports what it can take rather than being told. Furniture
-    // footprints are axis-aligned boxes around meshes that are narrower than
-    // their bounds, and a real person turns their shoulders to pass a desk, so
-    // planning at less than the shoulder half-width is a fair reading of the
-    // geometry - and it is bounded, so a genuinely blocked room stays blocked
-    // rather than letting bodies through walls. Separation between people
-    // still uses their full radius.
-    const navProbePoints: NavPoint[] = [
-      ...staffRigs.map((entry) => ({ x: entry.home.x, z: entry.home.z })),
-      { x: 0, z: 3.4 },
-      { x: 0, z: .6 },
-      { x: -2.4, z: -2.5 },
-      { x: 2.4, z: -2.5 },
-    ]
-    const widestBody = staffRigs.reduce((widest, entry) => Math.max(widest, entry.radius), .3)
-    const navPassRadius = navField.connectedRadius(navProbePoints, widestBody, .17)
-    staffRigs.forEach((entry) => { entry.agent.passRadius = Math.min(entry.radius, navPassRadius) })
-
-    // Somewhere known to be on the room's main walkable region, for resolving
-    // every placement below against.
-    //
-    // `connectedRadius` returns the radius at which all of `navProbePoints`
-    // share one region, so by construction any of them is in it. This matters
-    // because free floor is not necessarily one piece: measured in the shipped
-    // office, the field at the runtime pass radius has three regions - the room
-    // itself at 74.06 m², and two isolated single cells of 0.026 m² each where
-    // the chamfer clearance grazes the threshold beside the back wall. They are
-    // standable, so a region-blind `nearestFree` may legitimately return one,
-    // and a body placed on one can stand there and go nowhere for the life of
-    // the scene.
-    const navCore = navProbePoints[0]
-
-    // Resolve every standing home slot onto floor a body can actually occupy.
-    // A slot computed as "48cm behind the desk origin" can land inside the
-    // desk's own pedestal once the bay is furnished, and a character standing
-    // inside its own desk is the sunken-into-furniture artefact in its purest
-    // form.
-    //
-    // Seated slots are deliberately left alone. A chair is an obstacle to
-    // anyone walking past it and must stay one, but the person whose chair it
-    // is belongs *in* it; snapping them to the nearest clear floor would
-    // evict them from their own desk. Their walking always starts from a path
-    // query, which resolves the start point itself.
-    const homeScratch: NavPoint = { x: 0, z: 0 }
-    staffRigs.forEach((entry) => {
-      // Every station gets a *navigable* home as well as a home.
-      //
-      // A chair is solid to the navigator, correctly, so a seated station's
-      // home is a point no route can ever end at. Sending someone back to it
-      // and then testing whether they arrived is a test that cannot pass:
-      // `findPath` answers with the nearest reachable cell, which for a body
-      // already standing beside its own desk is the cell it is standing in, so
-      // the route comes back one point long, `hasPath` is false, and the
-      // distance to the seat is still most of a metre. The errand then bounced
-      // to `away`, waited a few seconds and tried the identical query again.
-      //
-      // Measured on tier 9, that left the junior associate - the only seated
-      // member of that shift - parked 86 cm from its desk with 0.00 m of travel
-      // over a thirty-second window, permanently. It was not a low sample.
-      //
-      // So the route home ends on the floor beside the chair, which is the
-      // furthest the navigator was ever able to deliver anyone, and the last
-      // few centimetres into the seat stay where they already were: the settle
-      // damp below, under the sit-down clip.
-      navField.nearestConnected(entry.home.x, entry.home.z, entry.agent.passRadius, navCore, homeScratch)
-      entry.navHome = { x: homeScratch.x, z: homeScratch.z }
-      if (entry.seated) return
-      entry.home.set(homeScratch.x, 0, homeScratch.z)
-      entry.errandGoal = { x: homeScratch.x, z: homeScratch.z }
-      entry.agent.place(homeScratch.x, homeScratch.z, entry.homeRotation)
-      entry.actor.position.set(homeScratch.x, 0, homeScratch.z)
-    })
-
-    // The cat's patrol is an authored circuit, and authored circuits go stale
-    // for exactly the reasons the staff routes did. Snapping each waypoint onto
-    // reachable floor keeps the shape of the route the art intended while
-    // guaranteeing none of its corners sits inside a bookcase.
-    // A cat is not a person, and giving it a person's footprint was the whole
-    // reason it stopped moving. At a 0.3 pass radius its patrol runs down the
-    // same corridors the staff use, every one of which is within a millimetre
-    // of that width, so the clearance push-out cancelled its forward motion
-    // frame for frame. Measured across the shoulders the body is about a
-    // sixteenth of a metre either side of its spine, which is also why a real
-    // cat goes under the furniture people walk around.
-    const CAT_RADIUS = .17
-    catActor.agent.radius = CAT_RADIUS
-    catActor.agent.passRadius = CAT_RADIUS
-    catActor.waypoints.forEach((waypoint) => {
-      const resolved = navField.nearestConnected(waypoint.x, waypoint.z, CAT_RADIUS, navCore)
-      waypoint.x = resolved.x
-      waypoint.z = resolved.z
-    })
     cat.position.copy(catActor.waypoints[0])
-    catActor.agent.place(cat.position.x, cat.position.z, cat.rotation.y)
-
-    // Errand anchors: places in the room there is a reason to walk to. They are
-    // requests, not coordinates - each is snapped onto reachable floor, and any
-    // that cannot be reached at all is dropped rather than becoming a
-    // destination a character walks into a wall trying to satisfy.
-    phase('navfield')
-    const errandAnchors = ([
-      { x: 0, z: 3.4, facing: Math.PI },
-      { x: -roomHalf + 1.5, z: 2.2, facing: -Math.PI / 2 },
-      { x: roomHalf - 1.5, z: 2.2, facing: Math.PI / 2 },
-      { x: -2.4, z: -2.5, facing: 0 },
-      { x: 2.4, z: -2.5, facing: 0 },
-      { x: 0, z: .6, facing: Math.PI },
-    ] as const)
-      .map((anchor) => {
-        const resolved = navField.nearestConnected(anchor.x, anchor.z, navPassRadius, navCore)
-        return {
-          x: resolved.x,
-          z: resolved.z,
-          facing: anchor.facing,
-          shifted: Math.hypot(resolved.x - anchor.x, resolved.z - anchor.z),
-        }
-      })
-      // An anchor that had to move more than a stride to find floor was never
-      // a place in this room - the layout that tier bought has put furniture
-      // where the authored list expected an aisle. Snapping it anyway produces
-      // a destination with a facing that points at the side of a bookcase, so
-      // it is dropped instead and the remaining anchors carry the errands.
-      .filter((anchor) => anchor.shifted < 1.2)
-      .filter((anchor, index, all) =>
-        all.findIndex((other) => Math.hypot(other.x - anchor.x, other.z - anchor.z) < .5) === index)
-      .map(({ x, z, facing }) => ({ x, z, facing }))
-
-    // Who currently holds each anchor, by index into `staffRigs`, or -1.
-    //
-    // An errand anchor is a place to stand, and only one person can stand in
-    // it. Without that being said anywhere, two bodies would pick the same one,
-    // walk into each other on top of it, and each spend the next several
-    // seconds being shoved off a spot it was still trying to reach - the
-    // separation and the path pulling in opposite directions with nothing to
-    // decide between them. It resolved eventually, by the stall watchdog, which
-    // is to say it looked like two people having an argument in the middle of
-    // the room for the better part of eight seconds.
-    //
-    // Claiming the anchor when the errand is chosen makes that unrepresentable
-    // rather than merely unlikely, and it costs one integer. The claim is held
-    // through the walk and the whole time the body is standing there, and given
-    // back when it sets off home.
-    const anchorClaims = new Int8Array(errandAnchors.length).fill(-1)
 
     // Stable list for the LOD pass, so the render loop does not allocate one
     // per frame just to rank the same actors.
@@ -2860,37 +2743,6 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         renderer,
         root,
         roomHalf,
-        navField,
-        navPassRadius,
-        errandAnchors,
-        regions: (radius: number) => navField.debugRegions(radius),
-        // The room's aisle clearance, defined on `NavField.bottleneckClearance`:
-        // over every pair of errand anchors, the widest body that could walk
-        // between the two that are hardest to get between. Reported in world
-        // units and as a ratio to the widest staff body, which is the form the
-        // no-regress check uses — above 1.0 the room is walkable by everyone in
-        // it with room to spare, below 1.0 somebody is squeezing.
-        aisleClearance: () => {
-          let worst = Infinity
-          let pair: [number, number] = [-1, -1]
-          for (let a = 0; a < errandAnchors.length; a += 1) {
-            for (let b = a + 1; b < errandAnchors.length; b += 1) {
-              const value = navField.bottleneckClearance(errandAnchors[a], errandAnchors[b])
-              if (value < worst) { worst = value; pair = [a, b] }
-            }
-          }
-          if (!Number.isFinite(worst)) return null
-          return {
-            clearance: Number(worst.toFixed(4)),
-            ratio: Number((worst / widestBody).toFixed(4)),
-            widestBody: Number(widestBody.toFixed(4)),
-            pair,
-          }
-        },
-        obstacles: () => navField.obstacles.map((box) => ({
-          minX: Number(box.minX.toFixed(3)), maxX: Number(box.maxX.toFixed(3)),
-          minZ: Number(box.minZ.toFixed(3)), maxZ: Number(box.maxZ.toFixed(3)),
-        })),
         // Lowest point of each character's actual geometry against the floor
         // plane. A planted foot should read ~0; anything else is a body
         // hovering above the boards or sunk into them.
@@ -2934,10 +2786,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
           index: catActor.waypointIndex,
           previous: catActor.previousWaypointIndex,
           pause: Number(catActor.pauseRemaining.toFixed(2)),
-          hasPath: catActor.agent.hasPath,
-          legs: catActor.agent.remainingLegs,
-          goal: catActor.agent.goal,
-          speed: Number(catActor.agent.speed.toFixed(3)),
+          resting: true,
         }),
         objects: () => ({
           staff: staffRigs.map((entry, index) => ({
@@ -2950,6 +2799,14 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
           client: activeClientActor ?? null,
           cat,
         }),
+        /** The focus key a harness must send to select the client, or '' if
+         *  there is no consultation in progress. */
+        clientKey: () => clientFocusKey,
+        // Where every body in the room is. This used to carry the crowd
+        // state as well - pass radius, errand phase, measured speed, anchor
+        // held, seconds stalled - all of which described a simulation that no
+        // longer runs. What a harness can still usefully ask is where things
+        // are and what they are doing, so that is what is left.
         bodies: () => [
           ...staffRigs.map((entry, index) => ({
             kind: 'staff' as const,
@@ -2957,37 +2814,74 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
             station: entry.station,
             x: entry.actor.position.x,
             z: entry.actor.position.z,
-            radius: entry.radius,
-            // What this body is currently asking the crowd to honour, which
-            // for someone tucked under a desk is less than its full width.
-            // A harness comparing against `radius` alone reports a seated
-            // person's own colleagues as walking through them.
-            navRadius: entry.errand === 'settled' && entry.seated ? entry.radius * .55 : entry.radius,
-            passRadius: entry.agent.passRadius,
-            errand: entry.errand,
-            speed: entry.measuredSpeed,
+            task: entry.task,
             state: entry.humanoid.state,
-            walking: entry.walking,
-            anchor: entry.anchorIndex,
-            stalled: entry.stalled,
           })),
-          { kind: 'cat' as const, key: 'cat', station: 'cat', x: cat.position.x, z: cat.position.z, radius: CAT_RADIUS, navRadius: CAT_RADIUS, passRadius: CAT_RADIUS, errand: 'cat', speed: catActor.agent.speed, state: 'cat', walking: false, anchor: -1, stalled: 0 },
+          { kind: 'cat' as const, key: 'cat', station: 'cat', x: cat.position.x, z: cat.position.z, task: 'rest', state: 'rest' },
         ],
+      }
+    }
+
+    // DEV-only camera control.
+    //
+    // Posture has been reported three times and fixed from one camera angle
+    // each time. Judging a body from the in-game view alone is guesswork: the
+    // room is dim, the cast is half behind furniture, and a splayed arm reads
+    // as fine from directly in front. This lets a harness put the camera
+    // exactly where it needs it - side-on, from above, close on one chair -
+    // and hold it there, with the ambient drift suppressed so two renders of
+    // the same pose are actually the same render. Compiled out of production.
+    if (import.meta.env.DEV) {
+      ;(window as unknown as { __officeCamera?: unknown }).__officeCamera = {
+        set: (options: { yaw?: number; pitch?: number; pivot?: [number, number, number]; radius?: number }) => {
+          if (options.yaw !== undefined) { cameraYaw = options.yaw; cameraYawTarget = options.yaw }
+          if (options.pitch !== undefined) { cameraPitch = options.pitch; cameraPitchTarget = options.pitch }
+          if (options.pivot) cameraPivot.set(...options.pivot)
+          if (options.radius !== undefined) cameraOrbit = options.radius
+          // Park the drift: it eases in after three idle seconds and would
+          // otherwise move the shot between the call and the screenshot.
+          officeAmbient = 0
+          lastLookAt = performance.now()
+          positionCamera()
+        },
+        // Frame one body from a given compass bearing, which is what checking
+        // a posture from several angles actually needs.
+        frameBody: (x: number, y: number, z: number, bearing: number, distance = 2.2, pitch = -.12) => {
+          cameraPivot.set(x, y, z)
+          cameraOrbit = distance
+          cameraYaw = bearing
+          cameraYawTarget = bearing
+          cameraPitch = pitch
+          cameraPitchTarget = pitch
+          officeAmbient = 0
+          lastLookAt = performance.now()
+          positionCamera()
+        },
+        home: () => {
+          cameraPivot.copy(cameraPivotHome)
+          cameraOrbit = cameraOrbitHome
+          cameraYaw = homeYaw; cameraYawTarget = homeYaw
+          cameraPitch = homePitch; cameraPitchTarget = homePitch
+          positionCamera()
+        },
       }
     }
 
     // DEV-only frame profiler.
     //
-    // The navigation system was adopted without anybody measuring what it costs
-    // per frame, and "should be well under a millisecond" is an inference, not a
-    // number. These buckets separate path planning from steering from skeletal
-    // animation from the draw itself, so the claim can be checked. `performance
-    // .now()` is clamped to 100 microseconds in a page that is not cross-origin
-    // isolated, which is coarse against a sub-millisecond section - so the
-    // harness accumulates over several hundred frames and reads the mean, where
-    // the quantisation averages out. Compiled out of production.
-    type FrameBucket = 'navPath' | 'navSteer' | 'humanoid' | 'render'
-    const frameProfile = { navPath: 0, navSteer: 0, humanoid: 0, render: 0, total: 0, frames: 0, paths: 0, steers: 0 }
+    // The navigation buckets that used to be here did their job: they are the
+    // reason it is known, rather than assumed, that path planning and steering
+    // together cost about 0.04 ms of a 14 ms frame, and therefore that retiring
+    // the walking was never going to be a speed-up. With that machinery gone
+    // there is nothing left for them to time, so what remains separates the
+    // skeletal animation from the draw itself.
+    //
+    // `performance.now()` is clamped to 100 microseconds in a page that is not
+    // cross-origin isolated, which is coarse against a sub-millisecond section,
+    // so the harness accumulates over several hundred frames and reads the
+    // mean, where the quantisation averages out. Compiled out of production.
+    type FrameBucket = 'humanoid' | 'render'
+    const frameProfile = { humanoid: 0, render: 0, total: 0, frames: 0 }
     let profiling = false
     const timed = import.meta.env.DEV
       ? <T,>(bucket: FrameBucket, run: () => T): T => {
@@ -3002,9 +2896,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       ;(window as unknown as { __officeFrameProfile?: unknown }).__officeFrameProfile = {
         start: () => {
           profiling = true
-          frameProfile.navPath = 0; frameProfile.navSteer = 0; frameProfile.humanoid = 0
-          frameProfile.render = 0; frameProfile.total = 0; frameProfile.frames = 0
-          frameProfile.paths = 0; frameProfile.steers = 0
+          frameProfile.humanoid = 0; frameProfile.render = 0
+          frameProfile.total = 0; frameProfile.frames = 0
         },
         stop: () => { profiling = false; return { ...frameProfile } },
       }
@@ -3080,6 +2973,18 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
 
       if (activeClientActor) {
         const { rig, humanoid, phase, folder, mug } = activeClientActor
+        // Selected clients look at you; everyone else gets on with their day.
+        //
+        // The target is the camera itself rather than a fixed point in the
+        // room, so the client keeps facing the player as the view is orbited
+        // instead of staring at wherever the camera happened to be at the
+        // moment of the click. `setLookTarget(null)` releases rather than
+        // cancels: the layer eases out over about a third of a second and the
+        // seated idle underneath was never interrupted, so what a viewer sees
+        // is somebody's attention wandering back to their own business.
+        humanoid.setLookTarget(
+          focusedTarget?.object === rig.root ? camera.getWorldPosition(clientLookTarget) : null,
+        )
         humanoid.update(delta)
 
         // The props keep their own clock.
@@ -3140,91 +3045,20 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         hearthLight.intensity = .48 * emberPulse
       }
       minuteHand.rotation.z = -elapsed * .11
-      // Neighbour set for reciprocal separation, rebuilt once per frame rather
-      // than once per actor, and shared by the people and the cat. A person
-      // walking through the cat is exactly as wrong as one walking through a
-      // chair. The order is fixed: staff first, cat last, so each body can
-      // find and mute its own entry by index.
-      // Rewritten in place rather than rebuilt: this ran every frame and threw
-      // away six freshly allocated objects each time, which is six objects a
-      // frame the collector has to deal with for a list whose length never
-      // changes after the room is built.
-      staffRigs.forEach((entry, index) => {
-        // Someone sitting at a desk is not the same obstacle as someone
-        // standing in an aisle. Their legs are under the desk and their chair
-        // is already in the field as furniture, so the part of them that is
-        // actually in the way is a torso - and holding them to a standing
-        // shoulder width is what made walking past a colleague's chair need a
-        // gap the aisle does not have. Everyone downstream then spent the
-        // errand pressed against a seated back, which is both wrong and the
-        // single largest source of bodies stopped in the middle of a journey.
-        const settled = entry.errand === 'settled' && entry.seated
-        const slot = navNeighbours[index] ?? (navNeighbours[index] = { x: 0, z: 0, radius: 0, moving: false })
-        slot.x = entry.agent.x
-        slot.z = entry.agent.z
-        slot.radius = settled ? entry.radius * .55 : entry.radius
-        slot.moving = entry.errand === 'leaving' || entry.errand === 'returning'
-      })
-      const catSlot = navNeighbours[staffRigs.length]
-        ?? (navNeighbours[staffRigs.length] = { x: 0, z: 0, radius: CAT_RADIUS, moving: false })
-      catSlot.x = catActor.agent.x
-      catSlot.z = catActor.agent.z
-      catSlot.radius = CAT_RADIUS
-      catSlot.moving = catActor.agent.hasPath
-
+      // The cat has stopped patrolling along with everyone else.
+      //
+      // Once the staff sat down it was the last consumer of the navigation
+      // field, and keeping an obstacle scan, a clearance grid and a path
+      // planner alive in this scene for one animal is exactly the machinery
+      // left to rot that retiring the walking was meant to avoid. It now
+      // sleeps at the first waypoint of what used to be its circuit - an
+      // authored spot, picked by the same art that picked the route - and
+      // keeps every part of its performance that was never about going
+      // anywhere: the breathing, the tail, the blink, and the glance toward
+      // whoever happens to be looking at it.
       const catDelta = delta
       catActor.lastElapsed = elapsed
-      let catWalking = false
-      // The patrol is still the authored circuit, but the leg between two
-      // waypoints is now planned across the navigable floor rather than driven
-      // as a straight line. A straight line between two points that are both
-      // clear can still cross a bookcase that sits between them, which is what
-      // used to walk the cat through the furniture.
-      const catAgent = catActor.agent
-      if (!catAgent.hasPath) {
-        // The agent is not updated while it has nowhere to go, so its reported
-        // speed would otherwise stay at whatever it was on the frame it
-        // arrived - which the gait blend ignores but every harness reading
-        // `bodies()` believes.
-        catAgent.speed = 0
-        if (catActor.pauseRemaining > 0) {
-          catActor.pauseRemaining = Math.max(0, catActor.pauseRemaining - catDelta)
-        } else {
-          const arrivedIndex = catActor.waypointIndex
-          // The route is a closed circuit, so either direction remains a
-          // believable option at every stop instead of forcing a mechanical
-          // bounce at the two ends of the room.
-          const neighbors = [
-            (arrivedIndex - 1 + catActor.waypoints.length) % catActor.waypoints.length,
-            (arrivedIndex + 1) % catActor.waypoints.length,
-          ]
-          catActor.randomState = (Math.imul(catActor.randomState, 1664525) + 1013904223) >>> 0
-          const choice = catActor.randomState / 4294967296
-          const forward = neighbors.filter((index) => index !== catActor.previousWaypointIndex)
-          const candidates = forward.length && choice < .78 ? forward : neighbors
-          const nextIndex = candidates[Math.floor(choice * candidates.length) % candidates.length]
-          catActor.previousWaypointIndex = arrivedIndex
-          catActor.waypointIndex = nextIndex
-          catActor.pauseRemaining = 1.25 + choice * 3.8
-          const goal = catActor.waypoints[nextIndex]
-          frameProfile.paths += 1
-          catAgent.setPath(timed('navPath', () => navField.findPath(catAgent, goal, CAT_RADIUS)))
-        }
-      } else {
-        catAgent.maxSpeed = awake ? .58 : .43
-        // The neighbour list is shared with the people and has the cat's own
-        // entry in it; hide it from itself rather than allocating a copy.
-        const catSelf = navNeighbours[navNeighbours.length - 1]
-        const catSelfRadius = catSelf.radius
-        catSelf.radius = -1e6
-        frameProfile.steers += 1
-        timed('navSteer', () => catAgent.update(catDelta, navField, navNeighbours))
-        catSelf.radius = catSelfRadius
-        catActor.root.position.x = catAgent.x
-        catActor.root.position.z = catAgent.z
-        catActor.root.rotation.y = interpolateAngle(catActor.root.rotation.y, catAgent.heading, Math.min(1, catDelta * 5.4))
-        catWalking = catAgent.speed > .04
-      }
+      const catWalking = false
       // `catWalking` flips the instant the cat reaches or leaves a waypoint.
       // Gating every leg/body pose directly on that boolean (as this used to)
       // meant the whole gait popped into its idle formula on that single
@@ -3282,483 +3116,18 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         // reduced update rate and skip the foot solver.
         timed('humanoid', () => assignHumanoidLod(staffHumanoids, camera, { fullBudget: 4, mediumBudget: 8 }))
       }
-      staffRigs.forEach((entry, entryIndex) => {
-        const { rig, actor, humanoid, phase, station, home, homeRotation, canWalk, agent } = entry
-        const seatedStation = entry.seated
-
-        // ---- Errand state machine -------------------------------------
+      staffRigs.forEach((entry) => {
+        const { rig, humanoid, phase } = entry
+        // A seated actor is placed once, at build time, and never moves again.
+        // Its position and facing are properties of its bay, not of this
+        // frame, so all that happens here is the clip and the blink.
         //
-        // The old schedule was a modulo of the global clock, so every actor
-        // departed and returned on a fixed timetable regardless of what was in
-        // the way, and the "route" was two straight lines. Now a destination is
-        // a request: the navigator finds a way there through whatever the room
-        // currently contains, and the body takes as long as it takes.
-        if (!reduced && canWalk && errandAnchors.length > 0) {
-          entry.errandTimer -= delta
-          const nextRandom = () => {
-            entry.randomState = (entry.randomState * 1664525 + 1013904223) >>> 0
-            return entry.randomState / 4294967296
-          }
-          // Choose somewhere this body can genuinely get to.
-          //
-          // The planner returns an empty path when a destination is walled off
-          // at this body's radius - a bay closed by its own desk, a chair the
-          // player has dragged into the only gap - and an errand to a place
-          // that cannot be reached is an errand that never happens. Trying a
-          // few anchors turns that from "this person never moves again" into
-          // "this person goes somewhere else", which is also what a person
-          // would do.
-          const releaseAnchor = () => {
-            if (entry.anchorIndex >= 0 && anchorClaims[entry.anchorIndex] === entryIndex) {
-              anchorClaims[entry.anchorIndex] = -1
-            }
-            entry.anchorIndex = -1
-          }
-          const chooseErrand = () => {
-            // Walk the list from a random offset rather than sampling it at
-            // random: with five people and six anchors, most of the list is
-            // usually spoken for, and repeated sampling would keep landing on
-            // the same held anchors and give up with somewhere free still on
-            // the table.
-            const offset = Math.floor(nextRandom() * errandAnchors.length)
-            let attempt = 0
-            for (let step = 0; step < errandAnchors.length && attempt < 4; step += 1) {
-              const anchorIndex = (offset + step) % errandAnchors.length
-              const heldBy = anchorClaims[anchorIndex]
-              if (heldBy >= 0 && heldBy !== entryIndex) continue
-              attempt += 1
-              const anchor = errandAnchors[anchorIndex]
-              frameProfile.paths += 1
-              const route = timed('navPath', () => navField.findPath(agent, anchor, agent.passRadius))
-              // `findPath` answers with the closest reachable point when the
-              // destination itself is walled off, which is the right answer for
-              // a body that has to go *somewhere* but the wrong basis for
-              // committing to an errand: arriving three metres short and then
-              // turning to face a heading chosen for a spot you never reached
-              // is how a character ends up standing in an aisle staring at a
-              // wall. An errand is only taken if the route genuinely ends at it.
-              const arrival = route.length > 1 ? route[route.length - 1] : null
-              if (arrival && Math.hypot(arrival.x - anchor.x, arrival.z - anchor.z) < .6) {
-                releaseAnchor()
-                anchorClaims[anchorIndex] = entryIndex
-                entry.anchorIndex = anchorIndex
-                entry.errandGoal = { x: anchor.x, z: anchor.z }
-                entry.errandFacing = anchor.facing
-                entry.errandRoute = route
-                return true
-              }
-            }
-            return false
-          }
-          // Stepping out of the way is not the same as changing your mind.
-          //
-          // While a body is backing off to let someone past, its errand is
-          // suspended rather than re-evaluated: the phase machine's tests are
-          // all "am I there yet" and "have I run out of path", and a retreat
-          // satisfies the second one at a point that is not the destination.
-          // Left to run, it would read the completed retreat as a completed
-          // errand and settle into a pose in the middle of the floor.
-          if (entry.yieldTimer > 0) {
-            entry.yieldTimer -= delta
-            if (entry.yieldTimer <= 0) {
-              entry.stalled = 0
-              entry.stallBest = Infinity
-              frameProfile.paths += 1
-              agent.setPath(timed('navPath', () => navField.findPath(agent, entry.errandGoal, agent.passRadius)))
-            }
-          } else switch (entry.errand) {
-            case 'settled':
-              if (entry.errandTimer <= 0) {
-                if (!chooseErrand()) {
-                  // Nowhere to go from here. Wait a beat and look again rather
-                  // than retrying every frame.
-                  entry.errandTimer = 4 + nextRandom() * 5
-                  break
-                }
-                entry.stallRetries = 0
-                if (seatedStation) {
-                  // Anticipation: stand up before any ground is covered.
-                  //
-                  // Gesture first, then state. `standUp` is an override
-                  // gesture, and an override that is already running parks the
-                  // incoming base at zero weight and keeps sole control of the
-                  // body, so the standing base is waiting underneath when the
-                  // clip ends. The other order starts a 0.95s seated-to-
-                  // standing crossfade that the gesture then fights.
-                  entry.errand = 'rising'
-                  entry.errandTimer = 1.15
-                  humanoid.playGesture('standUp')
-                  humanoid.setState('idle')
-                } else {
-                  entry.errand = 'leaving'
-                  entry.errandTimer = 0
-                  agent.setPath(entry.errandRoute)
-                }
-              }
-              break
-            case 'rising':
-              if (entry.errandTimer <= 0) {
-                entry.errand = 'leaving'
-                // Replanned rather than reused: the body has been standing up
-                // for a second, and someone may have walked across the route.
-                frameProfile.paths += 1
-                const route = timed('navPath', () => navField.findPath(agent, entry.errandGoal, agent.passRadius))
-                agent.setPath(route.length > 1 ? route : entry.errandRoute)
-              }
-              break
-            case 'leaving':
-              // Blocked is not the same as thwarted.
-              //
-              // Three of this room's staff share one aisle barely wider than
-              // one of them, so the common blockage is a colleague standing in
-              // it, and the common resolution is that the colleague moves. A
-              // watchdog that abandons the errand after a couple of seconds
-              // turns every one of those into "changed my mind", and the room
-              // fills up with people who set off and immediately stopped.
-              // Waiting a few seconds, then trying a different destination, and
-              // only then giving up is both more patient and what makes the
-              // errand actually happen.
-              // Standing at the destination counts as having got there.
-              //
-              // The last waypoint of a route is a point on the floor, and a
-              // body only ever gets as near it as the other bodies and the
-              // push-out allow. Waiting for the path to formally complete
-              // meant someone parked half a metre from where they were going
-              // spent ten seconds replanning routes they had already walked
-              // before the watchdog let them get on with it - the stall was
-              // real, but it was an arrival, not a blockage.
-              if (Math.hypot(agent.x - entry.errandGoal.x, agent.z - entry.errandGoal.z) < .62) agent.clearPath()
-              else if (entry.stalled > 3.4 && entry.stallRetries < 2) {
-                entry.stallRetries += 1
-                entry.stalled = 0
-                entry.stallBest = Infinity
-                if (chooseErrand()) agent.setPath(entry.errandRoute)
-                break
-              }
-              if (!agent.hasPath || entry.stalled > 4.5) {
-                entry.errand = 'away'
-                // Give the anchor back if this is a body that gave up short of
-                // it. Standing in an aisle two metres away is not occupying it,
-                // and holding it from there would keep the one place someone
-                // else could have gone reserved for nobody.
-                if (Math.hypot(agent.x - entry.errandGoal.x, agent.z - entry.errandGoal.z) > .9) releaseAnchor()
-                // Long enough to read as a purpose rather than a bounce.
-                entry.errandTimer = 5 + nextRandom() * 7
-                humanoid.setState(AWAY_STATES[Math.floor(nextRandom() * AWAY_STATES.length) % AWAY_STATES.length])
-                // Released here rather than by the ownership pass below, so
-                // the arriving glance is not swallowed by a suspension that is
-                // one statement away from being lifted anyway.
-                entry.directorHeld = false
-                staffDirector.suspend(humanoid, false)
-                staffDirector.notice(humanoid, 'scanRoom')
-              }
-              break
-            case 'away':
-              // Standing somewhere is not worth blocking a corridor for. The
-              // rest of the pause is given up and the body heads home, which
-              // both clears the way and reads as the right thing to have done.
-              if (entry.blockedFor > .8) {
-                entry.blockedFor = 0
-                entry.errandTimer = 0
-              }
-              if (entry.errandTimer <= 0) {
-                entry.errand = 'returning'
-                entry.stallRetries = 0
-                releaseAnchor()
-                entry.errandGoal = { x: entry.navHome.x, z: entry.navHome.z }
-                entry.errandFacing = homeRotation
-                frameProfile.paths += 1
-                agent.setPath(timed('navPath', () => navField.findPath(agent, entry.errandGoal, agent.passRadius)))
-              }
-              break
-            case 'returning':
-              // Same arrival test as the outbound leg, tightened to a chair's
-              // worth of slack, because sitting down is a placement and not
-              // just a stop. Measured against the navigable home rather than
-              // the seat, for the reason given where `navHome` is computed.
-              if (Math.hypot(agent.x - entry.navHome.x, agent.z - entry.navHome.z) < entry.radius * 1.5) agent.clearPath()
-              else if (entry.stalled > 3.4 && entry.stallRetries < 2) {
-                // Same patience going home, but the destination is not
-                // negotiable, so this replans the same route rather than
-                // choosing a different one.
-                entry.stallRetries += 1
-                entry.stalled = 0
-                entry.stallBest = Infinity
-                frameProfile.paths += 1
-                agent.setPath(timed('navPath', () => navField.findPath(agent, entry.errandGoal, agent.passRadius)))
-                break
-              }
-              if (!agent.hasPath || entry.stalled > 4.5) {
-                // Only sit down where there is a chair. If the route home was
-                // blocked - someone parked in the aisle - the body stays on
-                // its feet and tries again shortly, rather than miming a chair
-                // in the middle of the floor.
-                const homeGap = Math.hypot(agent.x - entry.navHome.x, agent.z - entry.navHome.z)
-                if (homeGap > entry.radius * 2.2) {
-                  entry.errand = 'away'
-                  entry.errandTimer = 2 + nextRandom() * 3
-                  break
-                }
-                if (seatedStation) {
-                  entry.errand = 'seating'
-                  entry.errandTimer = 1.1
-                  // Same composition as standing up, and the seated base is
-                  // set now so it is the pose the clip lands on.
-                  humanoid.playGesture('sitDown')
-                  humanoid.setState(STATION_SETTLED[station])
-                } else {
-                  entry.errand = 'settled'
-                  entry.errandTimer = 11 + nextRandom() * 21
-                  humanoid.setState(STATION_SETTLED[station])
-                }
-              }
-              break
-            case 'seating':
-              if (entry.errandTimer <= 0) {
-                entry.errand = 'settled'
-                entry.errandTimer = 11 + nextRandom() * 21
-              }
-              break
-          }
-        }
-
-        // ---- Steering --------------------------------------------------
-        //
-        // Only a body that is actually travelling gets steered. A settled one
-        // is standing at a post, or sitting in a chair that the navigation
-        // field quite correctly regards as solid, and running the push-out on
-        // it would evict it from its own desk. Its entry stays in the
-        // neighbour list either way, so people walking past still avoid it.
-        const travelling = entry.errand === 'leaving' || entry.errand === 'returning'
-        // Stall watchdog.
-        //
-        // A path is a plan, and plans in a room with five other bodies in it
-        // do not always survive. Two people can meet in an aisle exactly wide
-        // enough for one, each yield into the other's next waypoint, and hold
-        // there: both have a valid path, neither is making progress, and the
-        // errand phase - which only ends when the path does - never ends
-        // either. That is not a hypothetical, it is what left one character
-        // standing still in the middle of the floor for fifteen seconds with
-        // its desk repertoire quietly putting it back into a seated pose.
-        //
-        // The test has to be progress toward the destination, not movement.
-        // Comparing against a rolling "where I was a moment ago" looks like
-        // the same thing and is not: two bodies circling each other in an
-        // aisle, or one being nudged back and forth by the push-out, cover
-        // plenty of ground and reset the timer every time they do, so the
-        // watchdog never fires on precisely the case it exists for. Closest
-        // approach so far cannot be gamed that way - milling about does not
-        // improve it - and it only ratchets one way, so ordinary weaving
-        // around furniture is not mistaken for being stuck.
-        if (travelling) {
-          const remaining = Math.hypot(agent.x - entry.errandGoal.x, agent.z - entry.errandGoal.z)
-          if (remaining < entry.stallBest - .12) {
-            entry.stalled = 0
-            entry.stallBest = remaining
-          } else {
-            entry.stalled += delta
-          }
-        } else {
-          entry.stalled = 0
-          entry.stallBest = Infinity
-        }
-
-        // After you.
-        //
-        // Two people walking into each other in a room this size is the normal
-        // case, not the exception, and the avoidance handles nearly all of it
-        // by each drifting a shoulder aside. What it cannot handle is the
-        // meeting where there is no aside to drift into: both bodies stop
-        // touching, both keep aiming at a waypoint behind the other, and
-        // neither has any reason to be the one that gives. Measured, those ran
-        // to four seconds before the stall watchdog picked one - four seconds
-        // of two characters standing chest to chest in an aisle.
-        //
-        // Someone has to go second. Which one does not matter, only that both
-        // agree, so it is settled by index: consistent, symmetric, and decided
-        // without either body needing to know anything about the other's
-        // intentions. The one that gives way backs off a stride, waits, and
-        // then replans - the errand survives, it simply happens after the
-        // other person has gone through.
-        if (!reduced && travelling && entry.yieldTimer <= 0 && entry.stalled > 1.2) {
-          const self = navNeighbours[entryIndex]
-          for (let index = 0; index < staffRigs.length; index += 1) {
-            if (index >= entryIndex) continue
-            const other = navNeighbours[index]
-            if (!other.moving) continue
-            const dx = other.x - agent.x
-            const dz = other.z - agent.z
-            const reach = self.radius + other.radius + .3
-            if (dx * dx + dz * dz > reach * reach) continue
-            const distance = Math.hypot(dx, dz) || 1
-            const retreat = navField.nearestFree(
-              agent.x - (dx / distance) * .85,
-              agent.z - (dz / distance) * .85,
-              agent.passRadius,
-            )
-            frameProfile.paths += 1
-            const route = timed('navPath', () => navField.findPath(agent, retreat, agent.passRadius))
-            if (route.length > 1) agent.setPath(route)
-            else agent.clearPath()
-            entry.yieldTimer = 1.5
-            entry.stalled = 0
-            entry.stallBest = Infinity
-            break
-          }
-        }
-
-        // Ambient behaviour ownership.
-        //
-        // The director is held off for the whole of a journey, not merely for
-        // the frames the feet happen to be moving on. Tying it to "is walking"
-        // meant every yield, every wait for someone to pass, handed the body
-        // back to a scheduler that immediately started a beat - and for a desk
-        // worker that beat is a chair.
-        const held = entry.errand !== 'settled' && entry.errand !== 'away'
-        if (held !== entry.directorHeld) {
-          entry.directorHeld = held
-          staffDirector.suspend(humanoid, held)
-        }
-        // And away from the desk, the repertoire itself changes: same person,
-        // same personality, but standing.
-        const wantedRole = entry.errand === 'settled' ? STATION_BEHAVIOR[station] : AWAY_BEHAVIOR[station]
-        if (wantedRole !== entry.behaviorRole) {
-          entry.behaviorRole = wantedRole
-          staffDirector.setRole(humanoid, wantedRole)
-        }
-
-        if (!reduced && travelling) {
-          // Exclude self from the neighbour set by muting its radius, which is
-          // cheaper than allocating a filtered array.
-          const self = navNeighbours[entryIndex]
-          const selfRadius = self.radius
-          self.radius = -1e6
-          frameProfile.steers += 1
-          timed('navSteer', () => agent.update(delta, navField, navNeighbours))
-          self.radius = selfRadius
-          self.x = agent.x
-          self.z = agent.z
-          actor.position.set(agent.x, 0, agent.z)
-        } else {
-          agent.speed = 0
-          // Settle back onto the post. For a seated station this is what
-          // lowers the body into the chair while the sit-down clip plays: the
-          // navigator can only ever deliver someone to clear floor beside a
-          // chair, because the chair is solid to it, so the last few
-          // centimetres belong to the animation rather than to the steering.
-          // Away from the desk there is no post to return to, so the body just
-          // stands where its errand left it.
-          if (entry.errand !== 'away') {
-            const settleRate = entry.errand === 'seating' ? 4.2 : 6
-            let settleX = THREE.MathUtils.damp(actor.position.x, home.x, settleRate, delta)
-            let settleZ = THREE.MathUtils.damp(actor.position.z, home.z, settleRate, delta)
-            // A settle is a body moving, so it moves at a body's pace.
-            //
-            // An exponential ease covers a tenth of its remaining distance
-            // every frame, which from half a metre out is three metres a
-            // second - faster than any of these people walk, and fast enough
-            // to cross a colleague before the contact pass has had two frames
-            // to push them apart. Two people settling onto neighbouring posts
-            // at once was the deepest interpenetration left in the room.
-            const stepX = settleX - actor.position.x
-            const stepZ = settleZ - actor.position.z
-            const step = Math.hypot(stepX, stepZ)
-            const budget = agent.maxSpeed * delta
-            if (step > budget) {
-              settleX = actor.position.x + stepX * (budget / step)
-              settleZ = actor.position.z + stepZ * (budget / step)
-            }
-            actor.position.x = settleX
-            actor.position.z = settleZ
-            agent.x = settleX
-            agent.z = settleZ
-          }
-          // Standing still is not an exemption from occupying space. This is
-          // the same reciprocal push the steering applies, and it is what keeps
-          // a body being eased back onto its post from being eased through
-          // whoever is standing on it.
-          if (!reduced) {
-            const self = navNeighbours[entryIndex]
-            const selfRadius = self.radius
-            self.radius = -1e6
-            agent.resolveContacts(navField, navNeighbours, selfRadius)
-            self.radius = selfRadius
-            self.x = agent.x
-            self.z = agent.z
-            actor.position.set(agent.x, 0, agent.z)
-
-            // Am I in someone's way?
-            //
-            // Claiming anchors stopped two people converging on the same spot,
-            // but it says nothing about the other half of the problem: a body
-            // that gave up on an errand stands wherever it happened to stop,
-            // and in a room whose aisles are narrower than two people that is
-            // quite often the only way through. The walker then presses into a
-            // colleague who has no idea it is there, for as long as its own
-            // watchdog allows - measured at just under four seconds, and it
-            // looks exactly like what it is.
-            //
-            // A person notices. So this one does too, and the noticing is
-            // cheap: the neighbour list already knows who is trying to get
-            // somewhere, and being touched by one of them for the better part
-            // of a second is the whole test.
-            let obstructing = false
-            for (let index = 0; index < navNeighbours.length; index += 1) {
-              if (index === entryIndex) continue
-              const other = navNeighbours[index]
-              if (!other.moving) continue
-              const reach = selfRadius + other.radius + .18
-              if ((agent.x - other.x) ** 2 + (agent.z - other.z) ** 2 < reach * reach) { obstructing = true; break }
-            }
-            entry.blockedFor = obstructing ? entry.blockedFor + delta : 0
-          }
-        }
-
-        // Face where you are going while moving, and turn to the station's
-        // working heading once stopped. The agent already limits its own turn
-        // rate, so the body's yaw can track it exactly rather than lagging it.
-        const facingTarget = agent.speed > .08 ? agent.heading : entry.errandFacing
-        actor.rotation.y = reduced
-          ? facingTarget
-          : interpolateAngle(actor.rotation.y, facingTarget, 1 - Math.exp(-7.5 * delta))
-
-        // ---- Weight, lean and banking ----------------------------------
-        //
-        // Three secondary-motion terms that all come from the same idea: a body
-        // has mass, so it leads and trails its own translation rather than
-        // being rigidly attached to it.
-        const speed = agent.speed
-        const acceleration = delta > 1e-4 ? (speed - entry.measuredSpeed) / delta : 0
-        entry.measuredSpeed = speed
-        const headingDelta = delta > 1e-4
-          ? Math.atan2(Math.sin(agent.heading - entry.previousHeading), Math.cos(agent.heading - entry.previousHeading)) / delta
-          : 0
-        entry.previousHeading = agent.heading
-        entry.turnRate = THREE.MathUtils.damp(entry.turnRate, headingDelta, 7, Math.max(delta, 1 / 120))
-        // Lean into acceleration: forward to set off, back to pull up. This is
-        // the readable cue that a stop was intended rather than a freeze.
-        entry.turnLean = THREE.MathUtils.damp(entry.turnLean, THREE.MathUtils.clamp(acceleration * .055, -.08, .09), 9, Math.max(delta, 1 / 120))
-        if (!reduced) {
-          rig.root.rotation.x = entry.turnLean
-          // Bank into the corner, on the inside of the turn.
-          rig.root.rotation.z = THREE.MathUtils.clamp(-entry.turnRate * speed * .035, -.06, .06)
-        }
-
-        // ---- Gait ------------------------------------------------------
-        //
-        // The gait rate comes from the speed the body genuinely covered this
-        // frame, including any correction the separation and push-out passes
-        // applied, so one stride covers one step by construction rather than by
-        // coincidence. This is what stops the feet skating.
-        const walking = entry.walking ? speed > .05 : speed > .13
-        if (walking !== entry.walking) {
-          entry.walking = walking
-          if (walking) humanoid.setState('walk')
-          else if (entry.errand === 'away') humanoid.setState(humanoid.state === 'walk' ? 'idle' : humanoid.state)
-          else if (entry.errand === 'settled') humanoid.setState(STATION_SETTLED[station])
-          else humanoid.setState('idle')
-        }
-        if (walking) humanoid.setGroundSpeed(speed)
+        // What used to be here: an errand state machine with six phases, a
+        // path query and a steering pass per body, reciprocal separation,
+        // yielding, stall detection and re-planning, an anchor reservation
+        // table, and the measured-speed, heading-delta, lean and banking terms
+        // that only meant anything to a body in motion. All of it went with
+        // the walking, and none of it is switched off - it is gone.
         timed('humanoid', () => humanoid.update(delta))
         // Blinking stays here: it is not a joint, so the skeleton has no
         // opinion about it.

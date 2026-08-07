@@ -103,7 +103,7 @@ export function PerformancePage() {
   // moves it, which is the only time the movement carries information.
   const measured = performanceQuery.data?.performance
   const rolledAccuracy = useRollupInt((measured?.test_performance ?? measured?.overall)?.accuracy)
-  if (performanceQuery.isLoading || diagnosticQuery.isLoading || current.isLoading) return <LoadingScreen label="Measuring your training line…" />
+  if (performanceQuery.isLoading || diagnosticQuery.isLoading || current.isLoading) return <LoadingScreen label="Loading…" />
   if (performanceQuery.error || diagnosticQuery.error) {
     return (
       <div className="contained page-error">
@@ -152,10 +152,10 @@ export function PerformancePage() {
   const diagnosticMinutes = diagnosticSession?.target_minutes || 105
   const activePractice = current.data?.session
   const evidenceCopy = {
-    baseline: 'Fewer than 10 questions. Treat every signal as provisional.',
-    emerging: 'Enough work to identify early patterns, but not stable mastery.',
-    directional: 'The trend is useful for training decisions.',
-    stable: 'Your sample is large enough for a stable performance signal.',
+    baseline: 'Fewer than 10 questions. Provisional.',
+    emerging: 'Early patterns only.',
+    directional: 'Trend is usable.',
+    stable: 'Sample is large enough to be stable.',
   }[metrics.evidence]
   const openPrimaryTraining = () => {
     if (activePractice) navigate(`/cases/${activePractice.id}`)
@@ -176,7 +176,7 @@ export function PerformancePage() {
       <BriefcaseBusiness size={16} />
       <span>
         <strong>{activePractice.current_index} of {activePractice.total_items} answered</strong>
-        <small>{activePractice.status === 'in_progress' ? 'Running now' : 'Paused'} · click continue to jump back in</small>
+        <small>{activePractice.status === 'in_progress' ? 'Running now' : 'Paused'}</small>
       </span>
       {activePractice.status === 'in_progress' && !activePractice.pending_result && (
         <button type="button" className="active-run-pause" disabled={pauseActive.isPending} onClick={pauseActiveRun}>
@@ -234,7 +234,7 @@ export function PerformancePage() {
           </p>
         ) : <small>Grade 20 more explanations to reveal a trend.</small>}
       </>
-    ) : <p>Coached cases are graded on every written explanation — run a set to seed this.</p>,
+    ) : <p>Run a set of cases to see explanation grades.</p>,
     review: (
       <>
         <div className="metric-breakdown metric-breakdown-review">
@@ -247,22 +247,22 @@ export function PerformancePage() {
             and hands back the weakest whenever you sit down. */}
         <p>
           {reviewMetrics.desired_retention
-            ? `A question counts as slipping once your chance of getting it right again drops below ${Math.round(reviewMetrics.desired_retention * 100)}%. No calendar gate — start a run whenever you like and the weakest material comes first.`
-            : 'Repairs are mixed through your runs rather than stacked at the front.'}
+            ? `A question is slipping once your chance of getting it right again drops below ${Math.round(reviewMetrics.desired_retention * 100)}%. No calendar gate: the weakest material comes first whenever you start a run.`
+            : 'Repairs are mixed through your runs, not stacked at the front.'}
         </p>
         {reviewMetrics.due > 0 ? (
           <button type="button" className="metric-detail-action" onClick={openPrimaryTraining} disabled={startCases.isPending}>
             Start a run — repairs folded in <ArrowRight size={14} />
           </button>
-        ) : <p>Nothing is slipping right now. Keep working unseen questions.</p>}
+        ) : <p>Nothing slipping.</p>}
       </>
     ),
     confidence: confidenceMetrics.sample ? (
       <>
         <p>Average self-rated confidence: {confidenceMetrics.average ?? '—'} / 5 across {confidenceMetrics.sample} rated answer{confidenceMetrics.sample === 1 ? '' : 's'}.</p>
-        <p>A high-confidence miss is a wrong answer you rated 4 or 5 on — the errors most worth reviewing, since the mistake wasn't a guess.</p>
+        <p>A high-confidence miss is a wrong answer you rated 4 or 5.</p>
       </>
-    ) : <p>Rate your confidence on graded answers to unlock this signal.</p>,
+    ) : <p>Rate confidence on graded answers to see this.</p>,
   }
   // One metric card, used at every width. The page used to carry a second,
   // phone-only copy of the same five measures; the tab strip below removed the
@@ -304,7 +304,7 @@ export function PerformancePage() {
             <small>Mega-litigation accuracy</small>
             <p>{testMetrics.attempts
               ? `${testMetrics.attempts} measured question${testMetrics.attempts === 1 ? '' : 's'} · ${readiness.status === 'ready' ? 'comparison ready' : 'evidence forming'}`
-              : 'Sit a mega-litigation — a full practice LSAT — to establish your line.'}</p>
+              : 'Sit a mega-litigation — a full practice LSAT — to set your baseline.'}</p>
             {/* What used to be a separate evidence strip across the page. It
                 qualifies the figure beside it, so it belongs on the same line
                 as the figure rather than in a band of its own. */}
@@ -337,7 +337,7 @@ export function PerformancePage() {
             <strong>{performance.recommendation?.skill ?? 'Establish your baseline'}</strong>
             <small>{performance.recommendation
               ? `${performance.recommendation.accuracy}% accuracy · recommended because it currently has the ${performance.recommendation.reason}.`
-              : 'A mega-litigation will identify the first weakness. No weakness is inferred without evidence.'}</small>
+              : 'Sit a mega-litigation to find the first weakness.'}</small>
           </div>
           {performance.recommendation && (
             <button
@@ -366,7 +366,7 @@ export function PerformancePage() {
         {tab === 'skills' && (
           <>
             <section className="skill-table-panel">
-              <div className="panel-heading"><div><span>SKILL MATRIX</span><h2>Where the points are actually moving</h2></div><Brain /></div>
+              <div className="panel-heading"><div><span>SKILL MATRIX</span><h2>Accuracy by question type</h2></div><Brain /></div>
               {performance.skills.length ? (
                 <>
                   <div className="skill-table">
@@ -383,7 +383,7 @@ export function PerformancePage() {
                       </button>
                     ))}
                   </div>
-                  <p className="skill-table-hint">Select a row to pull it up here and run a focused sprint on it.</p>
+                  <p className="skill-table-hint">Select a row to run a focused sprint on it.</p>
                   {selectedSkillDetail && (
                     <div className="skill-detail">
                       <div>
@@ -417,13 +417,13 @@ export function PerformancePage() {
                     </div>
                   )}
                 </>
-              ) : <div className="empty-skills"><Brain /><p>No skill claims yet. A mega-litigation creates the first evidence-backed matrix.</p></div>}
+              ) : <div className="empty-skills"><Brain /><p>No data yet. Sit a mega-litigation to build the matrix.</p></div>}
             </section>
 
             <section className="focus-panel" aria-label="What practice is weighted toward">
               <div className="panel-heading"><div><span>PRACTICE FOCUS</span><h2>{focus.types.length ? focus.types.join(' · ') : 'Weighted evenly across the test'}</h2></div><Target /></div>
               <p>{focus.explanation}</p>
-              {focus.baseline_accuracy !== null && <small>Measured against your own {focus.baseline_accuracy}% on that form, not a fixed bar.</small>}
+              {focus.baseline_accuracy !== null && <small>Measured against your own {focus.baseline_accuracy}% on that form.</small>}
             </section>
           </>
         )}
@@ -431,7 +431,7 @@ export function PerformancePage() {
         {tab === 'methods' && (
           <section className="strategy-lab-panel" aria-labelledby="strategy-lab-title">
             <div className="panel-heading strategy-lab-heading">
-              <div><span>WHAT&apos;S WORKING FOR YOU</span><h2 id="strategy-lab-title">The approaches that actually help you.</h2></div>
+              <div><span>APPROACHES</span><h2 id="strategy-lab-title">What works for you</h2></div>
               <Brain />
             </div>
             <p className="strategy-lab-intro">{strategyLab.intro}</p>
@@ -474,14 +474,14 @@ export function PerformancePage() {
           <section className="diagnostic-lab">
             <div className="diagnostic-copy">
               <span className="eyebrow">MEGA-LITIGATION</span>
-              <h2>{performance.diagnostic ? 'Your performance anchor is set.' : 'Basically a full practice LSAT.'}</h2>
-              <p>{diagnosticSize} LR and RC questions in three blocks under a single {diagnosticMinutes}-minute clock, with results held to the end. It takes one sitting and there is no pause. Take one whenever you like — nothing in the firm waits on it.</p>
+              <h2>{performance.diagnostic ? 'Your baseline is set.' : 'A full practice LSAT.'}</h2>
+              <p>{diagnosticSize} LR and RC questions in three blocks, one {diagnosticMinutes}-minute clock, results held to the end. One sitting, no pause.</p>
               <ul><li>Above 70% promotes your firm a tier</li><li>Prerequisite upgrades unlocked free</li><li>Sets what your case runs practice</li><li>Pays nothing, prompts nothing, coaches nothing</li></ul>
               <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>{diagnosticSession ? 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight /></button>
-              <p className="diagnostic-crosslink">Every sitting you have already taken, question by question, lives on the Practice tab under Mega-litigation.</p>
+              <p className="diagnostic-crosslink">Past sittings are on the Practice tab, under Mega-litigation.</p>
             </div>
             <div className={`diagnostic-score${performance.diagnostic ? '' : ' diagnostic-score-empty'}`}>
-              {performance.diagnostic ? <><small>LAST FORM SCORE</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong><span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span><p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p></> : <><small>{diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small><Gauge className="diagnostic-score-glyph" /><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>Scaled-score projections remain withheld until a form has a validated conversion.</p></>}
+              {performance.diagnostic ? <><small>LAST FORM SCORE</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong><span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span><p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p></> : <><small>{diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small><Gauge className="diagnostic-score-glyph" /><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>No scaled score until a form has a validated conversion.</p></>}
             </div>
           </section>
         )}
@@ -504,23 +504,23 @@ export function PerformancePage() {
                   <polyline points={chartPoints} />
                   {trend.map((entry, index) => <circle key={entry.id} cx={20 + index * (560 / Math.max(1, trend.length - 1))} cy={160 - entry.accuracy * 1.25} r="5"><title>{entry.accuracy}% · {entry.kind}</title></circle>)}
                 </svg>
-              ) : <div className="empty-trend"><Activity /><strong>Complete two runs to reveal a trend.</strong><p>One result is a baseline, not improvement.</p></div>}
+              ) : <div className="empty-trend"><Activity /><strong>Complete two runs to see a trend.</strong></div>}
             </section>
 
             <section className="evidence-class-panel" aria-label="Evidence coverage">
-              <div className="panel-heading"><div><span>COMPARISON READINESS</span><h2>{readiness.status === 'ready' ? 'Enough independent evidence to compare periods' : 'Still building a defensible sample'}</h2></div><ShieldAlert /></div>
+              <div className="panel-heading"><div><span>COMPARISON READINESS</span><h2>{readiness.status === 'ready' ? 'Enough evidence to compare periods' : 'Still building a sample'}</h2></div><ShieldAlert /></div>
               <div className="readiness-grid">
                 <div><strong>{readiness.lr_samples}</strong><span>Timed LR</span><small>40 recommended</small></div>
                 <div><strong>{readiness.rc_samples}</strong><span>Timed RC</span><small>20 recommended</small></div>
                 <div><strong>{readiness.completed_diagnostics}</strong><span>Mega-litigations</span><small>1 recommended</small></div>
               </div>
-              <details><summary>How evidence is separated</summary><p>A mega-litigation is a full practice LSAT, and the only thing that estimates test performance: it pays nothing, prompts nothing, and coaches nothing. Everything else is coached practice, reported separately. Repeated questions never inflate the headline.</p></details>
+              <details><summary>How evidence is separated</summary><p>Only the mega-litigation estimates test performance. Everything else is coached practice, reported separately. Repeated questions do not count toward the headline.</p></details>
             </section>
           </>
         )}
 
         {tab === 'projection' && (
-          <Suspense fallback={<PanelFallback label="Working out your projected score…" />}>
+          <Suspense fallback={<PanelFallback label="Loading…" />}>
             <ScoreProjectionPanel projection={performance.projection} />
           </Suspense>
         )}

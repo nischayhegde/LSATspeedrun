@@ -13,7 +13,7 @@ import { UnifiedEmpireMap } from './art/unified-empire-map'
 import { useSound } from './sound'
 import { MOTION_TIMING } from './motion'
 import {
-  connectionArt, keyHash, playerStage, upgradeArt, cutsceneArt, rivalSiteArt,
+  clientCastIdentity, connectionArt, keyHash, playerStage, upgradeArt, cutsceneArt, rivalSiteArt,
 } from './art/assets'
 import { loadStylizedCharacter } from './art/scene-loaders'
 import { officeEnvironmentFor, officeStaffStationFor, officeVisualFor, ownedOfficeAssets } from './art/office-manifest'
@@ -329,7 +329,15 @@ export function ClientPortrait({
   // of clients share e.g. "briefcase" or "lunar"), which collapsed most of the
   // roster onto a handful of identical-looking faces. `name` is unique per
   // client in the catalog, giving each one its own deterministic appearance.
-  const identity = `${kind}:${name}`
+  //
+  // It is also the *only* unique thing about a client that both this card and
+  // the seated 3D client in the office scene hold, which is why the identity is
+  // the bare name and not `kind:name`. Those two are the same person and have
+  // to look it: the office scene has the client's name and key but no icon
+  // category, so folding `kind` in here is what made the card and the body in
+  // the room resolve to two different faces. See `clientCastSeed`, which is the
+  // hash both sides run this through.
+  const identity = clientCastIdentity(name)
   return (
     <div className={`client-portrait av-portrait client-${kind} mood-${mood} ${className}`} aria-label={`${name}, ${profile.title.toLowerCase()}, ${mood}`} role="img">
       <Bust identity={identity} backdrop={profile.bg} mood={mood} />

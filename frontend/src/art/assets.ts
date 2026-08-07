@@ -11,6 +11,41 @@ export function keyHash(key: string) {
   return [...key].reduce((total, character) => total + character.charCodeAt(0), 0)
 }
 
+/* ------------------------------------------------------------- cast
+ *
+ * One client is drawn twice: as the 2D-framed portrait on the contract card
+ * (`ClientPortrait`, which is a `Bust` behind a plaque) and as the seated
+ * figure in the 3D office. Both are the same procedural builder driven by a
+ * palette seed, so they are the same person only for as long as both sides
+ * seed from the same value — and they had drifted, because the card hashed
+ * `icon:name` while the office hashed `session:clientKey`.
+ *
+ * The client's *name* is the one identifier both surfaces hold, and it is
+ * unique per client in the catalog, so it is both the only workable choice and
+ * a variety-preserving one. Seeding from the icon category or the client key
+ * would put dozens of clients on one face, which is the regression this
+ * deliberately avoids repeating.
+ *
+ * This lives here, rather than beside the character builder, because the
+ * contract card must not pull three.js into the entry bundle to ask a question
+ * about a string.
+ */
+
+/** The cast-identity string for one client, from its catalog name. */
+export function clientCastIdentity(clientName: string) {
+  return clientName
+}
+
+/** FNV-1a, matching the `castHash` the cast surfaces already hash identities
+ *  with, so a seed computed here and one computed there agree exactly. */
+export function clientCastSeed(clientName: string) {
+  let hash = 2166136261
+  for (const character of clientCastIdentity(clientName)) {
+    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
+  }
+  return hash >>> 0
+}
+
 /* ------------------------------------------------------------ scenes */
 
 export const CUTSCENE_KEYS = [

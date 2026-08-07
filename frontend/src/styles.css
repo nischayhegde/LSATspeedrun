@@ -929,12 +929,19 @@ body {
   background-image: linear-gradient(90deg, rgba(40,35,31,.045) 1px, transparent 1px), linear-gradient(rgba(40,35,31,.045) 1px, transparent 1px);
   background-size: 8px 8px;
 }
+/* This pseudo-element is fixed, full-viewport and above everything, so it must
+   never carry a blend mode. `mix-blend-mode` on a layer this size makes the
+   compositor re-blend the whole viewport against the content beneath it on
+   every frame the content moves. Measured on /progress, /firm and /story: p95
+   frame time during a scroll halved, 33ms back to 17ms, and dropped frames went
+   from 6-47% (it varies with machine load) to under 1%. At this grain — .18
+   layer opacity over a .12 dot — multiply and normal composite to within 1/255
+   of each other, so the texture is unchanged. Keep it unblended. */
 body::before {
   z-index: 1000;
   opacity: .12;
   background-image: repeating-linear-gradient(0deg, transparent 0 3px, rgba(8,12,17,.18) 4px);
   background-size: auto;
-  mix-blend-mode: multiply;
 }
 ::selection { color: #fff4ce; background: #8d4c43; }
 button, a { -webkit-tap-highlight-color: transparent; }
@@ -1040,7 +1047,11 @@ h1, h2, h3 { letter-spacing: -.035em; }
    navy row and therefore impossible to miss while it is holding three screens
    back. */
 .header-focus-toggle {
-  height: 36px;
+  /* Same 42px as `.desktop-nav a`: this is a plate sitting in a row of plates,
+     and at 36px its top and bottom edges missed the nav tabs beside it by 3px
+     each — most visible against the lit tab, which is the one plate in the row
+     that is always filled. */
+  height: 42px;
   border: 2px solid #080c13;
   border-radius: 2px;
   color: #9cb0bb;
@@ -1050,7 +1061,9 @@ h1, h2, h3 { letter-spacing: -.035em; }
   font-size: 10.5px;
   letter-spacing: .04em;
 }
-.header-focus-toggle::before { left: -6px; background: rgba(148,178,196,.25); }
+/* The gap this hairline divides is 16px — 8px of nav gap plus the button's 8px
+   margin — so it only reads as centred at -8px. */
+.header-focus-toggle::before { left: -8px; background: rgba(148,178,196,.25); }
 .header-focus-toggle:hover:not(:disabled) { color: #ffe394; border-color: #080c13; background: #26384c; }
 .header-focus-toggle.is-on {
   color: #ffe1ad;
@@ -1237,8 +1250,17 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .office-gamebar .training-evidence-card small { color: #565e59; font-size: 11px; font-weight: 700; }
 .office-gamebar .training-focus-card button,
 .office-gamebar .training-evidence-card button { min-height: 44px; padding: 9px 13px; border: 2px solid #b88935; font-size: 10px; box-shadow: 3px 3px #9a712b; }
-.client-quest-card { padding: 12px; display: grid; grid-template-columns: 76px 1fr auto; align-items: center; gap: 12px; }
-.client-quest-card .client-portrait { width: 70px; height: 76px; }.client-quest-card span, .daily-quest-card span, .safe-card span { color: #945b30; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.client-quest-card h3 { margin: 5px 0; color: #1d2935; font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.client-quest-card p { margin: 0; color: #6d5e4b; font-size: 11px; }.client-quest-card button, .safe-card button { min-height: 34px; padding: 0 10px; border: 2px solid #121720; color: #f8e6b5; background: #263f50; box-shadow: 3px 3px #121720; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; }.client-quest-card button { display: flex; align-items: center; gap: 5px; }.client-quest-card button svg { width: 12px; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
+/* The portrait track is intrinsic rather than a fixed 76px. The rendered
+   portrait is `av-portrait`, which art.css sizes to 86px and wins on load
+   order, so a fixed track put the portrait 10px into the text column before
+   its decorations were counted at all. The badge and the title pill are both
+   absolutely positioned, so neither widens the track — `--portrait-overhang`
+   reserves the room they hang outside the circle. */
+.client-quest-card { --portrait-overhang: 6px; padding: 12px 12px 20px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.client-quest-card .client-portrait { margin-right: var(--portrait-overhang); }
+.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }
+.client-quest-card > div { min-width: 0; }
+.client-quest-card p { overflow-wrap: anywhere; }.client-quest-card span, .daily-quest-card span, .safe-card span { color: #945b30; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.client-quest-card h3 { margin: 5px 0; color: #1d2935; font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.client-quest-card p { margin: 0; color: #6d5e4b; font-size: 11px; }.client-quest-card button, .safe-card button { min-height: 34px; padding: 0 10px; border: 2px solid #121720; color: #f8e6b5; background: #263f50; box-shadow: 3px 3px #121720; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; }.client-quest-card button { display: flex; align-items: center; gap: 5px; }.client-quest-card button svg { width: 12px; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
 .empire-game-page { width: 100%; min-height: calc(100vh - 68px); padding: 27px clamp(16px, 2.7vw, 44px) 48px; color: #f6e8bb; background: #101724; }
 /* Just the page title here — the map's own headquarters panel just below
    carries every stat, so this bar stays plain text with no boxed card. */
@@ -1321,7 +1343,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
 }
 
 /* And the word "Focus" only where there is room for it on top of that. Below
-   this the control is a 36px plate carrying its name in `aria-label` and
+   this the control is a square plate carrying its name in `aria-label` and
    `title`; above it, the word shows. */
 @media (min-width: 1400px) {
   .header-focus-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
@@ -1378,7 +1400,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
   .command-stats { overflow-x: auto; }.command-stats > span { min-width: 145px; }
   .office-explorer { min-height: 500px; aspect-ratio: auto; }.office-upkeep-strip { padding: 11px; }
   .office-upkeep-terms { grid-template-columns: repeat(4,130px); }
-  .office-milestone-strip { grid-template-columns: 1fr; padding: 12px; }.office-milestone-progress,.office-milestone-strip > button { grid-column: 1; grid-row: auto; }.office-milestone-strip > button { width: 100%; }.client-quest-card { grid-template-columns: 62px 1fr; }.client-quest-card .client-portrait { width: 58px; height: 64px; }.client-quest-card > button { grid-column: 1 / 3; }  .empire-command-bar > div:last-child { width: 100%; }.login-copy h1 { font-size: 38px; }  .firm-tabs button { font-size: 10px; }
+  .office-milestone-strip { grid-template-columns: 1fr; padding: 12px; }.office-milestone-progress,.office-milestone-strip > button { grid-column: 1; grid-row: auto; }.office-milestone-strip > button { width: 100%; }.client-quest-card { grid-template-columns: auto minmax(0, 1fr); }.client-quest-card > button { grid-column: 1 / 3; }  .empire-command-bar > div:last-child { width: 100%; }.login-copy h1 { font-size: 38px; }  .firm-tabs button { font-size: 10px; }
 }@keyframes airport-shuttle{50%{translate:30px 0}}@keyframes orbital-ready{50%{translate:0 -7px;filter:drop-shadow(0 9px #f1b14e)}}@keyframes mega-core-float{50%{translate:0 -6px}}@keyframes mega-particle{50%{translate:8px -15px;opacity:.2}}/* Client archetypes read like case files, and every new portrait has a skyline. */
 .content-location-tag{min-height:18px;margin:2px 0 7px;display:flex;align-items:center;justify-content:space-between;gap:7px;color:#925537;font-family:var(--font-pixel);font-size:9px;letter-spacing:.08em;text-transform:uppercase}.content-location-tag b{padding:3px 5px;color:#e9d59b;background:#304b55;font-size:9px;letter-spacing:0}
 .client-special{min-height:46px;margin:10px 0;padding:7px 8px;display:flex;align-items:center;gap:7px;border:2px solid #493240;color:#63374c;background:#ecd291;box-shadow:inset 0 0 0 2px #f6e5ad,3px 3px rgba(61,42,32,.25);font-family:var(--font-pixel);font-size:9.5px;line-height:1.4}.client-special svg{flex:0 0 auto;color:#a04d4c}.client-special span,.client-special small{display:block}.client-special small{margin-bottom:3px;color:#a0533e;font-size:9px}

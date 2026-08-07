@@ -22,6 +22,7 @@ import { ErrorNotice, formatMoney } from './components'
 import { ClientPortrait, CounselPortrait3D, JudgePortrait } from './game-art'
 import { counselFor, keyHash } from './art/assets'
 import { useSound } from './sound'
+import { MarkupLayer, MarkupToolbar, useCaseMarkup } from './markup'
 import { MOTION_TIMING } from './motion'
 import { LockedChoicesNotice, useStrategyGate } from './strategy-enforcement'
 import type { AttemptReward, CoachingFeedback, GameResponse, StudySession } from './types'
@@ -339,6 +340,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     locked: Boolean(result),
   })
   const [mobileCasePane, setMobileCasePane] = useState<'passage' | 'question'>(() => item?.question.passage ? 'passage' : 'question')
+  // Scratch ink over the case file. It belongs to the question on screen and
+  // resets itself when the item changes, so nothing follows a student to the
+  // next page and nothing is sent to the server.
+  const markup = useCaseMarkup(item?.id)
   const [clock, setClock] = useState(Date.now())
   const [openedAt, setOpenedAt] = useState(Date.now())
   const [formClock, setFormClock] = useState(Date.now())
@@ -706,12 +711,16 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
       {strategyGate.panel}
 
+      <MarkupToolbar markup={markup} seed={item.id} />
+
       <div className={`${question.passage ? `question-content with-passage mobile-pane-${mobileCasePane}` : 'question-content'} ${strategyDecisionRequired ? 'strategy-decision-pending' : ''}`}>
         {question.passage && (
           <article className="passage-card">
             <div className="document-heading"><BookOpen size={16} /><span>EXHIBIT A · READING PASSAGE</span></div>
             <div className="passage-text">{question.passage.text}</div>
             <button type="button" className="mobile-open-question" onClick={() => setMobileCasePane('question')}>Go to the question <ArrowRight size={17} /></button>
+            {/* Last, so the sentinel inside measures the passage above it. */}
+            <MarkupLayer markup={markup} surface="passage" />
           </article>
         )}
 
@@ -856,6 +865,9 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               </button>
             </div>
           )}
+          {/* Last, so the sentinel inside measures the whole card — including
+              the verdict and coaching panels that mount after a submission. */}
+          <MarkupLayer markup={markup} surface="answer" />
         </section>
       </div>
     </div>

@@ -1,7 +1,7 @@
 /* ================================================================
    NARRATIVE LAYER — chapter surfacing and the closing record
    One stacking order for every story surface:
-   chapter marker (120) < chapter prompt (130) < cutscene (300)
+   chapter prompt (130) < cutscene (300)
    < epilogue (400) < guided tour (10000).
    ================================================================ */
 
@@ -18,49 +18,12 @@
 }
 .cutscene-defer:hover { color: #f2d383; border-color: #6d5a30; }
 
-/* ------------------------------------------------------ chapter dock */
-
-/* The shell's in-flow slot for the waiting-chapter prompt (see overlays.tsx).
-   Empty for the whole game except while a chapter is pending, so it collapses
-   to nothing rather than reserving a permanent gap. */
-.chapter-dock:empty { display: none; }
-.chapter-dock {
-  padding: 14px clamp(14px, 3vw, 44px) 0;
-}
-
-/* Docked, the prompt is a banner across the page rather than a card over it:
-   the same content, laid out along the row it now owns. Nothing is stacked on
-   top of the dashboard, so nothing can intercept a click meant for a card. */
-.chapter-dock .chapter-prompt {
-  width: auto;
-  position: static;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-areas:
-    "seal eyebrow actions"
-    "seal title   actions"
-    "seal body    actions";
-  align-items: center;
-  column-gap: 20px;
-  padding: 15px 20px;
-}
-.chapter-dock .chapter-prompt-seal { grid-area: seal; position: static; }
-.chapter-dock .chapter-prompt-eyebrow { grid-area: eyebrow; padding-right: 0; }
-.chapter-dock .chapter-prompt h2 { grid-area: title; margin: 3px 0 2px; font-size: 22px; }
-.chapter-dock .chapter-prompt p { grid-area: body; font-size: 12.5px; }
-.chapter-dock .chapter-prompt-actions { grid-area: actions; margin-top: 0; }
-/* "Not now" is on the same row and does exactly what the corner ✕ does, so the
-   docked form drops the duplicate rather than crowding the border with it. */
-.chapter-dock .chapter-prompt-close { display: none; }
-/* The collapsed form is a chip on the same row, so "not now" still costs the
-   page a single slim line instead of pinning a pulsing badge over a card. */
-.chapter-dock .chapter-marker { position: static; }
-.chapter-dock:has(.chapter-marker) { display: flex; justify-content: flex-end; }
-
 /* ------------------------------------------------------ chapter prompt */
 
-/* The floating form below is the fallback for anything rendering the narrative
-   layer without the shell around it (the gate harness, a standalone story). */
+/* A card in the bottom-right corner, clear of the page's own content: the
+   pages keep their layout to themselves and the prompt sits over the gutter.
+   Dismissing it removes it outright — the caseboard's "Play this chapter"
+   button is the standing way back in, so nothing needs a badge left behind. */
 .chapter-prompt {
   width: min(370px, calc(100vw - 32px));
   padding: 22px 22px 20px;
@@ -147,52 +110,21 @@
 }
 .chapter-prompt-later:hover { color: #3d4a52; border-color: #6f7b7f; }
 
-/* ------------------------------------------------------ standing marker */
-
-.chapter-marker {
-  padding: 9px 13px;
-  position: fixed;
-  z-index: 120;
-  right: 24px;
-  bottom: 24px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 3px solid #171d28;
-  color: #241c0e;
-  background: #e8bd51;
-  box-shadow: 4px 5px 0 #14202b;
-  font-family: var(--font-pixel);
-  font-size: 9.5px;
-  letter-spacing: .06em;
-  animation: chapter-marker-pulse 2.4s steps(2) infinite;
-}
-.chapter-marker:hover { background: #f4cf6c; translate: 1px -1px; }
-
 @keyframes chapter-prompt-in {
   from { opacity: 0; transform: translateY(18px) scale(.97); }
   to { opacity: 1; transform: none; }
 }
-@keyframes chapter-marker-pulse {
-  50% { box-shadow: 4px 5px 0 #14202b, 0 0 0 6px rgba(232, 189, 81, .22); }
-}
 
 @media (max-width: 760px) {
-  .chapter-prompt, .chapter-marker { right: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); }
-  .chapter-prompt { left: 12px; width: auto; padding: 18px 16px 16px; }
-  .chapter-prompt h2 { font-size: 23px; }
-  /* One column: a phone has no room for a side-by-side banner. */
-  .chapter-dock { padding: 10px 12px 0; }
-  .chapter-dock .chapter-prompt {
-    grid-template-columns: auto 1fr;
-    grid-template-areas:
-      "seal eyebrow"
-      "seal title"
-      "seal body"
-      "actions actions";
-    padding: 16px 16px 15px;
+  /* Clear of the mobile nav strip along the bottom edge. */
+  .chapter-prompt {
+    right: 12px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    left: 12px;
+    width: auto;
+    padding: 18px 16px 16px;
   }
-  .chapter-dock .chapter-prompt-actions { margin-top: 14px; }
+  .chapter-prompt h2 { font-size: 23px; }
 }
 
 /* --------------------------------------------- entry points on the pages */

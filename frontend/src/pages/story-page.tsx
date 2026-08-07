@@ -45,7 +45,7 @@ export function StoryPage() {
       })
     },
   })
-  if (gameQuery.isLoading) return <LoadingScreen label="Developing the caseboard…" />
+  if (gameQuery.isLoading) return <LoadingScreen label="Loading…" />
   if (gameQuery.error) return <div className="contained"><ErrorNotice error={gameQuery.error} /></div>
   const game = gameQuery.data!.game!
   const story = game.story
@@ -84,7 +84,7 @@ export function StoryPage() {
       </section>
 
       <section className="campaign-timeline">
-        <div className="story-section-heading"><span>01 · THE CAMPAIGN</span><h2>From one light to a constellation</h2><p>Chapters unlock with headquarters tiers, and each one opens the caseboard files that follow it. Story decisions are permanent.</p></div>
+          <div className="story-section-heading"><span>01 · THE CAMPAIGN</span><h2>From one light to a constellation</h2><p>Chapters unlock with headquarters tiers. Story decisions are permanent.</p></div>
         <div className="chapter-track">
           {story.chapters.map((chapter, index) => (
             <article key={chapter.key} className={`${chapter.seen ? 'seen' : ''} ${story.pending_chapter?.key === chapter.key ? 'pending' : ''}`}>
@@ -110,7 +110,7 @@ export function StoryPage() {
       )}
 
       <section className="quest-caseboard">
-        <div className="story-section-heading"><span>02 · THE CASEBOARD</span><h2>Choose the work behind the work</h2><p>Files open in order along their own track, so closing one is what puts the next on the board. Only one can occupy the caseboard at a time, and hidden files surface when your Ethics and Intel make the right people trust you or target you.</p></div>
+          <div className="story-section-heading"><span>02 · THE CASEBOARD</span><h2>Choose the work behind the work</h2><p>Files open in order along their track. One at a time. Hidden files surface as your Ethics and Intel change.</p></div>
         {grouped.map(({ category, quests }) => {
           const presentation = questPresentation[category]
           const Icon = presentation.icon

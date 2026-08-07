@@ -207,11 +207,7 @@ function StreakWelcomeModal({ game, justAdvanced, suppressed }: { game: GameStat
         <h2 id="streak-welcome-title" className="streak-welcome-count">
           <span>{game.daily_streak}</span> {game.daily_streak === 1 ? 'day' : 'days'}
         </h2>
-        <p>
-          {isPersonalBest
-            ? 'Your longest run yet. One more case tomorrow keeps it climbing.'
-            : 'Another day on the docket and the streak holds. Come back tomorrow to keep it alive.'}
-        </p>
+        <p>{isPersonalBest ? 'Your longest run yet.' : 'Sit a case tomorrow to keep it.'}</p>
         <button type="button" className="primary-button" onClick={close}>Back to work</button>
       </div>
     </div>

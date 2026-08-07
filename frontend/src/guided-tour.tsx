@@ -323,12 +323,18 @@ export function GuidedTour({ oriented }: { oriented: boolean }) {
       return
     }
     let frame = 0
+    // A target can be a frame or two late (lazy art, a route still settling),
+    // so retry — but give up rather than re-queue forever if the element is
+    // hidden at this breakpoint. The step then reads without a spotlight
+    // instead of spinning a rAF loop for as long as the tour is open.
+    let attempts = 0
     const measure = () => {
       const target = findVisibleTarget(step.target)
       if (!target) {
-        frame = window.requestAnimationFrame(measure)
+        if (attempts++ < 90) frame = window.requestAnimationFrame(measure)
         return
       }
+      attempts = 0
       const rect = target.getBoundingClientRect()
       const pad = 8
       setHighlight({

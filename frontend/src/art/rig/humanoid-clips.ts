@@ -830,6 +830,360 @@ const CLIP_SPECS: ClipSpec[] = [
     root: { y: [-.450, -.450, -.450, -.450, -.450, -.450, -.450, -.450] },
     grounded: 0,
   },
+
+  // ------------------------------------------------------------------
+  // The four desk tasks.
+  //
+  // Everyone seated in the office is doing exactly one of these, and unlike
+  // the rest of the library they are on screen continuously rather than for a
+  // beat, so they are authored at more length and in more detail than
+  // anything else here. Three things follow from being watched constantly.
+  //
+  // First, sample rate. A channel array is spread evenly over the clip, so an
+  // eight-key curve across ten seconds cannot express a keystroke. The task
+  // limbs therefore carry a hundred-odd samples while the torso keeps eight -
+  // they are independent per channel, and paying for density on the two limbs
+  // anyone is looking at is the whole trick.
+  //
+  // Second, durations are long and share no factors: 11.3, 9.1, 13.7 and 10.7
+  // seconds. Two people on the same task drift apart instead of locking, and
+  // the actor's own per-character rate jitter and rest-rate drift finish the
+  // job (see `driftRestingRate`, which these states opt into).
+  //
+  // Third, nobody works at a constant rate. Each clip has an envelope with
+  // real pauses in it - the hands stop, the head comes up, the body resettles
+  // - because uninterrupted activity at fixed amplitude is the single loudest
+  // tell that something is a loop rather than a person.
+  //
+  // All four sit on the same seated base as `seatedIdle`, and all four run
+  // with `{ arms: 0, legs: 0 }` rest-offset weight, so the arm angles below
+  // are absolute rather than a delta on top of a standing stance.
+  // ------------------------------------------------------------------
+  {
+    name: 'deskWrite',
+    duration: 9.1,
+    loop: true,
+    restPhase: .3,
+    channels: {
+      // Breathing, and a slow settle lower over the page as the line fills.
+      spine: { x: [-3.4, -3.9, -4.4, -4.8, -3.2, -3.6, -4.1, -4.5] },
+      chest: { x: [-1.4, -1.8, -2.2, -2.5, -1.2, -1.6, -2, -2.3] },
+      // The head follows the pen along the line and drops down the page, then
+      // comes up at the line return. Written as the same sawtooth the writing
+      // hand runs on, at a fraction of the amplitude - a reader's head moves
+      // far less than their hand does.
+      head: {
+        x: Array.from({ length: 64 }, (_, index) => {
+          const t = index / 64
+          const line = (t * 3) % 1
+          return 8.5 + line * 2.6 + Math.sin(t * Math.PI * 2 * 1.3) * .7
+        }),
+        y: Array.from({ length: 64 }, (_, index) => {
+          const t = index / 64
+          const line = (t * 3) % 1
+          // Ease the carriage return rather than cutting it: the head swings
+          // back over the last eighth of each line instead of teleporting.
+          return line < .875 ? -3.4 + line * 8.2 : 3.8 - (line - .875) * 57
+        }),
+      },
+      // The upper arm is almost still. This is the whole difference between
+      // writing and gesturing: the shoulder parks, and the forearm, wrist and
+      // hand do the work. It carries only the slow traverse across the page.
+      leftShoulder: { x: [-33, -33.4, -33.1, -32.8, -33.2, -33.5, -33.1, -32.9], y: [7, 7.2, 7, 6.8, 7.1, 7.3, 7, 6.9] },
+      rightShoulder: {
+        x: [-36, -36.6, -37, -36.4, -35.8, -36.5, -37.1, -36.3],
+        y: Array.from({ length: 48 }, (_, index) => {
+          const t = index / 48
+          const line = (t * 3) % 1
+          return line < .875 ? -13 + line * 16 : -.5 - (line - .875) * 100
+        }),
+      },
+      // The left hand is not idle, it is holding the page steady, with the
+      // occasional small repositioning nudge.
+      leftElbow: { x: [-72, -72.3, -72, -71.6, -72.1, -74.5, -72.4, -72] },
+      leftHand: { x: [2, 2.2, 2, 1.7, 2.1, 5.5, 2.3, 2] },
+      // Letter formation. A fast small oscillation on the wrist, gated by an
+      // envelope that stops it three times: twice briefly mid-line, and once
+      // properly at the end where the writer looks at what they have written.
+      rightElbow: {
+        x: Array.from({ length: 160 }, (_, index) => {
+          const t = index / 160
+          const busy = t > .30 && t < .35 ? 0 : t > .63 && t < .69 ? 0 : t > .90 ? 0 : 1
+          const line = (t * 3) % 1
+          return -70 + line * 5 + Math.sin(t * Math.PI * 2 * 34) * 2.1 * busy
+        }),
+      },
+      rightHand: {
+        x: Array.from({ length: 160 }, (_, index) => {
+          const t = index / 160
+          const busy = t > .30 && t < .35 ? 0 : t > .63 && t < .69 ? 0 : t > .90 ? 0 : 1
+          return 3 + Math.sin(t * Math.PI * 2 * 34) * 6.5 * busy + Math.sin(t * Math.PI * 2 * 17.3) * 2 * busy
+        }),
+        z: Array.from({ length: 160 }, (_, index) => {
+          const t = index / 160
+          const busy = t > .30 && t < .35 ? 0 : t > .63 && t < .69 ? 0 : t > .90 ? 0 : 1
+          return Math.sin(t * Math.PI * 2 * 34 + 1.1) * 4 * busy
+        }),
+      },
+      leftHip: { x: [-59, -59, -59, -59, -59, -59, -59, -59] },
+      rightHip: { x: [-59, -59, -59, -59, -59, -59, -59, -59] },
+      leftKnee: { x: [68, 68, 68, 68, 68, 68, 68, 68] },
+      rightKnee: { x: [68, 68, 68, 68, 68, 68, 68, 68] },
+      leftFoot: { x: [-7, -7, -7, -7, -7, -7, -7, -7] },
+      rightFoot: { x: [-7, -7, -7, -7, -7, -7, -7, -7] },
+    },
+    root: { y: [-.450, -.450, -.450, -.450, -.450, -.450, -.450, -.450] },
+    grounded: 0,
+  },
+  {
+    name: 'deskType',
+    duration: 11.3,
+    loop: true,
+    restPhase: .22,
+    channels: {
+      spine: { x: [-2.6, -3.1, -2.4, -2.9, -2.2, -3.3, -2.7, -2.5] },
+      chest: { x: [-1.1, -1.5, -1, -1.4, -.9, -1.6, -1.2, -1] },
+      // Eyes on the screen, not the keys, with a glance down at the hands in
+      // the pause and a longer look away near the end of the cycle.
+      head: {
+        x: Array.from({ length: 64 }, (_, index) => {
+          const t = index / 64
+          const glance = t > .41 && t < .49 ? 6 : 0
+          return 3.4 + glance + Math.sin(t * Math.PI * 2 * 1.7) * .8
+        }),
+        y: Array.from({ length: 64 }, (_, index) => {
+          const t = index / 64
+          const away = t > .74 && t < .86 ? 9 : 0
+          return away + Math.sin(t * Math.PI * 2 * .9) * 1.6
+        }),
+      },
+      leftShoulder: { x: [-38, -38.4, -38.1, -37.7, -38.3, -38.6, -38, -37.9] },
+      rightShoulder: { x: [-39.2, -38.7, -39.4, -39, -38.6, -39.3, -38.9, -39.1] },
+      // The two hands are given different rates, different burst envelopes and
+      // different phase, deliberately. Symmetric typing is the most obvious
+      // mechanical tell in the whole room, and two hands that pause at the
+      // same instant are almost as bad as two that strike together.
+      leftElbow: {
+        x: Array.from({ length: 176 }, (_, index) => {
+          const t = index / 176
+          const busy = t < .38 ? 1 : t < .46 ? 0 : t < .72 ? 1 : t < .78 ? .3 : t < .93 ? 1 : 0
+          return -66 + Math.sin(t * Math.PI * 2 * 41) * 2.4 * busy
+        }),
+      },
+      rightElbow: {
+        x: Array.from({ length: 176 }, (_, index) => {
+          const t = index / 176
+          const busy = t < .34 ? 1 : t < .46 ? 0 : t < .69 ? 1 : t < .74 ? .5 : t < .95 ? 1 : 0
+          return -67 + Math.sin(t * Math.PI * 2 * 37 + 2.2) * 2.6 * busy
+        }),
+      },
+      leftHand: {
+        x: Array.from({ length: 176 }, (_, index) => {
+          const t = index / 176
+          const busy = t < .38 ? 1 : t < .46 ? 0 : t < .72 ? 1 : t < .78 ? .3 : t < .93 ? 1 : 0
+          // Two frequencies rather than one: fingers do not strike at a single
+          // rate, and the beat between the two reads as words rather than a tone.
+          return 4 + (Math.sin(t * Math.PI * 2 * 41) * 5.5 + Math.sin(t * Math.PI * 2 * 23.5) * 2.4) * busy
+        }),
+        y: Array.from({ length: 176 }, (_, index) => {
+          const t = index / 176
+          const busy = t < .38 ? 1 : t < .46 ? 0 : t < .72 ? 1 : t < .78 ? .3 : t < .93 ? 1 : 0
+          // The hand tracks sideways across the keyboard as well as striking.
+          return Math.sin(t * Math.PI * 2 * 6.5) * 3.2 * busy
+        }),
+      },
+      rightHand: {
+        x: Array.from({ length: 176 }, (_, index) => {
+          const t = index / 176
+          const busy = t < .34 ? 1 : t < .46 ? 0 : t < .69 ? 1 : t < .74 ? .5 : t < .95 ? 1 : 0
+          return 5 + (Math.sin(t * Math.PI * 2 * 37 + 2.2) * 6 + Math.sin(t * Math.PI * 2 * 19.7 + .8) * 2.1) * busy
+        }),
+        y: Array.from({ length: 176 }, (_, index) => {
+          const t = index / 176
+          const busy = t < .34 ? 1 : t < .46 ? 0 : t < .69 ? 1 : t < .74 ? .5 : t < .95 ? 1 : 0
+          return Math.sin(t * Math.PI * 2 * 5.1 + 1.9) * 3.6 * busy
+        }),
+      },
+      leftHip: { x: [-59, -59, -59, -59, -59, -59, -59, -59] },
+      rightHip: { x: [-59, -59, -59, -59, -59, -59, -59, -59] },
+      leftKnee: { x: [68, 68, 68, 68, 68, 68, 68, 68] },
+      rightKnee: { x: [68, 68, 68, 68, 68, 68, 68, 68] },
+      leftFoot: { x: [-7, -7, -7, -7, -7, -7, -7, -7] },
+      rightFoot: { x: [-7, -7, -7, -7, -7, -7, -7, -7] },
+    },
+    root: { y: [-.450, -.450, -.450, -.450, -.450, -.450, -.450, -.450] },
+    grounded: 0,
+  },
+  {
+    name: 'deskRead',
+    duration: 13.7,
+    loop: true,
+    restPhase: .35,
+    channels: {
+      // The calmest of the four, and the one with the most torso in it: with
+      // the hands nearly still, the breathing and the slow lean are all the
+      // motion there is, so they carry more amplitude than elsewhere.
+      spine: { x: [-2.8, -3.6, -4.2, -3.4, -2.4, -3.1, -3.9, -3.2], y: [-1.2, -.6, .4, 1.1, .5, -.4, -1.1, -1.3] },
+      chest: { x: [-1.2, -1.7, -2.1, -1.6, -1, -1.4, -1.9, -1.5] },
+      // Following text. The head sweeps a line, snaps back, and works down the
+      // page; at the page turn near the end it lifts and resets to the top.
+      head: {
+        x: Array.from({ length: 96 }, (_, index) => {
+          const t = index / 96
+          const page = t < .78 ? t / .78 : 1 - (t - .78) / .22
+          return 6.5 + page * 4.5
+        }),
+        y: Array.from({ length: 96 }, (_, index) => {
+          const t = index / 96
+          const line = (t * 7) % 1
+          // Long sweep, short return - the shape of reading, and the reason a
+          // symmetric side-to-side head sway never reads as reading.
+          return line < .82 ? -7 + line * 16.5 : 6.5 - (line - .82) * 75
+        }),
+        z: Array.from({ length: 96 }, (_, index) => {
+          const t = index / 96
+          // A small considering tilt that comes and goes, not a constant lean.
+          return Math.sin(t * Math.PI * 2 * 1.4) * 1.8 + (t > .55 && t < .64 ? 2.4 : 0)
+        }),
+      },
+      // Both hands hold the document up off the desk, so the elbows are more
+      // folded than for typing and the shoulders slightly more forward.
+      leftShoulder: { x: [-30, -30.4, -30.8, -30.2, -29.6, -30.1, -30.6, -30.1], y: [5.5, 5.7, 5.4, 5.6, 5.8, 5.5, 5.3, 5.6] },
+      rightShoulder: { x: [-30.6, -30.1, -30.7, -31, -30.3, -29.9, -30.5, -30.8], y: [-5.2, -5, -5.4, -5.1, -4.9, -5.3, -5.5, -5.1] },
+      leftElbow: {
+        x: Array.from({ length: 96 }, (_, index) => {
+          const t = index / 96
+          // The page-turn beat: the left hand takes the weight while the right
+          // reaches over, then both settle back.
+          const turn = t > .80 && t < .90 ? Math.sin((t - .80) / .10 * Math.PI) : 0
+          return -78 + turn * 7 + Math.sin(t * Math.PI * 2 * 1.1) * .8
+        }),
+      },
+      rightElbow: {
+        x: Array.from({ length: 96 }, (_, index) => {
+          const t = index / 96
+          const turn = t > .80 && t < .90 ? Math.sin((t - .80) / .10 * Math.PI) : 0
+          return -77 - turn * 13 + Math.sin(t * Math.PI * 2 * .9 + 1.4) * .9
+        }),
+      },
+      leftHand: { x: [-3, -3.2, -2.8, -3.1, -3.3, -2.9, -3, -3.2] },
+      rightHand: {
+        x: Array.from({ length: 96 }, (_, index) => {
+          const t = index / 96
+          const turn = t > .80 && t < .90 ? Math.sin((t - .80) / .10 * Math.PI) : 0
+          return -2.6 + turn * 14
+        }),
+      },
+      leftHip: { x: [-59, -59, -59, -59, -59, -59, -59, -59] },
+      rightHip: { x: [-59, -59, -59, -59, -59, -59, -59, -59] },
+      leftKnee: { x: [68, 68, 68, 68, 68, 68, 68, 68] },
+      rightKnee: { x: [68, 68, 68, 68, 68, 68, 68, 68] },
+      leftFoot: { x: [-7, -7, -7, -7, -7, -7, -7, -7] },
+      rightFoot: { x: [-7, -7, -7, -7, -7, -7, -7, -7] },
+    },
+    root: { y: [-.450, -.450, -.450, -.450, -.450, -.450, -.450, -.450] },
+    grounded: 0,
+  },
+  {
+    name: 'deskSort',
+    duration: 10.7,
+    loop: true,
+    restPhase: .18,
+    channels: {
+      // Four pick-and-place cycles, and the only one of the four tasks with
+      // enough reach in it to move the torso: the body turns toward the stack
+      // on the reach and comes back square on the place.
+      spine: {
+        x: Array.from({ length: 80 }, (_, index) => {
+          const t = index / 80
+          const beat = (t * 4) % 1
+          return -2.4 + Math.sin(beat * Math.PI) * 4.2
+        }),
+        y: Array.from({ length: 80 }, (_, index) => {
+          const t = index / 80
+          const beat = (t * 4) % 1
+          return Math.sin(beat * Math.PI) * -6.5
+        }),
+      },
+      chest: {
+        x: Array.from({ length: 80 }, (_, index) => {
+          const t = index / 80
+          const beat = (t * 4) % 1
+          return -1 + Math.sin(beat * Math.PI) * 1.8
+        }),
+      },
+      head: {
+        x: Array.from({ length: 80 }, (_, index) => {
+          const t = index / 80
+          const beat = (t * 4) % 1
+          return 7 + Math.sin(beat * Math.PI) * 2.2
+        }),
+        y: Array.from({ length: 80 }, (_, index) => {
+          const t = index / 80
+          const beat = (t * 4) % 1
+          // Looks at the stack it is reaching for, then at where it is putting
+          // the sheet. The eyeline leads the hand rather than following it.
+          return beat < .45 ? -11 * Math.sin(beat / .45 * Math.PI) : 7 * Math.sin((beat - .45) / .55 * Math.PI)
+        }),
+      },
+      // The left hand squares the pile and holds it down; the right does the
+      // lifting. Not mirrored at any point in the cycle.
+      leftShoulder: { x: [-34, -34.4, -33.8, -34.2, -34.6, -33.9, -34.3, -34.1], y: [9, 9.4, 8.8, 9.2, 9.5, 8.9, 9.3, 9.1] },
+      leftElbow: {
+        x: Array.from({ length: 80 }, (_, index) => {
+          const t = index / 80
+          const beat = (t * 4) % 1
+          // A small press on the stack as the right hand pulls a sheet clear.
+          return -70 - (beat > .35 && beat < .55 ? 4 : 0)
+        }),
+      },
+      leftHand: { x: [1.5, 1.8, 1.4, 1.7, 2, 1.5, 1.8, 1.6] },
+      rightShoulder: {
+        x: Array.from({ length: 112 }, (_, index) => {
+          const t = index / 112
+          const beat = (t * 4) % 1
+          // Reach out and down, lift, carry across, place, return.
+          return -30 - Math.sin(beat * Math.PI) * 14
+        }),
+        y: Array.from({ length: 112 }, (_, index) => {
+          const t = index / 112
+          const beat = (t * 4) % 1
+          return beat < .45 ? -22 * Math.sin(beat / .45 * Math.PI) : 15 * Math.sin((beat - .45) / .55 * Math.PI)
+        }),
+      },
+      rightElbow: {
+        x: Array.from({ length: 112 }, (_, index) => {
+          const t = index / 112
+          const beat = (t * 4) % 1
+          // Extends to reach, folds to bring the sheet in, extends to place.
+          return -58 + Math.sin(beat * Math.PI * 2) * 16
+        }),
+      },
+      rightHand: {
+        x: Array.from({ length: 112 }, (_, index) => {
+          const t = index / 112
+          const beat = (t * 4) % 1
+          // The pinch and release. Sharp on the pick, softer on the drop.
+          const pick = beat > .30 && beat < .42 ? Math.sin((beat - .30) / .12 * Math.PI) : 0
+          const drop = beat > .70 && beat < .84 ? Math.sin((beat - .70) / .14 * Math.PI) : 0
+          return -1 + pick * 13 - drop * 8
+        }),
+        z: Array.from({ length: 112 }, (_, index) => {
+          const t = index / 112
+          const beat = (t * 4) % 1
+          return Math.sin(beat * Math.PI * 2 + .7) * 5
+        }),
+      },
+      leftHip: { x: [-59, -59, -59, -59, -59, -59, -59, -59] },
+      rightHip: { x: [-59, -59, -59, -59, -59, -59, -59, -59] },
+      leftKnee: { x: [68, 68, 68, 68, 68, 68, 68, 68] },
+      rightKnee: { x: [68, 68, 68, 68, 68, 68, 68, 68] },
+      leftFoot: { x: [-7, -7, -7, -7, -7, -7, -7, -7] },
+      rightFoot: { x: [-7, -7, -7, -7, -7, -7, -7, -7] },
+    },
+    root: { y: [-.450, -.450, -.450, -.450, -.450, -.450, -.450, -.450] },
+    grounded: 0,
+  },
   {
     name: 'sitDown',
     duration: 1.15,

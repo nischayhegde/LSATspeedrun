@@ -105,6 +105,14 @@
 }
 .practice-action-shape { max-width: var(--prose-measure); margin: 0; color: #bfd0d7; font-size: 14px; line-height: 1.6; }
 .practice-lab .practice-run .primary-button.jumbo { min-height: 52px; }
+/* The run shape is the primary button's caption, so it sits with the button
+   rather than floating above the pair. */
+.practice-run-start { justify-self: stretch; display: grid; gap: 8px; justify-items: start; }
+.practice-run-start .practice-action-shape { font-size: 13px; }
+/* The docket action is the alternative to starting fresh, not a second equal
+   button. The "or" is what makes the default readable at a glance. */
+.practice-run-alt { justify-self: stretch; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.practice-run-or { color: #8aa0aa; font-family: var(--font-pixel, inherit); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .practice-action-secondary { padding: 11px 14px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(226,187,101,.4); border-radius: 10px; color: #f4ead4; background: rgba(226,187,101,.09); font-size: 13px; font-weight: 600; text-align: left; }
 .practice-action-secondary:hover:not(:disabled) { background: rgba(226,187,101,.17); }
 .practice-action-secondary:disabled { opacity: .72; }

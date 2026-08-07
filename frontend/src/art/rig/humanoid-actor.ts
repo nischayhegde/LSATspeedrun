@@ -9,6 +9,7 @@ import {
 } from './humanoid-clips'
 import {
   HUMANOID_BONES,
+  REST_OFFSET_GROUPS,
   applyWorldQuaternion,
   bindHumanoidSkeleton,
   clampJoint,
@@ -16,6 +17,7 @@ import {
   type BindableRig,
   type HumanoidBone,
   type HumanoidSkeleton,
+  type RestOffsetGroup,
 } from './humanoid-rig'
 
 /**
@@ -42,12 +44,23 @@ export type HumanoidState =
   | 'swim'
   | 'seatedIdle'
   | 'seatedType'
+  // The four desk tasks. Everyone seated in the office is doing exactly one of
+  // these, so between them they carry most of the motion anybody ever sees in
+  // that room; they are authored at correspondingly more length than the rest
+  // of the library. See their specs in `humanoid-clips.ts`.
+  | 'deskWrite'
+  | 'deskType'
+  | 'deskRead'
+  | 'deskSort'
   | 'confer'
   | 'reviewDocument'
   | 'presentBoard'
 
 /** The resting stances the ambient idle drifts between. */
 export const IDLE_STATES: readonly HumanoidState[] = ['idle', 'idleWeightShift', 'idleRelaxed', 'idleAlert']
+
+/** The four things anybody seated at a desk in the office is ever doing. */
+export const DESK_STATES: readonly HumanoidState[] = ['deskWrite', 'deskType', 'deskRead', 'deskSort']
 
 /**
  * One-shot beats.
@@ -380,6 +393,53 @@ function scaleRotation(quaternion: THREE.Quaternion, gain: number) {
 
 const CLAMPED_BONES = HUMANOID_BONES.filter((bone) => bone !== 'hips')
 
+/**
+ * How much of a character's own resting stance each pose keeps.
+ *
+ * Absent from this table means all of it, which is what every pose did before
+ * the table existed, so nothing already shipped changes. The desk poses are
+ * the exception and the reason it exists: their arms are on a keyboard, a pen
+ * or a page and their legs are folded under a chair, and the resting stance
+ * describes neither - it describes how this person stands in a corridor. See
+ * `RestOffsetGroup` for the full argument.
+ *
+ * Torso stays at one throughout. The head tilt and ribcage lean are what make
+ * two characters at identical desks read as two people.
+ */
+const STATE_REST_WEIGHT: Partial<Record<HumanoidState, Partial<Record<RestOffsetGroup, number>>>> = {
+  deskWrite: { arms: 0, legs: 0 },
+  deskType: { arms: 0, legs: 0 },
+  deskRead: { arms: 0, legs: 0 },
+  deskSort: { arms: 0, legs: 0 },
+}
+
+const FULL_REST_WEIGHT: Record<RestOffsetGroup, number> = { torso: 1, arms: 1, legs: 1 }
+const scaledRest = new THREE.Quaternion()
+
+/**
+ * How a look-at is shared out along the spine, and how far each joint will go.
+ *
+ * Nobody turns their head to look at something and leaves their chest facing
+ * where it was - past about thirty degrees the shoulders come round too, and a
+ * head that swivels alone on a still torso is the owl-neck effect that makes a
+ * character read as a puppet. So the chest takes a third of the turn and the
+ * head takes the rest, and both are clamped to angles a neck can actually
+ * reach. The chest's pitch limit is deliberately small: leaning back to look
+ * up is a whole-body action this layer has no business attempting.
+ *
+ * Ordered proximal to distal, and applied in that order, because each joint
+ * aims at the target from wherever the one above it has already put it.
+ */
+const LOOK_CHAIN: readonly [HumanoidBone, number, number, number][] = [
+  ['chest', .34, .52, .16],
+  ['head', 1, .82, .46],
+]
+
+const lookMatrix = new THREE.Matrix4()
+const lookLocal = new THREE.Vector3()
+const lookEuler = new THREE.Euler()
+const lookQuaternion = new THREE.Quaternion()
+
 const tmpFootWorld = new THREE.Vector3()
 const tmpTarget = new THREE.Vector3()
 const tmpHipWorld = new THREE.Vector3()
@@ -545,6 +605,13 @@ export class HumanoidActor {
   private readonly asymmetry: number
   /** The slow rate wander applied to resting states. See `driftRestingRate`. */
   private restClock = 0
+  /** Live per-group rest-offset weight, eased toward the current state's. */
+  private restWeights: Record<RestOffsetGroup, number> = { ...FULL_REST_WEIGHT }
+  /** Look-at layer. `lookWanted` is the requested weight, `lookWeight` the
+   *  eased one; both stay at zero for every character that never opts in. */
+  private lookTarget: THREE.Vector3 | null = null
+  private lookWanted = 0
+  private lookWeight = 0
   private readonly restPhaseOffset: number
   /** A base action to restart at the top of the next update. See `onGestureFinished`. */
   private pendingRestart: THREE.AnimationAction | null = null
@@ -982,6 +1049,61 @@ export class HumanoidActor {
    * the sub-threshold frames are therefore never fed. Left at 0.35 rather than
    * carrying an unmeasurable change through shared rig code.
    */
+  /**
+   * Point this character's head and chest at a place in the world.
+   *
+   * Opt-in, and off by default. With no target ever set, the whole pass is one
+   * float comparison per frame and the clip's own head motion is bit-for-bit
+   * what it was - which is the property that let this be added to a shared rig
+   * without re-verifying every character that uses it.
+   *
+   * Pass a world-space point to have the body turn toward it and hold; pass
+   * `null` to release it back to whatever it was doing. Both directions ease
+   * over roughly a third of a second rather than snapping, and because the
+   * turn is layered on top of the running clip rather than replacing it, the
+   * character keeps breathing and shifting while it holds the look. Releasing
+   * does not restart or interrupt anything: the layer's weight simply falls
+   * back to zero and the clip is left as the only thing posing the joints.
+   *
+   * The target is copied, not retained, so a caller may hand over a scratch
+   * vector it is about to reuse.
+   */
+  setLookTarget(target: THREE.Vector3 | null) {
+    if (!target) {
+      this.lookWanted = 0
+      return
+    }
+    this.lookTarget = (this.lookTarget ?? new THREE.Vector3()).copy(target)
+    this.lookWanted = 1
+  }
+
+  /** True while any part of a look-at is still being applied, including the
+   *  ease-out after the target is cleared. */
+  get looking() {
+    return this.lookWeight > .002 || this.lookWanted > 0
+  }
+
+  /**
+   * Move this actor's playhead forward inside its own loop without simulating
+   * the elapsed time.
+   *
+   * Called once at spawn. Five characters constructed on the same frame all
+   * start their clip at zero, and if two of them drew the same task they will
+   * strike the same key in unison for as long as anyone is watching. Per-
+   * character rate jitter does separate them, but it does so over tens of
+   * seconds, which is no help at all for the first thing a player sees.
+   *
+   * This nudges the clip time only - no mixer pass, no fades, no gesture
+   * bookkeeping - which is what makes it both safe before the first `update`
+   * and cheap enough to call on every body in the room.
+   */
+  advance(seconds: number) {
+    const action = this.actions.get(this.current)
+    if (!action) return
+    const duration = action.getClip().duration
+    if (duration > 0) action.time = ((seconds % duration) + duration) % duration
+  }
+
   setGroundSpeed(speed: number) {
     const walk = this.action('walk')
     const natural = this.naturalWalkSpeed
@@ -1145,8 +1267,25 @@ export class HumanoidActor {
 
     this.advanceFades(step)
     this.driftRestingRate(step)
+    this.advanceRestWeights(step)
     this.mixer.update(step)
     this.applyPostPass(step, false)
+  }
+
+  /**
+   * Eases the rest-offset weights toward what the current state asks for.
+   *
+   * Over roughly the same window as a state crossfade, so the stance fades out
+   * as the pose that does not want it fades in. Switching them outright would
+   * drop nineteen degrees of shoulder rotation in one frame, which is exactly
+   * the kind of snap this system exists to avoid.
+   */
+  private advanceRestWeights(delta: number) {
+    const wanted = STATE_REST_WEIGHT[this.current]
+    for (const group of REST_OFFSET_GROUPS) {
+      const target = wanted?.[group] ?? 1
+      this.restWeights[group] = THREE.MathUtils.damp(this.restWeights[group], target, 4.5, delta)
+    }
   }
 
   /**
@@ -1175,12 +1314,59 @@ export class HumanoidActor {
    * foot-slide this system exists to prevent.
    */
   private driftRestingRate(delta: number) {
-    if (!IDLE_STATES.includes(this.current)) return
+    // The desk tasks opt in for the same reason the idles do, and with more
+    // reason than any of them: they are the longest-running loops in the app
+    // and the ones a player stares at. `walk` and `swim` still must not, since
+    // their rate is what keeps a foot or a hand from sliding.
+    if (!IDLE_STATES.includes(this.current) && !DESK_STATES.includes(this.current)) return
     const action = this.action(this.current)
     if (!action) return
     this.restClock += delta
     const wander = 1 + Math.sin(this.restClock * REST_RATE_DRIFT_RATE + this.restPhaseOffset) * REST_RATE_DRIFT
     action.setEffectiveTimeScale(this.rateJitter * wander)
+  }
+
+  /**
+   * Turn the head and chest toward `lookTarget`, by `lookWeight`.
+   *
+   * Each joint is aimed in its own local frame: inverting its world matrix
+   * puts the target in the space the joint's rotation is expressed in, where
+   * aiming is just a yaw and a pitch about that joint's own axes. Doing it
+   * that way means the layer needs to know nothing about which way the
+   * character is facing, how its parent is scaled, or where in the scene graph
+   * it hangs - all of which are already in the matrix.
+   *
+   * The chain is walked proximal to distal and each joint's world matrix is
+   * rebuilt as it is reached, so the head aims from where the chest has just
+   * put it rather than from where it was at the start of the frame. That is
+   * two world-matrix rebuilds, which is why this runs only while a look is
+   * actually in progress.
+   *
+   * The `.05` floor under the forward component keeps the `atan2` sane for a
+   * target that has come round beside or behind the character: without it the
+   * angle flips sign as the target crosses the shoulder line and the head
+   * snaps through the full arc. Clamped, the body simply looks as far round as
+   * it can and stops, which is what a person does.
+   */
+  private applyLookAt(delta: number) {
+    this.lookWeight = THREE.MathUtils.damp(this.lookWeight, this.lookWanted, 3.6, delta)
+    const target = this.lookTarget
+    if (!target || this.lookWeight <= .002) return
+    for (const [bone, share, yawLimit, pitchLimit] of LOOK_CHAIN) {
+      const joint = this.skeleton.bones[bone]
+      joint.updateWorldMatrix(true, false)
+      lookLocal.copy(target).applyMatrix4(lookMatrix.copy(joint.matrixWorld).invert())
+      const forward = Math.max(.05, lookLocal.z)
+      const yaw = THREE.MathUtils.clamp(Math.atan2(lookLocal.x, forward), -yawLimit, yawLimit)
+      const pitch = THREE.MathUtils.clamp(
+        -Math.atan2(lookLocal.y, Math.max(.05, Math.hypot(lookLocal.x, lookLocal.z))),
+        -pitchLimit,
+        pitchLimit,
+      )
+      const amount = this.lookWeight * share
+      lookEuler.set(pitch * amount, yaw * amount, 0, 'YXZ')
+      joint.quaternion.multiply(lookQuaternion.setFromEuler(lookEuler))
+    }
   }
 
   /**
@@ -1195,8 +1381,20 @@ export class HumanoidActor {
     // 1. Restore each character's authored resting posture on top of the
     //    shared clip, so a shared clip library does not flatten the small
     //    per-character differences the art defines.
-    for (const { bone, offset } of this.skeleton.restOffsets) {
-      bone.quaternion.premultiply(offset)
+    //
+    // Weighted per limb group, because the offset is a *standing* stance and
+    // not every pose is standing. See `RestOffsetGroup`: a body at a keyboard
+    // wants its own head tilt and none of its own idle arm carriage, and the
+    // weights ease rather than switch so changing task does not snap the arms.
+    // Every state that does not name a weight keeps 1 across the board, which
+    // is what this pass has always done.
+    const restWeights = this.restWeights
+    for (const { bone, offset, group } of this.skeleton.restOffsets) {
+      const weight = restWeights[group]
+      if (weight >= .999) bone.quaternion.premultiply(offset)
+      else if (weight > .002) {
+        bone.quaternion.premultiply(scaledRest.identity().slerp(offset, weight))
+      }
     }
 
     // 1b. Scale the performance to the lens, and 1c. let the distal joints be
@@ -1219,6 +1417,14 @@ export class HumanoidActor {
       this.skeleton.bones.rightShoulder.rotation.z += this.asymmetry * .7
       this.skeleton.bones.leftHip.rotation.z += this.asymmetry * .4
     }
+
+    // 2b. Look-at, if anything has asked for one.
+    //
+    // Placed here on purpose: after the clip, the rest posture and the
+    // secondary motion, so it turns the head the performance actually
+    // produced rather than fighting it, and before the anatomical clamp
+    // below, so its own limits have a backstop behind them.
+    if (this.lookWeight > .002 || this.lookWanted > 0) this.applyLookAt(delta)
 
     // 3. Retarget normalized root motion onto this character's real
     //    proportions. The clip says "drop 0.45 hip-heights to sit"; how far

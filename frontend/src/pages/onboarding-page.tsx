@@ -68,7 +68,7 @@ export function OnboardingPage() {
         <section className="onboarding-panel">
           <span className="step-indicator">YOUR GOAL · 01</span>
           <h1>Tell us your target,<br />or skip straight in.</h1>
-          <p>Students aiming for a high score close to test day often want a leaner view—fewer distractions, just the questions. Everyone else gets the full firm-building experience by default. Either way, you can flip this later from the menu.</p>
+          <p>Used to work back a weekly caseload. Both are optional and you can change them later.</p>
           <div className="name-fields">
             <label>
               Target score (120–180)
@@ -128,7 +128,7 @@ export function OnboardingPage() {
       <section className="onboarding-panel">
         <span className="step-indicator">YOUR ORIGIN · 02</span>
         <h1>Name the lawyer<br />who changes this room.</h1>
-        <p>Choose your character presentation. Both have identical progression, outfits, and abilities—and you can change it later.</p>
+        <p>Identical progression, outfits and abilities either way. Change it later.</p>
         <div className="character-choice" role="radiogroup" aria-label="Character presentation">
           {(['female', 'male'] as CharacterGender[]).map((value) => (
             <button

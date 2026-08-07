@@ -3116,8 +3116,11 @@ body {
   .case-lobby .practice-action-client .lobby-client-portrait { width: 54px; height: 62px; }
   .case-lobby .practice-action-client > div > strong { font-size: 20px; }
   .case-lobby .practice-run { padding: 18px 16px 22px; }
-  .case-lobby .practice-run > .primary-button.jumbo,
+  .case-lobby .practice-run .primary-button.jumbo,
   .case-lobby .practice-action-secondary { width: 100%; min-height: 52px; justify-content: center; }
+  /* Stack the "or" above the alternative rather than beside it: side by side,
+     the label steals width the button needs at phone measure. */
+  .case-lobby .practice-run-alt { grid-template-columns: 1fr; gap: 8px; justify-items: center; }
 
   .case-lobby .practice-guide {
     margin: 0;

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, BookOpen, Check, ScrollText, Sparkles, Star, X } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -8,7 +7,6 @@ import { api } from './api'
 import { ErrorNotice, formatMoney } from './components'
 import { CutsceneArtwork } from './game-art'
 import {
-  CHAPTER_DOCK_ID,
   clearOverlayNote,
   readOverlayNote,
   useBlockingOverlay,
@@ -36,8 +34,8 @@ function epilogueStorageKey(gameId: string) {
   return `lsat-tycoon:epilogue-read:${gameId}`
 }
 
-type ChapterView = 'cutscene' | 'prompt' | 'marker'
-/** The two views a chapter can be put off *to*; `cutscene` is never a deferral. */
+type ChapterView = 'cutscene' | 'prompt' | 'dismissed'
+/** The two states a chapter can be put off *to*; `cutscene` is never a deferral. */
 type ChapterDeferral = Exclude<ChapterView, 'cutscene'>
 
 function chapterDeferralKey(gameId: string, chapterKey: string) {
@@ -58,25 +56,11 @@ function chapterDeferralKey(gameId: string, chapterKey: string) {
 function readChapterDeferral(gameId: string, chapterKey: string | null): ChapterDeferral | null {
   if (!chapterKey) return null
   const stored = readOverlayNote(chapterDeferralKey(gameId, chapterKey))
-  return stored === 'prompt' || stored === 'marker' ? stored : null
-}
-
-/**
- * The waiting-chapter prompt sits in the shell's own dock (a plain slot under
- * the header) rather than floating over the page, so it cannot cover a
- * dashboard card. Outside the shell — a harness, a standalone story — there is
- * no dock and it falls back to the corner, which is what its CSS still does by
- * default.
- */
-function useChapterDock() {
-  const [dock, setDock] = useState<HTMLElement | null>(null)
-  // No dependency list: the shell remounts with the route, so the slot is a
-  // different node after every navigation and re-reading it is the only way to
-  // stay attached. Setting the same node back is a no-op re-render for React.
-  useEffect(() => {
-    setDock(document.getElementById(CHAPTER_DOCK_ID))
-  })
-  return dock
+  if (stored === 'prompt') return 'prompt'
+  // `marker` is what a dismissal used to be written as, back when it collapsed
+  // to a standing chip instead of leaving the screen. Same intent, so a note
+  // carried over from that build is honoured rather than re-prompting.
+  return stored === 'dismissed' || stored === 'marker' ? 'dismissed' : null
 }
 
 function useAppEvent(name: string, handler: () => void) {
@@ -177,8 +161,9 @@ function StoryCutscene({ game, chapter, onDefer }: { game: GameState; chapter: S
  * moment it is earned rather than banked until someone opens the caseboard.
  * A chapter that unlocks while the app is open runs straight away, since the
  * player just finished the upgrade that bought it. A chapter carried in from an
- * earlier session opens a prompt instead, which collapses to a standing marker
- * if the answer is "not now".
+ * earlier session opens a corner prompt instead, which leaves the screen for
+ * good if the answer is "not now" — the caseboard's own "Play this chapter"
+ * button is the way back in, so nothing is stranded behind the dismissal.
  *
  * Which of the three views is showing is derived from storage on mount rather
  * than reset to a default, because this component remounts on every navigation
@@ -190,7 +175,6 @@ function StoryCutscene({ game, chapter, onDefer }: { game: GameState; chapter: S
  */
 function PendingChapterLayer({ game, muted }: { game: GameState; muted: boolean }) {
   const { play } = useSound()
-  const dock = useChapterDock()
   const chapter = game.story.pending_chapter ?? null
   const chapterKey = chapter?.key ?? null
   const openingBeat = game.story.chapters.every((entry) => !entry.seen)
@@ -203,6 +187,13 @@ function PendingChapterLayer({ game, muted }: { game: GameState; muted: boolean 
     if (chapterKey) writeOverlayNote(chapterDeferralKey(game.id, chapterKey), next)
     setView(next)
   }, [chapterKey, game.id])
+
+  // "Not now" means gone, not shrunk: the note is what keeps it gone across the
+  // remount every navigation causes, so it is written before the view changes.
+  const dismiss = useCallback(() => {
+    void play('paper', { seed: `chapter-defer:${chapterKey}`, intensity: .3 })
+    defer('dismissed')
+  }, [chapterKey, defer, play])
 
   const openChapter = useCallback(() => {
     // Asking for the chapter withdraws the deferral, so a later remount opens
@@ -220,8 +211,8 @@ function PendingChapterLayer({ game, muted }: { game: GameState; muted: boolean 
     Boolean(chapter) && !muted && view === 'cutscene',
     () => defer('prompt'),
   )
-  // The prompt and marker do not block anything, but they should not sit chirping
-  // in the corner underneath a modal either.
+  // The prompt does not block anything, but it should not sit chirping in the
+  // corner underneath a modal either.
   const blockedByModal = useTopOverlay() !== null
 
   useEffect(() => {
@@ -249,24 +240,16 @@ function PendingChapterLayer({ game, muted }: { game: GameState; muted: boolean 
     return cutsceneAllowed ? <StoryCutscene game={game} chapter={chapter} onDefer={() => defer('prompt')} /> : null
   }
 
-  if (blockedByModal) return null
+  if (blockedByModal || view === 'dismissed') return null
 
-  const waiting = view === 'marker' ? (
-    <button type="button" className="chapter-marker" onClick={openNow}>
-      <ScrollText size={15} />
-      <span>1 chapter waiting</span>
-    </button>
-  ) : (
+  return (
     <aside className="chapter-prompt" role="dialog" aria-labelledby="chapter-prompt-title">
       <div className="chapter-prompt-seal" aria-hidden="true"><ScrollText size={17} /></div>
       <button
         type="button"
         className="chapter-prompt-close"
-        aria-label="Keep the chapter waiting"
-        onClick={() => {
-          void play('paper', { seed: `chapter-defer:${chapter.key}`, intensity: .3 })
-          defer('marker')
-        }}
+        aria-label="Dismiss until you open the caseboard"
+        onClick={dismiss}
       >
         <X size={15} />
       </button>
@@ -275,15 +258,10 @@ function PendingChapterLayer({ game, muted }: { game: GameState; muted: boolean 
       <p>{chapter.speaker.split(' · ')[0]} is waiting on a decision the firm cannot delegate.</p>
       <div className="chapter-prompt-actions">
         <button type="button" className="chapter-prompt-open" onClick={openNow}>Take the meeting <ArrowRight size={15} /></button>
-        <button type="button" className="chapter-prompt-later" onClick={() => defer('marker')}>Not now</button>
+        <button type="button" className="chapter-prompt-later" onClick={dismiss}>Not now</button>
       </div>
     </aside>
   )
-
-  // Docked, the prompt takes its own row and pushes the page down; undocked it
-  // is the old floating card. Only the docked form is used inside the app, and
-  // only it is guaranteed not to be sitting on top of a metric card.
-  return dock ? createPortal(waiting, dock) : waiting
 }
 
 

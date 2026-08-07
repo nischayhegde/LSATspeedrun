@@ -46,3 +46,18 @@ frontend/scratch-*
 
 # Async-coaching investigation scratch (harnesses, logs, timings).
 .async/
+
+# Office-scene scratch (renders, harnesses, measurements, work mirrors).
+.office/
+
+# Map-scene scratch (renders, harnesses, measurements, work mirrors).
+.maps/
+
+# App-wide performance scratch (harnesses, traces, measurements, work mirrors).
+.appperf/
+
+# Character hair/cosmetics scratch (renders, harnesses, comparison sheets).
+.cosmetics/
+
+# Merge-reconciliation scratch (upstream patches, scratch databases, gate logs).
+.reconcile/
