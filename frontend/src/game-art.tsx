@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ActiveOfficeCase, CharacterGender, GameAsset, GameState } from './types'
+import { CheckMark, DeliberatingMark, LockMark, MinusMark, PlusMark, ScalesMark, StatuteMark } from './art-2d/marks'
 import { Bust, Person, type Mood } from './art/people'
 import { OfficeRoom } from './art/office'
 // Splitting this out of the entry bundle was tried and reverted: it saves ~16 kB
@@ -261,8 +262,8 @@ export function PixelAssetArtwork({ asset }: { asset: GameAsset }) {
           <i className="av-card-sheen" />
         </div>
       )}
-      {state === 'locked' && <div className="av-vignette-lock"><span>?</span></div>}
-      {state === 'owned' && <div className="av-vignette-owned">✓</div>}
+      {state === 'locked' && <div className="av-vignette-lock"><span><LockMark /></span></div>}
+      {state === 'owned' && <div className="av-vignette-owned"><CheckMark /></div>}
       <span className="asset-art-label av-vignette-label">
         {asset.type === 'upgrade' ? 'OFFICE UPGRADE' : asset.type === 'cosmetic' ? 'OFFICE DECOR' : asset.type === 'staff' ? 'TEAM MEMBER' : asset.type === 'connection' ? 'NEW CONTACTS' : 'ACQUISITION'}
       </span>
@@ -346,8 +347,8 @@ export function JudgePortrait({ thinking = false, pleased = false }: { thinking?
           <StylizedCharacter gender="female" tier={5} role="judge" mode="portrait" mood={thinking ? 'thinking' : pleased ? 'happy' : 'neutral'} paletteSeed={2} />
         </Suspense>
       </div>
-      <span className="av-judge-gavel">⚖</span>
-      <span className="av-judge-state">{pleased ? '✓' : thinking ? '…' : '§'}</span>
+      <span className="av-judge-gavel"><ScalesMark /></span>
+      <span className="av-judge-state">{pleased ? <CheckMark /> : thinking ? <DeliberatingMark /> : <StatuteMark />}</span>
     </div>
   )
 }
@@ -522,7 +523,7 @@ function OfficeInventory({ game, onFocus }: { game: GameState; onFocus: (key: st
   return (
     <aside className={`office-inventory ${open ? 'is-open' : ''}`} aria-label="Installed office features">
       <button type="button" className="office-inventory-toggle" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
-        <span>IN THIS OFFICE</span><strong>{installed.length}</strong><i>{open ? '−' : '+'}</i>
+        <span>IN THIS OFFICE</span><strong>{installed.length}</strong><i>{open ? <MinusMark /> : <PlusMark />}</i>
       </button>
       {open && (
         <div className="office-inventory-panel">

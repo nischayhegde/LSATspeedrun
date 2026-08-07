@@ -236,6 +236,57 @@ export class NavField {
    */
   nearestFree(x: number, z: number, radius: number, out: NavPoint = { x: 0, z: 0 }): NavPoint {
     if (this.isFree(x, z, radius)) { out.x = x; out.z = z; return out }
+    if (this.spiral(x, z, radius, null, out)) return out
+    out.x = x
+    out.z = z
+    return out
+  }
+
+  /**
+   * Nearest standable point that the body could also *walk to* from `from`.
+   *
+   * `nearestFree` is deliberately region-blind, and for pushing a body out of
+   * a chair that is correct: the way out is the way out. It is the wrong
+   * question for deciding where somebody is going to stand, because the free
+   * floor is not always one piece. A chamfer clearance field grazing the
+   * threshold beside a wall leaves single-cell islands - two of them in the
+   * shipped office, 16cm square, against the back wall - and they are
+   * "standable" by every test `nearestFree` applies. Resolving a home slot or
+   * an errand anchor onto one seals that body in for the life of the scene:
+   * it can stand there and nowhere else, and no route out exists to plan.
+   *
+   * Build-time call. It labels the whole grid and allocates, so keep it out of
+   * the animation loop.
+   */
+  nearestConnected(x: number, z: number, radius: number, from: NavPoint, out: NavPoint = { x: 0, z: 0 }): NavPoint {
+    const { labels } = this.label(radius)
+    const anchor = this.nearestFree(from.x, from.z, radius)
+    const wanted = labels[this.index(this.colOf(anchor.x), this.rowOf(anchor.z))]
+    // The reference itself is not on walkable floor, so there is no region to
+    // prefer and nothing better to say than what `nearestFree` would say.
+    if (wanted < 0) return this.nearestFree(x, z, radius, out)
+    const accept = (index: number) => labels[index] === wanted
+    if (this.isFree(x, z, radius) && accept(this.index(this.colOf(x), this.rowOf(z)))) {
+      out.x = x
+      out.z = z
+      return out
+    }
+    if (this.spiral(x, z, radius, accept, out)) return out
+    return this.nearestFree(x, z, radius, out)
+  }
+
+  /**
+   * Ring-by-ring outward search for the closest cell satisfying `accept`,
+   * rather than a walk up the clearance gradient, because a point buried deep
+   * inside a desk has no useful gradient. Returns false if nothing qualified.
+   */
+  private spiral(
+    x: number,
+    z: number,
+    radius: number,
+    accept: ((index: number) => boolean) | null,
+    out: NavPoint,
+  ): boolean {
     const startCol = this.colOf(x)
     const startRow = this.rowOf(z)
     const limit = Math.max(this.cols, this.rows)
@@ -250,6 +301,7 @@ export class NavField {
           if (!edge && Math.abs(col - startCol) !== ring) continue
           const index = this.index(col, row)
           if (this.clearance[index] < radius) continue
+          if (accept && !accept(index)) continue
           const px = this.centreX(col)
           const pz = this.centreZ(row)
           const distance = (px - x) * (px - x) + (pz - z) * (pz - z)
@@ -259,12 +311,10 @@ export class NavField {
       if (best >= 0) {
         out.x = this.centreX(best % this.cols)
         out.z = this.centreZ(Math.floor(best / this.cols))
-        return out
+        return true
       }
     }
-    out.x = x
-    out.z = z
-    return out
+    return false
   }
 
   /**
@@ -532,6 +582,72 @@ export class NavField {
 
   /** Debug aid: how many walkable regions exist for a body of this radius. */
   debugRegions(radius: number): number { return this.label(radius).count }
+
+  /**
+   * Aisle clearance between two points, in world units: the radius of the
+   * widest body that could walk from one to the other.
+   *
+   * Defined as the maximin, or widest-path, bottleneck. Over every route from
+   * `a` to `b`, take the route that maximises the *minimum* cell clearance
+   * along it, and report that minimum. 0.48 means the tightest spot on the
+   * best available route admits a body of radius 0.48 — a shoulder span of
+   * 0.96 — so against bodies of radius 0.342 the room has a clearance ratio
+   * of 1.40. Endpoints are included in the minimum, deliberately: a slot
+   * nobody can stand in is not somewhere anybody can walk to either.
+   *
+   * Note what this is *not*. Searching `pointsConnected` over ascending radii
+   * looks like the same question and is not: it resolves each point through
+   * `nearestFree(radius)` first, so the larger the probe radius the further
+   * the points are snapped, until they all land in the open middle of the room
+   * and trivially connect. That search reports over 1.0 units of clearance in
+   * a room whose widest body is 0.342, which is a measurement of the snap and
+   * not of the floor. This fixes both endpoints to the cells they occupy.
+   *
+   * Authoring and QA aid rather than a per-frame call: it sorts the grid.
+   */
+  bottleneckClearance(a: NavPoint, b: NavPoint): number {
+    const from = this.index(this.colOf(a.x), this.rowOf(a.z))
+    const to = this.index(this.colOf(b.x), this.rowOf(b.z))
+    if (from === to) return this.clearance[from]
+
+    // Classic maximin: add cells widest-first and watch for the moment the two
+    // endpoints join. The clearance of the cell that joined them is the
+    // bottleneck, because every earlier cell was at least as wide.
+    const order: number[] = []
+    for (let index = 0; index < this.clearance.length; index += 1) {
+      if (this.clearance[index] > 0) order.push(index)
+    }
+    order.sort((left, right) => this.clearance[right] - this.clearance[left])
+
+    const parent = new Int32Array(this.clearance.length).fill(-1)
+    const find = (node: number): number => {
+      let root = node
+      while (parent[root] !== root) root = parent[root]
+      let walk = node
+      while (parent[walk] !== root) { const next = parent[walk]; parent[walk] = root; walk = next }
+      return root
+    }
+    const { cols, rows } = this
+    for (const index of order) {
+      parent[index] = index
+      const col = index % cols
+      const row = (index - col) / cols
+      const join = (other: number) => {
+        if (parent[other] < 0) return
+        const left = find(index)
+        const right = find(other)
+        if (left !== right) parent[left] = right
+      }
+      if (col > 0) join(index - 1)
+      if (col < cols - 1) join(index + 1)
+      if (row > 0) join(index - cols)
+      if (row < rows - 1) join(index + cols)
+      if (parent[from] >= 0 && parent[to] >= 0 && find(from) === find(to)) {
+        return this.clearance[index]
+      }
+    }
+    return 0
+  }
 }
 
 export type NavAgentOptions = {

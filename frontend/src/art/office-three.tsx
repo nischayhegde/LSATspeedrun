@@ -2679,6 +2679,20 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const navPassRadius = navField.connectedRadius(navProbePoints, widestBody, .17)
     staffRigs.forEach((entry) => { entry.agent.passRadius = Math.min(entry.radius, navPassRadius) })
 
+    // Somewhere known to be on the room's main walkable region, for resolving
+    // every placement below against.
+    //
+    // `connectedRadius` returns the radius at which all of `navProbePoints`
+    // share one region, so by construction any of them is in it. This matters
+    // because free floor is not necessarily one piece: measured in the shipped
+    // office, the field at the runtime pass radius has three regions - the room
+    // itself at 74.06 m², and two isolated single cells of 0.026 m² each where
+    // the chamfer clearance grazes the threshold beside the back wall. They are
+    // standable, so a region-blind `nearestFree` may legitimately return one,
+    // and a body placed on one can stand there and go nowhere for the life of
+    // the scene.
+    const navCore = navProbePoints[0]
+
     // Resolve every standing home slot onto floor a body can actually occupy.
     // A slot computed as "48cm behind the desk origin" can land inside the
     // desk's own pedestal once the bay is furnished, and a character standing
@@ -2711,7 +2725,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       // furthest the navigator was ever able to deliver anyone, and the last
       // few centimetres into the seat stay where they already were: the settle
       // damp below, under the sit-down clip.
-      navField.nearestFree(entry.home.x, entry.home.z, entry.agent.passRadius, homeScratch)
+      navField.nearestConnected(entry.home.x, entry.home.z, entry.agent.passRadius, navCore, homeScratch)
       entry.navHome = { x: homeScratch.x, z: homeScratch.z }
       if (entry.seated) return
       entry.home.set(homeScratch.x, 0, homeScratch.z)
@@ -2735,7 +2749,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     catActor.agent.radius = CAT_RADIUS
     catActor.agent.passRadius = CAT_RADIUS
     catActor.waypoints.forEach((waypoint) => {
-      const resolved = navField.nearestFree(waypoint.x, waypoint.z, CAT_RADIUS)
+      const resolved = navField.nearestConnected(waypoint.x, waypoint.z, CAT_RADIUS, navCore)
       waypoint.x = resolved.x
       waypoint.z = resolved.z
     })
@@ -2756,7 +2770,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       { x: 0, z: .6, facing: Math.PI },
     ] as const)
       .map((anchor) => {
-        const resolved = navField.nearestFree(anchor.x, anchor.z, navPassRadius)
+        const resolved = navField.nearestConnected(anchor.x, anchor.z, navPassRadius, navCore)
         return {
           x: resolved.x,
           z: resolved.z,
@@ -2850,6 +2864,29 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         navPassRadius,
         errandAnchors,
         regions: (radius: number) => navField.debugRegions(radius),
+        // The room's aisle clearance, defined on `NavField.bottleneckClearance`:
+        // over every pair of errand anchors, the widest body that could walk
+        // between the two that are hardest to get between. Reported in world
+        // units and as a ratio to the widest staff body, which is the form the
+        // no-regress check uses — above 1.0 the room is walkable by everyone in
+        // it with room to spare, below 1.0 somebody is squeezing.
+        aisleClearance: () => {
+          let worst = Infinity
+          let pair: [number, number] = [-1, -1]
+          for (let a = 0; a < errandAnchors.length; a += 1) {
+            for (let b = a + 1; b < errandAnchors.length; b += 1) {
+              const value = navField.bottleneckClearance(errandAnchors[a], errandAnchors[b])
+              if (value < worst) { worst = value; pair = [a, b] }
+            }
+          }
+          if (!Number.isFinite(worst)) return null
+          return {
+            clearance: Number(worst.toFixed(4)),
+            ratio: Number((worst / widestBody).toFixed(4)),
+            widestBody: Number(widestBody.toFixed(4)),
+            pair,
+          }
+        },
         obstacles: () => navField.obstacles.map((box) => ({
           minX: Number(box.minX.toFixed(3)), maxX: Number(box.maxX.toFixed(3)),
           minZ: Number(box.minZ.toFixed(3)), maxZ: Number(box.maxZ.toFixed(3)),

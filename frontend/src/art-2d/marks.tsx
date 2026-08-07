@@ -82,6 +82,230 @@ export function FocusMark({ on = false, className = '' }: { on?: boolean; classN
 }
 
 /**
+ * Dismissal. Two struck bars rather than a `×`, which is a multiplication
+ * sign the reader's font happens to draw as a cross: its weight, its size
+ * relative to the em box and whether it centres at all are decided by
+ * whichever face the platform substituted, so the same button was a hairline
+ * on one machine and a slab on another.
+ */
+export function CloseMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-close ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M5.55 3.44 20.56 18.45 18.45 20.56 3.44 5.55z" />
+      <path d="M18.45 3.44 20.56 5.55 5.55 20.56 3.44 18.45z" />
+    </svg>
+  )
+}
+
+/**
+ * Settled: owned, granted, decided in your favour. Drawn with the short arm
+ * deliberately stubby so the mark still reads at the 30px badge on a catalog
+ * vignette, where a evenly-armed tick turns into a smudge.
+ */
+export function CheckMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-check ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M9.6 18.2 3.1 11.7 5.6 9.2 9.6 13.2 18.4 4.4 20.9 6.9z" />
+    </svg>
+  )
+}
+
+/**
+ * Sealed away until it is earned. The padlock is one contour with the shackle
+ * interior and the keyhole punched back out under `evenodd`, so it stays a
+ * single filled shape at the catalog's 44px lock badge instead of picking up
+ * the thin-outline look the marks exist to avoid.
+ */
+export function LockMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-lock ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+      fillRule="evenodd"
+    >
+      <path d="M12 1.5A5.5 5.5 0 0 0 6.5 7v3H4v12h16V10h-2.5V7A5.5 5.5 0 0 0 12 1.5z M12 4a3 3 0 0 1 3 3v3H9V7a3 3 0 0 1 3-3z M10.75 14.5h2.5v4.5h-2.5z" />
+    </svg>
+  )
+}
+
+/**
+ * The bench is still thinking. Three beats rather than an ellipsis character,
+ * which sits on the baseline and so hung at the bottom of the circular status
+ * badge instead of centring in it.
+ */
+export function DeliberatingMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-deliberating ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M3 10h4v4H3z" />
+      <path d="M10 10h4v4h-4z" />
+      <path d="M17 10h4v4h-4z" />
+    </svg>
+  )
+}
+
+/**
+ * On the record: a ruled statute page, standing in for the `§` the judge's
+ * status badge used to print. Drawn as a frame plus three rules rather than a
+ * solid sheet so it stays legible as a 14px silhouette in a filled circle.
+ */
+export function StatuteMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-statute ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M5 2h14v2H5z M5 20h14v2H5z M5 4h2v16H5z M17 4h2v16h-2z" />
+      <path d="M8.5 6.5h7v2h-7z M8.5 10.5h7v2h-7z M8.5 14.5h4v2h-4z" />
+    </svg>
+  )
+}
+
+/* The world map's control surface. Every one of these replaced a typographic
+   character sitting alone inside a button — `⌂`, `☰`, `◎`, `›`, `+`, `−` —
+   which is the one place a substituted font is most obvious, because there is
+   no surrounding text for the reader to read the glyph against. The buttons
+   already carried their own `aria-label`, so these are all decorative. */
+
+/** Back to the headquarters. */
+export function HomeMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-home ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M12 2 22 11h-3v11h-6v-7h-2v7H5V11H2z" />
+    </svg>
+  )
+}
+
+/** The mobile control drawer. */
+export function MenuMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-menu ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M3 5h18v3H3z M3 10.5h18v3H3z M3 16h18v3H3z" />
+    </svg>
+  )
+}
+
+/** Put the camera back on your own lawyer. */
+export function TargetMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-target ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+      fillRule="evenodd"
+    >
+      <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 3a7 7 0 1 1 0 14 7 7 0 0 1 0-14z" />
+      <path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z" />
+    </svg>
+  )
+}
+
+/** Onward, into the thing the button names. */
+export function ChevronMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-chevron ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M8.5 3.4 17.1 12 8.5 20.6 5.9 18 11.9 12 5.9 6z" />
+    </svg>
+  )
+}
+
+/** Zoom in, and open a disclosure. */
+export function PlusMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-plus ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M10.5 3h3v18h-3z" />
+      <path d="M3 10.5h18v3H3z" />
+    </svg>
+  )
+}
+
+/** Zoom out, and close a disclosure. */
+export function MinusMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`mark mark-minus ${className}`.trim()}
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      aria-hidden="true"
+      focusable="false"
+      fill="currentColor"
+    >
+      <path d="M3 10.5h18v3H3z" />
+    </svg>
+  )
+}
+
+/**
  * A returned filing, stamped. The error banner carried its message with no
  * mark at all, which made an interruption look like body copy; a seal gives
  * the alert something to scan to without adding a second line of text.

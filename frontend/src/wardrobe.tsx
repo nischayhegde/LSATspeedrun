@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, Shirt } from 'lucide-react'
 
 import { api } from './api'
+import { CloseMark } from './art-2d/marks'
 import { ErrorNotice } from './components'
 import { loadStylizedCharacter } from './art/scene-loaders'
 import { useSound } from './sound'
@@ -111,7 +112,7 @@ export function WardrobePanel({ game, onClose }: { game: GameState; onClose: () 
             <h2 id="wardrobe-title">Dress your counsel</h2>
             <p>{unlockedCount} of {totalCount} pieces earned. Everything here is won by practising, never bought.</p>
           </div>
-          <button type="button" className="wardrobe-close" ref={closeRef} onClick={onClose} aria-label="Close the wardrobe">×</button>
+          <button type="button" className="wardrobe-close" ref={closeRef} onClick={onClose} aria-label="Close the wardrobe"><CloseMark /></button>
         </header>
 
         <div className="wardrobe-body">

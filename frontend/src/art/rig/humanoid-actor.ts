@@ -953,6 +953,15 @@ export class HumanoidActor {
    * cycle travels, so playing it at `speed / strideSpeed` makes the body
    * advance exactly one stride per cycle by construction, and the foot-planting
    * pass below only has to absorb rounding error.
+   *
+   * The 0.35 floor looks like a skate source and was tested as one: below it
+   * the stance foot travels at `natural * 0.35` however slowly the body is
+   * going, which on the office rig is 0.45 u/s. Dropping it to 0.12 changed
+   * the measured office skate by nothing (the seated associate's creeping
+   * planted foot went 0.400 -> 0.395 u/s, inside run-to-run noise), because
+   * `office-three.tsx` only calls this while its own `walking` flag is set and
+   * the sub-threshold frames are therefore never fed. Left at 0.35 rather than
+   * carrying an unmeasurable change through shared rig code.
    */
   setGroundSpeed(speed: number) {
     const walk = this.action('walk')

@@ -336,3 +336,13 @@
   .uw-mobile-scene-menu .uw-retainer-list { max-height: 208px; }
   .uw-mobile-scene-menu .uw-retainer-intro { display: none; }
 }
+
+/* Marks in the map's control surface. Each container already sets `color`, so
+   the marks tint themselves; these rules only size them against the button
+   they sit in, which the glyphs used to do via `font-size`. */
+.uw-ledger-jump b .mark { width: 15px; height: 15px; }
+.uw-map-toolbar button .mark { width: 15px; height: 15px; }
+.uw-district-guide-toggle i .mark { width: 9px; height: 9px; }
+.uw-card-close .mark { width: 11px; height: 11px; }
+.uw-card-action i .mark { width: 12px; height: 12px; }
+.uw-mobile-scene-menu-toggle b .mark { width: 13px; height: 13px; }

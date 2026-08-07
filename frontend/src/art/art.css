@@ -124,6 +124,9 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .av-judge-model { position: absolute; inset: -8px 4px 0; overflow: hidden; border-radius: 46% 46% 12px 12px; background: radial-gradient(circle at 50% 14%, rgba(247,228,188,.28), rgba(33,28,39,.88) 72%); box-shadow: inset 0 0 0 1px rgba(232,200,124,.38), 0 14px 30px rgba(8,12,20,.45); }
 .av-judge-gavel { position: absolute; left: -8px; bottom: 4px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; border: 2px solid #f0dcae; color: #17293a; background: linear-gradient(160deg, #f2d791, #c89b4b); font-size: 17px; box-shadow: 0 5px 12px rgba(9, 15, 22, 0.4); }
 .av-judge-state { position: absolute; right: -6px; top: -4px; min-width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; border: 2px solid #101b28; color: #ffe9a6; background: #22374a; font-size: 14px; font-weight: 800; }
+/* Both badges inherit `color` from the rules above, so the marks tint themselves. */
+.av-judge-gavel .mark { width: 20px; height: 20px; }
+.av-judge-state .mark { width: 15px; height: 15px; }
 .judge-portrait.av-judge.is-thinking .av-judge-state { animation: av-think 1.1s ease-in-out infinite; }
 .judge-portrait.av-judge.is-pleased .av-judge-state { background: #267557; }
 .judge-portrait.av-judge.is-pleased .av-judge-gavel { animation: av-gavel-tap 0.7s cubic-bezier(0.3, 1.6, 0.4, 1) 2; }
@@ -267,6 +270,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .office-inventory-toggle span { margin-right: auto; color: #d9c27e; font-family: var(--font-pixel); font-size: 9px; font-weight: 850; letter-spacing: .12em; }
 .office-inventory-toggle strong { min-width: 25px; color: #f7f0df; font: 800 12px/1 var(--font-pixel); text-align: center; }
 .office-inventory-toggle i { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid rgba(223,195,125,.3); border-radius: 50%; color: #e5c76e; font: normal 700 16px/1 system-ui; }
+.office-inventory-toggle i .mark { width: 10px; height: 10px; }
 .office-inventory-panel { width: 100%; max-height: calc(100% - 52px); margin-bottom: 10px; display: flex; flex-direction: column; overflow: hidden; pointer-events: auto; border: 1px solid rgba(223,195,125,.34); border-radius: 15px; color: #f5ead2; background: rgba(8,17,27,.965); box-shadow: 0 24px 54px rgba(2,6,11,.62),inset 0 0 0 1px rgba(255,255,255,.035); backdrop-filter: blur(18px); animation: av-pop-in .22s ease both; }
 .office-inventory-panel > header { padding: 16px 17px 13px; border-bottom: 1px solid rgba(223,195,125,.18); background: radial-gradient(120% 140% at 0 0,rgba(50,104,110,.24),transparent 55%); }
 .office-inventory-panel header small { color: #69b9b2; font-family: var(--font-pixel); font-size: 8.5px; font-weight: 850; letter-spacing: .13em; }
@@ -384,7 +388,9 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .av-vignette-owner small { display: block; color: #b0a588; font-size: 9px; letter-spacing: 0.06em; }
 .av-vignette-lock { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(9, 14, 21, 0.55); backdrop-filter: blur(2.5px) saturate(0.6); }
 .av-vignette-lock span { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 2px solid rgba(232, 200, 124, 0.5); color: #ffe9a6; background: rgba(13, 20, 32, 0.85); font-family: var(--font-display); font-size: 22px; font-weight: 700; }
-.av-vignette-owned { position: absolute; z-index: 5; right: 10px; top: 10px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; border: 2px solid #dff3e8; color: #0d2c1e; background: linear-gradient(170deg, #8fe0bd, #3f9f78); font-weight: 900; box-shadow: 0 6px 14px rgba(23, 60, 44, 0.45); animation: av-pop-in 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+.av-vignette-lock span .mark { width: 22px; height: 22px; }
+.av-vignette-owned { position: absolute; z-index: 5; right: 10px; top: 10px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; border: 2px solid #dff3e8; color: #0d2c1e; background: linear-gradient(170deg, #8fe0bd, #3f9f78); box-shadow: 0 6px 14px rgba(23, 60, 44, 0.45); animation: av-pop-in 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+.av-vignette-owned .mark { width: 16px; height: 16px; }
 .asset-art-label.av-vignette-label { position: absolute; z-index: 4; right: 8px; bottom: 8px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--av-panel-line); background: var(--av-panel); color: var(--av-brass-bright); font-family: var(--font-pixel); font-size: 8.5px; font-weight: 800; letter-spacing: 0.16em; }
 
 /* Unlocked staff become a visible cast rather than remaining catalog art. */
@@ -418,6 +424,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .rival-target-strip .av-vignette-label,
 .rival-target-strip .av-vignette-owned { display: none; }
 .rival-target-strip .av-vignette-lock span { width: 26px; height: 26px; font-size: 14px; }
+.rival-target-strip .av-vignette-lock span .mark { width: 14px; height: 14px; }
 
 /* ------------------------------------------------- verdict drama */
 

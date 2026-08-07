@@ -33,8 +33,12 @@ zpolish-shots/
 zqa-shots/
 frontend/.rig-evidence/
 frontend/.rig-qa-shots/
-frontend/scratch-*.mjs
+frontend/scratch-*
+.punch/
 /qa_*.py
 /zfix_*.py
 /zpolish_*.py
 /zqa_*.py
+
+# Punch-list scratch (screenshots, harnesses, measurements). Regenerated on demand.
+.punch/

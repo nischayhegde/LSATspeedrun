@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 
 import { api } from '../api'
+import { ChevronMark, CloseMark, HomeMark, MenuMark, MinusMark, PlusMark, TargetMark } from '../art-2d/marks'
 import { formatMoney } from '../components'
 import type { GameState, TerritoryDistrict } from '../types'
 import { useAmbientMusic, useSound } from '../sound'
@@ -113,7 +114,7 @@ function RetainerBoard({ game, regionKey, regionName, onTravel }: {
       <button type="button" className="uw-retainer-toggle" aria-expanded={open} onClick={() => setOpen((was) => !was)}>
         <small>STANDING RETAINERS</small>
         <strong>{region.held} of {region.total} districts</strong>
-        <i aria-hidden="true">{open ? '−' : '+'}</i>
+        <i aria-hidden="true">{open ? <MinusMark /> : <PlusMark />}</i>
       </button>
       {open && (
         <>
@@ -363,7 +364,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
           <strong>{empireValueLabel}</strong>
         </div>
         <button type="button" className="uw-ledger-jump" onClick={focusHeadquarters} aria-label={`Jump to headquarters — ${currentRegion.name}`}>
-          <b>⌂</b>
+          <b><HomeMark /></b>
           <span>{currentRegion.name}</span>
         </button>
       </header>
@@ -425,7 +426,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
             setMobileControlsOpen((open) => !open)
           }}
         >
-          <span>{mobileControlsOpen ? 'Close' : 'Explore'}</span><b>{mobileControlsOpen ? '×' : '☰'}</b>
+          <span>{mobileControlsOpen ? 'Close' : 'Explore'}</span><b>{mobileControlsOpen ? <CloseMark /> : <MenuMark />}</b>
         </button>
 
         {mobileControlsOpen && (
@@ -504,10 +505,10 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
         </div>
 
         <div className="uw-map-toolbar" role="group" aria-label="Scene camera controls">
-          <button type="button" onClick={() => sendCameraCommand('in')} aria-label="Move camera closer">+</button>
-          <button type="button" onClick={() => sendCameraCommand('out')} aria-label="Move camera farther">−</button>
-          <button type="button" onClick={() => sendCameraCommand('focus')} aria-label="Focus camera on your lawyer">◎</button>
-          <button type="button" onClick={() => sendCameraCommand('home')} aria-label="Reset scene camera">⌂</button>
+          <button type="button" onClick={() => sendCameraCommand('in')} aria-label="Move camera closer"><PlusMark /></button>
+          <button type="button" onClick={() => sendCameraCommand('out')} aria-label="Move camera farther"><MinusMark /></button>
+          <button type="button" onClick={() => sendCameraCommand('focus')} aria-label="Focus camera on your lawyer"><TargetMark /></button>
+          <button type="button" onClick={() => sendCameraCommand('home')} aria-label="Reset scene camera"><HomeMark /></button>
         </div>
 
         <nav className="uw-level-navigator" aria-label={`${activeRegion.name} ${viewMode}`}>
@@ -557,7 +558,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
               <button type="button" className="uw-district-guide-toggle" aria-expanded={guideOpen} onClick={() => setGuideOpen((open) => !open)}>
                 <small>DISTRICT GUIDE</small>
                 <strong>{landmarks.length} places</strong>
-                <i aria-hidden="true">{guideOpen ? '−' : '+'}</i>
+                <i aria-hidden="true">{guideOpen ? <MinusMark /> : <PlusMark />}</i>
               </button>
               {guideOpen && (
                 <>
@@ -597,7 +598,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
 
         {selected && (
           <aside className={`uw-location-card kind-${selected.kind}`} aria-live="polite">
-            <button type="button" className="uw-card-close" onClick={() => setSelectedKey('')} aria-label="Close location card">×</button>
+            <button type="button" className="uw-card-close" onClick={() => setSelectedKey('')} aria-label="Close location card"><CloseMark /></button>
             <small>
               {selected.kind === 'tier'
                 ? `LEVEL ${selected.data.tier + 1} · ${selected.state.toUpperCase()}`
@@ -630,11 +631,11 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
             {selected.kind !== 'event' && <div className="uw-card-cost">{selected.kind === 'tier' && <span>${selected.data.cost.toLocaleString()}</span>}<span>★ {selected.data.reputation}</span>{selected.kind === 'tier' && <span>LEASE ${selected.data.rent_daily.toLocaleString()}/DAY</span>}</div>}
             {selected.kind !== 'event' && (
               <button type="button" className="uw-card-action" disabled={pointLocked(selected)} onClick={() => onManage(selected.kind === 'tier' ? 'upgrades' : 'rivals')}>
-                {pointLocked(selected) ? 'Route not yet earned' : selected.kind === 'tier' ? 'Manage headquarters' : 'Run an operation'} <i>{pointLocked(selected) ? '×' : '›'}</i>
+                {pointLocked(selected) ? 'Route not yet earned' : selected.kind === 'tier' ? 'Manage headquarters' : 'Run an operation'} <i>{pointLocked(selected) ? <CloseMark /> : <ChevronMark />}</i>
               </button>
             )}
             {selected.kind === 'event' && <div className={`uw-signal-state ${selected.locked ? '' : 'live'}`}>{selected.locked ? `Reach level ${selected.data.minTier + 1} to open this docket.` : selected.data.detail}</div>}
-            {selected.kind === 'event' && !selected.locked && <button type="button" className="uw-card-action" onClick={() => navigate('/cases')}>Open Daily Docket <i>›</i></button>}
+            {selected.kind === 'event' && !selected.locked && <button type="button" className="uw-card-action" onClick={() => navigate('/cases')}>Open Daily Docket <i><ChevronMark /></i></button>}
           </aside>
         )}
       </section>

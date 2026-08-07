@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -354,7 +354,11 @@ def make_user(*, target_score=165, days_out=90) -> User:
         email=f"trial{utcnow().timestamp()}@example.test",
         display_name="Test",
         target_score=target_score,
-        target_test_date=(date.today() + timedelta(days=days_out)) if days_out is not None else None,
+        # `trial_plan` counts the days from the UTC date. Building the target
+        # from the local one made `days_out` off by a day for every run between
+        # 19:00 and midnight here, which sent days_out=0 into the "trial date
+        # passed" branch and left `phase` unset.
+        target_test_date=(utcnow().date() + timedelta(days=days_out)) if days_out is not None else None,
     )
     db.session.add(user)
     db.session.commit()
