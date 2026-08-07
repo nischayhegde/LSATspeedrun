@@ -1,24 +1,40 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Target } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import { api, ApiError } from './api'
 import { AppShell, ErrorNotice, LoadingScreen } from './components'
-import { StoryOverlays } from './narrative'
+import { FocusMark } from './art-2d/marks'
 import { preloadArtForRoute, preloadDockArt } from './art/scene-loaders'
-import {
-  CasesLobbyPage,
-  CaseSessionPage,
-  FirmPage,
-  LoginPage,
-  OfficePage,
-  OnboardingPage,
-  PerformancePage,
-  ProgressionMapPage,
-  StoryPage,
-} from './pages'
 import './focus-mode-gate.css'
+
+/**
+ * One module per route, so a route only ever downloads its own screen.
+ *
+ * These were nine named imports out of a single 2,174-line `pages.tsx`, which
+ * is the same thing as no code splitting at all: a named import pulls in the
+ * whole module, so every route paid for all nine. Wrapping *those* imports in
+ * `lazy()` changes nothing — the module is still one unit. Splitting the file
+ * is what makes the dynamic import real.
+ */
+const PerformancePage = lazy(() => import('./pages/dashboard-page').then((m) => ({ default: m.PerformancePage })))
+const LoginPage = lazy(() => import('./pages/login-page').then((m) => ({ default: m.LoginPage })))
+const OnboardingPage = lazy(() => import('./pages/onboarding-page').then((m) => ({ default: m.OnboardingPage })))
+const OfficePage = lazy(() => import('./pages/office-page').then((m) => ({ default: m.OfficePage })))
+const CasesLobbyPage = lazy(() => import('./pages/cases-page').then((m) => ({ default: m.CasesLobbyPage })))
+const CaseSessionPage = lazy(() => import('./pages/case-session-page').then((m) => ({ default: m.CaseSessionPage })))
+const FirmPage = lazy(() => import('./pages/firm-page').then((m) => ({ default: m.FirmPage })))
+const ProgressionMapPage = lazy(() => import('./pages/map-page').then((m) => ({ default: m.ProgressionMapPage })))
+const StoryPage = lazy(() => import('./pages/story-page').then((m) => ({ default: m.StoryPage })))
+
+/**
+ * The narrative layer interrupts a screen; it never opens one. Loading it
+ * beside the route rather than in front of it keeps `game-art` — and the 3D
+ * cutscene artwork behind it — off the first paint of every route, including
+ * the six that have no cutscene at all.
+ */
+const StoryOverlays = lazy(() => import('./narrative').then((m) => ({ default: m.StoryOverlays })))
 
 
 function isAuthenticationError(error: unknown) {
@@ -64,10 +80,18 @@ function Protected({ children, gameRequired = true }: { children: React.ReactNod
   if (gameRequired && !game.data?.game) return <Navigate to="/onboarding" replace />
   return (
     <>
-      <AppShell user={me.data!.user} game={game.data?.game}>{children}</AppShell>
+      <AppShell user={me.data!.user} game={game.data?.game}>
+        {/* Inside the shell, so a route's own chunk lands under a header and
+            nav that are already on screen rather than behind a full-page wait. */}
+        <Suspense fallback={<LoadingScreen />}>{children}</Suspense>
+      </AppShell>
       {/* Rendered outside the shell so the narrative layer keeps one stacking
           order of its own instead of competing inside the page it interrupts. */}
-      {game.data?.game && <StoryOverlays game={game.data.game} />}
+      {game.data?.game && (
+        <Suspense fallback={null}>
+          <StoryOverlays game={game.data.game} />
+        </Suspense>
+      )}
     </>
   )
 }
@@ -113,7 +137,7 @@ function FocusModeGate({ children }: { children: React.ReactNode }) {
   return (
     <div className="focus-gate" role="status">
       <div>
-        <div className="focus-gate-mark" aria-hidden="true"><Target /></div>
+        <div className="focus-gate-mark" aria-hidden="true"><FocusMark on /></div>
         <span className="eyebrow">FOCUS MODE IS ON</span>
         <h1>{route.name} is put away.</h1>
         <p>
@@ -157,13 +181,43 @@ function HomeRedirect() {
 export default function App() {
   const location = useLocation()
   useEffect(() => {
-    preloadArtForRoute(location.pathname)
-    const idle = window.requestIdleCallback?.(() => { preloadDockArt(location.pathname) }, { timeout: 1800 })
+    /**
+     * Running this inline was free while every screen lived in the entry chunk:
+     * the route was already parsed by the time this effect ran, so there was
+     * nothing left for the preload to race. Now that the routes are real dynamic
+     * imports it competes with them, and on the screens where the 3D is
+     * decoration it wins a race it should lose — on `/login` it pulled ~717 kB
+     * of three.js in ahead of the 4 kB route chunk, which pushed the `me`
+     * request that decides where to send the visitor from 54 ms out to 729 ms.
+     *
+     * So it is now split by what the scene is worth on each screen. Where the
+     * scene *is* the page, the head start is the point and measurably costs the
+     * first frame if it is given up. Everywhere else the scene is an inset and
+     * yields to the screen the reader actually asked for.
+     */
+    const sceneIsThePage = location.pathname === '/office' || location.pathname === '/map'
+    const preload = () => {
+      preloadArtForRoute(location.pathname)
+      preloadDockArt(location.pathname)
+    }
+    if (sceneIsThePage) {
+      preloadArtForRoute(location.pathname)
+      const idle = window.requestIdleCallback?.(() => { preloadDockArt(location.pathname) }, { timeout: 1800 })
+      return () => { if (idle !== undefined) window.cancelIdleCallback?.(idle) }
+    }
+    const idle = window.requestIdleCallback?.(preload, { timeout: 1800 })
+    // Safari has no requestIdleCallback; a short timer is enough to let the
+    // route's own chunk get in first, which is the whole point.
+    const timer = idle === undefined ? setTimeout(preload, 300) : undefined
     return () => {
       if (idle !== undefined) window.cancelIdleCallback?.(idle)
+      if (timer !== undefined) clearTimeout(timer)
     }
   }, [location.pathname])
   return (
+    /* `Protected` carries its own boundary so a protected route keeps the shell
+       while its chunk lands. This one is the net for the routes outside it. */
+    <Suspense fallback={<LoadingScreen />}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={<HomeRedirect />} />
@@ -179,6 +233,7 @@ export default function App() {
       <Route path="/practice/:sessionId" element={<LegacyCaseRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   )
 }
 

@@ -229,6 +229,24 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
     return [...tiers, ...rivals, ...events]
   }, [activeRegionKey, game.catalog.assets, game.catalog.tiers, game.office_tier])
 
+  // Districts the firm holds, named as the scene's own landmark keys — the
+  // `TerritoryDistrict.landmark_key` -> `MapLandmark.key` join. Districts in
+  // other regions and those the planner never laid out drop out here.
+  //
+  // Derived from a sorted key string rather than from `districts` directly
+  // because the scene lists this among the dependencies that rebuild the whole
+  // world, and `game` is refetched on a timer: filtering inline would hand it a
+  // fresh array on every refetch and rebuild the map each time.
+  const ownedLandmarkKeys = game.territory.districts
+    .filter((district) => district.owned && district.landmark_key && district.region === activeRegionKey)
+    .map((district) => district.landmark_key)
+    .sort()
+    .join(',')
+  const ownedLandmarks = useMemo(
+    () => (ownedLandmarkKeys ? ownedLandmarkKeys.split(',') : []),
+    [ownedLandmarkKeys],
+  )
+
   const selected = points.find((point) => point.key === selectedKey)
   const established = game.catalog.tiers.filter((tier) => tier.tier <= game.office_tier).length
   const activity = Math.max(2, Math.min(9, 3 + points.filter((point) => point.kind === 'tier' && point.state !== 'locked').length))
@@ -388,6 +406,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
             onLandmarks={handleLandmarks}
             onLandmarkHover={handleLandmarkHover}
             onLandmarkSelect={handleLandmarkSelect}
+            ownedLandmarks={ownedLandmarks}
           />}
         </Suspense>
 

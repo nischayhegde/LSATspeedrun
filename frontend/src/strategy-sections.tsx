@@ -1,5 +1,7 @@
 import { ChevronDown } from 'lucide-react'
 
+import type { PerformanceSnapshot, StrategySectionReading } from './types'
+
 /**
  * The per-section readings inside the Methods tab: the strongest approach for
  * Logical Reasoning and for Reading Comprehension, each with the strength of
@@ -11,60 +13,16 @@ import { ChevronDown } from 'lucide-react'
  * step with the statistics it is describing.
  */
 
-export type StrategySectionResult = {
-  key: string
-  plain_title: string
-  /** The catalogue's own label for the approach, which is not what grouped it. */
-  section: string
-  sample: number
-  control_sample: number
-  lift: number | null
-  /** The difference after shrinking both arms toward "this made no difference". */
-  adjusted_lift: number | null
-  /** Effective per-arm size of the difference, dominated by the thinner arm. */
-  contrast_sample: number
-  contrast_evidence: string
-  eligible: boolean
-  with_headline: string
-  with_note: string
-  without_headline: string
-  without_note: string
-  detail: string
-}
-
-export type StrategySectionReading = {
-  section: string
-  short_label: string
-  /**
-   * `leader` names an approach. `level` means the comparison is strong enough
-   * to read and nothing is ahead. `insufficient` and `none` are the two ways of
-   * not having an answer, and both say which.
-   */
-  status: 'leader' | 'level' | 'insufficient' | 'none'
-  headline: string
-  summary: string
-  next_step: string
-  evidence_label: string | null
-  evidence_note: string | null
-  lift_headline: string
-  trials: number
-  prompt_trials: number
-  control_trials: number
-  strategies_tested: number
-  leader: StrategySectionResult | null
-  /** Whichever approach the reading is about, named or not. */
-  focus: StrategySectionResult | null
-  results: StrategySectionResult[]
-  itt: { note: string }
-}
-
 type StrategyLabSections = { sections: StrategySectionReading[]; note: string }
 
-export function readStrategyLabSections(lab: unknown): StrategyLabSections {
-  const payload = lab as { sections?: unknown; sections_note?: unknown } | null | undefined
+/**
+ * `strategy_lab` is absent until the student has run a trial, so the sections
+ * still need a defensive read even though their shape is now known.
+ */
+export function readStrategyLabSections(lab: PerformanceSnapshot['strategy_lab']): StrategyLabSections {
   return {
-    sections: Array.isArray(payload?.sections) ? (payload.sections as StrategySectionReading[]) : [],
-    note: typeof payload?.sections_note === 'string' ? payload.sections_note : '',
+    sections: lab?.sections ?? [],
+    note: lab?.sections_note ?? '',
   }
 }
 

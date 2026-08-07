@@ -13,10 +13,13 @@ from app.game import (
     DISTRICT_KEYS_BY_REGION,
     FIRM_TIERS,
     TERRITORY_REGIONS,
+    TERRITORY_RENT_RELIEF_POOL_BPS,
     TERRITORY_STANDING_CAP,
     TERRITORY_STANDING_FLOOR_CEILING,
+    TERRITORY_STANDING_POOL,
     TERRITORY_TOTAL_CASE_BUDGET,
     UNBALANCED_ASSET_TYPES,
+    _apportion_exactly,
     _career_floor,
     _case_target_for_tier,
     _relieved_daily_rent,
@@ -27,6 +30,7 @@ from app.game import (
     territory_state,
 )
 from app.models import PlayerProfile, PlayerTerritory, User, utcnow
+from scripts.simulate_economy_curve import Player, cash_per_played_case, total_campaign
 from app.trial import (
     MAX_SUSTAINABLE_WEEKLY_CASES,
     TARGET_EVIDENCE_SAMPLE,
@@ -77,18 +81,109 @@ def make_profile(*, tier: int = 0, reputation: float = 0, cash: int = 0) -> Play
 def test_the_whole_retainer_board_costs_its_stated_case_budget():
     """The mechanic's total drag on playtime is one number, and this is it.
 
-    Buying the core catalog out is ~950 solid cases and ~69 engaged hours. If
-    this drifts, the campaign length claim in the audit drifts with it.
+    The board costs 65 nominal cases: 61.9 played cases, 3.6 hours, 3.0% on top
+    of a 120-hour campaign. Not a second campaign, and no longer nearly free.
+
+    It carried 34 through the repacing to one-to-two hours an upgrade, on the
+    reasoning that the board is optional content and its authored *absolute*
+    cost of about two hours was the thing to hold. That reasoning missed that
+    only one side of the trade is quoted in cases. A full sweep retires the
+    office lease, rent is absolute currency charged per day, and repacing
+    multiplied the days in a campaign by 5.6 — so the sweep's payback rose 5.6x
+    while its price did not move, and rent relief alone came to repay 70% of
+    the board. At 65 it repays 39%, which leaves the mechanic worth buying and
+    still a real commitment.
+
+    Deliberately not the ~167 that restoring the pre-repacing 8% *share* would
+    need. Share is the wrong anchor at this campaign length: 8% is 9.3 hours.
     """
     total = sum(item["cost"] / _case_target_for_tier(item["tier"]) for item in DISTRICTS)
     assert TERRITORY_TOTAL_CASE_BUDGET * 0.97 <= total <= TERRITORY_TOTAL_CASE_BUDGET * 1.03
-    assert total <= 40, "territory must stay a rounding error against a 950-case campaign"
+    # Bounded as a share of the campaign rather than by a remembered case count,
+    # so it tracks a repacing instead of failing on one. The lower bound is the
+    # half of this that has no other guard: a board that drifts back toward free
+    # is the failure that prompted the change.
+    played_cases, _ = total_campaign(Player())
+    board_share = sum(item["cost"] / cash_per_played_case(item["tier"], Player()) for item in DISTRICTS)
+    assert .02 <= board_share / played_cases <= .05, f"{board_share / played_cases:.1%} of the campaign"
+
+
+def test_a_full_sweep_costs_clearly_more_than_the_rent_it_refunds():
+    """An optional board has to be a decision, and a free one is not.
+
+    Holding every district retires the lease, so the board partly pays for
+    itself and the only question is how much. At the 34 cases it carried
+    through the repacing that was 70%, because the refund had grown 5.6x with
+    the campaign's day count while the price stayed fixed in cases. Anything
+    near 100% would make the map a chore with a reward attached rather than a
+    thing a player chooses.
+
+    Both sides are measured in played cases against the same player, which is
+    the only way to compare a one-off price with a per-day refund at all.
+    """
+    player = Player()
+    board = sum(item["cost"] / cash_per_played_case(item["tier"], player) for item in DISTRICTS)
+    with_rent, _ = total_campaign(player)
+    without_rent, _ = total_campaign(Player(rent_relief_share=1.0))
+    refunded = with_rent - without_rent
+
+    assert refunded > 0
+    assert refunded / board <= .55, (
+        f"a sweep refunds {refunded:.1f} of the {board:.1f} played cases it costs "
+        f"({refunded / board:.0%}); the board is close to free"
+    )
+    # ...and still worth buying for a player who wants the map.
+    assert refunded / board >= .20, f"rent relief is now token at {refunded / board:.0%}"
+
+
+def test_both_district_pools_are_apportioned_to_the_last_unit():
+    """A full sweep is worth the whole pool, not the whole pool minus rounding.
+
+    Rent relief was `round(POOL * share)` per district, thirty-four independent
+    roundings whose sum is not the pool. It happened to land on exactly 10,000
+    bps at one particular set of shares and silently stopped when
+    `_tier_effort_scale` moved and re-weighted them: 9,998, so a player holding
+    literally every district on the map still paid 1 a day at tier 4 and 960 a
+    day at tier 14. Nothing in the game says "you own the entire map and the
+    lease is 96% retired".
+
+    Asserted as an exact equality on both pools, because approximate is what it
+    was. `_apportion_exactly` makes it structural rather than a coincidence of
+    the current weights.
+    """
+    assert sum(item["rent_relief_bps"] for item in DISTRICTS) == TERRITORY_RENT_RELIEF_POOL_BPS
+    assert sum(item["standing"] for item in DISTRICTS) == pytest.approx(TERRITORY_STANDING_POOL, abs=1e-9)
+    assert all(item["rent_relief_bps"] > 0 for item in DISTRICTS)
+    assert all(item["standing"] > 0 for item in DISTRICTS)
+
+    # The apportionment itself, at weights the district table does not happen to
+    # produce: nothing may be lost or invented, whatever the shares look like.
+    for shares in ([1 / 3] * 3, [0.5, 0.25, 0.125, 0.125], [0.9999, 0.0001], [1.0]):
+        units = _apportion_exactly(10_000, shares)
+        assert sum(units) == 10_000, shares
+        assert len(units) == len(shares)
+    assert _apportion_exactly(10_000, []) == []
 
 
 def test_no_district_is_a_better_deal_than_any_other():
-    """Standing per case is flat, so there is no purchase order to optimise."""
+    """Standing per case is flat, so there is no purchase order to optimise.
+
+    By construction the rate is exactly `TERRITORY_STANDING_POOL /
+    TERRITORY_TOTAL_CASE_BUDGET` for every district: both standing and price are
+    apportioned from the same share. What is left over is rounding, and it is
+    measured relatively rather than in absolute standing, because an absolute
+    tolerance silently depends on the fee scale — this assertion read `< 0.02`
+    and broke the first time the ladder was repaced, even though no district had
+    become a better deal than any other. `_round_game_amount` keeps two
+    significant digits, so a price can sit up to 5% either side of its exact
+    value and the widest possible spread between the most-rounded-up and
+    most-rounded-down district is about 10%.
+    """
     rates = [item["standing"] / (item["cost"] / _case_target_for_tier(item["tier"])) for item in DISTRICTS]
-    assert max(rates) - min(rates) < 0.02
+    exact_rate = TERRITORY_STANDING_POOL / TERRITORY_TOTAL_CASE_BUDGET
+    assert (max(rates) - min(rates)) / exact_rate < 0.11
+    for rate in rates:
+        assert rate == pytest.approx(exact_rate, rel=0.06)
 
 
 def test_every_district_is_cheaper_than_the_cheapest_real_asset_at_its_tier():

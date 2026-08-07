@@ -32,46 +32,147 @@ from .story import (
 )
 
 
-RULE_VERSION = "lsat-tycoon-v4"
+# Stamped onto every settlement and frozen into every case context. v6 repaces
+# the ladder to one-to-two *hours* an upgrade: prices did not move but every
+# client fee fell about 5.6x, so settlements either side of it are not
+# comparable and must not share a label. (v5 was the same knob turned the other
+# way, to three-to-six cases an upgrade, on a brief that turned out to be using
+# "case" to mean "sitting" -- see TIER_EFFORT_BASE.)
+#
+# v7 does not move the settlement formula at all: a case pays exactly what it
+# paid under v6. What moved is the daily goal reward, which fell 13x at tier 0
+# and rose by four orders of magnitude at the top (DAILY_REWARD_CASE_BUDGET).
+# Cash and lifetime earnings therefore accumulate at a materially different
+# rate either side of this label even though per-settlement figures are
+# comparable, so anything aggregating income over time has to split on it.
+#
+# v8 repaces the ladder a second time, by 3.3%: TIER_EFFORT_BASE 5.16 -> 5.33,
+# so every client fee is that much smaller and every settlement pays that much
+# less. Small, but it is a change to the settlement formula and not a
+# recalibration of a side reward, so it may not share v7's label. The reason it
+# is here is v7: putting daily claims into the income model showed the band had
+# been measured against a player who ignores a tenth of their income, and the
+# base is what puts a daily-claiming player back inside one-to-two hours.
+RULE_VERSION = "lsat-tycoon-v8"
 STARTING_CASH = 250
 DAILY_REWARD_MULTIPLIERS = {5: 1, 10: 3, 20: 8}
+# What a full day of daily-goal claims is worth, quoted in cases like every
+# other price here, and split between the three milestones in the 1:3:8 ratio
+# above so the twenty-case claim is still the one worth staying for.
+#
+# It has to be quoted in cases. The previous rule was
+# `max(flat_floor, active_client_fee * multiplier)` and both halves were wrong
+# in the same direction at opposite ends of the ladder:
+#
+#   * The floors -- 500/1500/4000 -- were absolute currency authored when fees
+#     were 5.6x larger. At tier 0 they paid 6,000 a day against a 3,800 first
+#     upgrade and a 6,000 first headquarters, so a daily claim *was* the
+#     upgrade. By tier 5 the same 6,000 is 1.2% of a purchase and the floor has
+#     silently stopped existing.
+#   * The fee term looks scale-free but is not. A client fee is
+#     `_case_target_for_tier / average_value_factor`, and that divisor grows
+#     with `_expected_firm_multiplier` as owned upgrades compound, so the fee
+#     falls from 0.64 of a case at tier 0 to 0.13 at tier 14. Twelve times the
+#     fee is therefore 47% of the cheapest tier-0 purchase and 6% of the
+#     cheapest tier-14 one -- an eightfold drift in what a day is worth. It is
+#     also 12x a number the player chooses: the active client may be any
+#     unlocked one, so a tier-5 player still on walk-ins collected 1,800 while
+#     the client beside them collected 99,600, and taking pro bono work cut the
+#     daily reward to 30% for no reason anyone designed.
+#
+# Anchoring to `_case_target_for_tier` fixes both: the day is worth the same
+# fraction of a purchase at every rung, and no client choice moves it.
+#
+# The size is 2.0 because a mandatory purchase costs 16-25 cases of nominal fee
+# (`scripts/simulate_economy_curve.py`), so a two-case day is 8-12% of one
+# purchase at every rung: ten days of claiming without playing would not buy a
+# single upgrade, which is the invariant that failed under the flat floors.
+# Against income it is a 10% raise on the twenty-case day it asks for.
+#
+# Sizing it cost TIER_EFFORT_BASE a repacing, which is worth knowing before
+# moving it again. The one-to-two-hour band had only 8% of clearance at its
+# lower edge, measured without dailies in the model at all, so *any* daily
+# worth more than about 1.4 cases pushed the cheapest purchase under an hour.
+# Rather than shrink the reward to fit a measurement that was ignoring it, the
+# base was moved 5.16 -> 5.33 and the band now holds with dailies counted. The
+# consequence is that this constant and TIER_EFFORT_BASE are coupled: raising
+# this one lowers the measured band and there is now only 0.2% of clearance at
+# the floor. See `test_a_full_day_of_daily_claims_never_approaches_an_upgrade`
+# and `test_the_band_holds_for_a_player_who_claims_their_daily_goals`.
+DAILY_REWARD_CASE_BUDGET = 2.0
 # Every price in the catalog is quoted in *cases*: `_case_target_for_tier`
 # converts one solid, well-argued win into cash, and each headquarters costs
 # `TARGET_CASES_PER_MILESTONE * FIRM_TIER_COST_MULTIPLIER * _tier_effort_scale`
-# of them while each upgrade, hire, or acquisition costs three to five.
+# of them while each upgrade, hire, or acquisition costs three to five times
+# that same effort scale (`_rebalance_asset_catalog`).
 #
-# Those two quotes have to stay within a factor of two of each other or no
-# single effort scale can hold both inside one band, which is why the
-# headquarters multiplier is 1 rather than the 2 it carried while offices were
-# meant to be the rare, expensive rung.
+# So this multiplier has to stay inside the three-to-five that assets already
+# span, or the two quotes drift apart and no single effort scale can hold both
+# inside one band. That is why it is 1 rather than the 2 it carried while
+# offices were meant to be the rare, expensive rung, and why retuning the pace
+# moves `_tier_effort_scale` -- which multiplies both quotes -- rather than this,
+# which multiplies only one.
 TARGET_CASES_PER_MILESTONE = 5
 FIRM_TIER_COST_MULTIPLIER = 1
 # How much longer a purchase costs at tier `t` than the same purchase would at
-# the bottom of the ladder.
+# the bottom of the ladder. This is a pure fee scale: raising it lowers
+# `_case_target_for_tier` and every client fee with it, and moves not one price
+# the player pays.
 #
-# This used to run 0.8 -> 9.2 across the ladder, on the theory that late tiers
-# should be multi-week climbs. Measured against a realistic player (72%
-# accuracy, ordinary prose grades) that produced 3.6 cases for an early
-# purchase and 33.7 for a late one, and a 1,944-case, 144-hour campaign: the
-# ladder got longer every rung while the reward for climbing it stayed a single
-# case.
+# The target is one to two *hours* of play per mandatory purchase, at every
+# rung. That is the brief's own unit and the only one that survives a change of
+# pace. A previous revision priced against "3 to 6 cases" instead, because the
+# brief said both and they were assumed to agree. They do not: a case here is
+# one attempted question (`profile.total_cases += 1` per settled attempt), so
+# 3-6 cases is 10-21 minutes, not the hour or two the brief meant by it. The
+# hour figure is the one the player experiences and the one that was kept.
 #
-# The target is 8-12 cases per purchase at every rung — about 35-55 minutes of
-# play for an upgrade, a ~940-case, ~70-hour campaign, and a month to two months
-# of study depending on whether the player works ten cases a day or twenty. The
-# scale is therefore close to flat, drifting up around 36% across fifteen tiers
-# so a late purchase still costs visibly more work than an early one without the
-# curve running away. Both figures come from simulating the real catalog against
-# that player rather than from the nominal budget, which flatters itself by
+# In cases, one to two hours is 17.2-34.4 at the shipped pace of 3.49 minutes a
+# case -- `_target_time_seconds` blended over the section mix the selector
+# actually serves, read back out of the database by
+# `scripts/simulate_economy_curve.py` rather than retyped. That script measures
+# the band against a realistic player (72% accuracy, ordinary prose grades)
+# rather than against the nominal budget, because nominal flatters itself by
 # assuming every case is a solid win.
 #
-# A slightly lower base (1.85) lands nearer 900 cases but drops the first rung
-# to about seven cases; holding the whole ladder inside the band is worth the
-# extra forty cases. What the scale cannot fix is the spread *within* a tier —
-# a purchase costs three to five cases by design, so which assets happen to sit
-# at a tier moves that tier's average by more than a step of this size does.
-TIER_EFFORT_BASE = 1.95
-TIER_EFFORT_STEP = 0.05
+# The base is pinned by the *daily-claiming* player, which is what 5.33 buys
+# over the 5.16 that preceded it. Claiming the daily goals is one tap on a
+# screen the player is already looking at and is worth a tenth of their income,
+# but the curve did not model it, so the band was being measured against
+# somebody who declines it. With dailies counted, 5.16 measured 16.7-28.3
+# played cases -- the tier-1 deposition studio at 58 minutes, under the floor.
+# At 5.33 the same player measures 17.2-29.3 (1.00-1.71 hours) with nothing
+# under an hour, and a player who never claims measures 19.2-32.7 (1.12-1.90
+# hours), so both are inside the band and the claiming one is the binding
+# constraint. It measured 3.3-5.7 at the far older 0.925/0.012.
+#
+# The step is pinned to the base, and the room for it is tight. A purchase
+# already costs three to five cases by design, a 1.67x spread *within* every
+# tier, and a one-to-two-hour band is only 2x wide -- so the entire fifteen-tier
+# drift has to fit in the 1.2x that is left over. 0.067 against a base of 5.33
+# drifts 1.18x, which still makes a late purchase cost visibly more work than an
+# early one. Anything near 1.36x exhausts the room on its own and *no* base
+# satisfies the band. This constraint is a ratio, so it did not change when the
+# band moved: the old 3-6 band was 2x wide too.
+#
+# What is left of the margin, and where: 0.2% at the floor for a claiming
+# player and 4.8% at the ceiling for a non-claiming one. That is much tighter
+# than it was, and deliberately so -- the band is now measured against both
+# populations at once rather than against one of them. It means the next change
+# to any income source, DAILY_REWARD_CASE_BUDGET included, has to be measured
+# here before it ships rather than after.
+#
+# What this costs in total playtime is the honest headline. There are 93
+# mandatory purchases (79 tier-gated assets plus 14 headquarters), so buying the
+# catalog out is about 2,061 played cases and 120 hours on cases for a claiming
+# player, 2,282 and 133 for one who never claims -- two months at two hours a
+# day, four at one. Those hours are a floor: they count case time only and
+# exclude coaching, story beats, and the map. An older brief asked for 55-88
+# hours, which this band cannot produce from either end; 93 purchases at the
+# very bottom of the band is still 93 * 17.2 * 3.49/60 = 93 hours. Buying the
+# catalog out is in any case not the same as exhausting the app.
+TIER_EFFORT_BASE = 5.33
+TIER_EFFORT_STEP = 0.067
 FINAL_CASE_KEY = "constellation_charter"
 ACTIVE_RENT_WINDOW = timedelta(hours=24)
 REPUTATION_GRACE_PERIOD = timedelta(hours=48)
@@ -102,6 +203,24 @@ FIRM_TIERS = [
 # Office rent scales predictably with the headquarters investment. The starter
 # practice still has a modest ground lease, while every later office costs 2%
 # of its purchase price per day to operate.
+#
+# This is absolute currency charged per day, and the two repacings multiplied
+# the days in a campaign by 5.6 without touching it, so rent is about 5.6x
+# heavier in real terms than when it was authored: 0.4-1.5% of income where it
+# was 0.07-0.27%, and 24 played cases across the whole campaign. Examined and
+# deliberately left, unlike the daily-goal floors and the decor branch, which
+# were the same kind of drift. The difference is where each one landed. This
+# one is still inside what it was authored to be -- "a fraction of one case per
+# day", 0.07 of a case at tier 0 and 0.31 at tier 14, never approaching one --
+# so what drifted away is slack, not the design.
+#
+# There is also a hard reason not to trim it now. It is income to the player if
+# you do, and `TIER_EFFORT_BASE` has 0.2% of clearance at the band floor:
+# retiring rent altogether already measures 0.99h for a daily-claiming player.
+# Cutting rent moves the pace band, and it would hollow out the district
+# board's rent relief, which TERRITORY_TOTAL_CASE_BUDGET was just priced
+# against. Three coupled constants, one of them signed off; this one moves last
+# if it moves at all.
 for _firm_tier in FIRM_TIERS:
     _firm_tier["rent_daily"] = max(15, int(_firm_tier["cost"]) // 50)
 
@@ -765,9 +884,19 @@ def _rebalance_asset_catalog() -> None:
         if item["type"] in UNBALANCED_ASSET_TYPES:
             # Decor carries no effects to balance, but it still has to be priced
             # against the tier it sits in or it stops being a choice.
+            #
+            # The effort scale belongs here for the same reason it belongs on
+            # the functional purchase below: `decor_cases` is a fraction of what
+            # a real purchase at this tier costs, and a real purchase is
+            # `target_questions * _tier_effort_scale`. It was omitted while the
+            # scale sat near 1.0, where the mistake was invisible; repacing the
+            # ladder turned it into an 82% price cut on every cosmetic, which is
+            # how it was found.
             if "decor_cases" in item:
                 item["cost"] = _round_game_amount(
-                    _case_target_for_tier(item["tier"]) * float(item["decor_cases"])
+                    _case_target_for_tier(item["tier"])
+                    * float(item["decor_cases"])
+                    * _tier_effort_scale(item["tier"])
                 )
             continue
         tier = item["tier"]
@@ -879,12 +1008,33 @@ TERRITORY_RENT_RELIEF_POOL_BPS = 10_000
 
 # What the entire retainer board costs, in successful cases, and therefore the
 # only number that decides how much this mechanic lengthens the campaign.
-# `test_the_whole_campaign_is_priced_in_weeks_of_study` puts buying the core
-# catalog out at ~950 solid cases and ~69 engaged hours; 34 is 3.6% on top of
-# that, about three and a half hours, and it buys nothing the ladder requires.
 # Districts are priced *out* of this budget rather than each being priced on
 # its own, so the mechanic's total cost cannot drift as districts are added.
-TERRITORY_TOTAL_CASE_BUDGET = 34.0
+#
+# Priced against what the board *pays back*, which is the only comparison that
+# survives a repacing, because only one side of it is quoted in cases. Rent is
+# absolute currency charged per day, and repacing the ladder multiplied the
+# days in a campaign by 5.6 without touching the daily figure. Retiring the
+# lease is what a full sweep buys, so the sweep's value rose 5.6x while its
+# price -- fixed in cases -- did not move at all. At the 34 this carried
+# through the repacing, rent relief alone repaid 70% of the board before the 18
+# points of standing were counted: an optional mechanic that is very nearly
+# free is not a choice, it is a chore with a reward attached.
+#
+# At 65 the board costs 61.9 played cases (3.6 hours, 3.0% of the campaign) and
+# refunds 24.3 in rent, so it is 39% self-financing and nets out at 37.7 cases.
+# That is a real commitment that still clearly repays a player who wants the
+# map, which is what an optional board should be.
+#
+# 65 rather than the ~167 that holding the old 8% share would require. Share is
+# the wrong anchor: 8% of today's campaign is 9.3 hours, which makes an
+# optional side board into a second campaign. What was authored was a
+# proportion of the *ladder's* difficulty, and 3% of it buys the whole map.
+#
+# The standing it also buys cannot reach the top of the ladder by design:
+# TERRITORY_STANDING_FLOOR_CEILING is 90 and the final headquarters needs 94,
+# so no amount of map play skips a rung.
+TERRITORY_TOTAL_CASE_BUDGET = 65.0
 
 # `cases` is a relative weight, not a price. Costs are apportioned out of
 # TERRITORY_TOTAL_CASE_BUDGET below, scaled by tier effort so a late district
@@ -936,6 +1086,32 @@ _DISTRICTS: list[dict] = [
 ]
 
 
+def _apportion_exactly(total_units: int, shares: list[float]) -> list[int]:
+    """Split ``total_units`` across ``shares`` so the parts sum to the whole.
+
+    Rounding each share on its own does not do that, and the shortfall is
+    invisible until it matters. Every district's rent relief was
+    `round(POOL * share)`, which happened to sum to exactly 10,000 bps at one
+    particular set of shares and stopped doing so the moment `_tier_effort_scale`
+    moved and re-weighted them: the sum came to 9,998, so holding literally
+    every district on the map left the player paying 1 a day at tier 4 and 960 a
+    day at tier 14. "Holding every district retires the office lease entirely"
+    is the mechanic's headline promise, and it was true by luck.
+
+    Largest remainder makes it true by construction: floor everything, then hand
+    the leftover units to the shares that lost the most in the flooring.
+    """
+    if not shares:
+        return []
+    raw = [total_units * share for share in shares]
+    units = [int(value) for value in raw]
+    leftover = total_units - sum(units)
+    by_remainder = sorted(range(len(raw)), key=lambda index: raw[index] - units[index], reverse=True)
+    for index in by_remainder[:leftover]:
+        units[index] += 1
+    return units
+
+
 def _price_district_catalog() -> list[dict]:
     """Price, weight, and finalise the district catalog.
 
@@ -943,16 +1119,25 @@ def _price_district_catalog() -> list[dict]:
     that sets the price, so a district is never a better deal in standing per
     case than any other and there is no ordering to optimise -- only the gates
     decide what is reachable.
+
+    The two pools are apportioned exactly rather than rounded independently, so
+    a full sweep is worth the whole pool and not the whole pool minus whatever
+    rounding took. Price is not: it is quoted per district in readable money by
+    `_round_game_amount`, and the budget it is drawn from is a design target
+    with a 3% tolerance rather than a promise to the player.
     """
     weights = {
         item["key"]: float(item["cases"]) * _tier_effort_scale(int(item["tier"]))
         for item in _DISTRICTS
     }
     total_weight = sum(weights.values())
+    shares = [weights[item["key"]] / total_weight for item in _DISTRICTS]
+    relief = _apportion_exactly(TERRITORY_RENT_RELIEF_POOL_BPS, shares)
+    # Standing is carried to two decimals, so it is apportioned in hundredths.
+    standing = _apportion_exactly(round(TERRITORY_STANDING_POOL * 100), shares)
     catalog: list[dict] = []
-    for item in _DISTRICTS:
+    for item, share, relief_bps, standing_units in zip(_DISTRICTS, shares, relief, standing):
         tier = int(item["tier"])
-        share = weights[item["key"]] / total_weight
         catalog.append(
             {
                 **item,
@@ -960,8 +1145,8 @@ def _price_district_catalog() -> list[dict]:
                 "cost": _round_game_amount(
                     _case_target_for_tier(tier) * TERRITORY_TOTAL_CASE_BUDGET * share
                 ),
-                "standing": round(TERRITORY_STANDING_POOL * share, 2),
-                "rent_relief_bps": round(TERRITORY_RENT_RELIEF_POOL_BPS * share),
+                "standing": round(standing_units / 100, 2),
+                "rent_relief_bps": relief_bps,
                 "region_name": TERRITORY_REGION_BY_KEY[item["region"]]["name"],
             }
         )
@@ -1523,11 +1708,20 @@ def _next_milestone(profile: PlayerProfile, owned: set[str]) -> dict | None:
     return {"kind": "tier", "name": tier["name"], "cost": tier["cost"], "reputation": tier["reputation"]}
 
 
-def _daily_reward_amount(profile: PlayerProfile, milestone: int, owned: set[str] | None = None) -> int:
-    owned = owned if owned is not None else _owned_keys(profile)
-    selected = CLIENT_BY_KEY.get(profile.active_client_key, CLIENT_BY_KEY["walk_in"])
-    client = selected if _client_is_unlocked(selected, profile, owned) else CLIENT_BY_KEY["walk_in"]
-    return max({5: 500, 10: 1_500, 20: 4_000}[milestone], int(client["base_fee"] * DAILY_REWARD_MULTIPLIERS[milestone]))
+def daily_reward_for_tier(tier: int, milestone: int) -> int:
+    """Cash for claiming the ``milestone``-case daily goal at firm ``tier``.
+
+    Priced off the tier's own case value rather than off the client the player
+    happens to have selected -- see DAILY_REWARD_CASE_BUDGET. Kept free of
+    `PlayerProfile` so `scripts/simulate_economy_curve.py` can put real daily
+    income into the curve instead of modelling it a second time.
+    """
+    share = DAILY_REWARD_MULTIPLIERS[milestone] / sum(DAILY_REWARD_MULTIPLIERS.values())
+    return _round_game_amount(_case_target_for_tier(tier) * DAILY_REWARD_CASE_BUDGET * share)
+
+
+def _daily_reward_amount(profile: PlayerProfile, milestone: int) -> int:
+    return daily_reward_for_tier(profile.office_tier, milestone)
 
 
 def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict:
@@ -1584,7 +1778,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
             "goals": [
                 {
                     "cases": cases,
-                    "reward": _daily_reward_amount(profile, cases, owned),
+                    "reward": _daily_reward_amount(profile, cases),
                     "complete": daily.cases_completed >= cases,
                     "claimed": cases in (daily.claimed_json or []),
                 }

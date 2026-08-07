@@ -734,6 +734,9 @@ export type PerformanceSnapshot = {
     empty_state: { title: string; body: string }
     catalog_note: string
     evidence_note: string
+    /** The same comparison run separately for Logical Reasoning and Reading Comprehension. */
+    sections: StrategySectionReading[]
+    sections_note: string
   }
   /** What the last mega-litigation told practice to work on. */
   focus: {
@@ -744,6 +747,60 @@ export type PerformanceSnapshot = {
     explanation: string
   }
   recommendation: { skill: string; accuracy: number; reason: string } | null
+}
+
+/**
+ * One approach's record inside a single section's comparison. Every figure and
+ * every piece of prose is computed in `backend/app/strategies.py`; nothing on
+ * the client decides what counts as enough evidence or formats a number the
+ * backend withheld.
+ */
+export type StrategySectionResult = {
+  key: string
+  plain_title: string
+  /** The catalogue's own label for the approach, which is not what grouped it. */
+  section: string
+  sample: number
+  control_sample: number
+  lift: number | null
+  /** The difference after shrinking both arms toward "this made no difference". */
+  adjusted_lift: number | null
+  /** Effective per-arm size of the difference, dominated by the thinner arm. */
+  contrast_sample: number
+  contrast_evidence: string
+  eligible: boolean
+  with_headline: string
+  with_note: string
+  without_headline: string
+  without_note: string
+  detail: string
+}
+
+/** The Methods tab's reading for one section: Logical Reasoning or Reading Comprehension. */
+export type StrategySectionReading = {
+  section: string
+  short_label: string
+  /**
+   * `leader` names an approach. `level` means the comparison is strong enough
+   * to read and nothing is ahead. `insufficient` and `none` are the two ways of
+   * not having an answer, and both say which.
+   */
+  status: 'leader' | 'level' | 'insufficient' | 'none'
+  headline: string
+  summary: string
+  next_step: string
+  evidence_label: string | null
+  evidence_note: string | null
+  lift_headline: string
+  trials: number
+  prompt_trials: number
+  control_trials: number
+  strategies_tested: number
+  leader: StrategySectionResult | null
+  /** Whichever approach the reading is about, named or not. */
+  focus: StrategySectionResult | null
+  results: StrategySectionResult[]
+  itt: { note: string }
 }
 
 export type ReviewQueue = {

@@ -35,18 +35,7 @@ body {
 :where(button, input, textarea, select) { max-width: 100%; }
 :where(button, a, input, textarea, select, [role="button"]) {
   -webkit-tap-highlight-color: transparent;
-}
-
-/* The wrapper is layout-neutral on desktop; its track becomes a swipe deck
-   only inside the mobile breakpoint below. */
-.mobile-performance-deck,
-.mobile-performance-deck-track { display: contents; }
-.mobile-performance-deck-heading { display: none; }
-
-/* Native builds rotate scene routes automatically. Mobile Safari cannot lock
-   orientation, so it gets a concise, dismissible transition instead. */
-.mobile-landscape-prompt { display: none; }
-.mobile-overflow-trigger,
+}.mobile-overflow-trigger,
 .mobile-site-menu,
 .office-mobile-menu-toggle,
 .office-mobile-scene-menu,
@@ -55,57 +44,7 @@ body {
 .office-mobile-brief-sheet,
 .mobile-scene-menu-scrim { display: none; }
 
-@media (max-width: 640px) and (orientation: portrait) {
-  html:not(.native-app-shell) .mobile-landscape-prompt {
-    padding: 24px;
-    display: grid;
-    place-items: center;
-    position: fixed;
-    z-index: 190;
-    inset: 58px 0 calc(68px + env(safe-area-inset-bottom));
-    color: #f5e8c2;
-    background:
-      radial-gradient(circle at 50% 38%, rgba(68, 113, 119, .28), transparent 34%),
-      rgba(7, 13, 23, .94);
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
-  }
-  .mobile-landscape-card {
-    width: min(100%, 360px);
-    padding: 28px 24px 22px;
-    border: 1px solid rgba(228, 196, 119, .48);
-    border-radius: 20px;
-    text-align: center;
-    background: linear-gradient(155deg, rgba(28, 43, 57, .98), rgba(12, 22, 34, .98));
-    box-shadow: inset 0 0 0 3px rgba(8, 13, 21, .7), 0 28px 70px rgba(0, 0, 0, .46);
-  }
-  .mobile-landscape-device {
-    width: 82px;
-    height: 82px;
-    margin: 0 auto 17px;
-    display: grid;
-    place-items: center;
-    position: relative;
-    color: #f0ca70;
-  }
-  .mobile-landscape-device > svg:first-child {
-    width: 58px;
-    height: 58px;
-    stroke-width: 1.35;
-    animation: mobile-scene-rotate 2.2s cubic-bezier(.55, 0, .2, 1) infinite;
-  }
-  .mobile-landscape-device > svg:last-child {
-    width: 25px;
-    height: 25px;
-    position: absolute;
-    right: -1px;
-    top: 1px;
-    color: #7bc9bc;
-  }
-  .mobile-landscape-card .eyebrow { color: #82cfc2; font-size: 9px; }
-  .mobile-landscape-card h2 { margin: 8px 0 9px; font-size: clamp(25px, 8vw, 33px); line-height: 1.06; }
-  .mobile-landscape-card p { margin: 0 auto 20px; max-width: 290px; color: #c0c9c4; font-size: 13px; line-height: 1.5; }
-  .mobile-landscape-card .secondary-button { width: 100%; min-height: 46px; font-size: 10px; }
+@media (max-width: 640px) and (orientation: portrait) {.mobile-landscape-card .eyebrow { color: #82cfc2; font-size: 9px; }.mobile-landscape-card .secondary-button { width: 100%; min-height: 46px; font-size: 10px; }
 }
 
 @keyframes mobile-scene-rotate {
@@ -361,61 +300,7 @@ body {
   .uw-map-toolbar button { width: 38px; height: 38px; }
 
   .appearance-button { min-height: 40px; }
-  .catalog-view-buttons button { min-width: 40px; min-height: 40px; }
-  .office-view-rail button { min-width: 40px; min-height: 40px; }
-  .office-view-rail { display: none; }
-  .office-mobile-menu-toggle {
-    min-width: 94px;
-    min-height: 40px;
-    padding: 0 10px;
-    position: absolute;
-    z-index: 92;
-    right: 8px;
-    top: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    border: 1px solid rgba(231, 202, 133, .5);
-    border-radius: 8px;
-    color: #f0e1bb;
-    background: rgba(8, 18, 28, .9);
-    box-shadow: 0 10px 24px rgba(2, 7, 11, .35);
-    font-family: var(--font-pixel);
-    font-size: 7px;
-    backdrop-filter: blur(10px);
-  }
-  .office-mobile-menu-toggle b { color: #dfbd66; font-size: 14px; }
-  .office-mobile-scene-menu {
-    width: min(300px, calc(100% - 16px));
-    padding: 13px;
-    position: absolute;
-    z-index: 91;
-    right: 8px;
-    top: 53px;
-    display: grid;
-    gap: 10px;
-    border: 1px solid rgba(226, 197, 126, .44);
-    border-radius: 11px;
-    color: #eee2c3;
-    background: linear-gradient(150deg, rgba(8, 18, 28, .98), rgba(21, 36, 41, .97));
-    box-shadow: 0 22px 50px rgba(2, 6, 10, .52);
-    backdrop-filter: blur(17px);
-  }
-  .office-mobile-scene-menu header { padding-bottom: 8px; display: grid; grid-template-columns: 1fr auto; border-bottom: 1px solid rgba(221, 191, 119, .18); }
-  .office-mobile-scene-menu header small,
-  .office-mobile-scene-menu header strong { display: block; grid-column: 1; }
-  .office-mobile-scene-menu header small { color: #78bdb3; font-family: var(--font-pixel); font-size: 7px; letter-spacing: .12em; }
-  .office-mobile-scene-menu header strong { margin-top: 2px; font-family: var(--font-display); font-size: 19px; }
-  .office-mobile-scene-menu header button { width: 31px; height: 31px; grid-column: 2; grid-row: 1 / 3; border: 1px solid rgba(255,255,255,.12); border-radius: 7px; color: #e9d9b2; background: rgba(255,255,255,.05); }
-  .office-mobile-camera-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .office-mobile-camera-actions button { min-height: 46px; padding: 5px; display: grid; place-items: center; border: 1px solid rgba(222, 193, 120, .25); border-radius: 7px; color: #dfc77f; background: rgba(255,255,255,.04); }
-  .office-mobile-camera-actions b { font: 18px var(--font-display); }
-  .office-mobile-camera-actions span { font-family: var(--font-pixel); font-size: 6.5px; }
-  .office-mobile-scene-menu > button { min-height: 38px; border: 1px solid rgba(222, 193, 120, .25); border-radius: 7px; color: #e9d9aa; background: rgba(255,255,255,.04); font-family: var(--font-pixel); font-size: 7px; }
-  .office-mobile-scene-menu > button.is-active { color: #17282b; background: #dbbd6a; }
-  .office-mobile-scene-menu p { margin: 0; color: #91a39f; font-size: 10px; text-align: center; }
-  .office-inventory-toggle { min-width: 136px; min-height: 40px; padding-inline: 9px; }
+  .catalog-view-buttons button { min-width: 40px; min-height: 40px; }.office-mobile-scene-menu > button.is-active { color: #17282b; background: #dbbd6a; }  .office-inventory-toggle { min-width: 136px; min-height: 40px; padding-inline: 9px; }
   .office-inventory-toggle span { font-size: 7px; letter-spacing: .07em; }
 
   .uw-arc-navigation,
@@ -450,12 +335,7 @@ body {
   .onboarding-scene-wrap { padding: clamp(20px, 5vw, 32px); }
   .onboarding-scene-wrap .office-scene { aspect-ratio: 16 / 9.5; }
   .opening-caption { margin-top: 18px; }
-  .onboarding-panel { padding: 34px clamp(18px, 6vw, 32px) 42px; }
-
-  .docket-hero { min-height: 0; padding: clamp(28px, 7vw, 44px); gap: 30px; }
-  .case-brief-card { width: min(100%, 440px); min-height: 0; }
-
-  .office-game-page,
+  .onboarding-panel { padding: 34px clamp(18px, 6vw, 32px) 42px; }  .office-game-page,
   .empire-game-page { min-height: calc(100dvh - 62px); }
   .office-command-bar,
   .empire-command-bar { gap: 14px; }
@@ -584,17 +464,7 @@ body {
   .mini-avatar.av-mini-avatar { width: 80px; height: 132px; }
   .mini-avatar.av-mini-avatar .av-person { width: 74px; height: 128px; }
   .name-fields { gap: 10px; }
-  .name-fields input { min-height: 46px; font-size: 16px; }
-
-  .docket-hero { padding: 27px 19px 29px; }
-  .docket-copy h1 { font-size: clamp(33px, 10vw, 41px); line-height: 1; }
-  .docket-copy > p { font-size: 14px; }
-  .primary-button.jumbo { width: 100%; min-height: 52px; padding-inline: 13px; font-size: 10px; }
-  .case-brief-card { padding: 22px 18px; transform: none; }
-  .case-brief-card h2 { font-size: 18px; }
-  .how-scoring-works { padding-top: 42px; }
-
-  /* Active case: the passage and response file are independently scrollable
+  .name-fields input { min-height: 46px; font-size: 16px; }.primary-button.jumbo { width: 100%; min-height: 52px; padding-inline: 13px; font-size: 10px; }/* Active case: the passage and response file are independently scrollable
      panes. A reader never has to shuttle up and down the whole document just
      to compare an RC passage with its question. */
   .session-page {
@@ -610,14 +480,7 @@ body {
   .matter-tag strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .case-timer { min-width: 0; }
   .case-timer small { display: none; }
-  .progress-track { flex: 0 0 auto; margin: 8px 0 10px; }
-  .strategy-trial {
-    flex: 0 0 auto;
-    max-height: min(36vh, 280px);
-    max-height: min(36dvh, 280px);
-    overflow-y: auto;
-  }
-  .question-content { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+  .progress-track { flex: 0 0 auto; margin: 8px 0 10px; }  .question-content { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
   .question-content.with-passage {
     min-height: 0;
     display: grid;
@@ -648,10 +511,7 @@ body {
     height: min(660px, calc(100dvh - 88px));
   }
 
-  .performance-page { padding-inline: 0; }
-  .performance-hero { padding: 22px 17px; }
-  .performance-hero h1 { font-size: clamp(31px, 9.5vw, 38px); }
-  .strategy-results-detail { overflow: hidden; }
+  .performance-page { padding-inline: 0; }.strategy-results-detail { overflow: hidden; }
   .strategy-results-table { overflow-x: auto; padding-bottom: 5px; }
 
   /* Office stays interactive; only supporting controls become more compact.
@@ -671,14 +531,7 @@ body {
   }
   .av-character-panel { height: 178px; }
   .av-hero-stage { flex-basis: 43%; }
-  .av-hero-plaque { margin: 10px; }
-  .office-view-rail { width: calc(100% - 16px); grid-template-columns: 40px minmax(0, 1fr) 40px 40px; }
-  .office-view-rail button { min-height: 40px; }
-  .office-view-rail .office-look-home { padding-inline: 6px; }
-  .office-view-rail .office-detail-toggle { padding: 0; }
-  .office-view-rail .office-detail-toggle span { font-size: 0; }
-  .office-view-rail .office-detail-toggle span::before { content: "+"; font-family: system-ui, sans-serif; font-size: 19px; line-height: 1; }
-  .office-inventory { width: calc(100% - 16px); right: 8px; bottom: 8px; }
+  .av-hero-plaque { margin: 10px; }.office-inventory { width: calc(100% - 16px); right: 8px; bottom: 8px; }
   .office-inventory-panel { max-height: min(310px, calc(100% - 52px)); }
   .office-upkeep-strip,
   .office-milestone-strip { margin-top: 10px; }
@@ -1000,51 +853,7 @@ body {
     min-width: 0 !important;
   }
   .login-panel .secondary-button.full { min-height: 44px; margin-top: 5px; font-size: 10px; }
-  .login-panel > small { margin-top: 8px; font-size: 9.5px; }
-
-  /* Practice is arranged as swipeable briefs rather than a very tall hero.
-     Both the learning premise and the active client remain present. */
-  .docket-hero {
-    min-height: 0;
-    padding: 0;
-    display: flex;
-    align-items: stretch;
-    gap: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-  .docket-hero::-webkit-scrollbar { display: none; }
-  .docket-copy,
-  .case-brief-card {
-    width: 100%;
-    min-width: 100%;
-    min-height: min(500px, calc(100dvh - 180px));
-    padding: 28px 21px;
-    flex: 0 0 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    scroll-snap-align: start;
-  }
-  .docket-copy h1 {
-    margin: 11px 0 16px;
-    font-size: var(--mobile-title);
-    line-height: 1.02;
-    word-spacing: .12em;
-  }
-  .docket-copy > p { margin-bottom: 20px; font-size: var(--mobile-body); }
-  .primary-button.jumbo { min-height: 50px; font-size: 10.5px; }
-  .case-brief-card {
-    width: 100%;
-    transform: none;
-    border: 0;
-    box-shadow: inset 0 0 0 3px #c49c5b;
-  }
-  .case-brief-card h2 { font-size: 20px; }
-
-  /* Reusable horizontal dossiers preserve information without forcing a long
+  .login-panel > small { margin-top: 8px; font-size: 9.5px; }.primary-button.jumbo { min-height: 50px; font-size: 10.5px; }  /* Reusable horizontal dossiers preserve information without forcing a long
      vertical document. A small portion of the next card remains visible as a
      natural swipe affordance. */
   .daily-docket-track,
@@ -1094,68 +903,10 @@ body {
     scrollbar-width: none;
   }
   .client-grid::-webkit-scrollbar { display: none; }
-  .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }
-  .how-scoring-works > div > article { min-height: 190px; }
-
-  .performance-hero { padding: 21px 17px; }
-  .performance-hero h1,
+  .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }.performance-hero h1,
   .review-summary-hero h1 { font-size: var(--mobile-title); line-height: 1.04; }
   .performance-hero p,
-  .review-summary-hero p { font-size: var(--mobile-body); }
-  .performance-hero-actions { gap: 9px; }
-  .performance-hero-actions button { min-height: 46px; }
-
-  .mobile-performance-deck { display: block; margin-top: 18px; }
-  .mobile-performance-deck-heading {
-    margin: 0 3px 9px;
-    padding: 11px 13px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    border: 1px solid rgba(26, 49, 58, .2);
-    border-radius: 12px;
-    color: #d8e6df;
-    background: linear-gradient(115deg, #17303c, #213e43);
-  }
-  .mobile-performance-deck-heading span {
-    flex: 0 0 auto;
-    color: #e8c776;
-    font-family: var(--font-pixel);
-    font-size: 9px;
-    letter-spacing: .1em;
-  }
-  .mobile-performance-deck-heading strong {
-    font-size: 11.5px;
-    font-weight: 650;
-    line-height: 1.35;
-    text-align: right;
-  }
-  .mobile-performance-deck-track {
-    padding: 2px 3px 10px;
-    display: flex;
-    align-items: stretch;
-    gap: 12px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    overscroll-behavior-inline: contain;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .mobile-performance-deck-track::-webkit-scrollbar { display: none; }
-  .mobile-performance-deck-track > * {
-    width: calc(100vw - 34px);
-    max-height: min(680px, calc(100dvh - 165px));
-    margin: 0;
-    flex: 0 0 calc(100vw - 34px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scroll-snap-align: center;
-    -webkit-overflow-scrolling: touch;
-  }
-  .mobile-performance-deck-track > .performance-grid { display: grid; }
-
-  /* The office's real Three.js room becomes the hero. The lawyer remains in
+  .review-summary-hero p { font-size: var(--mobile-body); }/* The office's real Three.js room becomes the hero. The lawyer remains in
      the same scene as a compact picture-in-picture identity card instead of
      consuming a separate full-width row. */
   .office-game-page {
@@ -1215,18 +966,7 @@ body {
   .av-hero-plaque small { display: none; }
   .av-hero-plaque strong { margin: 0; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
   .av-hero-plaque span { margin-top: 2px; font-size: 7.5px; letter-spacing: .08em; }
-  .av-hero-plaque em { margin-top: 3px; font-size: 7.5px; }
-  .office-view-rail {
-    width: calc(100% - 150px);
-    min-width: 214px;
-    max-width: 252px;
-    left: auto;
-    right: 9px;
-    top: 9px;
-    grid-template-columns: 40px minmax(70px, 1fr) 40px 40px;
-    transform: none;
-  }
-  .office-inventory { bottom: 9px; }
+  .av-hero-plaque em { margin-top: 3px; font-size: 7.5px; }  .office-inventory { bottom: 9px; }
   .office-upkeep-strip,
   .office-milestone-strip { padding: 13px; }
   .office-upkeep-terms { scroll-snap-type: x mandatory; }
@@ -1345,14 +1085,7 @@ body {
 
 @media (max-width: 360px) {
   .av-character-panel { width: 102px; height: 146px; }
-  .av-hero-stage { height: 104px; }
-  .office-view-rail {
-    width: calc(100% - 124px);
-    min-width: 0;
-    grid-template-columns: 36px minmax(60px, 1fr) 36px 36px;
-  }
-  .office-view-rail button { min-height: 38px; }
-}
+  .av-hero-stage { height: 104px; }}
 
 @media (min-width: 641px) and (max-width: 900px) and (min-height: 501px) {
   .av-office-duo { display: block; position: relative; }
@@ -1378,11 +1111,7 @@ body {
   .av-hero-plaque small { display: none; }
   .av-hero-plaque strong { margin: 0; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
   .av-hero-plaque span { margin-top: 2px; font-size: 8px; }
-  .av-hero-plaque em { margin-top: 3px; font-size: 8px; }
-  .office-view-rail { left: auto; right: 12px; top: 12px; transform: none; }
-  .office-view-rail button { min-height: 40px; }
-
-  .appearance-button { min-height: 42px; }
+  .av-hero-plaque em { margin-top: 3px; font-size: 8px; }  .appearance-button { min-height: 42px; }
   .catalog-view-buttons button { min-width: 42px; min-height: 42px; }
   .asset-management-grid,
   .client-grid,
@@ -1459,9 +1188,7 @@ body {
     aspect-ratio: auto;
     border-radius: 0;
   }
-  .av-character-panel { display: none; }
-  .office-mobile-menu-toggle { top: 8px; }
-  .office-inventory { right: 8px; bottom: 8px; }
+  .av-character-panel { display: none; }  .office-inventory { right: 8px; bottom: 8px; }
 
   .map-page .empire-command-bar { display: none; }
   .unified-empire { height: 100%; position: relative; }
@@ -1529,15 +1256,7 @@ body {
   .question-progress { font-size: 10px; }
   .question-progress span { display: none; }
   .case-timer small { font-size: 8.5px; }
-  .progress-track { height: 3px; margin: 5px 0 7px; flex: 0 0 auto; }
-  .strategy-trial {
-    max-height: 84px;
-    margin: 0 0 6px;
-    padding: 8px;
-    flex: 0 0 auto;
-    overflow-y: auto;
-  }
-  .question-content,
+  .progress-track { height: 3px; margin: 5px 0 7px; flex: 0 0 auto; }  .question-content,
   .question-content.with-passage {
     min-height: 0;
     flex: 1 1 auto;
@@ -1954,37 +1673,7 @@ body {
   .app-shell:not(.wide-scene-shell) .mobile-site-menu { inset: 58px 0 calc(76px + env(safe-area-inset-bottom)); }
   .page-wrap,
   .case-lobby,
-  .contained { width: calc(100% - 24px); }
-
-  .docket-hero {
-    min-height: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: minmax(0,1fr);
-    gap: 0;
-    overflow: hidden;
-    scroll-snap-type: none;
-    border-radius: 20px;
-  }
-  .docket-copy,
-  .case-brief-card {
-    width: auto;
-    min-width: 0;
-    min-height: 0;
-    padding: 24px 20px;
-    display: block;
-    scroll-snap-align: none;
-  }
-  .docket-copy { padding-bottom: 20px; }
-  .docket-copy h1 { margin: 10px 0 14px; font-size: clamp(29px, 8.4vw, 35px); }
-  .docket-copy > p { margin: 0 0 18px; font-size: 14px; }
-  .case-brief-card { margin: 0 12px 12px; border: 1px solid rgba(233, 201, 125, .42); border-radius: 16px; box-shadow: none; }
-
-  .performance-hero { padding: 22px 18px; border-radius: 20px; }
-  .performance-hero h1 { font-size: clamp(29px, 8.4vw, 35px); }
-  .mobile-performance-deck-track > * { max-height: none; }
-
-  /* Two nested decorative frames used to push the actual copy 45px in on a
+  .contained { width: calc(100% - 24px); }/* Two nested decorative frames used to push the actual copy 45px in on a
      390px screen, leaving it a third narrower than every other route. Trim the
      outer page so the frame still reads but the content lines up close to the
      16px gutter the rest of the app uses. */
@@ -2204,91 +1893,26 @@ body {
     width: calc(100% - 24px);
     margin-inline: auto;
     padding: 12px 0 var(--mobile-dock-clearance);
-  }
-  .performance-hero {
-    padding: 20px 18px;
-    grid-template-columns: 1fr;
-    gap: 16px;
-    border-radius: 18px;
-  }
-  .performance-hero h1 {
-    max-width: 12ch;
-    margin: 8px 0 10px;
-    font-size: clamp(30px, 8.5vw, 35px);
-    line-height: 1.02;
-  }
-  .performance-hero p { margin: 0; font-size: 14px; line-height: 1.5; }
-  .performance-actions { margin-top: 17px; gap: 8px; }
-  .performance-actions button { min-height: 48px; }
-  .speedrun-index {
-    min-height: 112px;
-    padding: 12px;
-    grid-template-columns: 84px minmax(0, 1fr);
-    grid-template-rows: auto auto;
-    align-items: center;
-    justify-items: start;
-    column-gap: 13px;
-    border-radius: 14px;
-  }
-  .speedrun-index .index-ring {
+  }.speedrun-index .index-ring {
     width: 82px;
     height: 82px;
     padding: 8px;
     grid-row: 1 / 3;
   }
-  .speedrun-index .index-ring strong { font-size: 31px; }
-  .speedrun-index > small { margin: 0; font-size: 8px; line-height: 1.45; }
-  .speedrun-index > p { margin: 3px 0 0; font-size: 10.5px; text-align: left; }
-  .evidence-strip { margin: 10px 0; padding: 12px; border-radius: 12px; }
-
-  /* Practice: centered headline and a compact client dossier. */
+  .speedrun-index .index-ring strong { font-size: 31px; }/* Practice: centered headline and a compact client dossier. */
   .case-lobby {
     width: calc(100% - 24px);
     max-width: 520px;
     margin-inline: auto;
     padding: 12px 0 var(--mobile-dock-clearance);
-  }
-  .docket-hero { width: 100%; margin-inline: auto; border-radius: 18px; }
-  .docket-copy { padding: 22px 18px 18px; text-align: center; }
-  .docket-copy .eyebrow { display: block; text-align: center; }
-  .docket-copy h1 {
-    max-width: 12ch;
-    margin: 10px auto 13px;
-    font-size: clamp(28px, 8.2vw, 34px);
-    line-height: 1.03;
-    text-wrap: balance;
-  }
-  .docket-copy > p { max-width: 34ch; margin: 0 auto 18px; font-size: 13.5px; }
-  .docket-copy .primary-button { margin-inline: auto; }
-  .case-brief-card {
-    margin: 0 12px 12px;
-    padding: 17px;
-    display: grid;
-    grid-template-columns: 68px minmax(0, 1fr);
-    align-items: center;
-    gap: 5px 12px;
-    text-align: left;
-  }
-  .case-brief-card .brief-stamp { grid-column: 1 / -1; justify-self: end; }
-  .case-brief-card .lobby-client-portrait {
+  }.docket-copy .eyebrow { display: block; text-align: center; }.docket-copy .primary-button { margin-inline: auto; }.case-brief-card .lobby-client-portrait {
     width: 68px;
     height: 76px;
     margin: 0;
     grid-row: 2 / 4;
-  }
-  .case-brief-card h2 { margin: 0; font-size: 16px; }
-  .case-brief-card > p { margin: 2px 0 0; font-size: 12px; line-height: 1.4; }
-  .case-brief-card .brief-terms {
-    margin-top: 12px;
-    grid-column: 1 / -1;
-    gap: 7px;
-  }
-  .case-brief-card .brief-terms span { padding-bottom: 6px; font-size: 10.5px; }
-  .daily-docket { margin-top: 14px; border-radius: 16px; }
+  }.daily-docket { margin-top: 14px; border-radius: 16px; }
   .daily-docket > header { padding: 18px 16px; gap: 14px; }
   .daily-docket h2 { font-size: 25px; }
-  .how-scoring-works { padding: 34px 0 0; }
-
   /* Active questions use the full viewport. RC keeps both documents visible
      with independent scrolling, so comparison never requires page shuttling. */
   .app-shell.active-case { height: 100dvh; padding: 0; overflow: hidden; }
@@ -2461,9 +2085,7 @@ body {
     font-size: 9px;
     font-weight: 700;
     letter-spacing: .1em;
-  }
-  .office-mobile-camera-actions span { font-size: 10px; font-weight: 650; }
-  .office-game-page .office-mobile-scene-menu > button { font-family: var(--font-pixel); font-size: 11px; }
+  }  .office-game-page .office-mobile-scene-menu > button { font-family: var(--font-pixel); font-size: 11px; }
   .empire-game-page .uw-mobile-scene-menu label > span {
     margin-bottom: 5px;
     display: block;
@@ -2489,137 +2111,21 @@ body {
      is the single authoritative rule for them at phone widths. */
   .performance-page > .performance-hero,
   .performance-page > .evidence-strip,
-  .performance-page > .performance-metrics { display: none !important; }
-  .mobile-training-home {
-    min-height: 0;
-    padding: 20px 16px 24px;
-    display: flex;
-    flex-direction: column;
-    background:
-      radial-gradient(circle at 84% 12%, rgba(73, 129, 124, .19), transparent 31%),
-      linear-gradient(160deg, #142535, #0d1823 68%);
-  }
-  .mobile-learning-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-  }
-  .mobile-learning-header > div > span,
-  .mobile-learning-header h1 {
-    margin: 5px 0 0;
-    color: #f1d586;
-    font: 700 clamp(29px, 8.4vw, 36px)/1.03 var(--font-pixel);
-    letter-spacing: -.035em;
-  }
-  .mobile-learning-header > a {
-    min-height: 44px;
-    padding: 0 4px 0 10px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    color: #b7c8c5;
-    font: 650 11px var(--font-pixel);
-    text-decoration: none;
-  }
-  .mobile-training-signal {
-    margin-top: clamp(28px, 6dvh, 48px);
-    padding: 0 0 22px;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 18px;
-    border-bottom: 1px solid rgba(224, 199, 135, .2);
-  }
-  .mobile-training-score { display: flex; align-items: flex-end; color: #f4dda0; }
-  .mobile-training-score strong { font: 700 clamp(58px, 17vw, 76px)/.8 var(--font-pixel); letter-spacing: -.07em; }
-  .mobile-training-score span { margin: 0 0 3px 4px; color: #7fc9bc; font: 700 14px var(--font-pixel); }
-  .mobile-training-signal > div:last-child small { color: #d6b96b; font: 700 9px var(--font-pixel); letter-spacing: .09em; }
-  .mobile-training-signal p { margin: 6px 0 0; color: #aab9b7; font: 500 12px/1.45 var(--font-pixel); }
-  /* Six columns so the five measures split 3 + 2 into even rows. The three
-     headline numbers stay on one glanceable line; the two that need a sentence
-     of context get the wider cells underneath. */
-  .mobile-training-metrics {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    border-bottom: 1px solid rgba(224, 199, 135, .2);
-  }
-  /* Cells are tappable <button>s (see `.metric-card-trigger` for the desktop
-     equivalent), so the reset lives on the shared `.mobile-metric-cell`
-     class rather than a bare `div` selector. */
-  .mobile-metric-cell {
-    all: unset;
-    box-sizing: border-box;
-    padding: 15px 10px 14px;
-    display: grid;
-    align-content: center;
-    grid-column: span 2;
-    border-left: 1px solid rgba(224, 199, 135, .14);
-    text-align: left;
-    cursor: pointer;
-  }
-  .mobile-metric-cell:nth-child(n + 4) { grid-column: span 3; border-top: 1px solid rgba(224, 199, 135, .14); }
-  .mobile-metric-cell:nth-child(1),
-  .mobile-metric-cell:nth-child(4) { padding-left: 0; border-left: 0; }
-  .mobile-metric-cell:active,
-  .mobile-metric-cell.is-expanded { background: rgba(224, 199, 135, .09); }
-  .mobile-metric-cell span { color: #819693; font: 600 9px var(--font-pixel); }
-  .mobile-metric-cell strong { margin-top: 6px; color: #eef0e8; font: 700 19px var(--font-pixel); }
-  .mobile-metric-cell strong.stat-empty { color: rgba(238, 240, 232, .42); font-weight: 400; }
-  .mobile-metric-cell small { margin-top: 5px; color: #7f918f; font: 500 9.5px/1.4 var(--font-pixel); }
-  .mobile-metric-detail {
-    margin: 0;
-    padding: 14px 16px 16px;
-    border-bottom: 1px solid rgba(224, 199, 135, .2);
-    background: rgba(8, 19, 27, .3);
-    color: #cbd3ca;
-    font-family: var(--font-pixel);
-    font-size: 11px;
-    line-height: 1.55;
-  }
-  .mobile-metric-detail p { margin: 0 0 8px; }
-  .mobile-metric-detail p:last-child { margin-bottom: 0; }
-  .mobile-metric-detail .metric-breakdown,
+  .performance-page > .performance-metrics { display: none !important; }.mobile-metric-cell:active,
+  .mobile-metric-cell.is-expanded { background: rgba(224, 199, 135, .09); }.mobile-metric-cell strong.stat-empty { color: rgba(238, 240, 232, .42); font-weight: 400; }.mobile-metric-detail .metric-breakdown,
   .mobile-metric-detail .metric-detail-action { font-family: var(--font-pixel); }
   .mobile-metric-detail .metric-trend-up { color: #79d0be; }
   .mobile-metric-detail .metric-trend-down { color: #e2ad6f; }
   /* The dashboard's own active-run chip, shown above the primary actions
      when a case run is already open. */
-  .mobile-training-home .active-run-chip { margin: 20px 0 0; }
-  .mobile-training-priority {
-    margin-top: 20px;
-    padding: 15px 0;
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
-    gap: 12px;
-    border-bottom: 1px solid rgba(224, 199, 135, .16);
-  }
-  .mobile-training-priority > svg { color: #dfbd66; }
-  .mobile-training-priority span,
-  .mobile-training-priority strong,
-  .mobile-training-priority small { display: block; font-family: var(--font-pixel); }
-  .mobile-training-priority span { color: #78c4b9; font-size: 9px; font-weight: 700; letter-spacing: .11em; }
-  .mobile-training-priority strong { margin-top: 5px; color: #f0e8d3; font-size: 15px; }
-  .mobile-training-priority small { margin-top: 5px; color: #8fa4a2; font-size: 10.5px; line-height: 1.4; }
-  .mobile-training-actions { margin-top: 24px; padding-top: 0; display: grid; gap: 8px; }
-  .mobile-training-actions .primary-button,
+  .mobile-training-home .active-run-chip { margin: 20px 0 0; }.mobile-training-actions .primary-button,
   .mobile-training-secondary {
     width: 100%;
     min-height: 52px;
     border-radius: 14px;
     font: 700 12px var(--font-pixel);
   }
-  .mobile-training-actions .primary-button { color: #17202a; background: #e1bf68; box-shadow: none; }
-  .mobile-training-secondary {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border: 1px solid rgba(229, 204, 142, .26);
-    color: #ded6bf;
-    background: transparent;
-  }
-  /* The dashboard is the dark "instrument panel" sub-theme end to end, so the
+  .mobile-training-actions .primary-button { color: #17202a; background: #e1bf68; box-shadow: none; }  /* The dashboard is the dark "instrument panel" sub-theme end to end, so the
      analysis deck stays on the same navy the training surface above it uses. */
   .performance-page .mobile-performance-deck {
     margin: 0;
@@ -2694,82 +2200,7 @@ body {
     padding-inline: 8px;
     border-radius: 11px;
     font-size: 11.5px;
-  }
-
-  .mobile-practice-home {
-    min-height: calc(100dvh - 58px - 70px - env(safe-area-inset-bottom));
-    padding: 20px 16px 24px;
-    display: flex;
-    flex-direction: column;
-    background:
-      radial-gradient(circle at 12% 88%, rgba(83, 125, 111, .15), transparent 30%),
-      linear-gradient(155deg, #172a37, #0d1823 72%);
-  }
-  .mobile-practice-client {
-    max-width: 150px;
-    display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
-    align-items: center;
-    gap: 8px;
-  }
-  .mobile-practice-client .client-portrait { width: 34px; height: 38px; border-width: 1px; box-shadow: none; }
-  .mobile-practice-client small,
-  .mobile-practice-client strong { display: block; overflow: hidden; font-family: var(--font-pixel); text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-practice-client small { color: #77b9b0; font-size: 7px; letter-spacing: .08em; }
-  .mobile-practice-client strong { margin-top: 3px; color: #e7ddc2; font-size: 10px; }
-  .mobile-docket-next {
-    width: 100%;
-    min-height: 96px;
-    margin-top: 26px;
-    padding: 16px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 30px;
-    align-items: center;
-    gap: 12px;
-    border: 1px solid rgba(229, 197, 119, .42);
-    border-radius: 16px;
-    color: #eee7d7;
-    background: rgba(255,255,255,.035);
-    box-shadow: none;
-    text-align: left;
-  }
-  .mobile-docket-next span,
-  .mobile-docket-next small,
-  .mobile-docket-next strong,
-  .mobile-docket-next em { display: block; font-family: var(--font-pixel); }
-  .mobile-docket-next small { color: #e2bf68; font-size: 9px; font-weight: 700; letter-spacing: .1em; }
-  .mobile-docket-next strong { margin-top: 6px; font-size: 15px; }
-  .mobile-docket-next em { margin-top: 5px; color: #8fa5a2; font-size: 9.5px; font-style: normal; }
-  .mobile-docket-next > svg { color: #dfbf6a; }
-  .mobile-practice-selection {
-    margin-top: 18px;
-    padding: 15px 0;
-    display: grid;
-    grid-template-columns: 28px minmax(0, 1fr);
-    gap: 10px;
-    border-top: 1px solid rgba(221, 195, 132, .16);
-  }
-  .mobile-practice-selection > svg { color: #79c1b6; }
-  .mobile-practice-selection strong,
-  .mobile-practice-selection p { font-family: var(--font-pixel); }
-  .mobile-practice-selection strong { color: #eee5ce; font-size: 14px; }
-  .mobile-practice-selection p { margin: 4px 0 0; color: #91a3a1; font-size: 10.5px; line-height: 1.4; }
-  .mobile-practice-start {
-    width: 100%;
-    min-height: 54px;
-    margin-top: auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    border: 0;
-    border-radius: 14px;
-    color: #16212a;
-    background: #e0bd65;
-    font: 750 12px var(--font-pixel);
-  }
-
-  /* Case reader --------------------------------------------------------- */
+  }.mobile-practice-client .client-portrait { width: 34px; height: 38px; border-width: 1px; box-shadow: none; }/* Case reader --------------------------------------------------------- */
   .app-shell.active-case,
   .app-shell.active-case > main,
   .app-shell.active-case .session-page {
@@ -3141,38 +2572,7 @@ body {
   .mobile-site-menu h2 { font-family: var(--font-pixel); font-size: 22px; font-weight: 750; }
   .mobile-site-menu nav a,
   .mobile-site-menu-tools > button { min-height: 54px; border-radius: 12px; }
-  .mobile-site-menu footer { margin-top: 2px; padding-top: 10px; }
-
-  /* These are sections in the middle of their page, not the end of it. Dock
-     clearance here opened a blank band before the panels that follow. */
-  .mobile-training-home { min-height: 0; padding-bottom: 8px; }
-
-  .mobile-practice-home {
-    min-height: 0;
-    padding-bottom: 8px;
-  }
-  .mobile-practice-client {
-    width: 100%;
-    max-width: none;
-    margin-top: 16px;
-    padding: 10px 0;
-    display: grid;
-    grid-template-columns: 46px minmax(0, 1fr) auto;
-    gap: 10px;
-    border-top: 1px solid rgba(221, 195, 132, .16);
-    border-bottom: 1px solid rgba(221, 195, 132, .16);
-  }
-  .mobile-practice-client .client-portrait { width: 46px; height: 50px; border-width: 1px; border-radius: 10px; }
-  .mobile-practice-client small,
-  .mobile-practice-client strong,
-  .mobile-practice-client em { display: block; overflow: hidden; font-family: var(--font-pixel); text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-practice-client small { color: #77b9b0; font-size: 8px; font-weight: 700; letter-spacing: .1em; }
-  .mobile-practice-client strong { margin-top: 4px; color: #eee5cb; font-size: 13px; }
-  .mobile-practice-client em { margin-top: 3px; color: #91a3a1; font-size: 9.5px; font-style: normal; }
-  .mobile-practice-client > b { align-self: center; display: flex; align-items: center; gap: 4px; color: #dfbf6a; font: 700 9.5px var(--font-pixel); white-space: nowrap; }
-  .mobile-practice-start { margin-top: 22px; }
-
-  /* Sizing for this header lives in the earlier `max-width: 640px` block; only
+  .mobile-site-menu footer { margin-top: 2px; padding-top: 10px; }.mobile-practice-client .client-portrait { width: 46px; height: 50px; border-width: 1px; border-radius: 10px; }/* Sizing for this header lives in the earlier `max-width: 640px` block; only
      the column order differs here. */
   .mobile-case-reader-header { grid-template-columns: minmax(0, 1fr) auto; }
   .mobile-case-reader-meta { min-width: 0; }

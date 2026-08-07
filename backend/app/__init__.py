@@ -7,8 +7,10 @@ import sqlite3
 from pathlib import Path
 
 import click
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, current_app, jsonify, request
 from flask_cors import CORS
 from flask_migrate import Migrate
 from sqlalchemy import event
@@ -20,6 +22,8 @@ from .extensions import db
 from .routes import api
 from .scoring import FORM_ITEMS
 from .seed import seed_questions
+
+MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
 
 @event.listens_for(Engine, "connect")
@@ -88,6 +92,32 @@ def _database_url() -> str:
         database=name,
         query={"sslmode": "require"},
     ).render_as_string(hide_password=False)
+
+
+def schema_is_at_migration_head() -> bool:
+    """Whether the connected database matches the models the code is holding.
+
+    Must be called inside an app context. True only when Alembic's version table
+    exists and names exactly the head revision(s) in ``migrations/versions``.
+
+    This is the precondition for touching any table through the ORM outside a
+    migration, and the two failure modes it covers are different. An *empty*
+    database has no tables at all, so a query raises "no such table". A database
+    stamped *behind* head has the tables but not every column the mapped classes
+    select, so a query raises "no such column". Checking the revision instead of
+    probing for individual tables covers both without needing to know which
+    migration introduced what.
+    """
+    try:
+        heads = set(ScriptDirectory(str(MIGRATIONS_DIR)).get_heads())
+        with db.engine.connect() as connection:
+            # Returns an empty tuple rather than raising when the database has
+            # never been migrated and has no alembic_version table.
+            stamped = set(MigrationContext.configure(connection).get_current_heads())
+    except Exception:  # pragma: no cover - unreachable database, bad script dir
+        current_app.logger.exception("Could not determine the database migration revision")
+        return False
+    return bool(heads) and stamped == heads
 
 
 def create_app(test_config: dict | None = None, *, instance_path: str | None = None) -> Flask:
@@ -217,6 +247,11 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
     @app.cli.command("seed")
     @click.option("--force", is_flag=True, help="Refresh records from the repository question snapshot.")
     def seed_command(force: bool):
+        if not schema_is_at_migration_head():
+            raise click.ClickException(
+                "The database is not at the latest migration. "
+                "Run `flask db upgrade` first, then seed."
+            )
         count = seed_questions(force=force)
         click.echo(f"Seeded {count} questions.")
 
@@ -268,7 +303,24 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         # older stamped database can pre-create future tables and make upgrades collide.
         if app.config.get("TESTING"):
             db.create_all()
-        if app.config["AUTO_SEED"]:
-            seed_questions()
+        elif app.config["AUTO_SEED"]:
+            # `create_app` runs for *every* entrypoint, including `flask db
+            # upgrade` — which is the first thing a new environment runs, and
+            # the Procfile's own web command. Seeding queries the `questions`
+            # table, so on a fresh database it used to raise "no such table"
+            # before a single migration had a chance to create it, and the only
+            # way through was the undocumented `AUTO_SEED=false`. Populating
+            # data is not the app object's job when the schema it needs may not
+            # exist yet, so boot-time seeding now waits until the database is
+            # actually at head and says so when it is not. `flask seed` remains
+            # the explicit path, and the deployment order (upgrade, then serve)
+            # means the web process still finds a seeded bank.
+            if schema_is_at_migration_head():
+                seed_questions()
+            else:
+                app.logger.warning(
+                    "Skipping automatic question seeding: the database is not at the "
+                    "latest migration. Run `flask db upgrade`, then `flask seed`."
+                )
 
     return app

@@ -19,6 +19,7 @@ from app.game import (
     UNGRADED_MULTIPLIER,
     WARDROBE_CATEGORY_KEYS,
     WARDROBE_DEFAULTS,
+    daily_reward_for_tier,
     settle_upkeep,
 )
 from app.models import (
@@ -502,6 +503,74 @@ def test_office_rent_rates_are_systematic_and_one_active_day_settles_once(app):
 
         settle_upkeep(profile, now)
         assert LedgerEntry.query.filter_by(user_id=profile.user_id, kind="office_rent").count() == 1
+
+
+def test_claiming_every_daily_goal_is_a_bonus_not_a_free_office(app):
+    """End to end: what a full day of daily goals actually pays into the bank.
+
+    The reward used to be `max(flat_floor, active_client_fee * multiplier)` with
+    floors of 500/1500/4000 authored when a case fee was 5.6x larger. A brand
+    new player could claim 6,000 on day one against a 3,800 first upgrade and a
+    6,000 first headquarters, so a day of dailies *was* the office and the early
+    game ran at half the length the pace band set. It is now priced off the
+    tier's own case value (DAILY_REWARD_CASE_BUDGET), and this exercises the
+    real endpoint, the ledger, and the numbers the claim screen renders.
+    """
+    client = app.test_client()
+    headers = login(client, "daily-rewards@example.test")
+    created = create_game(client, headers)
+
+    expected = {milestone: daily_reward_for_tier(0, milestone) for milestone in (5, 10, 20)}
+    assert [goal["reward"] for goal in created["daily"]["goals"]] == [expected[5], expected[10], expected[20]]
+    assert not any(goal["complete"] for goal in created["daily"]["goals"])
+
+    # Nothing is claimable before the cases are actually worked.
+    refused = client.post("/v1/game/daily-rewards/5/claim", headers=headers)
+    assert refused.status_code == 409 and refused.json["error"]["code"] == "goal_incomplete"
+    invalid = client.post("/v1/game/daily-rewards/7/claim", headers=headers)
+    assert invalid.status_code == 409 and invalid.json["error"]["code"] == "invalid_milestone"
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        progress = DailyProgress.query.filter_by(profile_id=profile.id).one()
+        progress.cases_completed = 20
+        db.session.commit()
+
+    banked = 0
+    for milestone in (5, 10, 20):
+        response = client.post(f"/v1/game/daily-rewards/{milestone}/claim", headers=headers)
+        assert response.status_code == 200, response.json
+        assert response.json["claimed"] == expected[milestone]
+        banked += response.json["claimed"]
+        repeated = client.post(f"/v1/game/daily-rewards/{milestone}/claim", headers=headers)
+        assert repeated.status_code == 409 and repeated.json["error"]["code"] == "already_claimed"
+
+    # Escalating, so the twenty-case goal is the one worth staying for.
+    assert expected[5] < expected[10] < expected[20]
+    assert expected[20] > banked / 2
+
+    # And the whole day is a fraction of the cheapest thing the ladder makes
+    # the player buy, rather than the whole of it.
+    first_upgrade = ASSET_BY_KEY["repaired_desk"]["cost"]
+    assert banked < first_upgrade * .2, f"{banked:,} against a {first_upgrade:,} upgrade"
+    assert banked > first_upgrade * .05
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        assert profile.cash == 250 + banked
+        assert profile.lifetime_earnings == 250 + banked
+        rewards = LedgerEntry.query.filter_by(user_id=profile.user_id, kind="daily_reward").all()
+        assert sorted(entry.amount for entry in rewards) == sorted(expected.values())
+
+        # A bigger office pays a bigger daily, without the client on the desk
+        # having anything to do with it.
+        profile.office_tier = 3
+        db.session.commit()
+    promoted = client.get("/v1/game", headers=headers).json["game"]
+    assert [goal["reward"] for goal in promoted["daily"]["goals"]] == [
+        daily_reward_for_tier(3, milestone) for milestone in (5, 10, 20)
+    ]
+    assert promoted["daily"]["goals"][2]["reward"] > expected[20]
 
 
 def test_daily_activity_streak_advances_resets_and_tracks_best(app):

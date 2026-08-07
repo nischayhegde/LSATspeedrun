@@ -39,6 +39,9 @@ import {
   TrafficSim,
   buildRoadGraph,
   markDocks,
+  planFootways,
+  type CarriagewaySpec,
+  type FootwaySpec,
   type RoadGraph,
   type RoadGraphSpec,
 } from './map-agents'
@@ -534,7 +537,37 @@ const STREET_SPEED: Record<StreetClass, number> = {
 }
 
 type RoadWay = RoadGraphSpec['ways'][number]
-type FootWay = { points: XZ[]; closed?: boolean }
+type FootWay = FootwaySpec
+
+/**
+ * Distance from a kerb face to the centreline of the pavement running beside
+ * it, and — the same number, deliberately — how far back from a kerb a pavement
+ * that runs into one stops. Sharing it is what makes the four pavement ends at
+ * a crossroads land on the four corners of the junction rather than near them,
+ * which in turn is what lets the crowd pair them into square crossings.
+ */
+const KERB_TO_PAVEMENT = .28
+/**
+ * Half the paved width a walker may drift over on a planned street.
+ *
+ * `addPlannedStreets` draws its apron .37 wider than the carriageway on each
+ * side, so a pavement centred .28 out from the kerb has .09 of paving to give
+ * either way. That is narrow, and it is the honest figure: the crowd's default
+ * half-width of .65 was letting the outer half of every walker's wander take
+ * them into the traffic lane, on streets whose whole pavement is a third of a
+ * metre wide.
+ */
+const STREET_PAVEMENT_HALF = .09
+/**
+ * How much of the district's foot traffic each class of street carries.
+ *
+ * Local streets get pavements now — a quarter where only the six biggest
+ * streets have anywhere to walk is most of why so little of the road network
+ * had a pedestrian anywhere near it — but they should not get the same share of
+ * the crowd as the high street. Weighting by class as well as by length is what
+ * makes the difference between a district and a uniform scatter of people.
+ */
+const STREET_PAVEMENT_WEIGHT: Record<StreetClass, number> = { arterial: 1, collector: .6, local: .22, alley: 0 }
 
 function roadWays(root: THREE.Group) {
   return (root.userData.roadWays ??= []) as RoadWay[]
@@ -542,6 +575,17 @@ function roadWays(root: THREE.Group) {
 
 function footWays(root: THREE.Group) {
   return (root.userData.footWays ??= []) as FootWay[]
+}
+
+/**
+ * A fresh id for one carriageway's pair of pavements. See `FootwaySpec.street`:
+ * it is what lets the crowd tell "the far kerb of this street" from "the near
+ * kerb of the next street over, with a terrace in between".
+ */
+function nextStreetId(root: THREE.Group) {
+  const next = ((root.userData.streetIdCursor as number | undefined) ?? 0) + 1
+  root.userData.streetIdCursor = next
+  return next
 }
 
 /**
@@ -570,7 +614,7 @@ function transitStops(root: THREE.Group) {
 function recordCurveWay(
   root: THREE.Group,
   curve: THREE.Curve<THREE.Vector3>,
-  options: { closed?: boolean; speed?: number; kind?: RoadWay['kind']; samples?: number; portal?: boolean },
+  options: { closed?: boolean; speed?: number; kind?: RoadWay['kind']; samples?: number; portal?: boolean; width?: number },
 ) {
   const samples = options.samples ?? 60
   const points: XZ[] = []
@@ -581,12 +625,27 @@ function recordCurveWay(
     const point = curve.getPointAt(index / samples)
     points.push([point.x, point.z])
   }
-  roadWays(root).push({ points, closed: options.closed, kind: options.kind ?? 'road', speed: options.speed, portal: options.portal })
+  roadWays(root).push({ points, closed: options.closed, kind: options.kind ?? 'road', speed: options.speed, portal: options.portal, width: options.width })
   return points
 }
 
-/** A pavement running alongside a drawn curve, on both sides. */
-function recordCurveFootways(root: THREE.Group, curve: THREE.Curve<THREE.Vector3>, offset: number, closed = false, samples = 48) {
+/**
+ * A pavement running alongside a drawn curve, on both sides.
+ *
+ * `halfWidth` has to be the paving the curve's own drawing pass laid down. A
+ * verge-side walk beside a country lane and the pavement of a high street are
+ * both one call to this, and giving them the same lateral spread walks one of
+ * them into the ditch.
+ */
+function recordCurveFootways(
+  root: THREE.Group,
+  curve: THREE.Curve<THREE.Vector3>,
+  offset: number,
+  closed = false,
+  samples = 48,
+  options: { halfWidth?: number; weight?: number } = {},
+) {
+  const street = nextStreetId(root)
   for (const side of [-1, 1]) {
     const points: XZ[] = []
     const count = closed ? samples : samples + 1
@@ -596,7 +655,7 @@ function recordCurveFootways(root: THREE.Group, curve: THREE.Curve<THREE.Vector3
       const tangent = curve.getTangentAt(Math.min(.9999, t)).normalize()
       points.push([point.x - tangent.z * offset * side, point.z + tangent.x * offset * side])
     }
-    footWays(root).push({ points, closed })
+    footWays(root).push({ points, closed, halfWidth: options.halfWidth, weight: options.weight, street })
   }
 }
 
@@ -613,6 +672,9 @@ function recordCurveFootways(root: THREE.Group, curve: THREE.Curve<THREE.Vector3
  *
  * The pavements come from the same pass, offset to sit inside the apron the
  * street already draws, so pedestrians walk on paving rather than beside it.
+ * They are laid here as one run per street and cut apart at their junctions
+ * later, by `planFootways`, once the whole network is known — a street does not
+ * know which of the other streets in the district will end up crossing it.
  */
 function recordStreetNetwork(root: THREE.Group, streets: PlannedStreet[]) {
   const ways = roadWays(root)
@@ -625,20 +687,29 @@ function recordStreetNetwork(root: THREE.Group, streets: PlannedStreet[]) {
     const along = [street.from, ...crossings, street.to]
     const horizontal = street.axis === 'ew'
     const at = (value: number, offset = 0): XZ => horizontal ? [value, street.position + offset] : [street.position + offset, value]
+    const width = streetWidth(street.streetClass)
     ways.push({
       points: along.map((value) => at(value)),
       kind: 'road',
       speed: STREET_SPEED[street.streetClass],
+      width,
       // The ends of a grid street are where it leaves the district, which is
       // exactly where traffic should be allowed to appear and disappear.
       portal: true,
     })
-    // Alleys have no kerb, so they have no pavement to walk on; and a crowd
-    // spread over every local street reads as thinner than the same number of
-    // people on the streets that are actually meant to be busy.
-    if (street.streetClass !== 'arterial' && street.streetClass !== 'collector') return
-    const offset = streetWidth(street.streetClass) / 2 + .28
-    for (const side of [-1, 1]) walks.push({ points: [at(street.from, side * offset), at(street.to, side * offset)] })
+    // Alleys have no kerb, so they have no pavement to walk on.
+    const weight = STREET_PAVEMENT_WEIGHT[street.streetClass]
+    if (!weight) return
+    const offset = width / 2 + KERB_TO_PAVEMENT
+    const id = nextStreetId(root)
+    for (const side of [-1, 1]) {
+      walks.push({
+        points: [at(street.from, side * offset), at(street.to, side * offset)],
+        halfWidth: STREET_PAVEMENT_HALF,
+        weight,
+        street: id,
+      })
+    }
   })
 }
 
@@ -2184,7 +2255,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
       root.add(alley)
       // The alley is a real lane in the road graph, so delivery traffic has
       // somewhere to be that is not the high street.
-      roadWays(root).push({ points: alleyPoints, kind: 'road', speed: STREET_SPEED.alley })
+      roadWays(root).push({ points: alleyPoints, kind: 'road', speed: STREET_SPEED.alley, width: streetWidth('alley') })
 
       // Loading docks against the rear wall, one per two units or so.
       let dockIndex = 0
@@ -2357,7 +2428,10 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
     kerb.castShadow = false
     root.add(kerb)
   }
-  recordCurveFootways(root, route, footwayCentre, false, 60)
+  // The high street's own pavement is a real one — a metre of paving between
+  // the kerb and the shopfronts — so it gets the lateral room to match, and the
+  // largest share of the district's foot traffic.
+  recordCurveFootways(root, route, footwayCentre, false, 60, { halfWidth: (SETBACK - KERB_OFFSET) / 2 - .06, weight: 1.8 })
 
   // Kerbside parking: marked bays with cars actually standing in them, in the
   // runs between junctions. A shopping street with no parked cars on it reads
@@ -2701,7 +2775,7 @@ function addCircuitTown(root: THREE.Group, trees: TreeRecord[], town: TownPlan, 
     // welds to the high street instead of leaving a free end one block short
     // of it — a free end inside a village is a spawn portal in a village.
     const way = new THREE.LineCurve3(new THREE.Vector3(town.x, .07, town.z), new THREE.Vector3(town.x, .07, to))
-    recordCurveWay(root, way, { speed: 1.15, samples: Math.max(7, Math.round(Math.abs(to - town.z))) })
+    recordCurveWay(root, way, { speed: 1.15, samples: Math.max(7, Math.round(Math.abs(to - town.z))), width: .58 })
     for (let step = 1; step <= 3; step += 1) {
       const at = from + (to - from) * step / 3.6
       trees.push({
@@ -3054,7 +3128,7 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
       // This is the same defect the Old Quarter's side streets had at their
       // far ends, seen from the other end of the street.
       const joined = curveFrom([corridor.at(street.s, 0), ...street.points], .058)
-      recordCurveWay(root, joined, { speed: 1.05, samples: 11 })
+      recordCurveWay(root, joined, { speed: 1.05, samples: 11, width: streetWidth(street.streetClass) })
     } else {
       const track = mesh(ribbonGeometry(curve, .34, 14), trackMaterial)
       track.castShadow = false
@@ -3613,7 +3687,7 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
   // One way, both ends off the map: the turnpike is the spine of the network as
   // well as of the layout, and its portals are the only place a car on The
   // Circuit is allowed to appear.
-  roadWays(root).push({ points: wayPoints, kind: 'road', speed: 1.75, portal: true })
+  roadWays(root).push({ points: wayPoints, kind: 'road', speed: 1.75, portal: true, width: 1.48 })
 
   root.add(buildInstancedTreeField(trees))
   registerLandmark(root, {
@@ -3654,7 +3728,7 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
   const backRoadSurface = mesh(ribbonGeometry(backRoad, .5, 30), material(0x3f4441, .93))
   backRoadSurface.castShadow = false
   root.add(backRoadSurface)
-  recordCurveWay(root, backRoad, { speed: 1.1, samples: 22 })
+  recordCurveWay(root, backRoad, { speed: 1.1, samples: 22, width: .5 })
 
   // The river runs behind the settled band, as rivers usually decide where a
   // road corridor can go rather than crossing it repeatedly. The brook that
@@ -3721,8 +3795,8 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
   stationCarriageway.position.y = .012
   stationCarriageway.castShadow = false
   root.add(stationCarriageway)
-  recordCurveWay(root, stationLane, { speed: 1, samples: 14 })
-  recordCurveFootways(root, stationLane, .58, false, 12)
+  recordCurveWay(root, stationLane, { speed: 1, samples: 14, width: .54 })
+  recordCurveFootways(root, stationLane, .58, false, 12, { halfWidth: .15, weight: .5 })
   // The level crossing where it meets the line.
   for (const side of [-1, 1]) {
     const gate = box([.09, .5, 1.05], material(0xb7aa8c, .92), [side * .62, .27, circuitRailZ(0)])
@@ -3745,7 +3819,7 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
   // Sampled densely because it is the one curve in the region long enough for
   // a straight-line graph to visibly leave the tarmac. Slower than the city's
   // arterials: this is a two-lane country road, not a boulevard.
-  recordCurveWay(root, backLane, { closed: true, speed: 1.95, samples: 84 })
+  recordCurveWay(root, backLane, { closed: true, speed: 1.95, samples: 84, width: .84 })
 
   root.add(buildInstancedTreeField(trees))
 }
@@ -4027,8 +4101,8 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
     // rings: each one crosses both, so a car can leave the boulevard, cross the
     // core and go out the other side. Their outer ends sit beyond the ring
     // road, which makes them the region's spawn and despawn portals.
-    recordCurveWay(root, avenue, { speed: 1.9, samples: 26, portal: true })
-    recordCurveFootways(root, avenue, .74, false, 20)
+    recordCurveWay(root, avenue, { speed: 1.9, samples: 26, portal: true, width: .92 })
+    recordCurveFootways(root, avenue, .74, false, 20, { halfWidth: .17, weight: .8 })
     for (let step = 1; step <= 6; step += 1) {
       const distance = 4.6 + step * 2.2
       for (const side of [-1, 1]) {
@@ -4189,8 +4263,8 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   const ringRoad = closedCircuit(ringPoints, .07)
   root.add(mesh(ribbonGeometry(ringRoad, 1.15, 200), material(0x384447, .93)))
   root.add(mesh(ribbonGeometry(ringRoad, .06, 200), material(0xc7b982, .7, .05)))
-  recordCurveWay(root, ringRoad, { closed: true, speed: 2.3, samples: 110 })
-  recordCurveFootways(root, ringRoad, .86, true, 56)
+  recordCurveWay(root, ringRoad, { closed: true, speed: 2.3, samples: 110, width: 1.15 })
+  recordCurveFootways(root, ringRoad, .86, true, 56, { halfWidth: .18, weight: 1 })
   // Two more circulation rings, one either side of the middle block band, so
   // every band of building has a street on both of its faces. All three rings
   // and all three bands are struck on the same .78 ellipse as the plan itself.
@@ -4200,8 +4274,8 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
       return [Math.cos(angle) * radius, Math.sin(angle) * radius * .78 - .1] as XZ
     }), .07)
     root.add(mesh(ribbonGeometry(ring, width, 160), material(0x3b474a, .93)))
-    recordCurveWay(root, ring, { closed: true, speed, samples: 72 + index * 16 })
-    recordCurveFootways(root, ring, width / 2 + .25, true, 44)
+    recordCurveWay(root, ring, { closed: true, speed, samples: 72 + index * 16, width })
+    recordCurveFootways(root, ring, width / 2 + .25, true, 44, { halfWidth: .16, weight: .7 })
   })
   registerLandmark(root, { key: 'continent-ring', name: 'Wall Ring Boulevard', kind: 'transit', detail: 'Laid on the line of the demolished walls. Everything monumental is inside it; everything commercial is not.', position: [0, -12.7], radius: 3 })
 
@@ -4823,7 +4897,7 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition) {
     // about a screenshot; with the plan on the group a harness can measure
     // count, height and frontage against distance and say by how much.
     group.userData.faubourgPlan = faubourgBuildings.map((building) => ({
-      x: building.x, z: building.z, width: building.width, height: building.height,
+      x: building.x, z: building.z, width: building.width, depth: building.depth, height: building.height,
     }))
 
     for (const building of faubourgBuildings) {
@@ -6227,57 +6301,17 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   return { root, rig, beacon, marker }
 }
 
-function animateLawyerRig(rig: StylizedCounselRig, elapsed: number, locomotion: number, arrival: number, gaitPhase: number, leanRoll = 0, leanPitch = 0) {
-  const stridePhase = gaitPhase
-  const stride = Math.sin(stridePhase) * locomotion
-  // A forearm/satchel that swings in perfect lockstep with the shoulder reads
-  // as a rigid pendulum. Sampling the same stride wave a fraction of a beat
-  // later - reusing the phase this gait already runs on, no extra state -
-  // gives the swing a trailing, secondary-motion lag instead.
-  const strideFollow = Math.sin(stridePhase - .34) * locomotion
-  const doubleStep = Math.abs(Math.sin(stridePhase * 2)) * locomotion
-  const leftLift = Math.max(0, Math.sin(stridePhase)) * locomotion
-  const rightLift = Math.max(0, -Math.sin(stridePhase)) * locomotion
-  const breath = Math.sin(elapsed * 1.15)
-  const settle = Math.sin(elapsed * 2.1) * arrival
-
-  rig.hips.position.y = rig.base.hipsY + doubleStep * .026 + breath * .008 * (1 - locomotion)
-  // The lean is split between the hips and the spine rather than applied to
-  // the whole body: banking the root rotates the feet off the pavement, and
-  // people take a corner by carrying the upper body into it over a pelvis that
-  // stays much closer to level.
-  rig.hips.rotation.z = stride * .018 + leanRoll * .35
-  rig.hips.rotation.y = -stride * .016
-  rig.hips.rotation.x = leanPitch * .3
-  rig.spine.rotation.z = -stride * .022 + settle * .007 + leanRoll * .65
-  rig.spine.rotation.x = leanPitch * .7
-  rig.spine.rotation.y = stride * .032
-  rig.chest.scale.set(1 + breath * .006, 1 + breath * .005, 1)
-  rig.head.rotation.y = -stride * .022 - leanRoll * 1.1
-  rig.head.rotation.x = -.018 + doubleStep * .009
-  rig.head.rotation.z = stride * .009
-  rig.leftHip.rotation.x = stride * .44
-  rig.rightHip.rotation.x = -stride * .44
-  rig.leftHip.rotation.z = -.025 - stride * .012
-  rig.rightHip.rotation.z = .035 - stride * .012
-  rig.leftKnee.rotation.x = leftLift * .52 + Math.max(0, -stride) * .08
-  rig.rightKnee.rotation.x = rightLift * .52 + Math.max(0, stride) * .08
-  rig.leftKnee.rotation.z = .015
-  rig.rightKnee.rotation.z = -.015
-  rig.leftFoot.rotation.x = -leftLift * .28 + Math.max(0, -stride) * .11
-  rig.rightFoot.rotation.x = -rightLift * .28 + Math.max(0, stride) * .11
-  rig.leftShoulder.rotation.x = -stride * .24
-  rig.rightShoulder.rotation.x = stride * .24
-  rig.leftShoulder.rotation.z = rig.base.leftShoulderZ + stride * .01
-  rig.rightShoulder.rotation.z = rig.base.rightShoulderZ + stride * .01
-  rig.leftElbow.rotation.x = Math.max(0, strideFollow) * .08
-  rig.rightElbow.rotation.x = Math.max(0, -strideFollow) * .08
-  rig.leftElbow.rotation.z = rig.base.leftElbowZ
-  rig.rightElbow.rotation.z = rig.base.rightElbowZ
-  rig.satchel.rotation.z = -strideFollow * .035
-  rig.satchel.rotation.x = doubleStep * .018
-  rig.satchel.position.y = .28 + doubleStep * .012
-
+/**
+ * Counsel's blink, which the rig deliberately does not own.
+ *
+ * Eyes are meshes rather than joints, so this is not motion the actor would
+ * ever drive — the same division the portrait already makes, where gaze and
+ * blink layer on top of the clip. It is also the last surviving line of the
+ * hand-written animation this file used to do, and the only one whose absence
+ * would be noticed: a figure that never blinks reads as a waxwork however good
+ * its walk is.
+ */
+function blinkCounsel(rig: StylizedCounselRig, elapsed: number) {
   const blinkPhase = elapsed % 6.4
   const blink = blinkPhase > 3.05 && blinkPhase < 3.28 ? Math.sin((blinkPhase - 3.05) / .23 * Math.PI) : 0
   rig.eyes.forEach((eye) => { eye.scale.y = Math.max(.09, 1 - blink * .92) })
@@ -7347,7 +7381,31 @@ export function MapThreeScene({
      * batches and the pool can be sized for how the street should look rather
      * than for what the draw-call budget will bear.
      */
-    const crowdWays = (world.userData.footWays ?? []) as Array<{ points: XZ[]; closed?: boolean }>
+    /**
+     * Cut the pavements apart wherever they run into a carriageway.
+     *
+     * Everything up to here contributed pavements the way it drew them: one
+     * polyline down the side of a street, offset to the kerb and running the
+     * whole length of the district. Correct beside its own street and wrong
+     * everywhere it met another, because it simply carried on across. Measured
+     * on the Old Quarter before this pass, 39% of all pavement length was inside
+     * a carriageway, and the only place two pavements ended near enough to be
+     * paired into a crossing was the outer edge of the map, so 56 of the 80
+     * "crossings" the crowd found ran end to end *down* the perimeter road
+     * instead of over anything.
+     *
+     * Splitting here rather than in each builder is the point: the grid, the
+     * high street, the ring roads and the village lanes are drawn by unrelated
+     * code and all had it, and the record is the only place that knows about
+     * every street at once.
+     */
+    const pedestrianPlan = planFootways(
+      (world.userData.footWays ?? []) as FootwaySpec[],
+      (world.userData.roadWays ?? []) as CarriagewaySpec[],
+      { setback: KERB_TO_PAVEMENT },
+    )
+    const crowdWays = pedestrianPlan.ways
+    world.userData.pedestrianPlan = { ways: crowdWays.length, cuts: pedestrianPlan.cuts, unsliced: pedestrianPlan.unsliced }
     const walkerCount = crowdWays.length
       ? (region === 'city' ? 18 : region === 'continent' ? 14 : region === 'ocean' ? 8 : 9)
       : 0
@@ -7377,7 +7435,13 @@ export function MapThreeScene({
         // rather than maintaining a second list means the pavement furniture
         // and the obstacle set cannot drift apart.
         obstacles: crowdObstacles(world),
-        crossingRange: 4.6,
+        // Wide enough for the two kerbs of the widest street in any region
+        // (the high street, at 2.85 between its pavements) with a little to
+        // spare. It used to be 4.6, which mattered less when pavements only
+        // ended at the edge of the district; now that they end at every
+        // junction, a generous radius is a licence to pair corners that have a
+        // whole block between them.
+        crossingRange: 3.2,
         // The traffic the crossings have to give way to. Both simulations run
         // on the one welded graph, so the crowd can resolve each kerb-to-kerb
         // link against the carriageways it actually cuts and then ask the
@@ -7455,21 +7519,38 @@ export function MapThreeScene({
     }
 
     /**
-     * Swim traversal.
+     * Counsel's motion, on the shared skeletal rig.
      *
-     * The map's counsel is otherwise animated by `animateLawyerRig`, which is
-     * per-joint trigonometry and has no vocabulary for a stroke. Swimming is
-     * driven from the shared rig instead: `swimEnter` as the body commits to
-     * the water, the looping `swim` clip while crossing, `swimExit` climbing
-     * out. `setGroundSpeed` is fed the distance actually covered this frame, so
-     * the stroke rate tracks the crossing rather than running at a fixed tempo
-     * while the body is towed along underneath it.
+     * Every region now, not just the Treaty Sea. Counsel used to be posed by
+     * `animateLawyerRig`, a page of per-joint trigonometry driven by an
+     * accumulated gait phase, and the swim was the one traversal that reached
+     * for the rig because a stroke is not expressible that way. The trouble
+     * with the trigonometric version was never the poses, it was that the gait
+     * phase advanced with distance covered at a fixed ratio: a stride was
+     * whatever `travelDelta * 5.4` said it was, so the feet swung at a rate
+     * that only matched the ground by coincidence. The rig time-scales the walk
+     * from the speed the body reports, which is the same relationship stated
+     * the right way round.
+     *
+     * Ordering, per `rig/ADOPTION.md`: bind with a fresh world matrix, move the
+     * body before `update`, and feed `setGroundSpeed` the distance genuinely
+     * covered — measured below from the holder's own world position between
+     * frames, never from the journey's intended pace. The two differ here by
+     * construction: the walk eases through a trapezoidal speed profile and the
+     * heading is damped, so intended and achieved speed disagree on every ramp
+     * and every corner.
      */
     // The skeleton measures its own limb lengths from the bind pose, so the rig
     // has to be in the graph with a current world matrix before it is bound.
     lawyer.updateWorldMatrix(true, true)
     const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-    const swimmer = region === 'ocean' ? new HumanoidActor(lawyerModel.rig, { seed: 12.7, state: 'idle', reduced: reducedMotion }) : null
+    const counsel = new HumanoidActor(lawyerModel.rig, { seed: 12.7, state: 'idle', reduced: reducedMotion })
+    const counselWorld = new THREE.Vector3()
+    const counselPrevious = new THREE.Vector3()
+    let counselPlaced = false
+    let counselWalking = false
+    /** Countdown to the next standing beat, so a waiting figure is not a statue. */
+    let counselIdleBeat = 1.8
     let swimPhase: 'dry' | 'entering' | 'swimming' | 'leaving' = 'dry'
     // A wake, so the swimmer displaces water rather than sliding across it.
     const swimWake = region === 'ocean'
@@ -7485,7 +7566,6 @@ export function MapThreeScene({
     }
     /** Waterline the body rides at while swimming: shoulders clear, hips under. */
     const SWIM_WATERLINE = -.02
-    const lastSwimPosition = new THREE.Vector3()
     let swimSubmersion = 0
     const closestRoutePoint = (position: THREE.Vector3) => {
       let bestT = 0
@@ -7509,6 +7589,30 @@ export function MapThreeScene({
       return new THREE.CatmullRomCurve3(points, false, 'centripetal', .42)
     }
     type WalkState = { curve: THREE.CatmullRomCurve3; delayMs: number; duration: number; elapsedMs: number; lastProgress: number }
+    /**
+     * How long counsel takes to walk a route.
+     *
+     * Derived from the rig's own natural walking speed — the speed at which the
+     * walk clip plays at its authored rate — rather than from a constant
+     * milliseconds-per-unit, because the two turned out to disagree by a factor
+     * of four. At 260ms per unit counsel crossed the quarter at about 3.4 units
+     * a second against a natural 0.78, so the clip's time scale saturated at the
+     * 2.2x ceiling the rig imposes and the remainder of the travel came out as
+     * the feet sliding: measured at a skate ratio of 0.40, meaning two fifths of
+     * every stride was the planted foot dragging along the pavement. It was also
+     * three to four times the pace of the crowd walking the same pavements,
+     * which is its own tell.
+     *
+     * The trapezoidal profile below peaks about a third above its average, so
+     * the average is set far enough under the ceiling that the cruise stays
+     * inside it. Long routes still hit the cap and give up a little of that,
+     * which is the deliberate trade: a genuinely long walk across a district
+     * should not become a minute of watching someone stroll.
+     */
+    const walkDuration = (length: number) => {
+      const pace = Math.max(.2, counsel.naturalWalkSpeed * 1.62)
+      return THREE.MathUtils.clamp((length / pace) * 1000, 1400, 9500)
+    }
     const initialDestination = destination.clone().setY(.12)
     const overviewTarget = new THREE.Vector3(...definition.target)
     cameraTarget.copy(overviewTarget)
@@ -7530,7 +7634,7 @@ export function MapThreeScene({
     let walking: WalkState | null = initialWalkCurve ? {
         curve: initialWalkCurve,
         delayMs: 420,
-        duration: THREE.MathUtils.clamp(initialWalkCurve.getLength() * 285, 2400, region === 'city' ? 7800 : 6200),
+        duration: walkDuration(initialWalkCurve.getLength()),
         elapsedMs: 0,
         lastProgress: 0,
       } : null
@@ -7804,10 +7908,6 @@ export function MapThreeScene({
     const fadedOccluders = new Set<THREE.Object3D>()
     const pointer = new THREE.Vector2()
     let elapsed = 0
-    let gaitPhase = 0
-    // Body lean, carried between frames so it settles rather than snapping.
-    let leanRoll = 0
-    let leanPitch = 0
     let occlusionTimer = 0
     let cullingTimer = 0
     let previousFrame = performance.now()
@@ -8018,7 +8118,7 @@ export function MapThreeScene({
         walking = {
           curve,
           delayMs: 0,
-          duration: THREE.MathUtils.clamp(curve.getLength() * 260, 1200, 6200),
+          duration: walkDuration(curve.getLength()),
           elapsedMs: 0,
           lastProgress: 0,
         }
@@ -8126,7 +8226,7 @@ export function MapThreeScene({
         if (selectedAnchor && !locked) {
           const target = selectedAnchor.clone().setY(.12)
           const curve = walkingCurve(lawyer.position.clone(), target)
-          walking = { curve, delayMs: 0, duration: THREE.MathUtils.clamp(curve.getLength() * 260, 1200, 6200), elapsedMs: 0, lastProgress: 0 }
+          walking = { curve, delayMs: 0, duration: walkDuration(curve.getLength()), elapsedMs: 0, lastProgress: 0 }
           cameraMode = 'counsel'
           zoom = 1
           panOffset.set(0, 0, 0)
@@ -8240,8 +8340,6 @@ export function MapThreeScene({
           }
         }
       })
-      let locomotion = 0
-      let arrival = 1
       if (walking) {
         walking.elapsedMs += delta * 1000
         const progress = THREE.MathUtils.clamp((walking.elapsedMs - walking.delayMs) / walking.duration, 0, 1)
@@ -8278,8 +8376,6 @@ export function MapThreeScene({
         eased = THREE.MathUtils.clamp(eased, 0, 1)
         walking.curve.getPointAt(eased, walkPosition)
         walking.curve.getTangentAt(Math.min(.999, Math.max(.001, eased)), walkTangent).normalize()
-        const travelDelta = Math.hypot(walkPosition.x - lawyer.position.x, walkPosition.z - lawyer.position.z)
-        gaitPhase += travelDelta * 5.4
         lawyer.position.copy(walkPosition)
         const desiredHeading = Math.atan2(walkTangent.x, walkTangent.z)
         // Shortest arc. Damping the raw angle meant that any turn which
@@ -8291,19 +8387,8 @@ export function MapThreeScene({
         const agility = progress < .08 ? 5.2 : 10.5
         const applied = turn * (1 - Math.exp(-agility * delta))
         lawyer.rotation.y += applied
-        // Lean into the corner, and into the acceleration. A body that changes
-        // direction with its shoulders level is the other half of why this read
-        // as a puppet being slid along a spline.
-        const rate = THREE.MathUtils.clamp(applied / Math.max(1e-3, delta), -2.4, 2.4)
-        leanRoll = THREE.MathUtils.damp(leanRoll, rate * .052, 6, delta)
-        leanPitch = THREE.MathUtils.damp(leanPitch, (pace - 1) * .06, 4.5, delta)
-        locomotion = THREE.MathUtils.clamp(pace, 0, 1)
-        arrival = 1 - locomotion
         walking.lastProgress = progress
         if (progress >= 1) walking = null
-      } else {
-        leanRoll = THREE.MathUtils.damp(leanRoll, 0, 6, delta)
-        leanPitch = THREE.MathUtils.damp(leanPitch, 0, 4.5, delta)
       }
       if (transitCarrier) {
         if (walking) {
@@ -8316,28 +8401,37 @@ export function MapThreeScene({
           lawyer.position.y = .12
         }
       }
-      if (swimmer) {
-        // Metres actually covered this frame, which is what keeps the stroke
-        // rate honest: the crossing eases in and out, so a fixed tempo would
-        // have the swimmer pulling hard while barely moving.
-        const travelled = walking
-          ? Math.hypot(lawyer.position.x - lastSwimPosition.x, lawyer.position.z - lastSwimPosition.z) / Math.max(1e-4, delta)
-          : 0
-        lastSwimPosition.set(lawyer.position.x, 0, lawyer.position.z)
+      // --- counsel's gait ---------------------------------------------------
+      // The body has already been placed for this frame, so its displacement
+      // since the last one is the only honest measure of how fast it is
+      // travelling — and the one thing the rig asks for. Taken in world space
+      // from the holder, in the plane only: the swim's submersion and the
+      // orbital carrier's lift both move the body vertically without it
+      // covering any ground, and counting that as travel would drive the stride.
+      lawyer.updateWorldMatrix(true, false)
+      lawyer.getWorldPosition(counselWorld)
+      const travelled = counselPlaced
+        ? Math.hypot(counselWorld.x - counselPrevious.x, counselWorld.z - counselPrevious.z)
+        : 0
+      counselPrevious.copy(counselWorld)
+      counselPlaced = true
+      // Riding the orbital craft is not walking, however fast the craft moves.
+      const carried = transitCarrier !== null && walking !== null
+      const groundSpeed = carried || delta <= 1e-4 ? 0 : travelled / delta
+      if (region === 'ocean') {
         if (walking && swimPhase === 'dry') {
           swimPhase = 'entering'
-          swimmer.setState('swim')
-          swimmer.playGesture('swimEnter')
+          counsel.setState('swim')
+          counsel.playGesture('swimEnter')
         } else if (!walking && (swimPhase === 'swimming' || swimPhase === 'entering')) {
           swimPhase = 'leaving'
-          swimmer.playGesture('swimExit')
-          swimmer.setState('idle')
-        } else if (walking && swimPhase === 'entering' && !swimmer.isTransitioning) {
+          counsel.playGesture('swimExit')
+          counsel.setState('idle')
+        } else if (walking && swimPhase === 'entering' && !counsel.isTransitioning) {
           swimPhase = 'swimming'
-        } else if (!walking && swimPhase === 'leaving' && !swimmer.isTransitioning) {
+        } else if (!walking && swimPhase === 'leaving' && !counsel.isTransitioning) {
           swimPhase = 'dry'
         }
-        swimmer.setGroundSpeed(travelled)
         // Submersion is tracked on its own rather than by damping
         // `position.y`, because the traversal curve rewrites that every frame:
         // damping the position directly only ever moved the body one frame's
@@ -8362,11 +8456,45 @@ export function MapThreeScene({
           const pulse = 1 + Math.sin(elapsed * 3.1) * .12
           swimWake.scale.setScalar(pulse)
         }
-        swimmer.update(delta)
       } else {
-        const articulatedLocomotion = transitCarrier ? 0 : locomotion
-        animateLawyerRig(lawyerModel.rig, elapsed, articulatedLocomotion, transitCarrier ? 1 : arrival, gaitPhase, transitCarrier ? 0 : leanRoll, transitCarrier ? 0 : leanPitch)
+        // Hysteresis against the rig's own natural walking speed rather than a
+        // world constant, so the thresholds hold at any character scale: the
+        // figure is 0.278 here and 0.46 in the office.
+        const natural = Math.max(.15, counsel.naturalWalkSpeed)
+        const moving = counselWalking ? groundSpeed > natural * .16 : groundSpeed > natural * .34
+        if (moving !== counselWalking) {
+          counselWalking = moving
+          counsel.setState(moving ? 'walk' : 'idle')
+        }
+        if (!moving) {
+          // Standing beats, so counsel waiting outside a headquarters reads as a
+          // person rather than a marker. Additive ones only — an override beat
+          // would fade the idle out from under the body — and drawn with a fresh
+          // amplitude and rate each time, because a repertoire fired in random
+          // order still reads as a loop if every performance is identical.
+          counselIdleBeat -= delta
+          if (counselIdleBeat <= 0 && !counsel.isPlayingGesture && !counsel.isTransitioning) {
+            const roll = hashUnit(elapsed * 1.37 + 4.1)
+            counselIdleBeat = 3.4 + hashUnit(elapsed * 2.11) * 5.6
+            counsel.playGesture(
+              roll < .24 ? 'weightSettle'
+                : roll < .44 ? 'breathDeep'
+                  : roll < .62 ? 'cuffAdjust'
+                    : roll < .78 ? 'glance'
+                      : roll < .9 ? 'glanceMirrored' : 'postureReset',
+              { amplitude: .72 + hashUnit(elapsed * 3.7) * .5, timeScale: .88 + hashUnit(elapsed * 5.3) * .3 },
+            )
+          }
+        }
       }
+      counsel.setGroundSpeed(groundSpeed)
+      // Foot planting is the expensive half of the rig and counsel is the one
+      // body on the map the player is ever close to, so it keeps `full` in the
+      // tracking camera and drops to `medium` — clamped joints, no IK — once the
+      // figure is small enough in frame that planted feet are not readable.
+      counsel.setLod(camera.position.distanceToSquared(lawyer.position) < 900 ? 'full' : 'medium')
+      counsel.update(delta)
+      blinkCounsel(lawyerModel.rig, elapsed)
       for (let index = 0; index < trafficSims.length; index += 1) trafficSims[index].update(delta, camera)
       if (crowd) crowd.update(delta, camera)
       // One matrix upload for the whole population, after every walker for
@@ -8508,6 +8636,23 @@ export function MapThreeScene({
         region, scene, world, camera, renderer, lawyer, transports, landmarks, buildStartedAt, firstRenderAt,
         firstFrameMs: firstRenderAt - buildStartedAt,
         roadGraph, trafficSims, crowd, crowdRenderer,
+        // The counsel's rig and its own feet, so "does the walk skate" can be
+        // measured — foot travel against body travel — instead of judged from a
+        // screenshot. `walkTo` drives a journey on demand, because the walk is
+        // otherwise only triggered by a player selecting a headquarters.
+        counsel, counselRig: lawyerModel.rig,
+        walkTo: (x: number, z: number, milliseconds?: number) => {
+          const target = new THREE.Vector3(x, .12, z)
+          const curve = walkingCurve(lawyer.position.clone(), target)
+          walking = {
+            curve,
+            delayMs: 0,
+            duration: milliseconds ?? walkDuration(curve.getLength()),
+            elapsedMs: 0,
+            lastProgress: 0,
+          }
+          return { length: curve.getLength(), duration: walking.duration }
+        },
       }
       if (!surfaceVisible || document.hidden) return
       previousFrame = performance.now()
@@ -8519,7 +8664,7 @@ export function MapThreeScene({
       cancelAnimationFrame(animationFrame)
       // The mixer caches its bindings against the rig root, so the actor has
       // to be released explicitly or a remounted map rebinds onto stale ones.
-      swimmer?.dispose()
+      counsel.dispose()
       const globalScope = window as unknown as { __mapScene?: { scene: THREE.Scene } }
       if (globalScope.__mapScene?.scene === scene) globalScope.__mapScene = undefined
       fadedOccluders.forEach((root) => setOccluderFade(root, false))

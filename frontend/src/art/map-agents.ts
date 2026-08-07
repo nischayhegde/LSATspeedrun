@@ -45,6 +45,14 @@ export type RoadGraphSpec = {
     oneWay?: boolean
     /** Nodes at either end of an open way become spawn/despawn portals. */
     portal?: boolean
+    /**
+     * Kerb-to-kerb width of the carriageway. The driving sim does not use it —
+     * vehicles run on the centreline with a lane offset — but the pedestrian
+     * planner does, and it needs to agree with the width the scene actually
+     * drew. Recording it on the way the scene already contributes is the only
+     * way to keep the two from drifting apart.
+     */
+    width?: number
   }>
   /** Nodes within this distance of each other are welded into one junction. */
   weldRadius?: number
@@ -75,6 +83,8 @@ export type RoadEdge = {
   kind: LaneKind
   /** Free-flow speed limit in world units per second. */
   speed: number
+  /** Kerb-to-kerb width, for the pedestrian side's "is this in the road" tests. */
+  width: number
   /** The edge running the other way between the same pair, or -1 on a one-way. */
   twin: number
 }
@@ -106,6 +116,12 @@ function hashUnit(seed: number) {
 }
 
 const DEFAULT_SPEED: Record<LaneKind, number> = { road: 1.35, water: .82, rail: 3.1 }
+/**
+ * Fallback carriageway widths, for ways contributed without one. Deliberately
+ * generous on the road case: a pedestrian test that thinks the street is wider
+ * than it is errs towards keeping people out of it.
+ */
+const DEFAULT_WIDTH: Record<LaneKind, number> = { road: 1.5, water: 2.8, rail: 1.5 }
 
 function cellKey(cellX: number, cellZ: number) {
   return `${cellX},${cellZ}`
@@ -153,7 +169,7 @@ export function buildRoadGraph(spec: RoadGraphSpec): RoadGraph {
     return node.index
   }
 
-  const addEdge = (from: number, to: number, kind: LaneKind, speed: number) => {
+  const addEdge = (from: number, to: number, kind: LaneKind, speed: number, width: number) => {
     if (from === to) return -1
     const pair = `${from}>${to}`
     const existing = edgeIndexByPair.get(pair)
@@ -171,6 +187,7 @@ export function buildRoadGraph(spec: RoadGraphSpec): RoadGraph {
       length,
       kind,
       speed,
+      width,
       twin: -1,
     }
     edges.push(edge)
@@ -190,6 +207,7 @@ export function buildRoadGraph(spec: RoadGraphSpec): RoadGraph {
     if (way.points.length < 2) continue
     const kind = way.kind ?? 'road'
     const speed = way.speed ?? DEFAULT_SPEED[kind]
+    const width = way.width ?? DEFAULT_WIDTH[kind]
     const ids: number[] = []
     for (const [x, z] of way.points) {
       const id = findOrCreateNode(x, z)
@@ -200,12 +218,12 @@ export function buildRoadGraph(spec: RoadGraphSpec): RoadGraph {
     }
     if (ids.length < 2) continue
     for (let index = 0; index < ids.length - 1; index += 1) {
-      addEdge(ids[index], ids[index + 1], kind, speed)
-      if (!way.oneWay) addEdge(ids[index + 1], ids[index], kind, speed)
+      addEdge(ids[index], ids[index + 1], kind, speed, width)
+      if (!way.oneWay) addEdge(ids[index + 1], ids[index], kind, speed, width)
     }
     if (way.closed) {
-      addEdge(ids[ids.length - 1], ids[0], kind, speed)
-      if (!way.oneWay) addEdge(ids[0], ids[ids.length - 1], kind, speed)
+      addEdge(ids[ids.length - 1], ids[0], kind, speed, width)
+      if (!way.oneWay) addEdge(ids[0], ids[ids.length - 1], kind, speed, width)
     } else if (way.portal) {
       // An explicit flag matters where an open way ends *on* another way: the
       // weld gives that node degree 3, so the degree test below would never
@@ -438,13 +456,16 @@ const PEDESTRIAN_STANDOFF = 1.5
  */
 const PEDESTRIAN_ABREAST = .45
 /**
- * How close to a junction a vehicle still counts as "about to arrive" on the
- * edge beyond it. Only used by the pedestrian gap test, which has to see a car
- * that is one edge short of the crossing and already committed to turning onto
- * it — the alternative is a walker stepping off in front of a car that was
- * hidden behind a corner for the last two metres of its approach.
+ * How far past a point a vehicle's reference must be before the vehicle has
+ * genuinely left it. A nose that has passed is not a road that is clear: most
+ * of the body is still over the point behind it.
  */
-const TURN_IN_REACH = 3.4
+const VEHICLE_CLEAR = 1.4
+/**
+ * Above this a vehicle straddling a point will be gone by the time anyone on
+ * foot could reach it, so it does not need to be treated as an obstruction.
+ */
+const CRAWLING = .8
 
 export class TrafficSim {
   private readonly graph: RoadGraph
@@ -717,82 +738,50 @@ export class TrafficSim {
   }
 
   /**
-   * Seconds until the first vehicle reaches `distance` along `edge`, or
-   * Infinity if nothing is coming.
+   * Seconds until the first vehicle travelling along `edge` reaches a point
+   * `offset` past the end of that edge, or Infinity if nothing is coming.
+   * `via`, when not -1, restricts the answer to vehicles that have already
+   * chosen `via` as their next edge.
    *
-   * This is the pedestrian's side of the crossing. It walks the same per-edge
-   * occupancy buckets the car-following pass uses — rebuilt at the top of
-   * `update`, so they are this frame's — which makes the cost degree × the
-   * handful of vehicles on those edges rather than anything proportional to
-   * the size of either population. Three places a car can be coming from:
-   *
-   *  - this edge, behind the crossing point;
-   *  - its twin, which approaches the same point from the other side;
-   *  - an edge feeding the junction just short of the crossing, but only if
-   *    that vehicle has already chosen this edge as its continuation. Turning
-   *    traffic is otherwise invisible until the frame it enters the edge,
-   *    which is far too late for a walker who has just committed.
+   * This is the pedestrian's side of the crossing, and it is deliberately
+   * dumber than a route query: the caller has already worked out, once, every
+   * way a vehicle can reach the point it cares about — see `buildApproaches` —
+   * so all this has to do is walk the per-edge occupancy bucket the
+   * car-following pass has already built this frame. Cost is the handful of
+   * vehicles on one edge, with nothing proportional to the size of either
+   * population, which is the whole reason the crossing work does not turn the
+   * crowd update into a scan over the traffic.
    *
    * A stopped vehicle is not "arriving": a queue held at a junction is exactly
-   * when a pedestrian should cross. Standing right on the crossing is a block
+   * when a pedestrian should cross. Standing on the point itself is a block
    * rather than a gap, though, or a walker would set off through a stationary
    * car.
    */
-  timeToPoint(edgeIndex: number, distance: number) {
+  timeAlong(edgeIndex: number, via: number, offset: number) {
     if (this.disposed || edgeIndex < 0 || edgeIndex >= this.graph.edges.length) return Number.POSITIVE_INFINITY
     const edge = this.graph.edges[edgeIndex]
     if (edge.kind !== this.kind) return Number.POSITIVE_INFINITY
     let soonest = Number.POSITIVE_INFINITY
-    const consider = (approach: number, speed: number) => {
-      if (approach < .1) { soonest = 0; return }
-      if (speed < .06) return
-      const time = approach / speed
-      if (time < soonest) soonest = time
-    }
     for (let other = this.edgeHead[edgeIndex]; other >= 0; other = this.agentNext[other]) {
       const rival = this.agents[other]
-      if (rival.distance > distance + .1) continue
-      consider(distance - rival.distance, rival.speed)
-    }
-    if (edge.twin >= 0) {
-      const twin = this.graph.edges[edge.twin]
-      const mirrored = twin.length - distance
-      for (let other = this.edgeHead[edge.twin]; other >= 0; other = this.agentNext[other]) {
-        const rival = this.agents[other]
-        if (rival.distance > mirrored + .1) continue
-        consider(mirrored - rival.distance, rival.speed)
+      if (via >= 0 && rival.nextEdge !== via) continue
+      const approach = offset + edge.length - rival.distance
+      if (approach < -.1) {
+        // Nose past the point. Whether that is a gap depends on the speed it is
+        // leaving at: a vehicle still crawling out of the crossing, or stopped
+        // half way across it in a queue, is a wall to walk into rather than a
+        // road that has cleared. One at speed is gone before anyone on foot
+        // could reach the lane, so it is ignored — otherwise every walker would
+        // stand at the kerb watching the back of a car that had already passed.
+        if (approach > -VEHICLE_CLEAR && rival.speed < CRAWLING) return 0
+        continue
       }
-    }
-    // Traffic still one edge away, already turned towards this one.
-    if (distance < TURN_IN_REACH) this.turningIn(edge.from, edgeIndex, distance, consider)
-    if (edge.twin >= 0) {
-      const twin = this.graph.edges[edge.twin]
-      const mirrored = twin.length - distance
-      if (mirrored < TURN_IN_REACH) this.turningIn(edge.to, edge.twin, mirrored, consider)
+      if (approach < .1) return 0
+      if (rival.speed < .06) continue
+      const time = approach / rival.speed
+      if (time < soonest) soonest = time
     }
     return soonest
-  }
-
-  /**
-   * Vehicles on the arms feeding `node` that have already committed to
-   * `edgeIndex`. The incoming edges are found as the twins of the node's
-   * outgoing ones, which holds on a two-way street network and costs nothing;
-   * a genuinely one-way arm is simply not seen, and the standoff on the
-   * vehicle side covers that case.
-   */
-  private turningIn(node: number, edgeIndex: number, distance: number, consider: (approach: number, speed: number) => void) {
-    const arms = this.graph.nodes[node].out
-    for (let slot = 0; slot < arms.length; slot += 1) {
-      const incoming = this.graph.edges[arms[slot]].twin
-      if (incoming < 0 || incoming === edgeIndex) continue
-      const arm = this.graph.edges[incoming]
-      if (arm.kind !== this.kind) continue
-      for (let other = this.edgeHead[incoming]; other >= 0; other = this.agentNext[other]) {
-        const rival = this.agents[other]
-        if (rival.nextEdge !== edgeIndex) continue
-        consider(arm.length - rival.distance + distance, rival.speed)
-      }
-    }
   }
 
   private despawn(agent: TrafficAgent, index: number) {
@@ -1224,9 +1213,244 @@ export class TrafficSim {
 // Pedestrians
 // ---------------------------------------------------------------------------
 
+/** One pavement, as the scene contributes it. */
+export type FootwaySpec = {
+  points: XZ[]
+  closed?: boolean
+  /**
+   * Half the usable paved width, measured from the polyline. Walkers spread
+   * across it, so this has to be the paving the scene actually drew: the
+   * default is sized for a generous promenade and will put people in the
+   * gutter of a narrow street.
+   */
+  halfWidth?: number
+  /**
+   * Relative likelihood a spawning walker chooses this pavement, multiplied by
+   * its length. A high street and a back lane both being one entry in a list is
+   * how a district ends up with the same number of people on each.
+   */
+  weight?: number
+  /**
+   * An opaque id shared by the pavements laid down either side of the same
+   * carriageway, and inherited by the pieces they are cut into.
+   *
+   * Two pavement ends facing each other over open ground are either the two
+   * kerbs of a street or a shortcut through a building, and no amount of
+   * geometry tells the crowd which: the map has streets it draws in full — a
+   * kerb, a carriageway, marked bays, parked cars — without contributing them
+   * to the driving network, and across one of those the two answers look
+   * identical. The scene knows, so it says.
+   */
+  street?: number
+}
+
+/** One carriageway, for the purposes of laying pavements beside it. */
+export type CarriagewaySpec = {
+  points: XZ[]
+  closed?: boolean
+  kind?: LaneKind
+  width?: number
+}
+
+/** Gap left between a kerb line and the end of the pavement that stops at it. */
+const KERB_SETBACK = .28
+/**
+ * How square a pavement has to meet a street before the meeting counts as a
+ * junction to be cut at, as |cos| between the two directions. A pavement
+ * grazing a carriageway at a shallow angle is not a junction; it is the same
+ * street seen twice, and cutting there would shred it.
+ */
+const CUT_SQUARENESS = .5
+/** Shortest pavement stub worth keeping after cutting. */
+const MIN_PIECE = .8
+
+/**
+ * Split each pavement where it runs into a carriageway, leaving the two halves
+ * facing each other across the kerb line.
+ *
+ * This is the fix for the thing that made the maps read as unpeopled rather
+ * than as cities. A pavement was authored as one polyline down the whole length
+ * of a street, correctly offset from *its own* carriageway — and then it ran
+ * straight through every side street on the way, because nothing had ever
+ * looked at the two networks together. Measured on the Old Quarter, 39% of all
+ * pavement length was inside a carriageway, and the walkers on it were simply
+ * in the road for that whole distance with no kerb, no wait and no traffic
+ * check. It also meant that the only place two pavements ever ended near each
+ * other was the outer edge of the district, so the crossings the crowd derived
+ * from pavement ends were nearly all strung along the perimeter road.
+ *
+ * Doing it here, against the recorded network, rather than in each of the eight
+ * places that draw streets, is deliberate: a grid, a ring road, a curved high
+ * street and a village lane are drawn by completely different code and all have
+ * the same defect, and a rule applied to the finished record cannot be
+ * forgotten by the ninth builder.
+ *
+ * The cut ends are what the crowd then pairs into crossings, so the geometry
+ * here decides the crossing geometry: an end left at `width/2 + KERB_SETBACK`
+ * from the centreline faces its opposite number square across the street.
+ */
+export function planFootways(
+  ways: FootwaySpec[],
+  roads: CarriagewaySpec[],
+  options: { setback?: number; minPiece?: number } = {},
+): { ways: FootwaySpec[]; cuts: number; unsliced: number } {
+  const setback = options.setback ?? KERB_SETBACK
+  const minPiece = options.minPiece ?? MIN_PIECE
+
+  type Bar = { ax: number; az: number; bx: number; bz: number; ux: number; uz: number; half: number }
+  const bars: Bar[] = []
+  for (const road of roads) {
+    // Only carriageways. A rail line or a shipping lane crossing a pavement is
+    // not a kerb, and the crowd has no yielding behaviour for either.
+    if ((road.kind ?? 'road') !== 'road') continue
+    const half = (road.width ?? DEFAULT_WIDTH.road) / 2
+    const count = road.closed ? road.points.length : road.points.length - 1
+    for (let index = 0; index < count; index += 1) {
+      const [ax, az] = road.points[index]
+      const [bx, bz] = road.points[(index + 1) % road.points.length]
+      const length = Math.hypot(bx - ax, bz - az)
+      if (length < 1e-4) continue
+      bars.push({ ax, az, bx, bz, ux: (bx - ax) / length, uz: (bz - az) / length, half })
+    }
+  }
+
+  const out: FootwaySpec[] = []
+  let cuts = 0
+  let unsliced = 0
+  for (const way of ways) {
+    const points = way.points
+    if (points.length < 2) continue
+    const closed = way.closed ?? false
+    const loop = closed ? [...points, points[0]] : points
+    const cumulative: number[] = [0]
+    for (let index = 1; index < loop.length; index += 1) {
+      cumulative.push(cumulative[index - 1] + Math.hypot(loop[index][0] - loop[index - 1][0], loop[index][1] - loop[index - 1][1]))
+    }
+    const total = cumulative[cumulative.length - 1]
+    if (total < 1e-3) continue
+
+    const found: Array<{ s: number; half: number }> = []
+    for (let index = 1; index < loop.length; index += 1) {
+      const [ax, az] = loop[index - 1]
+      const [bx, bz] = loop[index]
+      const span = cumulative[index] - cumulative[index - 1]
+      if (span < 1e-5) continue
+      const ux = (bx - ax) / span
+      const uz = (bz - az) / span
+      const minX = Math.min(ax, bx)
+      const maxX = Math.max(ax, bx)
+      const minZ = Math.min(az, bz)
+      const maxZ = Math.max(az, bz)
+      for (const bar of bars) {
+        if (Math.min(bar.ax, bar.bx) > maxX || Math.max(bar.ax, bar.bx) < minX) continue
+        if (Math.min(bar.az, bar.bz) > maxZ || Math.max(bar.az, bar.bz) < minZ) continue
+        if (Math.abs(ux * bar.ux + uz * bar.uz) > CUT_SQUARENESS) continue
+        const hit = segmentCross(ax, az, bx, bz, bar.ax, bar.az, bar.bx, bar.bz)
+        if (!hit) continue
+        found.push({ s: cumulative[index - 1] + hit.t * span, half: bar.half })
+      }
+    }
+    if (!found.length) {
+      out.push(way)
+      continue
+    }
+    found.sort((a, b) => a.s - b.s)
+    // One street is many graph segments and often two overlapping records, so
+    // several hits land at the same junction. Merged, keeping the widest, which
+    // is the one whose kerb the pavement has to stop at.
+    const merged: Array<{ s: number; half: number }> = []
+    for (const cut of found) {
+      const last = merged[merged.length - 1]
+      if (last && cut.s - last.s < .4) {
+        last.half = Math.max(last.half, cut.half)
+        continue
+      }
+      merged.push({ ...cut })
+    }
+    cuts += merged.length
+
+    // A ring pavement cut anywhere is no longer a ring. Rotating the arc to
+    // start just past the first cut turns it into the open case, so there is
+    // only one piece of slicing code.
+    let arcFrom = 0
+    let arcTo = total
+    let spans: Array<[number, number]> = []
+    if (closed) {
+      const first = merged[0]
+      arcFrom = first.s + first.half + setback
+      arcTo = first.s + total - first.half - setback
+      let cursor = arcFrom
+      for (let index = 1; index < merged.length; index += 1) {
+        const cut = merged[index]
+        const stop = cut.s - cut.half - setback
+        if (stop - cursor >= minPiece) spans.push([cursor, stop])
+        cursor = cut.s + cut.half + setback
+      }
+      if (arcTo - cursor >= minPiece) spans.push([cursor, arcTo])
+    } else {
+      let cursor = 0
+      for (const cut of merged) {
+        const stop = cut.s - cut.half - setback
+        if (stop - cursor >= minPiece) spans.push([cursor, stop])
+        cursor = cut.s + cut.half + setback
+      }
+      if (total - cursor >= minPiece) spans.push([cursor, total])
+    }
+    if (!spans.length) {
+      // Every piece was shorter than a stub: a short path that happens to end
+      // in a junction, most often. Better whole and slightly wrong than gone,
+      // because a pavement removed here is a pavement no walker can reach.
+      unsliced += 1
+      out.push(way)
+      continue
+    }
+    for (const [from, to] of spans) {
+      const piece = subPolyline(loop, cumulative, from, to, total)
+      if (piece.length >= 2) out.push({ points: piece, halfWidth: way.halfWidth, weight: way.weight, street: way.street })
+    }
+  }
+  return { ways: out, cuts, unsliced }
+}
+
+/**
+ * The part of a polyline between two arc lengths, with the original vertices in
+ * between preserved. `wrap` lets a closed way be read past its own end.
+ */
+function subPolyline(points: XZ[], cumulative: number[], from: number, to: number, wrap: number): XZ[] {
+  const at = (s: number): XZ => {
+    let target = s
+    if (target > cumulative[cumulative.length - 1]) target -= wrap
+    if (target < 0) target += wrap
+    let low = 0
+    let high = cumulative.length - 1
+    while (low < high - 1) {
+      const middle = (low + high) >> 1
+      if (cumulative[middle] <= target) low = middle
+      else high = middle
+    }
+    const span = cumulative[high] - cumulative[low]
+    const t = span > 1e-5 ? (target - cumulative[low]) / span : 0
+    return [
+      points[low][0] + (points[high][0] - points[low][0]) * t,
+      points[low][1] + (points[high][1] - points[low][1]) * t,
+    ]
+  }
+  const result: XZ[] = [at(from)]
+  const push = (point: XZ) => {
+    const last = result[result.length - 1]
+    if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 1e-3) result.push(point)
+  }
+  for (let index = 0; index < cumulative.length; index += 1) {
+    const s = cumulative[index] + (cumulative[index] < from && to > wrap ? wrap : 0)
+    if (s > from && s < to) push(points[index])
+  }
+  push(at(to))
+  return result
+}
+
 export type CrowdOptions = {
   /** Footway polylines the crowd may walk along, in world space. */
-  ways: Array<{ points: XZ[]; closed?: boolean }>
+  ways: FootwaySpec[]
   /** Articulated rigs, already built and parented by the caller. */
   rigs: Array<{ root: THREE.Object3D; rig: StylizedCounselRig; seed: number }>
   /** Optional cheap distant walkers, one InstancedMesh pair supplied by the caller. */
@@ -1269,15 +1493,110 @@ export type CrowdOptions = {
 }
 
 /**
+ * One way a vehicle can reach a conflict point: the edge it is on, the edge it
+ * must have chosen next for this route to apply (-1 where it is already on the
+ * final approach), and the distance from the end of that edge to the point.
+ */
+type Approach = { edge: number; via: number; offset: number }
+
+/**
  * Where one crossing meets one carriageway: which directed edge, how far along
- * it, and how far along the crossing itself the conflict sits.
+ * it, how far along the crossing itself the conflict sits, and every route by
+ * which traffic arrives there.
  *
  * Resolved once when the crowd is built. The whole point of precomputing it is
  * that the per-frame question — "is anything coming?" — then reduces to a
  * lookup on the traffic sim's existing per-edge occupancy list, with no
  * geometry and no search.
  */
-type CrossingConflict = { edge: number; distance: number; at: number }
+type CrossingConflict = { edge: number; distance: number; at: number; approaches: Approach[] }
+
+/**
+ * How far back up the network a crossing watches for traffic.
+ *
+ * This has to be a distance in world units rather than a hop count because the
+ * road graph is subdivided far more finely than a street plan suggests: a
+ * carriageway that reads as one block is a dozen two-metre edges, so "look one
+ * edge back" is barely a second of warning at the sim's road speeds, and a
+ * walker needs its whole crossing time plus a margin. Sized for the slowest
+ * plausible walker against the fastest road: about eight seconds of warning at
+ * default road speed, which is comfortably more than any crossing takes.
+ */
+const APPROACH_REACH = 11
+/**
+ * Ceiling on approach routes per conflict point. A junction with four arms and
+ * a fine subdivision can otherwise fan out into hundreds of paths, and the
+ * later ones are all far enough back to be irrelevant. Breadth-first order
+ * means the cap always drops the most distant routes first.
+ */
+const APPROACH_CAP = 24
+
+/**
+ * Margin outside the kerb line within which a point still counts as being *in*
+ * the carriageway. Added to the edge's own half-width, so a lane and an
+ * arterial are judged at their real widths rather than at one guessed figure.
+ */
+const IN_LANE_MARGIN = .12
+/** How nearly parallel to the carriageway, as |cos|, before it counts. */
+const IN_LANE_PARALLEL = .7
+/**
+ * How square a crossing has to meet the carriageway it cuts, as |cos| between
+ * the two directions. Zero is a right angle; this admits anything from about
+ * sixty degrees up.
+ *
+ * The gate this feeds is the second half of the pavement fix. Pairing pavement
+ * ends by proximity finds the crossings that matter — the two kerbs of a
+ * street, and the mouth of a side street — but it also finds the diagonal
+ * across a junction and, before the pavements were cut at junctions at all, a
+ * long tail of links that simply ran down the middle of a road. A pedestrian
+ * route that shares a lane with the traffic for its whole length is not a
+ * crossing however carefully it is timed, so those are refused rather than
+ * managed.
+ *
+ * Twenty-two degrees off square. Sixty was the first attempt and let through
+ * eighty-eight corner-to-corner diagonals in the Old Quarter alone: a link from
+ * one corner of a junction to the one opposite is only two thirds of the way to
+ * parallel with one of the two streets, so it passes a loose test on angle and
+ * a loose test on length at the same time.
+ */
+const CROSS_SQUARENESS = .38
+/**
+ * Longest link accepted between two corners with no carriageway between them at
+ * all. At this length it is a break in the paving at a corner; any longer and,
+ * between two pavements laid along streets, it is a route over whatever they
+ * were laid around — which on a grid is a terrace.
+ */
+const CORNER_JOIN = 1.1
+/**
+ * How far the connectivity repair will reach to attach a stranded pavement, and
+ * how many times it will try. The reach is generous because the alternative is
+ * an island; the count is bounded because each pass is quadratic in corners, and
+ * a region with hundreds of genuine islands has a scene problem that no amount
+ * of stitching will hide.
+ */
+const STITCH_RANGE = 9
+const MAX_STITCHES = 64
+/**
+ * Pavement ends closer than this are welded into one corner. Sized to absorb
+ * the disagreement between the pavement offsets different builders use — a
+ * grid street's kerb line and a curved high street's are set out by unrelated
+ * code — while staying well under the narrowest street anyone can cross.
+ */
+const CORNER_WELD = .45
+/**
+ * How much longer than the carriageway it cuts, plus its two kerb setbacks, a
+ * crossing may be. Covers a link taken at a slight angle and the difference
+ * between the graph's welded geometry and the drawn one.
+ *
+ * Tight, because the squareness test alone does not catch a diagonal: a link
+ * two blocks east and one north is within sixty degrees of square to the
+ * north-south street it happens to cut, so it passes on angle and is only
+ * refused on length. At .8 a scattering of those survived, reading in plan as
+ * shortcuts clipping the corners of terraces.
+ */
+const CROSS_SLACK = .45
+/** Longest link accepted between the two kerbs of a street with no traffic on it. */
+const SAME_STREET_RANGE = 3.2
 
 /** Minimum look-both-ways pause at a kerb, before traffic is even considered. */
 const KERB_LOOK = .35
@@ -1299,17 +1618,34 @@ const KERB_PATIENCE = 11
 /** An obstacle in one footway's own coordinates: along, across, and its size. */
 type WayObstacle = { s: number; d: number; radius: number }
 
-/** One kerb-to-kerb link between the ends of two footways. */
+/**
+ * One link between two corners of the pedestrian network.
+ *
+ * A corner is a place where pavements end, not one pavement's end: at an
+ * ordinary crossroads eight pavement ends land on four corners, two to a
+ * corner, and the crossing over the north arm is one piece of road whichever of
+ * the two pavements at each side the walker happens to be on. Welding them
+ * first is what keeps the link count proportional to the number of junctions
+ * rather than to the square of the pavements meeting at them — on the Old
+ * Quarter, four thousand links instead of twenty-six thousand, with the
+ * conflict resolution and its approach search scaled down to match.
+ */
 type Crossing = {
-  fromWay: number
-  fromEnd: 0 | 1
-  toWay: number
-  toEnd: 0 | 1
+  /** Pavement ends at the far corner, encoded `way * 2 + end`. */
+  toEnds: number[]
   fromX: number
   fromZ: number
   toX: number
   toZ: number
   length: number
+  /**
+   * The two ends are the same corner rather than opposite kerbs: where a
+   * pavement running along one street meets the pavement running up the street
+   * it has just stopped at. Turning that corner is not a crossing — there is no
+   * carriageway between the two ends — so the walker takes it at pace instead
+   * of standing at a kerb it is not actually at.
+   */
+  kerbside: boolean
 }
 
 type Footway = {
@@ -1319,6 +1655,17 @@ type Footway = {
   cumulative: Float32Array
   length: number
   closed: boolean
+  /**
+   * Half the paved width available either side of the centreline. Per pavement,
+   * because the aprons on this map are a fixed strip beside carriageways that
+   * differ by a factor of four: one global figure either holds people to the
+   * middle of an esplanade or walks them off the edge of a lane's kerb.
+   */
+  halfWidth: number
+  /** Length × class weight, for choosing where a walker appears. */
+  weight: number
+  /** Which carriageway this pavement runs beside, or -1. See `FootwaySpec`. */
+  street: number
   /** Furniture on this pavement, sorted by distance along it. */
   obstacles: WayObstacle[]
 }
@@ -1365,7 +1712,7 @@ type Walker = {
   previousWorld: THREE.Vector3
 }
 
-function buildFootway(points: XZ[], closed: boolean): Footway | null {
+function buildFootway(points: XZ[], closed: boolean, halfWidth: number, weight: number, street: number): Footway | null {
   const count = points.length + (closed ? 1 : 0)
   if (points.length < 2) return null
   const flat = new Float32Array(count * 2)
@@ -1382,7 +1729,7 @@ function buildFootway(points: XZ[], closed: boolean): Footway | null {
   }
   const length = cumulative[count - 1]
   if (length < 1e-3) return null
-  return { points: flat, cumulative, length, closed, obstacles: [] }
+  return { points: flat, cumulative, length, closed, halfWidth, weight: length * weight, street, obstacles: [] }
 }
 
 /** First index whose `s` is at or past `value`, in a list sorted by `s`. */
@@ -1456,6 +1803,219 @@ function segmentCross(
   return { t: Math.min(1, Math.max(0, t)), u: Math.min(1, Math.max(0, u)) }
 }
 
+/**
+ * Every route by which traffic reaches `distance` along `edge`, out to
+ * `APPROACH_REACH`.
+ *
+ * A breadth-first walk *backwards* from the conflict point. Both carriageways
+ * of a two-way street are seeded, because a crossing spans the whole road, and
+ * from there each step takes the incoming arms of the node the previous edge
+ * started at. An arm is only a genuine approach for vehicles that have chosen
+ * the edge downstream of it, which is what `via` records: without it a car
+ * approaching a junction it is about to turn away from would hold a pedestrian
+ * on an unrelated arm. Incoming edges are found as the twins of a node's
+ * outgoing ones — exact on the two-way network the map builds, and a genuinely
+ * one-way arm is simply not watched, which the vehicle-side standoff covers.
+ *
+ * Build-time only, once per crossing per carriageway it cuts.
+ */
+function buildApproaches(graph: RoadGraph, edgeIndex: number, distance: number): Approach[] {
+  const kind = graph.edges[edgeIndex].kind
+  const found: Approach[] = []
+  const seen = new Set<number>()
+  const stride = graph.edges.length + 1
+  const add = (edge: number, via: number, offset: number) => {
+    const key = edge * stride + via + 1
+    if (seen.has(key)) return false
+    seen.add(key)
+    found.push({ edge, via, offset })
+    return true
+  }
+  // node: whose incoming arms to examine next; via: the edge a vehicle on one of
+  // those arms must have chosen; offset: distance from that node to the point.
+  const queue: Array<{ node: number; via: number; offset: number }> = []
+  const seed = (index: number, at: number) => {
+    const edge = graph.edges[index]
+    add(index, -1, at - edge.length)
+    queue.push({ node: edge.from, via: index, offset: at })
+  }
+  seed(edgeIndex, distance)
+  const twin = graph.edges[edgeIndex].twin
+  if (twin >= 0) seed(twin, graph.edges[twin].length - distance)
+
+  // Most conflict points sit at a junction, because that is where the footways
+  // either side of a street meet. A vehicle that has just turned out of one is
+  // physically still over the point while being, as far as its own edge is
+  // concerned, somewhere else entirely — so the arms leaving the node are worth
+  // watching too. Added before the walk outward so the cap cannot crowd them
+  // out, and only where the point is close enough to the node for a vehicle
+  // leaving it to still be standing on the crossing.
+  const departures = (index: number, at: number) => {
+    const edge = graph.edges[index]
+    if (edge.length - at > VEHICLE_CLEAR) return
+    const arms = graph.nodes[edge.to].out
+    for (let slot = 0; slot < arms.length; slot += 1) {
+      const arm = graph.edges[arms[slot]]
+      if (arm.kind !== kind || arms[slot] === edge.twin) continue
+      // Negated length, so `timeAlong` reads a vehicle this far along the arm as
+      // exactly that far past the point.
+      add(arms[slot], -1, -arm.length)
+    }
+  }
+  departures(edgeIndex, distance)
+  if (twin >= 0) departures(twin, graph.edges[twin].length - distance)
+
+  for (let head = 0; head < queue.length && found.length < APPROACH_CAP; head += 1) {
+    const step = queue[head]
+    if (step.offset >= APPROACH_REACH) continue
+    const arms = graph.nodes[step.node].out
+    const reverse = graph.edges[step.via].twin
+    for (let slot = 0; slot < arms.length && found.length < APPROACH_CAP; slot += 1) {
+      const incoming = graph.edges[arms[slot]].twin
+      if (incoming < 0) continue
+      // Entering `via` from its own twin is a U-turn, which the turn chooser
+      // does not make.
+      if (incoming === reverse) continue
+      const arm = graph.edges[incoming]
+      if (arm.kind !== kind) continue
+      if (!add(incoming, step.via, step.offset)) continue
+      queue.push({ node: arm.from, via: incoming, offset: step.offset + arm.length })
+    }
+  }
+  return found
+}
+
+/**
+ * Whether a pair of pavement ends is a crossing, a corner, or nothing.
+ *
+ * Pairing ends by proximity is the right way to discover crossings — it needs
+ * no declaration, so it cannot drift from the art — but proximity on its own
+ * has no opinion about the road, and that is exactly what the two ends are
+ * separated by. Three answers:
+ *
+ *   `crossing`  cuts one or more carriageways, each roughly square on, or joins
+ *               the two kerbs of one street. The walker waits and gives way.
+ *   `kerbside`  cuts nothing and is short: the inside corner where the pavement
+ *               along one street meets the pavement up the next. Walked
+ *               straight through, because there is no road under it.
+ *   `null`      shares a lane with the traffic, meets one at a shallow angle,
+ *               or spans open ground with no carriageway to explain it —
+ *               which, between two pavements of two different streets, is a
+ *               route through whatever is between them.
+ */
+function linkVerdict(
+  graph: RoadGraph | undefined,
+  ax: number, az: number, bx: number, bz: number, gap: number,
+  sameStreet: boolean,
+): 'crossing' | 'kerbside' | null {
+  const roads = graph?.edgesByKind.road
+  if (!graph || !roads || !roads.length) {
+    // Nothing to judge against: a quay, a network of park paths. Every pair in
+    // range is a legitimate link, which is what it was before any of this.
+    return gap < CORNER_JOIN ? 'kerbside' : 'crossing'
+  }
+  let widest = 0
+  const corner = gap < CORNER_JOIN
+  const dirX = gap > 1e-4 ? (bx - ax) / gap : 1
+  const dirZ = gap > 1e-4 ? (bz - az) / gap : 0
+  const midX = (ax + bx) / 2
+  const midZ = (az + bz) / 2
+  const minX = Math.min(ax, bx)
+  const maxX = Math.max(ax, bx)
+  const minZ = Math.min(az, bz)
+  const maxZ = Math.max(az, bz)
+  let crosses = 0
+  for (let index = 0; index < roads.length; index += 1) {
+    const edgeIndex = roads[index]
+    const edge = graph.edges[edgeIndex]
+    if (edge.twin >= 0 && edge.twin < edgeIndex) continue
+    const from = graph.nodes[edge.from]
+    const to = graph.nodes[edge.to]
+    const reach = edge.width / 2 + IN_LANE_MARGIN
+    if (Math.min(from.x, to.x) > maxX + reach) continue
+    if (Math.max(from.x, to.x) < minX - reach) continue
+    if (Math.min(from.z, to.z) > maxZ + reach) continue
+    if (Math.max(from.z, to.z) < minZ - reach) continue
+    const parallel = Math.abs(dirX * edge.dx + dirZ * edge.dz)
+    if (segmentCross(ax, az, bx, bz, from.x, from.z, to.x, to.z)) {
+      if (parallel > CROSS_SQUARENESS) return null
+      crosses += 1
+      widest = Math.max(widest, edge.width)
+      continue
+    }
+    // A corner's direction is noise over a few centimetres, so it is tested for
+    // standing in a lane whichever way it happens to point.
+    if (!corner && parallel < IN_LANE_PARALLEL) continue
+    const along = (midX - from.x) * edge.dx + (midZ - from.z) * edge.dz
+    if (along < -.2 || along > edge.length + .2) continue
+    if (Math.abs((midX - from.x) * edge.dz - (midZ - from.z) * edge.dx) <= reach) return null
+  }
+  if (crosses) {
+    // A crossing is only ever about as long as the road under it. Without this,
+    // any two corners inside the pairing radius that happen to have a street
+    // between them become a link, and on a grid whose streets are two metres
+    // apart that is a lattice of shortcuts diagonally over the blocks — walkers
+    // strolling through terraces because the geometry allowed it.
+    return gap <= widest + 2 * KERB_SETBACK + CROSS_SLACK ? 'crossing' : null
+  }
+  if (corner) return 'kerbside'
+  // Nothing under it, but the two ends are opposite kerbs of one street: the Old
+  // Quarter's high street is drawn in full — kerbs, markings, parked cars — and
+  // never contributed to the driving network, and refusing to let anyone cross
+  // it would cut the busiest pavement in the region in half. Guarded by
+  // `sameStreet` being square-on, which the caller checks against the pavements'
+  // own directions: two points on the same street are otherwise "opposite
+  // kerbs" however far apart along it they are.
+  if (sameStreet) return 'crossing'
+  return null
+}
+
+/**
+ * Does this link share ground with the traffic — lying in a lane, or meeting one
+ * at too shallow an angle to be a crossing? This is the half of `linkVerdict`
+ * that is about safety rather than about urbanism, and it is the only half the
+ * connectivity repair below is allowed to relax.
+ */
+function sharesALane(
+  graph: RoadGraph | undefined,
+  ax: number, az: number, bx: number, bz: number, gap: number,
+): boolean {
+  const roads = graph?.edgesByKind.road
+  if (!graph || !roads || !roads.length) return false
+  const dirX = gap > 1e-4 ? (bx - ax) / gap : 1
+  const dirZ = gap > 1e-4 ? (bz - az) / gap : 0
+  for (let index = 0; index < roads.length; index += 1) {
+    const edgeIndex = roads[index]
+    const edge = graph.edges[edgeIndex]
+    if (edge.twin >= 0 && edge.twin < edgeIndex) continue
+    const from = graph.nodes[edge.from]
+    const to = graph.nodes[edge.to]
+    const reach = edge.width / 2 + IN_LANE_MARGIN
+    if (Math.min(from.x, to.x) > Math.max(ax, bx) + reach) continue
+    if (Math.max(from.x, to.x) < Math.min(ax, bx) - reach) continue
+    if (Math.min(from.z, to.z) > Math.max(az, bz) + reach) continue
+    if (Math.max(from.z, to.z) < Math.min(az, bz) - reach) continue
+    const parallel = Math.abs(dirX * edge.dx + dirZ * edge.dz)
+    if (segmentCross(ax, az, bx, bz, from.x, from.z, to.x, to.z)) {
+      if (parallel > CROSS_SQUARENESS) return true
+      continue
+    }
+    if (parallel < IN_LANE_PARALLEL) continue
+    // Sampled along the link rather than at its midpoint only: a repair link is
+    // allowed to be long, and a long one can lie in a lane over part of its run
+    // while its middle is clear.
+    const steps = Math.max(2, Math.ceil(gap / .5))
+    for (let step = 0; step <= steps; step += 1) {
+      const px = ax + (bx - ax) * (step / steps)
+      const pz = az + (bz - az) * (step / steps)
+      const along = (px - from.x) * edge.dx + (pz - from.z) * edge.dz
+      if (along < -.2 || along > edge.length + .2) continue
+      if (Math.abs((px - from.x) * edge.dz - (pz - from.z) * edge.dx) <= reach) return true
+    }
+  }
+  return false
+}
+
 export class Crowd {
   private readonly ways: Footway[] = []
   private readonly crossings: Crossing[] = []
@@ -1475,6 +2035,23 @@ export class Crowd {
   /** Per-way intrusive occupant list, mirroring the traffic sim's edge buckets. */
   private readonly wayHead: Int32Array
   private readonly walkerNext: Int32Array
+  /**
+   * Crossing indices reachable from each pavement end, keyed `way * 2 + end`.
+   * Built once because a district cut properly at its junctions has hundreds of
+   * links and a walker reaches an end every few seconds.
+   */
+  private readonly crossingsByEnd: number[][] = []
+  /**
+   * Running total of `weight` over `ways`, for choosing where a walker appears.
+   * Uniform choice over the list would put as many people on a six-metre stub of
+   * back lane as on the high street, and cutting the pavements at junctions
+   * turned twenty-seven ways into several hundred.
+   */
+  private readonly spawnCumulative: Float32Array
+  /** How many conflicts came from the lane-sharing branch. See `networkReport`. */
+  private inLaneConflicts = 0
+  /** How many links the connectivity repair had to add. See `stitch`. */
+  private stitched = 0
   /** Scratch for `sample`: written by every call, read immediately. */
   private sampleX = 0
   private sampleZ = 0
@@ -1484,13 +2061,14 @@ export class Crowd {
   private elapsed = 0
 
   constructor(options: CrowdOptions) {
+    const defaultHalfWidth = (options.width ?? 1.5) * .5
     for (const way of options.ways) {
-      const built = buildFootway(way.points, way.closed ?? false)
+      const built = buildFootway(way.points, way.closed ?? false, way.halfWidth ?? defaultHalfWidth, way.weight ?? 1, way.street ?? -1)
       if (built) this.ways.push(built)
     }
     this.instanced = options.instanced
     this.animateWithin = options.animateWithin ?? 34
-    this.halfWidth = (options.width ?? 1.5) * .5
+    this.halfWidth = defaultHalfWidth
     this.lift = options.lift ?? .12
     this.fade = Math.max(.05, options.fade ?? 1.2)
     this.fogDistance = options.fogDistance ?? 58
@@ -1502,79 +2080,177 @@ export class Crowd {
     // this once, in the footway's own along/across frame, is what makes the
     // per-frame avoidance a couple of comparisons rather than a distance test
     // against every prop in the district.
-    const reach = this.halfWidth + 1.4
     for (const obstacle of options.obstacles ?? []) {
       for (const way of this.ways) {
         const hit = projectOntoWay(way, obstacle.x, obstacle.z)
-        if (hit.distance > reach + obstacle.radius) continue
+        if (hit.distance > way.halfWidth + 1.4 + obstacle.radius) continue
         way.obstacles.push({ s: hit.s, d: hit.d, radius: obstacle.radius })
       }
     }
     for (const way of this.ways) way.obstacles.sort((a, b) => a.s - b.s)
+    // Before the crossings, because the conflict resolution below only runs
+    // where there is traffic for a walker to give way to.
+    if (options.traffic?.length) this.traffic.push(...options.traffic)
 
     // Crossings. Two open footways whose ends nearly meet are the two kerbs of
     // one junction: walkers reaching such an end wait, look, and step across
     // rather than simply evaporating at the corner, which is what made the
     // pavements read as separate treadmills with no connection between them.
-    const range = options.crossingRange ?? 4.6
+    //
+    // Proximity alone is not enough to say that two ends face each other across
+    // a street, and it used to be all that was asked. Ends cluster wherever
+    // pavements stop, so the pairing also produced diagonals over junctions and
+    // — where pavements ran the length of a district and could only stop at its
+    // edge — links strung end to end down the perimeter road. Every candidate is
+    // therefore put to the road network before it is accepted: it has to cut a
+    // carriageway roughly square, or cut nothing and be short enough to be a
+    // corner. See `linkVerdict`.
+    const range = options.crossingRange ?? 3
+    const graph = options.roadGraph
+    for (let index = 0; index < this.ways.length * 2; index += 1) this.crossingsByEnd.push([])
+    // Corners first: every pavement end within `CORNER_WELD` of another is the
+    // same place on the ground, and the walkers standing there have the same
+    // choices whichever pavement brought them.
+    const corners: Array<{ x: number; z: number; ends: number[] }> = []
     if (range > 0) {
-      const ends: Array<{ way: number; end: 0 | 1; x: number; z: number }> = []
+      const weldCell = Math.max(CORNER_WELD, .1)
+      const weldBuckets = new Map<string, number[]>()
+      const weldKey = (x: number, z: number) => `${Math.floor(x / weldCell)},${Math.floor(z / weldCell)}`
+      const attach = (x: number, z: number, code: number) => {
+        const cellX = Math.floor(x / weldCell)
+        const cellZ = Math.floor(z / weldCell)
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          for (let offsetZ = -1; offsetZ <= 1; offsetZ += 1) {
+            for (const index of weldBuckets.get(`${cellX + offsetX},${cellZ + offsetZ}`) ?? []) {
+              const corner = corners[index]
+              if (Math.hypot(corner.x - x, corner.z - z) > CORNER_WELD) continue
+              corner.ends.push(code)
+              return
+            }
+          }
+        }
+        const created = corners.length
+        corners.push({ x, z, ends: [code] })
+        const key = weldKey(x, z)
+        const bucket = weldBuckets.get(key)
+        if (bucket) bucket.push(created)
+        else weldBuckets.set(key, [created])
+      }
+      // Which way the pavement points as it arrives at its end, per end code.
+      // Used to tell "the far kerb of this street" from "somewhere else on the
+      // same street": both share a street id, and only one is a crossing.
+      const endDirX = new Float32Array(this.ways.length * 2)
+      const endDirZ = new Float32Array(this.ways.length * 2)
       this.ways.forEach((way, index) => {
         if (way.closed) return
         const last = way.cumulative.length - 1
-        ends.push({ way: index, end: 0, x: way.points[0], z: way.points[1] })
-        ends.push({ way: index, end: 1, x: way.points[last * 2], z: way.points[last * 2 + 1] })
+        const tangent = (from: number, to: number, code: number) => {
+          const dx = way.points[to * 2] - way.points[from * 2]
+          const dz = way.points[to * 2 + 1] - way.points[from * 2 + 1]
+          const magnitude = Math.hypot(dx, dz) || 1
+          endDirX[code] = dx / magnitude
+          endDirZ[code] = dz / magnitude
+        }
+        tangent(0, 1, index * 2)
+        tangent(last, last - 1, index * 2 + 1)
+        attach(way.points[0], way.points[1], index * 2)
+        attach(way.points[last * 2], way.points[last * 2 + 1], index * 2 + 1)
       })
-      for (let a = 0; a < ends.length; a += 1) {
-        for (let b = a + 1; b < ends.length; b += 1) {
-          if (ends[a].way === ends[b].way) continue
-          const gap = Math.hypot(ends[a].x - ends[b].x, ends[a].z - ends[b].z)
-          // Below the lower bound the two ends are the same corner rather than
-          // opposite kerbs, and a "crossing" there is a walker jittering on the
-          // spot.
-          if (gap < 1.1 || gap > range) continue
-          this.crossings.push({ fromWay: ends[a].way, fromEnd: ends[a].end, toWay: ends[b].way, toEnd: ends[b].end, fromX: ends[a].x, fromZ: ends[a].z, toX: ends[b].x, toZ: ends[b].z, length: gap })
-          this.crossings.push({ fromWay: ends[b].way, fromEnd: ends[b].end, toWay: ends[a].way, toEnd: ends[a].end, fromX: ends[b].x, fromZ: ends[b].z, toX: ends[a].x, toZ: ends[a].z, length: gap })
+
+      // Turning a corner: from any pavement at this corner onto any other. No
+      // carriageway is involved, so it is not a crossing and is not timed like
+      // one — see the end-of-pavement handler, which steps straight across.
+      for (const corner of corners) {
+        if (corner.ends.length < 2) continue
+        for (const code of corner.ends) {
+          const others = corner.ends.filter((other) => (other >> 1) !== (code >> 1))
+          if (!others.length) continue
+          this.crossingsByEnd[code].push(this.crossings.length)
+          this.crossings.push({ toEnds: others, fromX: corner.x, fromZ: corner.z, toX: corner.x, toZ: corner.z, length: 0, kerbside: true })
+          this.conflicts.push([])
         }
       }
+
+      // Then the crossings between corners. Proximity alone is not enough to
+      // say two corners face each other over a street, and it used to be all
+      // that was asked: ends cluster wherever pavements stop, so the pairing
+      // also produced diagonals over junctions and — where pavements ran the
+      // length of a district and could only stop at its edge — links strung end
+      // to end down the perimeter road. Every candidate is put to the road
+      // network before it is accepted. See `linkVerdict`.
+      const cell = Math.max(range, .5)
+      const buckets = new Map<string, number[]>()
+      corners.forEach((corner, index) => {
+        const key = `${Math.floor(corner.x / cell)},${Math.floor(corner.z / cell)}`
+        const bucket = buckets.get(key)
+        if (bucket) bucket.push(index)
+        else buckets.set(key, [index])
+      })
+      /**
+       * Are these two corners the two kerbs of one street, at the same point
+       * along it? Both have to carry a pavement of the same street, and both of
+       * those pavements have to run square to the link — which is what a kerb
+       * opposite a kerb looks like, and what two corners a block apart on the
+       * same street does not.
+       */
+      const facingKerbs = (
+        a: { ends: number[] }, b: { ends: number[] }, dirX: number, dirZ: number,
+      ) => {
+        const square = (corner: { ends: number[] }, street: number) => corner.ends.some((code) => (
+          this.ways[code >> 1].street === street
+          && Math.abs(endDirX[code] * dirX + endDirZ[code] * dirZ) <= CROSS_SQUARENESS
+        ))
+        for (const code of a.ends) {
+          const street = this.ways[code >> 1].street
+          if (street < 0) continue
+          if (square(a, street) && square(b, street)) return true
+        }
+        return false
+      }
+      for (let a = 0; a < corners.length; a += 1) {
+        const cellX = Math.floor(corners[a].x / cell)
+        const cellZ = Math.floor(corners[a].z / cell)
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          for (let offsetZ = -1; offsetZ <= 1; offsetZ += 1) {
+            for (const b of buckets.get(`${cellX + offsetX},${cellZ + offsetZ}`) ?? []) {
+              // Each unordered pair once; both directed links come from it.
+              if (b <= a) continue
+              const gap = Math.hypot(corners[a].x - corners[b].x, corners[a].z - corners[b].z)
+              if (gap < CORNER_WELD || gap > range) continue
+              const sameStreet = gap <= SAME_STREET_RANGE && facingKerbs(
+                corners[a], corners[b],
+                (corners[b].x - corners[a].x) / gap, (corners[b].z - corners[a].z) / gap,
+              )
+              const verdict = linkVerdict(graph, corners[a].x, corners[a].z, corners[b].x, corners[b].z, gap, sameStreet)
+              if (!verdict) continue
+              // Asked of corner turns too, not just of crossings. A corner is
+              // short and has no carriageway across it, which is why it is
+              // walked straight through — but "no carriageway across it" is not
+              // "no carriageway near it", and a corner cut at the mouth of a
+              // side street can still sit inside a lane. Those came back from
+              // the audit as links a walker would step onto without looking.
+              const conflicts = this.resolveConflicts(graph, corners[a], corners[b], gap)
+              const kerbside = verdict === 'kerbside' && !conflicts.length
+              for (const code of corners[a].ends) this.crossingsByEnd[code].push(this.crossings.length)
+              this.crossings.push({ toEnds: corners[b].ends, fromX: corners[a].x, fromZ: corners[a].z, toX: corners[b].x, toZ: corners[b].z, length: gap, kerbside })
+              this.conflicts.push(conflicts)
+              for (const code of corners[b].ends) this.crossingsByEnd[code].push(this.crossings.length)
+              this.crossings.push({ toEnds: corners[a].ends, fromX: corners[b].x, fromZ: corners[b].z, toX: corners[a].x, toZ: corners[a].z, length: gap, kerbside })
+              // The same points from the other side: the same carriageways at
+              // the same places, measured from the other end of the link.
+              this.conflicts.push(conflicts.map((conflict) => ({ ...conflict, at: 1 - conflict.at })))
+            }
+          }
+        }
+      }
+      this.stitch(corners, graph)
     }
 
-    // Which carriageways each crossing actually cuts across.
-    //
-    // Derived from the road graph rather than declared, on the same principle
-    // as the pavement furniture above: the footways and the road network were
-    // both contributed by the scene as it drew the streets, so anything that
-    // tied them together by hand would drift from the art the first time a
-    // street moved. A crossing that turns out to cross nothing — a path over a
-    // green, the two ends of a quay — simply gets an empty list and keeps the
-    // old timer behaviour, which is the correct answer for it.
-    if (options.traffic?.length) this.traffic.push(...options.traffic)
-    const graph = options.roadGraph
-    for (const link of this.crossings) {
-      const found: CrossingConflict[] = []
-      if (graph && this.traffic.length) {
-        const roads = graph.edgesByKind.road
-        for (let index = 0; index < roads.length; index += 1) {
-          const edgeIndex = roads[index]
-          const edge = graph.edges[edgeIndex]
-          // One of each two-way pair. `markPedestrian` and `timeToPoint` both
-          // handle the twin themselves, and recording both would double every
-          // lookup for nothing.
-          if (edge.twin >= 0 && edge.twin < edgeIndex) continue
-          const from = graph.nodes[edge.from]
-          const to = graph.nodes[edge.to]
-          // Cheap reject before the intersection maths: most of the network is
-          // nowhere near any given kerb.
-          if (Math.min(from.x, to.x) > Math.max(link.fromX, link.toX) + .1) continue
-          if (Math.max(from.x, to.x) < Math.min(link.fromX, link.toX) - .1) continue
-          if (Math.min(from.z, to.z) > Math.max(link.fromZ, link.toZ) + .1) continue
-          if (Math.max(from.z, to.z) < Math.min(link.fromZ, link.toZ) - .1) continue
-          const hit = segmentCross(link.fromX, link.fromZ, link.toX, link.toZ, from.x, from.z, to.x, to.z)
-          if (!hit) continue
-          found.push({ edge: edgeIndex, distance: hit.u * edge.length, at: hit.t })
-        }
-      }
-      this.conflicts.push(found)
+    let cumulative = 0
+    this.spawnCumulative = new Float32Array(Math.max(1, this.ways.length))
+    for (let index = 0; index < this.ways.length; index += 1) {
+      cumulative += this.ways[index].weight
+      this.spawnCumulative[index] = cumulative
     }
     this.reduced = prefersReducedMotion()
 
@@ -1673,19 +2349,285 @@ export class Crowd {
    * mechanical as one where none of them do.
    */
   private pickCrossing(walker: Walker, end: 0 | 1) {
-    if (!this.crossings.length) return -1
-    if (hashUnit(walker.seed * 13.1 + this.elapsed) > .72) return -1
-    let first = -1
-    let count = 0
-    for (let index = 0; index < this.crossings.length; index += 1) {
-      const link = this.crossings[index]
-      if (link.fromWay !== walker.way || link.fromEnd !== end) continue
-      count += 1
+    const bucket = this.crossingsByEnd[walker.way * 2 + end]
+    if (!bucket || !bucket.length) return -1
+    let chosen = -1
+    for (let count = 1; count <= bucket.length; count += 1) {
       // Reservoir pick, so a corner with three kerbs off it does not send
       // everyone to the same one.
-      if (first < 0 || hashUnit(walker.seed * 17.3 + this.elapsed + count) < 1 / count) first = index
+      if (chosen < 0 || hashUnit(walker.seed * 17.3 + this.elapsed + count) < 1 / count) chosen = bucket[count - 1]
     }
-    return first
+    // Not everyone carries on. Some proportion of arrivals at any corner have
+    // simply got where they were going, and a junction where every single
+    // pedestrian steps into the road looks as mechanical as one where none of
+    // them do. Rolled against the link that came up rather than before it,
+    // because turning a corner onto the next pavement is not the same decision
+    // as stepping into a road, and pavements cut at their junctions put a walker
+    // at one end or the other every few seconds.
+    const stop = this.crossings[chosen].kerbside ? .03 : .12
+    return hashUnit(walker.seed * 13.1 + this.elapsed) < stop ? -1 : chosen
+  }
+
+  /**
+   * Which carriageways one crossing puts a walker into.
+   *
+   * Derived from the road graph rather than declared, on the same principle as
+   * the pavement furniture: the footways and the road network were both
+   * contributed by the scene as it drew the streets, so anything that tied them
+   * together by hand would drift from the art the first time a street moved. A
+   * link that turns out to cross nothing — a path over a green, the two ends of
+   * a quay — gets an empty list and keeps the plain timer behaviour, which is
+   * the correct answer for it.
+   *
+   * Two geometries. The first is the crossing proper: the link cuts the
+   * carriageway, and the conflict sits where they intersect.
+   *
+   * The second used to be the common case and is now the exception, which is
+   * the whole point of the pavement work. A link that lies *along* a lane
+   * rather than across it puts a walker in the road lengthwise, where there is
+   * no intersection to find; in the Old Quarter 56 of 80 crossings were that
+   * shape, because pavements ran uncut through junctions and could only end at
+   * the district boundary. With the pavements cut at their junctions and
+   * `linkVerdict` refusing anything that shares a lane at its midpoint, that
+   * shape should not be generated at all any more.
+   *
+   * It is kept, and sampled along the link rather than only at its midpoint,
+   * because "should not" is a property of the geometry the scene happens to
+   * hand over, and this module cannot see the next street someone draws.
+   * `linkVerdict` rejects on one sample; this watches five, so a link that dips
+   * into a lane near one end while its midpoint sits on paving still holds the
+   * traffic. Both run once, at build time.
+   * `networkReport().inLaneConflicts` counts what it catches.
+   */
+  /**
+   * Join up whatever the crossing rules left stranded.
+   *
+   * The rules above are deliberately strict, and strictness costs reach: a
+   * pavement that only ever met the rest of the network through a link that ran
+   * down a lane is an island once that link is refused. An island is worse than
+   * an ugly link — walkers spawn on it and can never leave — so rather than
+   * loosening the rules everywhere to keep a few places attached, connectivity
+   * is repaired afterwards, deliberately and only where it is missing.
+   *
+   * Repeatedly: take the shortest link between two corners that are not yet
+   * connected, refuse it if it would put walkers in a lane, and accept it
+   * otherwise. Stop when nothing is left within `STITCH_RANGE` — quays across a
+   * harbour are genuinely separate places and pretending otherwise would have
+   * people walking on water.
+   */
+  private stitch(corners: Array<{ x: number; z: number; ends: number[] }>, graph: RoadGraph | undefined) {
+    const parent = new Int32Array(this.ways.length)
+    for (let index = 0; index < parent.length; index += 1) parent[index] = index
+    const find = (index: number): number => {
+      let root = index
+      while (parent[root] !== root) root = parent[root]
+      while (parent[index] !== root) {
+        const next = parent[index]
+        parent[index] = root
+        index = next
+      }
+      return root
+    }
+    const union = (a: number, b: number) => {
+      const rootA = find(a)
+      const rootB = find(b)
+      if (rootA !== rootB) parent[rootB] = rootA
+    }
+    // Seed from the links that were accepted. A link reached from end `code`
+    // lands on the ends listed in its `toEnds`, so those pavements are mutually
+    // reachable.
+    this.crossingsByEnd.forEach((bucket, code) => {
+      for (const index of bucket) {
+        for (const far of this.crossings[index].toEnds) union(code >> 1, far >> 1)
+      }
+    })
+    // Corners bind their own pavements together whether or not a link was made.
+    for (const corner of corners) {
+      for (let index = 1; index < corner.ends.length; index += 1) {
+        union(corner.ends[0] >> 1, corner.ends[index] >> 1)
+      }
+    }
+
+    for (let attempt = 0; attempt < MAX_STITCHES; attempt += 1) {
+      let bestGap = STITCH_RANGE
+      let bestA = -1
+      let bestB = -1
+      for (let a = 0; a < corners.length; a += 1) {
+        const rootA = find(corners[a].ends[0] >> 1)
+        for (let b = a + 1; b < corners.length; b += 1) {
+          if (find(corners[b].ends[0] >> 1) === rootA) continue
+          const gap = Math.hypot(corners[a].x - corners[b].x, corners[a].z - corners[b].z)
+          if (gap >= bestGap) continue
+          if (sharesALane(graph, corners[a].x, corners[a].z, corners[b].x, corners[b].z, gap)) continue
+          bestGap = gap
+          bestA = a
+          bestB = b
+        }
+      }
+      if (bestA < 0) break
+      const a = corners[bestA]
+      const b = corners[bestB]
+      // Timed like any other crossing if it cuts a carriageway, walked straight
+      // through if it does not. A repair link is long by nature, so it is never
+      // treated as a corner turn.
+      const conflicts = this.resolveConflicts(graph, a, b, bestGap)
+      const kerbside = !conflicts.length
+      this.stitched += 1
+      for (const code of a.ends) this.crossingsByEnd[code].push(this.crossings.length)
+      this.crossings.push({ toEnds: b.ends, fromX: a.x, fromZ: a.z, toX: b.x, toZ: b.z, length: bestGap, kerbside })
+      this.conflicts.push(conflicts)
+      for (const code of b.ends) this.crossingsByEnd[code].push(this.crossings.length)
+      this.crossings.push({ toEnds: a.ends, fromX: b.x, fromZ: b.z, toX: a.x, toZ: a.z, length: bestGap, kerbside })
+      this.conflicts.push(conflicts.map((conflict) => ({ ...conflict, at: 1 - conflict.at })))
+      union(a.ends[0] >> 1, b.ends[0] >> 1)
+    }
+  }
+
+  private resolveConflicts(
+    graph: RoadGraph | undefined,
+    a: { x: number; z: number },
+    b: { x: number; z: number },
+    length: number,
+  ): CrossingConflict[] {
+    const found: CrossingConflict[] = []
+    if (!graph || !this.traffic.length || length < 1e-4) return found
+    const dirX = (b.x - a.x) / length
+    const dirZ = (b.z - a.z) / length
+    const roads = graph.edgesByKind.road
+    for (let index = 0; index < roads.length; index += 1) {
+      const edgeIndex = roads[index]
+      const edge = graph.edges[edgeIndex]
+      // One of each two-way pair. `markPedestrian` handles the twin itself and
+      // `buildApproaches` seeds both, so recording both here would double every
+      // lookup for nothing.
+      if (edge.twin >= 0 && edge.twin < edgeIndex) continue
+      const from = graph.nodes[edge.from]
+      const to = graph.nodes[edge.to]
+      const reach = edge.width / 2 + IN_LANE_MARGIN
+      // Cheap reject before the geometry: most of the network is nowhere near
+      // any given kerb. The margin covers the lane-sharing test below, which
+      // looks slightly wider than the link's own bounding box.
+      if (Math.min(from.x, to.x) > Math.max(a.x, b.x) + reach) continue
+      if (Math.max(from.x, to.x) < Math.min(a.x, b.x) - reach) continue
+      if (Math.min(from.z, to.z) > Math.max(a.z, b.z) + reach) continue
+      if (Math.max(from.z, to.z) < Math.min(a.z, b.z) - reach) continue
+      const hit = segmentCross(a.x, a.z, b.x, b.z, from.x, from.z, to.x, to.z)
+      if (hit) {
+        const distance = hit.u * edge.length
+        found.push({ edge: edgeIndex, distance, at: hit.t, approaches: buildApproaches(graph, edgeIndex, distance) })
+        continue
+      }
+      if (Math.abs(dirX * edge.dx + dirZ * edge.dz) < IN_LANE_PARALLEL) continue
+      let inLaneAt = -1
+      let inLaneAlong = 0
+      for (let sample = 0; sample <= 4; sample += 1) {
+        const t = sample / 4
+        const px = a.x + (b.x - a.x) * t
+        const pz = a.z + (b.z - a.z) * t
+        const along = (px - from.x) * edge.dx + (pz - from.z) * edge.dz
+        if (along < -.2 || along > edge.length + .2) continue
+        if (Math.abs((px - from.x) * edge.dz - (pz - from.z) * edge.dx) > reach) continue
+        // The midpoint if it qualifies, since that is where the walker is most
+        // exposed and where `claimRoadway` centres its window; otherwise the
+        // sample nearest to it.
+        if (inLaneAt < 0 || Math.abs(t - .5) < Math.abs(inLaneAt - .5)) {
+          inLaneAt = t
+          inLaneAlong = along
+        }
+      }
+      if (inLaneAt < 0) continue
+      this.inLaneConflicts += 1
+      const distance = THREE.MathUtils.clamp(inLaneAlong, 0, edge.length)
+      found.push({ edge: edgeIndex, distance, at: inLaneAt, approaches: buildApproaches(graph, edgeIndex, distance) })
+    }
+    return found
+  }
+
+  /**
+   * Set a walker down on the far side of a link. Which pavement, of however
+   * many meet at that corner, is drawn here rather than baked into the link:
+   * one link serves every pavement at each of its two corners, and a crossing
+   * that always deposited people on the same one would turn every junction into
+   * a funnel.
+   */
+  private land(walker: Walker, link: number) {
+    const ends = this.crossings[link].toEnds
+    const code = ends[Math.floor(hashUnit(walker.seed * 23.9 + this.elapsed) * ends.length) % ends.length]
+    const target = this.ways[code >> 1]
+    walker.way = code >> 1
+    walker.distance = (code & 1) === 0 ? 0 : target.length
+    walker.direction = (code & 1) === 0 ? 1 : -1
+    walker.lateral = 0
+    walker.targetLateral = (hashUnit(walker.seed * 19.7 + this.elapsed) * 2 - 1) * target.halfWidth
+    walker.crossing = -1
+    walker.crossPhase = 'wait'
+    walker.crossHeld = 0
+    walker.companion = -1
+  }
+
+  /** Index of the pavement a new walker appears on, by length and class weight. */
+  private pickWay(unit: number) {
+    const total = this.spawnCumulative[this.spawnCumulative.length - 1]
+    if (!(total > 0)) return 0
+    const target = unit * total
+    let low = 0
+    let high = this.spawnCumulative.length - 1
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if (this.spawnCumulative[middle] < target) low = middle + 1
+      else high = middle
+    }
+    return low
+  }
+
+  /**
+   * The shape of the pedestrian network, for a headless harness. None of this
+   * is read by `update`; it exists so that "pavements run beside the roads and
+   * everywhere stays reachable" can be a measurement rather than a claim.
+   */
+  networkReport() {
+    // Union-find over pavements, joined by every link a walker can take.
+    const parent = this.ways.map((_, index) => index)
+    const find = (index: number): number => {
+      let root = index
+      while (parent[root] !== root) root = parent[root]
+      while (parent[index] !== root) { const next = parent[index]; parent[index] = root; index = next }
+      return root
+    }
+    this.crossingsByEnd.forEach((bucket, code) => {
+      for (const index of bucket) {
+        for (const target of this.crossings[index].toEnds) {
+          const a = find(code >> 1)
+          const b = find(target >> 1)
+          if (a !== b) parent[a] = b
+        }
+      }
+    })
+    const sizes = new Map<number, number>()
+    const lengths = new Map<number, number>()
+    let total = 0
+    this.ways.forEach((way, index) => {
+      const root = find(index)
+      sizes.set(root, (sizes.get(root) ?? 0) + 1)
+      lengths.set(root, (lengths.get(root) ?? 0) + way.length)
+      total += way.length
+    })
+    const largest = [...lengths.entries()].sort((a, b) => b[1] - a[1])[0]
+    return {
+      ways: this.ways.length,
+      crossings: this.crossings.length,
+      kerbsideJoins: this.crossings.filter((link) => link.kerbside).length,
+      crossingsWithConflicts: this.conflicts.filter((found) => found.length).length,
+      /** Conflicts found by the lane-sharing branch rather than by intersection. */
+      inLaneConflicts: this.inLaneConflicts,
+      /** Links the connectivity repair had to add. See `stitch`. */
+      stitched: this.stitched,
+      components: sizes.size,
+      componentSizes: [...sizes.values()].sort((a, b) => b - a).slice(0, 10),
+      largestComponentWays: largest ? sizes.get(largest[0]) ?? 0 : 0,
+      reachableLengthFraction: total > 0 && largest ? +(largest[1] / total).toFixed(3) : 0,
+      totalLength: +total.toFixed(1),
+    }
   }
 
   /**
@@ -1708,11 +2650,29 @@ export class Crowd {
       const conflict = conflicts[index]
       // When this body would be past the far side of that lane.
       const needed = (conflict.at * length + LANE_CLEARANCE) / pace + CROSS_MARGIN
-      for (let sim = 0; sim < this.traffic.length; sim += 1) {
-        if (this.traffic[sim].timeToPoint(conflict.edge, conflict.distance) < needed) return false
-      }
+      if (this.timeToConflict(conflict, needed) < needed) return false
     }
     return true
+  }
+
+  /**
+   * Soonest arrival of any vehicle at one conflict point, abandoning the search
+   * as soon as it is known to be under `limit`. The early exit is what keeps a
+   * kerb wait cheap on a busy junction: the answer the caller wants is almost
+   * always "no", and it can be given from the first car that is too close.
+   */
+  private timeToConflict(conflict: CrossingConflict, limit: number) {
+    let soonest = Number.POSITIVE_INFINITY
+    const approaches = conflict.approaches
+    for (let index = 0; index < approaches.length; index += 1) {
+      const approach = approaches[index]
+      for (let sim = 0; sim < this.traffic.length; sim += 1) {
+        const time = this.traffic[sim].timeAlong(approach.edge, approach.via, approach.offset)
+        if (time < soonest) soonest = time
+      }
+      if (soonest < limit) return soonest
+    }
+    return soonest
   }
 
   /**
@@ -1734,6 +2694,12 @@ export class Crowd {
       const conflict = conflicts[index]
       const along = conflict.at * length
       if (here < along - 1.6 || here > along + LANE_CLEARANCE) continue
+      // A vehicle already standing in this lane is let out rather than held.
+      // Both parties waiting for the other is the one outcome worse than either
+      // going first: the walker cannot pass a stopped car, and the car will not
+      // move while a body is claimed in front of it, so the claim is dropped
+      // while the walker is still on the kerb and has lost nothing by waiting.
+      if (walker.crossPhase === 'wait' && this.timeToConflict(conflict, .05) <= 0) continue
       for (let sim = 0; sim < this.traffic.length; sim += 1) {
         this.traffic[sim].markPedestrian(conflict.edge, conflict.distance)
       }
@@ -1757,7 +2723,7 @@ export class Crowd {
       const conflicts = this.conflicts[walker.crossing] ?? []
       let gap = Number.POSITIVE_INFINITY
       for (const conflict of conflicts) {
-        for (const sim of this.traffic) gap = Math.min(gap, sim.timeToPoint(conflict.edge, conflict.distance))
+        gap = Math.min(gap, this.timeToConflict(conflict, Number.NEGATIVE_INFINITY))
       }
       out.push({
         index,
@@ -1796,7 +2762,7 @@ export class Crowd {
   private trySpawn(walker: Walker) {
     if (!this.ways.length) return false
     this.spawnCursor += 1
-    const wayIndex = Math.floor(hashUnit(walker.seed + this.spawnCursor * 3.17) * this.ways.length) % this.ways.length
+    const wayIndex = this.pickWay(hashUnit(walker.seed + this.spawnCursor * 3.17))
     const way = this.ways[wayIndex]
     const direction: 1 | -1 = hashUnit(walker.seed + this.spawnCursor * 4.13) < .5 ? 1 : -1
     // An open footway is entered from an end, which is the pedestrian analogue
@@ -1805,7 +2771,7 @@ export class Crowd {
       ? hashUnit(walker.seed + this.spawnCursor * 6.53) * way.length
       : direction > 0 ? 0 : way.length
     this.sample(way, distance)
-    const lateral = (hashUnit(walker.seed + this.spawnCursor * 8.11) * 2 - 1) * this.halfWidth
+    const lateral = (hashUnit(walker.seed + this.spawnCursor * 8.11) * 2 - 1) * way.halfWidth
     scratchTarget.set(
       this.sampleX - this.sampleDz * lateral * direction,
       this.lift,
@@ -1842,7 +2808,7 @@ export class Crowd {
         walker.companion = index
         other.companion = this.walkers.indexOf(walker)
         walker.distance = other.distance
-        walker.lateral = THREE.MathUtils.clamp(other.lateral + (other.lateral > 0 ? -.42 : .42), -this.halfWidth, this.halfWidth)
+        walker.lateral = THREE.MathUtils.clamp(other.lateral + (other.lateral > 0 ? -.42 : .42), -way.halfWidth, way.halfWidth)
         walker.targetLateral = walker.lateral
         break
       }
@@ -2007,17 +2973,7 @@ export class Crowd {
         walker.pace += ((walker.crossPhase === 'go' ? 1 : 0) - walker.pace) * (1 - Math.exp(-6 * step))
         walker.life -= step
         if (walker.crossProgress >= 1) {
-          // Landed. Pick up the far footway from the end that was crossed to.
-          walker.way = link.toWay
-          const target = this.ways[link.toWay]
-          walker.distance = link.toEnd === 0 ? 0 : target.length
-          walker.direction = link.toEnd === 0 ? 1 : -1
-          walker.lateral = 0
-          walker.targetLateral = (hashUnit(walker.seed * 19.7 + this.elapsed) * 2 - 1) * this.halfWidth
-          walker.crossing = -1
-          walker.crossPhase = 'wait'
-          walker.crossHeld = 0
-          walker.companion = -1
+          this.land(walker, walker.crossing)
         }
         this.settle(walker, step, cullSquared, animateWithinSquared, false)
         continue
@@ -2043,7 +2999,7 @@ export class Crowd {
           // Window shopping: slows right down and drifts to the shop side.
           walker.errand = 'browse'
           walker.errandTimer = 2.6 + hashUnit(walker.seed * 9.7 + this.elapsed) * 5
-          walker.targetLateral = (walker.lateral >= 0 ? 1 : -1) * this.halfWidth
+          walker.targetLateral = (walker.lateral >= 0 ? 1 : -1) * way.halfWidth
         } else {
           walker.errand = 'walk'
           walker.errandTimer = 4 + hashUnit(walker.seed * 4.9 + this.elapsed) * 16
@@ -2097,12 +3053,12 @@ export class Crowd {
           const clear = obstacle.radius + .34
           if (Math.abs(walker.lateral - offset) > clear) continue
           crowded = true
-          const leftRoom = offset - clear + this.halfWidth
-          const rightRoom = this.halfWidth - (offset + clear)
+          const leftRoom = offset - clear + way.halfWidth
+          const rightRoom = way.halfWidth - (offset + clear)
           steer = rightRoom > leftRoom ? offset + clear : offset - clear
         }
         if (crowded) {
-          walker.targetLateral = THREE.MathUtils.clamp(steer, -this.halfWidth, this.halfWidth)
+          walker.targetLateral = THREE.MathUtils.clamp(steer, -way.halfWidth, way.halfWidth)
           // And slow down for it, because squeezing past something is slower
           // than walking at it and then teleporting through.
           walker.speed *= .78
@@ -2122,7 +3078,7 @@ export class Crowd {
         if (Math.abs(separation) < .48) nudge += separation >= 0 ? .9 : -.9
       }
       if (nudge !== 0) {
-        walker.targetLateral = THREE.MathUtils.clamp(walker.lateral + nudge, -this.halfWidth, this.halfWidth)
+        walker.targetLateral = THREE.MathUtils.clamp(walker.lateral + nudge, -way.halfWidth, way.halfWidth)
       }
       walker.lateral += (walker.targetLateral - walker.lateral) * (1 - Math.exp(-2.6 * step))
 
@@ -2146,18 +3102,33 @@ export class Crowd {
         const link = this.pickCrossing(walker, end)
         if (link >= 0) {
           walker.crossing = link
-          walker.crossPhase = 'wait'
-          // The look, only. How long the walker actually stands here is now
-          // decided by the traffic — see `gapIsSafe` — so this is the reaction
-          // time before it starts judging gaps, not the wait itself. Drawn per
-          // walker so a group does not step off together the instant a gap
-          // opens.
-          walker.crossTimer = KERB_LOOK + hashUnit(walker.seed * 7.7 + this.elapsed) * .75
           walker.crossHeld = 0
-          walker.crossGlance = .5 + hashUnit(walker.seed * 11.3 + this.elapsed) * 1.4
           walker.crossProgress = 0
           walker.errand = 'walk'
-          walker.pace = 0
+          if (this.crossings[link].length < .25) {
+            // Turning a corner: the pavement it is stepping onto starts where
+            // the one it is leaving stopped. Nothing to cross and nowhere to go,
+            // so the transfer happens on the spot rather than through the
+            // crossing state machine, whose progress rate has a floor that would
+            // hold the walker still for half a second at every junction.
+            this.land(walker, link)
+          } else if (this.crossings[link].kerbside) {
+            // A step across a gap in the paving, still with no carriageway under
+            // it. Walked, but not waited at.
+            walker.crossPhase = 'go'
+            walker.crossTimer = 0
+            walker.crossGlance = 0
+          } else {
+            walker.crossPhase = 'wait'
+            // The look, only. How long the walker actually stands here is now
+            // decided by the traffic — see `gapIsSafe` — so this is the reaction
+            // time before it starts judging gaps, not the wait itself. Drawn per
+            // walker so a group does not step off together the instant a gap
+            // opens.
+            walker.crossTimer = KERB_LOOK + hashUnit(walker.seed * 7.7 + this.elapsed) * .75
+            walker.crossGlance = .5 + hashUnit(walker.seed * 11.3 + this.elapsed) * 1.4
+            walker.pace = 0
+          }
         } else {
           finished = true
         }
@@ -2204,16 +3175,15 @@ export class Crowd {
     const near = this.animateWithin * .75
     const nearSquared = near * near
     for (let index = 0; index < instanced.count; index += 1) {
-      const wayIndex = index % this.ways.length
-      const way = this.ways[wayIndex]
       const seed = index * 13.71 + 4.3
+      const way = this.ways[this.pickWay(hashUnit(seed * 1.13))]
       const direction = hashUnit(seed) < .5 ? 1 : -1
       const speed = .5 + hashUnit(seed * 1.7) * .4
       const offset = hashUnit(seed * 2.3) * way.length
       let distance = (offset + this.elapsed * speed * direction) % way.length
       if (distance < 0) distance += way.length
       this.sample(way, distance)
-      const lateral = (hashUnit(seed * 3.1) * 2 - 1) * this.halfWidth
+      const lateral = (hashUnit(seed * 3.1) * 2 - 1) * way.halfWidth
       scratchTarget.set(
         this.sampleX - this.sampleDz * lateral,
         this.lift,

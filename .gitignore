@@ -25,6 +25,7 @@ node_modules/
 .strategy-shots/
 .tabs-shots/
 .ui2d/
+.verify/
 .wardrobe-shots/
 mapqa/
 qa-shots/
