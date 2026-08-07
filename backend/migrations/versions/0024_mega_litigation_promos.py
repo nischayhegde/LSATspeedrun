@@ -1,6 +1,6 @@
 """Per-account cooldown and lifetime allowance for free mega-litigation promotions.
 
-Revision ID: 0024_mega_litigation_promotion_limits
+Revision ID: 0024_mega_litigation_promos
 Revises: 0023_focus_mode_and_propensity
 """
 
@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0024_mega_litigation_promotion_limits"
+revision = "0024_mega_litigation_promos"
 down_revision = "0023_focus_mode_and_propensity"
 branch_labels = None
 depends_on = None

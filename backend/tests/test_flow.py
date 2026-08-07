@@ -4475,6 +4475,62 @@ def test_a_mega_litigation_runs_on_one_whole_form_clock(app):
         assert targets == {even_split}
 
 
+def test_a_mega_litigation_is_the_full_reference_form_end_to_end(app):
+    """The real `/v1/diagnostics` entry point has to land on 77, not just the
+    question-selection helper in isolation.
+
+    `select_diagnostic_questions` was already proven exact for whatever count
+    it is handed (see `test_the_mega_litigation_form_is_exactly_the_length_it_says`
+    in `test_progress.py`), and the default-config value was already proven to
+    be `FORM_ITEMS` when no environment override is present (see
+    `test_the_form_size_default_matches_the_scoring_reference_form`). Neither
+    test exercises the actual seam between them: a real deployment's `.env` can
+    carry a value under either the current name (`DIAGNOSTIC_SESSION_SIZE`) or
+    the historical one (`DIAGNOSTIC_SIZE`), both of which `create_app` honours
+    on purpose. A stale `DIAGNOSTIC_SIZE` left over from before that setting
+    was renamed — dead for however long the old name went unread — silently
+    starts mattering again the moment it collides with a real value, and
+    nothing here would have caught that except a session that actually goes
+    through `create_diagnostic_session` and comes out short. That is what put
+    a "35 questions" mega-litigation on a real dashboard: this fixture's own
+    `backend/.env` still had `DIAGNOSTIC_SIZE=35` fossilised in it from long
+    before the 77-item reference form existed.
+    """
+    from app.scoring import FORM_ITEMS
+
+    assert app.config["DIAGNOSTIC_SESSION_SIZE"] == FORM_ITEMS, (
+        "DIAGNOSTIC_SESSION_SIZE resolved to a non-default value in a test run "
+        "that never asked for one — check backend/.env for a stale "
+        "DIAGNOSTIC_SIZE or DIAGNOSTIC_SESSION_SIZE left over from before the "
+        f"form was fixed at {FORM_ITEMS} items."
+    )
+
+    # The shared fixture only seeds a dozen sample questions, plenty for tests
+    # that check ordering or clocking but not enough for the bank to ever offer
+    # a real 77-item form. Bulk up supply well past the reference form's size
+    # so this test can prove the actual count, not just that the bank was the
+    # bottleneck.
+    with app.app_context():
+        for index in range(12, 72):
+            add_question(index, "Logical Reasoning")
+        for index in range(72, 112):
+            add_question(index, "Reading Comprehension")
+        db.session.commit()
+
+    client = app.test_client()
+    headers = login(client, "mega-full-length@example.test")
+    create_game(client, headers)
+
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    assert session["total_items"] == FORM_ITEMS
+
+    with app.app_context():
+        record = db.session.get(StudySession, session["id"])
+        assert record.total_items == FORM_ITEMS
+        assert SessionItem.query.filter_by(session_id=record.id).count() == FORM_ITEMS
+        assert sum(block["questions"] for block in record.section_plan_json) == FORM_ITEMS
+
+
 def test_a_mega_litigation_cannot_be_paused_or_resumed(app):
     """One sitting means the clock is wall-clock, and nothing stops wall-clock."""
     client = app.test_client()

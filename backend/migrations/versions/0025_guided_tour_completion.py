@@ -1,7 +1,7 @@
 """Persist guided-tour completion on the account instead of in browser storage.
 
 Revision ID: 0025_guided_tour_completion
-Revises: 0024_mega_litigation_promotion_limits
+Revises: 0024_mega_litigation_promos
 """
 
 from alembic import op
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 
 
 revision = "0025_guided_tour_completion"
-down_revision = "0024_mega_litigation_promotion_limits"
+down_revision = "0024_mega_litigation_promos"
 branch_labels = None
 depends_on = None
 

@@ -126,6 +126,33 @@ def test_migrations_take_an_empty_database_all_the_way_to_head(
         assert len(tables) > 20
 
 
+def test_every_revision_id_fits_the_column_that_records_it():
+    """Revision ids must fit VARCHAR(32), which Alembic hardcodes and cannot widen.
+
+    Postgres enforces that width and SQLite ignores it, so a too-long id passes
+    every test above -- they all run on SQLite -- and then fails on the real
+    database with
+
+        psycopg.errors.StringDataRightTruncation: value too long for type
+        character varying(32)
+
+    at the moment Alembic records the offending revision. That is a failed
+    deploy, not a failed test run, and it happened twice:
+    `0024_mega_litigation_promotion_limits` was 37 characters. The name is not
+    cosmetic, so this asserts on the one property that has to hold.
+    """
+    script = ScriptDirectory(str(MIGRATIONS_DIR))
+    too_long = {
+        revision.revision: len(revision.revision)
+        for revision in script.walk_revisions()
+        if len(revision.revision) > 32
+    }
+    assert not too_long, (
+        "these revision ids do not fit alembic_version.version_num, so Postgres "
+        f"will reject the upgrade that records them: {too_long}"
+    )
+
+
 def test_boot_seeds_as_soon_as_the_database_is_at_head(
     tmp_path, empty_database, seed_calls, restored_logging
 ):
