@@ -58,6 +58,42 @@ function RouteLoadError({ error, retrying, onRetry }: { error: unknown; retrying
 }
 
 
+/**
+ * Warms the Office and World scenes for a tap on the dock that may never come.
+ *
+ * This is speculative work, so it has to lose every race against the screen the
+ * reader actually asked for. Scheduling it from `App` stopped achieving that
+ * once the routes became real dynamic imports: `requestIdleCallback` fires
+ * happily during the gap while a route's own chunk is still in flight, and the
+ * main thread is genuinely idle then — it is waiting on the network, not
+ * finished. `whenMainThreadIsQuiet` in `scene-loaders` reads that gap as calm
+ * for the same reason.
+ *
+ * Measured cold on /progress at 4x throttle, that gap was enough for ~300 kB of
+ * three.js, the map scene and the office scene to be fetched and parsed in
+ * front of the dashboard's own first data request, which went from 230 ms to
+ * 609 ms and took content on screen from 338 ms to 714 ms.
+ *
+ * Rendering this inside the route's Suspense boundary ties the warm-up to the
+ * commit of the screen itself, which is the condition that was always meant.
+ * It lives with the dock for the same reason: the dock only exists inside
+ * `AppShell`, so no route outside this boundary has one to warm.
+ */
+function DockWarmer() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    const warm = () => preloadDockArt(pathname)
+    const idle = window.requestIdleCallback?.(warm, { timeout: 1800 })
+    const timer = idle === undefined ? setTimeout(warm, 300) : undefined
+    return () => {
+      if (idle !== undefined) window.cancelIdleCallback?.(idle)
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }, [pathname])
+  return null
+}
+
+
 function Protected({ children, gameRequired = true }: { children: React.ReactNode; gameRequired?: boolean }) {
   const location = useLocation()
   const me = useQuery({ queryKey: ['me'], queryFn: api.me })
@@ -83,7 +119,10 @@ function Protected({ children, gameRequired = true }: { children: React.ReactNod
       <AppShell user={me.data!.user} game={game.data?.game}>
         {/* Inside the shell, so a route's own chunk lands under a header and
             nav that are already on screen rather than behind a full-page wait. */}
-        <Suspense fallback={<LoadingScreen />}>{children}</Suspense>
+        <Suspense fallback={<LoadingScreen />}>
+          {children}
+          <DockWarmer />
+        </Suspense>
       </AppShell>
       {/* Rendered outside the shell so the narrative layer keeps one stacking
           order of its own instead of competing inside the page it interrupts. */}
@@ -182,6 +221,10 @@ export default function App() {
   const location = useLocation()
   useEffect(() => {
     /**
+     * The scene the current route renders itself. The dock's speculative
+     * warm-up used to ride along here too; it now waits for the route to
+     * commit, in `DockWarmer`.
+     *
      * Running this inline was free while every screen lived in the entry chunk:
      * the route was already parsed by the time this effect ran, so there was
      * nothing left for the preload to race. Now that the routes are real dynamic
@@ -196,14 +239,10 @@ export default function App() {
      * yields to the screen the reader actually asked for.
      */
     const sceneIsThePage = location.pathname === '/office' || location.pathname === '/map'
-    const preload = () => {
-      preloadArtForRoute(location.pathname)
-      preloadDockArt(location.pathname)
-    }
+    const preload = () => { preloadArtForRoute(location.pathname) }
     if (sceneIsThePage) {
       preloadArtForRoute(location.pathname)
-      const idle = window.requestIdleCallback?.(() => { preloadDockArt(location.pathname) }, { timeout: 1800 })
-      return () => { if (idle !== undefined) window.cancelIdleCallback?.(idle) }
+      return
     }
     const idle = window.requestIdleCallback?.(preload, { timeout: 1800 })
     // Safari has no requestIdleCallback; a short timer is enough to let the

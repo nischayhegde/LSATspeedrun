@@ -43,3 +43,6 @@ frontend/scratch-*
 
 # Punch-list scratch (screenshots, harnesses, measurements). Regenerated on demand.
 .punch/
+
+# Async-coaching investigation scratch (harnesses, logs, timings).
+.async/
