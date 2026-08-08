@@ -2,6 +2,29 @@
    is one drop-in pair, and scoped under .gate so nothing here can reach the
    rest of the case file. */
 
+/* The control arm's card, which names no technique on purpose. It borrows the
+   full .strategy-tip shell so it reads as the same feature in the same slot,
+   and only changes what would otherwise make it look like the suggested-
+   approach card with its contents missing: the gold heading and border promise
+   a technique, and there is none here to promise. Muted instead, with the note
+   line carrying the reason. The eyebrow stays, because the point is that this
+   is the partner deciding not to suggest anything rather than the partner
+   failing to load. */
+.strategy-tip.is-neutral {
+  border-color: rgba(148, 170, 167, .34);
+  box-shadow: 0 15px 34px rgba(3, 9, 14, .2), inset 0 0 0 3px rgba(255, 255, 255, .02);
+}
+.strategy-tip.is-neutral h2 { color: #cbd8d3; }
+/* Out-specifies `.strategy-tip > p` in styles.css, which would otherwise style
+   this the same as the line above it whichever order the sheets load in. */
+.strategy-tip.is-neutral > p.strategy-tip-neutral-note {
+  margin: 9px 0 0;
+  max-width: 760px;
+  color: #8fa5a1;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
 .gate {
   border: 1px solid var(--line);
   border-left: 4px solid var(--gold);

@@ -349,6 +349,16 @@ export function PerformancePage() {
             </button>
           )}
         </div>
+        {/* What practice is currently weighted toward, and the reason it would
+            change. It used to be a card of its own below the skill matrix,
+            which meant scrolling past the whole table to find out. It is one
+            line of status, so it reads as one line under the recommendation
+            it qualifies. */}
+        <p className="dash-focus-note">
+          Practice is weighted {focus.types.length ? `toward ${focus.types.join(' · ')}` : 'evenly across the test'}.
+          {focus.explanation ? ` ${focus.explanation}` : ''}
+          {focus.baseline_accuracy !== null ? ` Measured against your own ${focus.baseline_accuracy}% on that form.` : ''}
+        </p>
         {activeRunChip}
         <div className="dash-actions">
           <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10 cases'} <ArrowRight /></button>
@@ -364,8 +374,7 @@ export function PerformancePage() {
       <div key={tab} className="dash-panel" id={`dash-panel-${tab}`} role="tabpanel" aria-labelledby={`dash-tab-${tab}`} tabIndex={0}>
 
         {tab === 'skills' && (
-          <>
-            <section className="skill-table-panel">
+          <section className="skill-table-panel">
               <div className="panel-heading"><div><span>SKILL MATRIX</span><h2>Accuracy by question type</h2></div><Brain /></div>
               {performance.skills.length ? (
                 <>
@@ -380,10 +389,10 @@ export function PerformancePage() {
                         onClick={() => toggleSkill(skill.name)}
                       >
                         <strong>{skill.name}</strong><span>{skill.attempts}</span><span><i style={{ width: `${skill.accuracy}%` }} />{skill.accuracy}%</span><span>{skill.pace_adherence}%</span><span>{skill.reasoning === null ? '—' : `${skill.reasoning}%`}</span>
+                        <ChevronDown className="skill-row-chevron" size={13} aria-hidden="true" />
                       </button>
                     ))}
                   </div>
-                  <p className="skill-table-hint">Select a row to run a focused sprint on it.</p>
                   {selectedSkillDetail && (
                     <div className="skill-detail">
                       <div>
@@ -418,14 +427,7 @@ export function PerformancePage() {
                   )}
                 </>
               ) : <div className="empty-skills"><Brain /><p>No data yet. Sit a mega-litigation to build the matrix.</p></div>}
-            </section>
-
-            <section className="focus-panel" aria-label="What practice is weighted toward">
-              <div className="panel-heading"><div><span>PRACTICE FOCUS</span><h2>{focus.types.length ? focus.types.join(' · ') : 'Weighted evenly across the test'}</h2></div><Target /></div>
-              <p>{focus.explanation}</p>
-              {focus.baseline_accuracy !== null && <small>Measured against your own {focus.baseline_accuracy}% on that form.</small>}
-            </section>
-          </>
+          </section>
         )}
 
         {tab === 'methods' && (

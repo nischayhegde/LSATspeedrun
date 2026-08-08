@@ -7,7 +7,6 @@ import {
   CircleDollarSign,
   ScrollText,
   Shirt,
-  TrendingUp,
   Trophy,
   Wrench,
 } from 'lucide-react'
@@ -111,18 +110,12 @@ export function OfficePage() {
         </aside>
       )}
       {wardrobeOpen && <WardrobePanel game={game} onClose={() => setWardrobeOpen(false)} />}
-      <section className="office-command-bar">
-        <div>
-          <span className="pixel-kicker">{game.reputation_band.name.toUpperCase()} COUNSEL · HQ LEVEL {game.office_tier}</span>
-          <h1>{new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {game.lawyer_name.split(' ')[0]}. <em>The office is alive.</em></h1>
-        </div>
-        <div className="command-stats">
-          <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><TrendingUp /></span>
-          <span><small>ACTIVE CLIENT</small><strong>{workingClient.name}</strong><BriefcaseBusiness /></span>
-          <span className={game.upkeep.rent_arrears ? 'has-arrears' : ''}><small>{game.upkeep.completed ? 'LEASE RETIRED' : 'DAILY LEASE'}</small><strong>{game.upkeep.completed ? 'Charter complete' : `${formatMoney(game.upkeep.daily_rent, true)} / day`}</strong><CircleDollarSign /></span>
-        </div>
-      </section>
-
+      {/* No greeting band above the room, and no stat overlay inside it either.
+          Firm value, cash and the lease all move on their own, so they live in
+          the fixed economy ledger where they are visible from every screen;
+          repeating them here would be two readings of the same number that can
+          disagree mid-refetch. The active client is not an economy figure and
+          keeps its home below, on the ACTIVE CONTRACT card. */}
       <section className="office-world-shell">
         <ExplorableOffice
           game={game}

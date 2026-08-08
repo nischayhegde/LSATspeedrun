@@ -311,6 +311,26 @@ def _candidate_keys(question: Question) -> list[str]:
 
 CONTROL_PROBABILITY = 0.25
 
+# The prompt arm: a named technique, and the only arm enforcement ever gates.
+VARIANT_PROMPT = "prompt"
+# The control arm as it is drawn today — a card appears on the question and
+# deliberately names no technique.
+VARIANT_CONTROL_VISIBLE = "control_visible"
+# The control arm as it was drawn before that: no card at all, the question
+# simply arrived bare.
+VARIANT_CONTROL_HIDDEN = "control"
+
+# Both control labels are the same *assignment* — no technique was offered —
+# and every estimate here is intention-to-treat over assignment, so both belong
+# on the control side of a contrast. They are two different *presentations* of
+# that assignment, and therefore two different counterfactuals: "no offer"
+# against "an offer of nothing in particular". The labels are kept apart on the
+# row so a later analysis can split them and decide which question it is
+# asking, exactly as `strategy_enforcement_version` keeps two presentations of
+# the prompt arm apart. Pooling them is a choice made here, in the open, rather
+# than an accident of both having been called "control".
+CONTROL_VARIANTS = frozenset({VARIANT_CONTROL_HIDDEN, VARIANT_CONTROL_VISIBLE})
+
 
 def assign_strategy_trial(
     user_id: str,
@@ -324,8 +344,26 @@ def assign_strategy_trial(
 
     The mega-litigation stays a clean measurement surface and gets no trial.
     Early trials force coverage across the candidate approaches; later trials
-    favor the best posterior performer while preserving a challenger and an
-    invisible 25% control condition.
+    favor the best posterior performer while preserving a challenger and a 25%
+    control condition.
+
+    The control condition used to be invisible: a quarter of questions simply
+    arrived with nothing on them. It is now visible and neutral — a card still
+    appears, and says in as many words that this question has no suggested
+    approach. Every question in a run therefore carries a card, which is what
+    was asked for, and the arm that carries no technique still exists, which is
+    what the ranking in `_section_reading` is computed against. Deleting the
+    arm instead would have left `_contrast_sample` at zero for every approach
+    forever, so no approach could ever be named and the panel would have gone
+    on telling students to go collect questions the app no longer produced.
+
+    Making the control visible also improves the contrast rather than merely
+    preserving it. The old bare control differed from the prompt arm by the
+    technique *and* by the pause, the interruption, and the act of being asked
+    for a decision; the neutral card holds those constant and leaves the
+    technique as more nearly the only difference. That does make it a different
+    counterfactual from the pre-existing control rows, which is why the two
+    carry different arm labels — see `CONTROL_VARIANTS`.
 
     The old cadence exposed one trial every four questions so that Sprint and
     Infinite could stay clean measurement surfaces. With the diagnostic as the
@@ -372,7 +410,7 @@ def assign_strategy_trial(
         Attempt.query.filter(
             Attempt.user_id == user_id,
             Attempt.strategy_key.in_(candidates),
-            Attempt.strategy_variant == "prompt",
+            Attempt.strategy_variant == VARIANT_PROMPT,
         ).all()
     )
     grouped: dict[str, list[Attempt]] = defaultdict(list)
@@ -411,12 +449,16 @@ def assign_strategy_trial(
         explore = _stable_fraction(f"explore:{seed}") < .30
         key = ranked[1 if explore and len(ranked) > 1 else 0]
 
-    variant = "control" if _stable_fraction(f"control:{seed}:{key}") < CONTROL_PROBABILITY else "prompt"
+    variant = (
+        VARIANT_CONTROL_VISIBLE
+        if _stable_fraction(f"control:{seed}:{key}") < CONTROL_PROBABILITY
+        else VARIANT_PROMPT
+    )
     # The assignment draw above is a single uniform threshold test, so the
     # propensity of landing in the observed arm is exactly this constant —
     # logged per-observation now so a later IPW/CACE fit (P1-6) does not have
     # to reconstruct it from the hashing scheme after the fact.
-    propensity = CONTROL_PROBABILITY if variant == "control" else 1 - CONTROL_PROBABILITY
+    propensity = CONTROL_PROBABILITY if variant in CONTROL_VARIANTS else 1 - CONTROL_PROBABILITY
     return {"key": key, "variant": variant, "propensity": propensity, "candidates_n": len(candidates)}
 
 
@@ -690,7 +732,7 @@ def _shortfall_sentence(result: dict) -> str:
         return "It is over the line; the difference just has not separated yet."
     return (
         f"About {' and '.join(parts)} would put {result['plain_title'].lower()} over that line. "
-        "Roughly one question in four arrives without a prompt, so the without-it side fills slowest."
+        "Roughly one question in four names no approach at all, so the without-it side fills slowest."
     )
 
 
@@ -724,7 +766,7 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
         by_key[attempt.strategy_key].append(attempt)
 
     trials = len(attempts)
-    prompt_trials = sum(attempt.strategy_variant == "prompt" for attempt in attempts)
+    prompt_trials = sum(attempt.strategy_variant == VARIANT_PROMPT for attempt in attempts)
     observed = sum(attempt.is_correct for attempt in attempts) / trials if trials else 0.0
     # Where both arms sit under the null. Shrunk toward the population itself so
     # that a section holding six answers does not hand the arms a centre that is
@@ -742,8 +784,8 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
         result = _strategy_result(key, strategy, values)
         result.update(
             _contrast(
-                [value for value in values if value.strategy_variant == "prompt"],
-                [value for value in values if value.strategy_variant == "control"],
+                [value for value in values if value.strategy_variant == VARIANT_PROMPT],
+                [value for value in values if value.strategy_variant in CONTROL_VARIANTS],
                 baseline,
             )
         )
@@ -845,9 +887,9 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
 
     if adjusted < 0.5:
         standing = (
-            "runs level with answering those questions unprompted"
+            "runs level with answering those questions with no approach suggested"
             if adjusted > -0.5
-            else f"sits {abs(round(adjusted))} points behind answering those questions unprompted"
+            else f"sits {abs(round(adjusted))} points behind answering those questions with no approach suggested"
         )
         return {
             **reading,
@@ -889,8 +931,8 @@ def _strategy_result(key: str, strategy: dict, values: list[Attempt]) -> dict:
     `_section_reading` instead of the latter being a display-time slice of the
     former.
     """
-    prompted = [value for value in values if value.strategy_variant == "prompt"]
-    controls = [value for value in values if value.strategy_variant == "control"]
+    prompted = [value for value in values if value.strategy_variant == VARIANT_PROMPT]
+    controls = [value for value in values if value.strategy_variant in CONTROL_VARIANTS]
     applied = sum(value.strategy_applied is True for value in prompted)
     skipped = sum(value.strategy_applied is False for value in prompted)
     # Verified compliance, kept strictly apart from the self-reported kind
@@ -1032,11 +1074,11 @@ def strategy_performance(user_id: str) -> dict:
         "trials_completed": sum(result["sample"] + result["control_sample"] for result in results),
         "strategies_tested": sum(result["sample"] > 0 for result in results),
         "intro": (
-            "Some questions come with a suggested approach. We compare how you did on those against similar questions where nothing was suggested."
+            "Every question comes with a card, and most of them suggest an approach. We compare how you did on those against the ones that suggested nothing."
         ),
         "empty_state": {
             "title": "Nothing to compare yet.",
-            "body": "Answer a few cases. Every question arrives with a suggested approach.",
+            "body": "Answer a few cases. Every question arrives with a card, and most of them name an approach.",
         },
         "catalog_note": (
             "No source guarantees a 170. Official LSAC guidance comes first; the rest are approaches this app tests against your own results."

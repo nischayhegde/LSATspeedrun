@@ -19,6 +19,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from './api'
 import { AlertSealMark, FocusMark, ScalesMark } from './art-2d/marks'
+import { EconomyLedger } from './economy-ledger'
 import { SoundControls, useSound, useSoundProfile } from './sound'
 import { replayGuidedTour } from './guided-tour-replay'
 import { CHAPTER_DOCK_ID, clearOverlayNote, readOverlayNote, useBlockingOverlay, writeOverlayNote } from './overlays'
@@ -215,14 +216,7 @@ function StreakWelcomeModal({ game, justAdvanced, suppressed }: { game: GameStat
 }
 
 
-export function formatMoney(value: number, compact = false) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-    notation: compact && Math.abs(value) >= 10_000 ? 'compact' : 'standard',
-  }).format(value)
-}
+export { formatMoney } from './format'
 
 
 /**
@@ -266,11 +260,11 @@ export function Brand({ light = false, caseFile = false }: { light?: boolean; ca
   const contents = (
     <>
       <span className="brand-mark"><ScalesMark /></span>
-      <span className="brand-word"><strong>LSAT</strong><small>{caseFile ? 'CASE FILE' : 'TYCOON'}</small></span>
+      <span className="brand-word"><strong>LAWYER</strong><small>{caseFile ? 'CASE FILE' : 'TYCOON'}</small></span>
     </>
   )
-  if (caseFile) return <div className="brand case-brand" aria-label="LSAT Tycoon active case">{contents}</div>
-  return <Link className={`brand ${light ? 'light' : ''}`} to="/progress" aria-label="LSAT Tycoon training lab" data-sound="navigate" data-sound-seed="progress">{contents}</Link>
+  if (caseFile) return <div className="brand case-brand" aria-label="Lawyer Tycoon active case">{contents}</div>
+  return <Link className={`brand ${light ? 'light' : ''}`} to="/progress" aria-label="Lawyer Tycoon training lab" data-sound="navigate" data-sound-seed="progress">{contents}</Link>
 }
 
 
@@ -580,6 +574,14 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           <GuidedTour oriented={user.guided_tour_completed || game.total_cases > 0} />
         </Suspense>
       )}
+      {/* Fixed, and deliberately outside <main>: these figures move while the
+          student is on some other screen, which is the whole reason for it.
+          Focus Mode passes `hidden`, which stops the rendering only — the game
+          query and every mutation that moves these numbers sit above this and
+          keep running, so turning Focus Mode back off shows current values
+          rather than whatever was last on screen. A case in progress owns the
+          viewport, so the ledger stands down for it. */}
+      {game && !isActiveCase && <EconomyLedger game={game} hidden={isFocusMode} />}
       {game && <StreakWelcomeModal game={game} justAdvanced={streakJustAdvanced} suppressed={isOnCaseRoute} />}
     </div>
   )

@@ -102,7 +102,6 @@ body {
 .uw-scene-view-tabs,
 .uw-level-navigator-track,
 .office-upkeep-terms,
-.command-stats,
 .answer-audit-list {
   overscroll-behavior-inline: contain;
   -webkit-overflow-scrolling: touch;
@@ -337,10 +336,6 @@ body {
   .opening-caption { margin-top: 18px; }
   .onboarding-panel { padding: 34px clamp(18px, 6vw, 32px) 42px; }  .office-game-page,
   .empire-game-page { min-height: calc(100dvh - 62px); }
-  .office-command-bar,
-  .empire-command-bar { gap: 14px; }
-  .command-stats { display: flex; max-width: 100%; padding-bottom: 4px; }
-  .command-stats > span { min-width: 148px; }
   .office-explorer { min-height: 470px; }
   .office-upkeep-terms { padding-bottom: 4px; }
 
@@ -520,10 +515,6 @@ body {
   .empire-game-page {
     padding: 16px max(10px, env(safe-area-inset-right)) 27px max(10px, env(safe-area-inset-left));
   }
-  .office-command-bar h1,
-  .empire-command-bar h1 { font-size: clamp(18px, 5.5vw, 22px); line-height: 1.25; }
-  .office-command-bar .pixel-kicker,
-  .empire-command-bar .pixel-kicker { font-size: 8px; line-height: 1.5; }
   .office-explorer {
     min-height: 430px;
     height: min(67vh, 510px);
@@ -912,30 +903,6 @@ body {
   .office-game-page {
     padding: 13px var(--mobile-page-gutter) 28px;
   }
-  .office-command-bar { margin-bottom: 10px; }
-  .office-command-bar h1 {
-    margin-top: 4px;
-    font-size: clamp(20px, 5.8vw, 24px);
-    line-height: 1.15;
-  }
-  .office-command-bar .pixel-kicker { font-size: 9.5px; }
-  .command-stats {
-    width: 100%;
-    padding-bottom: 3px;
-    gap: 7px;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
-  }
-  .command-stats::-webkit-scrollbar { display: none; }
-  .command-stats > span {
-    min-width: min(67vw, 230px);
-    min-height: 48px;
-    flex: 0 0 auto;
-    scroll-snap-align: start;
-  }
-  .command-stats small { font-size: 9.5px; }
-  .command-stats strong { font-size: 11px; }
   .av-office-duo { display: block; position: relative; }
   .office-explorer {
     width: 100%;
@@ -977,9 +944,6 @@ body {
   .empire-game-page {
     padding: 10px var(--mobile-page-gutter) 20px;
   }
-  .map-page .empire-command-bar { min-height: 66px; margin-bottom: 8px; }
-  .empire-command-bar h1 { font-size: clamp(21px, 6vw, 25px); }
-  .empire-command-bar .pixel-kicker { font-size: 9px; }
   .uw-arc-navigation {
     margin: 0;
     padding: 4px;
@@ -1177,7 +1141,6 @@ body {
   .app-shell { padding-bottom: 62px; }
   .office-game-page,
   .empire-game-page { height: calc(100dvh - 54px); }
-  .office-command-bar { display: none; }
   .office-world-shell { width: 100%; margin: 0; }
   .av-office-duo { display: block; position: relative; }
   .office-explorer {
@@ -1190,7 +1153,6 @@ body {
   }
   .av-character-panel { display: none; }  .office-inventory { right: 8px; bottom: 8px; }
 
-  .map-page .empire-command-bar { display: none; }
   .unified-empire { height: 100%; position: relative; }
   .uw-world-ledger { display: none; }
   .uw-map-frame {
@@ -1302,10 +1264,36 @@ body {
     --mobile-chrome-height: 58px;
     --mobile-dock-height: 64px;
     --mobile-safe-bottom: max(8px, env(safe-area-inset-bottom));
-    /* Room for the floating dock plus a little breathing space. Every scrolling
-       route ends with exactly this much padding and nothing else, so the page's
-       own background is what paints behind the dock. */
-    --mobile-dock-clearance: calc(var(--mobile-dock-height) + var(--mobile-safe-bottom) + 14px);
+    /* The economy strip is the second thing anchored to the bottom edge, not a
+       detail of the first: it rests on top of the dock and is measured at 36px
+       plus its gap. Clearance that counted only the dock left the top of the
+       strip 111px off the bottom of the viewport with 86px of padding under the
+       page, so the last row of every scrolling route — the dashboard's skill
+       rows most visibly — stayed under it at maximum scroll with no way to
+       bring it out. Both figures belong in the token, since the strip shows on
+       every route this token is used on. */
+    --mobile-ledger-gap: 10px;
+    --mobile-ledger-height: 36px;
+    /* Room for the floating dock and the strip above it, plus a little
+       breathing space. Every scrolling route ends with exactly this much
+       padding and nothing else, so the page's own background is what paints
+       behind the dock. */
+    --mobile-dock-clearance: calc(
+      var(--mobile-dock-height) + var(--mobile-safe-bottom)
+      + var(--mobile-ledger-gap) + var(--mobile-ledger-height) + 14px
+    );
+    /* The office and the world map stand the ledger down and put their own HUD
+       in that corner instead — the brief toggle, the district guide — anchored
+       one gap higher than the strip and taller than it. Anything floating over
+       a scene clears this figure rather than the one above; the narrative
+       layer reads it for exactly that (see narrative.css), since it renders
+       beside `.app-shell` and cannot select the scene itself. */
+    --mobile-scene-hud-gap: 24px;
+    --mobile-scene-hud-height: 44px;
+    --mobile-scene-clearance: calc(
+      var(--mobile-dock-height) + var(--mobile-safe-bottom)
+      + var(--mobile-scene-hud-gap) + var(--mobile-scene-hud-height) + 14px
+    );
   }
 
   .app-shell:not(.wide-scene-shell):not(.active-case) > main {
@@ -1400,7 +1388,6 @@ body {
   }
 
   /* Full-screen office --------------------------------------------------- */
-  .office-game-page .office-command-bar,
   .office-game-page .office-upkeep-strip,
   .office-game-page .office-milestone-strip,
   .office-game-page .office-gamebar { display: none; }
@@ -1570,7 +1557,6 @@ body {
   .office-mobile-brief-sheet > nav button { min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgba(229, 200, 129, .23); border-radius: 13px; color: #ead9ae; background: rgba(255,255,255,.04); font-size: 11px; }
 
   /* Full-screen world map ----------------------------------------------- */
-  .empire-game-page .empire-command-bar { display: none; }
   .empire-game-page .unified-empire,
   .empire-game-page .uw-map-frame {
     width: 100%;
@@ -2093,6 +2079,26 @@ body {
     font-size: 10px;
     font-weight: 650;
   }
+}
+
+/* The run queue's per-run actions, at both phone and tablet-portrait widths
+   the floating dock covers (`.practice-lab` styles these at 36px tall, which
+   this has to out-specify — not just out-order — to hold at every width). */
+@media (max-width: 900px) {
+  .practice-lab .run-queue-item-actions .run-queue-pause,
+  .practice-lab .run-queue-item-actions .run-queue-discard,
+  .practice-lab .run-queue-item-actions .run-queue-resume {
+    min-height: 44px;
+  }
+  /* A short queue can end close enough to the bottom of the page that its
+     last row opens already tucked under the floating dock — a real
+     hit-test block on Discard/Resume, not just a visual overlap, and true
+     at the default scroll position before anyone touches the page. Nudging
+     the panel itself down is enough room in every case observed; it does
+     not depend on the exact dock height, so it holds independent of that
+     token's own tuning. `.practice-lab .run-queue-panel` zeroes margin
+     unconditionally, so this has to match it, not just add on top of it. */
+  .practice-lab .run-queue-panel { margin-top: 40px !important; }
 }
 
 @media (max-width: 640px) {
@@ -3050,6 +3056,20 @@ body {
     scroll-snap-align: start;
     white-space: nowrap;
   }
+
+  /* Pinned under the app bar rather than left to scroll away. This used to be
+     scoped to 640px, which skipped the one viewport that needs it most: a phone
+     held sideways is 390px tall, and the caseboard's client header alone is
+     taller than what the app bar, the economy strip and the dock leave of that,
+     so the strip came to rest inside the dock's band. Sticky takes it out of
+     there on the first scroll and keeps it in reach after. Both strips have an
+     opaque background of their own, so nothing reads through them. */
+  .performance-page .dash-tabs,
+  .case-lobby .practice-tabs {
+    position: sticky;
+    top: var(--mobile-chrome-height);
+    z-index: 4;
+  }
 }
 
 @media (max-width: 640px) {
@@ -3131,4 +3151,74 @@ body {
   .case-lobby .practice-guide > summary { min-height: 52px; padding-inline: 16px; }
   .case-lobby .practice-guide-body { padding: 0 16px 22px; }
   .practice-loop { grid-template-columns: 1fr; }
+}
+
+/* ---------------------------------------------------------------------------
+   The economy ledger on a narrow screen.
+
+   The desktop card sits in the bottom-left corner, which on a phone belongs to
+   the navigation dock. It becomes a four-column strip resting just above that
+   dock instead, and keeps the same rule as the desktop card: nothing expensive,
+   nothing animated but transform and opacity.
+   --------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .economy-ledger {
+    width: auto;
+    padding: 6px 11px 7px;
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    /* The same terms `--mobile-dock-clearance` reserves room for, so the two
+       cannot drift: the strip rests one gap above the dock, and the dock rests
+       on `--mobile-safe-bottom` rather than on the raw inset. */
+    bottom: calc(var(--mobile-dock-height) + var(--mobile-safe-bottom) + var(--mobile-ledger-gap));
+    min-height: var(--mobile-ledger-height);
+    /* One row rather than two. A phone fold is tight enough that the second
+       row was covering the last line of the dashboard's practice note, which
+       is meant to be readable without scrolling. */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0 10px;
+    border-radius: 12px;
+  }
+  .economy-reading strong { font-size: 12.5px; }
+  .economy-delta { top: -1px; font-size: 7px; }
+
+  /* The office and the world map run full-bleed on a phone, and their own HUD
+     already owns every edge — the brief toggle and scene status on the office,
+     the district guide and Explore sheet on the map. Rather than stack a fifth
+     floating element on top of them, the ledger stands down for those two
+     surfaces only; the same figures are in the Today brief and in the map's own
+     headquarters panel. It is unaffected everywhere else, including the Firm
+     screen where most purchases are made. */
+  .wide-scene-shell .economy-ledger { display: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   A tablet held sideways.
+
+   Past 900px every rule above stops matching and the desktop layout comes back
+   — on a device with no pointer, where the desktop's control sizes are the only
+   thing wrong with it. An iPad at 1180x820 has the room for that layout; what
+   it does not have is a cursor, and the header row was the worst of it, with
+   the Focus toggle at 38x42 the smallest thing on the screen.
+
+   This is a floor on the shared chrome, not a touch layout: a proper one is a
+   pass of its own, since the sub-44px controls left over are spread across the
+   individual pages and most of those files are in flight. Scoping on the
+   pointer rather than the width means a touchscreen laptop gets it too, which
+   is the right answer there for the same reason.
+   --------------------------------------------------------------------------- */
+@media (pointer: coarse) and (min-width: 901px) {
+  /* The toggle deliberately matches the tabs beside it (see styles.css), so
+     both move together rather than the plate growing out of its row. */
+  .desktop-nav a,
+  .header-focus-toggle {
+    height: 44px;
+    min-width: 44px;
+  }
+  .header-right button,
+  .account-menu-trigger,
+  .dash-tabs button,
+  .practice-tabs button {
+    min-height: 44px;
+  }
 }

@@ -194,28 +194,79 @@ export function streetWidth(streetClass: StreetClass) {
 }
 
 /**
+ * How far the paving reaches beyond the kerb on each side, by street class.
+ *
+ * A street is its carriageway *and* its pavements; the plot line is behind the
+ * paving, not at the kerb. An alley has neither kerb nor pavement, so its plots
+ * come right up to the carriageway.
+ */
+const STREET_VERGE: Record<StreetClass, number> = {
+  arterial: .37,
+  collector: .37,
+  local: .37,
+  alley: 0,
+}
+
+/**
+ * Half the full paved width of a street: carriageway, kerb and footway.
+ *
+ * `addPlannedStreets` draws its apron to exactly this, so a caller that insets
+ * from it and the drawn paving cannot disagree about where the street ends.
+ */
+export function streetHalfPaved(streetClass: StreetClass) {
+  return STREET_WIDTH[streetClass] / 2 + STREET_VERGE[streetClass]
+}
+
+/**
  * Builds the block lattice implied by a set of north–south and east–west
- * street lines. Each block is inset by half of each bounding street's width,
- * so the carriageway is genuinely between blocks rather than painted over
- * them.
+ * street lines. Each block is inset by half of each bounding street's *paved*
+ * width, so the whole street — carriageway and both pavements — is genuinely
+ * between blocks rather than painted over them.
+ *
+ * Insetting by the carriageway alone, which is what this did, is the reason
+ * people were seen walking through buildings. It put the full width of every
+ * pavement inside the block: `addPlannedStreets` centres a footway .28 beyond
+ * the kerb with .09 of paving either side, so the entire walkable band sat
+ * between .19 and .37 *inside* the block that the buildings then filled. A
+ * walker is bound to its footway polyline and may only shift within that
+ * footway's half-width, so it had no way not to be inside a frontage.
+ *
+ * Measured over 600 deterministic frames before this change, walkers were
+ * inside a planned building for 20.5% of all samples on the Old Quarter and
+ * 22.1% on The Circuit — and neither figure had ever been seen, because the
+ * collision harness skipped instanced meshes and every planned building is one.
  */
 export function blocksFromGrid(
   avenues: Array<{ position: number; streetClass: StreetClass }>,
   streets: Array<{ position: number; streetClass: StreetClass }>,
-  options?: { rotation?: (column: number, row: number) => number; seed?: number },
+  options?: { rotation?: (column: number, row: number) => number; seed?: number; verge?: boolean },
 ) {
   const blocks: BlockRect[] = []
   const seedBase = options?.seed ?? 0
+  // `verge: false` keeps the old plot line, at the kerb.
+  //
+  // Only The Circuit's villages ask for it, and only because their authored
+  // props were sited by eye against the old lattice: measured over the same 600
+  // frames, correcting the plot line there moved walkers in solid geometry from
+  // 42.2% to 51.2% of samples, because the farmstead, the halt shelter and the
+  // milestones stayed put while everything around them stepped back and the
+  // crowd's obstacle set — which is what decides where in a pavement a walker
+  // actually stands — changed underneath them. The same correction on the Old
+  // Quarter took 27.9% to 10.8%. The villages need their props re-sited before
+  // they can have it, and that is a separate piece of work.
+  const inset = options?.verge === false
+    ? (streetClass: StreetClass) => STREET_WIDTH[streetClass] / 2
+    : streetHalfPaved
   for (let column = 0; column < avenues.length - 1; column += 1) {
     const west = avenues[column]
     const east = avenues[column + 1]
     for (let row = 0; row < streets.length - 1; row += 1) {
       const north = streets[row]
       const south = streets[row + 1]
-      const minX = west.position + STREET_WIDTH[west.streetClass] / 2
-      const maxX = east.position - STREET_WIDTH[east.streetClass] / 2
-      const minZ = north.position + STREET_WIDTH[north.streetClass] / 2
-      const maxZ = south.position - STREET_WIDTH[south.streetClass] / 2
+      const minX = west.position + inset(west.streetClass)
+      const maxX = east.position - inset(east.streetClass)
+      const minZ = north.position + inset(north.streetClass)
+      const maxZ = south.position - inset(south.streetClass)
       const width = maxX - minX
       const depth = maxZ - minZ
       if (width < 1.4 || depth < 1.4) continue

@@ -27,6 +27,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { formatMoney } from './components'
 import { rivalSiteArt } from './art/assets'
+import { RivalCaptureCutscene } from './rival-capture-cutscene'
 import { useSound } from './sound'
 import type { GameAsset, GameResponse, GameState, RivalOperation, RivalTarget } from './types'
 import './rival-war-room.css'
@@ -161,6 +162,11 @@ export function RivalWarRoom({
   const queryClient = useQueryClient()
   const { play } = useSound()
   const [localKey, setLocalKey] = useState<string | null>(null)
+  // The cutscene's own lifetime, not derived from `targets`/`rivals`: the
+  // moment a rival is bought it drops out of both of those, and the cutscene
+  // has to keep showing the firm that was just absorbed rather than vanish
+  // with it or flip to whatever the selection lands on next.
+  const [capturedAsset, setCapturedAsset] = useState<GameAsset | null>(null)
 
   const rivals = useMemo(
     () => game.catalog.assets.filter((asset) => asset.type === 'rival').sort((a, b) => a.tier - b.tier),
@@ -195,6 +201,12 @@ export function RivalWarRoom({
     onSuccess: ({ game: next }, key) => {
       storeGame(queryClient, next)
       void play('promotion', { id: `acquire:${next.id}:${key}`, seed: key, intensity: .92 })
+      // `next.catalog.assets` carries every asset regardless of ownership —
+      // unlike `story.rival_targets`, which drops a rival the instant it is
+      // owned — so this is the one place still holding the firm's name, art
+      // and description at the exact moment it becomes available to look up.
+      const won = next.catalog.assets.find((asset) => asset.key === key && asset.type === 'rival')
+      if (won) setCapturedAsset(won)
     },
   })
 
@@ -215,6 +227,7 @@ export function RivalWarRoom({
           <h3>Every rival firm now carries your crest.</h3>
           <p>All {rivals.length} competing practices have been absorbed. The war room is quiet; the caseboard is where the story goes from here.</p>
         </div>
+        {capturedAsset && <RivalCaptureCutscene asset={capturedAsset} onClose={() => setCapturedAsset(null)} />}
       </section>
     )
   }
@@ -320,6 +333,7 @@ export function RivalWarRoom({
           {operation.error instanceof Error ? operation.error.message : acquire.error instanceof Error ? acquire.error.message : 'That move could not be made.'}
         </p>
       )}
+      {capturedAsset && <RivalCaptureCutscene asset={capturedAsset} onClose={() => setCapturedAsset(null)} />}
     </section>
   )
 }

@@ -1,3 +1,13 @@
+"""Verify the coaching pipeline end to end against a disposable account.
+
+The canary answers one real case the way a player does — including the strategy
+gate that case arms — then waits for the coaching job to come back through
+whichever transport it was pointed at, and checks that the case settled exactly
+once. Nothing here is allowed to take a shortcut through `app.enforcement`: a
+canary that skipped the gate, or that ran with enforcement disabled, would stop
+covering the path every real submission takes.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -10,6 +20,7 @@ from botocore.config import Config
 from sqlalchemy import delete, func, select
 
 from app import create_app
+from app.enforcement import LEVEL_FULL, STATUS_SATISFIED, GateRejection
 from app.extensions import db
 from app.game import create_profile
 from app.jobs import enqueue_coaching_job, queue_ready
@@ -25,6 +36,17 @@ from app.models import (
 from app.services import create_study_session, serialize_session, submit_attempt
 
 
+# The approach the canary works the case with. Every question carries a strategy
+# trial, and the prompt arm arms a blocking gate that refuses an answer until the
+# approach's operations are on the record, so the canary has to do one of them
+# for real. `prephrase` is the cheapest of the thirteen to do honestly: one
+# written prediction, checked against this question's own text. It is also the
+# only family with no dependence on how the stimulus happens to split into
+# sentences or paragraphs, so it cannot degrade to "no gate" on some questions
+# and quietly stop being tested. See `GATES` in app/enforcement.py.
+CANARY_STRATEGY = "prephrase"
+
+
 def _specific_reasoning(item: SessionItem) -> str:
     question = item.question
     correct_choice = next(choice for choice in question.choices if choice.label == question.correct_answer)
@@ -33,6 +55,44 @@ def _specific_reasoning(item: SessionItem) -> str:
         f"The decisive issue in this specific question is: {question.stem} "
         f"The supplied text says {source_text[:600]} Therefore choice {question.correct_answer}, "
         f"which states {correct_choice.canonical_text}, best follows from that evidence."
+    )
+
+
+def _arm_canary_gate(item: SessionItem) -> None:
+    """Put the canary's chosen approach on this case, in its blocking form.
+
+    Which approach a question offers is a per-student bandit draw, so leaving it
+    alone would make every deploy test one of thirteen gates at random. Pinning
+    it is a decision about *which* approach is offered, which is the same thing
+    `assign_strategy_trial` does; it is not a decision about whether the gate is
+    enforced. The gate below still blocks, still runs every check, and is still
+    the copy that decides, because there is no way to ask it not to be.
+    """
+    item.strategy_key = CANARY_STRATEGY
+    item.strategy_variant = "prompt"
+    item.strategy_enforcement_level = LEVEL_FULL
+    # The propensity of landing in the arm this item now carries. Recorded for
+    # the same reason a real assignment records it, even though this account is
+    # deleted before any analysis could read it.
+    item.strategy_propensity = 0.75
+    db.session.commit()
+
+
+def _prediction(item: SessionItem) -> str:
+    """What the credited answer has to do, said in this question's own terms.
+
+    This is the artifact the gate asks for, and it has to survive the same
+    checks a player's prediction does: six words, thirty characters, more than
+    one distinct idea, and neither the stem nor the stimulus read back. It is
+    built from the credited choice rather than from a fixed sentence so that it
+    is a claim about this question and could not be reused on another one.
+    """
+    question = item.question
+    credited = next(choice for choice in question.choices if choice.label == question.correct_answer)
+    claim = " ".join(credited.canonical_text.split())[:280].rstrip(" .,;:")
+    return (
+        f"It has to establish that {claim}, and a choice that leaves that unsettled "
+        "does not finish the task this stem sets."
     )
 
 
@@ -60,7 +120,11 @@ def _invoke_lambda(function_name: str, job_id: str) -> None:
         raise RuntimeError("The direct Lambda coaching invocation rejected its job.")
 
 
-def run_smoke_test(timeout_seconds: int, lambda_function: str | None = None) -> dict:
+def run_smoke_test(
+    timeout_seconds: int,
+    lambda_function: str | None = None,
+    transport: str = "sqs",
+) -> dict:
     app = create_app({"AUTO_SEED": False, "DEV_AUTH_ENABLED": False})
     smoke_token = uuid.uuid4().hex
     smoke_email = f"deploy-smoke+{smoke_token}@example.invalid"
@@ -69,8 +133,12 @@ def run_smoke_test(timeout_seconds: int, lambda_function: str | None = None) -> 
 
     with app.app_context():
         try:
-            if app.config.get("AI_JOBS_MODE") != "sqs" or not queue_ready():
-                raise RuntimeError("The SQS coaching worker is not configured.")
+            if app.config.get("AI_JOBS_MODE") != transport or not queue_ready():
+                raise RuntimeError(f"The {transport} coaching worker is not configured.")
+            # A canary that ran with the gates switched off would pass without
+            # covering what every real submission goes through.
+            if not app.config.get("STRATEGY_ENFORCEMENT_ENABLED"):
+                raise RuntimeError("Strategy enforcement is disabled, so this run would not test it.")
 
             user = User(
                 email=smoke_email,
@@ -95,22 +163,50 @@ def run_smoke_test(timeout_seconds: int, lambda_function: str | None = None) -> 
             if not item:
                 raise RuntimeError("The smoke-test case was not created.")
 
+            _arm_canary_gate(item)
+            gate = (serialize_session(session).get("current_item") or {}).get("strategy_gate") or {}
+            if gate.get("strategy_key") != CANARY_STRATEGY or not gate.get("blocking"):
+                raise RuntimeError("The smoke-test case did not serve the blocking strategy gate.")
+
             payload = {
                 "item_id": item.id,
                 "selected_label": item.question.correct_answer,
                 "reasoning": _specific_reasoning(item),
+                # Choosing the approach is what arms the gate. The interface's
+                # other option is to decline it, which needs no artifact and is
+                # recorded as a non-application, but declining would leave
+                # enforcement untested. The canary does the work instead.
+                "strategy_applied": True,
+                "strategy_prompt_ms": 4000,
+                "strategy_gate_ms": 6000,
             }
-            # Every case question now carries a strategy trial, and a prompted
-            # trial refuses an answer without an explicit use/skip decision.
-            if item.strategy_key and item.strategy_variant == "prompt":
-                payload["strategy_applied"] = True
-                payload["strategy_prompt_ms"] = 4000
-            attempt, _duplicate = submit_attempt(
-                user,
-                session,
-                payload,
-                f"deploy-smoke-{smoke_token}",
-            )
+            # The gate has to actually refuse an unfinished approach, or the
+            # artifact below proves nothing. This costs one rejected submission
+            # and leaves no attempt behind.
+            try:
+                submit_attempt(user, session, payload, f"deploy-smoke-gate-{smoke_token}")
+            except GateRejection:
+                db.session.rollback()
+            else:
+                raise RuntimeError("The strategy gate accepted an answer with no artifact.")
+            if Attempt.query.filter_by(user_id=smoke_user_id).count():
+                raise RuntimeError("A refused strategy gate left an attempt behind.")
+
+            payload["strategy_artifact"] = {"fields": {"prediction": _prediction(item)}}
+            try:
+                attempt, _duplicate = submit_attempt(
+                    user,
+                    session,
+                    payload,
+                    f"deploy-smoke-{smoke_token}",
+                )
+            except GateRejection as rejection:
+                messages = "; ".join(entry["message"] for entry in rejection.errors)
+                raise RuntimeError(
+                    f"The canary's own {CANARY_STRATEGY} artifact did not satisfy the gate: {messages}"
+                ) from rejection
+            if attempt.strategy_gate_status != STATUS_SATISFIED:
+                raise RuntimeError("The smoke-test answer did not clear the strategy gate.")
             attempt_id = attempt.id
             expected_choice_count = len(item.question.choices)
             if lambda_function:
@@ -206,7 +302,10 @@ def run_smoke_test(timeout_seconds: int, lambda_function: str | None = None) -> 
                 "score": settlement.total_score,
                 "payout": settlement.payout,
                 "exactly_once": True,
-                "transport": "direct-lambda" if lambda_function else "sqs",
+                "transport": "direct-lambda" if lambda_function else transport,
+                "strategy_key": attempt.strategy_key,
+                "strategy_gate_status": attempt.strategy_gate_status,
+                "gate_refused_empty_artifact": True,
             }
         finally:
             db.session.rollback()
@@ -225,19 +324,35 @@ def run_smoke_test(timeout_seconds: int, lambda_function: str | None = None) -> 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Verify the production SQS -> Lambda -> TrueFoundry -> settlement path.",
+        description="Verify the strategy gate -> queue -> TrueFoundry -> settlement path.",
     )
     parser.add_argument("--timeout-seconds", type=int, default=180)
     parser.add_argument(
         "--lambda-function",
         help="Invoke this Lambda directly instead of allowing SQS to deliver the smoke job.",
     )
+    parser.add_argument(
+        "--transport",
+        choices=("sqs", "local"),
+        default="sqs",
+        help=(
+            "Which worker drains the job. 'local' runs the same job pipeline on a background "
+            "thread in this process, which verifies everything except the SQS and Lambda hop "
+            "and needs no AWS access."
+        ),
+    )
     args = parser.parse_args()
     if args.timeout_seconds < 30 or args.timeout_seconds > 300:
         parser.error("--timeout-seconds must be between 30 and 300")
+    if args.lambda_function and args.transport != "sqs":
+        parser.error("--lambda-function replaces the SQS hop, so it cannot be used with --transport local")
     print(
         json.dumps(
-            run_smoke_test(args.timeout_seconds, lambda_function=args.lambda_function),
+            run_smoke_test(
+                args.timeout_seconds,
+                lambda_function=args.lambda_function,
+                transport=args.transport,
+            ),
             separators=(",", ":"),
         )
     )

@@ -2121,6 +2121,24 @@ def test_purchases_and_passive_income_are_account_bound(app):
     )
     assert manager["benefit"] == ASSET_BY_KEY["office_manager"]["benefit"]
 
+    # The office scene reports what each item contributes, so the two numbers
+    # behind that readout are published rather than left to be scraped out of
+    # `benefit`. They have to agree with the catalog exactly: an item that earns
+    # by the hour publishes its rate, and one that only multiplies case fees
+    # publishes a rate of nothing at all rather than an absent field.
+    associate = next(
+        asset for asset in collected.json["game"]["catalog"]["assets"] if asset["key"] == "junior_associate"
+    )
+    assert associate["passive_hourly"] == ASSET_BY_KEY["junior_associate"]["passive_hourly"]
+    assert associate["payout_mult"] == ASSET_BY_KEY["junior_associate"]["payout_mult"]
+    assert manager["payout_mult"] == ASSET_BY_KEY["office_manager"]["payout_mult"]
+    assert "passive_hourly" not in manager
+
+    # Effects that no client surface reads stay private.
+    for private in ("staff_flat", "storage_hours", "streak_bonus_cap", "reputation_guard"):
+        assert private not in associate
+        assert private not in manager
+
 
 def test_cosmetics_are_purchasable_account_bound_and_respect_their_requirement(app):
     first = app.test_client()
@@ -2163,13 +2181,22 @@ def test_cosmetics_are_purchasable_account_bound_and_respect_their_requirement(a
     assert "banker_lamp" in bought.json["game"]["owned_assets"]
     assert first.post("/v1/game/purchases", json={"asset_key": "banker_lamp"}, headers=first_headers).status_code == 409
 
-    # Decor buys nothing but the view: no passive income and no payout effect
-    # leaks into the serialized catalog entry.
+    # Decor buys nothing but the view, and the catalog entry has to say so in
+    # the payload rather than merely omit the evidence. The office scene reads
+    # these two fields to decide what an item is, so "absent" is what it uses to
+    # mean "this genuinely earns nothing" -- a cosmetic that acquired either
+    # field would start claiming an income it does not have.
+    #
+    # This once passed because every effect was stripped from every asset. It
+    # now passes because decor really has no economics, which is the thing worth
+    # asserting: `junior_associate` in the passive-collection test above proves
+    # the same payload does publish both numbers when they exist.
     assert bought.json["game"]["passive_income"]["hourly_rate"] == 0
     catalog_lamp = next(asset for asset in bought.json["game"]["catalog"]["assets"] if asset["key"] == "banker_lamp")
     assert catalog_lamp["owned"] is True
     assert catalog_lamp["benefit"] == lamp["benefit"]
     assert "payout_mult" not in catalog_lamp
+    assert "passive_hourly" not in catalog_lamp
 
     assert "banker_lamp" not in second.get("/v1/game").json["game"]["owned_assets"]
 
@@ -2928,7 +2955,135 @@ def test_every_case_carries_a_strategy_trial(app):
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
         # Every position, not just the old position % 4 == 2 cadence.
         assert [item.position for item in items if item.strategy_key] == [0, 1, 2, 3, 4, 5, 6]
-        assert all(item.strategy_variant in {"prompt", "control"} for item in items)
+        assert all(item.strategy_variant in {"prompt", "control_visible"} for item in items)
+
+
+def test_every_item_in_a_ten_question_run_arrives_with_a_card(app):
+    """End to end, over a real run of ten: no question arrives with nothing.
+
+    This is the whole point of the visible control. A quarter of these carry the
+    neutral card instead of a technique, which is what keeps the control arm —
+    and therefore the approach ranking, which is a difference against it —
+    alive. What the student must never see is a question with no card at all.
+
+    Ten is the production `PRACTICE_SESSION_SIZE`, and the size is requested
+    explicitly because the fixture runs smaller runs everywhere else.
+    """
+    from app.services import serialize_item
+
+    client = app.test_client()
+    headers = login(client, "ten-question-cards@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", json={"size": 10}, headers=headers).json["session"]
+
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        assert len(items) == 10
+
+        cards = []
+        for item in items:
+            payload = serialize_item(item, commit=False)
+            prompt, neutral = payload["strategy_trial"], payload["strategy_neutral"]
+            # Exactly one card per question, never both and never neither.
+            assert bool(prompt) != bool(neutral), f"position {item.position} has {prompt=} {neutral=}"
+            cards.append("prompt" if prompt else "neutral")
+            if neutral:
+                # The neutral arm is the baseline, so it is never gated. This
+                # falls out of `assign_enforcement_level` refusing any variant
+                # that is not the prompt arm, which is why enforcement needed no
+                # change to make this true.
+                assert payload["strategy_gate"] is None
+                assert item.strategy_enforcement_level == "none"
+
+        assert len(cards) == 10
+        # Both arms are reachable in a run of ten, which is what makes this a
+        # trial rather than a universal prompt wearing one.
+        assert set(cards) <= {"prompt", "neutral"}
+
+
+def test_the_neutral_arm_needs_no_decision_and_records_no_self_report(app):
+    """A card that offers nothing cannot be applied or declined.
+
+    The prompt arm requires a bool `strategy_applied` and rejects a submission
+    without one. The neutral arm must not, because there is no technique to
+    report on — and recording one anyway would put a self-report on the control
+    side of the very comparison that exists to avoid depending on self-reports.
+    """
+    client = app.test_client()
+    headers = login(client, "neutral-no-decision@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", json={"size": 3}, headers=headers).json["session"]
+
+    with app.app_context():
+        study = db.session.get(StudySession, session["id"])
+        item = next(value for value in study.items if value.position == study.current_index)
+        item.strategy_key = "argument_core"
+        item.strategy_variant = "control_visible"
+        item.strategy_enforcement_level = "none"
+        db.session.commit()
+        item_id = item.id
+
+    response = client.post(
+        f"/v1/study-sessions/{session['id']}/attempts",
+        json={
+            "item_id": item_id,
+            "selected_label": "C",
+            "reasoning": explanation("the controlling relationship"),
+            "confidence": 3,
+            # Deliberately no `strategy_applied`. The prompt arm would 400 here.
+        },
+        headers={**headers, "Idempotency-Key": "neutral-1"},
+    )
+    assert response.status_code == 200, response.json
+
+    with app.app_context():
+        attempt = Attempt.query.one()
+        assert attempt.strategy_variant == "control_visible"
+        assert attempt.strategy_key == "argument_core"
+        # No self-report and no gate status: nothing was offered, so nothing was
+        # applied, declined, satisfied or attested.
+        assert attempt.strategy_applied is None
+        assert attempt.strategy_gate_status is None
+
+
+def test_the_visible_control_still_counts_as_the_control_side_of_the_ranking(app):
+    """The renamed arm has to keep powering the LR/RC approach ranking.
+
+    The ranking is a shrunk intention-to-treat difference against the arm that
+    offered no technique. If the new label stopped counting as that arm,
+    `_contrast_sample` would sit at zero, nothing would ever clear
+    `MIN_CONTRAST_SAMPLE`, and the panel would go on advising students to
+    collect un-prompted questions the app no longer produces. Both control
+    labels therefore land on the same side, and the mix does not change the
+    reading.
+    """
+    with app.app_context():
+        user = User(email="visible-control-ranks@example.test", display_name="Ranks")
+        db.session.add(user)
+        db.session.flush()
+        lr = Question.query.filter_by(section="Logical Reasoning").order_by(Question.id).first()
+
+        # 20 prompted against 20 controls is an effective comparison of exactly
+        # 10 a side, the smallest split that can carry a named approach — and
+        # the control side is split across the old label and the new one.
+        _seed_strategy_trials(
+            user,
+            lr,
+            key="argument_core",
+            prompt=(20, 16),
+            control=(10, 5),
+            tag="v-new",
+            control_variant="control_visible",
+        )
+        _seed_strategy_trials(user, lr, key="argument_core", prompt=(0, 0), control=(10, 5), tag="v-old")
+
+        sections = _sections(user)
+        result = next(value for value in sections["LR"]["results"] if value["key"] == "argument_core")
+        assert result["control_sample"] == 20, "both control labels have to count as control"
+        assert result["contrast_sample"] == 10.0
+        assert result["eligible"] is True
+        assert sections["LR"]["status"] == "leader"
+        assert sections["LR"]["leader"]["key"] == "argument_core"
 
 
 def test_the_diagnostic_still_has_no_strategy_trial(app):
@@ -2962,11 +3117,21 @@ def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
         first = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
         second = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
         assert first == second
-        # The hidden control arm still exists alongside the prompts.
-        assert {trial["variant"] for trial in first} <= {"prompt", "control"}
+        # The control arm still exists alongside the prompts. It is visible now
+        # rather than hidden, but it is still an arm that offers no technique.
+        assert {trial["variant"] for trial in first} <= {"prompt", "control_visible"}
 
 
-def test_strategy_control_assignment_is_stable_and_hidden(app, monkeypatch):
+def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monkeypatch):
+    """The control arm is visible now, and still offers nothing.
+
+    It used to be invisible: a quarter of questions arrived bare. A card appears
+    on those questions now and says so in as many words, which is what makes a
+    prompt arrive on every question in a run without deleting the arm the
+    dashboard's approach ranking is a difference against. What has not changed
+    is the assignment — no technique is offered, so `strategy_trial` is still
+    absent and there is still no decision to make.
+    """
     client = app.test_client()
     headers = login(client, "strategy-control@example.test")
     create_game(client, headers)
@@ -2978,8 +3143,11 @@ def test_strategy_control_assignment_is_stable_and_hidden(app, monkeypatch):
         question = Question.query.order_by(Question.id).first()
         monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.0)
         assigned = assign_strategy_trial(user.id, question, "deep", 2)
-        assert assigned["variant"] == "control"
+        assert assigned["variant"] == "control_visible"
         assert assigned["key"] in {"argument_core", "prephrase", "scope_precision", "conditional_chain"}
+        # The arm's propensity is untouched by making it visible, so the
+        # inverse-propensity weighting in `_arm_rate` reads the same as before.
+        assert assigned["propensity"] == 0.25
 
         session = StudySession(
             user_id=user.id,
@@ -3001,7 +3169,16 @@ def test_strategy_control_assignment_is_stable_and_hidden(app, monkeypatch):
         )
         db.session.add(item)
         db.session.flush()
-        assert serialize_item(item)["strategy_trial"] is None
+        payload = serialize_item(item)
+        # No technique was offered, so nothing here can be applied or skipped.
+        assert payload["strategy_trial"] is None
+        assert payload["strategy_gate"] is None
+        # But a card does arrive, and it reads as a decision rather than a gap.
+        assert payload["strategy_neutral"] is not None
+        assert payload["strategy_neutral"]["variant"] == "control_visible"
+        assert payload["strategy_neutral"]["plain_title"]
+        assert payload["strategy_neutral"]["plain_line"]
+        assert payload["strategy_neutral"]["note"]
 
 
 def test_strategy_candidates_respect_causal_and_assumption_boundaries(app):
@@ -3246,12 +3423,18 @@ def _seed_strategy_trials(
     tag: str,
     applied: bool | None = True,
     propensity: bool = True,
+    control_variant: str = "control",
 ) -> None:
     """Give ``user`` a strategy trial record on ``question``.
 
     ``prompt``/``control`` are (observations, correct) per arm. Everything lands
     on one question deliberately: the section a trial is counted under comes off
     that question, which is the property most of these tests are about.
+
+    ``control_variant`` defaults to the pre-existing ``control`` label rather
+    than the visible arm that replaced it, so every caller here keeps proving
+    that historical control rows still count as control. Pass
+    ``control_visible`` to seed the arm assigned today.
     """
     session = StudySession(
         user_id=user.id,
@@ -3265,7 +3448,7 @@ def _seed_strategy_trials(
     db.session.add(session)
     db.session.flush()
     position = 0
-    for variant, (observations, correct) in (("prompt", prompt), ("control", control)):
+    for variant, (observations, correct) in (("prompt", prompt), (control_variant, control)):
         for index in range(observations):
             item = SessionItem(
                 session_id=session.id,

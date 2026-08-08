@@ -403,7 +403,7 @@ export function GuidedTour({ oriented }: { oriented: boolean }) {
   const placement = highlight && highlight.left + highlight.width / 2 > window.innerWidth * .55 ? 'left' : 'right'
 
   return (
-    <div className={`guided-tour guided-tour-mode-${step.kind}`} role="dialog" aria-modal="true" aria-label="LSAT Tycoon guided introduction">
+    <div className={`guided-tour guided-tour-mode-${step.kind}`} role="dialog" aria-modal="true" aria-label="Lawyer Tycoon guided introduction">
       {step.kind === 'premise' && (
         <div className="tour-cinematic" aria-hidden="true">
           <div className="tour-skyline"><i /><i /><i /><i /><i /></div>

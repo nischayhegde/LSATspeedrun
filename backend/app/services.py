@@ -46,7 +46,13 @@ from .enforcement import (
     build_gate,
     validate_artifact,
 )
-from .strategies import assign_strategy_trial, serialize_strategy, strategy_performance
+from .strategies import (
+    VARIANT_CONTROL_VISIBLE,
+    VARIANT_PROMPT,
+    assign_strategy_trial,
+    serialize_strategy,
+    strategy_performance,
+)
 
 
 PRACTICE_STYLES = {"cases"}
@@ -54,6 +60,18 @@ FEEDBACK_POLICIES = {"immediate", "delayed"}
 EVIDENCE_CLASS = {
     "cases": "coached_practice",
     "diagnostic": "diagnostic",
+}
+
+# The control arm's card. It names no technique, because that is the condition
+# being measured, so it has to read as a deliberate instruction rather than as
+# a prompt that failed to arrive — a student who reads it as a bug learns the
+# wrong thing about the feature, and a student who waits for it to load loses
+# time this arm is supposed to spend the same way the prompt arm does.
+NEUTRAL_STRATEGY_CARD = {
+    "variant": VARIANT_CONTROL_VISIBLE,
+    "plain_title": "No set approach for this one",
+    "plain_line": "Work this one however you want. Nothing is being suggested here on purpose.",
+    "note": "Some questions come with an approach and some deliberately do not. This is one that does not.",
 }
 # Retained for the seed scripts and for reading historical `interval_index`
 # values; scheduling itself is now `app/scheduling.py` (FSRS-6).
@@ -404,7 +422,7 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
     client = CLIENT_BY_KEY.get(client_key, CLIENT_BY_KEY["walk_in"])
     strategy_trial = (
         serialize_strategy(item.strategy_key)
-        if item.strategy_key and item.strategy_variant == "prompt"
+        if item.strategy_key and item.strategy_variant == VARIANT_PROMPT
         else None
     )
     return {
@@ -413,8 +431,18 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
         "section_index": item.section_index,
         "requires_reasoning": item.requires_reasoning,
         "reasoning_min_chars": reasoning_min_chars(item.session),
-        "strategy_trial": ({**strategy_trial, "variant": "prompt"} if strategy_trial else None),
+        "strategy_trial": ({**strategy_trial, "variant": VARIANT_PROMPT} if strategy_trial else None),
         "strategy_gate": build_gate(item) if strategy_trial else None,
+        # Kept as its own field rather than folded into `strategy_trial`, which
+        # means "a named technique was offered" everywhere on both sides of the
+        # wire — the submit path keys the required decision off it, and a
+        # neutral card asks for no decision because there is nothing to apply
+        # or to skip.
+        "strategy_neutral": (
+            dict(NEUTRAL_STRATEGY_CARD)
+            if item.strategy_variant == VARIANT_CONTROL_VISIBLE
+            else None
+        ),
         "served_at": _iso_utc(item.served_at),
         "elapsed_ms": _elapsed_ms(item),
         "target_time_seconds": item.target_time_seconds,
@@ -1386,7 +1414,7 @@ def submit_attempt(
     strategy_gate_status = None
     strategy_artifact = None
     enforcement_level = item.strategy_enforcement_level or LEVEL_NONE
-    if item.strategy_key and item.strategy_variant == "prompt":
+    if item.strategy_key and item.strategy_variant == VARIANT_PROMPT:
         raw_strategy_applied = payload.get("strategy_applied")
         if not isinstance(raw_strategy_applied, bool):
             raise ValueError("strategy_decision_required")
@@ -1396,7 +1424,15 @@ def submit_attempt(
             strategy_gate_ms = max(0, min(int(payload.get("strategy_gate_ms") or 0), 10 * 60 * 1000))
         except (TypeError, ValueError):
             raise ValueError("invalid_strategy_prompt_time")
-        if enforcement_level == LEVEL_NONE:
+        # A gate whose operations annotate the stimulus has nothing to annotate
+        # when the stimulus does not split, and `build_gate` returns None rather
+        # than serve steps that could never be satisfied. The level was fixed at
+        # session creation and cannot know that, so asking `validate_artifact`
+        # for an artifact here would reject a student who was shown no steps to
+        # produce one from — "Finish the approach first", with nothing to
+        # finish, escapable only by skipping. The gate the student actually met
+        # is the one that decides, and they met none.
+        if enforcement_level == LEVEL_NONE or build_gate(item) is None:
             strategy_gate_status = STATUS_UNENFORCED
         elif not strategy_applied:
             # Declining the approach is a legitimate answer, not a failure. It

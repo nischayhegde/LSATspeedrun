@@ -1180,28 +1180,83 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .pixel-portrait.mood-happy { animation: portrait-hop 2.2s steps(2) infinite; }
 @keyframes portrait-hop { 50% { transform: translateY(-3px); } }/* The explorable office */
 .office-game-page { min-height: calc(100vh - 68px); padding: 28px clamp(16px, 2.6vw, 42px) 55px; color: #f7e9bd; background: #101724; }
-.office-command-bar, .empire-command-bar {
-  max-width: 1660px;
-  margin: 0 auto 17px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-}
 .pixel-kicker { color: #66c5bd; font-size: 11px; }
-.office-command-bar h1, .empire-command-bar h1 { margin: 6px 0 0; color: #fff0c1; font-family: var(--font-pixel); font-size: clamp(21px, 2.5vw, 34px); line-height: 1.1; text-transform: uppercase; }
-.office-command-bar h1 em { color: #edc45d; font-style: normal; }
-.command-stats { display: flex; gap: 8px; }
-.command-stats > span { min-width: 160px; min-height: 51px; padding: 8px 40px 8px 10px; position: relative; border: 2px solid #3c5265; background: #172438; box-shadow: inset -3px -3px #0e1827; }
-.command-stats small, .command-stats strong { display: block; font-family: var(--font-pixel); }
-.command-stats small { color: #6bc8c1; font-size: 10px; letter-spacing: .09em; }
-.command-stats strong { margin-top: 5px; max-width: 160px; overflow: hidden; color: #f8e8b7; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.command-stats svg { width: 19px; position: absolute; right: 10px; top: 14px; color: #edc45d; }
-.command-stats > span.has-arrears { border-color: #a86b56; background: #352633; }
-.command-stats > span.has-arrears small { color: #e39a7b; }
 .office-world-shell { max-width: 1660px; margin: auto; position: relative; }
+
+/* ---------------------------------------------------------------------------
+   The economy ledger: fixed, always on, and therefore held to a strict budget.
+
+   It is on screen for the whole session, so it does exactly nothing expensive:
+   no backdrop-filter, no blend mode, no filter, and no box-shadow that spans
+   the viewport. An opaque panel costs one paint when a figure changes; a
+   blurred one costs a re-blur of whatever scrolls behind it, every frame, for
+   the life of the session — the same class of whole-screen recomposite that
+   `mix-blend-mode` was caught doing here.
+
+   `contain: content` keeps a rolling figure's repaint inside the card, and the
+   only animated properties anywhere below are transform and opacity.
+   --------------------------------------------------------------------------- */
+.economy-ledger {
+  width: 214px;
+  padding: 8px 11px 9px;
+  position: fixed;
+  z-index: 60;
+  left: 14px;
+  bottom: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  contain: content;
+  border: 1px solid rgba(208, 176, 101, .28);
+  border-radius: 11px;
+  color: #eee4c8;
+  background: #0e1a26;
+  box-shadow: 0 10px 24px rgba(4, 10, 16, .34);
+  /* Anything fixed to a scrolling page eventually sits over something. Two by
+     two rather than four rows halves how much, and click-through guarantees
+     the rest is only ever visual — the card can never swallow a press meant
+     for a tab or a button beneath it. */
+  pointer-events: none;
+}
+.economy-reading { min-width: 0; position: relative; display: grid; gap: 1px; }
+.economy-reading small { overflow: hidden; color: #7cb6ac; font-family: var(--font-pixel); font-size: 6.5px; font-weight: 900; letter-spacing: .11em; text-overflow: ellipsis; white-space: nowrap; }
+.economy-reading strong { min-width: 0; overflow: hidden; color: #f2d489; font-family: var(--font-display); font-size: 13px; font-weight: 700; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
+/* Out of flow on purpose. In flow, a badge that appears and disappears would
+   reflow the card twice per change — the exact layout thrash to avoid on
+   something permanently on screen. Absolute, it costs a paint of its own box. */
+.economy-delta {
+  padding: 1px 5px;
+  position: absolute;
+  z-index: 1;
+  top: -2px;
+  right: 0;
+  border-radius: 99px;
+  font-family: var(--font-pixel);
+  font-size: 7.5px;
+  font-weight: 900;
+  white-space: nowrap;
+  animation: economy-delta-in 1.6s var(--mo-out, cubic-bezier(.2,.7,.3,1)) both;
+}
+/* Read aloud with the badge, never drawn: the card has no room for the word
+   "CASH" twice, and the figure it sits beside already supplies it visually. */
+.economy-delta-context { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.economy-delta.is-good { color: #8fdcc0; background: rgba(90, 190, 155, .15); }
+.economy-delta.is-bad { color: #f0a98c; background: rgba(224, 132, 98, .15); }
+/* Enters travelling in the direction the figure moved, then fades in place. */
+@keyframes economy-delta-in {
+  from { opacity: 0; transform: translateY(5px); }
+  14% { opacity: 1; transform: translateY(0); }
+  76% { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .economy-delta { animation: economy-delta-hold 1.6s steps(1) both; }
+  @keyframes economy-delta-hold { from { opacity: 1; } 99% { opacity: 1; } to { opacity: 0; } }
+}
 .game-viewport { position: relative; overflow: hidden; border: 4px solid #080c13; background: #172538; box-shadow: inset 0 0 0 3px #34465a, 10px 10px 0 #080c13; isolation: isolate; }
-.office-explorer { aspect-ratio: 16 / 8.5; min-height: 590px; }@keyframes office-cloud { to { transform: translateX(420px); } }@keyframes office-rain { to { transform: translate(-12px, 180px); } }@keyframes lamp-pixel-flicker { 46% { opacity: 1; } 48% { opacity: .25; } 50% { opacity: .8; } }@keyframes screen-glow { 50% { color: #f4c95e; background: #2b5660; } }@keyframes printer-blink { 50% { background: #edc45d; } }
+/* Taller than it was: with the greeting band gone, the room is what the freed
+   height is for. */
+.office-explorer { aspect-ratio: 16 / 9.4; min-height: 640px; }@keyframes office-cloud { to { transform: translateX(420px); } }@keyframes office-rain { to { transform: translate(-12px, 180px); } }@keyframes lamp-pixel-flicker { 46% { opacity: 1; } 48% { opacity: .25; } 50% { opacity: .8; } }@keyframes screen-glow { 50% { color: #f4c95e; background: #2b5660; } }@keyframes printer-blink { 50% { background: #edc45d; } }
 .trophy-case { width: 13%; height: 18%; padding: 9px; position: absolute; z-index: 3; left: 67%; top: 6%; display: flex; align-items: end; justify-content: space-around; border: 4px solid #35261c; background: rgba(28,43,51,.82); box-shadow: inset 0 0 0 3px #bc8d3d; }
 .trophy-case i { color: #f0bd50; font-family: var(--font-pixel); font-size: 19px; font-style: normal; text-shadow: 3px 3px #7d5527; }@keyframes clock-hand { to { transform: rotate(360deg); } }@keyframes npc-idle { 50% { transform: translateY(-2px); } }
 .client-person { z-index: 14; }.client-person .pixel-person { animation: client-wait 2s steps(2) infinite; }
@@ -1264,9 +1319,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .empire-game-page { width: 100%; min-height: calc(100vh - 68px); padding: 27px clamp(16px, 2.7vw, 44px) 48px; color: #f6e8bb; background: #101724; }
 /* Just the page title here — the map's own headquarters panel just below
    carries every stat, so this bar stays plain text with no boxed card. */
-.empire-command-bar { max-width: 1660px; flex-direction: column; align-items: flex-start; gap: 3px; }
-.empire-command-bar h1 { margin: 5px 0 2px; }
-.empire-command-bar p { margin: 0; max-width: 62ch; color: #9fb4bd; font-size: 11px; }@keyframes water-shimmer { 50% { transform: translateX(12px); } }@keyframes boat-bob { 50% { transform: translateY(5px); } }@keyframes map-train { from { transform: translate(-220px, 55px); } to { transform: translate(1150px, -120px); } }@keyframes map-cloud { to { transform: translateX(1500px); } }.empire-node.current > span { color: #182132; background: #f0c65c; }.empire-node.current > span b { color: #182132; }.empire-node.current > span small { color: #704d24; }.map-building.locked { filter: grayscale(.8) brightness(.68) drop-shadow(6px 7px 0 rgba(21,33,29,.28)); }.map-building.locked::after { content: "×"; width: 22px; height: 22px; display: grid; place-items: center; position: absolute; left: 19px; top: 24px; border: 3px solid #1a2229; color: #e0c993; background: #5d5f5d; font-family: var(--font-pixel); font-weight: 900; }
+@keyframes water-shimmer { 50% { transform: translateX(12px); } }@keyframes boat-bob { 50% { transform: translateY(5px); } }@keyframes map-train { from { transform: translate(-220px, 55px); } to { transform: translate(1150px, -120px); } }@keyframes map-cloud { to { transform: translateX(1500px); } }.empire-node.current > span { color: #182132; background: #f0c65c; }.empire-node.current > span b { color: #182132; }.empire-node.current > span small { color: #704d24; }.map-building.locked { filter: grayscale(.8) brightness(.68) drop-shadow(6px 7px 0 rgba(21,33,29,.28)); }.map-building.locked::after { content: "×"; width: 22px; height: 22px; display: grid; place-items: center; position: absolute; left: 19px; top: 24px; border: 3px solid #1a2229; color: #e0c993; background: #5d5f5d; font-family: var(--font-pixel); font-weight: 900; }
 .rival-map-node { z-index: 13; }.rival-building { width: 58px; height: 58px; position: absolute; left: 26px; bottom: 20px; border: 4px solid #26171c; background: #6f3446; box-shadow: inset -6px -6px #442432, inset 5px 0 #9c4b5c, 6px 7px rgba(21,33,29,.28); }.rival-building > i { width: 22px; height: 22px; display: grid; place-items: center; margin: -14px auto 6px; border: 3px solid #251920; color: #ffe498; background: #a7504a; font-family: var(--font-pixel); font-style: normal; font-weight: 900; }.rival-building b { width: 8px; height: 8px; display: inline-block; margin: 5px 3px; background: #efc45c; box-shadow: inset -2px -2px #a8732d; }.rival-map-node.owned .rival-building { background: #3c7655; box-shadow: inset -6px -6px #27533e, inset 5px 0 #63a06e, 6px 7px rgba(21,33,29,.28); }/* Pixel treatment for the rest of the game */
 .login-page { color: #f5e8bd; background: #101725; }
 .login-nav { border-bottom: 4px solid #080c13; background: #111a29; }.login-hero { background-color: #17283a; background-image: linear-gradient(90deg, rgba(105,153,157,.05) 2px, transparent 2px), linear-gradient(rgba(105,153,157,.05) 2px, transparent 2px), radial-gradient(circle at 20% 10%, #2b5662, transparent 38%); background-size: 18px 18px, 18px 18px, auto; }.login-copy h1 { font-family: var(--font-pixel); font-size: clamp(38px, 4.5vw, 68px); font-weight: 900; text-transform: uppercase; text-shadow: 5px 5px #0a111d; }.login-copy h1 em { color: #f0c65c; font-style: normal; }.login-copy > p { color: #b4c9ce; }.feature-list { font-family: var(--font-pixel); font-size: 10.5px; }.login-panel-wrap { color: #2e2a25; background-color: #d5c89f; background-image: linear-gradient(90deg, rgba(49,40,32,.06) 1px, transparent 1px), linear-gradient(rgba(49,40,32,.06) 1px, transparent 1px); background-size: 8px 8px; }.login-panel { border: 4px solid #141721; border-radius: 0; background: #f3e4ba; box-shadow: inset 0 0 0 3px #c59b58, 9px 9px #141721; }.login-panel h2 { font-family: var(--font-pixel); font-size: 26px; font-weight: 900; text-transform: uppercase; }.crest { border: 4px solid #141721; border-radius: 0; background: #1e3548; box-shadow: inset 0 0 0 2px #dbad4e, 5px 5px #141721; }.login-scene { border: 4px solid #080c13; border-radius: 0; box-shadow: 10px 10px #080c13; transform: none; }
@@ -1384,8 +1437,6 @@ h1, h2, h3 { letter-spacing: -.035em; }
   .app-shell { padding-bottom: 66px; }
   .mobile-nav { height: 66px; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); border: 0; border-top: 4px solid #080c13; background: #111a29; backdrop-filter: none; box-shadow: inset 0 3px #2f4860; }
   .mobile-nav a { color: #91a7b1; font-family: var(--font-pixel); font-size: 10px; }.mobile-nav a.active { color: #f2c75b; background: #1d2d41; }
-  .office-command-bar, .empire-command-bar { align-items: flex-start; flex-direction: column; }
-  .command-stats { width: 100%; }.command-stats > span { flex: 1; }
   .office-explorer { min-height: 480px; aspect-ratio: 4 / 3; }  .office-upkeep-strip { grid-template-columns: 1fr; }
   .office-upkeep-terms { grid-template-columns: repeat(4,minmax(120px,1fr)); overflow-x: auto; }
   .office-upkeep-note { grid-column: 1; }
@@ -1396,11 +1447,9 @@ h1, h2, h3 { letter-spacing: -.035em; }
   .app-header { height: 62px; padding-inline: 10px; }
   .brand-mark { width: 36px; height: 36px; }.header-economy > span { font-size: 10.5px; }
   .office-game-page, .empire-game-page { padding: 18px 10px 35px; }
-  .office-command-bar h1, .empire-command-bar h1 { font-size: 19px; }
-  .command-stats { overflow-x: auto; }.command-stats > span { min-width: 145px; }
   .office-explorer { min-height: 500px; aspect-ratio: auto; }.office-upkeep-strip { padding: 11px; }
   .office-upkeep-terms { grid-template-columns: repeat(4,130px); }
-  .office-milestone-strip { grid-template-columns: 1fr; padding: 12px; }.office-milestone-progress,.office-milestone-strip > button { grid-column: 1; grid-row: auto; }.office-milestone-strip > button { width: 100%; }.client-quest-card { grid-template-columns: auto minmax(0, 1fr); }.client-quest-card > button { grid-column: 1 / 3; }  .empire-command-bar > div:last-child { width: 100%; }.login-copy h1 { font-size: 38px; }  .firm-tabs button { font-size: 10px; }
+  .office-milestone-strip { grid-template-columns: 1fr; padding: 12px; }.office-milestone-progress,.office-milestone-strip > button { grid-column: 1; grid-row: auto; }.office-milestone-strip > button { width: 100%; }.client-quest-card { grid-template-columns: auto minmax(0, 1fr); }.client-quest-card > button { grid-column: 1 / 3; }.login-copy h1 { font-size: 38px; }  .firm-tabs button { font-size: 10px; }
 }@keyframes airport-shuttle{50%{translate:30px 0}}@keyframes orbital-ready{50%{translate:0 -7px;filter:drop-shadow(0 9px #f1b14e)}}@keyframes mega-core-float{50%{translate:0 -6px}}@keyframes mega-particle{50%{translate:8px -15px;opacity:.2}}/* Client archetypes read like case files, and every new portrait has a skyline. */
 .content-location-tag{min-height:18px;margin:2px 0 7px;display:flex;align-items:center;justify-content:space-between;gap:7px;color:#925537;font-family:var(--font-pixel);font-size:9px;letter-spacing:.08em;text-transform:uppercase}.content-location-tag b{padding:3px 5px;color:#e9d59b;background:#304b55;font-size:9px;letter-spacing:0}
 .client-special{min-height:46px;margin:10px 0;padding:7px 8px;display:flex;align-items:center;gap:7px;border:2px solid #493240;color:#63374c;background:#ecd291;box-shadow:inset 0 0 0 2px #f6e5ad,3px 3px rgba(61,42,32,.25);font-family:var(--font-pixel);font-size:9.5px;line-height:1.4}.client-special svg{flex:0 0 auto;color:#a04d4c}.client-special span,.client-special small{display:block}.client-special small{margin-bottom:3px;color:#a0533e;font-size:9px}

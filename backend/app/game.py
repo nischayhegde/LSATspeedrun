@@ -1629,8 +1629,20 @@ def _achievement_state(profile: PlayerProfile, owned: set[str]) -> list[dict]:
 
 
 def _public_asset(item: dict, profile: PlayerProfile, owned: set[str]) -> dict:
+    # `payout_mult` and `passive_hourly` are published as numbers because the
+    # office scene reports what each item contributes, and it has to be able to
+    # tell a genuine hourly earner from a case multiplier from a cosmetic that
+    # earns nothing. Both values already reach the client inside `benefit`, and
+    # `_rebalance_asset_catalog` writes that string from these exact fields, so
+    # publishing them leaks nothing new -- it only stops a reader of the economy
+    # having to parse display copy, which would break silently the first time a
+    # benefit was reworded.
+    #
+    # The rest stay private. Nothing outside the settlement path needs them, and
+    # `staff_flat` and `storage_hours` in particular are already described in
+    # `benefit` for the one screen that mentions them.
     private_effects = {
-        "payout_mult", "staff_flat", "passive_hourly", "storage_hours",
+        "staff_flat", "storage_hours",
         "streak_bonus_cap", "contract_bonus_mult", "reputation_guard",
         "decor_cases",
     }

@@ -1,9 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 
 import type { ActiveOfficeCase, CharacterGender, GameAsset } from '../types'
 import { clientCastSeed } from './assets'
+import { officeGroupEconomics } from './office-earnings'
+import { OfficeEarningsReadout, type OfficeReadoutTarget } from './office-earnings-readout'
 import { OFFICE_ASSET_MANIFEST, officeEnvironmentFor, officeLayoutFor, officeStaffStationFor, officeVisualFor, type OfficeStaffStation, type OfficeVisualZone } from './office-manifest'
 import { IllustratedRenderPass } from './render-style'
 import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
@@ -328,6 +330,35 @@ function shackWoodTexture() {
   return texture
 }
 
+/**
+ * A soft round dot for the earning markers.
+ *
+ * Cached at module scope alongside the shared geometry, because the markers are
+ * rebuilt on every purchase and this is a texture upload. Points are square
+ * without a map, and a square is unmistakably a rendering artefact rather than a
+ * deliberate mark, so the alpha falloff is the whole job.
+ */
+let pipTextureCache: THREE.CanvasTexture | null = null
+function pipTexture() {
+  if (pipTextureCache) return pipTextureCache
+  const canvas = document.createElement('canvas')
+  canvas.width = 32
+  canvas.height = 32
+  const context = canvas.getContext('2d')!
+  const gradient = context.createRadialGradient(16, 16, 0, 16, 16, 16)
+  gradient.addColorStop(0, 'rgba(255,255,255,1)')
+  gradient.addColorStop(.42, 'rgba(255,255,255,.55)')
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 32, 32)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  // Survives the scene's dispose pass, which is the point of caching it.
+  texture.userData.characterShared = true
+  pipTextureCache = texture
+  return texture
+}
+
 function screenTexture() {
   const canvas = document.createElement('canvas')
   canvas.width = 512
@@ -389,6 +420,14 @@ function addCapsuleBetween(
 
 export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: OfficeThreeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  // What the earnings readout is currently showing, and where. The scene writes
+  // it from the pointer handlers; the readout below renders it. Held in a ref as
+  // well so the scene's build effect can read the current value without taking
+  // the state as a dependency and rebuilding the whole room on every hover.
+  const [readout, setReadout] = useState<OfficeReadoutTarget | null>(null)
+  const readoutRef = useRef<OfficeReadoutTarget | null>(null)
+  readoutRef.current = readout
+  const dismissReadout = useCallback(() => setReadout(null), [])
   const assetSignature = ownedAssets.map((asset) => `${asset.key}:${asset.type}`).join('|')
   const activeCaseSignature = activeCase
     ? `${activeCase.sessionId}:${activeCase.clientKey}:${activeCase.clientName}:${activeCase.baseFee}`
@@ -626,10 +665,42 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       halo.receiveShadow = false
       focusHalos.push(halo)
       keys.forEach((key) => focusTargets.set(key, { object, halo }))
+      // The earnings readout picks against the same objects. Anything whose keys
+      // are not owned catalog assets — the consulting client, most obviously —
+      // has no economics to report and is simply not registered.
+      const owned = keys.map((key) => assetByKey.get(key)).filter((asset): asset is GameAsset => Boolean(asset))
+      const economics = officeGroupEconomics(owned)
+      if (economics) {
+        // A generous floor, because a wall seal and a desk lamp are authored with
+        // radii small enough to make pixel-hunting the only way to hit them.
+        const forgiving = Math.max(.3, radius * 1.15)
+        pickTargets.push({ object, radiusSq: forgiving * forgiving, economics, world: null })
+      }
       return halo
     }
 
     const zoneAssets = (zone: OfficeVisualZone) => assetsByZone.get(zone) ?? []
+
+    // Hover and tap picking for the earnings readout.
+    //
+    // `attachFocus` above already maintains the one registry that matters here:
+    // every economically meaningful object in the room, under the asset keys it
+    // represents, with an authored radius. Reusing it means the pick set is a few
+    // dozen groups rather than the several thousand meshes the room is built
+    // from, and the authored radius doubles as a forgiving hit sphere — pointing
+    // near a desk lamp is enough, which it has to be for objects this small at
+    // this distance.
+    //
+    // The test is a ray-to-sphere distance rather than `intersectObject`, so a
+    // pick costs a handful of arithmetic per candidate and never walks geometry.
+    const assetByKey = new Map(ownedAssets.map((asset) => [asset.key, asset]))
+    type PickTarget = {
+      object: THREE.Object3D
+      radiusSq: number
+      economics: NonNullable<ReturnType<typeof officeGroupEconomics>>
+      world: THREE.Vector3 | null
+    }
+    const pickTargets: PickTarget[] = []
 
     phase('materials+textures')
     // Architectural shell: tier zero is a genuinely built timber shack. Each
@@ -2453,7 +2524,110 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     let lookStartYaw = 0
     let lookStartPitch = 0
     let lastChairHoverRaycast = -Infinity
+    let lastEarningsPick = -Infinity
     canvas.tabIndex = 0
+
+    // Picking and anchoring for the earnings readout.
+    const pickProjection = new THREE.Vector3()
+    let pickWorldReady = false
+    /** Nothing in the pick set moves after the build, so world positions are
+     *  resolved once on first use rather than every pointer event. */
+    const resolvePickWorld = () => {
+      if (pickWorldReady) return
+      scene.updateMatrixWorld(true)
+      pickTargets.forEach((target) => {
+        target.world = target.object.getWorldPosition(new THREE.Vector3())
+      })
+      pickWorldReady = true
+    }
+    const itemUnderPointer = (event: PointerEvent) => {
+      resolvePickWorld()
+      updateDragRay(event)
+      let best: PickTarget | null = null
+      let bestDistance = Infinity
+      for (const target of pickTargets) {
+        const world = target.world
+        if (!world) continue
+        if (raycaster.ray.distanceSqToPoint(world) > target.radiusSq) continue
+        // Two forgiving spheres can overlap along the ray, so the nearer object
+        // wins — which is also what stops something behind a wall being reported
+        // in front of the thing actually being pointed at.
+        const distance = raycaster.ray.origin.distanceToSquared(world)
+        if (distance < bestDistance) {
+          bestDistance = distance
+          best = target
+        }
+      }
+      return best
+    }
+    /** Where an item actually is on screen, in the room-relative pixels the
+     *  readout's CSS is written against. The canvas is `inset: 0` of `.av-room`,
+     *  so canvas space and room space are the same space. */
+    const projectFor = (target: PickTarget) => {
+      const world = target.world
+      if (!world) return null
+      const bounds = canvas.getBoundingClientRect()
+      pickProjection.copy(world).project(camera)
+      return {
+        x: (pickProjection.x * .5 + .5) * bounds.width,
+        y: (-pickProjection.y * .5 + .5) * bounds.height,
+        width: bounds.width,
+        height: bounds.height,
+      }
+    }
+    /** The same point, pulled far enough inside the room for a card to fit. The
+     *  room clips its overflow, so an unclamped anchor loses the card's edge. */
+    const anchorFor = (target: PickTarget) => {
+      const point = projectFor(target)
+      if (!point) return null
+      return {
+        x: THREE.MathUtils.clamp(point.x, 96, Math.max(96, point.width - 96)),
+        y: THREE.MathUtils.clamp(point.y, 12, Math.max(12, point.height)),
+      }
+    }
+    // DEV-only: where every pickable item currently is on screen, and what the
+    // readout would say about it. A verification harness would otherwise have to
+    // sweep the canvas hunting for hit spheres, which fights this scene's own
+    // hover throttle and takes minutes per run. Compiled out of production
+    // builds, exactly like the tier and asset overrides above.
+    if (import.meta.env.DEV) {
+      (canvas as unknown as Record<string, unknown>).__officeEarningsProbe = () => {
+        resolvePickWorld()
+        const bounds = canvas.getBoundingClientRect()
+        return pickTargets.map((target) => {
+          const point = projectFor(target)
+          return {
+            key: target.economics.key,
+            name: target.economics.name,
+            mode: target.economics.mode,
+            hourly: target.economics.hourly,
+            payoutMult: target.economics.payoutMult,
+            // Viewport coordinates, so a harness can drive real pointer input
+            // straight at the item without knowing where the canvas sits.
+            clientX: point ? point.x + bounds.left : -1,
+            clientY: point ? point.y + bounds.top : -1,
+            onScreen: Boolean(point) && point!.x > 0 && point!.y > 0
+              && point!.x < bounds.width && point!.y < bounds.height,
+          }
+        })
+      }
+      // Run the real pick against a viewport point, so a harness can tell a
+      // picking failure apart from a pointer that never reached the canvas.
+      ;(canvas as unknown as Record<string, unknown>).__officeEarningsPick = (clientX: number, clientY: number) => {
+        const hit = itemUnderPointer({ clientX, clientY } as PointerEvent)
+        return hit ? { key: hit.economics.key, mode: hit.economics.mode } : null
+      }
+    }
+
+    /** The item a tapped card belongs to, so the draw loop can keep the card
+     *  over it while the camera orbits. Null whenever nothing is pinned. */
+    let pinnedTarget: PickTarget | null = null
+    const showReadout = (target: PickTarget, pinned: boolean) => {
+      const anchor = anchorFor(target)
+      if (!anchor) return
+      pinnedTarget = pinned ? target : null
+      setReadout({ item: target.economics, x: anchor.x, y: anchor.y, pinned })
+    }
 
     const nearestYaw = (target: number, current: number) => current + Math.atan2(Math.sin(target - current), Math.cos(target - current))
 
@@ -2485,7 +2659,30 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       if (!draggingChair) {
         if (lookingAround || event.timeStamp - lastChairHoverRaycast < 40) return
         lastChairHoverRaycast = event.timeStamp
-        canvas.style.cursor = chairUnderPointer(event) ? 'grab' : 'default'
+        const overChair = chairUnderPointer(event)
+        canvas.style.cursor = overChair ? 'grab' : 'default'
+        // Hover is the desktop half of the earnings readout. It is deliberately
+        // not run for touch: a phone dispatches a single synthetic move at the
+        // tap point, which would flash a card and leave it stranded, so touch
+        // gets the explicit tap path in `finishLook` instead.
+        //
+        // Throttled well below the frame rate and skipped entirely while a card
+        // is pinned open, so moving the pointer cannot fight a tapped card.
+        if (event.pointerType === 'mouse' && !readoutRef.current?.pinned
+          && event.timeStamp - lastEarningsPick >= 60) {
+          lastEarningsPick = event.timeStamp
+          // The chair sits against the desk, so its mesh covers part of the very
+          // installation a player is most likely to point at. Suppressing the
+          // readout wherever the chair overlaps made the desk close to
+          // unhoverable, and there is no real conflict to resolve: dragging is a
+          // press gesture and this is a hover, so both can coexist. The chair
+          // only keeps the cursor, because that is what advertises the drag.
+          const hit = itemUnderPointer(event)
+          if (hit) {
+            if (!overChair) canvas.style.cursor = 'help'
+            showReadout(hit, false)
+          } else if (readoutRef.current) setReadout(null)
+        }
         return
       }
       updateDragRay(event)
@@ -2578,18 +2775,32 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       // selected in this scene and the halo, the camera framing and the look
       // below all read it from the same place.
       const travelled = Math.hypot(event.clientX - lookStartX, event.clientY - lookStartY)
-      if (travelled > 6 || draggingChair || !activeClientActor) return
+      if (travelled > 6 || draggingChair) return
       const bounds = canvas.getBoundingClientRect()
       dragPointer.set(
         (event.clientX - bounds.left) / bounds.width * 2 - 1,
         -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
       )
       raycaster.setFromCamera(dragPointer, camera)
-      const hitClient = raycaster.intersectObject(activeClientActor.rig.root, true).length > 0
+      const hitClient = Boolean(activeClientActor)
+        && raycaster.intersectObject(activeClientActor!.rig.root, true).length > 0
+
+      // Tap is how touch reaches the earnings readout, and it is free to mean
+      // that: the only thing a tap already did in this scene was select the
+      // consulting client, and a tap on anything else did nothing but clear the
+      // selection. So the client keeps first refusal, and an item tap now both
+      // opens its readout and takes the selection — which routes through the
+      // same `office-focus-asset` event as everything else, so the halo and the
+      // camera framing come along instead of being a second, competing notion
+      // of what is selected.
+      const hitItem = hitClient ? null : itemUnderPointer(event)
+      if (hitItem) showReadout(hitItem, true)
+      else setReadout(null)
+
       surface?.dispatchEvent(new CustomEvent('office-focus-asset', {
         // A key nothing is registered under is how this scene already says
         // "nothing is selected": the lookup misses and the focus clears.
-        detail: { key: hitClient ? clientFocusKey : 'office-none' },
+        detail: { key: hitClient ? clientFocusKey : hitItem?.economics.key ?? 'office-none' },
       }))
     }
     const onLookKeyDown = (event: KeyboardEvent) => {
@@ -2910,6 +3121,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     let previousFrame = startedAt
     let elapsed = 0
     let lastAnchorDispatch = -Infinity
+    let lastPinnedAnchor = -Infinity
 
     const anchorWorld = new THREE.Vector3()
     const anchorView = new THREE.Vector3()
@@ -2925,6 +3137,43 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         visible,
       }
     }
+
+    // Discoverability cue: a slow shimmer over the items that actually earn.
+    //
+    // Hover reveals itself on a desktop because the cursor sweeps the room, but
+    // nothing on a phone suggests an item can be tapped, so the cue is what makes
+    // the touch path findable at all. It is also honest signal rather than
+    // decoration: only items with a real hourly rate are marked, so the room
+    // itself teaches which purchases earn while you are away.
+    //
+    // Built as one `THREE.Points` rather than a mesh per item, so twenty-six
+    // markers cost one draw call, and animated by writing a single material
+    // opacity per frame rather than touching each marker.
+    const earningPips = (() => {
+      resolvePickWorld()
+      const positions: number[] = []
+      pickTargets.forEach((target) => {
+        if (target.economics.mode !== 'passive' || !target.world) return
+        positions.push(target.world.x, target.world.y + .34, target.world.z)
+      })
+      if (!positions.length) return null
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+      const material = new THREE.PointsMaterial({
+        color: 0xf2d089,
+        size: .13,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: .3,
+        depthWrite: false,
+        map: pipTexture(),
+      })
+      const points = new THREE.Points(geometry, material)
+      points.userData.navIgnore = true
+      points.frustumCulled = false
+      scene.add(points)
+      return { points, material }
+    })()
 
     const focusedWorldPosition = new THREE.Vector3()
     const catCameraDirection = new THREE.Vector3()
@@ -2970,6 +3219,31 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       ambientYawOffset = Math.sin(elapsed * .074) * .034 * officeAmbient
       ambientPitchOffset = Math.sin(elapsed * .053 + .8) * .014 * officeAmbient
       positionCamera()
+
+      // A tapped card is anchored to its item rather than to the pointer, so
+      // orbiting has to carry it along. This is the feature's only per-frame
+      // work, it runs solely while a card is open, and it is throttled and
+      // gated on the anchor having actually moved — the alternative, a React
+      // state write every frame, is exactly the kind of thing that has cost
+      // this scene its frame budget before.
+      // One material write drives every earning marker. Held still for
+      // reduced-motion viewers, who get the marker without the breathing.
+      if (earningPips) {
+        earningPips.material.opacity = reduced ? .26 : .2 + Math.sin(elapsed * 1.15) * .11
+      }
+
+      // Dismissal happens in React (the close button, Escape), so the scene
+      // learns about it here rather than being told.
+      if (pinnedTarget && !readoutRef.current) pinnedTarget = null
+      if (pinnedTarget && now - lastPinnedAnchor > 90) {
+        lastPinnedAnchor = now
+        const anchor = anchorFor(pinnedTarget)
+        const current = readoutRef.current
+        if (anchor && current
+          && (Math.abs(anchor.x - current.x) > 1.5 || Math.abs(anchor.y - current.y) > 1.5)) {
+          setReadout({ ...current, x: anchor.x, y: anchor.y })
+        }
+      }
 
       if (activeClientActor) {
         const { rig, humanoid, phase, folder, mug } = activeClientActor
@@ -3237,5 +3511,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
   // equivalent assets array (especially in previews).
   }, [activeCaseSignature, assetSignature, layoutKey, tier])
 
-  return <canvas className="office-three-canvas" ref={canvasRef} aria-label={`Interactive three-dimensional ${environmentName} law office${activeCase ? ` with ${activeCase.clientName} waiting` : ''}`} role="img" />
+  return (
+    <>
+      <canvas className="office-three-canvas" ref={canvasRef} aria-label={`Interactive three-dimensional ${environmentName} law office${activeCase ? ` with ${activeCase.clientName} waiting` : ''}`} role="img" />
+      {/* Sits inside `.av-room` alongside the canvas, so it is clipped to the
+          scene and needs no layout of its own from the page that mounts us. */}
+      <OfficeEarningsReadout target={readout} onDismiss={dismissReadout} />
+    </>
+  )
 }

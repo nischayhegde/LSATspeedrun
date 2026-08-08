@@ -11,15 +11,12 @@ export function ProgressionMapPage() {
   const gameQuery = useGame()
   if (gameQuery.isLoading) return <LoadingScreen />
   const game = gameQuery.data!.game!
-  const heldRivals = game.catalog.assets.filter((asset) => asset.type === 'rival' && asset.owned).length
-  const totalRivals = game.catalog.assets.filter((asset) => asset.type === 'rival').length
   return (
     <div className="map-page empire-game-page">
-      <section className="empire-command-bar">
-        <span className="pixel-kicker">CONTESTED TERRITORY · {heldRivals} OF {totalRivals} RIVAL FIRMS HELD</span>
-        <h1>Your legal empire</h1>
-        <p>Every rival practice sits at a real address. Move against one from the world itself, then absorb it when its price has fallen far enough.</p>
-      </section>
+      {/* No page header above the map: the title and the standing blurb cost a
+          band of the viewport that the world itself is better spent on. The
+          rival holding count they carried is now a quiet overlay inside the
+          map frame. */}
       {/* `?rival=` lets the firm tab's "Show on the map" hand a specific target
           across, so the two surfaces stay one conversation. Empire value travels
           down as a prop rather than being shown in a second box up here, since

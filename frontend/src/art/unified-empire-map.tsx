@@ -250,6 +250,11 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
 
   const selected = points.find((point) => point.key === selectedKey)
   const established = game.catalog.tiers.filter((tier) => tier.tier <= game.office_tier).length
+  // Empire-wide, not per-region: this is the count the page header used to
+  // carry, and it answers "how far through the rivals am I" rather than
+  // "what is in front of me right now", which the view tabs already show.
+  const rivalAssets = game.catalog.assets.filter((asset) => asset.type === 'rival')
+  const rivalsHeld = rivalAssets.filter((asset) => asset.owned).length
   const activity = Math.max(2, Math.min(9, 3 + points.filter((point) => point.kind === 'tier' && point.state !== 'locked').length))
   const pointCounts = {
     career: points.filter((point) => point.kind === 'tier').length,
@@ -358,10 +363,6 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
             <span><i style={{ width: `${established / Math.max(1, game.catalog.tiers.length) * 100}%` }} /></span>
             <small>Level {game.office_tier + 1} of {game.catalog.tiers.length}</small>
           </div>
-        </div>
-        <div className="uw-ledger-value">
-          <small>Empire value</small>
-          <strong>{empireValueLabel}</strong>
         </div>
         <button type="button" className="uw-ledger-jump" onClick={focusHeadquarters} aria-label={`Jump to headquarters — ${currentRegion.name}`}>
           <b><HomeMark /></b>
@@ -549,6 +550,11 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
 
         <div className="uw-map-instructions"><b>SELECT AN OFFICE TO MOVE COUNSEL</b><i /><span>Drag to survey</span><i /><span>Scroll to zoom</span></div>
 
+        <div className="uw-holdings">
+          <b>CONTESTED TERRITORY</b>
+          <span>{rivalsHeld} of {rivalAssets.length} rival firms held</span>
+        </div>
+
         {/* The left rail: what is here (the scene's own place index) and what
             of it your firm holds. Both are collapsed strips, so the map stays
             the map until one of them is asked for. */}
@@ -629,6 +635,15 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
               )
             })()}
             {selected.kind !== 'event' && <div className="uw-card-cost">{selected.kind === 'tier' && <span>${selected.data.cost.toLocaleString()}</span>}<span>★ {selected.data.reputation}</span>{selected.kind === 'tier' && <span>LEASE ${selected.data.rent_daily.toLocaleString()}/DAY</span>}</div>}
+            {/* The header ledger used to carry this always-on; now it surfaces
+                here, on the one card that is specifically about the office you
+                are actually sitting in right now. */}
+            {selected.kind === 'tier' && selected.state === 'current' && (
+              <div className="uw-card-empire-value">
+                <small>Empire value</small>
+                <strong>{empireValueLabel}</strong>
+              </div>
+            )}
             {selected.kind !== 'event' && (
               <button type="button" className="uw-card-action" disabled={pointLocked(selected)} onClick={() => onManage(selected.kind === 'tier' ? 'upgrades' : 'rivals')}>
                 {pointLocked(selected) ? 'Route not yet earned' : selected.kind === 'tier' ? 'Manage headquarters' : 'Run an operation'} <i>{pointLocked(selected) ? <CloseMark /> : <ChevronMark />}</i>

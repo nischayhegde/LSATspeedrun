@@ -584,6 +584,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   if (!item) return <ErrorNotice error={new Error('This case file could not be loaded.')} />
   const question = item.question
   const strategyTrial = item.strategy_trial
+  // The control arm's card. It asks for nothing, so it is deliberately absent
+  // from `strategyDecisionRequired` below: there is no technique to apply or
+  // decline, and demanding an acknowledgement would make the arm cost more
+  // than the thing it is the baseline for.
+  const strategyNeutral = item.strategy_neutral
   const strategyDecisionRequired = Boolean(strategyTrial && strategyApplied === null && !result)
   const timerRatio = elapsed / Math.max(1, item.target_time_seconds * 1000)
   const caseClient = gameQuery.data?.game?.catalog.clients.find((client) => client.key === item.case_terms?.client_key)
@@ -706,6 +711,17 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               }}>Skip this one</button>
             </> : <div className="strategy-tip-recorded"><Check size={17} /><span>{strategyApplied ? 'Used this approach' : 'Answered without it'}</span></div>}
           </div>
+        </section>
+      )}
+
+      {strategyNeutral && (
+        <section className="strategy-tip is-neutral" aria-label={strategyNeutral.plain_title}>
+          <div className="strategy-tip-head">
+            <span><Brain size={15} /> PARTNER TIP</span>
+          </div>
+          <h2>{strategyNeutral.plain_title}</h2>
+          <p>{strategyNeutral.plain_line}</p>
+          <p className="strategy-tip-neutral-note">{strategyNeutral.note}</p>
         </section>
       )}
 

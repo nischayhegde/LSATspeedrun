@@ -17,6 +17,7 @@ import {
   isReserved,
   radialFrontage,
   ringFrontage,
+  streetHalfPaved,
   streetWidth,
   streetsFromGrid,
   subdivideFrontage,
@@ -46,6 +47,8 @@ import {
   type RoadGraphSpec,
 } from './map-agents'
 import { CrowdRenderer, buildCrowdWalker, type CrowdWalker } from './map-crowd-rig'
+import { createRiverBed, createRiverSurface, createSeaSurface, setSeaWake, type RiverOptions } from './map-water'
+import { clearObjects, clearanceIntrusion, escapeCorridors, keepRecordsClear, prepareClearance, type ClearanceCorridor } from './map-clearance'
 import { IllustratedRenderPass } from './render-style'
 import { HumanoidActor } from './rig'
 
@@ -573,6 +576,42 @@ function roadWays(root: THREE.Group) {
   return (root.userData.roadWays ??= []) as RoadWay[]
 }
 
+/**
+ * Strips of ground that must stay clear of buildings and props, over and above
+ * the carriageways the road record already describes: a railway's right-of-way,
+ * a river's channel. See `map-clearance`.
+ */
+function clearanceCorridors(root: THREE.Group) {
+  return (root.userData.clearanceCorridors ??= []) as ClearanceCorridor[]
+}
+
+/**
+ * Plant a tree field, having first taken out the trees that are in the water.
+ *
+ * An instanced field cannot be edited once built, so anything standing in a
+ * corridor has to be dropped from the records before the instances are written.
+ * The corridors used are whatever the region has recorded *so far*, which is
+ * exactly right for a district that lays its roads and watercourses before it
+ * plants: the trees along the Arc's south radial ran out to z=17.7, straight
+ * through a river that had not existed until now.
+ */
+function addTreeField(root: THREE.Group, records: TreeRecord[]) {
+  const corridors = clearanceCorridors(root).slice()
+  for (const way of roadWays(root)) {
+    if (way.kind === 'water') corridors.push({ points: way.points, closed: way.closed, halfWidth: (way.width ?? 2.8) / 2, label: 'water' })
+  }
+  if (!corridors.length) {
+    root.add(buildInstancedTreeField(records))
+    return
+  }
+  const field = prepareClearance(corridors)
+  // A tree's own footprint is its trunk, not its crown: a bough over a channel
+  // is a bough over a channel, and only the trunk has to be on the bank.
+  const kept = records.filter((record) => !clearanceIntrusion(field, record.x, record.z, .16 * (record.scale ?? 1)))
+  root.userData.treesCleared = records.length - kept.length
+  root.add(buildInstancedTreeField(kept))
+}
+
 function footWays(root: THREE.Group) {
   return (root.userData.footWays ??= []) as FootWay[]
 }
@@ -734,7 +773,9 @@ function addPlannedStreets(root: THREE.Group, streets: PlannedStreet[], palette:
     const at = (y: number): [number, number, number] => horizontal ? [along, y, street.position] : [street.position, y, along]
     const size = (across: number): [number, number, number] => horizontal ? [length, .05, across] : [across, .05, length]
     if (surface.kerb) {
-      const apron = box(size(width + .74), pavementMaterial, at(.048))
+      // The same figure `blocksFromGrid` insets its plots by, so the paving and
+      // the building line meet exactly instead of overlapping.
+      const apron = box(size(streetHalfPaved(street.streetClass) * 2), pavementMaterial, at(.048))
       apron.castShadow = false
       root.add(apron)
     }
@@ -1391,6 +1432,75 @@ function tintForRegion(region: MapRegionKey, record: InstancedBlockRecord, index
  * are built as articulated meshes (which the static batcher then merges),
  * because that is the only place the extra cornices and awnings are legible.
  */
+/**
+ * Half the beam of a walker, at the .278 the crowd is scaled to.
+ *
+ * Buildings are set back from a pavement by this much more than the paving is
+ * wide, because what has to be clear is the person and not the kerb line.
+ */
+const WALKER_HALF_BEAM = .16
+
+/**
+ * Whether planned buildings are reconciled against the corridors before they
+ * are instanced. Off, because measured against the same code it is a no-op.
+ *
+ * Wiring this was the standing theory for "walkers inside buildings" and the
+ * theory is wrong. Two 600-frame runs, one with the pass and one without, agree
+ * on every figure to the last digit: the planned buildings are already clear of
+ * every carriageway and pavement the district records, because `blocksFromGrid`
+ * lays them inside blocks those same streets bound.
+ *
+ * What walkers are actually inside is the *authored* population — the worst
+ * sites name a cafe, a farmstead, court benches, a lamp — placed by the detail
+ * passes against no corridor at all, and tall enough (tops at 1.5 to 4.2) to
+ * read as buildings in the count. Whoever picks this up should point the pass at
+ * those, not at the plan. Kept rather than deleted so the next attempt starts
+ * from the measurement instead of repeating it.
+ */
+const BUILDING_CLEARANCE_ENABLED = false
+
+/**
+ * Take a set of planned buildings out of the streets and pavements.
+ *
+ * The pavements matter more than the carriageways here. A walker is bound to a
+ * footway polyline and may only shift within that footway's half-width, so it
+ * physically cannot route around anything: a building standing over a pavement
+ * puts people inside a wall for as long as that pavement is walked, and no
+ * amount of steering can help. The carriageways are included for the same
+ * reason at lower stakes, a car being at least able to brake.
+ */
+function keepBuildingsClear(root: THREE.Group, buildings: PlannedBuilding[]) {
+  const corridors: ClearanceCorridor[] = clearanceCorridors(root).slice()
+  for (const way of roadWays(root)) {
+    const kind = way.kind ?? 'road'
+    const width = way.width ?? (kind === 'water' ? 2.8 : 1.5)
+    // The carriageway itself and a hand's breadth. Not the vehicle margin the
+    // prop pass uses: a building is *supposed* to front onto the street, and
+    // pushing every frontage back by half a car would unpick the street wall.
+    corridors.push({ points: way.points, closed: way.closed, halfWidth: width / 2 + .06, label: kind })
+  }
+  for (const way of footWays(root)) {
+    corridors.push({
+      points: way.points,
+      closed: way.closed,
+      halfWidth: (way.halfWidth ?? .65) + WALKER_HALF_BEAM,
+      label: 'footway',
+    })
+  }
+  if (!corridors.length) return buildings
+  const { kept, report } = keepRecordsClear(buildings, prepareClearance(corridors), { limit: 1.1, label: 'building' })
+  // Accumulated across the several calls a district makes, so the harness can
+  // read one figure per region rather than whichever batch happened to be last.
+  const running = (root.userData.buildingClearance ??= { considered: 0, moved: 0, dropped: 0, worstBefore: 0 }) as {
+    considered: number; moved: number; dropped: number; worstBefore: number
+  }
+  running.considered += report.considered
+  running.moved += report.moved
+  running.dropped += report.dropped
+  running.worstBefore = Math.max(running.worstBefore, report.worstBefore)
+  return kept
+}
+
 function renderPlannedBuildings(
   root: THREE.Group,
   region: MapRegionKey,
@@ -1400,6 +1510,23 @@ function renderPlannedBuildings(
   const records: InstancedBlockRecord[] = []
   const centre = options?.articulateAround ?? [0, 0]
   const articulateWithin = options?.articulateWithin ?? 0
+  // Take the buildings out of the streets before any of them is built.
+  //
+  // `map-clearance` was written for exactly this and was wired to the props and
+  // the tree fields but never to the buildings, so the largest static objects on
+  // the map were the only ones checked against nothing. It matters most for
+  // people rather than for cars: a pedestrian here cannot free-roam — the crowd
+  // binds each walker to a footway polyline and only lets it shift within that
+  // footway's half-width — so a walker seen inside a wall is not a steering
+  // failure that better steering would fix, it is a pavement with a building
+  // standing on it. Reconciling the two is the only thing that can help.
+  //
+  // Filtered as records rather than nudged as objects because these become
+  // instances in a batched mesh, and an instance cannot be moved once written.
+  // The corridors are whatever the district has recorded so far, which is the
+  // same rule `addTreeField` follows and is right for every builder here: all
+  // of them lay their streets before they place anything on them.
+  if (BUILDING_CLEARANCE_ENABLED) buildings = keepBuildingsClear(root, buildings)
   buildings.forEach((building) => {
     const near = articulateWithin > 0 && Math.hypot(building.x - centre[0], building.z - centre[1]) < articulateWithin
     if (near) {
@@ -1644,25 +1771,54 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
   // rather than by lattice key, so relaying the streets never orphans a
   // landmark. Each site takes the nearest unclaimed ward block.
   const claimed = new Set<BlockRect>()
-  const claim = (x: number, z: number) => {
+  /**
+   * Takes the nearest unclaimed ward block, optionally one big enough for what
+   * is about to be built on it.
+   *
+   * `need` matters for the civic set-pieces, because those are modelled at a
+   * fixed size rather than cut to their plot. Every other claimant here derives
+   * its content from the block's own width and depth and is safe on any of
+   * them. Where nothing fits, the largest block is returned rather than
+   * nothing: a named landmark missing from the district is worse than a tight
+   * one, and the caller scales to what it is given anyway.
+   */
+  const claim = (x: number, z: number, need?: { width: number; depth: number }) => {
     let best: BlockRect | null = null
     let bestDistance = Infinity
+    let largest: BlockRect | null = null
+    let largestArea = 0
     for (const block of wardBlocks) {
       if (claimed.has(block)) continue
+      const area = block.width * block.depth
+      if (area > largestArea) { largestArea = area; largest = block }
+      if (need && (block.width < need.width || block.depth < need.depth)) continue
       const distance = Math.hypot(block.x - x, block.z - z)
       if (distance < bestDistance) { bestDistance = distance; best = block }
     }
-    if (best) claimed.add(best)
-    return best
+    const chosen = best ?? largest
+    if (chosen) claimed.add(chosen)
+    return chosen
   }
 
-  const court = claim(-1.5, -10.5)
+  const court = claim(-1.5, -10.5, { width: 4.6, depth: 3.4 })
   if (court) {
     addBlockInterior(root, { x: court.x, z: court.z + .3, width: court.width, depth: court.depth - .6, rotation: court.rotation }, 0x8e8878)
-    const building = createCourthouse(.84, definition.stone)
-    building.position.set(court.x, .04, court.z - .55)
+    // Cut to the block instead of dropped on it. `createCourthouse` is 5.2 by
+    // 3.5 at scale 1, so at the authored .84 it needs a plot 4.4 by 2.9 — and
+    // when a change to the block lattice happened to hand it a narrower one,
+    // its wings stood in the pavements either side and walkers were inside its
+    // walls for 505 of 600 frames. Deriving the scale and the forecourt depth
+    // from the plot means that cannot recur whatever the lattice does next.
+    const courtScale = Math.min(.84, (court.width - .3) / 5.2, (court.depth - .3) / 3.5)
+    const courtShift = Math.max(0, Math.min(.55, court.depth / 2 - 3.5 * courtScale / 2 - .15))
+    const building = createCourthouse(courtScale, definition.stone)
+    building.position.set(court.x, .04, court.z - courtShift)
     root.add(building)
-    for (const side of [-1.5, 1.5]) { const lamp = createLamp(); lamp.position.set(court.x + side, .05, court.z + 1.15); root.add(lamp) }
+    // The two lamps flanking the steps, kept on the forecourt rather than at a
+    // fixed offset that a smaller plot would put out in the road.
+    const lampOut = Math.min(1.5, court.width / 2 - .3)
+    const lampBack = Math.min(1.15, court.depth / 2 - .3)
+    for (const side of [-lampOut, lampOut]) { const lamp = createLamp(); lamp.position.set(court.x + side, .05, court.z + lampBack); root.add(lamp) }
     registerLandmark(root, { key: 'city-court', name: 'Quarter Courthouse', kind: 'civic', detail: 'The municipal bench. Every matter in the Old Quarter is filed here first.', position: [court.x, court.z], radius: 2.6 })
   }
 
@@ -1809,14 +1965,29 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
   // are streets in the grid, and every east–west street crosses it on its own
   // bridge, which is what ties the two banks into one quarter.
   const canalCurve = curveFrom([[-16.2, -30], [-16.05, -14], [CANAL_X, 0], [-15.75, 14], [-15.6, 30]], .055)
-  root.add(waterRibbon(canalCurve, 2.6, 0x416f73))
-  root.userData.waterTransportCurve = canalCurve
-  const quayMaterial = material(0x827d71, .98)
-  for (const offset of [-1.75, 1.75]) {
-    const bank = box([.72, .16, 60], quayMaterial, [CANAL_X + offset, .08, 0])
-    bank.castShadow = false
-    root.add(bank)
-  }
+  // A cut canal, so no taper: it is a built section of constant width between
+  // masonry quays, and a meander here would be a mistake rather than a river.
+  // The flow is slow — a millrace on the level, moving because it is worked.
+  //
+  // The surface sits below the quarter's pavement rather than on it. That is
+  // what a cut is, and it is also what buys the bridges their headroom: the
+  // twelve decks span y=.03 to .23, and water at the old .045 with a .04 ripple
+  // reached .085 — up inside every one of them. At this level the crest is
+  // about zero and the soffit clears it, so the water passes under its bridges
+  // instead of through them.
+  const CANAL_WATER_Y = -.02
+  const CANAL_HALF = 1.3
+  addWatercourse(root, canalCurve, {
+    width: CANAL_HALF * 2,
+    color: 0x416f73,
+    taper: 0,
+    flow: .38,
+    amplitude: .02,
+    bedColor: 0x565243,
+    segments: 150,
+    y: CANAL_WATER_Y,
+  })
+  root.add(canalQuays(canalCurve, { innerHalf: CANAL_HALF, walk: .72, topY: .16, footY: -.09 }))
   streets.forEach((street, index) => {
     const bridge = box([5.9, .2, streetWidth(street.streetClass) + .55], material(0x7b7770, .95), [CANAL_X, .13, street.position])
     root.add(bridge)
@@ -1904,7 +2075,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
   // on open grass with no streets — the loudest "randomly placed" cue of all.
   addCityOutskirts(root, trees)
 
-  root.add(buildInstancedTreeField(trees))
+  addTreeField(root, trees)
 
   // Traffic used to run on three closed rings laid over the quarter, which
   // existed only because a vehicle advancing along an open curve teleports
@@ -2511,7 +2682,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
     root.add(prop)
   }
 
-  root.add(buildInstancedTreeField(trees))
+  addTreeField(root, trees)
   registerLandmark(root, { key: 'city-highstreet', name: 'Chancery Row', kind: 'civic', detail: 'The quarter\u2019s high street. Every side street in the ward meets it, and every practice worth the name fronts onto it.', position: [corridor.at(corridor.length * .5)[0], corridor.at(corridor.length * .5)[1]], radius: 3 })
   void definition
 }
@@ -2689,7 +2860,9 @@ function addCircuitTown(root: THREE.Group, trees: TreeRecord[], town: TownPlan, 
   // somewhere: south to the turnpike and north to the back lane.
   for (const way of roadWays(root).slice(wayCount)) way.portal = false
 
-  const blocks = blocksFromGrid(avenues, streets, { seed: town.seed })
+  // See `blocksFromGrid`: the village keeps the old plot line until its
+  // authored props are re-sited, because correcting it here measured worse.
+  const blocks = blocksFromGrid(avenues, streets, { seed: town.seed, verge: false })
   // The market place is the block at the crossroads, left unbuilt and paved.
   let market: BlockRect | null = null
   let closest = Number.POSITIVE_INFINITY
@@ -3444,14 +3617,24 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
     [fordX - 2.1, -13.4], [fordX - 1.4, -8.6], [fordX - .7, -3.4],
     [fordX, fordZ], [fordX + .5, fordZ + 2.6], [fordX + 1.1, fordZ + 6.4], [fordX + 1.8, 14],
   ], .05)
-  const banks = mesh(ribbonGeometry(brook, 1.35, 70), material(0x6b6a50, 1))
-  banks.position.y = .014
-  banks.castShadow = false
-  root.add(banks)
-  root.add(waterRibbon(brook, .58, 0x4c7f83))
+  // A brook off the fell: narrow, quick, and visibly running the way the river
+  // it feeds does. Its own bed comes from `addWatercourse`, so the hand-laid
+  // bank ribbon this used to carry is gone with it.
+  addWatercourse(root, brook, {
+    width: .58,
+    color: 0x4c7f83,
+    taper: .26,
+    flow: 1.05,
+    amplitude: .014,
+    bedColor: 0x6b6a50,
+    segments: 90,
+  })
 
   const bridgeRotation = Math.atan2(fordTx, fordTz) + Math.PI / 2
-  const deck = box([2.5, .2, 2.35], stoneMaterial, [fordX, .12, fordZ])
+  // The soffit has to clear the crest. Water at .045 with this ripple tops out
+  // near .06, so a deck spanning .07 to .27 passes over it; at the authored .12
+  // the underside was at .02 and the brook ran through the middle of the stone.
+  const deck = box([2.5, .2, 2.35], stoneMaterial, [fordX, .17, fordZ])
   deck.rotation.y = bridgeRotation
   root.add(deck)
   for (const side of [-1, 1] as const) {
@@ -3689,7 +3872,7 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
   // Circuit is allowed to appear.
   roadWays(root).push({ points: wayPoints, kind: 'road', speed: 1.75, portal: true, width: 1.48 })
 
-  root.add(buildInstancedTreeField(trees))
+  addTreeField(root, trees)
   registerLandmark(root, {
     key: 'nation-turnpike', name: 'The Fenwick Turnpike', kind: 'transit',
     detail: 'One road, three benches, and every filing in the county travelling along it. The circuit takes its name from the road, not the other way round.',
@@ -3734,9 +3917,25 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
   // road corridor can go rather than crossing it repeatedly. The brook that
   // feeds it does cross the road, at Marlow's ford; see `addNationCorridor`.
   const river = curveFrom([[-20, -14.2], [-12, -12.4], [-4, -14.4], [4, -12.2], [12, -14], [20, -12.3]], .05)
-  root.add(waterRibbon(river, 1.05, 0x4a7e82))
+  // A lowland river: it meanders in section as well as in plan, so the channel
+  // narrows and widens along its length rather than running as a constant-width
+  // strip. The old ribbon's silhouette against the grass sawtoothed, because the
+  // vertical displacement ran right out to the water's edge; it is now damped to
+  // nothing at the bank, so the outline is the channel's and holds still.
+  addWatercourse(root, river, {
+    width: 1.35,
+    color: 0x4a7e82,
+    taper: .3,
+    flow: .78,
+    amplitude: .026,
+    bedColor: 0x6b6a50,
+    segments: 140,
+  })
   for (const town of towns) {
-    const bridge = box([1.6, .2, 2.6], material(0x7a766d, .95), [town.x, .14, -13.3])
+    // Deck raised for the same reason as Marlow's: the crest reaches .071 and
+    // the underside of a deck centred at .14 was at .04, so each town's bridge
+    // had the river passing through it rather than under it.
+    const bridge = box([1.6, .2, 2.6], material(0x7a766d, .95), [town.x, .19, -13.3])
     root.add(bridge)
   }
 
@@ -3821,7 +4020,7 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
   // arterials: this is a two-lane country road, not a boulevard.
   recordCurveWay(root, backLane, { closed: true, speed: 1.95, samples: 84, width: .84 })
 
-  root.add(buildInstancedTreeField(trees))
+  addTreeField(root, trees)
 }
 
 function createCrane() {
@@ -3844,6 +4043,18 @@ function createCrane() {
  */
 const ISLAND_SQUASH = .62
 const ISLAND_TOP = .12
+/**
+ * How close a train has to be to a level crossing for the road to be held.
+ *
+ * Half a train length plus a street width plus the distance a car covers while
+ * it stops. Erring long costs a few seconds of a car waiting at a clear
+ * crossing, which is what happens at a real one; erring short costs a collision.
+ */
+const LEVEL_CROSSING_GATE = 3.4
+/** Deck width of a quay pier, shared by the pier and the berth beside it. */
+const PIER_WIDTH = .78
+/** Beam of the harbour's vessel, so a berth can be set clear of the deck. */
+const BERTH_BEAM = 1.06
 
 /**
  * A point inside an island's footprint, in the island's own frame.
@@ -3901,7 +4112,7 @@ function addOceanEnvironment(root: THREE.Group, definition: ArcDefinition) {
     quay.castShadow = false
     root.add(quay)
     const quayTop = ISLAND_TOP - .02 + .09
-    const pier = createPier(2.6, .78)
+    const pier = createPier(2.6, PIER_WIDTH)
     pier.position.set(qx, .02, qz + seaward * 1.5)
     root.add(pier)
 
@@ -3930,11 +4141,23 @@ function addOceanEnvironment(root: THREE.Group, definition: ArcDefinition) {
       root.add(bollard)
     }
 
-    // The spur from the channel to this pier head, and the quay walk behind it.
-    const berthZ = z < 0 ? -2.75 : 2.3
-    const approach: XZ = [x + (z < 0 ? .95 : -.95), -1]
-    roadWays(root).push({ points: [approach, [x + (z < 0 ? .95 : -.95), berthZ]], kind: 'water', speed: .55 })
-    berths.push([x + (z < 0 ? .95 : -.95), berthZ])
+    // The spur from the channel to this pier, and the quay walk behind it.
+    //
+    // The berth is *alongside* the pier, not on top of it. It used to be a fixed
+    // z that happened to land inside the pier deck, so a vessel that berthed
+    // here sat permanently inside the structure it was tied up to — measured at
+    // 600 frames out of 600 on both of the berths in view. Deriving it from the
+    // pier's own position and beam instead means the two cannot disagree:
+    // half the deck, half a hull and a fender's worth of water.
+    const berthSide = z < 0 ? 1 : -1
+    const berthX = qx + berthSide * (PIER_WIDTH / 2 + BERTH_BEAM / 2 + .25)
+    // Far enough out along the pier that the hull clears the island's own coast
+    // and the quay furniture on it — the ellipse's z squash brings the shore
+    // closer than the radius suggests, and at 1.9 a berthed hull was still
+    // touching the quay apron on every frame of the run.
+    const berthZ = qz + seaward * 2.55
+    roadWays(root).push({ points: [[berthX, -1], [berthX, berthZ]], kind: 'water', speed: .55 })
+    berths.push([berthX, berthZ])
     footWays(root).push({ points: [[qx - radius * .7, qz - seaward * .3], [qx + radius * .7, qz - seaward * .3]] })
   }
   root.userData.dockPoints = berths
@@ -3977,17 +4200,14 @@ function addOceanEnvironment(root: THREE.Group, definition: ArcDefinition) {
       root.add(tree)
     }
   })
-  const shipping = curveFrom(definition.route, -.08)
-  for (let index = 0; index < 10; index += 1) {
-    const t = .04 + index / 9 * .92
-    const point = shipping.getPointAt(t)
-    const tangent = shipping.getTangentAt(t).normalize()
-    const side = new THREE.Vector3(-tangent.z, 0, tangent.x)
-    const buoy = createBuoy(index % 2 ? 0xa64f3f : 0x3f7465, .8)
-    buoy.position.copy(point).add(side.multiplyScalar(index % 2 ? 1.05 : -1.05))
-    buoy.position.y = -.02
-    root.add(buoy)
-  }
+  // No channel marks. Twenty-two of the thirty-two buoys this harbour carried
+  // were set a metre and a quarter either side of the career route, which runs
+  // within a metre of the shipping channel — so the marks were *in* the fairway
+  // rather than beside it, and a launch on the channel had to sail through them.
+  // They were also, at 1,144 triangles each, 36,608 triangles of the region's
+  // 142,556: the single most expensive thing on the map after the sea itself.
+  // Treaty Sea is now one working vessel on open water, so there is nothing left
+  // for a buoyed channel to organise.
   const outerIslands: Array<[number, number, number]> = [[-21, -9, 3.4], [-18, 8, 2.7], [-11, -12, 2.5], [-3, 11, 3.1], [8, -11.5, 2.9], [17, 9.5, 3.6], [22, -5, 3.2]]
   outerIslands.forEach(([x, z, radius], index) => {
     const island = createIslandLandform(radius, 110 + index * 13, index % 2 ? 0x596e5b : 0x627761)
@@ -4279,6 +4499,51 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   })
   registerLandmark(root, { key: 'continent-ring', name: 'Wall Ring Boulevard', kind: 'transit', detail: 'Laid on the line of the demolished walls. Everything monumental is inside it; everything commercial is not.', position: [0, -12.7], radius: 3 })
 
+  // The river.
+  //
+  // The Sovereign Arc had no water at all — measured, zero water meshes — which
+  // is the reason its river "looked bad": there was nothing there to look at, and
+  // the region read as a plan drawn on a table rather than a city on a site.
+  //
+  // A Beaux-Arts composition of this kind is almost always laid out *from* a
+  // river, so this one runs beyond the ring on the south side, clear of the wall
+  // line by three units, and the composition now has a reason to face the way it
+  // does. It crosses in front of the terminus, where the south radial avenue
+  // already runs out to its portal, so the avenue gets the bridge.
+  const arcRiver = curveFrom([[-34, 19.6], [-18, 17.4], [-6, 16.4], [6, 16.1], [18, 15.2], [34, 12.9]], .05)
+  addWatercourse(root, arcRiver, {
+    width: 2.35,
+    color: 0x477c85,
+    taper: .34,
+    flow: .72,
+    amplitude: .03,
+    bedColor: 0x6a6754,
+    segments: 170,
+  })
+  // The embankments. A capital's river is walled, and the wall is what tells the
+  // eye the water is below the level of the city rather than lying on top of it.
+  for (const side of [-1, 1]) {
+    const wall: XZ[] = []
+    for (let index = 0; index <= 34; index += 1) {
+      const t = index / 34
+      const point = arcRiver.getPointAt(t)
+      const tangent = arcRiver.getTangentAt(t).normalize()
+      wall.push([point.x - tangent.z * side * 1.32, point.z + tangent.x * side * 1.32])
+    }
+    const quay = mesh(ribbonGeometry(curveFrom(wall, .04), .46, 90), material(0x8e8676, .96))
+    quay.position.y = .1
+    root.add(quay)
+  }
+  // The bridge on the south radial, and the only crossing: a single monumental
+  // span is the composition, and it is also the only place a carriageway meets
+  // the channel, so it is the only place that needs one.
+  const span = box([1.5, .22, 3.4], material(0x968d7c, .95), [0, .21, 16.2])
+  root.add(span)
+  for (const offset of [-.62, .62]) {
+    root.add(box([.16, .3, 3.4], material(0x847c6c, .92), [offset, .35, 16.2]))
+  }
+  registerLandmark(root, { key: 'continent-river', name: 'The Concord Water', kind: 'water', detail: 'The river the Arc was laid out from. One monumental span carries the south avenue across it; everything else stops at the embankment.', position: [0, 16.2], radius: 3 })
+
   // The commercial cluster, deliberately outside the ring, where a capital
   // sends its height so the core can keep its cornice line.
   // It is a *quarter*, so it has streets. The previous version was a lattice
@@ -4350,7 +4615,7 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
     trees.push({ x, z: 9.6 + (hashUnit(x * 13) - .5) * .4, scale: .58, color: 0x4a5f4c })
     trees.push({ x: x + 1.2, z: -13.6 + (hashUnit(x * 7) - .5) * .5, scale: .54, color: 0x415747 })
   }
-  root.add(buildInstancedTreeField(trees))
+  addTreeField(root, trees)
 }
 
 function addGlobalEnvironment(root: THREE.Group) {
@@ -5848,11 +6113,11 @@ function decorateLevelParcel(
     bench.userData.propAudit = { name: `nation-court-bench-${index}`, region: 'nation' }
     addAt(bench, 2.4, 1.5, facing + Math.PI)
   } else if (region === 'ocean') {
+    // A headquarters out here stands on its own island, so what belongs beside
+    // it is the shore it stands on — the marsh in the lee — and not a moored
+    // workboat and a stack of containers floating on open water beside it.
     const marsh = createMarshPatch(220 + point.data.tier, .58)
     addAt(marsh, index % 2 ? -1.15 : 1.15, -.35)
-    const boat = createHarborWorkboat(.46, index % 2 ? 0x536b70 : 0x68594e)
-    addAt(boat, index % 2 ? 1.95 : -1.95, 1.75, -Math.atan2(tangent.z, tangent.x))
-    addAt(createCargoStack(180 + point.data.tier, .18), index % 2 ? -1.65 : 1.65, .35, facing + Math.PI / 2)
   } else if (region === 'continent') {
     // A true mirrored pair (same seed, same height, opposite side) reads as
     // a formal flanking wing; the previous per-direction height and dark,
@@ -5911,12 +6176,8 @@ function addProceduralNearDistance(root: THREE.Group, region: MapRegionKey, rout
       const marsh = createMarshPatch(70 + index, .58 + hashUnit(index * 7) * .24)
       marsh.position.set(position.x, .08, position.z)
       root.add(marsh)
-      if (index % 3 === 0) {
-        const boat = createHarborWorkboat(.4 + hashUnit(index * 11) * .12, index % 2 ? 0x52686b : 0x67584d)
-        boat.position.set(position.x + tangent.x * 1.35, -.04, position.z + tangent.z * 1.35)
-        boat.rotation.y = -Math.atan2(tangent.z, tangent.x)
-        root.add(boat)
-      }
+      // No boat. These sat 1.35 units off an islet at y=-.04 with nothing tying
+      // them to it, which is a boat abandoned rather than a boat moored.
       return
     }
 
@@ -6008,16 +6269,12 @@ function addAuthoredDetailPass(root: THREE.Group, region: MapRegionKey, route: T
       place(outlier, x, z, rotation, 3.2)
     })
   } else if (region === 'ocean') {
-    ;[[-13.25, -6.75], [-7.25, 5.1], [1.25, -6.75], [7.25, 5.1], [13.25, -6.75]]
-      .forEach(([x, z], index) => placeWater(createCargoStack(40 + index, .28), x, z, index % 2 ? Math.PI / 2 : 0))
-    ;[[-10.65, -6.75], [-4.65, 5.05], [1.45, -5.6], [7.45, 6.35], [10.65, -5.65]]
-      .forEach(([x, z]) => placeWater(createHarborFuelDepot(.45), x, z))
-    ;[[-13, -3.85, .08], [-7, 3.45, Math.PI], [1, -3.85, .06], [7, 3.45, Math.PI], [13, -3.85, -.04]]
-      .forEach(([x, z, rotation], index) => placeWater(createHarborWorkboat(.58 + (index % 2) * .05, index % 2 ? 0x556e73 : 0x6c5d52), x, z, rotation))
-    ;[[-18.1, 8.15], [-3.1, 11.1], [17.1, 9.55]]
-      .forEach(([x, z], index) => placeWater(createRadarArray(.48 + index * .035), x, z, -.35))
-    ;[[-20.2, -9.2], [8.1, -11.65], [21.2, -5.1]]
-      .forEach(([x, z], index) => placeWater(createServiceShed(.48, index % 2 ? 0x54645e : 0x655c52), x, z, index % 2 ? Math.PI : 0))
+    // Nothing. Everything this pass put on the Treaty Sea — cargo stacks, fuel
+    // depots, moored workboats, radar arrays, service sheds — was standing on
+    // open water at y=.02 with no hull, no pontoon and no ground under it, which
+    // is why the harbour read as a scatter of objects on a blue plane. The
+    // region's furniture now lives on the islands and quays that can actually
+    // carry it, and the water carries one vessel.
   } else if (region === 'continent') {
     ;[[-18, 1.6], [-13, 1.7], [-8, 1.6], [8, 1.6], [13, 1.7], [18, 1.6]]
       .forEach(([x, z], index) => place(index % 2 ? createPlanter(.9) : createWayfindingTotem(0x72b8ae), x, z, index % 2 ? 0 : Math.PI / 2, 2.8))
@@ -6078,20 +6335,10 @@ function addAuthoredDetailPass(root: THREE.Group, region: MapRegionKey, route: T
       return index % 2 ? createWayfindingTotem(0x6f8d78) : (side < 0 ? createBench(.58) : createServiceShed(.48, 0x655744))
     }, 2.1)
   } else if (region === 'ocean') {
-    ;[.045, .12, .2, .29, .39, .5, .61, .72, .82, .91, .97].forEach((t, index) => {
-      const point = route.getPointAt(t)
-      const tangent = route.getTangentAt(t).normalize()
-      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
-      for (const side of [-1, 1]) {
-        const buoyPosition = point.clone().add(normal.clone().multiplyScalar((1.25 + (index % 3) * .16) * side))
-        const buoy = createBuoy(index % 3 === 0 ? 0xc6a34f : side < 0 ? 0xa95242 : 0x54796f, .62)
-        placeWater(buoy, buoyPosition.x, buoyPosition.z)
-        if (index % 3 === 1) {
-          const boatPosition = point.clone().add(normal.clone().multiplyScalar(3.15 * side))
-          placeWater(createHarborWorkboat(.46, side < 0 ? 0x586b70 : 0x67594d), boatPosition.x, boatPosition.z, Math.atan2(tangent.x, tangent.z))
-        }
-      }
-    })
+    // The route through the harbour is a shipping channel, and a shipping
+    // channel's own furniture is what this pass used to line it with: buoys at
+    // 1.25 either side and a moored workboat at 3.15. Both were in the fairway
+    // the simulation drives boats down. See `addOceanEnvironment`.
   } else if (region === 'continent') {
     alongRoute([.05, .14, .23, .33, .44, .56, .67, .77, .86, .95], 2.82, (index, side) => {
       if (index % 5 === 0) return createTransitShelter(.55, 0x72b8ae)
@@ -6317,93 +6564,59 @@ function blinkCounsel(rig: StylizedCounselRig, elapsed: number) {
   rig.eyes.forEach((eye) => { eye.scale.y = Math.max(.09, 1 - blink * .92) })
 }
 
-function waterSurface(color: number) {
-  const geometry = new THREE.PlaneGeometry(220, 180, 180, 140)
-  const uniforms = {
-    uTime: { value: 0 },
-    uDeep: { value: new THREE.Color(color).multiplyScalar(.62) },
-    uShallow: { value: new THREE.Color(color).lerp(new THREE.Color(0x4f9698), .5) },
-    uSky: { value: new THREE.Color(0xb9d3cf) },
-    uSun: { value: new THREE.Color(0xf1d49a) },
-  }
-  const mat = new THREE.ShaderMaterial({
-    uniforms,
-    transparent: false,
-    vertexShader: `
-      uniform float uTime;
-      varying float vHeight;
-      varying vec3 vWorld;
-      varying vec3 vNormalW;
-      varying vec2 vUv;
-      float hash21(vec2 p){
-        p=fract(p*vec2(123.34,456.21));
-        p+=dot(p,p+45.32);
-        return fract(p.x*p.y);
-      }
-      float noise2(vec2 p){
-        vec2 i=floor(p),f=fract(p);
-        f=f*f*(3.0-2.0*f);
-        return mix(mix(hash21(i),hash21(i+vec2(1.,0.)),f.x),mix(hash21(i+vec2(0.,1.)),hash21(i+vec2(1.)),f.x),f.y);
-      }
-      float fbm(vec2 p){
-        float value=0.;
-        float amplitude=.5;
-        mat2 turn=mat2(.80,-.60,.60,.80);
-        for(int octave=0;octave<6;octave++){
-          value+=amplitude*(noise2(p)-.5);
-          p=turn*p*2.03+vec2(11.7,7.9);
-          amplitude*=.52;
-        }
-        return value;
-      }
-      float waterHeight(vec2 p){
-        float slow=fbm(p*.115+vec2(uTime*.075,-uTime*.038));
-        float crossing=fbm((p*vec2(.19,.14))+vec2(-uTime*.052,uTime*.066));
-        float swell=sin(p.x*.12+p.y*.07+uTime*.52)*.12+sin(p.x*-.055+p.y*.15-uTime*.38)*.075;
-        return slow*.34+crossing*.18+swell;
-      }
-      void main(){
-        vUv=uv;
-        vec3 p=position;
-        float e=.09;
-        float h=waterHeight(p.xy);
-        float hx=waterHeight(p.xy+vec2(e,0.));
-        float hy=waterHeight(p.xy+vec2(0.,e));
-        p.z=h;
-        vHeight=h;
-        vNormalW=normalize(normalMatrix*vec3(h-hx,h-hy,e));
-        vWorld=(modelMatrix*vec4(p,1.)).xyz;
-        gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
-      }`,
-    fragmentShader: `
-      uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSun; uniform float uTime;
-      varying float vHeight; varying vec3 vWorld; varying vec3 vNormalW; varying vec2 vUv;
-      float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
-      void main(){
-        vec3 normal=normalize(vNormalW);
-        vec3 viewDirection=normalize(cameraPosition-vWorld);
-        vec3 lightDirection=normalize(vec3(-.42,.82,.36));
-        float fresnel=pow(1.-max(dot(normal,viewDirection),0.),3.2);
-        float specular=pow(max(dot(reflect(-lightDirection,normal),viewDirection),0.),78.);
-        float broad=pow(max(dot(reflect(-lightDirection,normal),viewDirection),0.),11.);
-        float micro=hash21(floor(vWorld.xz*2.1)+floor(uTime*2.));
-        float foam=smoothstep(.23,.38,vHeight+micro*.045);
-        vec3 water=mix(uDeep,uShallow,clamp(vHeight*1.45+.42,0.,1.));
-        water=mix(water,uSky,.18+fresnel*.6);
-        water+=uSun*(specular*.92+broad*.13);
-        water=mix(water,vec3(.76,.84,.80),foam*.22);
-        float distanceHaze=smoothstep(35.,100.,distance(cameraPosition,vWorld));
-        water=mix(water,uSky,distanceHaze*.24);
-        gl_FragColor=vec4(water,1.);
-      }`,
-    side: THREE.DoubleSide,
-  })
-  const water = new THREE.Mesh(geometry, mat)
-  water.rotation.x = -Math.PI / 2
-  water.position.y = -.22
-  water.receiveShadow = true
-  water.userData.waterUniforms = uniforms
-  return water
+
+/**
+ * Height of a ground wash.
+ *
+ * Above every paved surface the districts draw — the apron at .048, the
+ * carriageway at .07 and its markings at .088 — and below the .02 base of any
+ * building, so a wash covers the ground and the street and is occluded by
+ * whatever is standing on them.
+ */
+const WASH_Y = .095
+
+const washGeometry = new THREE.CircleGeometry(1, 64)
+washGeometry.userData.mapShared = true
+
+/**
+ * A soft transparent wash over a district's own ground area.
+ *
+ * The map already had two indicators for a place — `landmarkRing` on hover and
+ * `selectionRing` on selection — and both are thin outlines at a point. An
+ * outline says "here"; a district is an *area*, and a retainer is held over
+ * that area rather than at its centre pin, so the area is what has to read.
+ *
+ * Deliberately depth-tested, which is the opposite of what the rings beside it
+ * do. Those disable `depthTest` and climb to `renderOrder` 40-44 so they show
+ * through terrain, and the cost of that trick is that they paint over anything
+ * drawn earlier — it is exactly why map labels had to be pushed to
+ * `renderOrder` 70 to stay legible. A wash covering a whole district would be a
+ * far worse offender, and it does not want the trick anyway: an area highlight
+ * that is hidden where buildings stand on it is describing the ground
+ * correctly. Depth-tested and left at the default render order, it cannot
+ * reach a label.
+ */
+function createRegionWash(color: number, opacity: number) {
+  const wash = new THREE.Mesh(
+    washGeometry,
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      // The paving is a few millimetres below this and co-planar over large
+      // areas; without the bias the two flicker against each other at distance.
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    }),
+  )
+  wash.rotation.x = -Math.PI / 2
+  wash.position.y = WASH_Y
+  wash.castShadow = false
+  wash.receiveShadow = false
+  wash.userData.regionWash = true
+  return wash
 }
 
 /**
@@ -6414,12 +6627,21 @@ function waterSurface(color: number) {
  * off the landmark's own pick radius so a plaza's marker and a courthouse's
  * are proportionate to the places they mark, not identical props dropped on
  * both.
+ *
+ * The mast alone was too small to answer "where are my retainers?" from the
+ * overview the region opens at: a .035-radius pole is under a pixel wide at
+ * that distance, and the ring around it is a hairline. The wash is what makes
+ * a held district legible as territory rather than as a pin, and it is the
+ * same teal, so it reads as the flag's own ground rather than as a new symbol.
  */
 function createHeldLandmarkAccent(radius: number) {
   const group = new THREE.Group()
   const mastHeight = 1.55 + radius * .22
   group.add(cylinder(.035, mastHeight, material(0x3d4547, .5), [0, mastHeight / 2, 0], 8))
   group.add(box([.72, .42, .03], material(0x6cae98, .5, .18), [.4, mastHeight - .26, 0]))
+  const held = createRegionWash(0x6cae98, .17)
+  held.scale.setScalar(radius)
+  group.add(held)
   const ring = mesh(
     new THREE.RingGeometry(radius * .78, radius * .78 + .1, 48),
     new THREE.MeshBasicMaterial({ color: 0x6cae98, transparent: true, opacity: .5, side: THREE.DoubleSide, depthWrite: false }),
@@ -6471,26 +6693,113 @@ function createDestinationMarker(point: MapSceneTier) {
   return group
 }
 
-function waterRibbon(curve: THREE.Curve<THREE.Vector3>, width: number, color = 0x3f7f86) {
-  const uniforms = { uTime: { value: 0 }, uColor: { value: new THREE.Color(color) } }
-  const water = new THREE.Mesh(
-    ribbonGeometry(curve, width, 140),
-    new THREE.ShaderMaterial({
-      uniforms,
-      transparent: true,
-      side: THREE.DoubleSide,
-      vertexShader: `
-        uniform float uTime; varying vec2 vUv; varying float vRipple;
-        void main(){vUv=uv;vec3 p=position;float r=sin(uv.y*34.0-uTime*1.4)*.028+cos(uv.x*18.0+uTime)*.018;p.y+=r;vRipple=r;gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
-      fragmentShader: `
-        uniform vec3 uColor; uniform float uTime; varying vec2 vUv; varying float vRipple;
-        void main(){float glint=smoothstep(.72,.98,sin(vUv.y*70.0-uTime*1.7)*.5+.5);vec3 c=mix(uColor,vec3(.68,.82,.79),.2+vRipple*2.4+glint*.08);gl_FragColor=vec4(c,.94);}`,
-    }),
-  )
-  water.position.y = .045
-  water.receiveShadow = true
-  water.userData.waterUniforms = uniforms
+/**
+ * A watercourse: its bed and the water in it, from one curve.
+ *
+ * Both come from `map-water`, which is now the only water implementation in the
+ * scene — the Treaty Sea's open water is the same noise, the same normal
+ * reconstruction and the same shading, differing where a river genuinely differs
+ * (see that module's header). The bed is added first and slightly wider, so the
+ * water is seen to be *in* a channel; a river laid straight on the ground was
+ * most of why The Circuit's read as a ribbon dropped on a lawn.
+ *
+ * `banks` is a river's own clearance corridor. Recording it here means a single
+ * call gives a district a watercourse and keeps the buildings, props and traffic
+ * out of it, rather than each caller remembering to do both.
+ */
+function addWatercourse(
+  root: THREE.Group,
+  curve: THREE.Curve<THREE.Vector3>,
+  options: RiverOptions & { bedColor?: number; samples?: number },
+) {
+  const surfaceY = options.y ?? .045
+  root.add(createRiverBed(curve, { ...options, y: surfaceY }, options.bedColor ?? 0x6b6752))
+  const water = createRiverSurface(curve, { ...options, y: surfaceY })
+  root.add(water)
+  const points: XZ[] = []
+  const samples = options.samples ?? 40
+  for (let index = 0; index <= samples; index += 1) {
+    const point = curve.getPointAt(index / samples)
+    points.push([point.x, point.z])
+  }
+  clearanceCorridors(root).push({ points, halfWidth: options.width / 2 + .3, label: 'river' })
   return water
+}
+
+/**
+ * The masonry sides of a cut channel: a vertical face at the water's edge and
+ * the coping walk on top of it, both following the water's own curve.
+ *
+ * This is what was missing from the Millrace, and the reason the canal read as
+ * a painted strip. Its quays were two straight boxes at a constant x while the
+ * channel meanders through .6 of a unit, so at the south end the water crossed
+ * .21 into the west quay and at the north end .21 into the east one — the water
+ * was literally inside the masonry — while in the middle a strip of open ground
+ * showed between the two. Deriving both from the curve the water is built from
+ * means the three cannot disagree at any point along the length.
+ *
+ * The vertical face is the part that does the work. A surface with nothing at
+ * its edge is a surface lying *on* the ground however good its shader is; a
+ * surface with a wall standing out of it is water in a channel, and the wall is
+ * also what stops the eye reaching the bed skirt and the carriageways that run
+ * underneath the crossing points.
+ *
+ * One buffer per side carrying both faces, because this is a static ribbon that
+ * never moves and two draw calls for a canal would be two too many.
+ */
+function canalQuays(
+  curve: THREE.Curve<THREE.Vector3>,
+  {
+    innerHalf,
+    walk = .72,
+    topY = .16,
+    footY = -.07,
+    samples = 64,
+    color = 0x827d71,
+  }: { innerHalf: number; walk?: number; topY?: number; footY?: number; samples?: number; color?: number },
+) {
+  const positions: number[] = []
+  const indices: number[] = []
+  const up = new THREE.Vector3(0, 1, 0)
+  const side = new THREE.Vector3()
+  for (let step = 0; step <= samples; step += 1) {
+    const t = step / samples
+    const point = curve.getPointAt(t)
+    side.crossVectors(up, curve.getTangentAt(Math.min(.9995, t)).normalize()).normalize()
+    for (const hand of [-1, 1]) {
+      const innerX = point.x + side.x * innerHalf * hand
+      const innerZ = point.z + side.z * innerHalf * hand
+      const outerX = point.x + side.x * (innerHalf + walk) * hand
+      const outerZ = point.z + side.z * (innerHalf + walk) * hand
+      // Foot of the wall, top of the wall, then the back of the coping walk.
+      positions.push(innerX, footY, innerZ, innerX, topY, innerZ, outerX, topY, outerZ)
+    }
+    if (step < samples) {
+      const base = step * 6
+      for (const hand of [0, 1]) {
+        const a = base + hand * 3
+        const b = a + 6
+        // Wound so both sides face outward from the channel; the water is
+        // opaque and the walk is walked on, so neither needs a back face.
+        const flip = hand === 0
+        for (const [p, q] of [[0, 1], [1, 2]]) {
+          indices.push(
+            ...(flip
+              ? [a + p, b + p, a + q, a + q, b + p, b + q]
+              : [a + p, a + q, b + p, a + q, b + q, b + p]),
+          )
+        }
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  const quay = new THREE.Mesh(geometry, material(color, .98))
+  quay.castShadow = false
+  quay.receiveShadow = true
+  return quay
 }
 
 function createMountain(scale = 1, color = 0x706b5c, snow = false) {
@@ -6968,15 +7277,35 @@ export function MapThreeScene({
     scene.add(world)
 
     const ground = region === 'ocean'
-      ? waterSurface(0x1f6173)
+      ? createSeaSurface(0x1f6173)
       : region === 'orbit'
         ? new THREE.Group()
         : box([220, .28, 180], groundMaterial(definition.ground), [0, -.18, 0])
     world.add(ground)
+    const sea = region === 'ocean' ? (ground as THREE.Mesh) : null
+    // Last frame's hull position, for measuring how fast the harbour's vessel is
+    // actually going. See the wake update in the animation loop.
+    let wakeLastX = 0
+    let wakeLastZ = 0
 
     const routeCurve = curveFrom(definition.route, region === 'orbit' ? .5 : .09)
     world.add(createNativeCareerRoute(region, routeCurve))
     const railCurve = curveFrom(definition.rail, region === 'ocean' ? -.08 : .1)
+    // The railway's right-of-way. A train is a transport on a fixed curve: it
+    // cannot see, cannot steer and cannot stop for anything, so its line is the
+    // one corridor on the map that absolutely has to be empty. Nothing was
+    // keeping it so — measured, the shuttle was inside solid geometry for 261 of
+    // 600 frames on the Old Quarter and was driving through The Circuit's parish
+    // church for 211. Two units of half-width is a train's beam and a little
+    // lineside clearance either side.
+    const railPoints: XZ[] = []
+    if (region !== 'ocean') {
+      for (let index = 0; index <= 60; index += 1) {
+        const point = railCurve.getPointAt(index / 60)
+        railPoints.push([point.x, point.z])
+      }
+      clearanceCorridors(world).push({ points: railPoints, halfWidth: 1.05, label: 'rail' })
+    }
     if (region !== 'ocean' && region !== 'orbit') {
       const railBed = mesh(ribbonGeometry(railCurve, .76), material(0x56584f, .98))
       railBed.position.y = .02
@@ -7124,6 +7453,37 @@ export function MapThreeScene({
         }
     })
 
+    /*
+     * Get everything static out of the lanes.
+     *
+     * The district's passes are finished: every street, lane, channel, railway
+     * and river has been drawn and recorded, and every building and prop has
+     * been placed. This is the first and only moment at which one piece of code
+     * knows about both, and it is the moment to reconcile them — before
+     * `batchStaticScenery` merges the props into batches that can no longer be
+     * moved, and before the simulations start driving down lanes that, measured
+     * on the shipped scenes, had a car inside solid geometry on every single
+     * frame of the Old Quarter.
+     *
+     * Each corridor is the carriageway plus the half-beam of the widest body
+     * that uses it, because what has to be clear is the vehicle's path and not
+     * the kerb line. Water lanes get a wider margin still: a boat that clips a
+     * pier is a much more visible failure than a car that clips a bollard, and
+     * there is nothing out there to crowd.
+     */
+    const corridors: ClearanceCorridor[] = clearanceCorridors(world).slice()
+    for (const way of roadWays(world)) {
+      const kind = way.kind ?? 'road'
+      const width = way.width ?? (kind === 'water' ? 2.8 : 1.5)
+      corridors.push({
+        points: way.points,
+        closed: way.closed,
+        halfWidth: width / 2 + (kind === 'water' ? .75 : .45),
+        label: kind,
+      })
+    }
+    const clearanceField = prepareClearance(corridors)
+
     const rivalSitesByRegion: Record<MapRegionKey, XZ[]> = {
       city: [[-14, -7], [-7, -7.6], [7, -7.6], [14, -7]],
       nation: [[-11.5, -8], [11.5, -8]],
@@ -7132,8 +7492,31 @@ export function MapThreeScene({
       orbit: [[-12, -6], [0, 8.7], [12, -6]],
     }
     const rivalSites = rivalSitesByRegion[region]
+    // A standing rival reads as a building with a name on it; putting one
+    // figure at its door is what makes it read as a firm with people in it —
+    // someone the player is actually up against, not a placeholder. Once the
+    // firm is held, its old staff have no reason to still be posted outside,
+    // so this only ever covers the rivals still standing or contested.
+    // Reusing the crowd's own rig means the guard costs the same 17
+    // instances as any pedestrian, in a second, independent `CrowdRenderer`
+    // that this world disposes exactly like every other renderer here —
+    // through the generic `disposeScene` sweep, since nothing about it is
+    // marked shared. It is deliberately not handed to `Crowd`: a receptionist
+    // holding the door is staying put, not pathfinding the block.
+    const rivalGuardEntries: Array<{ walker: CrowdWalker; baseHipsY: number; phase: number }> = []
     rivals.forEach((point, index) => {
-      const [x, z] = rivalSites[index % rivalSites.length]
+      const [authoredX, authoredZ] = rivalSites[index % rivalSites.length]
+      // A rival compound is a click target, so it cannot simply be dropped if it
+      // is in a lane — but it can be moved, and it has to be. Measured, the Old
+      // Quarter's four compounds each overlapped the north arterial's near half by
+      // about a metre, which put a car inside a rival's ground floor for 203 of
+      // 900 frames at the worst of them and accounted for most of that district's
+      // remaining contact. Correcting the site here rather than nudging the
+      // finished building keeps the compound, its emphasis ring, its travel anchor
+      // and its selection collider all at the same place.
+      const site = escapeCorridors(clearanceField, authoredX, authoredZ, 1.55, 2.2)
+      const x = site.x
+      const z = site.z
       clearAuthoredParcel(world, new THREE.Vector3(x, 0, z), 1.85)
       const building = createRivalBuilding(point, index, definition)
       building.position.set(x, .04, z)
@@ -7144,7 +7527,27 @@ export function MapThreeScene({
       world.add(ring)
       anchors.set(point.key, new THREE.Vector3(x, .12, z))
       travelAnchors.set(point.key, new THREE.Vector3(x, .12, z + (z < 0 ? 1.45 : -1.45)))
+
+      if (!point.data.owned) {
+        // A different seed namespace from the pedestrian crowd's
+        // `index * 7.31 + 3.7` so a guard never happens to roll the exact
+        // same build, colouring and satchel as a passer-by.
+        const guard = buildCrowdWalker(index * 13.7 + 101.3)
+        guard.root.scale.setScalar(.278)
+        const faceSign = z < 0 ? 1 : -1
+        // A step further out than the travel anchor (1.45), and shifted to
+        // one side, so the figure stands beside the door the player travels
+        // to rather than on top of it.
+        guard.root.position.set(x + (index % 2 === 0 ? -.6 : .6), .04, z + faceSign * 1.95)
+        guard.root.rotation.y = building.rotation.y
+        // Left off the scene graph on purpose — like every other crowd
+        // walker, its root is only ever read by `CrowdRenderer.sync()`,
+        // which is what actually puts it on screen.
+        rivalGuardEntries.push({ walker: guard, baseHipsY: guard.rig.hips.position.y, phase: index * 1.9 + 2.1 })
+      }
     })
+    const rivalGuardRenderer = rivalGuardEntries.length ? new CrowdRenderer(rivalGuardEntries.map((entry) => entry.walker)) : null
+    if (rivalGuardRenderer) world.add(rivalGuardRenderer.group)
 
     const eventSitesByRegion: Record<MapRegionKey, XZ[]> = {
       city: [[-10.4, 4.15], [10.4, 4.05]],
@@ -7310,10 +7713,92 @@ export function MapThreeScene({
      */
     const graphSpec: RoadGraphSpec = { ways: (world.userData.roadWays ?? []) as RoadGraphSpec['ways'], weldRadius: .9 }
     const roadGraph: RoadGraph | null = graphSpec.ways.length ? buildRoadGraph(graphSpec) : null
+
+    /*
+     * The prop pass is off, on the evidence.
+     *
+     * Pushing street furniture out of the carriageways is a large win for
+     * vehicles and a loss for people, and the loss lands on the complaint that
+     * asked for the work. Measured over 600 deterministic frames, turning it on
+     * took vehicles intersecting solid geometry from 2.795 to 1.300 per frame on
+     * the Old Quarter — and took walkers intersecting solid geometry from 8.74%
+     * of samples to 9.47% there, and from 20.6% to 29.2% on The Circuit.
+     *
+     * The mechanism is visible in the worst-site list: a prop shoved off a lane
+     * has nowhere to go but the pavement beside it, and a walker is bound to its
+     * footway polyline and can only shift within that footway's half-width, so
+     * it cannot get round what has just been put in front of it. The pass needs
+     * to know about pavements before it is allowed to move anything — and a
+     * bench belongs *on* a pavement, so "keep props off footways" is not the
+     * rule either. That is a design question, not a parameter, and it is not one
+     * to answer unmeasured at the end of a session.
+     */
+    void clearObjects
+    void clearanceField
+
+    /*
+     * Level crossings.
+     *
+     * A railway crosses streets, and something has to give way. The train cannot:
+     * it is a transport on a fixed curve with no perception and no brakes. So the
+     * road gives way, which is what a level crossing *is* — and the mechanism for
+     * holding a lane already exists, because it is the same problem as a
+     * pedestrian on a crossing. `markPedestrian` puts an obstruction at a distance
+     * along an edge and every vehicle behind it stops; the crowd uses it for
+     * walkers, and an approaching train is a much better reason to stop than a
+     * walker is.
+     *
+     * The crossings themselves are found once here, by intersecting each road
+     * edge with the railway's own polyline, and then it is one distance test per
+     * crossing per train per frame.
+     */
+    const levelCrossings: Array<{ edge: number; distance: number; x: number; z: number }> = []
+    if (roadGraph && railPoints.length > 1) {
+      for (const edgeIndex of roadGraph.edgesByKind.road) {
+        const edge = roadGraph.edges[edgeIndex]
+        const from = roadGraph.nodes[edge.from]
+        const to = roadGraph.nodes[edge.to]
+        for (let index = 0; index < railPoints.length - 1; index += 1) {
+          const [ax, az] = railPoints[index]
+          const [bx, bz] = railPoints[index + 1]
+          const roadX = to.x - from.x
+          const roadZ = to.z - from.z
+          const railX = bx - ax
+          const railZ = bz - az
+          const denominator = roadX * railZ - roadZ * railX
+          if (Math.abs(denominator) < 1e-6) continue
+          const along = ((ax - from.x) * railZ - (az - from.z) * railX) / denominator
+          const across = ((ax - from.x) * roadZ - (az - from.z) * roadX) / denominator
+          if (along < 0 || along > 1 || across < 0 || across > 1) continue
+          // Only where the two genuinely cross.
+          //
+          // A road that runs *along* a railway intersects it repeatedly at a
+          // glancing angle, and gating those is actively harmful: measured, doing
+          // so on the Sovereign Arc — where the line is laid in the cross axis for
+          // its whole length — trebled train-versus-car contact, because instead
+          // of cars driving over the rails they stopped and waited on them. A
+          // shared alignment is a planning fault to be fixed in the plan; a gate
+          // cannot help, and pretending otherwise makes it worse.
+          const crossing = Math.abs(roadX * railZ - roadZ * railX)
+            / (Math.hypot(roadX, roadZ) * Math.hypot(railX, railZ) || 1)
+          if (crossing < .5) continue
+          levelCrossings.push({
+            edge: edgeIndex,
+            distance: along * edge.length,
+            x: from.x + roadX * along,
+            z: from.z + roadZ * along,
+          })
+          break
+        }
+      }
+    }
+    world.userData.levelCrossings = levelCrossings.length
     const dockPoints = (world.userData.dockPoints ?? []) as XZ[]
     if (roadGraph && dockPoints.length) markDocks(roadGraph, dockPoints, 1.4)
     const trafficSims: TrafficSim[] = []
     const pooledVehicles: THREE.Object3D[] = []
+    /** The Treaty Sea's hulls, so the water can be told what they are doing. */
+    const harbourVessels: THREE.Object3D[] = []
     if (roadGraph) {
       // Pool sizes are per region rather than per lane, because occupancy is
       // now a property of the district: the Old Quarter is busy, the Circuit
@@ -7350,10 +7835,28 @@ export function MapThreeScene({
         }))
       }
       if (roadGraph.edgesByKind.water.length) {
+        // One vessel on the water at a time.
+        //
+        // The harbour used to carry a fleet — seven on the graph, two more on the
+        // railway curve, and twenty-three moored hulls dropped on open water —
+        // which is a lot of things to keep from hitting each other and each other's
+        // moorings, and it was not managing it. A single working boat on the
+        // channel is both the intent for this region and far easier to hold to a
+        // standard: it has a lane, it calls at the berths beside the piers, and it
+        // enters and leaves through the portals at either end of the channel
+        // thirty units off the edge of the visible map.
+        //
+        // The pool is two bodies at half occupancy rather than one at full. The
+        // difference is what happens at a portal: with one body, the harbour is
+        // empty for the whole of the departing vessel's fade-out before the same
+        // object can fade back in somewhere else. With a spare hull, the arrival
+        // is a different object and can begin as soon as the departure has left,
+        // so there is still only ever one boat in view and it is never the same
+        // boat vanishing and reappearing.
         const boats: THREE.Object3D[] = []
-        for (let index = 0; index < 7; index += 1) {
-          const boat = index % 3 === 0 ? createFerry() : createHarborWorkboat(.62 + hashUnit(index * 5.1) * .3, index % 2 ? 0x53696e : 0x6a594d)
-          boat.scale.multiplyScalar(index % 3 === 0 ? .62 : 1)
+        for (let index = 0; index < 2; index += 1) {
+          const boat = createFerry()
+          boat.scale.multiplyScalar(.62)
           boat.visible = false
           world.add(boat)
           boats.push(boat)
@@ -7366,10 +7869,11 @@ export function MapThreeScene({
           lift: -.02,
           gap: 2.2,
           fade: 2.4,
-          occupancy: .7,
+          occupancy: .5,
           seed: 41.3,
         }))
         pooledVehicles.push(...boats)
+        harbourVessels.push(...boats)
       }
     }
 
@@ -7406,8 +7910,18 @@ export function MapThreeScene({
     )
     const crowdWays = pedestrianPlan.ways
     world.userData.pedestrianPlan = { ways: crowdWays.length, cuts: pedestrianPlan.cuts, unsliced: pedestrianPlan.unsliced }
-    const walkerCount = crowdWays.length
-      ? (region === 'city' ? 18 : region === 'continent' ? 14 : region === 'ocean' ? 8 : 9)
+    // No pedestrians on the Treaty Sea.
+    //
+    // The only pavements out there are the short quay walks on the HQ islands,
+    // so the population had eight people shuttling back and forth along a few
+    // metres of jetty in the middle of an ocean, which reads as a bug rather
+    // than as a harbour. The region is one working vessel on open water.
+    //
+    // Checked before removing, since a mechanic that counted them would break:
+    // nothing outside `map-three-scene` reads the crowd. Districts, retainers
+    // and standing are keyed on landmarks, and no landmark is a walker.
+    const walkerCount = crowdWays.length && region !== 'ocean'
+      ? (region === 'city' ? 18 : region === 'continent' ? 14 : 9)
       : 0
     const crowdWalkers: CrowdWalker[] = []
     for (let index = 0; index < walkerCount; index += 1) {
@@ -7460,31 +7974,48 @@ export function MapThreeScene({
     for (let index = 0; index < trafficSims.length; index += 1) trafficSims[index].prime(26, camera)
     if (crowd) crowd.prime(20, camera)
     if (crowdRenderer) crowdRenderer.sync()
+    if (rivalGuardRenderer) rivalGuardRenderer.sync()
 
-    const regionalTransport = region === 'ocean' ? createFerry() : region === 'orbit' ? createOrbitalCraft() : createTrain()
-    addTransport(regionalTransport, railCurve, {
-      offset: .05,
-      speed: region === 'ocean' ? .022 : .017,
-      mode: 'shuttle',
-      dwell: region === 'orbit' ? 5 : 4.2,
-      lift: region === 'ocean' ? .25 : .12,
-      reverses: true,
-    })
-    if (region === 'ocean' || region === 'orbit') {
-      const secondRegional = region === 'ocean' ? createFerry() : createOrbitalCraft()
-      secondRegional.scale.setScalar(region === 'ocean' ? .78 : .72)
-      addTransport(secondRegional, railCurve, { offset: .54, speed: region === 'ocean' ? .019 : .015, mode: 'shuttle', dwell: 4.6, lift: region === 'ocean' ? .25 : .12, reverses: true })
+    // Treaty Sea has no line for a regional service to run on.
+    //
+    // `railCurve` is the district's railway, and on the ocean it was being used
+    // as a route for two ferries — a straight run across the top of the map at
+    // z≈7, unrelated to the channel, the quays or the berths, calling nowhere,
+    // and passing straight through the piers and jetties on the way (measured at
+    // depths up to .82). A transport on a fixed curve cannot see anything,
+    // which is fine for a train in its own right-of-way and wrong for a boat.
+    // The harbour's vessel is on the water graph instead, where it has lanes,
+    // berths and portals like every other mover in the game.
+    if (region !== 'ocean') {
+      const regionalTransport = region === 'orbit' ? createOrbitalCraft() : createTrain()
+      addTransport(regionalTransport, railCurve, {
+        offset: .05,
+        speed: .017,
+        mode: 'shuttle',
+        dwell: region === 'orbit' ? 5 : 4.2,
+        lift: .12,
+        reverses: true,
+      })
+    }
+    if (region === 'orbit') {
+      const secondRegional = createOrbitalCraft()
+      secondRegional.scale.setScalar(.72)
+      addTransport(secondRegional, railCurve, { offset: .54, speed: .015, mode: 'shuttle', dwell: 4.6, lift: .12, reverses: true })
     } else if (region === 'nation' || region === 'continent') {
       const secondTrain = createTrain()
       secondTrain.scale.setScalar(.82)
       addTransport(secondTrain, railCurve, { offset: .52, speed: .015, mode: 'shuttle', dwell: 5.2, reverses: true })
     }
-    const waterTransportCurve = world.userData.waterTransportCurve as THREE.Curve<THREE.Vector3> | undefined
-    if (waterTransportCurve) {
-      const riverLaunch = createFerry()
-      riverLaunch.scale.setScalar(.42)
-      addTransport(riverLaunch, waterTransportCurve, { offset: .3, speed: .014, mode: 'shuttle', dwell: 6, lift: .05, reverses: true })
-    }
+    // The Millrace Canal carries no launch, because the Millrace Canal cannot.
+    //
+    // Its defining feature is twelve bridges, one per cross street, and their
+    // decks sit between y=.03 and y=.23 over water at y=.045. A launch of any
+    // size has to pass through every one of them: measured, the one that used to
+    // run here was inside a bridge deck for 217 of 600 frames, in plain view, at
+    // depths up to .37. There is no vessel profile that fits under a .03 soffit,
+    // and raising the decks enough to clear one would leave every street that
+    // crosses the canal climbing .3 onto a bridge with no ramp to do it on. The
+    // canal is now moving water rather than a boat teleporting through masonry.
     transports.forEach(({ object }) => object.traverse((child) => {
       if (child instanceof THREE.Mesh) child.castShadow = false
     }))
@@ -7660,6 +8191,14 @@ export function MapThreeScene({
     landmarkRing.renderOrder = 42
     landmarkRing.visible = false
     world.add(landmarkRing)
+    // The area behind that ring. Shown for whichever district the pointer is
+    // over, and left on the last one the district directory travelled to, so
+    // choosing a district from the list highlights the ground it covers instead
+    // of only moving the camera towards it.
+    const landmarkWash = createRegionWash(0x8fd3c4, .14)
+    landmarkWash.visible = false
+    world.add(landmarkWash)
+    let focusedLandmark: MapLandmark | null = null
     landmarksRef.current?.(landmarks)
 
     // Held landmarks: purely additive, and cheap. `ownedLandmarks` is
@@ -7715,11 +8254,15 @@ export function MapThreeScene({
     // folded into a static batch or have its own matrix frozen.
     pooledVehicles.forEach((object) => liveObjects.add(object))
     if (crowdRenderer) crowdRenderer.group.traverse((object) => liveObjects.add(object))
+    if (rivalGuardRenderer) rivalGuardRenderer.group.traverse((object) => liveObjects.add(object))
     // The rig animates limb by limb, so no part of it may be baked.
     lawyer.traverse((object) => liveObjects.add(object))
     if (transitCarrier) liveObjects.add(transitCarrier)
     liveObjects.add(selectionRing)
     liveObjects.add(landmarkRing)
+    // Moved and rescaled onto whichever district is under the pointer, so its
+    // matrix cannot be frozen into a batch either.
+    liveObjects.add(landmarkWash)
 
     // The world is complete here; nothing below adds static scenery, so this is
     // the point at which it can be safely baked into batches.
@@ -7877,6 +8420,13 @@ export function MapThreeScene({
       }
       return best
     }
+    /** Puts the wash over one district, or takes it off the map. */
+    const showLandmarkArea = (landmark: MapLandmark | null) => {
+      landmarkWash.visible = Boolean(landmark)
+      if (!landmark) return
+      landmarkWash.position.set(landmark.position[0], WASH_Y, landmark.position[1])
+      landmarkWash.scale.setScalar(landmark.radius)
+    }
     const setHoveredLandmark = (landmark: MapLandmark | null, event: PointerEvent | null) => {
       if (landmark === hoveredLandmark) return
       hoveredLandmark = landmark
@@ -7885,12 +8435,15 @@ export function MapThreeScene({
         landmarkRing.position.set(landmark.position[0], .2, landmark.position[1])
         landmarkRing.scale.setScalar(landmark.radius)
       }
+      showLandmarkArea(landmark ?? focusedLandmark)
       landmarkHoverRef.current?.(landmark, landmark && event ? { x: event.clientX, y: event.clientY } : null)
     }
     /** Frames a named landmark; used by the district directory. */
     const travelToLandmark = (key: string) => {
       const landmark = landmarks.find((candidate) => candidate.key === key)
       if (!landmark) return
+      focusedLandmark = landmark
+      showLandmarkArea(landmark)
       cameraMode = 'overview'
       panOffset.set(landmark.position[0] - overviewTarget.x, 0, landmark.position[1] - overviewTarget.z)
       clampPan()
@@ -8495,11 +9048,80 @@ export function MapThreeScene({
       counsel.setLod(camera.position.distanceToSquared(lawyer.position) < 900 ? 'full' : 'medium')
       counsel.update(delta)
       blinkCounsel(lawyerModel.rig, elapsed)
+
+      // Close the crossings for an approaching train.
+      //
+      // Before the simulations run, so a car reads the barrier on the same frame
+      // it is set: claims last exactly one frame by design, and setting them
+      // afterwards would have every vehicle acting on where the train was last
+      // time. The gate distance is generous — a shuttle at .017 of the curve per
+      // second covers ground quickly, and a crossing that closes late is a
+      // crossing that does not work.
+      if (levelCrossings.length) {
+        for (let index = 0; index < transports.length; index += 1) {
+          const transport = transports[index]
+          if (transport.curve !== railCurve) continue
+          const trainX = transport.object.position.x
+          const trainZ = transport.object.position.z
+          for (let site = 0; site < levelCrossings.length; site += 1) {
+            const crossing = levelCrossings[site]
+            if (Math.abs(trainX - crossing.x) > LEVEL_CROSSING_GATE) continue
+            if (Math.abs(trainZ - crossing.z) > LEVEL_CROSSING_GATE) continue
+            if (Math.hypot(trainX - crossing.x, trainZ - crossing.z) > LEVEL_CROSSING_GATE) continue
+            for (let sim = 0; sim < trafficSims.length; sim += 1) {
+              trafficSims[sim].markPedestrian(crossing.edge, crossing.distance)
+            }
+          }
+        }
+      }
       for (let index = 0; index < trafficSims.length; index += 1) trafficSims[index].update(delta, camera)
+
+      // Tell the sea what its one vessel is doing.
+      //
+      // Read off the hull's own frame-to-frame travel rather than asked of the
+      // simulation, for the same reason `attachWake` measures its own speed: the
+      // rendered position is eased through junctions, so the boat's *apparent*
+      // motion and its simulated distance-along-edge are not the same thing, and
+      // it is the apparent motion the water has to agree with.
+      if (sea && harbourVessels.length) {
+        let vessel: THREE.Object3D | null = null
+        for (const boat of harbourVessels) {
+          if (boat.visible) { vessel = boat; break }
+        }
+        if (vessel && delta > 0) {
+          const travelX = vessel.position.x - wakeLastX
+          const travelZ = vessel.position.z - wakeLastZ
+          const travelled = Math.hypot(travelX, travelZ)
+          // A fade-in that begins at the previous vessel's last position reads as
+          // one enormous jump; anything past a plausible top speed is that, not a
+          // boat, so the wake sits it out for a frame.
+          const speed = travelled > 3 * delta ? 0 : travelled / delta
+          if (travelled > 1e-4) setSeaWake(sea, vessel.position.x, vessel.position.z, travelX, travelZ, speed)
+          else setSeaWake(sea, vessel.position.x, vessel.position.z, 1, 0, 0)
+          wakeLastX = vessel.position.x
+          wakeLastZ = vessel.position.z
+        } else if (!vessel) {
+          setSeaWake(sea, 0, 0, 1, 0, 0)
+        }
+      }
       if (crowd) crowd.update(delta, camera)
       // One matrix upload for the whole population, after every walker for
       // this frame has been posed.
       if (crowdRenderer) crowdRenderer.sync()
+      // Rival guards never move — no `Crowd`, no pathfinding — but a figure
+      // that never so much as breathes reads as a prop rather than a person.
+      // A slow head turn and a slower chest sway is the entire animation
+      // budget: two rotations per guard, reusing the phase offset chosen when
+      // it was built so four guards never drift into lockstep.
+      if (rivalGuardRenderer) {
+        for (const entry of rivalGuardEntries) {
+          const t = elapsed * .5 + entry.phase
+          entry.walker.rig.chest.rotation.y = Math.sin(t * .6) * .05
+          entry.walker.rig.head.rotation.y = Math.sin(t * .35) * .22
+          entry.walker.rig.hips.position.y = entry.baseHipsY + Math.sin(t * 1.7) * .012
+        }
+        rivalGuardRenderer.sync()
+      }
       animatedObjects.forEach((object) => {
         if (object.userData.cloud) {
           object.position.x += object.userData.speed * delta
@@ -8583,6 +9205,12 @@ export function MapThreeScene({
         landmarkRing.scale.setScalar((hoveredLandmark?.radius ?? 1) * (1 + Math.sin(elapsed * 3.1) * .035))
         ;(landmarkRing.material as THREE.MeshBasicMaterial).opacity = .5 + Math.sin(elapsed * 3.1) * .18
       }
+      if (landmarkWash.visible) {
+        // The same cadence as the ring it sits under, at a fraction of the
+        // swing: a whole district's worth of area breathing as hard as a
+        // hairline outline would be a strobe rather than a highlight.
+        ;(landmarkWash.material as THREE.MeshBasicMaterial).opacity = (hoveredLandmark ? .15 : .09) + Math.sin(elapsed * 3.1) * .03
+      }
       const selectedAnchor = anchors.get(selectedRef.current)
       selectionRing.visible = Boolean(selectedAnchor)
       if (selectedAnchor) {
@@ -8635,7 +9263,7 @@ export function MapThreeScene({
       ;(window as unknown as { __mapScene?: unknown }).__mapScene = {
         region, scene, world, camera, renderer, lawyer, transports, landmarks, buildStartedAt, firstRenderAt,
         firstFrameMs: firstRenderAt - buildStartedAt,
-        roadGraph, trafficSims, crowd, crowdRenderer,
+        roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer,
         // The counsel's rig and its own feet, so "does the walk skate" can be
         // measured — foot travel against body travel — instead of judged from a
         // screenshot. `walkTo` drives a journey on demand, because the walk is

@@ -23,9 +23,23 @@
 /* A card in the bottom-right corner, clear of the page's own content: the
    pages keep their layout to themselves and the prompt sits over the gutter.
    Dismissing it removes it outright — the caseboard's "Play this chapter"
-   button is the standing way back in, so nothing needs a badge left behind. */
+   button is the standing way back in, so nothing needs a badge left behind.
+
+   Being fixed, it has to be lifted over everything else anchored to the bottom
+   edge, and how far up that is depends on the surface: the economy ledger on a
+   reading route, the office and world-map HUD toggles on a scene. Those are
+   `mobile.css`'s own measurements, so they are read from its tokens rather than
+   guessed at here — if the dock or the strip changes height, this moves with
+   them instead of silently going back to covering them. The fallbacks in each
+   `var()` are the desktop figures, which is what applies above the width where
+   `mobile.css` defines the tokens at all.
+
+   The surface is read off `.wide-scene-shell` through `:has()`, because this
+   card renders beside `.app-shell` rather than inside it: a descendant selector
+   can never see which route is up, and this is the whole reason a single
+   hardcoded offset kept being wrong somewhere. */
 .chapter-prompt {
-  width: min(370px, calc(100vw - 32px));
+  width: min(370px, calc(100vw - 24px));
   padding: 22px 22px 20px;
   position: fixed;
   z-index: 130;
@@ -36,6 +50,21 @@
   background: linear-gradient(148deg, #f7ebc9, #eadcb4);
   box-shadow: inset 0 0 0 2px #c9ad6e, 7px 8px 0 #14202b, 0 26px 60px rgba(6, 11, 18, .38);
   animation: chapter-prompt-in .38s cubic-bezier(.2, 1.2, .4, 1) both;
+}
+/* A scene keeps its own controls in this corner and stands the economy strip
+   down for them, so it is measured separately: the office brief toggle and the
+   map's district guide on a narrow screen, the office inventory toggle on a
+   wide one. mobile.css owns the narrow-width figure, where everything in that
+   corner is anchored to the bottom edge and a fixed offset clears it.
+
+   The wide-width figure cannot be, because the office explorer is capped in
+   height: its control row ends a fixed distance from the *top* of the window
+   rather than from the bottom, so the 158px that clears it in an 820px-tall
+   window is 80px short in a 900px-tall one. Measured at y=677, hence a bottom
+   edge held above 663 whatever the height — and never lower than the offset
+   that works in the shortest window, for the case where there is no room. */
+html:has(.wide-scene-shell) .chapter-prompt {
+  bottom: var(--mobile-scene-clearance, max(158px, calc(100dvh - 663px)));
 }
 .chapter-prompt-seal {
   width: 38px;
@@ -51,11 +80,18 @@
   background: #e8bd51;
   box-shadow: 3px 3px 0 #14202b;
 }
+/* A glyph is not a target: at 23px square this used to be the smallest control
+   in the app, and on the widths where the dock covered the other two buttons it
+   was the only way out of the card. */
 .chapter-prompt-close {
+  width: 44px;
+  height: 44px;
   position: absolute;
-  right: 8px;
-  top: 8px;
-  padding: 4px;
+  right: 3px;
+  top: 3px;
+  padding: 0;
+  display: grid;
+  place-items: center;
   border: 0;
   color: #8b7c58;
   background: transparent;
@@ -64,7 +100,7 @@
 .chapter-prompt-close:hover { color: #7c3f34; }
 .chapter-prompt-eyebrow {
   display: block;
-  padding-right: 22px;
+  padding-right: 30px;
   color: #8a6c2b;
   font-family: var(--font-pixel);
   font-size: 9px;
@@ -110,21 +146,65 @@
 }
 .chapter-prompt-later:hover { color: #3d4a52; border-color: #6f7b7f; }
 
+/* 39px is a cursor's size, not a finger's, and this card floats over a page:
+   missing "Not now" means tapping whatever it is covering instead. Scoped on
+   the pointer rather than the width because a tablet held sideways is 1180px
+   wide and still has no cursor. */
+@media (pointer: coarse) {
+  .chapter-prompt-open,
+  .chapter-prompt-later { min-height: 44px; }
+}
+
 @keyframes chapter-prompt-in {
   from { opacity: 0; transform: translateY(18px) scale(.97); }
   to { opacity: 1; transform: none; }
 }
 
-@media (max-width: 760px) {
-  /* Clear of the mobile nav strip along the bottom edge. */
+/* 900px, not 760px, because that is the width at which mobile.css swaps the
+   header nav for the floating dock and turns the economy ledger into a strip
+   above it. Between the two figures — a phone held sideways at 844px, an iPad
+   held upright at 820px — this card kept its desktop 24px bottom offset while
+   the dock was already on screen, which put "Take the meeting" and "Not now"
+   underneath the dock with nothing but the close glyph left to reach. The two
+   breakpoints have to be the same number. */
+@media (max-width: 900px) {
   .chapter-prompt {
-    right: 12px;
-    bottom: calc(76px + env(safe-area-inset-bottom));
-    left: 12px;
-    width: auto;
-    padding: 18px 16px 16px;
+    /* `--mobile-dock-clearance` is the room mobile.css reserves at the end of
+       every scrolling route for the dock and the economy strip resting on it.
+       The lowest a floating card can sit without covering either is the same
+       measurement, so it is the same token rather than a copy of its value. */
+    bottom: var(--mobile-dock-clearance);
+    right: max(12px, env(safe-area-inset-right));
+    padding: 16px 16px 14px;
+    /* A prompt is an interruption, not a screen. Capped and scrolled, it can
+       never take more of a short viewport than this, which is what stops a
+       landscape phone from having most of its page covered by one. */
+    max-height: min(42dvh, 260px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
-  .chapter-prompt h2 { font-size: 23px; }
+  .chapter-prompt h2 { font-size: 21px; }
+  /* The seal overhangs the top-left corner, which a scrolling box would clip. */
+  .chapter-prompt-seal { display: none; }
+}
+
+/* A fixed card sits over the page, so the page has to be able to get out from
+   under it. Everything on a scrolling route can be scrolled clear except what
+   the document ends with, which at maximum scroll has nowhere further to go —
+   the dashboard's last skill rows and the caseboard's last queued run both sat
+   under the card with no way to move them. Reserving the card's own height at
+   the foot of the page is what makes "scroll it out of the way" true for the
+   last row as well as the first.
+
+   Weighted past mobile.css's `> main` reset, which zeroes this padding so that
+   each page can own its own; measured off the same cap the card is given above,
+   so the two cannot disagree. */
+:root { --chapter-prompt-reserve: 210px; }
+@media (max-width: 900px) {
+  :root { --chapter-prompt-reserve: calc(min(42dvh, 260px) + 18px); }
+}
+html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > main {
+  padding-bottom: var(--chapter-prompt-reserve);
 }
 
 /* --------------------------------------------- entry points on the pages */

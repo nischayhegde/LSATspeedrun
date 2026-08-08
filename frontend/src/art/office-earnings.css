@@ -1,0 +1,224 @@
+/* Per-item earnings readout for the 3D office.
+   Lives inside `.av-room`, which is `position: absolute; inset: 0` and clips its
+   overflow, so the card is anchored in room space and cannot escape the scene.
+   `.av-room::before` sits at z-index 3 and the glass grade at 2, so this has to
+   clear both to avoid being graded like part of the set. */
+
+.office-readout {
+  position: absolute;
+  z-index: 6;
+  top: var(--readout-y, 50%);
+  left: var(--readout-x, 50%);
+  pointer-events: none;
+}
+
+.office-readout-card {
+  position: relative;
+  width: max-content;
+  max-width: 17.5rem;
+  transform: translate(-50%, calc(-100% - .85rem));
+  padding: .62rem .78rem .6rem;
+  border: 1px solid rgba(226, 199, 143, .28);
+  border-radius: .6rem;
+  background: linear-gradient(168deg, rgba(11, 26, 36, .95), rgba(7, 17, 26, .96));
+  box-shadow: 0 .7rem 1.6rem rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .05);
+  color: #e8ecef;
+  font-size: .78rem;
+  line-height: 1.35;
+  /* A tooltip that fades in every time the pointer crosses a lamp is noise, so
+     the entrance is short and does not move the card. */
+  animation: office-readout-in .13s ease-out both;
+}
+
+/* The pointer sits below the card, so the tail points back at the item that
+   the number belongs to. */
+.office-readout-card::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: .5rem;
+  height: .5rem;
+  border-right: 1px solid rgba(226, 199, 143, .28);
+  border-bottom: 1px solid rgba(226, 199, 143, .28);
+  background: rgba(8, 19, 28, .96);
+  transform: translate(-50%, -55%) rotate(45deg);
+}
+
+.office-readout.is-pinned .office-readout-card {
+  pointer-events: auto;
+  border-color: rgba(226, 199, 143, .46);
+}
+
+.office-readout-card header {
+  display: flex;
+  gap: .5rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: .34rem;
+}
+
+.office-readout-card header strong {
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+  color: #cdb079;
+}
+
+.office-readout-close {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: -.2rem -.25rem -.2rem 0;
+  padding: 0;
+  border: 0;
+  border-radius: .3rem;
+  background: rgba(255, 255, 255, .07);
+  color: #b9c4cc;
+  font-size: .9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.office-readout-close:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+
+.office-readout-figure {
+  display: flex;
+  align-items: baseline;
+  gap: .06rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.42rem;
+  font-weight: 650;
+  letter-spacing: -.012em;
+  color: #7fd6c2;
+  /* Tabular figures alone are not enough: the dollar total grows a digit as it
+     climbs, and without a settled baseline the whole card twitches. */
+  min-height: 1.62rem;
+}
+
+.office-readout-figure small {
+  font-size: .82rem;
+  font-weight: 600;
+  opacity: .72;
+}
+
+.office-readout-figure.is-static { color: #e6c98a; }
+
+.office-readout-figure.is-full { color: #f0c97a; }
+
+.office-readout-lede {
+  margin: .05rem 0 .5rem;
+  color: #9fb0ba;
+  font-size: .73rem;
+}
+
+.office-readout-lede.is-view {
+  margin-bottom: .3rem;
+  color: #e6c98a;
+  font-size: .95rem;
+  font-style: italic;
+  font-weight: 550;
+}
+
+.office-readout-view-note {
+  margin: 0;
+  color: #9fb0ba;
+  font-size: .73rem;
+}
+
+.office-readout-card dl {
+  display: grid;
+  gap: .22rem;
+  margin: 0 0 .45rem;
+}
+
+.office-readout-card dl div {
+  display: flex;
+  gap: .5rem;
+  justify-content: space-between;
+}
+
+.office-readout-card dt {
+  flex: none;
+  color: #7d8d97;
+  font-size: .68rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.office-readout-card dd {
+  margin: 0;
+  color: #dfe6ea;
+  font-size: .72rem;
+  text-align: right;
+}
+
+.office-readout-cap {
+  margin: 0;
+  padding-top: .36rem;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  color: #8b9aa4;
+  font-size: .68rem;
+  letter-spacing: .015em;
+}
+
+/* The ceiling is a prompt, not a failure, so it is the one line in the card
+   allowed to raise its voice. */
+.office-readout-cap.is-full {
+  color: #f2ce85;
+  font-weight: 600;
+}
+
+/* The actual fix for the ceiling, sitting right under the line that names it.
+   Only ever rendered while the card is pinned — see `PassiveBody`'s `pinned`
+   prop — because that is the only state in which `.office-readout-card` (via
+   `.is-pinned`) carries `pointer-events: auto` and a tap could ever land. */
+.office-readout-collect {
+  width: 100%;
+  margin-top: .42rem;
+  padding: .42rem 0;
+  border: 1px solid rgba(242, 206, 133, .55);
+  border-radius: .4rem;
+  background: rgba(242, 206, 133, .14);
+  color: #f2ce85;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background .12s ease, transform .08s ease;
+}
+
+.office-readout-collect:hover:not(:disabled) { background: rgba(242, 206, 133, .28); }
+
+.office-readout-collect:active:not(:disabled) { transform: translateY(1px); }
+
+.office-readout-collect:disabled { opacity: .55; cursor: default; }
+
+.office-readout-collect-error {
+  margin: .32rem 0 0;
+  color: #e6897d;
+  font-size: .66rem;
+}
+
+@keyframes office-readout-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Phones get the same card, a touch larger, because it is opened deliberately
+   by a tap rather than grazed by a cursor. */
+@media (max-width: 620px) {
+  .office-readout-card {
+    max-width: 15rem;
+    padding: .68rem .8rem .64rem;
+    font-size: .82rem;
+  }
+  .office-readout-figure { font-size: 1.5rem; }
+  .office-readout-close { width: 1.5rem; height: 1.5rem; font-size: 1.05rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .office-readout-card { animation: none; }
+}

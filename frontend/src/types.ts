@@ -41,6 +41,19 @@ export type GameAsset = {
   owned: boolean
   available: boolean
   requirements: GameRequirement
+  /**
+   * Dollars per hour this one item adds to the passive rate, present only on the
+   * minority of assets that genuinely earn while idle. Absent means the item
+   * earns nothing by the hour — not that the number is unknown — so the office
+   * readout reads the absence as "this does not earn on its own".
+   */
+  passive_hourly?: number
+  /**
+   * The share this item adds to the firm's case-fee multiplier, as a fraction:
+   * `.04` is the +4% the catalog prints. It is realised only when a case is won,
+   * so it is never an hourly figure. Absent on cosmetics, which have no effect.
+   */
+  payout_mult?: number
 }
 
 export type ClientContract = {
@@ -406,6 +419,23 @@ export type StrategyDefinition = {
 export type StrategyTrial = StrategyDefinition & { variant: 'prompt' }
 
 /**
+ * The control arm's card. It carries no technique, no steps, and no gate,
+ * because naming nothing is the condition being measured — the difference
+ * against it is what ranks every approach on the dashboard.
+ *
+ * Deliberately a separate field from `strategy_trial` rather than a variant of
+ * it: `strategy_trial` means "a named technique was offered" on both sides of
+ * the wire, and the apply/skip decision the server requires is keyed off that.
+ * There is nothing here to apply or to skip. See backend/app/services.py.
+ */
+export type StrategyNeutralCard = {
+  variant: 'control_visible'
+  plain_title: string
+  plain_line: string
+  note: string
+}
+
+/**
  * One required operation inside a strategy gate. The server authors these, and
  * the gate component renders whatever it is handed, so adding a strategy never
  * touches the component. See backend/app/enforcement.py.
@@ -520,6 +550,7 @@ export type SessionItem = {
   requires_reasoning: boolean
   reasoning_min_chars: number
   strategy_trial?: StrategyTrial | null
+  strategy_neutral?: StrategyNeutralCard | null
   strategy_gate?: StrategyGateSpec | null
   served_at: string
   elapsed_ms: number

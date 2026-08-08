@@ -61,3 +61,6 @@ frontend/scratch-*
 
 # Merge-reconciliation scratch (upstream patches, scratch databases, gate logs).
 .reconcile/
+
+# Mobile/UI verification scratch (screenshot matrices, harnesses, reports).
+.shots/

@@ -783,6 +783,51 @@ def test_dropping_the_approach_is_always_available_and_never_blocks(app):
         assert attempt.strategy_gate_ms == 0
 
 
+def test_skipping_stays_its_own_status_apart_from_satisfying_and_attesting(app):
+    """Three outcomes, three different words, none of them collapsible.
+
+    `skipped` is a student declining the approach, `satisfied` is one doing the
+    operations, and `attested` is one whose demonstrated mastery bought them the
+    benefit of the doubt. They mean different things about what was actually
+    observed, so any analysis of compliance depends on them staying apart —
+    `_strategy_result` counts `satisfied` as verified behaviour and would
+    overstate it if a skip or an attestation ever landed in the same bucket.
+
+    Each arm runs on its own session so this proves the distinction rather than
+    the order they happen to be submitted in.
+    """
+    statuses = {}
+    for label, level, fields, applied in (
+        ("skipped", LEVEL_FULL, None, False),
+        ("satisfied", LEVEL_FULL, {"prediction": "It has to give another reason the sleeplessness turns up there."}, True),
+        ("attested", LEVEL_LIGHT, None, True),
+    ):
+        client = app.test_client()
+        headers = login(client, f"three-status-{label}@example.test")
+        create_game(client, headers)
+        session = start(client, headers)
+        arm(app, session["id"], "prephrase", level=level)
+
+        response = submit(
+            client,
+            headers,
+            session["id"],
+            session["current_item"]["id"],
+            fields,
+            applied=applied,
+            key=f"three-{label}",
+        )
+        assert response.status_code == 200, (label, response.json)
+        with app.app_context():
+            attempt = Attempt.query.filter_by(idempotency_key=f"three-{label}").one()
+            statuses[label] = attempt.strategy_gate_status
+            assert attempt.strategy_applied is applied
+
+    assert statuses == {"skipped": "skipped", "satisfied": "satisfied", "attested": "attested"}
+    # Three distinct values, which is the property that matters.
+    assert len(set(statuses.values())) == 3
+
+
 def test_gate_time_is_recorded_apart_from_the_answer_clock(app):
     client = app.test_client()
     headers = login(client)
@@ -1087,6 +1132,70 @@ def test_the_artifact_rating_prompt_refuses_to_take_orders_from_the_artifact(app
     assert "cannot see whether it was right" in _ARTIFACT_SYSTEM
 
 
+# ---------------------------------------------------------------------------
+# The deploy canary
+#
+# `scripts/smoke_async_coaching.py` answers one real case on every deploy, so it
+# meets a real gate. It shipped predating this module and was refused, which
+# failed the deploy for three days while the app was behaving correctly. These
+# two tests are here so a change to the `prephrase` gate breaks the suite instead
+# of the next deployment.
+#
+# Both skip when `boto3` is absent. The canary talks to AWS and imports it at
+# module scope, so without the guard these two fail on any machine that has not
+# installed an optional deploy-time dependency — which reads as three real
+# strategy-gate failures and makes the suite's own pass count depend on what
+# happens to be in the environment. Skipping says "not checked here" out loud
+# instead. Wherever the canary actually matters, boto3 is installed and these
+# run in full.
+# ---------------------------------------------------------------------------
+
+
+def test_the_deploy_canary_arms_a_strategy_that_still_has_a_gate():
+    pytest.importorskip("boto3", reason="the deploy canary imports boto3 at module scope")
+    from scripts.smoke_async_coaching import CANARY_STRATEGY
+
+    assert CANARY_STRATEGY in GATES
+    gate = GATES[CANARY_STRATEGY]
+    # The canary builds one text field by hand. If the gate grows another
+    # required operation, the canary can no longer satisfy it.
+    assert [field["key"] for field in gate["fields"]] == ["prediction"]
+
+
+@pytest.mark.parametrize("section", ["Logical Reasoning", "Reading Comprehension"])
+def test_the_deploy_canary_clears_the_gate_it_arms_rather_than_bypassing_it(app, section):
+    pytest.importorskip("boto3", reason="the deploy canary imports boto3 at module scope")
+    from scripts.smoke_async_coaching import CANARY_STRATEGY, _prediction
+
+    client = app.test_client()
+    headers = login(client, f"canary-{section[:2].lower()}@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+    arm(app, session["id"], CANARY_STRATEGY, section=section)
+
+    with app.app_context():
+        study = db.session.get(StudySession, session["id"])
+        item = next(value for value in study.items if value.position == study.current_index)
+        prediction = _prediction(item)
+
+    response = submit(
+        client,
+        headers,
+        session["id"],
+        session["current_item"]["id"],
+        {"prediction": prediction},
+        key="canary",
+    )
+    assert response.status_code == 200
+    with app.app_context():
+        attempt = Attempt.query.one()
+        # Satisfied, not skipped and not attested. A canary that cleared the
+        # gate by declining the approach would stop covering enforcement.
+        assert attempt.strategy_gate_status == "satisfied"
+        assert attempt.strategy_applied is True
+        assert attempt.strategy_enforcement_level == LEVEL_FULL
+
+
 def test_a_gate_degrades_rather_than_traps_when_the_question_has_nothing_to_annotate(app):
     """An empty stimulus has no sentences, so a sentence gate would be unsatisfiable."""
     with app.app_context():
@@ -1103,3 +1212,44 @@ def test_a_gate_degrades_rather_than_traps_when_the_question_has_nothing_to_anno
         item.question = question
         item.id = "detached-item"
         assert build_gate(item) is None
+
+
+def test_a_degraded_gate_lets_the_student_through_instead_of_demanding_an_artifact(app):
+    """The other half of "degrades rather than traps": the submit path.
+
+    `build_gate` returning None is only half the promise. The enforcement level
+    was fixed at session creation and does not know the gate degraded, so the
+    student saw the prompt, pressed "Use it", was shown no steps at all — and
+    was then told to finish an approach that had no steps to finish, with Skip
+    as the only way out. Nothing was enforced, so nothing is demanded, and the
+    attempt records `unenforced` rather than a compliance status it did not
+    earn either way.
+    """
+    client = app.test_client()
+    headers = login(client, "degraded-gate@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+    arm(app, session["id"], "argument_core", level=LEVEL_FULL)
+
+    with app.app_context():
+        study = db.session.get(StudySession, session["id"])
+        item = next(value for value in study.items if value.position == study.current_index)
+        # A stimulus that does not split into sentences is what makes the
+        # annotate-the-stimulus gate impossible to build.
+        item.question.stimulus = ""
+        db.session.commit()
+
+    # The prompt still arrives; only the steps are gone.
+    current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]["current_item"]
+    assert current["strategy_trial"] is not None
+    assert current["strategy_gate"] is None
+
+    response = submit(client, headers, session["id"], current["id"], None, key="degraded")
+    assert response.status_code == 200, response.json
+
+    with app.app_context():
+        attempt = Attempt.query.one()
+        assert attempt.strategy_gate_status == "unenforced"
+        # The self-report is still recorded; it is only the gate that was never
+        # armed, and `unenforced` is exactly what a missing gate means.
+        assert attempt.strategy_applied is True
