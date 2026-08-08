@@ -1,0 +1,1445 @@
+{
+ "city": {
+  "region": "city",
+  "frames": 600,
+  "movers": 18,
+  "staticTriangles": 51258,
+  "occupiedCells": 24584,
+  "grid": {
+   "cell": 0.14,
+   "columns": 481,
+   "rows": 478,
+   "originX": -34,
+   "originZ": -34
+  },
+  "staticHitFrames": 600,
+  "staticHitsPerFrame": 2.795,
+  "staticWorstDepth": 0.374,
+  "straddleFrames": 584,
+  "straddlesPerFrame": 2.395,
+  "moverHitFrames": 106,
+  "moverHitsPerFrame": 0.177,
+  "moverWorstDepth": 0.69,
+  "pedestrianHits": 0,
+  "pedestrianWorstDepth": 0,
+  "walkerSamples": 8997,
+  "walkerStaticFrames": 384,
+  "walkerStaticPerFrame": 1.31,
+  "walkerStaticShare": 0.0874,
+  "walkerStaticWorstDepth": 0.12,
+  "wrongSideFrames": 12,
+  "wrongSidePerFrame": 0.02,
+  "wrongSideWorst": 0.378,
+  "laneExcursionFrames": 4171,
+  "laneExcursionMax": 0.08,
+  "spawnsInView": 1,
+  "worstStaticSites": [
+   {
+    "where": "transport@-13,7",
+    "frames": 261,
+    "depth": 0.298,
+    "span": {
+     "hit": [
+      0.2,
+      0.93
+     ],
+     "body": [
+      0.38,
+      0.96
+     ]
+    }
+   },
+   {
+    "where": "road@14,-6",
+    "frames": 203,
+    "depth": 0.22,
+    "span": {
+     "hit": [
+      0.23,
+      2.89
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "transport@-5,7",
+    "frames": 137,
+    "depth": 0.16,
+    "span": {
+     "hit": [
+      0.2,
+      0.93
+     ],
+     "body": [
+      0.38,
+      0.96
+     ]
+    },
+    "prop": "city-market-fountain",
+    "away": 0.46
+   },
+   {
+    "where": "road@-10,9",
+    "frames": 109,
+    "depth": 0.266,
+    "span": {
+     "hit": [
+      0.05,
+      1.31
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-10,8",
+    "frames": 79,
+    "depth": 0.245,
+    "span": {
+     "hit": [
+      0.05,
+      1.31
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "transport@-16,19",
+    "frames": 78,
+    "depth": 0.374,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      -0.14,
+      0.53
+     ]
+    }
+   },
+   {
+    "where": "transport@-16,23",
+    "frames": 70,
+    "depth": 0.373,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      -0.14,
+      0.53
+     ]
+    }
+   },
+   {
+    "where": "transport@-16,20",
+    "frames": 69,
+    "depth": 0.373,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      -0.14,
+      0.53
+     ]
+    }
+   },
+   {
+    "where": "road@13,-7",
+    "frames": 66,
+    "depth": 0.239,
+    "span": {
+     "hit": [
+      0.23,
+      2.89
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@13,-6",
+    "frames": 66,
+    "depth": 0.239,
+    "span": {
+     "hit": [
+      0.23,
+      2.89
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@13,-8",
+    "frames": 59,
+    "depth": 0.239,
+    "span": {
+     "hit": [
+      0.23,
+      2.89
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@13,-4",
+    "frames": 59,
+    "depth": 0.239,
+    "span": {
+     "hit": [
+      0.16,
+      0.54
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "transport@-16,17",
+    "frames": 55,
+    "depth": 0.368,
+    "span": {
+     "hit": [
+      0.03,
+      0.23
+     ],
+     "body": [
+      -0.14,
+      0.53
+     ]
+    }
+   },
+   {
+    "where": "transport@-16,22",
+    "frames": 50,
+    "depth": 0.374,
+    "span": {
+     "hit": [
+      0.03,
+      0.23
+     ],
+     "body": [
+      -0.14,
+      0.53
+     ]
+    }
+   },
+   {
+    "where": "road@-10,4",
+    "frames": 43,
+    "depth": 0.244,
+    "span": {
+     "hit": [
+      0.19,
+      2.27
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-9,9",
+    "frames": 41,
+    "depth": 0.1,
+    "span": {
+     "hit": [
+      0.05,
+      1.31
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@15,-6",
+    "frames": 30,
+    "depth": 0.22,
+    "span": {
+     "hit": [
+      0.23,
+      2.89
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@1,-11",
+    "frames": 27,
+    "depth": 0.24,
+    "span": {
+     "hit": [
+      0.34,
+      3.19
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@1,-9",
+    "frames": 27,
+    "depth": 0.24,
+    "span": {
+     "hit": [
+      0.29,
+      3.19
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@1,-10",
+    "frames": 26,
+    "depth": 0.24,
+    "span": {
+     "hit": [
+      0.29,
+      3.19
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "transport@-16,24",
+    "frames": 17,
+    "depth": 0.372,
+    "span": {
+     "hit": [
+      0.03,
+      0.23
+     ],
+     "body": [
+      -0.14,
+      0.53
+     ]
+    }
+   },
+   {
+    "where": "transport@-15,24",
+    "frames": 17,
+    "depth": 0.218,
+    "span": {
+     "hit": [
+      0.03,
+      0.23
+     ],
+     "body": [
+      -0.14,
+      0.53
+     ]
+    }
+   },
+   {
+    "where": "road@12,-6",
+    "frames": 16,
+    "depth": 0.22,
+    "span": {
+     "hit": [
+      0.23,
+      2.89
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@1,-8",
+    "frames": 14,
+    "depth": 0.24,
+    "span": {
+     "hit": [
+      0.05,
+      3.19
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   }
+  ],
+  "worstWalkerSites": [
+   {
+    "where": "walker@2,3",
+    "frames": 125,
+    "depth": 0.065,
+    "span": {
+     "top": 1.52
+    }
+   },
+   {
+    "where": "walker@13,3",
+    "frames": 89,
+    "depth": 0.029,
+    "span": {
+     "top": 2.24
+    }
+   },
+   {
+    "where": "walker@2,4",
+    "frames": 79,
+    "depth": 0.12,
+    "span": {
+     "top": 1.52
+    }
+   },
+   {
+    "where": "walker@13,4",
+    "frames": 68,
+    "depth": 0.029,
+    "span": {
+     "top": 2.24
+    }
+   },
+   {
+    "where": "walker@0,-1",
+    "frames": 60,
+    "depth": 0.12,
+    "span": {
+     "top": 0.55
+    },
+    "prop": "city-cafe-0",
+    "away": 0.42
+   },
+   {
+    "where": "walker@0,0",
+    "frames": 59,
+    "depth": 0.12,
+    "span": {
+     "top": 0.37
+    }
+   },
+   {
+    "where": "walker@14,3",
+    "frames": 44,
+    "depth": 0.12,
+    "span": {
+     "top": 2.24
+    }
+   },
+   {
+    "where": "walker@-1,-2",
+    "frames": 43,
+    "depth": 0.064,
+    "span": {
+     "top": 0.87
+    },
+    "prop": "city-cafe-0",
+    "away": 0.14
+   },
+   {
+    "where": "walker@0,-2",
+    "frames": 43,
+    "depth": 0.12,
+    "span": {
+     "top": 0.96
+    },
+    "prop": "city-cafe-0",
+    "away": 0.44
+   },
+   {
+    "where": "walker@-25,-19",
+    "frames": 42,
+    "depth": 0.12,
+    "span": {
+     "top": 0.37
+    }
+   },
+   {
+    "where": "walker@-1,-3",
+    "frames": 30,
+    "depth": 0.065,
+    "span": {
+     "top": 0.87
+    }
+   },
+   {
+    "where": "walker@0,-3",
+    "frames": 29,
+    "depth": 0.12,
+    "span": {
+     "top": 0.87
+    }
+   },
+   {
+    "where": "walker@-24,-21",
+    "frames": 27,
+    "depth": 0.12,
+    "span": {
+     "top": 0.37
+    }
+   },
+   {
+    "where": "walker@0,1",
+    "frames": 24,
+    "depth": 0.12,
+    "span": {
+     "top": 0.29
+    }
+   },
+   {
+    "where": "walker@13,2",
+    "frames": 24,
+    "depth": 0.029,
+    "span": {
+     "top": 2.24
+    }
+   }
+  ],
+  "worstOffside": [
+   {
+    "where": "offside@19,-6",
+    "frames": 8,
+    "depth": 0.378
+   },
+   {
+    "where": "offside@-10,9",
+    "frames": 3,
+    "depth": 0.078
+   },
+   {
+    "where": "offside@15,-18",
+    "frames": 1,
+    "depth": 0.042
+   }
+  ],
+  "worstStraddles": [
+   {
+    "where": "road@14,-6",
+    "frames": 204,
+    "depth": 0.08,
+    "span": {
+     "hit": [
+      0.05,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-10,7",
+    "frames": 97,
+    "depth": 0.244,
+    "span": {
+     "hit": [
+      0.2,
+      0.2
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-10,5",
+    "frames": 93,
+    "depth": 0.244,
+    "span": {
+     "hit": [
+      0.05,
+      0.19
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-16,-8",
+    "frames": 79,
+    "depth": 0.213,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-13,-8",
+    "frames": 74,
+    "depth": 0.213,
+    "span": {
+     "hit": [
+      0.03,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-15,-8",
+    "frames": 70,
+    "depth": 0.213,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-18,-8",
+    "frames": 70,
+    "depth": 0.213,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-14,-8",
+    "frames": 69,
+    "depth": 0.213,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-17,-8",
+    "frames": 69,
+    "depth": 0.213,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-19,-8",
+    "frames": 61,
+    "depth": 0.213,
+    "span": {
+     "hit": [
+      0.23,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@13,-6",
+    "frames": 58,
+    "depth": 0.239,
+    "span": {
+     "hit": [
+      0.05,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-19,17",
+    "frames": 55,
+    "depth": 0.16,
+    "span": {
+     "hit": [
+      0.03,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@12,-4",
+    "frames": 47,
+    "depth": 0.099,
+    "span": {
+     "hit": [
+      0.11,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@12,-3",
+    "frames": 44,
+    "depth": 0.099,
+    "span": {
+     "hit": [
+      0.11,
+      0.23
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   }
+  ],
+  "worstMoverPairs": [
+   {
+    "where": "road|transport@-9,7",
+    "frames": 99,
+    "depth": 0.69
+   },
+   {
+    "where": "road|transport@-10,7",
+    "frames": 7,
+    "depth": 0.075
+   }
+  ]
+ },
+ "nation": {
+  "region": "nation",
+  "frames": 600,
+  "movers": 13,
+  "staticTriangles": 22992,
+  "occupiedCells": 37343,
+  "grid": {
+   "cell": 0.14,
+   "columns": 467,
+   "rows": 398,
+   "originX": -33,
+   "originZ": -28
+  },
+  "staticHitFrames": 416,
+  "staticHitsPerFrame": 2.057,
+  "staticWorstDepth": 0.418,
+  "straddleFrames": 592,
+  "straddlesPerFrame": 2.468,
+  "moverHitFrames": 0,
+  "moverHitsPerFrame": 0,
+  "moverWorstDepth": 0,
+  "pedestrianHits": 0,
+  "pedestrianWorstDepth": 0,
+  "walkerSamples": 4194,
+  "walkerStaticFrames": 553,
+  "walkerStaticPerFrame": 1.44,
+  "walkerStaticShare": 0.206,
+  "walkerStaticWorstDepth": 0.12,
+  "wrongSideFrames": 24,
+  "wrongSidePerFrame": 0.04,
+  "wrongSideWorst": 0.279,
+  "laneExcursionFrames": 2746,
+  "laneExcursionMax": 0.308,
+  "spawnsInView": 1,
+  "worstStaticSites": [
+   {
+    "where": "transport@-9,7",
+    "frames": 211,
+    "depth": 0.418,
+    "span": {
+     "hit": [
+      0.12,
+      1.9
+     ],
+     "body": [
+      0.38,
+      0.96
+     ]
+    },
+    "prop": "nation-church",
+    "away": 0
+   },
+   {
+    "where": "transport@-10,7",
+    "frames": 205,
+    "depth": 0.416,
+    "span": {
+     "hit": [
+      0.12,
+      1.9
+     ],
+     "body": [
+      0.38,
+      0.96
+     ]
+    },
+    "prop": "nation-church",
+    "away": 0
+   },
+   {
+    "where": "road@-3,-18",
+    "frames": 96,
+    "depth": 0.282,
+    "span": {
+     "hit": [
+      0.19,
+      0.93
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-5,-18",
+    "frames": 95,
+    "depth": 0.271,
+    "span": {
+     "hit": [
+      0.4,
+      1.11
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-4,-18",
+    "frames": 91,
+    "depth": 0.291,
+    "span": {
+     "hit": [
+      0.4,
+      1.11
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-6,-18",
+    "frames": 83,
+    "depth": 0.288,
+    "span": {
+     "hit": [
+      0.05,
+      0.7
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-2,-18",
+    "frames": 76,
+    "depth": 0.292,
+    "span": {
+     "hit": [
+      0.19,
+      0.93
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-6,-3",
+    "frames": 64,
+    "depth": 0.257,
+    "span": {
+     "hit": [
+      0.03,
+      0.39
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-6,-2",
+    "frames": 63,
+    "depth": 0.274,
+    "span": {
+     "hit": [
+      0.03,
+      0.39
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-1,-18",
+    "frames": 56,
+    "depth": 0.289,
+    "span": {
+     "hit": [
+      0,
+      0.48
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@10,-8",
+    "frames": 45,
+    "depth": 0.26,
+    "span": {
+     "hit": [
+      0.23,
+      3.54
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-7,-18",
+    "frames": 42,
+    "depth": 0.17,
+    "span": {
+     "hit": [
+      0,
+      0.7
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-6,-4",
+    "frames": 42,
+    "depth": 0.204,
+    "span": {
+     "hit": [
+      0.03,
+      0.39
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@10,-7",
+    "frames": 39,
+    "depth": 0.26,
+    "span": {
+     "hit": [
+      0.23,
+      3.54
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-5,-1",
+    "frames": 10,
+    "depth": 0.183,
+    "span": {
+     "hit": [
+      0.03,
+      0.39
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-6,-1",
+    "frames": 10,
+    "depth": 0.225,
+    "span": {
+     "hit": [
+      0.03,
+      0.39
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-3,-17",
+    "frames": 6,
+    "depth": 0.194,
+    "span": {
+     "hit": [
+      0,
+      0.4
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   }
+  ],
+  "worstWalkerSites": [
+   {
+    "where": "walker@13,2",
+    "frames": 244,
+    "depth": 0.12,
+    "span": {
+     "top": 4.12
+    },
+    "prop": "nation-court-bench-1",
+    "away": 0.78
+   },
+   {
+    "where": "walker@12,2",
+    "frames": 148,
+    "depth": 0.12,
+    "span": {
+     "top": 4.12
+    }
+   },
+   {
+    "where": "walker@11,2",
+    "frames": 133,
+    "depth": 0.12,
+    "span": {
+     "top": 4.12
+    }
+   },
+   {
+    "where": "walker@7,-1",
+    "frames": 80,
+    "depth": 0.12,
+    "span": {
+     "top": 0.42
+    },
+    "prop": "nation-farmstead-0",
+    "away": 0
+   },
+   {
+    "where": "walker@10,2",
+    "frames": 59,
+    "depth": 0.12,
+    "span": {
+     "top": 4.49
+    }
+   },
+   {
+    "where": "walker@9,2",
+    "frames": 49,
+    "depth": 0.12,
+    "span": {
+     "top": 0.73
+    },
+    "prop": "nation-court-gate-1",
+    "away": 0
+   },
+   {
+    "where": "walker@1,5",
+    "frames": 46,
+    "depth": 0.12,
+    "span": {
+     "top": 2.27
+    }
+   },
+   {
+    "where": "walker@-2,-2",
+    "frames": 24,
+    "depth": 0.028,
+    "span": {
+     "top": 0.55
+    },
+    "prop": "nation-field-gate-2",
+    "away": 0.52
+   },
+   {
+    "where": "walker@7,-2",
+    "frames": 24,
+    "depth": 0.12,
+    "span": {
+     "top": 0.39
+    },
+    "prop": "nation-farmstead-0",
+    "away": 0
+   },
+   {
+    "where": "walker@-1,-2",
+    "frames": 21,
+    "depth": 0.007,
+    "span": {
+     "top": 0.29
+    },
+    "prop": "nation-field-gate-2",
+    "away": 0.74
+   },
+   {
+    "where": "walker@11,-10",
+    "frames": 17,
+    "depth": 0.12,
+    "span": {
+     "top": 1.71
+    }
+   },
+   {
+    "where": "walker@-13,2",
+    "frames": 12,
+    "depth": 0.12,
+    "span": {
+     "top": 0.57
+    }
+   },
+   {
+    "where": "walker@-3,-1",
+    "frames": 6,
+    "depth": 0.12,
+    "span": {
+     "top": 0.4
+    },
+    "prop": "nation-field-gate-2",
+    "away": 0.17
+   },
+   {
+    "where": "walker@7,1",
+    "frames": 1,
+    "depth": 0.011,
+    "span": {
+     "top": 0.41
+    }
+   }
+  ],
+  "worstOffside": [
+   {
+    "where": "offside@21,-1",
+    "frames": 7,
+    "depth": 0.279
+   },
+   {
+    "where": "offside@0,-18",
+    "frames": 7,
+    "depth": 0.261
+   },
+   {
+    "where": "offside@10,-5",
+    "frames": 4,
+    "depth": 0.121
+   },
+   {
+    "where": "offside@-6,-5",
+    "frames": 4,
+    "depth": 0.144
+   },
+   {
+    "where": "offside@-10,-17",
+    "frames": 1,
+    "depth": 0.022
+   },
+   {
+    "where": "offside@-6,-4",
+    "frames": 1,
+    "depth": 0.193
+   }
+  ],
+  "worstStraddles": [
+   {
+    "where": "road@19,-4",
+    "frames": 95,
+    "depth": 0.274,
+    "span": {
+     "hit": [
+      0.01,
+      0.17
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "transport@7,7",
+    "frames": 91,
+    "depth": 0.323,
+    "span": {
+     "hit": [
+      0.36,
+      0.42
+     ],
+     "body": [
+      0.35,
+      0.82
+     ]
+    },
+    "prop": "nation-farmstead-1",
+    "away": 0.24
+   },
+   {
+    "where": "road@-25,2",
+    "frames": 60,
+    "depth": 0.066,
+    "span": {
+     "hit": [
+      0.2,
+      0.2
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-28,2",
+    "frames": 60,
+    "depth": 0.261,
+    "span": {
+     "hit": [
+      0.01,
+      0.17
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@21,-1",
+    "frames": 56,
+    "depth": 0.306,
+    "span": {
+     "hit": [
+      0.2,
+      0.2
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-26,2",
+    "frames": 52,
+    "depth": 0.1,
+    "span": {
+     "hit": [
+      0.2,
+      0.2
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-7,-18",
+    "frames": 50,
+    "depth": 0.242,
+    "span": {
+     "hit": [
+      0,
+      0.17
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@-2,-17",
+    "frames": 50,
+    "depth": 0.272,
+    "span": {
+     "hit": [
+      0,
+      0.19
+     ],
+     "body": [
+      0.17,
+      0.6
+     ]
+    }
+   },
+   {
+    "where": "road@0,-14",
+    "frames": 49,
+    "depth": 0.217,
+    "span": {
+     "hit": [
+      0.24,
+      0.24
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@0,-13",
+    "frames": 48,
+    "depth": 0.217,
+    "span": {
+     "hit": [
+      0.24,
+      0.24
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-27,2",
+    "frames": 45,
+    "depth": 0.066,
+    "span": {
+     "hit": [
+      0.2,
+      0.2
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@-30,2",
+    "frames": 45,
+    "depth": 0.082,
+    "span": {
+     "hit": [
+      0.2,
+      0.2
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@30,-2",
+    "frames": 45,
+    "depth": 0.045,
+    "span": {
+     "hit": [
+      0.2,
+      0.2
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   },
+   {
+    "where": "road@28,-2",
+    "frames": 44,
+    "depth": 0.084,
+    "span": {
+     "hit": [
+      0.2,
+      0.2
+     ],
+     "body": [
+      0.13,
+      0.72
+     ]
+    }
+   }
+  ],
+  "worstMoverPairs": []
+ },
+ "_errors": [
+  "[GSI_LOGGER]: The given origin is not allowed for the given client ID."
+ ],
+ "_frames": 600
+}
