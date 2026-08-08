@@ -46,11 +46,11 @@ export type RoadGraphSpec = {
     /** Nodes at either end of an open way become spawn/despawn portals. */
     portal?: boolean
     /**
-     * Kerb-to-kerb width of the carriageway. The driving sim does not use it —
-     * vehicles run on the centreline with a lane offset — but the pedestrian
-     * planner does, and it needs to agree with the width the scene actually
-     * drew. Recording it on the way the scene already contributes is the only
-     * way to keep the two from drifting apart.
+     * Kerb-to-kerb width of the carriageway. Both sides read it: the pedestrian
+     * planner to lay pavements beside it, and `TrafficSim` to solve a lane that
+     * keeps the body between the kerbs. It has to agree with the width the scene
+     * actually drew, and recording it on the way the scene already contributes
+     * is the only way to keep the two from drifting apart.
      */
     width?: number
   }>
@@ -467,10 +467,31 @@ const VEHICLE_CLEAR = 1.4
  */
 const CRAWLING = .8
 
+/**
+ * Gap left between a body's flank and the kerb it drives beside, and between
+ * two bodies passing in opposite directions. Small, because it is a tolerance
+ * rather than a comfort margin: the lane solver below is already working
+ * inside carriageways that only just fit what stands in them.
+ */
+const LANE_MARGIN = .02
+/** Half-width assumed for a pooled body that carries no hull tag. */
+const DEFAULT_BODY_HALF = .22
+
 export class TrafficSim {
   private readonly graph: RoadGraph
   private readonly kind: LaneKind
   private readonly laneOffset: number
+  /**
+   * Per-edge lane offset, solved once against the width of each carriageway.
+   *
+   * `laneOffset` alone was a single constant applied to every edge in a network
+   * whose widths span .52 to 1.95, and the sim never looked at `edge.width` at
+   * all. On the widest streets that parked the traffic near the centreline and
+   * left the kerbside — where the parked cars are — as the only part of the
+   * road anyone used. On an alley it was larger than the whole half-carriageway,
+   * so vehicles drove outside the alley and through the vans at its docks.
+   */
+  private readonly lane: Float32Array
   private readonly facing: 'x' | 'z'
   private readonly fade: number
   private readonly lift: number
@@ -554,6 +575,33 @@ export class TrafficSim {
         turns: 0,
       })
     })
+    // Widest body in the pool, read from the hull tags the scene attaches at
+    // construction. Solving the lane against the actual fleet rather than a
+    // guessed figure is the whole reason those tags are worth carrying.
+    let bodyHalf = 0
+    for (const object of options.vehicles) {
+      const hull = object.userData?.vehicleHull as { halfWidth?: number } | undefined
+      const half = (hull?.halfWidth ?? DEFAULT_BODY_HALF) * (Math.abs(object.scale.z) || 1)
+      if (half > bodyHalf) bodyHalf = half
+    }
+    if (bodyHalf <= 0) bodyHalf = DEFAULT_BODY_HALF
+
+    this.lane = new Float32Array(Math.max(1, this.graph.edges.length))
+    for (const edge of this.graph.edges) {
+      // The furthest a lane centre can sit and still keep the body between the
+      // kerbs, and the nearest it can sit without a two-way street's opposing
+      // flows sharing ground. On a carriageway wide enough for both these do
+      // not conflict and the authored offset is used untouched.
+      const inside = edge.width / 2 - bodyHalf - LANE_MARGIN
+      const apart = bodyHalf + LANE_MARGIN
+      const solved = Math.min(this.laneOffset, Math.max(0, inside))
+      // Where the street is too narrow to hold two bodies abreast, keeping them
+      // apart wins over keeping them off the kerb: a head-on is a worse defect
+      // than an overhang, and the real fault is a carriageway drawn narrower
+      // than the traffic assigned to it, which belongs to the plan not here.
+      this.lane[edge.index] = edge.twin >= 0 ? Math.max(apart, solved) : solved
+    }
+
     // Keeping a slice of the pool parked is what makes the churn legible: with
     // every body on the road at once, "despawn" would only ever be immediately
     // followed by a respawn of the same object somewhere else.
@@ -851,10 +899,11 @@ export class TrafficSim {
 
     const edge = this.graph.edges[chosen]
     const start = Math.min(hashUnit(agent.seed + this.spawnCursor) * .4, edge.length * .5)
+    const lane = this.lane[chosen]
     scratchTarget.set(
-      node.x + edge.dx * start - edge.dz * this.laneOffset,
+      node.x + edge.dx * start - edge.dz * lane,
       this.lift,
-      node.z + edge.dz * start + edge.dx * this.laneOffset,
+      node.z + edge.dz * start + edge.dx * lane,
     )
     // A world-space clearance test rather than a same-edge one. The spawn node
     // is by definition somewhere several edges meet, so a vehicle about to
@@ -893,10 +942,11 @@ export class TrafficSim {
     // Right of travel is (-dz, dx) — the same lateral convention `offsetCurve`
     // uses in the scene, so a lane laid out there and an agent driven here
     // agree about which side of the centreline they are on.
+    const lane = this.lane[agent.edge]
     scratchTarget.set(
-      from.x + edge.dx * agent.distance - edge.dz * this.laneOffset,
+      from.x + edge.dx * agent.distance - edge.dz * lane,
       this.lift,
-      from.z + edge.dz * agent.distance + edge.dx * this.laneOffset,
+      from.z + edge.dz * agent.distance + edge.dx * lane,
     )
     // Easing the *rendered* position rather than the simulated one is what
     // rounds off a corner: the two offset centrelines meeting at a junction are
@@ -980,8 +1030,12 @@ export class TrafficSim {
         // length of each other as they turn, which is exactly what it looks
         // like. `2·offset·tan(θ/2)` is the shortening; the clamp keeps a near
         // hairpin from demanding an absurd gap.
+        // Both lanes now differ per edge, so the shortening is taken on the
+        // wider of the two: it is the one that cuts the corner hardest, and
+        // asking for the larger gap is the safe way to be wrong here.
+        const turnLane = Math.max(this.lane[agent.edge], this.lane[agent.nextEdge])
         const corner = rightness > 0
-          ? Math.min(this.laneOffset * 3, 2 * this.laneOffset * Math.sqrt(Math.max(0, 1 - alignment) / Math.max(.08, 1 + alignment)))
+          ? Math.min(turnLane * 3, 2 * turnLane * Math.sqrt(Math.max(0, 1 - alignment) / Math.max(.08, 1 + alignment)))
           : 0
         for (let other = this.edgeHead[agent.nextEdge]; other >= 0; other = this.agentNext[other]) {
           const ahead = remaining + this.agents[other].distance - corner

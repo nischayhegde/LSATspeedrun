@@ -1442,22 +1442,24 @@ const WALKER_HALF_BEAM = .16
 
 /**
  * Whether planned buildings are reconciled against the corridors before they
- * are instanced. Off, because measured against the same code it is a no-op.
+ * are instanced.
  *
- * Wiring this was the standing theory for "walkers inside buildings" and the
- * theory is wrong. Two 600-frame runs, one with the pass and one without, agree
- * on every figure to the last digit: the planned buildings are already clear of
- * every carriageway and pavement the district records, because `blocksFromGrid`
- * lays them inside blocks those same streets bound.
+ * This was off for two passes on the strength of "two 600-frame runs, one with
+ * the pass and one without, agree on every figure to the last digit". That
+ * measurement was invalid. The harness it was taken with skipped
+ * `isInstancedMesh` when building its collision grid, and every planned building
+ * in the district is an `InstancedMesh` — so the only thing this pass moves was
+ * the one thing the metric could not see. The arms agreed because both were
+ * measuring the same blind spot, not because the pass does nothing.
  *
- * What walkers are actually inside is the *authored* population — the worst
- * sites name a cafe, a farmstead, court benches, a lamp — placed by the detail
- * passes against no corridor at all, and tall enough (tops at 1.5 to 4.2) to
- * read as buildings in the count. Whoever picks this up should point the pass at
- * those, not at the plan. Kept rather than deleted so the next attempt starts
- * from the measurement instead of repeating it.
+ * Measured with the corrected harness over 600 deterministic frames, on the
+ * Sovereign Arc: a train stood inside a building in 527 of 600 frames at
+ * `-11.4,7.4` and in 463 at `-12.6,6.0`, to a depth of 1.196. With this on, both
+ * sites disappear outright and the region's vehicle-in-building share falls from
+ * every frame to three quarters of them. That is the whole of the "trains phase
+ * through buildings" complaint, and it was a switch rather than a spline.
  */
-const BUILDING_CLEARANCE_ENABLED = false
+const BUILDING_CLEARANCE_ENABLED = true
 
 /**
  * Take a set of planned buildings out of the streets and pavements.
@@ -2218,6 +2220,16 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
   const UNIT_DEPTH = 1.45
   const REAR_LINE = SETBACK + UNIT_DEPTH
   const ALLEY_OFFSET = 4.03
+  /**
+   * The alley carriageway, drawn and routed from one number.
+   *
+   * The ribbon was drawn at .62 while the road graph was handed
+   * `streetWidth('alley')` = .52, so the lane the traffic was solved against was
+   * a tenth narrower than the tarmac under it. Same shape of fault as the
+   * carriageway-versus-paved-width mix-up in `blocksFromGrid`: one dimension
+   * with two sources of truth.
+   */
+  const ALLEY_CARRIAGEWAY = .62
   const ARTERIAL_Z = 5.8
 
   /* --- Planned voids ---------------------------------------------------- */
@@ -2421,12 +2433,31 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
 
       const alleyPoints: XZ[] = []
       for (let step = 0; step <= 4; step += 1) alleyPoints.push(corridor.at(from + (to - from) * (step / 4), ALLEY_OFFSET * side))
-      const alley = mesh(ribbonGeometry(curveFrom(alleyPoints, .058), .62, 8), material(0x4a4f4c, .95))
+      const alley = mesh(ribbonGeometry(curveFrom(alleyPoints, .058), ALLEY_CARRIAGEWAY, 8), material(0x4a4f4c, .95))
       alley.castShadow = false
       root.add(alley)
       // The alley is a real lane in the road graph, so delivery traffic has
       // somewhere to be that is not the high street.
-      roadWays(root).push({ points: alleyPoints, kind: 'road', speed: STREET_SPEED.alley, width: streetWidth('alley') })
+      //
+      // One-way, and the width the ribbon above was actually drawn to. Both
+      // matter: the graph used to be told `streetWidth('alley')`, a tenth
+      // narrower than the paving beside it, and two-way. A .62 lane cannot hold
+      // two bodies abreast — they are .44 and .46 wide — so the sim was obliged
+      // to keep the flows far enough apart to miss each other, which put both of
+      // them outside the alley and through the vans standing at the docks. A
+      // service lane behind a parade is one-way in any case.
+      //
+      // Reversed on the +1 side so that travel runs the same way round the
+      // block on both: lanes sit to the right of travel, corridor lateral is
+      // positive to the *left* of travel, so a consistent direction is what puts
+      // the lane against the outer kerb — away from the docks — on each side.
+      roadWays(root).push({
+        points: side > 0 ? alleyPoints.slice().reverse() : alleyPoints,
+        kind: 'road',
+        speed: STREET_SPEED.alley,
+        width: ALLEY_CARRIAGEWAY,
+        oneWay: true,
+      })
 
       // Loading docks against the rear wall, one per two units or so.
       let dockIndex = 0
@@ -2442,7 +2473,12 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
         markAuthoredProp(dock, .5)
         root.add(dock)
         if (hashUnit(seed * 7.3 + 5) < .34) {
-          const [vx, vz] = corridor.at(s + .55, (ALLEY_OFFSET - .34) * side)
+          // Backed onto the rear wall rather than sat in the middle of the
+          // yard. The van is .46 across and the yard between the rear building
+          // line and the alley kerb is .32, so it cannot stand entirely off the
+          // carriageway — but at the wall its flank clears the lane the sim now
+          // solves for this alley, which the old fixed .34 offset did not.
+          const [vx, vz] = corridor.at(s + .55, (REAR_LINE + .24) * side)
           const van = createDeliveryVan([0x8d8578, 0x6f7a72, 0x83705a][dockIndex % 3])
           van.position.set(vx, .03, vz)
           van.rotation.y = corridor.tangent(s)[0] > 0 ? 0 : Math.PI
@@ -5368,6 +5404,88 @@ function markAuthoredProp<T extends THREE.Object3D>(object: T, footprintRadius: 
 }
 
 /**
+ * Every vehicle body carries its own hull half-extents, measured on the local
+ * +x forward axis all of them are modelled along.
+ *
+ * A parked car is static scenery, so `batchStaticScenery` merges it out of
+ * existence and nothing downstream can read its box back. That is precisely why
+ * five cars standing in each other went unmeasured through three passes: the
+ * only collision harness in the project tests *movers*, and by the time it
+ * looks at the graph the parked population is anonymous triangles inside a
+ * merged batch. Tagging the hull at construction and harvesting the tags into a
+ * plain data registry before the batcher runs makes the parked fleet
+ * measurable without keeping a single extra draw call alive.
+ */
+function markVehicleHull<T extends THREE.Object3D>(
+  object: T, halfLength: number, halfWidth: number, kind: string, height: number, offsetX = 0,
+) {
+  object.userData.vehicleHull = { halfLength, halfWidth, kind, height, offsetX }
+  return object
+}
+
+export type VehicleHullRecord = {
+  x: number
+  z: number
+  rotationY: number
+  halfLength: number
+  halfWidth: number
+  low: number
+  high: number
+  kind: string
+}
+
+/**
+ * World-space hull records for every tagged vehicle currently in the graph.
+ *
+ * Read as an oriented box rather than an AABB: a car parked at an angle to the
+ * world axes has an axis-aligned box half again its own width, and inflating
+ * every hull like that would invent overlaps between neighbours that are
+ * actually clear.
+ */
+function collectVehicleHulls(root: THREE.Object3D, live: Set<THREE.Object3D>) {
+  const out: VehicleHullRecord[] = []
+  const position = new THREE.Vector3()
+  const quaternion = new THREE.Quaternion()
+  const scale = new THREE.Vector3()
+  const forward = new THREE.Vector3()
+  // A pooled body sits inactive at the origin until its simulation spawns it,
+  // so harvesting one here would record a dozen vehicles stacked on the same
+  // spot and invent exactly the fault this registry exists to measure. The
+  // movers are readable from their simulation at any time; this is the parked
+  // fleet only.
+  const isLive = (object: THREE.Object3D) => {
+    for (let node: THREE.Object3D | null = object; node; node = node.parent) if (live.has(node)) return true
+    return false
+  }
+  root.updateWorldMatrix(true, true)
+  root.traverse((child) => {
+    const hull = child.userData?.vehicleHull as
+      { halfLength: number; halfWidth: number; kind: string; height: number; offsetX?: number } | undefined
+    if (!hull) return
+    if (isLive(child)) return
+    child.matrixWorld.decompose(position, quaternion, scale)
+    // Heading straight off the world matrix, so a body nested inside a rotated
+    // parent group is recorded at the bearing it actually stands at.
+    forward.set(1, 0, 0).applyQuaternion(quaternion)
+    const spread = (Math.abs(scale.x) + Math.abs(scale.z)) / 2
+    // A train's three cars trail behind the origin the spline drives, so the
+    // hull centre is not the object position.
+    const shift = (hull.offsetX ?? 0) * Math.abs(scale.x || spread)
+    out.push({
+      x: position.x + forward.x * shift,
+      z: position.z + forward.z * shift,
+      rotationY: Math.atan2(forward.z, forward.x),
+      halfLength: hull.halfLength * Math.abs(scale.x || spread),
+      halfWidth: hull.halfWidth * Math.abs(scale.z || spread),
+      low: position.y,
+      high: position.y + hull.height * Math.abs(scale.y || spread),
+      kind: hull.kind,
+    })
+  })
+  return out
+}
+
+/**
  * Ground-conformance and overlap audit for placed props.
  *
  * Placement bugs in this scene have always been of two kinds — a prop hovering
@@ -5833,7 +5951,8 @@ function createFarmTractor(color = 0x6f5a3a) {
     front.rotation.x = Math.PI / 2
     group.add(front)
   }
-  return group
+  // Short but wide across the rear tyres, which is what it has to be judged on.
+  return markVehicleHull(group, .32, .24, 'tractor', .62)
 }
 
 function createRailSignal(scale = 1) {
@@ -6415,7 +6534,8 @@ function createDeliveryVan(color = 0x8d8578) {
     wheel.rotation.x = Math.PI / 2
     group.add(wheel)
   }
-  return group
+  // The cab overhangs the body at the back, so the hull is .94 nose to tail.
+  return markVehicleHull(group, .47, .23, 'van', .51, -.06)
 }
 
 function createVehicle(color = 0x7a4e45) {
@@ -6428,7 +6548,8 @@ function createVehicle(color = 0x7a4e45) {
     wheel.rotation.x = Math.PI / 2
     group.add(wheel)
   }
-  return group
+  // .7 of body over .44 across the wheel faces.
+  return markVehicleHull(group, .35, .22, 'car', .52)
 }
 
 function createTrain() {
@@ -6441,7 +6562,9 @@ function createTrain() {
     for (const x of [-.52, 0, .52]) car.add(box([.3, .25, .04], glass, [x - i * 1.75, .52, .36]))
     group.add(car)
   }
-  return group
+  // Three 1.55 cars on a 1.75 pitch: 5.05 end to end, centred 1.75 behind the
+  // leading car's origin, which is the point the spline actually drives.
+  return markVehicleHull(group, 2.53, .34, 'train', 1.07, -1.75)
 }
 
 /**
@@ -6482,6 +6605,7 @@ function createFerry() {
   group.add(hull)
   group.add(box([1.1, .52, .8], material(0xe0d8c2, .75), [0, .65, 0]))
   group.add(box([.78, .22, .7], material(0x49696f, .34, .18), [0, .94, 0]))
+  markVehicleHull(group, 1.25, .85, 'ferry', 1.05)
   return attachWake(group, 1.15)
 }
 
@@ -8270,6 +8394,11 @@ export function MapThreeScene({
     // conform half runs always — it is a placement fix, not instrumentation;
     // only the O(n²) overlap report is gated to development.
     conformAndAuditProps(world, region, import.meta.env.DEV)
+    // Harvested here for the same reason the audit above runs here: one line
+    // further down the parked fleet is anonymous triangles inside a merged
+    // batch. The moving pool stays addressable through its simulation, so this
+    // registry is only ever asked about bodies that stand still.
+    const vehicleHulls = collectVehicleHulls(world, liveObjects)
     batchStaticScenery(world, liveObjects)
 
     const playerOccluders = world.children.filter((object) => object.userData.playerOccluder)
@@ -9263,7 +9392,7 @@ export function MapThreeScene({
       ;(window as unknown as { __mapScene?: unknown }).__mapScene = {
         region, scene, world, camera, renderer, lawyer, transports, landmarks, buildStartedAt, firstRenderAt,
         firstFrameMs: firstRenderAt - buildStartedAt,
-        roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer,
+        roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer, vehicleHulls,
         // The counsel's rig and its own feet, so "does the walk skate" can be
         // measured — foot travel against body travel — instead of judged from a
         // screenshot. `walkTo` drives a journey on demand, because the walk is
