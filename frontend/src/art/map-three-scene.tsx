@@ -39,6 +39,7 @@ import {
   Crowd,
   TrafficSim,
   buildRoadGraph,
+  cutFootwaysAroundSolids,
   markDocks,
   planFootways,
   type CarriagewaySpec,
@@ -561,6 +562,41 @@ const KERB_TO_PAVEMENT = .28
  * metre wide.
  */
 const STREET_PAVEMENT_HALF = .09
+/**
+ * Fallback half-width for a pavement whose builder did not state one, shared by
+ * the crowd and by the pass that cuts pavements around solid footprints.
+ *
+ * One constant rather than two literals because the cut's whole correctness
+ * argument is that it removes exactly the spans where the crowd's own steering
+ * would have run out of room: give the two passes different ideas of how wide
+ * an unstated pavement is and the cut is either timid or destructive by exactly
+ * that difference.
+ */
+const CROWD_FOOTWAY_HALF = .65
+/**
+ * Whether pavements are taken out from under solid footprints before the crowd
+ * is built. See `cutFootwaysAroundSolids`.
+ *
+ * A switch rather than an assumption, because the pass is a real improvement in
+ * two regions and a real cost in the third, and the next person to work here
+ * should be able to see both halves of that and turn it over in one line rather
+ * than reconstructing it from a six-hundred-frame run. Walkers-in-any-solid over
+ * 600 deterministic frames, on the .12 test radius the series has always used:
+ *
+ * | region                     | off   | on    |
+ * | -------------------------- | ----- | ----- |
+ * | Old Quarter (`city`)       | .1299 | .0801 |
+ * | The Circuit (`nation`)     | .2928 | .2659 |
+ * | Sovereign Arc (`continent`)| .0535 | .0767 |
+ *
+ * Vehicle-in-building stays at zero in all three either way, and wrong-side
+ * frames stay at zero. The Arc pays for it in two places — that share, and
+ * walker-to-vehicle contacts, which rise as the cut moves people nearer kerbs —
+ * and the reason is understood but not yet fixed: the Arc's pavements are the
+ * narrowest in the game at a halfWidth of .09 to .18 while carrying the densest
+ * authored frontage, so it has the least room to give and gives it anyway.
+ */
+const FOOTWAY_SOLID_CUT_ENABLED = true
 /**
  * How much of the district's foot traffic each class of street carries.
  *
@@ -1360,11 +1396,36 @@ function createSolarArray(scale = 1) {
   return group
 }
 
+/**
+ * How far an articulated building's mouldings may stand outside the rectangle
+ * it was planned on.
+ *
+ * Small on purpose, and the same figure for every projection, so that "how much
+ * bigger is the drawn building than the planned one" has one answer that both
+ * the clearance pass and the crowd can be told. It used to be .12 for the trim,
+ * .1 to .12 for the cornice, .41 for the awning and .48 for a modern canopy,
+ * none of them written down anywhere, and the largest of them is four times the
+ * .09 pavement it was overhanging.
+ */
+const ARTICULATION = .12
+
 function createBlockBuilding(width: number, height: number, depth: number, color: number, modern = false, emissiveBoost = 0) {
   const group = new THREE.Group()
   group.userData.playerOccluder = true
   group.userData.footprintRadius = Math.max(width, depth) * .54
   group.userData.performanceCullRadius = Math.hypot(width, height, depth) * .62
+  // The drawn thing, reconciled with the planned rectangle rather than left to
+  // exceed it. `renderPlannedBuildings` articulates the few blocks nearest the
+  // camera and instances the rest, and both are laid out — and cleared of the
+  // pavements — on `width` by `depth`. This one is then drawn with a cornice, a
+  // canopy and an awning hanging off it, so the near buildings and only the
+  // near buildings stood over paving the planner had already cleared for them:
+  // the block passes the clearance check in plan while its awning is over the
+  // kerb. Both the projections below are therefore held to `ARTICULATION`, and
+  // that figure is declared to routing here so what a walker is steered around
+  // is what a walker can see.
+  group.userData.footprintBox = { hx: width / 2 + ARTICULATION, hz: depth / 2 + ARTICULATION }
+  group.userData.footprintSolid = true
   // emissiveBoost bypasses the shared material cache (a self-lit facade is a
   // narrow, region-specific need, not something every other caller of this
   // very widely shared function should suddenly start rendering).
@@ -1379,22 +1440,24 @@ function createBlockBuilding(width: number, height: number, depth: number, color
     const band = windowBand(width - .28, columns, .48 + floor * (height / floors), depth / 2 + .015, (floor + columns) % 3 === 0)
     group.add(band)
   }
-  group.add(box([width + .12, .12, depth + .12], trim, [0, height + .06, 0]))
+  group.add(box([width + ARTICULATION * 2, .12, depth + ARTICULATION * 2], trim, [0, height + .06, 0]))
   const doorway = box([Math.min(.52, width * .28), Math.min(.82, height * .38), .055], material(0x263235, .58, modern ? .24 : .08), [0, Math.min(.42, height * .19), depth / 2 + .04])
   group.add(doorway)
   if (modern) {
     const roofPlant = box([Math.min(1.05, width * .42), .34, Math.min(.8, depth * .4)], material(0x485355, .42, .34), [width * .16, height + .29, 0])
     group.add(roofPlant)
-    const canopy = box([Math.min(1.3, width * .62), .08, .48], material(0x778284, .38, .38), [0, .72, depth / 2 + .24])
+    const canopyDepth = .48
+    const canopy = box([Math.min(1.3, width * .62), .08, canopyDepth], material(0x778284, .38, .38), [0, .72, depth / 2 + ARTICULATION - canopyDepth / 2])
     group.add(canopy)
   } else {
-    const cornice = box([width + .24, .16, depth + .2], trim, [0, height + .15, 0])
+    const cornice = box([width + ARTICULATION * 2, .16, depth + ARTICULATION * 2], trim, [0, height + .15, 0])
     group.add(cornice)
     if (width > 1.55) {
       const chimney = box([.24, .62, .28], material(0x554a40, .94), [-width * .28, height + .46, -depth * .17])
       group.add(chimney)
     }
-    const awning = box([Math.min(1.05, width * .54), .08, .42], material(new THREE.Color(color).offsetHSL(0, -.05, -.12).getHex(), .8), [0, .82, depth / 2 + .2])
+    const awningDepth = .42
+    const awning = box([Math.min(1.05, width * .54), .08, awningDepth], material(new THREE.Color(color).offsetHSL(0, -.05, -.12).getHex(), .8), [0, .82, depth / 2 + ARTICULATION - Math.cos(.12) * awningDepth / 2])
     awning.rotation.x = -.12
     group.add(awning)
   }
@@ -1580,6 +1643,9 @@ function createCourthouse(scale = 1, color = 0x938771) {
   const group = new THREE.Group()
   group.userData.playerOccluder = true
   group.userData.footprintRadius = 2.7 * scale
+  // The plinth, which is the widest thing here and the thing at ankle height.
+  group.userData.footprintBox = { hx: 2.6 * scale, hz: 1.75 * scale }
+  group.userData.footprintSolid = true
   const stone = material(color, .9)
   const trim = material(0xb6ab92, .84)
   group.add(box([5.2 * scale, .35 * scale, 3.5 * scale], stone, [0, .18 * scale, 0]))
@@ -1597,6 +1663,7 @@ function createLighthouse(scale = 1) {
   const group = new THREE.Group()
   group.userData.playerOccluder = true
   group.userData.footprintRadius = .68 * scale
+  group.userData.footprintSolid = true
   const stone = material(0xd0c7b4, .84)
   const roof = material(0x69433a, .72)
   group.add(cylinder(.52 * scale, 2.9 * scale, stone, [0, 1.45 * scale, 0], 20))
@@ -1615,6 +1682,7 @@ function createOrbitalStation(scale = 1, accent = 0xc5a65f) {
   const group = new THREE.Group()
   group.userData.playerOccluder = true
   group.userData.footprintRadius = 2 * scale
+  group.userData.footprintSolid = true
   const hull = material(0x6a7376, .38, .46)
   const dark = material(0x26343d, .42, .32)
   const glow = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .68, roughness: .28, metalness: .42 })
@@ -1830,7 +1898,13 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
     // its wings stood in the pavements either side and walkers were inside its
     // walls for 505 of 600 frames. Deriving the scale and the forecourt depth
     // from the plot means that cannot recur whatever the lattice does next.
-    const courtScale = Math.min(.84, (court.width - .3) / 5.2, (court.depth - .3) / 3.5)
+    // The .15 a side this used to leave is the gap between the plinth and the
+    // *plot line*, and a ward block's plot line is exactly where the pavement's
+    // walkable half-width ends — so a walker at the outer edge of the paving
+    // still had its body over the steps. Leaving the beam as well is what makes
+    // the margin a margin for a person rather than for a line on a plan.
+    const courtMargin = .3 + WALKER_HALF_BEAM * 2
+    const courtScale = Math.min(.84, (court.width - courtMargin) / 5.2, (court.depth - courtMargin) / 3.5)
     const courtShift = Math.max(0, Math.min(.55, court.depth / 2 - 3.5 * courtScale / 2 - .15))
     const building = createCourthouse(courtScale, definition.stone)
     building.position.set(court.x, .04, court.z - courtShift)
@@ -2489,7 +2563,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
         dock.position.set(dx, .04, dz)
         // Facing the alley, so the shutter is on the wall behind it.
         dock.rotation.y = corridor.facing(s, side) + Math.PI
-        markAuthoredProp(dock, .5)
+        markSolidProp(dock, .5)
         root.add(dock)
         if (hashUnit(seed * 7.3 + 5) < .34) {
           // Backed onto the rear wall rather than sat in the middle of the
@@ -2501,7 +2575,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
           const van = createDeliveryVan([0x8d8578, 0x6f7a72, 0x83705a][dockIndex % 3])
           van.position.set(vx, .03, vz)
           van.rotation.y = corridor.tangent(s)[0] > 0 ? 0 : Math.PI
-          markAuthoredProp(van, .45)
+          markSolidProp(van, .45)
           root.add(van)
         }
       }
@@ -2543,7 +2617,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
           const parked = createVehicle([0x6d4d48, 0x52626a, 0x71664f, 0x455e59, 0x7a6a52, 0x8a7a63][bay % 6])
           parked.position.set(px, .03, pz)
           parked.rotation.y = corridor.facing(along, hole.side) + (facing > 0 ? Math.PI / 2 : -Math.PI / 2)
-          markAuthoredProp(parked, .42)
+          markSolidProp(parked, .42)
           root.add(parked)
         }
       }
@@ -2592,7 +2666,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
         stall.position.set(sx, .09, sz)
         // Both rows face the aisle between them.
         stall.rotation.y = corridor.facing(along, hole.side) + (row === 0 ? Math.PI : 0)
-        markAuthoredProp(stall, .5)
+        markSolidProp(stall, .5)
         stall.userData.propAudit = { name: `city-stall-${row}-${column}`, region: 'city', groundY: .09 }
         root.add(stall)
       }
@@ -2602,7 +2676,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
       const fountain = createFountain()
       fountain.scale.setScalar(.7)
       fountain.position.set(fx, .03, fz)
-      markAuthoredProp(fountain, .62)
+      markSolidProp(fountain, .62)
       fountain.userData.propAudit = { name: 'city-market-fountain', region: 'city', groundY: .03 }
       root.add(fountain)
       registerLandmark(root, { key: 'city-market', name: "Cooper's Market", kind: 'market', detail: 'A weekday produce market opening straight onto the high street. Where most client referrals start.', position: [cx, cz], radius: 2.6 })
@@ -2683,7 +2757,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
       parked.position.set(px, .03, pz)
       // Nose in the direction of travel on this side of the road.
       parked.rotation.y = side > 0 ? Math.PI : 0
-      markAuthoredProp(parked, .4)
+      markSolidProp(parked, .4)
       root.add(parked)
     }
   }
@@ -2976,7 +3050,7 @@ function addCircuitTown(root: THREE.Group, trees: TreeRecord[], town: TownPlan, 
     root.add(civic)
     const cross = createMarketStall(town.seed)
     cross.position.set(market.x + market.width * .22, .07, market.z + market.depth * .24)
-    markAuthoredProp(cross, .5)
+    markSolidProp(cross, .5)
     root.add(cross)
     for (const side of [-1, 1]) {
       const lamp = createLamp()
@@ -4193,7 +4267,7 @@ function addOceanEnvironment(root: THREE.Group, definition: ArcDefinition) {
     root.add(crane)
     const cargo = createCargoStack(Math.abs(x) + 3, .42)
     cargo.position.set(qx - radius * .78, quayTop, qz - seaward * .12)
-    markAuthoredProp(cargo, .46)
+    markSolidProp(cargo, .46)
     cargo.userData.propAudit = { name: `ocean-cargo-${x}`, region: 'ocean' }
     root.add(cargo)
     // Bollards along the quay edge, evenly spaced, as on a real wharf.
@@ -4368,7 +4442,7 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
     const fountain = createFountain()
     fountain.scale.setScalar(.54)
     fountain.position.set(0, .1, z)
-    markAuthoredProp(fountain, .55)
+    markSolidProp(fountain, .55)
     root.add(fountain)
   }
   registerLandmark(root, { key: 'continent-rondpoint', name: 'Concord Rond-Point', kind: 'monument', detail: 'The crossing of the ceremonial axis and the cross axis. Six avenues leave from this circle.', position: [0, -.1], radius: 4 })
@@ -5423,25 +5497,88 @@ function clearAuthoredParcel(root: THREE.Group, center: THREE.Vector3, radius: n
 
 /**
  * Every placed prop with a footprint, in world space, as a set of discs for the
- * crowd to steer around.
+ * crowd to steer around, each carrying whether it is solid.
  */
 function crowdObstacles(root: THREE.Object3D) {
-  const out: Array<{ x: number; z: number; radius: number }> = []
+  const out: Array<{ x: number; z: number; radius: number; solid: boolean; hx?: number; hz?: number; rotationY?: number }> = []
   const position = new THREE.Vector3()
+  const quaternion = new THREE.Quaternion()
+  const euler = new THREE.Euler()
   root.updateWorldMatrix(true, true)
   root.traverse((child) => {
     const radius = child.userData?.footprintRadius as number | undefined
     if (typeof radius !== 'number' || radius <= 0) return
     child.getWorldPosition(position)
-    out.push({ x: position.x, z: position.z, radius })
+    // Steering keeps the disc either way — a shoulder brushing past a bench
+    // wants a round thing to brush past, and inventing corners for it would
+    // make walkers flinch at nothing. The rectangle is for the routing pass,
+    // which is deciding whether a pavement exists at all.
+    const box = child.userData?.footprintBox as { hx: number; hz: number } | undefined
+    if (!box) {
+      out.push({ x: position.x, z: position.z, radius, solid: child.userData?.footprintSolid === true })
+      return
+    }
+    child.getWorldQuaternion(quaternion)
+    euler.setFromQuaternion(quaternion, 'YXZ')
+    out.push({
+      x: position.x,
+      z: position.z,
+      radius,
+      solid: child.userData?.footprintSolid === true,
+      hx: box.hx,
+      hz: box.hz,
+      rotationY: euler.y,
+    })
   })
   return out
+}
+
+/**
+ * A solid whose real plan is a rectangle, tagged with that rectangle.
+ *
+ * The `footprintRadius` stays as the disc the steering uses, and the box is
+ * read only by the routing pass. Callers give the *drawn* extent, not the
+ * planned one: a near building's canopy and cornice stand a third of a metre
+ * outside the block it was laid out on, and it is the drawn thing a walker
+ * collides with.
+ */
+function markSolidBox<T extends THREE.Object3D>(object: T, halfX: number, halfZ: number) {
+  object.userData.footprintBox = { hx: halfX, hz: halfZ }
+  return markSolidFootprint(object)
 }
 
 function markAuthoredProp<T extends THREE.Object3D>(object: T, footprintRadius: number) {
   object.userData.authoredProp = true
   object.userData.footprintRadius = footprintRadius
   return object
+}
+
+/**
+ * A prop a person has to walk *round*, not past. See `SolidFootprint`.
+ *
+ * The class distinction is the one the earlier prop work did not make, and it
+ * is the reason that work had to be reverted: a pass that treats a bench and a
+ * farmstead as the same kind of thing is either too timid to remove the
+ * farmstead from the pavement or aggressive enough to start re-siting the
+ * benches, and the second of those measured *worse* for pedestrians than doing
+ * nothing. A bench, a lamp standard, a bollard, a planter, a bike rack, a
+ * milestone and a signal are pavement furniture: they belong where they are and
+ * a walker brushes past them, which the crowd's per-frame steering already
+ * models. Everything tagged here is an enclosed mass at body height — a
+ * building, a cafe terrace, a farmstead, a market stall, a parked van, a walled
+ * churchyard — and the honest thing to do with the pavement under it is to take
+ * it away.
+ *
+ * Tagged on the factory rather than at each placement, because several callers
+ * override the radius afterwards and would silently drop a flag set beside it.
+ */
+function markSolidFootprint<T extends THREE.Object3D>(object: T) {
+  object.userData.footprintSolid = true
+  return object
+}
+
+function markSolidProp<T extends THREE.Object3D>(object: T, footprintRadius: number) {
+  return markSolidFootprint(markAuthoredProp(object, footprintRadius))
 }
 
 /**
@@ -5725,7 +5862,7 @@ function createCafeSet(scale = 1) {
     chair.rotation.y = -angle + Math.PI / 2
     group.add(chair)
   }
-  return markAuthoredProp(group, .88 * scale)
+  return markSolidProp(group, .88 * scale)
 }
 
 function createServiceShed(scale = 1, color = 0x665f55) {
@@ -5735,7 +5872,7 @@ function createServiceShed(scale = 1, color = 0x665f55) {
   roof.rotation.z = .08
   group.add(roof)
   group.add(box([.42 * scale, .7 * scale, .05], material(0x2c3333, .72), [0, .38 * scale, .49 * scale]))
-  return markAuthoredProp(group, .82 * scale)
+  return markSolidProp(group, .82 * scale)
 }
 
 function createRadarArray(scale = 1) {
@@ -5761,7 +5898,7 @@ function createTransitShelter(scale = 1, accent = 0x7eaa9e) {
   group.add(box([1.88 * scale, 1.05 * scale, .035 * scale], glass, [0, .9 * scale, -.37 * scale]))
   group.add(box([.72 * scale, .06 * scale, .3 * scale], material(0x59483b, .86), [0, .45 * scale, -.1 * scale]))
   group.add(box([.18 * scale, .95 * scale, .08 * scale], material(accent, .4, .3), [1.15 * scale, 1.05 * scale, -.33 * scale]))
-  return markAuthoredProp(group, 1.28 * scale)
+  return markSolidProp(group, 1.28 * scale)
 }
 
 function createBikeRack(scale = 1) {
@@ -5783,7 +5920,7 @@ function createCivicKiosk(scale = 1) {
   group.add(box([1.18 * scale, .12 * scale, .9 * scale], frame, [0, 1.2 * scale, 0]))
   group.add(box([.76 * scale, .48 * scale, .035], paper, [0, .72 * scale, .38 * scale]))
   for (let row = 0; row < 3; row += 1) group.add(box([.56 * scale, .025 * scale, .04], frame, [0, (.59 + row * .12) * scale, .405 * scale]))
-  return markAuthoredProp(group, .72 * scale)
+  return markSolidProp(group, .72 * scale)
 }
 
 function createFarmstead(scale = 1) {
@@ -5800,7 +5937,7 @@ function createFarmstead(scale = 1) {
   group.add(mesh(new THREE.ConeGeometry(.55 * scale, .5 * scale, 18), roof, [1.1 * scale, 1.9 * scale, .05 * scale]))
   group.add(box([.66 * scale, .92 * scale, .05], material(0x2f3434, .72), [-.35 * scale, .48 * scale, .74 * scale]))
   for (const z of [-1.08, 1.08]) group.add(box([3.1 * scale, .08 * scale, .06 * scale], pale, [.15 * scale, .38 * scale, z * scale]))
-  return markAuthoredProp(group, 1.85 * scale)
+  return markSolidProp(group, 1.85 * scale)
 }
 
 function createHayBales(scale = 1) {
@@ -5812,7 +5949,7 @@ function createHayBales(scale = 1) {
     bale.rotation.y = rotation
     group.add(bale)
   }
-  return markAuthoredProp(group, .92 * scale)
+  return markSolidProp(group, .92 * scale)
 }
 
 /**
@@ -5825,6 +5962,7 @@ function createVillageChurch(scale = 1, stone = 0x8b8377) {
   const group = new THREE.Group()
   group.userData.playerOccluder = true
   group.userData.footprintRadius = 1.9 * scale
+  group.userData.footprintSolid = true
   const masonry = material(stone, .94)
   const slate = material(0x4a4f57, .82)
   const lead = material(0x6a7076, .6, .18)
@@ -5883,7 +6021,7 @@ function createChurchyard(seed: number, scale = 1) {
     headstone.castShadow = false
     group.add(headstone)
   }
-  return markAuthoredProp(group, 2.9 * scale)
+  return markSolidProp(group, 2.9 * scale)
 }
 
 /** A stone water trough. The reason a field of grass reads as pasture. */
@@ -5894,7 +6032,7 @@ function createWaterTrough(scale = 1) {
   const water = box([.76 * scale, .05 * scale, .26 * scale], material(0x51767a, .32, .1), [0, .25 * scale, 0])
   water.castShadow = false
   group.add(water)
-  return markAuthoredProp(group, .6 * scale)
+  return markSolidProp(group, .6 * scale)
 }
 
 /**
@@ -5969,7 +6107,7 @@ function createMarketCross(scale = 1, stone = 0x9a9284) {
   group.add(cylinder(.11 * scale, 1.35 * scale, masonry, [0, 1.02 * scale, 0], 8))
   group.add(box([.46 * scale, .09 * scale, .12 * scale], masonry, [0, 1.6 * scale, 0]))
   group.add(box([.12 * scale, .34 * scale, .12 * scale], masonry, [0, 1.72 * scale, 0]))
-  return markAuthoredProp(group, .82 * scale)
+  return markSolidProp(group, .82 * scale)
 }
 
 /**
@@ -6027,7 +6165,7 @@ function createHarborWorkboat(scale = 1, color = 0x5a6968) {
     wake.castShadow = false
     group.add(wake)
   }
-  return markAuthoredProp(group, 1.35 * scale)
+  return markSolidProp(group, 1.35 * scale)
 }
 
 function createHarborFuelDepot(scale = 1) {
@@ -6040,7 +6178,7 @@ function createHarborFuelDepot(scale = 1) {
     group.add(mesh(new THREE.SphereGeometry(.34 * scale, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), tank, [x * scale, .86 * scale, 0]))
   }
   group.add(box([2.05 * scale, .055 * scale, .055 * scale], pipe, [0, .52 * scale, .42 * scale]))
-  return markAuthoredProp(group, 1.35 * scale)
+  return markSolidProp(group, 1.35 * scale)
 }
 
 function createChargingBay(scale = 1) {
@@ -6053,7 +6191,7 @@ function createChargingBay(scale = 1) {
   const charger = box([.22 * scale, .82 * scale, .22 * scale], material(0x788784, .38, .38), [.88 * scale, .42 * scale, .38 * scale])
   group.add(charger)
   group.add(box([.12 * scale, .18 * scale, .02], new THREE.MeshStandardMaterial({ color: 0x6bd1b5, emissive: 0x2d8a75, emissiveIntensity: .8 }), [.88 * scale, .57 * scale, .495 * scale]))
-  return markAuthoredProp(group, 1.35 * scale)
+  return markSolidProp(group, 1.35 * scale)
 }
 
 function createOrbitalDock(scale = 1, accent = 0x72ced7) {
@@ -6065,7 +6203,7 @@ function createOrbitalDock(scale = 1, accent = 0x72ced7) {
   group.children[group.children.length - 1].rotation.z = Math.PI / 2
   group.add(mesh(new THREE.TorusGeometry(.48 * scale, .055 * scale, 10, 32), new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .76, roughness: .25, metalness: .45 }), [1.72 * scale, .5 * scale, 0]))
   for (const x of [-.9, -.3, .3, .9]) group.add(box([.08 * scale, .035 * scale, .56 * scale], dark, [x * scale, .62 * scale, 0]))
-  return markAuthoredProp(group, 1.65 * scale)
+  return markSolidProp(group, 1.65 * scale)
 }
 
 function createOrbitalTankFarm(scale = 1) {
@@ -6077,7 +6215,7 @@ function createOrbitalTankFarm(scale = 1) {
     group.add(cylinder(.035 * scale, .82 * scale, frame, [x * scale, .4 * scale, z * scale], 8))
   }
   group.add(box([1.85 * scale, .08 * scale, 1.45 * scale], frame, [0, .04 * scale, 0]))
-  return markAuthoredProp(group, 1.25 * scale)
+  return markSolidProp(group, 1.25 * scale)
 }
 
 function createOrbitalServiceBay(index: number, scale = 1) {
@@ -6099,7 +6237,7 @@ function createOrbitalServiceBay(index: number, scale = 1) {
     group.add(cylinder(.025 * scale, .72 * scale, dark, [x * scale, .48 * scale, -.68 * scale], 8))
     group.add(box([.48 * scale, .035 * scale, .035 * scale], dark, [x * scale, .8 * scale, -.68 * scale]))
   }
-  return markAuthoredProp(group, 1.58 * scale)
+  return markSolidProp(group, 1.58 * scale)
 }
 
 function createCurbCluster(seed: number, scale = 1) {
@@ -6127,7 +6265,7 @@ function createParkedDeliveryBay(seed: number, scale = 1) {
   const crateMaterial = material(0x66513c, .94)
   for (let index = 0; index < 3; index += 1) group.add(box([.28 * scale, .24 * scale, .28 * scale], crateMaterial, [( .48 + (index % 2) * .31) * scale, (.14 + Math.floor(index / 2) * .24) * scale, ((index % 2) * .34 - .17) * scale]))
   group.add(box([2.05 * scale, .035 * scale, .95 * scale], material(0x3a4242, .96), [0, .01, 0]))
-  return markAuthoredProp(group, 1.18 * scale)
+  return markSolidProp(group, 1.18 * scale)
 }
 
 function createFieldGate(scale = 1) {
@@ -6142,7 +6280,7 @@ function createFieldGate(scale = 1) {
     const post = cylinder(.035 * scale, .72 * scale, timber, [(side * (1.05 + index * .48)) * scale, .36 * scale, 0], 8)
     group.add(post)
   }
-  return markAuthoredProp(group, 2.65 * scale)
+  return markSolidProp(group, 2.65 * scale)
 }
 
 function createMarshPatch(seed: number, scale = 1) {
@@ -8074,8 +8212,53 @@ export function MapThreeScene({
       (world.userData.roadWays ?? []) as CarriagewaySpec[],
       { setback: KERB_TO_PAVEMENT },
     )
-    const crowdWays = pedestrianPlan.ways
-    world.userData.pedestrianPlan = { ways: crowdWays.length, cuts: pedestrianPlan.cuts, unsliced: pedestrianPlan.unsliced }
+    /**
+     * Then take the pavement out from under anything solid standing on it.
+     *
+     * The remaining pedestrian defect after the pavements were cut at their
+     * junctions, and the one the last three passes each identified and none
+     * finished. A walker is bound to its footway and may only shift within that
+     * footway's half-width — .09 on a planned street — so a cafe terrace, a
+     * market stall or a farmstead standing across the paving leaves no lateral
+     * offset that clears it, and the walker goes through. Steering has nothing
+     * to choose between; the route itself has to give way.
+     *
+     * Only the solid class. Benches, lamps, bollards, planters and bike racks
+     * stay exactly as they were, in `obstacles`, steered around a shoulder at a
+     * time — the reverted prop-clearance pass is the standing evidence for what
+     * happens when the two classes are treated alike.
+     */
+    const crowdProps = crowdObstacles(world)
+    // The disc in `radius` is the steering's, and stays the steering's: it is
+    // what a shoulder brushes past, it is tuned, and inflating it to a
+    // rectangle's diagonal on the way through measured immediately and badly —
+    // the Old Quarter went .0060 to .0787 on the .12 ruler in the one run where
+    // this line handed the enlarged figure to `obstacles` as well. Routing gets
+    // the circumscribing radius, because for routing the radius is only a
+    // bounding test around the rectangle underneath it.
+    const solidFootprints = crowdProps
+      .filter((prop) => prop.solid)
+      .map(({ x, z, radius, hx, hz, rotationY }) => ({
+        x,
+        z,
+        radius: hx !== undefined && hz !== undefined ? Math.hypot(hx, hz) : radius,
+        hx,
+        hz,
+        rotationY,
+      }))
+    const solidPlan = FOOTWAY_SOLID_CUT_ENABLED
+      ? cutFootwaysAroundSolids(pedestrianPlan.ways, solidFootprints, { defaultHalfWidth: CROWD_FOOTWAY_HALF })
+      : { ways: pedestrianPlan.ways, cut: 0, unwalkable: 0, blocked: 0 }
+    const crowdWays = solidPlan.ways
+    world.userData.pedestrianPlan = {
+      ways: crowdWays.length,
+      cuts: pedestrianPlan.cuts,
+      unsliced: pedestrianPlan.unsliced,
+      solids: solidFootprints.length,
+      solidCuts: solidPlan.cut,
+      solidUnwalkable: solidPlan.unwalkable,
+      solidBlockedLength: solidPlan.blocked,
+    }
     // No pedestrians on the Treaty Sea.
     //
     // The only pavements out there are the short quay walks on the HQ islands,
@@ -8105,7 +8288,7 @@ export function MapThreeScene({
       ? new Crowd({
         ways: crowdWays,
         rigs: crowdWalkers,
-        width: 1.3,
+        width: CROWD_FOOTWAY_HALF * 2,
         lift: .1,
         animateWithin: 30,
         cullRadius: 90,
@@ -8114,7 +8297,14 @@ export function MapThreeScene({
         // also something a person has to walk round. Collecting them here
         // rather than maintaining a second list means the pavement furniture
         // and the obstacle set cannot drift apart.
-        obstacles: crowdObstacles(world),
+        obstacles: crowdProps,
+        // The same discs again, as routing blockages rather than as things to
+        // sidestep. Needed here even though the pavement under them is already
+        // gone: cutting leaves two ends facing each other a metre apart with no
+        // carriageway between them, which is exactly what the crossing pass
+        // calls a kerbside corner, and relinking one puts the walker back
+        // through the building the cut just took them out of.
+        solids: solidFootprints,
         // Wide enough for the two kerbs of the widest street in any region
         // (the high street, at 2.85 between its pavements) with a little to
         // spare. It used to be 4.6, which mattered less when pavements only

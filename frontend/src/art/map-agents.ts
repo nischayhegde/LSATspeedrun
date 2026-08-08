@@ -1489,6 +1489,315 @@ export function planFootways(
 }
 
 /**
+ * A footprint a walker has to go *round*, given in world space.
+ *
+ * The distinction between this and `CrowdOptions.obstacles` is the whole of the
+ * pedestrian-versus-props problem, and getting it wrong has cost this project
+ * two reverted passes. A bench, a lamp standard, a bollard or a planter belongs
+ * on a pavement: a person walks past it, brushing a shoulder round it, and the
+ * per-frame steering models exactly that. A cafe, a farmstead, a market stall
+ * or a building does not: there is no shoulder-width shift that gets past it,
+ * because it *is* the pavement for as long as it stands there.
+ *
+ * Only the second kind belongs here. Treating the first kind as solid is the
+ * mistake the reverted prop-clearance pass made from the other direction —
+ * it pushed benches and bollards off carriageways and onto pavements, where a
+ * walker bound to a polyline could not get round them, and the pedestrian
+ * figures got worse.
+ */
+export type SolidFootprint = {
+  x: number
+  z: number
+  /** Circumscribing radius. The only shape a disc-shaped footprint needs. */
+  radius: number
+  /**
+   * Half extents and heading of the footprint's real rectangle, where it has
+   * one. Optional because most authored props genuinely are round-ish, but it
+   * matters enormously for the ones that are not.
+   *
+   * A terrace block twelve metres long and four deep, described as a disc, is
+   * wrong in both directions at once: the disc is three metres too fat across
+   * the frontage, so the cut takes out pavement on a street the building never
+   * touches, and it is two metres too thin at the corners, so the link guard
+   * below waves through a crossing that goes clean through the corner of the
+   * building. Both were measured. Cutting on discs alone moved the Sovereign
+   * Arc from .0535 to .0890 and The Circuit from .2928 to .3479.
+   */
+  hx?: number
+  hz?: number
+  rotationY?: number
+}
+
+/**
+ * Distance from a point to a solid footprint's surface, zero inside it.
+ *
+ * A disc unless the caller gave half extents, in which case the oriented
+ * rectangle, which is what a building actually is.
+ */
+function solidDistance(solid: SolidFootprint, x: number, z: number) {
+  const dx = x - solid.x
+  const dz = z - solid.z
+  if (solid.hx === undefined || solid.hz === undefined) {
+    return Math.max(0, Math.hypot(dx, dz) - solid.radius)
+  }
+  const angle = solid.rotationY ?? 0
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  // World -> footprint frame. The scene builds these as `rotation.y = a`, which
+  // is a rotation of *the object*, so the inverse is what maps a world point in.
+  const localX = dx * cos - dz * sin
+  const localZ = dx * sin + dz * cos
+  const outX = Math.abs(localX) - solid.hx
+  const outZ = Math.abs(localZ) - solid.hz
+  if (outX <= 0 && outZ <= 0) return 0
+  return Math.hypot(Math.max(0, outX), Math.max(0, outZ))
+}
+
+/**
+ * Room between a walker's centreline and a footprint before the two are
+ * touching: the body, and nothing else.
+ *
+ * Deliberately *not* the `.34` the per-frame steering aims for. That figure is
+ * a comfort margin — the distance a person chooses to leave when they have the
+ * room — and cutting at it measured badly: on a footway with real width, an
+ * obstacle the walker can pass with a hand's breadth to spare still fails a
+ * .34 test, so whole pavements were removed for a lamp standard and the crowd
+ * concentrated onto what was left. Measured over 600 frames at the .34
+ * clearance, the Sovereign Arc's walkers-in-solid went .0535 -> .0890 and its
+ * walker-vehicle contacts 24 -> 253, both from over-cutting.
+ *
+ * The cut therefore removes only the spans where the walker has no choice but
+ * to overlap, and leaves the merely tight ones to the steering, which is what
+ * steering is for. Same figure as `WALKER_HALF_BEAM` in the scene, which is
+ * how far planned buildings are set back from a pavement for the same reason.
+ */
+const SOLID_CLEARANCE = .16
+
+/**
+ * How far back from a blocked span a pavement stops.
+ *
+ * Enough that the walker turning at the new end is already clear of the thing
+ * that closed the way, rather than standing against it.
+ */
+const SOLID_SETBACK = .12
+
+/**
+ * Step the blocked span is measured to. Comfortably finer than the setback, so
+ * the rounding is always smaller than the margin it is rounding into.
+ */
+const SOLID_STEP = .02
+
+/** A point on a way and the unit normal across it, at arc length `s`. */
+function sampleWay(points: XZ[], cumulative: number[], s: number) {
+  const total = cumulative[cumulative.length - 1]
+  if (s < 0 || s > total) return null
+  let low = 0
+  let high = cumulative.length - 1
+  while (low < high - 1) {
+    const middle = (low + high) >> 1
+    if (cumulative[middle] <= s) low = middle
+    else high = middle
+  }
+  const [ax, az] = points[low]
+  const [bx, bz] = points[high]
+  const span = cumulative[high] - cumulative[low]
+  if (span < 1e-6) return { x: ax, z: az, nx: 0, nz: 0 }
+  const t = (s - cumulative[low]) / span
+  return {
+    x: ax + (bx - ax) * t,
+    z: az + (bz - az) * t,
+    nx: (bz - az) / span,
+    nz: -(bx - ax) / span,
+  }
+}
+
+/**
+ * Subtract solid footprints from the pedestrian network.
+ *
+ * This is the piece steering cannot do, and the reason it cannot is worth
+ * stating plainly because three passes tried to steer out of it. `Crowd` binds
+ * a walker to a footway and clamps its lateral offset to `±way.halfWidth`. On
+ * a planned street that half-width is .09 — the paving either side of the
+ * polyline, and the honest figure, since anything wider walks people into the
+ * traffic. So when a footprint's clear band `[d - r - clearance, d + r +
+ * clearance]` covers the whole of `[-halfWidth, halfWidth]`, the set of legal
+ * offsets that clear it is *empty*. No steering rule can pick an element of an
+ * empty set, and the walker goes through the building.
+ *
+ * The span a footprint closes is the chord of its clear circle at the far kerb:
+ * with `reach = r + clearance` and `need = halfWidth + |d|`, the way is blocked
+ * for `|s - s0| <= sqrt(reach² - need²)`, and not blocked at all when
+ * `reach <= need`. Everything outside that keeps the pavement it had, so a
+ * frontage shop with a stall outside it loses a couple of metres of pavement
+ * rather than the street losing its pavement.
+ *
+ * A way whose every remaining piece is shorter than `minPiece` is dropped
+ * outright rather than kept whole. That is the opposite of what `planFootways`
+ * does with the same case, and deliberately so: there, a way that cannot be
+ * sliced is a short path that happens to end at a junction and is better
+ * slightly wrong than absent, because nothing is standing on it. Here, keeping
+ * it whole *is* the defect.
+ */
+export function cutFootwaysAroundSolids(
+  ways: FootwaySpec[],
+  solids: SolidFootprint[],
+  options: { defaultHalfWidth?: number; clearance?: number; minPiece?: number; setback?: number } = {},
+): { ways: FootwaySpec[]; cut: number; unwalkable: number; blocked: number } {
+  if (!solids.length) return { ways, cut: 0, unwalkable: 0, blocked: 0 }
+  const defaultHalfWidth = options.defaultHalfWidth ?? .65
+  const clearance = options.clearance ?? SOLID_CLEARANCE
+  // Shorter than `planFootways` keeps, and deliberately. That figure is about
+  // whether a *junction* slice is worth having; this is about whether there is
+  // anywhere to stand between two shopfronts, and a stride and a half is.
+  const minPiece = options.minPiece ?? .6
+  const setback = options.setback ?? SOLID_SETBACK
+
+  const out: FootwaySpec[] = []
+  let cut = 0
+  let unwalkable = 0
+  let blocked = 0
+  for (const way of ways) {
+    const points = way.points
+    if (points.length < 2) continue
+    const halfWidth = way.halfWidth ?? defaultHalfWidth
+    const closed = way.closed ?? false
+    const loop = closed ? [...points, points[0]] : points
+    const cumulative: number[] = [0]
+    let minX = Infinity
+    let maxX = -Infinity
+    let minZ = Infinity
+    let maxZ = -Infinity
+    for (const [x, z] of loop) {
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (z < minZ) minZ = z
+      if (z > maxZ) maxZ = z
+    }
+    for (let index = 1; index < loop.length; index += 1) {
+      cumulative.push(cumulative[index - 1] + Math.hypot(loop[index][0] - loop[index - 1][0], loop[index][1] - loop[index - 1][1]))
+    }
+    const total = cumulative[cumulative.length - 1]
+    if (total < 1e-3) continue
+
+    const spans: Array<[number, number]> = []
+    for (const solid of solids) {
+      const reach = solid.radius + clearance + halfWidth
+      if (solid.x < minX - reach || solid.x > maxX + reach) continue
+      if (solid.z < minZ - reach || solid.z > maxZ + reach) continue
+      const hit = projectOntoPolyline(loop, cumulative, solid.x, solid.z)
+      // Both kerbs, because the blocked set across the way is an interval: the
+      // distance to a convex body along a straight line is a convex function of
+      // position on it, so if the two edges of the band are both inside the
+      // clearance then everything between them is too, and if either is outside
+      // then the walker has somewhere to go.
+      const blockedAt = (s: number) => {
+        const at = sampleWay(loop, cumulative, s)
+        if (!at) return false
+        return solidDistance(solid, at.x + at.nx * halfWidth, at.z + at.nz * halfWidth) < clearance
+          && solidDistance(solid, at.x - at.nx * halfWidth, at.z - at.nz * halfWidth) < clearance
+      }
+      if (!blockedAt(hit.s)) continue
+      // Marched rather than solved. A chord has a closed form only against a
+      // circle on a straight way; this is the same question asked of a
+      // rectangle on a way that bends, and the answer is wanted to about a
+      // sixth of the setback, which one pass of small steps gives directly.
+      let from = hit.s
+      let to = hit.s
+      const limit = reach + halfWidth
+      while (from > hit.s - limit && blockedAt(from - SOLID_STEP)) from -= SOLID_STEP
+      while (to < hit.s + limit && blockedAt(to + SOLID_STEP)) to += SOLID_STEP
+      spans.push([from - setback, to + setback])
+    }
+    if (!spans.length) {
+      out.push(way)
+      continue
+    }
+    spans.sort((a, b) => a[0] - b[0])
+    const merged: Array<[number, number]> = []
+    for (const span of spans) {
+      const last = merged[merged.length - 1]
+      if (last && span[0] <= last[1]) last[1] = Math.max(last[1], span[1])
+      else merged.push([span[0], span[1]])
+    }
+    for (const [from, to] of merged) blocked += Math.min(to, total) - Math.max(from, 0)
+    cut += merged.length
+
+    // A ring cut anywhere is no longer a ring. Rotating the arc to start just
+    // past the first cut turns it into the open case, exactly as `planFootways`
+    // does, so there is only ever one piece of slicing code to be wrong.
+    const keep: Array<[number, number]> = []
+    if (closed) {
+      const first = merged[0]
+      let cursor = first[1]
+      const arcTo = first[0] + total
+      for (let index = 1; index < merged.length; index += 1) {
+        const [start, stop] = merged[index]
+        if (start - cursor >= minPiece) keep.push([cursor, start])
+        cursor = stop
+      }
+      if (arcTo - cursor >= minPiece) keep.push([cursor, arcTo])
+    } else {
+      let cursor = 0
+      for (const [start, stop] of merged) {
+        if (start - cursor >= minPiece) keep.push([cursor, start])
+        cursor = stop
+      }
+      if (total - cursor >= minPiece) keep.push([cursor, total])
+    }
+    if (!keep.length) {
+      // Nothing survived, so keep the way as it was.
+      //
+      // Deleting it is the tidier answer and it measured badly. The Circuit is
+      // 37 footways and 95 units of pavement for nine people, and four of those
+      // ways vanished here — among them the walk across the market place, which
+      // is short, which is lined with exactly the market cross and courthouse
+      // that closed it, and which is the one path through the middle of the
+      // village. The nine walkers redistributed onto the lanes, which run past
+      // farmsteads, and the region went .2928 to .4894 on the .12 ruler while
+      // the pass was nominally removing pedestrians from buildings.
+      //
+      // So the rule is: a pavement may be shortened but not abolished. Where a
+      // way is so beset that no walkable piece is left, the honest reading is
+      // that the region has no alternative route and losing the connection
+      // costs more than the overlap does.
+      unwalkable += 1
+      out.push(way)
+      continue
+    }
+    for (const [from, to] of keep) {
+      const piece = subPolyline(loop, cumulative, Math.max(0, from), Math.min(closed ? from + total : total, to), total)
+      if (piece.length >= 2) out.push({ points: piece, halfWidth: way.halfWidth, weight: way.weight, street: way.street })
+    }
+  }
+  return { ways: out, cut, unwalkable, blocked: +blocked.toFixed(2) }
+}
+
+/** Where a world point falls on a plain polyline: along, across, distance. */
+function projectOntoPolyline(points: XZ[], cumulative: number[], x: number, z: number) {
+  let bestS = 0
+  let bestD = 0
+  let bestSquared = Infinity
+  for (let index = 1; index < points.length; index += 1) {
+    const [ax, az] = points[index - 1]
+    const [bx, bz] = points[index]
+    const dx = bx - ax
+    const dz = bz - az
+    const span = dx * dx + dz * dz
+    if (span < 1e-8) continue
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / span))
+    const px = ax + dx * t
+    const pz = az + dz * t
+    const squared = (x - px) * (x - px) + (z - pz) * (z - pz)
+    if (squared >= bestSquared) continue
+    bestSquared = squared
+    const magnitude = Math.sqrt(span)
+    bestS = cumulative[index - 1] + magnitude * t
+    bestD = (x - px) * (dz / magnitude) - (z - pz) * (dx / magnitude)
+  }
+  return { s: bestS, d: bestD, distance: Math.sqrt(bestSquared) }
+}
+
+/**
  * The part of a polyline between two arc lengths, with the original vertices in
  * between preserved. `wrap` lets a closed way be read past its own end.
  */
@@ -1551,6 +1860,20 @@ export type CrowdOptions = {
    * pass close to it when the crowd is built.
    */
   obstacles?: Array<{ x: number; z: number; radius: number }>
+  /**
+   * The subset of those footprints that a walker cannot pass at all. See
+   * `SolidFootprint` and `cutFootwaysAroundSolids`, which is what removes the
+   * pavement under them.
+   *
+   * They are needed a second time here because cutting a pavement leaves two
+   * ends facing each other across the thing that closed it, and the crossing
+   * pass pairs ends that face each other. Under `CORNER_JOIN` those two ends
+   * are a metre apart with no carriageway between them, which is the exact
+   * description of a kerbside corner — so without this the crossing pass
+   * cheerfully relinks the cut and routes the walker straight back through the
+   * building the cut just took them out of.
+   */
+  solids?: SolidFootprint[]
   /**
    * How far apart two footway ends may be and still count as opposite kerbs of
    * the same crossing. Zero disables crossings entirely.
@@ -2047,6 +2370,55 @@ function linkVerdict(
 }
 
 /**
+ * Room a pedestrian link keeps from a solid footprint.
+ *
+ * Smaller than `SOLID_CLEARANCE`, and for a different question. The cut asks
+ * "can a walker travel *along* here comfortably", which wants a shoulder's
+ * room; this asks "does this link go *through* the thing", which only wants the
+ * body. Using the walking clearance here would refuse the perfectly ordinary
+ * crossing that starts a pace away from a corner shop.
+ */
+const LINK_SOLID_MARGIN = .12
+
+/**
+ * Does a straight pedestrian link pass through something solid?
+ *
+ * Asked of every crossing, every corner turn and every repair link. Two ends
+ * left facing each other by a cut are the case it exists for, but it is not
+ * limited to them on purpose: a link that shortcuts through a farmstead is
+ * wrong however it came to be proposed, and the pairing rules — which reason
+ * about carriageways, because that is what a crossing crosses — have no other
+ * way of knowing there is a building in the way.
+ */
+function linkThroughSolid(solids: SolidFootprint[], ax: number, az: number, bx: number, bz: number) {
+  const dx = bx - ax
+  const dz = bz - az
+  const length = Math.hypot(dx, dz)
+  for (let index = 0; index < solids.length; index += 1) {
+    const solid = solids[index]
+    const reach = solid.radius + LINK_SOLID_MARGIN
+    if (solid.x < Math.min(ax, bx) - reach || solid.x > Math.max(ax, bx) + reach) continue
+    if (solid.z < Math.min(az, bz) - reach || solid.z > Math.max(az, bz) + reach) continue
+    if (solid.hx === undefined || solid.hz === undefined) {
+      const span = length * length
+      const t = span > 1e-8 ? Math.max(0, Math.min(1, ((solid.x - ax) * dx + (solid.z - az) * dz) / span)) : 0
+      if (Math.hypot(solid.x - ax - dx * t, solid.z - az - dz * t) < reach) return true
+      continue
+    }
+    // Walked rather than clipped. The nearest point of a segment to a rectangle
+    // has no one-liner, and the cheap substitute — the nearest point to the
+    // rectangle's *centre* — is exactly the mistake that lets a link graze a
+    // building's corner and be called clear.
+    const steps = Math.max(2, Math.ceil(length / SOLID_STEP))
+    for (let step = 0; step <= steps; step += 1) {
+      const t = step / steps
+      if (solidDistance(solid, ax + dx * t, az + dz * t) < LINK_SOLID_MARGIN) return true
+    }
+  }
+  return false
+}
+
+/**
  * Does this link share ground with the traffic — lying in a lane, or meeting one
  * at too shallow an angle to be a crossing? This is the half of `linkVerdict`
  * that is about safety rather than about urbanism, and it is the only half the
@@ -2128,6 +2500,8 @@ export class Crowd {
   private inLaneConflicts = 0
   /** How many links the connectivity repair had to add. See `stitch`. */
   private stitched = 0
+  /** How many candidate links were refused for running through something solid. */
+  private solidRefusals = 0
   /** Scratch for `sample`: written by every call, read immediately. */
   private sampleX = 0
   private sampleZ = 0
@@ -2183,6 +2557,7 @@ export class Crowd {
     // corner. See `linkVerdict`.
     const range = options.crossingRange ?? 3
     const graph = options.roadGraph
+    const solids = options.solids ?? []
     for (let index = 0; index < this.ways.length * 2; index += 1) this.crossingsByEnd.push([])
     // Corners first: every pavement end within `CORNER_WELD` of another is the
     // same place on the ground, and the walkers standing there have the same
@@ -2299,6 +2674,17 @@ export class Crowd {
               )
               const verdict = linkVerdict(graph, corners[a].x, corners[a].z, corners[b].x, corners[b].z, gap, sameStreet)
               if (!verdict) continue
+              // The cut's own failure mode, closed here rather than by tagging
+              // the ends the cut made: two ends left facing each other across a
+              // farmstead are exactly what `linkVerdict` calls a kerbside
+              // corner — short, and with no carriageway under it — and relinking
+              // them puts the walker back through the building. Asked of every
+              // pair, not only of cut ends, because a pavement that was always
+              // this shape has the same problem.
+              if (linkThroughSolid(solids, corners[a].x, corners[a].z, corners[b].x, corners[b].z)) {
+                this.solidRefusals += 1
+                continue
+              }
               // Asked of corner turns too, not just of crossings. A corner is
               // short and has no carriageway across it, which is why it is
               // walked straight through — but "no carriageway across it" is not
@@ -2319,7 +2705,7 @@ export class Crowd {
           }
         }
       }
-      this.stitch(corners, graph)
+      this.stitch(corners, graph, solids)
     }
 
     let cumulative = 0
@@ -2491,7 +2877,7 @@ export class Crowd {
    * harbour are genuinely separate places and pretending otherwise would have
    * people walking on water.
    */
-  private stitch(corners: Array<{ x: number; z: number; ends: number[] }>, graph: RoadGraph | undefined) {
+  private stitch(corners: Array<{ x: number; z: number; ends: number[] }>, graph: RoadGraph | undefined, solids: SolidFootprint[]) {
     const parent = new Int32Array(this.ways.length)
     for (let index = 0; index < parent.length; index += 1) parent[index] = index
     const find = (index: number): number => {
@@ -2535,6 +2921,10 @@ export class Crowd {
           const gap = Math.hypot(corners[a].x - corners[b].x, corners[a].z - corners[b].z)
           if (gap >= bestGap) continue
           if (sharesALane(graph, corners[a].x, corners[a].z, corners[b].x, corners[b].z, gap)) continue
+          // A repair link is long by nature and is chosen for reach, so left
+          // alone it is the likeliest link in the whole network to be a route
+          // through a building. An island is better than that.
+          if (linkThroughSolid(solids, corners[a].x, corners[a].z, corners[b].x, corners[b].z)) continue
           bestGap = gap
           bestA = a
           bestB = b
@@ -2698,6 +3088,8 @@ export class Crowd {
       inLaneConflicts: this.inLaneConflicts,
       /** Links the connectivity repair had to add. See `stitch`. */
       stitched: this.stitched,
+      /** Links refused for passing through a solid footprint. See `linkThroughSolid`. */
+      solidRefusals: this.solidRefusals,
       components: sizes.size,
       componentSizes: [...sizes.values()].sort((a, b) => b - a).slice(0, 10),
       largestComponentWays: largest ? sizes.get(largest[0]) ?? 0 : 0,
