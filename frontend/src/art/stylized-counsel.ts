@@ -121,7 +121,42 @@ let detailTag = 'd1'
 function setRenderScale(scale: number) {
   renderScale = Math.min(1, Math.max(.25, Math.round(scale * 4) / 4))
   detailTag = `d${renderScale}`
+  silhouetteOnly = renderScale <= .25
 }
+
+/**
+ * Below a certain size a feature stops being coarse and starts being noise.
+ *
+ * The ladders above answer "how smooth should this be", and they answer it well
+ * down to about the office's scale. They cannot answer the next question, which
+ * is whether a feature should be drawn at all: a nine-millimetre catchlight cut
+ * to its coarsest six segments is still a hexagon submitted for something under
+ * a pixel across, and the posterising render pass will happily give it a hard
+ * edge.
+ *
+ * The world map is where that question bites, because it draws a whole crowd.
+ * The rung is `.25`, which nothing else asks for — the office quantises to `.5`
+ * and the portrait to `1` — so what follows changes no existing surface.
+ *
+ * **What decides membership is measured, not assumed.** The first cut of this
+ * tier was made against a guess that a map pedestrian is about forty pixels
+ * tall, and on that basis it dropped the entire face. The guess was wrong:
+ * `map-three-scene`'s counsel camera sits 13.1 units back and clamps to 0.48
+ * zoom, so the closest a body is ever drawn is 6.3 units, where it is **269
+ * pixels tall with a 54-pixel head** (`.maps/pixelsize.mjs`). An eye is 6.9
+ * pixels there and a mouth is 10.8. Faces read, and dropping them was a visible
+ * regression at close zoom rather than a saving.
+ *
+ * So the rule is a two-pixel floor at the *tightest* zoom the camera allows,
+ * which is the case a drop has to justify itself against. That admits exactly
+ * five things — the eye catchlight (0.9 px), the trouser crease (1.4), a
+ * spectacle rim's tube section (1.4), the breast-pocket welt (1.8) and the shoe
+ * toe cap (1.8) — and keeps every feature a player could actually see. The
+ * larger saving comes from sampling rather than from deletion: see the extruded
+ * rounded boxes below, whose corners are cut to a deviation of a fifth of a
+ * pixel.
+ */
+let silhouetteOnly = false
 
 /**
  * Keys are scoped by render scale. Two rigs built at different scales want
@@ -279,10 +314,16 @@ function softBoxGeometry(width: number, height: number, depth: number, radius: n
     const geometry = new THREE.ExtrudeGeometry(shape, {
       depth,
       bevelEnabled: true,
-      bevelSegments: 2,
+      // An extruded rounded box pays for its corners twice: once around the
+      // profile and once again for every bevel ring. That is why the shoe and
+      // the hand's finger mass are the two most expensive pieces left on a map
+      // body, at 332 triangles each for shapes a couple of pixels across. One
+      // bevel ring and half the corner sampling keeps the rounded read and
+      // halves the cost; above this rung both stay as authored.
+      bevelSegments: silhouetteOnly ? 1 : 2,
       bevelSize: Math.min(r * .32, .055),
       bevelThickness: Math.min(depth * .14, .05),
-      curveSegments: 6,
+      curveSegments: silhouetteOnly ? 3 : 6,
     })
     geometry.translate(0, 0, -depth / 2)
     return geometry
@@ -298,10 +339,12 @@ function garmentGeometry(points: Array<[number, number]>, depth = .065, bevel = 
     const geometry = new THREE.ExtrudeGeometry(shape, {
       depth,
       bevelEnabled: true,
-      bevelSegments: 2,
+      bevelSegments: silhouetteOnly ? 1 : 2,
       bevelSize: bevel,
       bevelThickness: bevel,
-      curveSegments: 5,
+      // A garment panel is a straight-sided polygon, so this only samples its
+      // bevel; the lapels keep their shape either way.
+      curveSegments: silhouetteOnly ? 3 : 5,
     })
     geometry.translate(0, 0, -depth / 2)
     return geometry
@@ -847,8 +890,11 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
     // Overlapping capsules remove the toy-block knee seam while retaining a
     // true knee joint for the map walk cycle.
     capsule(hip, .255, .78, trouser, [0, -.57, 0], [1, 1, .91])
-    const crease = capsule(hip, .014, .68, suitLight, [side * -.08, -.57, .245], [.7, 1, .55])
-    crease.castShadow = false
+    // A .014 tube of slightly lighter cloth: a shading cue, not a shape.
+    if (!silhouetteOnly) {
+      const crease = capsule(hip, .014, .68, suitLight, [side * -.08, -.57, .245], [.7, 1, .55])
+      crease.castShadow = false
+    }
     const knee = new THREE.Group()
     knee.position.set(0, -1.09, 0)
     hip.add(knee)
@@ -857,8 +903,10 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
     foot.position.set(0, -1.12, .04)
     knee.add(foot)
     addMesh(foot, softBoxGeometry(.48, .24, .66, .12), shoe, [0, -.03, .17])
+    // The sole survives at 2.6 px — it is the dark line that separates a shoe
+    // from the pavement — and the toe cap does not, at 1.8.
     addMesh(foot, softBoxGeometry(.50, .05, .68, .025), sole, [0, -.165, .17])
-    addMesh(foot, softBoxGeometry(.39, .035, .27, .018), suitLight, [0, .012, .39])
+    if (!silhouetteOnly) addMesh(foot, softBoxGeometry(.39, .035, .27, .018), suitLight, [0, .012, .39])
     return { hip, knee, foot }
   }
   const leftLeg = makeLeg(-1)
@@ -897,7 +945,8 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
     }
   }
   for (const y of [.42, .82]) ellipsoid(chest, brass, [.08, y, .39], [.045, .045, .025], 18)
-  addMesh(chest, softBoxGeometry(.24, .035, .04, .014), shirt, [.31, .62, .39])
+  // The breast-pocket welt, at 1.8 px.
+  if (!silhouetteOnly) addMesh(chest, softBoxGeometry(.24, .035, .04, .014), shirt, [.31, .62, .39])
 
   // Arms hang inboard far enough to bury their top end inside the ribcage. At
   // the previous .68 the upper arm was merely tangent to a torso .606 wide at
@@ -995,7 +1044,9 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
     ellipsoid(eye, eyeWhite, [0, 0, 0], [.067, .080, .028], 24)
     const pupil = ellipsoid(eye, ink, [0, -.004, .027], [.032, .041, .016], 20)
     pupil.userData.baseZ = .027
-    ellipsoid(eye, basic(0xffffff), [-.012, .018, .042], [.009, .011, .005], 14)
+    // The specular dot in the eye. Nine millimetres, and under a pixel at any
+    // zoom the map allows.
+    if (!silhouetteOnly) ellipsoid(eye, basic(0xffffff), [-.012, .018, .042], [.009, .011, .005], 14)
     eyes.push(eye)
     pupils.push(pupil)
     addLine(head, [

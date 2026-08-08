@@ -136,14 +136,58 @@ export type Intrusion = {
 }
 
 /**
+ * An oriented rectangular footprint, for callers whose object is not round.
+ *
+ * A disc is the right body for a lamp post and the wrong one for a building.
+ * Tested as its inscribed disc, a 3.2 by 1.1 block lying *across* a street
+ * reads as a 0.55 radius object 0.22 from the centreline and clears; tested as
+ * itself it is 1.68 of solid wall over the carriageway. That is how the
+ * Sovereign Arc kept a car inside a building on three quarters of its frames
+ * with the clearance pass switched on and reporting success.
+ */
+export type Footprint = {
+  /** Half-extents in the footprint's own frame. */
+  hx: number
+  hz: number
+  /** `Math.cos`/`Math.sin` of its `rotationY`, precomputed by the caller. */
+  cos: number
+  sin: number
+}
+
+/**
+ * The rectangle's half-extent along a direction — its support width.
+ *
+ * This is what makes the test honest without making it timid: a building that
+ * fronts the street it stands on presents its *depth* to the carriageway, which
+ * is the same small figure the inscribed disc used, so nothing that was
+ * correctly placed moves. Only a footprint turned across the street grows.
+ */
+function support(footprint: Footprint, dirX: number, dirZ: number) {
+  // Local axes in world space for a three.js `rotation.y`.
+  const alongX = Math.abs(dirX * footprint.cos - dirZ * footprint.sin)
+  const alongZ = Math.abs(dirX * footprint.sin + dirZ * footprint.cos)
+  return alongX * footprint.hx + alongZ * footprint.hz
+}
+
+/**
  * How far a disc of `radius` at (x, z) reaches into the nearest cleared strip.
  *
  * The deepest intrusion wins, and its escape direction is the one that is
  * perpendicular to the offending segment: pushing along the shortest way out is
  * what keeps a nudged building parallel to the street it was set back from
  * rather than sliding along it.
+ *
+ * `footprint` replaces the disc with an oriented rectangle. `radius` is still
+ * required and is used to size the broad-phase query, so it should be the
+ * rectangle's circumscribed radius when one is given.
  */
-export function clearanceIntrusion(field: ClearanceField, x: number, z: number, radius: number): Intrusion | null {
+export function clearanceIntrusion(
+  field: ClearanceField,
+  x: number,
+  z: number,
+  radius: number,
+  footprint?: Footprint,
+): Intrusion | null {
   if (!field.segments.length) return null
   let deepest: Intrusion | null = null
   const reach = radius
@@ -168,7 +212,12 @@ export function clearanceIntrusion(field: ClearanceField, x: number, z: number, 
         const awayX = x - nearestX
         const awayZ = z - nearestZ
         const distance = Math.hypot(awayX, awayZ)
-        const depth = segment.halfWidth + radius - distance
+        // The body's reach towards this particular strip. For a rectangle that
+        // is its support width along the strip's own normal, so the same block
+        // is a thin thing to the street it fronts and a wide one to the street
+        // it lies across.
+        const bodyReach = footprint ? support(footprint, -segment.dz, segment.dx) : radius
+        const depth = segment.halfWidth + bodyReach - distance
         if (depth <= 0) continue
         if (deepest && depth <= deepest.depth) continue
         // On the centreline itself there is no "away", so the segment's own
@@ -214,12 +263,12 @@ function emptyReport(): ClearanceReport {
  * only clear ground is diagonally out of both. Four passes settles every case
  * in these districts; the fifth has never moved anything.
  */
-function escape(field: ClearanceField, x: number, z: number, radius: number, limit: number) {
+function escape(field: ClearanceField, x: number, z: number, radius: number, limit: number, footprint?: Footprint) {
   let atX = x
   let atZ = z
   let first = 0
   for (let pass = 0; pass < 4; pass += 1) {
-    const intrusion = clearanceIntrusion(field, atX, atZ, radius)
+    const intrusion = clearanceIntrusion(field, atX, atZ, radius, footprint)
     if (!intrusion) return { x: atX, z: atZ, first, cleared: true, travelled: Math.hypot(atX - x, atZ - z) }
     if (pass === 0) first = intrusion.depth
     // A hair past the edge, so a floating-point equal case does not re-trigger.
@@ -229,7 +278,7 @@ function escape(field: ClearanceField, x: number, z: number, radius: number, lim
       return { x, z, first, cleared: false, travelled: 0 }
     }
   }
-  const remaining = clearanceIntrusion(field, atX, atZ, radius)
+  const remaining = clearanceIntrusion(field, atX, atZ, radius, footprint)
   return remaining
     ? { x, z, first, cleared: false, travelled: 0 }
     : { x: atX, z: atZ, first, cleared: true, travelled: Math.hypot(atX - x, atZ - z) }
@@ -246,13 +295,19 @@ function escape(field: ClearanceField, x: number, z: number, radius: number, lim
  * point when no clear ground is within `limit`, so a caller that cannot honour the
  * correction still gets a usable answer.
  */
-export function escapeCorridors(field: ClearanceField, x: number, z: number, radius: number, limit = 1.6) {
-  const result = escape(field, x, z, radius, limit)
+export function escapeCorridors(field: ClearanceField, x: number, z: number, radius: number, limit = 1.6, footprint?: Footprint) {
+  const result = escape(field, x, z, radius, limit, footprint)
   return { x: result.x, z: result.z, moved: result.travelled, cleared: result.cleared, before: result.first }
 }
 
 /** A planned building, as far as this pass needs to know. */
-export type PlacedRecord = { x: number; z: number; width: number; depth: number }
+export type PlacedRecord = { x: number; z: number; width: number; depth: number; rotationY?: number }
+
+/** The record as an oriented rectangle, which is what it actually is. */
+function footprintOf(record: PlacedRecord): Footprint {
+  const angle = record.rotationY ?? 0
+  return { hx: record.width / 2, hz: record.depth / 2, cos: Math.cos(angle), sin: Math.sin(angle) }
+}
 
 /**
  * Filter a set of planned buildings so none of them stands in a corridor.
@@ -273,11 +328,13 @@ export function keepRecordsClear<T extends PlacedRecord>(
   const kept: T[] = []
   for (const record of records) {
     report.considered += 1
-    // The inscribed disc, not the circumscribed one: a long terrace's corner is
-    // allowed to be nearer the street than its face, and using the outer radius
-    // would push every long building away from the street it fronts onto.
-    const radius = Math.min(record.width, record.depth) / 2
-    const result = escape(field, record.x, record.z, radius, limit)
+    // Tested as the rectangle it is, against each street's own normal. The
+    // inscribed disc that stood here read a block lying across a carriageway as
+    // a small round thing beside it, which is most of what was left of the
+    // vehicle-in-building count once the pass was switched on.
+    const footprint = footprintOf(record)
+    const radius = Math.hypot(footprint.hx, footprint.hz)
+    const result = escape(field, record.x, record.z, radius, limit, footprint)
     if (result.first > 0) report.worstBefore = Math.max(report.worstBefore, result.first)
     if (!result.cleared) {
       report.dropped += 1
@@ -293,8 +350,8 @@ export function keepRecordsClear<T extends PlacedRecord>(
     }
   }
   for (const record of kept) {
-    const radius = Math.min(record.width, record.depth) / 2
-    const remaining = clearanceIntrusion(field, record.x, record.z, radius)
+    const footprint = footprintOf(record)
+    const remaining = clearanceIntrusion(field, record.x, record.z, Math.hypot(footprint.hx, footprint.hz), footprint)
     if (remaining) report.worstAfter = Math.max(report.worstAfter, remaining.depth)
   }
   return { kept, report }

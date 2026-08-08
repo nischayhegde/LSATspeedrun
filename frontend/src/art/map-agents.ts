@@ -952,8 +952,30 @@ export class TrafficSim {
     // rounds off a corner: the two offset centrelines meeting at a junction are
     // a lateral step of up to twice the lane offset, and stepping it would read
     // as the vehicle jinking sideways as it turns.
-    if (blend >= 1) agent.object.position.copy(scratchTarget)
-    else agent.object.position.lerp(scratchTarget, blend)
+    if (blend >= 1) {
+      agent.object.position.copy(scratchTarget)
+    } else {
+      agent.object.position.lerp(scratchTarget, blend)
+      // The ease is only allowed to round a corner off towards the kerb.
+      //
+      // Lagging behind the target is a lateral offset in whichever direction
+      // the previous edge's lane happened to lie, and on a two-way street half
+      // of those directions are over the centreline into the oncoming lane.
+      // That is not a car cutting a corner, it is a car on the wrong side of
+      // the road, and it accounted for every wrong-side frame this simulation
+      // reported. Clamping the eased position back to the lane keeps the whole
+      // of the outward half of the ease — which is where the visible rounding
+      // is, since a vehicle turning away from its lane has the furthest to
+      // travel — and refuses the inward half.
+      if (edge.twin >= 0) {
+        const lateral = (agent.object.position.x - from.x) * -edge.dz + (agent.object.position.z - from.z) * edge.dx
+        if (lateral < lane) {
+          const push = lane - lateral
+          agent.object.position.x -= edge.dz * push
+          agent.object.position.z += edge.dx * push
+        }
+      }
+    }
     agent.object.rotation.y = this.facing === 'x' ? agent.heading - Math.PI / 2 : agent.heading
   }
 

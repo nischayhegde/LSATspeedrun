@@ -46,9 +46,9 @@ import {
   type RoadGraph,
   type RoadGraphSpec,
 } from './map-agents'
-import { CrowdRenderer, buildCrowdWalker, type CrowdWalker } from './map-crowd-rig'
+import { CROWD_RENDER_SCALE, CrowdRenderer, buildCrowdWalker, type CrowdWalker } from './map-crowd-rig'
 import { createRiverBed, createRiverSurface, createSeaSurface, setSeaWake, type RiverOptions } from './map-water'
-import { clearObjects, clearanceIntrusion, escapeCorridors, keepRecordsClear, prepareClearance, type ClearanceCorridor } from './map-clearance'
+import { clearObjects, clearanceIntrusion, escapeCorridors, keepRecordsClear, prepareClearance, type ClearanceCorridor, type ClearanceField } from './map-clearance'
 import { IllustratedRenderPass } from './render-style'
 import { HumanoidActor } from './rig'
 
@@ -1471,7 +1471,8 @@ const BUILDING_CLEARANCE_ENABLED = true
  * amount of steering can help. The carriageways are included for the same
  * reason at lower stakes, a car being at least able to brake.
  */
-function keepBuildingsClear(root: THREE.Group, buildings: PlannedBuilding[]) {
+/** Every strip a building has to stay off, as recorded by the district so far. */
+function buildingCorridors(root: THREE.Group): ClearanceCorridor[] {
   const corridors: ClearanceCorridor[] = clearanceCorridors(root).slice()
   for (const way of roadWays(root)) {
     const kind = way.kind ?? 'road'
@@ -1489,6 +1490,11 @@ function keepBuildingsClear(root: THREE.Group, buildings: PlannedBuilding[]) {
       label: 'footway',
     })
   }
+  return corridors
+}
+
+function keepBuildingsClear(root: THREE.Group, buildings: PlannedBuilding[]) {
+  const corridors = buildingCorridors(root)
   if (!corridors.length) return buildings
   const { kept, report } = keepRecordsClear(buildings, prepareClearance(corridors), { limit: 1.1, label: 'building' })
   // Accumulated across the several calls a district makes, so the harness can
@@ -1529,6 +1535,19 @@ function renderPlannedBuildings(
   // same rule `addTreeField` follows and is right for every builder here: all
   // of them lay their streets before they place anything on them.
   if (BUILDING_CLEARANCE_ENABLED) buildings = keepBuildingsClear(root, buildings)
+  // The footprints that were actually built, in plan.
+  //
+  // A harness can otherwise only see a building as a batch of wall instances,
+  // and reconstructing a rotated footprint from those is guesswork that has
+  // already hidden one fault for a whole pass. This is the same list the
+  // clearance pass worked from, so a collision site can be attributed to the
+  // record that caused it.
+  const audit = (root.userData.buildingAudit ??= []) as Array<
+    { x: number; z: number; width: number; depth: number; rotationY: number; region: MapRegionKey }
+  >
+  for (const building of buildings) {
+    audit.push({ x: building.x, z: building.z, width: building.width, depth: building.depth, rotationY: building.rotationY, region })
+  }
   buildings.forEach((building) => {
     const near = articulateWithin > 0 && Math.hypot(building.x - centre[0], building.z - centre[1]) < articulateWithin
     if (near) {
@@ -3137,6 +3156,45 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
   const trees: TreeRecord[] = []
   const reserved = circuitReservedSites(route)
 
+  /* --- The turnpike, registered before anything is built beside it --------- */
+  // The road has to come from somewhere and go somewhere, both because it is
+  // the only honest way to end a corridor and because traffic needs a node off
+  // the edge of the world to arrive from. Without one the whole network is a
+  // set of closed rings and every car has to be conjured into the middle of it.
+  //
+  // This is recorded here rather than where the approaches are drawn, several
+  // hundred lines down, because the clearance pass can only reconcile a
+  // building against the streets that have been recorded by the time that
+  // building is instanced. The turnpike used to be registered last, so every
+  // village frontage on it — the whole point of the corridor — was checked
+  // against a network that did not yet contain the road they front onto. That
+  // is the tractor at 29.4,-1.4, driving through a farm building the pass had
+  // no way to know was in its way.
+  const approachPoints = (fromEnd: boolean) => {
+    const s = fromEnd ? corridor.length : 0
+    const [ax, az] = corridor.at(s, 0)
+    const [tx, tz] = corridor.tangent(s)
+    const direction = fromEnd ? 1 : -1
+    const out: XZ[] = []
+    for (let step = 1; step <= 7; step += 1) {
+      const distance = step * 2.2
+      // A gentle drift, so the continuation reads as more road rather than as
+      // a tangent line ruled off the end of one.
+      const drift = Math.sin(step / 7 * 1.1) * 1.5 * (fromEnd ? -1 : 1)
+      out.push([ax + tx * distance * direction - tz * drift, az + tz * distance * direction + tx * drift])
+    }
+    return out
+  }
+  const westApproach = approachPoints(false).reverse()
+  const eastApproach = approachPoints(true)
+  const wayPoints: XZ[] = [...westApproach]
+  for (let index = 0; index <= 64; index += 1) wayPoints.push(corridor.at(corridor.length * (index / 64), 0))
+  wayPoints.push(...eastApproach)
+  // One way, both ends off the map: the turnpike is the spine of the network as
+  // well as of the layout, and its portals are the only place a car on The
+  // Circuit is allowed to appear.
+  roadWays(root).push({ points: wayPoints, kind: 'road', speed: 1.75, portal: true, width: 1.48 })
+
   const tagProp = <T extends THREE.Object3D>(object: T, name: string, footprint: number) => {
     markAuthoredProp(object, footprint)
     object.userData.propAudit = { name: `nation-${name}`, region: 'nation' }
@@ -3862,28 +3920,6 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
   })
 
   /* --- The turnpike beyond the district ----------------------------------- */
-  // The road has to come from somewhere and go somewhere, both because it is
-  // the only honest way to end a corridor and because traffic needs a node off
-  // the edge of the world to arrive from. Without one the whole network is a
-  // set of closed rings and every car has to be conjured into the middle of it.
-  const wayPoints: XZ[] = []
-  const approachPoints = (fromEnd: boolean) => {
-    const s = fromEnd ? corridor.length : 0
-    const [ax, az] = corridor.at(s, 0)
-    const [tx, tz] = corridor.tangent(s)
-    const direction = fromEnd ? 1 : -1
-    const out: XZ[] = []
-    for (let step = 1; step <= 7; step += 1) {
-      const distance = step * 2.2
-      // A gentle drift, so the continuation reads as more road rather than as
-      // a tangent line ruled off the end of one.
-      const drift = Math.sin(step / 7 * 1.1) * 1.5 * (fromEnd ? -1 : 1)
-      out.push([ax + tx * distance * direction - tz * drift, az + tz * distance * direction + tx * drift])
-    }
-    return out
-  }
-  const westApproach = approachPoints(false).reverse()
-  const eastApproach = approachPoints(true)
   for (const [tail, joinAtStart] of [[westApproach, false], [eastApproach, true]] as Array<[XZ[], boolean]>) {
     const anchor = corridor.at(joinAtStart ? corridor.length : 0, 0)
     const curve = curveFrom(joinAtStart ? [anchor, ...tail] : [...tail, anchor], .09)
@@ -3900,13 +3936,6 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
     centreLine.castShadow = false
     root.add(centreLine)
   }
-  wayPoints.push(...westApproach)
-  for (let index = 0; index <= 64; index += 1) wayPoints.push(corridor.at(corridor.length * (index / 64), 0))
-  wayPoints.push(...eastApproach)
-  // One way, both ends off the map: the turnpike is the spine of the network as
-  // well as of the layout, and its portals are the only place a car on The
-  // Circuit is allowed to appear.
-  roadWays(root).push({ points: wayPoints, kind: 'road', speed: 1.75, portal: true, width: 1.48 })
 
   addTreeField(root, trees)
   registerLandmark(root, {
@@ -4701,7 +4730,7 @@ function addGlobalEnvironment(root: THREE.Group) {
  * for a handful of draw calls, and are tinted towards the region's fog colour
  * so they resolve into the sky rather than ending at a hard edge.
  */
-function createHorizonRing(region: MapRegionKey, definition: ArcDefinition) {
+function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clearance?: ClearanceField) {
   const group = new THREE.Group()
   const fog = new THREE.Color(definition.fog)
   const ground = new THREE.Color(definition.ground)
@@ -5329,13 +5358,25 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition) {
     if (hamletTrees.length) group.add(buildInstancedTreeField(hamletTrees))
   }
 
-  if (outerRecords.length) group.add(buildFacadeGroup(outerRecords.map((record, index) => tintForRegion(region, record, index)), { region }))
+  // The outer country is authored from the horizon inwards and never knew about
+  // the district's streets, so its hamlets were the one set of buildings no
+  // clearance pass had ever looked at. That is The Circuit's tractor at
+  // 29.4,-1.4: the turnpike runs out past the district to its portal and a
+  // farmstead was standing on it, which is why enabling the building pass did
+  // nothing for that site — the farm is not a planned building.
+  if (outerRecords.length) {
+    const cleared = clearance
+      ? keepRecordsClear(outerRecords, clearance, { limit: 1.2, label: 'steading' }).kept
+      : outerRecords
+    if (cleared.length) group.add(buildFacadeGroup(cleared.map((record, index) => tintForRegion(region, record, index)), { region }))
+  }
   return group
 }
 
 function addPerimeterEnvironment(root: THREE.Group, region: MapRegionKey, definition: ArcDefinition) {
   if (region === 'orbit') return
-  root.add(createHorizonRing(region, definition))
+  const corridors = buildingCorridors(root)
+  root.add(createHorizonRing(region, definition, corridors.length ? prepareClearance(corridors) : undefined))
   if (region === 'city' || region === 'nation' || region === 'continent') return
   for (let index = 0; index < 16; index += 1) {
     const angle = index / 16 * Math.PI * 2
@@ -7657,7 +7698,7 @@ export function MapThreeScene({
         // `index * 7.31 + 3.7` so a guard never happens to roll the exact
         // same build, colouring and satchel as a passer-by.
         const guard = buildCrowdWalker(index * 13.7 + 101.3)
-        guard.root.scale.setScalar(.278)
+        guard.root.scale.setScalar(CROWD_RENDER_SCALE)
         const faceSign = z < 0 ? 1 : -1
         // A step further out than the travel anchor (1.45), and shifted to
         // one side, so the figure stands beside the door the player travels
@@ -8004,10 +8045,11 @@ export function MapThreeScene({
     /**
      * Pedestrians.
      *
-     * The rigs are proxy skeletons rather than built bodies — see
-     * `map-crowd-rig` — so the whole population renders in two instanced
-     * batches and the pool can be sized for how the street should look rather
-     * than for what the draw-call budget will bear.
+     * Real `buildStylizedCounsel` bodies, cut at the map detail rung and drawn
+     * through instanced batches keyed by geometry and material finish — see
+     * `map-crowd-rig` — so the whole population costs a fixed ~48 draw calls
+     * and the pool can be sized for how the street should look rather than for
+     * what the draw-call budget will bear.
      */
     /**
      * Cut the pavements apart wherever they run into a carriageway.
@@ -8054,7 +8096,7 @@ export function MapThreeScene({
       // a pedestrian and the lawyer read as the same species. It has to be
       // applied before the crowd is constructed, because the crowd reads it as
       // the scale its fade ramps towards.
-      walker.root.scale.setScalar(.278)
+      walker.root.scale.setScalar(CROWD_RENDER_SCALE)
       crowdWalkers.push(walker)
     }
     const crowdRenderer = crowdWalkers.length ? new CrowdRenderer(crowdWalkers) : null
@@ -8208,17 +8250,33 @@ export function MapThreeScene({
     let counselIdleBeat = 1.8
     let swimPhase: 'dry' | 'entering' | 'swimming' | 'leaving' = 'dry'
     // A wake, so the swimmer displaces water rather than sliding across it.
-    const swimWake = region === 'ocean'
-      ? mesh(
-        new THREE.RingGeometry(.16, .62, 28),
-        new THREE.MeshBasicMaterial({ color: 0xcfe6e4, transparent: true, opacity: 0, depthWrite: false }),
-      )
-      : null
-    if (swimWake) {
-      swimWake.rotation.x = -Math.PI / 2
-      swimWake.renderOrder = 12
-      world.add(swimWake)
-    }
+    // Rings are shed at the body and then left where they were shed: one ring
+    // pinned to the swimmer travels with them, which is the towed look the
+    // whole swim phase exists to avoid. Water that stays put behind a body is
+    // what makes it read as having pushed through something.
+    const SWIM_RIPPLE_COUNT = 7
+    /** Seconds a shed ring takes to spread out and fade. */
+    const SWIM_RIPPLE_LIFE = 1.7
+    /** Seconds between rings, roughly one per stroke at cruising pace. */
+    const SWIM_RIPPLE_INTERVAL = .32
+    const swimRippleGeometry = region === 'ocean' ? new THREE.RingGeometry(.3, .58, 28) : null
+    const swimRipples = swimRippleGeometry
+      ? Array.from({ length: SWIM_RIPPLE_COUNT }, () => {
+        const ring = mesh(
+          swimRippleGeometry,
+          new THREE.MeshBasicMaterial({ color: 0xcfe6e4, transparent: true, opacity: 0, depthWrite: false }),
+        )
+        ring.rotation.x = -Math.PI / 2
+        ring.renderOrder = 12
+        ring.visible = false
+        world.add(ring)
+        return ring
+      })
+      : []
+    /** Age of each ring in seconds; past its life it is spent and reusable. */
+    const swimRippleAge = new Float32Array(SWIM_RIPPLE_COUNT).fill(SWIM_RIPPLE_LIFE)
+    let swimRippleNext = 0
+    let swimRippleTimer = 0
     /** Waterline the body rides at while swimming: shoulders clear, hips under. */
     const SWIM_WATERLINE = -.02
     let swimSubmersion = 0
@@ -8264,9 +8322,30 @@ export function MapThreeScene({
      * which is the deliberate trade: a genuinely long walk across a district
      * should not become a minute of watching someone stroll.
      */
+    /**
+     * ...and on the Treaty Sea the clip that plays is the swim, not the walk.
+     *
+     * Pacing every region against `naturalWalkSpeed` reintroduced exactly the
+     * defect above, one traversal along. Counsel does not walk the sea; the
+     * swim clip carries 2.15 hip-heights per stroke where the walk carries a
+     * stride, so its natural speed is 0.611 against the walk's 0.78, and asking
+     * it for walk-paced ground put the demanded rate at **4.34x** against the
+     * rig's 3.6 ceiling. Measured over a full crossing (`.maps/swim.mjs`), the
+     * stroke accounted for only **75-80%** of the distance covered and the rest
+     * was the body being slid — the towed swimmer the ceiling was raised to
+     * prevent, arrived at from the other side.
+     *
+     * The upper clamp has to move with it. A 25-unit crossing at swim pace
+     * wants 25s, and the 9.5s cap is what forced the speed in the first place;
+     * capped at 15.5s the trapezoid's peak lands at about 3.5x, just inside the
+     * ceiling, so the stroke covers the whole crossing. A sea crossing is now
+     * meaningfully slower than a walk of the same length, which is correct:
+     * swimming is slower than walking.
+     */
     const walkDuration = (length: number) => {
-      const pace = Math.max(.2, counsel.naturalWalkSpeed * 1.62)
-      return THREE.MathUtils.clamp((length / pace) * 1000, 1400, 9500)
+      const clip = region === 'ocean' ? counsel.naturalSwimSpeed : counsel.naturalWalkSpeed
+      const pace = Math.max(.2, clip * 1.62)
+      return THREE.MathUtils.clamp((length / pace) * 1000, 1400, region === 'ocean' ? 15500 : 9500)
     }
     const initialDestination = destination.clone().setY(.12)
     const overviewTarget = new THREE.Vector3(...definition.target)
@@ -9130,13 +9209,37 @@ export function MapThreeScene({
         lawyer.position.y = standingY + (SWIM_WATERLINE - .12) * swimSubmersion + swell
         // A slow roll and a swell, so the body is carried by the water.
         lawyer.rotation.z = Math.sin(elapsed * 2.1) * .09 * swimSubmersion
-        if (swimWake) {
-          const wakeMaterial = swimWake.material as THREE.MeshBasicMaterial
-          wakeMaterial.opacity = .4 * swimSubmersion
-          swimWake.visible = wakeMaterial.opacity > .01
-          swimWake.position.set(lawyer.position.x, .035, lawyer.position.z)
-          const pulse = 1 + Math.sin(elapsed * 3.1) * .12
-          swimWake.scale.setScalar(pulse)
+        if (swimRipples.length > 0) {
+          // Shed a ring at the hips, a little astern, while there is a body in
+          // the water to shed it.
+          swimRippleTimer -= delta
+          if (swimRippleTimer <= 0 && swimSubmersion > .2) {
+            swimRippleTimer = SWIM_RIPPLE_INTERVAL
+            const ring = swimRipples[swimRippleNext]
+            ring.position.set(
+              lawyer.position.x - Math.sin(lawyer.rotation.y) * .3,
+              .035,
+              lawyer.position.z - Math.cos(lawyer.rotation.y) * .3,
+            )
+            swimRippleAge[swimRippleNext] = 0
+            swimRippleNext = (swimRippleNext + 1) % SWIM_RIPPLE_COUNT
+          }
+          for (let index = 0; index < swimRipples.length; index += 1) {
+            const age = swimRippleAge[index]
+            if (age >= SWIM_RIPPLE_LIFE) {
+              swimRipples[index].visible = false
+              continue
+            }
+            const next = age + delta
+            swimRippleAge[index] = next
+            const life = Math.min(1, next / SWIM_RIPPLE_LIFE)
+            const ring = swimRipples[index]
+            ring.visible = true
+            ring.scale.setScalar(.34 + life * 1.55)
+            const material = ring.material as THREE.MeshBasicMaterial
+            // Squared falloff: a ripple thins out fastest as it spreads.
+            material.opacity = .3 * (1 - life) * (1 - life) * Math.max(swimSubmersion, .35)
+          }
         }
       } else {
         // Hysteresis against the rig's own natural walking speed rather than a
