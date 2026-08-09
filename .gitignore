@@ -14,6 +14,7 @@ node_modules/
 
 # Throwaway agent scratch: screenshots, probe scripts and measurement runs.
 # These are regenerated on demand and were large enough to threaten the disk.
+.blind/
 .bundle-ab/
 .map-plan/
 .map-verify/
