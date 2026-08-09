@@ -1546,9 +1546,12 @@ body {
   .office-mobile-current-case em { margin-top: 3px; color: #9fb0aa; font-size: 11px; font-style: normal; }
   .office-mobile-current-case b { display: flex; align-items: center; gap: 4px; color: #ebca72; font-size: 11px; }
   .office-mobile-brief-metrics { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
-  .office-mobile-brief-metrics > span { min-height: 76px; padding: 10px; display: grid; align-content: center; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.035); }
+  /* Two rows of three rather than one, since the sheet now carries the three
+     economy figures the standing-down ledger took off this route. Each tile
+     gives up 12px of height to pay for the second row. */
+  .office-mobile-brief-metrics > span { min-height: 64px; padding: 9px; display: grid; align-content: center; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.035); }
   .office-mobile-brief-metrics small { color: #7fc4b8; font-family: var(--font-pixel); font-size: 7px; }
-  .office-mobile-brief-metrics strong { margin-top: 5px; color: #f0cf78; font-family: var(--font-display); font-size: 18px; }
+  .office-mobile-brief-metrics strong { margin-top: 4px; color: #f0cf78; font-family: var(--font-display); font-size: 16px; }
   .office-mobile-brief-metrics em { margin-top: 2px; color: #91a49f; font-size: 9px; font-style: normal; }
   .office-mobile-next-office { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 12px; border-radius: 14px; background: rgba(223, 191, 105, .08); }
   .office-mobile-next-office span small,
@@ -1724,6 +1727,27 @@ body {
      the narrow story column that resolves to a 10px indent, making it the only
      section that does not share its siblings' left edge. */
   .rival-war-room { margin-inline: 0; padding: 30px 16px 26px; border-width: 3px; }
+
+  /* The caseboard's controls were the smallest left on any route: "Play this
+     chapter" at 33px, "Show on the map" at 32px, and the acquire and locked
+     buttons on every rival card at 38px. They are full-width or near it, so
+     the height was the only thing wrong with them and the only thing changed
+     here. */
+  .chapter-play-button,
+  .wr-locate,
+  .wr-acquire,
+  .wr-target-detail button,
+  .quest-grid article button { min-height: 44px; }
+
+  /* The chapter arc and the rival strip are horizontal carousels — six chapter
+     cards run 865px past the right edge, fourteen rivals nearly 2000px — and
+     like the tab rails they gave no sign of it, since a card cut off flush at
+     the edge reads as a card that ends there. Same treatment, same reason. */
+  .chapter-track,
+  .wr-target-strip {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent 100%);
+  }
 
   .onboarding-page { min-height: calc(100dvh - 58px); display: grid; grid-template-columns: 1fr; }
   .onboarding-scene-wrap { min-height: 32dvh; padding: 12px; }
@@ -3176,6 +3200,58 @@ body {
   .case-lobby .practice-guide > summary { min-height: 52px; padding-inline: 16px; }
   .case-lobby .practice-guide-body { padding: 0 16px 22px; }
   .practice-loop { grid-template-columns: 1fr; }
+}
+
+/* ---------------------------------------------------------------------------
+   Ink markup: the tray a finger actually uses.
+
+   The one surface in the app that is operated by dragging a fingertip had the
+   smallest controls in it. markup.css narrows the tray for a phone but keeps
+   the desktop's target sizes underneath, which left the ink swatches at 21px
+   square, undo and redo at 30px, and the four tool buttons at 38x34 — all of
+   them well under a thumb, and all of them needed mid-drawing rather than once
+   at the start.
+
+   40px rather than 44px, matching the map toolbar's figure a few hundred lines
+   up: nine controls at 44px cannot share a 390px row and would put the tray on
+   two lines permanently, and this tray sits directly above the case documents
+   where every line costs reading room. At 40px the row still fits a 390px
+   phone and only wraps below that.
+
+   The swatch keeps its 21px dot and grows a transparent target around it, so
+   the tray looks unchanged and simply stops missing.
+   --------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .markup-tools button {
+    width: 40px;
+    min-height: 40px;
+    justify-content: center;
+  }
+  .markup-history button { width: 40px; height: 40px; }
+  .markup-color {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    box-shadow: none;
+  }
+  .markup-color::before {
+    content: "";
+    width: 21px;
+    height: 21px;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    background: var(--ink);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3);
+  }
+  .markup-color.active::before { border-color: #f0d79a; }
+  /* The gaps were sized for 21px dots sitting shoulder to shoulder; at 40px the
+     targets already separate themselves. */
+  .markup-colors { gap: 0; }
+  .markup-history { gap: 0; }
 }
 
 /* ---------------------------------------------------------------------------

@@ -67,13 +67,24 @@ export function TabStrip<Key extends string>({
    * one is open. Clicking a tab scrolls it into view by itself; arriving on the
    * page with a tab already chosen, or restoring one from the URL, does not.
    *
-   * `inline: 'nearest'` so a tab that is already fully visible is left alone
-   * rather than being centred, and `block: 'nearest'` so a sticky rail is never
-   * scrolled up the page just to satisfy a horizontal request.
+   * The rail's own `scrollLeft` is moved rather than calling `scrollIntoView`.
+   * `scrollIntoView` cannot be told to leave the vertical axis alone: with
+   * `block: 'nearest'` it still scrolls the *document* to bring an off-screen
+   * rail to the nearest edge, so on a phone, where this strip starts below the
+   * fold, merely arriving on the Dashboard jumped the page down far enough to
+   * park the strip behind the navigation dock. Adjusting the scroller directly
+   * cannot move anything but the scroller.
    */
   useEffect(() => {
     const node = document.getElementById(`${id}-tab-${active}`)
-    node?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+    const rail = node?.parentElement
+    if (!node || !rail) return
+    const left = node.offsetLeft - rail.offsetLeft
+    const overshoot = left + node.offsetWidth - (rail.scrollLeft + rail.clientWidth)
+    // Only when it is actually out of view, so a tab already on screen is not
+    // nudged and a rail that does not scroll at all is left untouched.
+    if (overshoot > 0) rail.scrollLeft += overshoot
+    else if (left < rail.scrollLeft) rail.scrollLeft = left
   }, [active, id])
 
   const move = (event: KeyboardEvent<HTMLButtonElement>, current: Key) => {

@@ -90,10 +90,22 @@ export function OfficePage() {
             <span><small>{active ? 'CASE IN PROGRESS' : 'ACTIVE CLIENT'}</small><strong>{workingClient.name}</strong><em>{game.active_client.cases_remaining} files · {formatMoney(workingClient.base_fee)} base</em></span>
             <b>{active ? 'Resume' : 'Start'} <ArrowRight size={15} /></b>
           </button>
+          {/* Cash, firm value and reputation are here as well as the training
+              figures, because on a phone this sheet is the only place on this
+              route that has them. The economy ledger those three normally live
+              in is a fixed corner card, and mobile.css stands it down on the
+              office and the map so the scene's own HUD can have that corner —
+              which left "$21K to go" below with no cash figure anywhere on
+              screen to read it against. Compact notation, unlike the ledger:
+              nothing here ticks between refetches, so there is no whole-dollar
+              step for rounding to swallow. */}
           <div className="office-mobile-brief-metrics">
+            <span><small>CASH</small><strong>{formatMoney(game.cash, true)}</strong><em>on hand</em></span>
+            <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><em>{game.reputation_band.name} counsel</em></span>
+            <span><small>LEASE</small><strong>{game.upkeep.completed ? 'Closed' : formatMoney(game.upkeep.daily_rent, true)}</strong><em>{game.upkeep.completed ? 'charter complete' : 'per day'}</em></span>
             <span><small>TRAINING</small><strong>{game.daily.cases_completed}/10</strong><em>questions today</em></span>
             <span><small>ACCURACY</small><strong>{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</strong><em>{game.total_cases} measured</em></span>
-            <span><small>LEASE</small><strong>{game.upkeep.completed ? 'Closed' : formatMoney(game.upkeep.daily_rent, true)}</strong><em>{game.upkeep.completed ? 'charter complete' : 'per day'}</em></span>
+            <span><small>REPUTATION</small><strong>{Math.round(game.reputation).toLocaleString()}</strong><em>standing</em></span>
           </div>
           <div className="office-mobile-next-office">
             <span><small>NEXT OFFICE</small><strong>{milestone?.name ?? 'Empire complete'}</strong></span>
@@ -112,10 +124,17 @@ export function OfficePage() {
       {wardrobeOpen && <WardrobePanel game={game} onClose={() => setWardrobeOpen(false)} />}
       {/* No greeting band above the room, and no stat overlay inside it either.
           Firm value, cash and the lease all move on their own, so they live in
-          the fixed economy ledger where they are visible from every screen;
-          repeating them here would be two readings of the same number that can
-          disagree mid-refetch. The active client is not an economy figure and
-          keeps its home below, on the ACTIVE CONTRACT card. */}
+          the fixed economy ledger; repeating them here would be two readings of
+          the same number that can disagree mid-refetch. The active client is not
+          an economy figure and keeps its home below, on the ACTIVE CONTRACT
+          card.
+
+          "Visible from every screen" is true of the ledger on a desktop and not
+          on a phone, where it stands down on this route and the map so the
+          scene HUD can have that corner — which is why the mobile brief sheet
+          above carries its own copy of the three figures. That sheet is opened
+          deliberately and is gone again on the next tap, so the two readings
+          are never on screen together to disagree. */}
       <section className="office-world-shell">
         <ExplorableOffice
           game={game}
