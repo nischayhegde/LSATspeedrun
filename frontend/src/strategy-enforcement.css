@@ -72,10 +72,28 @@
 .sg-head {
   padding: 14px 16px 12px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 4px 11px;
   border-bottom: 1px solid var(--sg-hair);
 }
+.sg-refold {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+  min-height: 28px;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(99, 184, 152, .45);
+  border-radius: 8px;
+  color: #a9cfbe;
+  background: rgba(38, 117, 87, .14);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.sg-refold:hover { border-color: #63b898; color: var(--sg-ink); }
 
 .sg-mark {
   width: 30px;
@@ -117,7 +135,7 @@
 .sg-steps {
   margin: 9px 0 0;
   padding: 0;
-  grid-column: 2;
+  grid-column: 2 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
@@ -288,6 +306,7 @@
 .sg-add:focus-visible,
 .sg-ghost:focus-visible,
 .sg-reopen:focus-visible,
+.sg-refold:focus-visible,
 .sg-inline-label select:focus-visible,
 .sg-inline-label input:focus-visible {
   outline: 2px solid var(--sg-accent);
@@ -813,7 +832,8 @@
 .sg-strike,
 .sg-add,
 .sg-ghost,
-.sg-reopen {
+.sg-reopen,
+.sg-refold {
   cursor: pointer;
   transition:
     transform var(--mo-2, 160ms) var(--mo-brass, cubic-bezier(.36, 0, .16, 1)),
@@ -829,7 +849,8 @@
 .sg-strike:active:not(:disabled),
 .sg-add:active:not(:disabled),
 .sg-ghost:active:not(:disabled),
-.sg-reopen:active:not(:disabled) { transform: translateY(1px); }
+.sg-reopen:active:not(:disabled),
+.sg-refold:active:not(:disabled) { transform: translateY(1px); }
 
 /* Marking a line is a commitment, so the numbered chip lands rather
    than merely changing colour. It is 20px across and moves nothing
@@ -963,6 +984,10 @@
   }
   .app-shell.active-case .sg-head,
   .sg-head { padding: 11px 13px 10px; }
+  /* A nowrap button in the third column leaves the heading about 200px on a
+     390px screen, so it takes a row of its own instead. */
+  .app-shell.active-case .sg-refold,
+  .sg-refold { grid-column: 1 / -1; grid-row: auto; justify-self: start; }
   .app-shell.active-case .sg-head h3,
   .sg-head h3 { font-size: 15px; }
   .app-shell.active-case .sg-head > .sg-title > p,
@@ -981,12 +1006,14 @@
   .app-shell.active-case .sg-strike,
   .app-shell.active-case .sg-add,
   .app-shell.active-case .sg-reopen,
+  .app-shell.active-case .sg-refold,
   .app-shell.active-case .sg-ghost,
   .sg-chip,
   .sg-segment,
   .sg-strike,
   .sg-add,
   .sg-reopen,
+  .sg-refold,
   .sg-ghost { min-height: 44px; touch-action: manipulation; }
   .app-shell.active-case .sg-chip.is-label,
   .sg-chip.is-label { width: 44px; }
@@ -1027,7 +1054,7 @@
   .app-shell.active-case .sg-head .sg-mark,
   .sg-head .sg-mark { display: none; }
   .app-shell.active-case .sg-steps,
-  .sg-steps { grid-column: 1; }
+  .sg-steps { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1052,6 +1079,7 @@
   .sg-add,
   .sg-ghost,
   .sg-reopen,
+  .sg-refold,
   .sg-ledger li,
   .choice.gate-struck,
   [data-gate-revealed="true"],

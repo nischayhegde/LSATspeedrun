@@ -358,6 +358,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [openedAt, setOpenedAt] = useState(Date.now())
   const [formClock, setFormClock] = useState(Date.now())
   const verdictRef = useRef<HTMLDivElement>(null)
+  const answerCardRef = useRef<HTMLElement>(null)
   const pageTurnRunRef = useRef(0)
   const formExpiredRef = useRef(false)
 
@@ -411,6 +412,20 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   useEffect(() => {
     if (result) verdictRef.current?.focus()
   }, [result?.attempt_id])
+
+  // The approach has just been discharged, so the panel that was carrying it
+  // has collapsed and everything below it has moved up. Carrying the student
+  // to the answer card is the point of the collapse: without it they are left
+  // to find the place the page has just moved to, which is the scrolling the
+  // fold was supposed to save. Once per commit, and it lands rather than
+  // travels when motion is turned down.
+  useEffect(() => {
+    if (!strategyGate.justCommitted) return
+    const node = answerCardRef.current
+    if (!node) return
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    node.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' })
+  }, [strategyGate.justCommitted])
 
   useEffect(() => {
     if (!item || result) return
@@ -756,7 +771,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           </article>
         )}
 
-        <section className={`answer-card ${result ? (result.is_correct ? 'case-won' : 'case-lost') : ''}`}>
+        <section ref={answerCardRef} className={`answer-card ${result ? (result.is_correct ? 'case-won' : 'case-lost') : ''}`}>
           <div className="paperclip" aria-hidden="true" />
           {question.stimulus && <div className="stimulus">{question.stimulus}</div>}
           <span className="question-label">QUESTION PRESENTED</span>

@@ -748,6 +748,8 @@ export type StrategyGateController = {
   choicesHidden: boolean
   /** True on the render where a sequence gate has just let the choices through. */
   justRevealed: boolean
+  /** True for a beat after the approach is discharged and the panel folds. */
+  justCommitted: boolean
   /** Labels the student struck. They cannot be selected. */
   strickenLabels: string[]
   /** True when everything the gate needs before submitting is done. */
@@ -848,6 +850,26 @@ export function useStrategyGate(
     return () => window.clearTimeout(timer)
   }, [hidingNow])
 
+  // The moment the approach is discharged, which is a different moment from
+  // the one above: every gate has it, not only the ones that hide the
+  // choices. The panel that was the workspace collapses on this render, so
+  // whatever was below it moves — and the question view uses this to carry the
+  // student to the answer choices rather than leaving them to find the place
+  // the page has just moved to.
+  const wasWorking = useRef(false)
+  const [justCommitted, setJustCommitted] = useState(false)
+  useEffect(() => {
+    if (blocking && !preAnswerDone) {
+      wasWorking.current = true
+      return
+    }
+    if (!wasWorking.current || !preAnswerDone) return
+    wasWorking.current = false
+    setJustCommitted(true)
+    const timer = window.setTimeout(() => setJustCommitted(false), 900)
+    return () => window.clearTimeout(timer)
+  }, [blocking, preAnswerDone])
+
   const strickenLabels = useMemo(() => {
     if (!gate?.restricts_choices || !armed) return []
     const field = (gate.fields ?? []).find((entry) => entry.kind === 'choice_eliminate')
@@ -932,7 +954,18 @@ export function useStrategyGate(
       />
     ) : null
 
-  return { gate, panel, choicesHidden, justRevealed, strickenLabels, satisfied, blockedReason, payload, applyServerErrors }
+  return {
+    gate,
+    panel,
+    choicesHidden,
+    justRevealed,
+    justCommitted,
+    strickenLabels,
+    satisfied,
+    blockedReason,
+    payload,
+    applyServerErrors,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -982,7 +1015,16 @@ export function GatePanel({
   const done = preAnswerDone
   const digest = gate.fields
     .filter((field) => field.stage === 'pre_answer')
-    .map((field) => digestFor(field, values, item))
+    .map((field) => {
+      const rendered = digestFor(field, values, item)
+      if (!rendered) return ''
+      // A mark on its own ("line 2") does not say what was marked. The server's
+      // field keys are already the vocabulary for that — conclusion, premises,
+      // cause, candidate — so a compact digest borrows them. Anything the
+      // student wrote as a sentence speaks for itself and is left alone.
+      const speaks = field.kind === 'text' && (field.min_words ?? 0) >= 4
+      return speaks ? rendered : `${field.key.replace(/_/g, ' ')} ${rendered}`
+    })
     .filter(Boolean)
     .join(' · ')
 
@@ -1024,6 +1066,13 @@ export function GatePanel({
               <h3>{blocking ? gate.copy.armed_title : gate.copy.light_title}</h3>
               <p>{blocking ? gate.instruction : gate.confirm}</p>
             </div>
+            {/* Only ever offered once the work is done, so this is a way back
+                to the record and never a way past the gate. */}
+            {done && !locked && onFold && (
+              <button type="button" className="sg-refold" onClick={() => onFold(false)}>
+                <Minimize2 size={13} /> Fold it away
+              </button>
+            )}
             <StepLedger gate={gate} values={values} item={item} />
           </header>
 
