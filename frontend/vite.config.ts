@@ -138,8 +138,164 @@ c.rel='preload';c.as='style';c.href=h.css[j];document.head.appendChild(c);}
   }
 }
 
+/**
+ * Which chunk each path enters through, mirroring `routeForPath` in
+ * `src/routes.tsx`. Anything not listed here — `/`, `/dashboard`, a typo —
+ * cannot know its screen until `me` answers, so it gets no route sheets and
+ * loads them the ordinary way once the redirect lands.
+ */
+const ROUTE_ENTRY_CHUNKS: [RegExp, string][] = [
+  [/^\/office$/, 'office-page'],
+  [/^\/map$/, 'map-page'],
+  [/^\/progress$/, 'dashboard-page'],
+  [/^\/(cases|practice)$/, 'cases-page'],
+  [/^\/(cases|practice)\/.+/, 'case-session-page'],
+  [/^\/firm$/, 'firm-page'],
+  [/^\/story$/, 'story-page'],
+  [/^\/onboarding$/, 'onboarding-page'],
+  [/^\/login$/, 'login-page'],
+]
+
+/**
+ * The order the page sheets held when they were pinned to the entry file.
+ *
+ * Their relative order is the cascade, and a screen that loads two of them has
+ * to see them in this sequence. Sorting by this rather than by chunk name keeps
+ * the emitted document honest even after Rollup regroups the chunks.
+ */
+const SHEET_ORDER = [
+  'src/narrative.css',
+  'src/trial-calendar.css',
+  'src/wardrobe.css',
+  'src/rival-war-room.css',
+  'src/strategy-enforcement.css',
+  'src/art/unified-empire-map.css',
+]
+
+/**
+ * Puts each route's own stylesheets in the document, ahead of the entry sheet.
+ *
+ * Six sheets belong to one screen each but were imported by `main.tsx`, which
+ * merged them into `index.css` and made every visitor block on 27 kB gzipped of
+ * rules for screens they had not asked for. They were pinned there for one
+ * reason: a stylesheet's place in the cascade is its place in the document, and
+ * a sheet that arrives with a lazy chunk lands *after* `index.css` — behind
+ * `styles.css` and `mobile.css`, which are written on the assumption that they
+ * come last.
+ *
+ * So position is taken over here instead. A script at the top of `<head>`, ahead
+ * of the entry `<link>` the parser has not reached yet, appends a real
+ * stylesheet link for each sheet the current route needs. That is earlier than
+ * Vite could ever discover them — it injects them at runtime, three modules
+ * deep — and it puts them exactly where they used to sit, so nothing in the
+ * cascade moves. Vite's own preload helper checks for an existing link with the
+ * same href before it injects one, so the route's chunk finds these and does
+ * not add a duplicate.
+ *
+ * The same script then watches `<head>`: a sheet that arrives with a chunk
+ * loaded by a *client-side* navigation is moved back in front of the entry
+ * sheet. Without that, walking from /office to /firm would give
+ * `rival-war-room.css` a precedence a cold load of /firm never gives it, and
+ * the two would disagree about the same screen.
+ *
+ * The sheets are found from the bundle rather than listed, so the set cannot
+ * drift from the build; `SHEET_ORDER` is the one thing stated by hand, because
+ * only the source knows what the order used to be.
+ */
+function routeStylesheets(): Plugin {
+  let config: ResolvedConfig
+  return {
+    name: 'lsat-route-stylesheets',
+    apply: 'build',
+    configResolved(resolved) { config = resolved },
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        const bundle = ctx.bundle
+        if (!bundle) return html
+        const base = config.base === './' ? '/' : config.base
+
+        const chunksByName = new Map<string, string>()
+        let entryCss = ''
+        for (const [fileName, output] of Object.entries(bundle)) {
+          if (output.type !== 'chunk') continue
+          chunksByName.set(output.name, fileName)
+          if (output.isEntry) {
+            const meta = (output as { viteMetadata?: { importedCss?: Set<string> } }).viteMetadata
+            for (const sheet of meta?.importedCss ?? []) entryCss = base + sheet
+          }
+        }
+        if (!entryCss) return html
+
+        /**
+         * Where a stylesheet asset sits in the old cascade: the earliest of the
+         * source sheets that ended up inside it. A chunk can own more than one,
+         * and `game-art` owns two of the six.
+         */
+        const rankOf = (fileName: string) => {
+          const chunk = bundle[fileName]
+          if (!chunk || chunk.type !== 'chunk') return SHEET_ORDER.length
+          let best = SHEET_ORDER.length
+          for (const id of chunk.moduleIds) {
+            const i = SHEET_ORDER.findIndex((s) => id.endsWith(s))
+            if (i >= 0 && i < best) best = i
+          }
+          return best
+        }
+
+        /** Every stylesheet reachable from `name` through static imports. */
+        const closure = (name: string) => {
+          const start = chunksByName.get(name)
+          if (!start) return []
+          const seen = new Set<string>()
+          const css = new Map<string, number>()
+          const queue = [start]
+          while (queue.length) {
+            const file = queue.shift()!
+            if (seen.has(file)) continue
+            seen.add(file)
+            const output = bundle[file]
+            if (!output || output.type !== 'chunk' || output.isEntry) continue
+            queue.push(...output.imports)
+            const meta = (output as { viteMetadata?: { importedCss?: Set<string> } }).viteMetadata
+            for (const sheet of meta?.importedCss ?? []) css.set(base + sheet, rankOf(file))
+          }
+          return [...css].sort((a, b) => a[1] - b[1]).map(([href]) => href)
+        }
+
+        const byRoute: [string, string[]][] = []
+        for (const [pattern, name] of ROUTE_ENTRY_CHUNKS) {
+          const sheets = closure(name)
+          if (sheets.length) byRoute.push([pattern.source, sheets])
+        }
+        if (!byRoute.length) return html
+
+        const known = [...new Set(byRoute.flatMap(([, sheets]) => sheets))]
+        const script = `(function(){try{
+var R=${JSON.stringify(byRoute)},K=${JSON.stringify(known)},E=${JSON.stringify(entryCss)};
+var p=location.pathname.replace(/\\/$/,'')||'/',own=[];
+for(var i=0;i<R.length;i++){if(new RegExp(R[i][0]).test(p)){own=R[i][1];break;}}
+for(var j=0;j<own.length;j++){var l=document.createElement('link');
+l.rel='stylesheet';l.href=own[j];document.head.appendChild(l);}
+new MutationObserver(function(recs){
+var e=document.querySelector('link[rel="stylesheet"][href="'+E+'"]');if(!e)return;
+for(var a=0;a<recs.length;a++){var added=recs[a].addedNodes;
+for(var b=0;b<added.length;b++){var n=added[b];
+if(n.tagName!=='LINK'||n.rel!=='stylesheet')continue;
+if(K.indexOf(n.getAttribute('href'))<0)continue;
+if(n.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_PRECEDING)e.parentNode.insertBefore(n,e);}}
+}).observe(document.head,{childList:true});
+}catch(e){}})();`
+        const link = html.match(new RegExp(`<link[^>]*href="${entryCss.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>`))
+        if (!link) return html
+        return html.replace(link[0], `<script>${script}</script>\n    ${link[0]}`)
+      },
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), scenePreloadHints()],
+  plugins: [react(), scenePreloadHints(), routeStylesheets()],
   build: {
     target: ['es2020', 'safari15'],
     cssTarget: 'safari15',

@@ -7,37 +7,34 @@ import { BlockingOverlayProvider } from './overlays'
 import { routeForPath } from './routes'
 import { SoundProvider } from './sound'
 /**
- * These seven are each imported by a component as well, and would otherwise
- * ride along in that component's async chunk now that the routes are split.
- * They are listed here because the entry file is the only place the emitted
- * order is guaranteed, and for this set the order is load-bearing in both
- * directions.
+ * The sheets every screen needs, in the order the cascade depends on.
  *
- * They sit *above* `styles.css` because that is where they landed before the
- * split: `App` is imported on line 5, so everything its module graph pulled in
- * was emitted before the stylesheets listed below it. Page sheets and
- * `styles.css` restate each other's rules at equal specificity, so moving them
- * after it silently flipped those ties — measured, it widened the rival
- * operations panel on /story by 37px.
+ * Six page sheets used to be listed here too — `narrative`, `trial-calendar`,
+ * `wardrobe`, `rival-war-room`, `strategy-enforcement` and
+ * `art/unified-empire-map`. They were pinned to the entry only to fix their
+ * position: each is imported by its own component and would otherwise arrive in
+ * that component's async chunk, and arriving late is what breaks them. Page
+ * sheets and `styles.css` restate each other's rules at equal specificity, so
+ * moving one after it silently flipped those ties — measured, that widened the
+ * rival operations panel on /story by 37px. `mobile.css` is the same problem
+ * from the other side: it is a global override sheet that wins purely by being
+ * last, so a page sheet that lands after it takes the phone layout back.
  *
- * `mobile.css` stays last for the same reason, from the other side: it is a
- * global override sheet that wins purely by being last, so a page sheet that
- * arrives late in a lazy chunk takes the phone layout back. That is not
- * hypothetical either — with `performance.css` in the dashboard chunk its
- * `grid-template-columns: repeat(3,1fr)` beat the `flex-wrap: nowrap` that
- * keeps the dashboard tabs on one scrolling row, and they wrapped onto two.
+ * They are no longer here because position is now held by the document instead
+ * of by the entry bundle: `lsat-route-stylesheets` in `vite.config.ts` writes a
+ * real `<link>` for each of them, ahead of the entry sheet, for the route being
+ * loaded — and moves any that arrive later back in front of it. That gives them
+ * the same place in the cascade they have always had while taking 27 kB
+ * gzipped out of the stylesheet every screen blocks on. The clash scan behind
+ * that change is `.shots/css-clash.mjs`.
  *
- * Keeping the seven eager costs ~101 kB in `index.css`. Splitting them safely
- * needs `@layer`, so precedence comes from layer order rather than arrival
- * order; that is a larger change and is not attempted here.
+ * `performance.css` stayed. It reads like a dashboard sheet and is imported by
+ * the dashboard, but it also styles the whole session review on /cases/:id, the
+ * strategy sections, and the docket on /cases — 25 of its classes are used by
+ * `case-session-page` alone — so deferring it to the dashboard chunk would
+ * leave those screens unstyled.
  */
 import './performance.css'
-import './narrative.css'
-import './trial-calendar.css'
-import './wardrobe.css'
-import './rival-war-room.css'
-import './strategy-enforcement.css'
-import './art/unified-empire-map.css'
 import './styles.css'
 import './art/art.css'
 import './case-instrument.css'
