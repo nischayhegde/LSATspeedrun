@@ -394,7 +394,13 @@
   .readiness-grid,.review-summary-hero,.review-next-actions { grid-template-columns: 1fr; }.review-score,.review-score-pair .review-score { min-width: 0; }.review-score-pair { grid-template-columns: 1fr; }.review-signal-row { grid-template-columns: 1fr 1fr; }
   .answer-audit-shell { display: block; }.answer-audit-index { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.08); }.answer-audit-list { display: flex; overflow-x: auto; padding-bottom: 4px; }.answer-audit-list button { min-width: 112px; }
   .answer-audit-detail { padding: 19px 15px; }.audit-choices > div { grid-template-columns: 23px 1fr; }.audit-choices small { grid-column: 2; }.review-next-actions > div:nth-child(2) { justify-content: stretch; }.review-next-actions button { flex: 1; justify-content: center; }
-  .blind-review-intro { min-height: auto; padding: 16px 10px 40px; }.blind-review-intro > section { padding: 30px 17px; }.blind-review-facts { grid-template-columns: 1fr; }.blind-review-facts span { min-height: 64px; }
+  /* The sealed intro is one short centred card, so it barely scrolls; at 360px
+     its start button landed under the dock and the ledger strip with no scroll
+     left to bring it out. It ends with the same clearance as every other
+     route. */
+  .blind-review-intro { min-height: auto; padding: 16px 10px var(--mobile-dock-clearance, 40px); }.blind-review-intro > section { padding: 30px 17px; }.blind-review-facts { grid-template-columns: 1fr; }.blind-review-facts span { min-height: 64px; }
+  /* Seventy-seven question chips on one rail, with nothing to say it moves. */
+  .answer-audit-list { mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent); }
 }
 
 /* ================================================================

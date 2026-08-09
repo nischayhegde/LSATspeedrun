@@ -3252,6 +3252,17 @@ body {
      targets already separate themselves. */
   .markup-colors { gap: 0; }
   .markup-history { gap: 0; }
+
+  /* The trial calendar's own controls, which are the only way to move a trial
+     date and were sized for a cursor: the reschedule button at 34px tall, the
+     date field and its confirm at 38px. The plate is opened by thumb from the
+     practice header, so everything inside it clears 44px. */
+  .trial-reschedule,
+  .trial-date-field input,
+  .trial-date-field button { min-height: 44px; }
+  .trial-date-field { gap: 9px 8px; }
+  .trial-date-field label { flex: 1 1 150px; }
+  .trial-date-field input { width: 100%; }
 }
 
 /* ---------------------------------------------------------------------------

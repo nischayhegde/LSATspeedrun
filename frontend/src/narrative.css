@@ -73,6 +73,21 @@
 html:has(.wide-scene-shell) {
   --chapter-prompt-bottom: var(--mobile-scene-clearance, max(158px, calc(100dvh - 663px)));
 }
+/* Clearance answers a card that shares the screen with a page. It cannot answer
+   a card that shares the screen with a modal, because the modal has taken the
+   whole screen: at 360px the map's control sheet reaches the bottom-right
+   corner and the prompt covered its environment and marker selects. Any open
+   modal therefore stands the prompt down for as long as it is open — the
+   office brief, the map controls, the wardrobe, the site menu, a cutscene.
+
+   Hidden rather than unmounted: the card keeps publishing its height, so the
+   page underneath does not lose and then regain its end padding, which would
+   shift the reader's scroll position while they are looking at something
+   else. */
+html:has([role="dialog"][aria-modal="true"]) .chapter-prompt {
+  visibility: hidden;
+  pointer-events: none;
+}
 .chapter-prompt-seal {
   width: 38px;
   height: 38px;
