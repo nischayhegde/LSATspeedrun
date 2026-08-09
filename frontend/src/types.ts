@@ -593,8 +593,10 @@ export type AttemptResult = {
 
 export type StudySession = {
   id: string
-  mode: 'practice' | 'diagnostic'
-  practice_style: 'cases' | 'diagnostic'
+  mode: 'practice' | 'diagnostic' | 'blind_review'
+  /** Set only on a blind review: the diagnostic whose misses it retries. */
+  diagnostic_session_id?: string | null
+  practice_style: 'cases' | 'diagnostic' | 'blind_review'
   feedback_policy: 'immediate' | 'delayed'
   status: 'in_progress' | 'paused' | 'completed' | 'abandoned'
   target_minutes: number
@@ -612,13 +614,19 @@ export type StudySession = {
   remaining_ms?: number | null
   time_limit_seconds?: number | null
   completed_at?: string | null
+  /** Answer-release stage of a completed diagnostic. Absent on every other run. */
+  blind_review?: {
+    state: 'unavailable' | 'not_required' | 'not_needed' | 'ready' | 'in_progress' | 'paused' | 'completed'
+    session_id?: string | null
+    total_items: number
+  }
   current_item?: SessionItem | null
   pending_item?: SessionItem | null
   pending_result?: AttemptResult | null
 }
 
 export type PracticeSummary = {
-  kind: 'practice' | 'diagnostic'
+  kind: 'practice' | 'diagnostic' | 'blind_review'
   practice_style?: StudySession['practice_style']
   feedback_policy?: StudySession['feedback_policy']
   accuracy: number
@@ -1031,6 +1039,11 @@ export type HistoryFacets = {
 export type SessionReview = {
   session: StudySession
   summary: PracticeSummary
+  /** Present on both halves of a diagnostic pair: the timed form and its untimed retry. */
+  comparison?: {
+    diagnostic: { session_id: string; summary: PracticeSummary }
+    blind_review?: { session_id: string; summary: PracticeSummary } | null
+  } | null
   items: Array<{
     position: number
     question: Question
@@ -1045,5 +1058,8 @@ export type SessionReview = {
     evidence_class: string
     feedback: AttemptResult['feedback']
     coaching_status: string
+    diagnostic_selected_label?: string | null
+    blind_review_selected_label?: string | null
+    blind_review_is_correct?: boolean | null
   }>
 }

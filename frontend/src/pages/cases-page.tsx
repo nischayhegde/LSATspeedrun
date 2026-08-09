@@ -162,8 +162,11 @@ export function CasesLobbyPage() {
   }
   const queueError = discardRun.error || pauseRun.error || resumeRun.error
   const liveMega = megaQuery.data?.session ?? null
-  const megaSize = liveMega?.total_items || megaQuery.data?.latest?.session.total_items || 75
-  const megaMinutes = liveMega?.target_minutes || megaQuery.data?.latest?.session.target_minutes || 105
+  // A blind review holds this slot too, and its size is the number of misses
+  // rather than the paper's, so the form's shape is only read off a form.
+  const openMegaForm = liveMega?.mode === 'diagnostic' ? liveMega : null
+  const megaSize = openMegaForm?.total_items || megaQuery.data?.latest?.session.total_items || 75
+  const megaMinutes = openMegaForm?.target_minutes || megaQuery.data?.latest?.session.target_minutes || 105
   const openMega = () => {
     if (liveMega) navigate(`/cases/${liveMega.id}`)
     else setMegaGateOpen(true)

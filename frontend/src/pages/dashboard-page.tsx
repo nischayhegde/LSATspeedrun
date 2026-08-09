@@ -148,8 +148,16 @@ export function PerformancePage() {
     ? trend.map((entry, index) => `${20 + index * (560 / Math.max(1, trend.length - 1))},${160 - entry.accuracy * 1.25}`).join(' ')
     : ''
   const diagnosticSession = diagnostic.session
-  const diagnosticSize = diagnosticSession?.total_items || performance.diagnostic?.raw_total || performance.diagnostic?.summary.questions_completed || 75
-  const diagnosticMinutes = diagnosticSession?.target_minutes || 105
+  // The active-diagnostic slot can hold a blind review, whose size is the
+  // number of misses. Only a real form describes the form.
+  const diagnosticForm = diagnosticSession?.mode === 'diagnostic' ? diagnosticSession : undefined
+  const diagnosticSize = diagnosticForm?.total_items || performance.diagnostic?.form_total || performance.diagnostic?.raw_total || performance.diagnostic?.summary.questions_completed || 75
+  const diagnosticMinutes = diagnosticForm?.target_minutes || performance.diagnostic?.time_limit_minutes || 105
+  const blindReviewPending = diagnosticSession?.mode === 'blind_review'
+    || (diagnosticSession?.mode === 'diagnostic' && diagnosticSession.status === 'completed')
+  const megaLitigationLabel = diagnosticSession
+    ? diagnosticSession.mode === 'blind_review' ? 'Resume blind review' : diagnosticSession.status === 'completed' ? 'Start blind review' : 'Resume mega-litigation'
+    : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'
   const activePractice = current.data?.session
   const evidenceCopy = {
     baseline: 'Fewer than 10 questions. Provisional.',
@@ -362,7 +370,7 @@ export function PerformancePage() {
         {activeRunChip}
         <div className="dash-actions">
           <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10 cases'} <ArrowRight /></button>
-          <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {diagnosticSession ? 'Resume mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'}</button>
+          <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {megaLitigationLabel}</button>
         </div>
       </section>
 
@@ -479,11 +487,11 @@ export function PerformancePage() {
               <h2>{performance.diagnostic ? 'Your baseline is set.' : 'A full practice LSAT.'}</h2>
               <p>{diagnosticSize} LR and RC questions in three blocks, one {diagnosticMinutes}-minute clock, results held to the end. One sitting, no pause.</p>
               <ul><li>Above 70% promotes your firm a tier</li><li>Prerequisite upgrades unlocked free</li><li>Sets what your case runs practice</li><li>Pays nothing, prompts nothing, coaches nothing</li></ul>
-              <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>{diagnosticSession ? 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight /></button>
+              <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>{diagnosticSession ? diagnosticSession.mode === 'blind_review' ? 'Return to the blind review' : diagnosticSession.status === 'completed' ? 'Start blind review' : 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight /></button>
               <p className="diagnostic-crosslink">Past sittings are on the Practice tab, under Mega-litigation.</p>
             </div>
             <div className={`diagnostic-score${performance.diagnostic ? '' : ' diagnostic-score-empty'}`}>
-              {performance.diagnostic ? <><small>LAST FORM SCORE</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong><span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span><p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p></> : <><small>{diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small><Gauge className="diagnostic-score-glyph" /><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>No scaled score until a form has a validated conversion.</p></>}
+              {performance.diagnostic ? <><small>LAST FORM SCORE</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong><span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span><p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p></> : <><small>{blindReviewPending ? 'ANSWERS SEALED' : diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small><Gauge className="diagnostic-score-glyph" /><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>No scaled score until a form has a validated conversion.</p></>}
             </div>
           </section>
         )}

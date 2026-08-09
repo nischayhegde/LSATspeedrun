@@ -388,15 +388,20 @@ export function MegaLitigationPanel({
   const diagnostic = useQuery({ queryKey: ['diagnostic'], queryFn: api.currentDiagnostic })
   const live = diagnostic.data?.session ?? null
   const latest = diagnostic.data?.latest ?? null
-  const size = live?.total_items || latest?.session.total_items || 75
-  const minutes = live?.target_minutes || latest?.session.target_minutes || 105
+  // The slot also carries a sealed form and its untimed retry, neither of
+  // which is a form running on the clock, and a retry's size is its miss
+  // count rather than the paper's.
+  const openForm = live?.mode === 'diagnostic' && live.status !== 'completed' ? live : null
+  const sealed = live && !openForm
+  const size = openForm?.total_items || latest?.session.total_items || 75
+  const minutes = openForm?.target_minutes || latest?.session.target_minutes || 105
 
   return (
     <section className="mega-panel" aria-labelledby="mega-panel-title">
       <div className="panel-heading">
         <div>
           <span>MEGA-LITIGATION</span>
-          <h2 id="mega-panel-title">{live ? 'A form is open on the clock.' : 'Basically a full practice LSAT.'}</h2>
+          <h2 id="mega-panel-title">{openForm ? 'A form is open on the clock.' : sealed ? 'A sat form is waiting on its blind review.' : 'Basically a full practice LSAT.'}</h2>
         </div>
         <Target />
       </div>
@@ -417,7 +422,7 @@ export function MegaLitigationPanel({
           <div className="mega-panel-actions">
             {live ? (
               <button type="button" className="mega-resume-button" onClick={() => onResume(live.id)}>
-                Return to the open form <ArrowRight size={15} />
+                {openForm ? 'Return to the open form' : live.mode === 'blind_review' ? 'Return to the blind review' : 'Start the blind review'} <ArrowRight size={15} />
               </button>
             ) : (
               <button type="button" className="mega-start-button" disabled={pending} onClick={onStart}>
