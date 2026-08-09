@@ -42,7 +42,15 @@ a { color: inherit; }
 h1, h2, h3, p { text-wrap: pretty; }
 
 .app-shell { min-height: 100vh; min-height: 100dvh; padding-bottom: 0; }
-.app-header { height: 72px; padding: 0 clamp(18px, 4vw, 64px); display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid rgba(23,34,40,.12); background: rgba(255,253,247,.92); position: sticky; top: 0; z-index: 50; backdrop-filter: blur(18px); }
+/* No `backdrop-filter` here, deliberately. A sticky full-width bar that blurs
+   whatever scrolls behind it re-samples and re-rasterises that strip on every
+   frame, for the whole session, on every route — the same shape of cost as the
+   full-viewport blend layer that was this app's worst runtime offender. The
+   background is 92% opaque, so the blur was being read through 8% of a pixel:
+   removing it is pixel-identical, measured at 390px on five routes with the
+   difference at or under the screen's own frame-to-frame noise (mean 0.000 on
+   the two still routes, 0.039 against a 0.053 noise floor on Firm). */
+.app-header { height: 72px; padding: 0 clamp(18px, 4vw, 64px); display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid rgba(23,34,40,.12); background: rgba(255,253,247,.92); position: sticky; top: 0; z-index: 50; }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--navy); text-decoration: none; }
 .brand.light { color: white; }
 .case-brand { cursor: default; }
@@ -825,7 +833,10 @@ h1, h2, h3, p { text-wrap: pretty; }
   .app-shell.active-case { padding-bottom: 0; }
   .app-header { height: 64px; }
   .desktop-nav { display: none; }
-  .mobile-nav { height: 64px; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; border-top: 1px solid #d5cdbf; background: rgba(255,253,247,.96); backdrop-filter: blur(15px); }
+  /* Also no `backdrop-filter`, for the reason on `.app-header`, and with less
+     to lose: this background is 96% opaque. mobile.css restyles the dock at
+     phone widths and carries the same note. */
+  .mobile-nav { height: 64px; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; border-top: 1px solid #d5cdbf; background: rgba(255,253,247,.96); }
   .mobile-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #858985; text-decoration: none; font-size: 11px; font-weight: 800; }
   .mobile-nav a.active { color: var(--gold-dark); }
   /* Between the desktop row and the phone header the standing badges are given

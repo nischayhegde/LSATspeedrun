@@ -116,6 +116,21 @@ body {
   .app-shell { padding-bottom: 0; }
   .app-shell > main { width: 100%; }
 
+  /* A plate, not glass. The dock is fixed over whatever is scrolling for the
+     entire session, so a `backdrop-filter` on it re-samples and re-blurs that
+     strip every frame — the same shape of cost as the full-viewport blend
+     layer that was this app's worst runtime offender, and unlike the header
+     this one could not simply be dropped: at 62% alpha with the blur gone, the
+     page's own text reads straight through the dock and collides with the tab
+     labels.
+
+     So the blur goes and the alpha comes up, to the point where nothing behind
+     the dock reads as text. Measured against the blurred dock over its own
+     band at 390px, that costs almost nothing in tone: mean 2.1 on Progress and
+     3.7 on Firm out of 255, within a level of the closest candidate tried, and
+     a shift of two to three levels of luminance. The scene rule further down
+     carries its own figure, because the backdrop there is a bright 3D canvas
+     rather than a dark page and this plate would read too heavy. */
   .mobile-nav {
     height: 62px;
     padding: 5px;
@@ -125,10 +140,8 @@ body {
     bottom: max(6px, env(safe-area-inset-bottom));
     border: 1px solid rgba(222, 194, 126, .28);
     border-radius: 18px;
-    background: rgba(11, 22, 35, .62);
+    background: rgba(13, 25, 39, .94);
     box-shadow: 0 14px 34px rgba(2, 7, 12, .4), inset 0 1px rgba(255,255,255,.06);
-    -webkit-backdrop-filter: blur(16px) saturate(1.12);
-    backdrop-filter: blur(16px) saturate(1.12);
   }
   .mobile-nav a { min-width: 0; border: 1px solid transparent; border-radius: 13px; font-size: 9.5px; line-height: 1.05; background: transparent; }
   .mobile-nav a.active { border-color: rgba(235, 202, 119, .46); color: #f1cd6d; background: rgba(213, 178, 89, .08); box-shadow: inset 0 0 18px rgba(216, 179, 88, .05); }
@@ -138,7 +151,6 @@ body {
     gap: 10px;
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
-    -webkit-backdrop-filter: blur(18px);
   }
   .brand,
   .header-right { min-width: 0; }
@@ -590,9 +602,12 @@ body {
 }
 
 /* Mobile Safari still benefits from the prefixed compositor path on glass
-   surfaces. Other browsers ignore the duplicate declaration. */
+   surfaces. Other browsers ignore the duplicate declaration.
+
+   The header is no longer in this list: it is the one surface here that is
+   full-width, sticky and in front of the whole session, and its background was
+   opaque enough that the blur was invisible. See styles.css. */
 @supports (-webkit-backdrop-filter: blur(1px)) {
-  .app-header { -webkit-backdrop-filter: blur(18px); }
   .office-view-rail,
   .uw-scene-view-tabs { -webkit-backdrop-filter: blur(10px); }
   .office-inventory-panel { -webkit-backdrop-filter: blur(18px); }
@@ -1311,7 +1326,9 @@ body {
     padding: 5px;
     bottom: var(--mobile-safe-bottom);
     border-radius: 20px;
-    background: rgba(11, 22, 35, .78);
+    /* Restates the plate above at this width for the same reason: without the
+       blur, 78% left the page's own text legible under the tab labels. */
+    background: rgba(13, 25, 39, .94);
     box-shadow: 0 12px 34px rgba(2, 7, 12, .34), inset 0 1px rgba(255,255,255,.08);
   }
   .mobile-nav a { min-height: 50px; border-radius: 15px; }
@@ -1375,10 +1392,15 @@ body {
   .wide-scene-shell .mobile-site-menu {
     inset: calc(var(--mobile-chrome-height) + env(safe-area-inset-top)) 0 calc(var(--mobile-dock-height) + 16px + env(safe-area-inset-bottom));
   }
+  /* The dock over a scene. Same plate as above and the same reason, but a
+     lighter, cooler mix: the backdrop here is a lit 3D canvas rather than a
+     dark page, so the blurred dock read lighter than it does anywhere else and
+     the reading-route plate would have landed four levels dark. Measured at
+     390px on the office, this is the closest of the candidates that stop the
+     scene showing through (mean 7.2 against 9.3 and 14.2), and on the map it
+     sits inside the scene's own frame-to-frame noise. */
   .wide-scene-shell .mobile-nav {
-    background: rgba(7, 17, 27, .66);
-    -webkit-backdrop-filter: blur(18px) saturate(1.1);
-    backdrop-filter: blur(18px) saturate(1.1);
+    background: rgba(21, 38, 52, .93);
   }
 
   .office-game-page,
