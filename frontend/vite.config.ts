@@ -160,6 +160,32 @@ export default defineConfig({
          */
         manualChunks(id) {
           if (id.includes('/node_modules/three/build/')) return 'three'
+          /**
+           * React, the router and the query client, held apart from the app.
+           *
+           * This buys nothing on a first visit and is not pretending to: the
+           * entry was 331.74 kB (105.47 kB gzip) in one file and is now 60.48 kB
+           * (19.98 kB) plus a 272.12 kB (85.87 kB) framework chunk, which is
+           * 0.67 kB of gzip *worse* in total. Both are needed before React can
+           * mount, so nothing has been deferred.
+           *
+           * What it buys is the second visit. Every one of these bytes is pinned
+           * to a version in `package.json` and changes when a dependency is
+           * upgraded; the app's own code changes several times a day. Bundled
+           * together, one edit to `App.tsx` invalidated the whole 105 kB gzip and
+           * every returning reader downloaded React again. Now that edit
+           * invalidates 19.98 kB and the other 85.87 kB is served from cache.
+           *
+           * The extra request costs no round trip on the critical path: Rollup
+           * makes this a static import of the entry, so Vite emits a
+           * `modulepreload` for it in the document head and the browser starts
+           * both files in the same breath as the navigation. Verified in the
+           * built `index.html` rather than assumed — an async chunk here would
+           * have been a serial hop and not worth it.
+           */
+          if (/\/node_modules\/(react|react-dom|scheduler|react-router|react-router-dom|@tanstack)\//.test(id)) {
+            return 'framework'
+          }
         },
       },
     },
