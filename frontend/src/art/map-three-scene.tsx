@@ -8350,9 +8350,31 @@ export function MapThreeScene({
     const railBlocks = ((world.userData.clearanceCorridors ?? []) as ClearanceCorridor[])
       .filter((corridor) => corridor.label === 'rail')
       .flatMap((corridor) => corridorFootprints(corridor.points, corridor.halfWidth, corridor.closed ?? false))
-    const railPlan = cutFootwaysAroundSolids(pedestrianPlan.ways, railBlocks, { defaultHalfWidth: CROWD_FOOTWAY_HALF })
+    /**
+     * The tarmac, as ground the crowd's usable width may not be moved onto.
+     *
+     * Not a solid and never a reason to remove a pavement — a carriageway
+     * beside a footway is where the footway is supposed to be. It is here
+     * because taking a band out from under a building moves it the other way,
+     * and on a village lane the other way is the road: the arm of the width
+     * pass that could move a band and knew only about buildings took The
+     * Circuit's walker-in-a-building share from .5203 to .4031 and its
+     * bodies-inside-a-vehicle from 0 to 56 in the same run. See `keepOut`.
+     */
+    const carriageways = ((world.userData.roadWays ?? []) as CarriagewaySpec[])
+      .filter((road) => (road.kind ?? 'road') === 'road')
+      // The same default `planFootways` laid the pavements against, so the two
+      // passes cannot disagree about where the kerb is.
+      .flatMap((road) => corridorFootprints(road.points, (road.width ?? 1.5) / 2, road.closed ?? false))
+    const railPlan = cutFootwaysAroundSolids(pedestrianPlan.ways, railBlocks, {
+      defaultHalfWidth: CROWD_FOOTWAY_HALF,
+      keepOut: carriageways,
+    })
     const solidPlan = FOOTWAY_SOLID_CUT[region]
-      ? cutFootwaysAroundSolids(railPlan.ways, solidFootprints, { defaultHalfWidth: CROWD_FOOTWAY_HALF })
+      ? cutFootwaysAroundSolids(railPlan.ways, solidFootprints, {
+        defaultHalfWidth: CROWD_FOOTWAY_HALF,
+        keepOut: carriageways,
+      })
       : railPlan
     const crowdWays = solidPlan.ways
     world.userData.pedestrianPlan = {
@@ -8365,9 +8387,16 @@ export function MapThreeScene({
       solidCuts: solidPlan.cut,
       solidUnwalkable: solidPlan.unwalkable,
       solidBlockedLength: solidPlan.blocked,
+      // Pieces whose usable width was reduced because a solid stands over one
+      // side of them, and the total width given up. See the second half of
+      // `cutFootwaysAroundSolids`: this is the figure that moved the reported
+      // defect, and a run where it is zero has not done anything.
+      solidNarrowed: solidPlan.narrowed,
+      solidNarrowedBy: solidPlan.narrowedFrom,
       railCuts: railPlan.cut,
       railUnwalkable: railPlan.unwalkable,
       railBlockedLength: railPlan.blocked,
+      railNarrowed: railPlan.narrowed,
     }
     // No pedestrians on the Treaty Sea.
     //

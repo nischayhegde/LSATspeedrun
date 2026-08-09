@@ -1301,6 +1301,12 @@ export type FootwaySpec = {
    */
   halfWidth?: number
   /**
+   * Where that usable width sits across the polyline, positive to its left.
+   * Zero unless `cutFootwaysAroundSolids` had to move the band off something
+   * standing over one edge of it. See `Footway.centre`.
+   */
+  centre?: number
+  /**
    * Relative likelihood a spawning walker chooses this pavement, multiplied by
    * its length. A high street and a back lane both being one entry in a list is
    * how a district ends up with the same number of people on each.
@@ -1482,7 +1488,7 @@ export function planFootways(
     }
     for (const [from, to] of spans) {
       const piece = subPolyline(loop, cumulative, from, to, total)
-      if (piece.length >= 2) out.push({ points: piece, halfWidth: way.halfWidth, weight: way.weight, street: way.street })
+      if (piece.length >= 2) out.push({ points: piece, halfWidth: way.halfWidth, centre: way.centre, weight: way.weight, street: way.street })
     }
   }
   return { ways: out, cuts, unsliced }
@@ -1634,6 +1640,30 @@ const SOLID_SETBACK = .12
 const SOLID_STEP = .02
 
 /**
+ * A pedestrian's actual horizontal reach, as opposed to the margin the cut
+ * leaves round a route.
+ *
+ * `SOLID_CLEARANCE` above is a *half-beam*: it dates from the crowd being
+ * capsule proxies at a .12 shoulder, and the buildings on a planned street are
+ * set back by the same .16 for the same reason, so the two agree and the narrow
+ * pavements come out exactly as authored. The crowd is not proxies any more. A
+ * `buildStylizedCounsel` body at map scale measures .19 to .30 across depending
+ * on where in the walk cycle its arms are, and .30 is the top of that range.
+ *
+ * Used only to decide how much of a footway's *width* a walker may use. It is
+ * deliberately not used to decide whether a span of pavement exists: widening
+ * the cut criterion to a real body deletes pavement, and deleting pavement is
+ * this job's best-documented dead end.
+ */
+const WALKER_SHOULDER = .3
+
+/** Arc-length lattice the usable width is measured on. */
+const NARROW_STEP = .05
+
+/** Lateral lattice the usable width is searched on. */
+const NARROW_LATERAL = .02
+
+/**
  * What a way's share of the crowd is multiplied by when the cut could not leave
  * a walkable piece of it. See the `!keep.length` branch.
  *
@@ -1692,15 +1722,85 @@ function sampleWay(points: XZ[], cumulative: number[], s: number) {
  * sliced is a short path that happens to end at a junction and is better
  * slightly wrong than absent, because nothing is standing on it. Here, keeping
  * it whole *is* the defect.
+ *
+ * # The second half: taking back the width, not the pavement
+ *
+ * Everything above is about whether a station on a way exists at all, and it
+ * decides that by asking whether *both* kerbs are inside the same solid — on
+ * the stated grounds that if one of them is clear, "the walker has somewhere to
+ * go". Nothing made that true. A walker's lateral offset is drawn at random
+ * over the full `±halfWidth` when it spawns, is nudged by whoever it passes,
+ * and is driven deliberately to the extreme edge by the `browse` errand; the
+ * only thing that ever steers it back is `way.obstacles`, which holds the
+ * pavement furniture and has never held a building. So a footway with a
+ * farmstead over one kerb and open ground over the other survived the cut
+ * intact and then put people inside the farmstead.
+ *
+ * Measured on The Circuit at the shipped tree, over 600 deterministic frames:
+ * of the 1167 walker-frames inside a planned building, 1137 were at a lateral
+ * offset of at least .75 of the way's own half-width, and 3 were within a
+ * quarter of its centreline. The same split holds for the static solids — 814
+ * of 923. People are not walking through walls because the route is wrong.
+ * They are walking through walls because the route is declared wider than the
+ * ground under it, and the widest part of it is inside a building.
+ *
+ * So each surviving piece is emitted with the largest half-width that keeps a
+ * real body clear of every solid along it. This cannot remove a way, cannot
+ * shorten one, cannot change what connects to what and cannot move anybody
+ * towards a carriageway — it only ever moves walkers *towards* the centreline
+ * of the pavement they are already on — which is what makes it safe to measure
+ * against a real body (`WALKER_SHOULDER`) rather than against the half-beam the
+ * cut itself has to keep using.
+ *
+ * The width is taken as the minimum over the whole piece rather than varying
+ * along it. Subdividing at each change would keep a little more pavement usable
+ * and would also manufacture a pair of coincident ends everywhere it did so,
+ * which `Crowd` welds into a corner and offers as somewhere to turn; the
+ * connectivity of the network is not worth trading for a few centimetres of
+ * lateral wander.
  */
 export function cutFootwaysAroundSolids(
   ways: FootwaySpec[],
   solids: SolidFootprint[],
-  options: { defaultHalfWidth?: number; clearance?: number; minPiece?: number; setback?: number } = {},
-): { ways: FootwaySpec[]; cut: number; unwalkable: number; blocked: number } {
-  if (!solids.length) return { ways, cut: 0, unwalkable: 0, blocked: 0 }
+  options: {
+    defaultHalfWidth?: number
+    clearance?: number
+    minPiece?: number
+    setback?: number
+    /** Body the *width* is measured against. See `WALKER_SHOULDER`. */
+    bodyRadius?: number
+    /**
+     * Ground the usable band must stay off, which is never a reason to remove
+     * a pavement.
+     *
+     * The carriageways, in practice. Moving a band off a building moves it
+     * towards whatever is on the other side, and on a village lane that is the
+     * road: the first arm of this that could shift a band and knew only about
+     * buildings took The Circuit's walker-in-a-building share from .5203 to
+     * .4031 and its bodies-inside-a-vehicle from 0 to 56, which is not a
+     * trade this job is allowed to make. Declaring the tarmac closes it.
+     */
+    keepOut?: SolidFootprint[]
+    /**
+     * Body `keepOut` is measured against, which is deliberately the half-beam
+     * and not the shoulder.
+     *
+     * `KERB_TO_PAVEMENT` and the pavement half-widths were authored together
+     * against `WALKER_HALF_BEAM`, so a planned street's pavement clears its own
+     * carriageway by exactly that and no more. Asking for a shoulder here would
+     * declare every correctly-authored pavement in the game unusable; asking
+     * for the half-beam says only "no further towards the road than the layout
+     * already puts people", which is all this needs to promise.
+     */
+    keepOutRadius?: number
+  } = {},
+): { ways: FootwaySpec[]; cut: number; unwalkable: number; blocked: number; narrowed: number; narrowedFrom: number } {
+  const keepOut = options.keepOut ?? []
+  if (!solids.length && !keepOut.length) return { ways, cut: 0, unwalkable: 0, blocked: 0, narrowed: 0, narrowedFrom: 0 }
   const defaultHalfWidth = options.defaultHalfWidth ?? .65
   const clearance = options.clearance ?? SOLID_CLEARANCE
+  const body = options.bodyRadius ?? WALKER_SHOULDER
+  const keepOutBody = options.keepOutRadius ?? SOLID_CLEARANCE
   // Shorter than `planFootways` keeps, and deliberately. That figure is about
   // whether a *junction* slice is worth having; this is about whether there is
   // anywhere to stand between two shopfronts, and a stride and a half is.
@@ -1711,6 +1811,8 @@ export function cutFootwaysAroundSolids(
   let cut = 0
   let unwalkable = 0
   let blocked = 0
+  let narrowed = 0
+  let narrowedFrom = 0
   for (const way of ways) {
     const points = way.points
     if (points.length < 2) continue
@@ -1734,12 +1836,94 @@ export function cutFootwaysAroundSolids(
     const total = cumulative[cumulative.length - 1]
     if (total < 1e-3) continue
 
+    /**
+     * The band a body still clears at each station of a `NARROW_STEP` lattice,
+     * as its two edges across the polyline. Starts at what the way claims and
+     * is only ever narrowed, so no walker ever reaches ground it could not
+     * reach before — which is what makes this safe to do against a real body
+     * without re-opening the walker-into-traffic question.
+     */
+    // Seeded from the band the way already has, not from the polyline: this
+    // pass runs twice, once for the right-of-way and once for the solids, and
+    // the second run must not hand back the width the first one took.
+    const bandCentre = way.centre ?? 0
+    const stations = Math.max(1, Math.ceil(total / NARROW_STEP))
+    const bandLow = new Float64Array(stations + 1).fill(bandCentre - halfWidth)
+    const bandHigh = new Float64Array(stations + 1).fill(bandCentre + halfWidth)
+
+    /**
+     * How much of the band one footprint takes, before asking whether it takes
+     * all of it. Distance to a convex body is 1-Lipschitz along the cross line,
+     * so a station whose whole remaining band is further off than the body
+     * cannot be constrained by this footprint at all, and that reject is what
+     * keeps a per-station search affordable.
+     */
+    const narrowAgainst = (solid: SolidFootprint, reachOfBody: number, along: number) => {
+      const reach = solid.radius + reachOfBody + halfWidth + Math.abs(bandCentre)
+      const first = Math.max(0, Math.floor((along - reach) / NARROW_STEP))
+      const last = Math.min(stations, Math.ceil((along + reach) / NARROW_STEP))
+      for (let station = first; station <= last; station += 1) {
+        const lowEdge = bandLow[station]
+        const highEdge = bandHigh[station]
+        if (highEdge <= lowEdge) continue
+        const at = sampleWay(loop, cumulative, Math.min(total, station * NARROW_STEP))
+        if (!at) continue
+        const reachOf = (offset: number) => solidDistance(solid, at.x + at.nx * offset, at.z + at.nz * offset)
+        // Nothing in the band can be within a body of a footprint that is
+        // further than that plus the band's own extent from the polyline.
+        if (reachOf(0) >= reachOfBody + Math.max(Math.abs(lowEdge), Math.abs(highEdge))) continue
+        // The offsets this solid takes are one interval, because distance to a
+        // convex body along the cross line is convex. One sweep finds it; the
+        // longer clear side of it is what the band becomes, which moves the
+        // band off the building rather than shrinking it onto its own
+        // centreline — the difference between a walker who can still sidestep
+        // a bench and one who has nowhere left to sidestep into.
+        let takenFrom = Infinity
+        let takenTo = -Infinity
+        for (let offset = lowEdge; offset <= highEdge + 1e-9; offset += NARROW_LATERAL) {
+          if (reachOf(offset) >= reachOfBody) continue
+          if (offset < takenFrom) takenFrom = offset
+          takenTo = offset
+        }
+        if (takenFrom > takenTo) continue
+        const belowRoom = takenFrom - NARROW_LATERAL - lowEdge
+        const aboveRoom = highEdge - (takenTo + NARROW_LATERAL)
+        if (belowRoom <= 0 && aboveRoom <= 0) {
+          // Every offset touches. The midpoint is retained as a zero-width band
+          // so the walker tracks the middle of what was there rather than an
+          // arbitrary edge of it.
+          const middle = (lowEdge + highEdge) / 2
+          bandLow[station] = middle
+          bandHigh[station] = middle
+        } else if (belowRoom >= aboveRoom) {
+          bandHigh[station] = takenFrom - NARROW_LATERAL
+        } else {
+          bandLow[station] = takenTo + NARROW_LATERAL
+        }
+      }
+    }
+
+    const nearby = (solid: SolidFootprint, body: number) => {
+      const reach = solid.radius + body + halfWidth + Math.abs(bandCentre)
+      if (solid.x < minX - reach || solid.x > maxX + reach) return false
+      if (solid.z < minZ - reach || solid.z > maxZ + reach) return false
+      return true
+    }
+
+    // The band first, off everything, including the tarmac. Then the cut, off
+    // the solids only: a carriageway beside a pavement is where the pavement is
+    // supposed to be and is never a reason to remove one.
+    for (const edge of keepOut) {
+      if (!nearby(edge, keepOutBody)) continue
+      narrowAgainst(edge, keepOutBody, projectOntoPolyline(loop, cumulative, edge.x, edge.z).s)
+    }
+
     const spans: Array<[number, number]> = []
     for (const solid of solids) {
-      const reach = solid.radius + clearance + halfWidth
-      if (solid.x < minX - reach || solid.x > maxX + reach) continue
-      if (solid.z < minZ - reach || solid.z > maxZ + reach) continue
+      if (!nearby(solid, Math.max(clearance, body))) continue
       const hit = projectOntoPolyline(loop, cumulative, solid.x, solid.z)
+      narrowAgainst(solid, body, hit.s)
+
       // Both kerbs, because the blocked set across the way is an interval: the
       // distance to a convex body along a straight line is a convex function of
       // position on it, so if the two edges of the band are both inside the
@@ -1758,13 +1942,59 @@ export function cutFootwaysAroundSolids(
       // sixth of the setback, which one pass of small steps gives directly.
       let from = hit.s
       let to = hit.s
-      const limit = reach + halfWidth
+      const limit = solid.radius + clearance + halfWidth * 2
       while (from > hit.s - limit && blockedAt(from - SOLID_STEP)) from -= SOLID_STEP
       while (to < hit.s + limit && blockedAt(to + SOLID_STEP)) to += SOLID_STEP
       spans.push([from - setback, to + setback])
     }
+    /**
+     * The band every station of a piece can honour: the intersection of their
+     * bands, which is the widest one interval that is clear along the whole
+     * piece. Stations wrap modulo the lattice so a ring's rotated arc reads the
+     * cells the unrotated one would.
+     *
+     * Taken over the piece as a whole rather than varying along it.
+     * Subdividing at each change would keep a little more pavement usable and
+     * would also manufacture a pair of coincident ends everywhere it did so,
+     * which `Crowd` welds into a corner and offers as somewhere to turn; the
+     * connectivity of the network is not worth a few centimetres of wander.
+     */
+    const bandOver = (from: number, to: number) => {
+      let low = bandCentre - halfWidth
+      let high = bandCentre + halfWidth
+      const start = Math.floor(from / NARROW_STEP)
+      const stop = Math.ceil(to / NARROW_STEP)
+      for (let station = start; station <= stop; station += 1) {
+        const slot = closed
+          ? ((station % stations) + stations) % stations
+          : Math.min(stations, Math.max(0, station))
+        if (bandLow[slot] > low) low = bandLow[slot]
+        if (bandHigh[slot] < high) high = bandHigh[slot]
+      }
+      // Disjoint bands along the piece leave no interval clear for all of it.
+      // The midpoint of the tighter constraint is the least bad single line.
+      if (high < low) { const middle = (low + high) / 2; return { centre: middle, half: 0 } }
+      return { centre: (low + high) / 2, half: (high - low) / 2 }
+    }
+    // A cut piece of a ring is not a ring, so `closed` is deliberately not
+    // carried over, exactly as before this pass existed.
+    const emit = (points: XZ[], from: number, to: number) => {
+      const band = bandOver(from, to)
+      if (band.half < halfWidth - 1e-9) {
+        narrowed += 1
+        narrowedFrom += halfWidth - band.half
+      }
+      out.push({ points, halfWidth: band.half, centre: band.centre, weight: way.weight, street: way.street })
+    }
+
     if (!spans.length) {
-      out.push(way)
+      const band = bandOver(0, total)
+      if (band.half >= halfWidth - 1e-9) out.push(way)
+      else {
+        narrowed += 1
+        narrowedFrom += halfWidth - band.half
+        out.push({ ...way, halfWidth: band.half, centre: band.centre })
+      }
       continue
     }
     spans.sort((a, b) => a[0] - b[0])
@@ -1831,16 +2061,27 @@ export function cutFootwaysAroundSolids(
       //
       // Deliberately not zero, and deliberately not a deletion. Both starve the
       // connection, and deletion is the recorded dead end above.
+      //
+      // Narrowed as well as de-weighted, and for the same reason the surviving
+      // pieces are: there is nowhere clear to stand on this way, but the
+      // centreline is still the least bad line on it, and a walker held to the
+      // centreline of a blocked pavement is less far inside the thing blocking
+      // it than one drifting to the kerb of one.
       unwalkable += 1
-      out.push({ ...way, weight: (way.weight ?? 1) * OBSTRUCTED_WEIGHT })
+      const band = bandOver(0, total)
+      if (band.half < halfWidth - 1e-9) {
+        narrowed += 1
+        narrowedFrom += halfWidth - band.half
+      }
+      out.push({ ...way, halfWidth: band.half, centre: band.centre, weight: (way.weight ?? 1) * OBSTRUCTED_WEIGHT })
       continue
     }
     for (const [from, to] of keep) {
       const piece = subPolyline(loop, cumulative, Math.max(0, from), Math.min(closed ? from + total : total, to), total)
-      if (piece.length >= 2) out.push({ points: piece, halfWidth: way.halfWidth, weight: way.weight, street: way.street })
+      if (piece.length >= 2) emit(piece, Math.max(0, from), to)
     }
   }
-  return { ways: out, cut, unwalkable, blocked: +blocked.toFixed(2) }
+  return { ways: out, cut, unwalkable, blocked: +blocked.toFixed(2), narrowed, narrowedFrom: +narrowedFrom.toFixed(2) }
 }
 
 /** Where a world point falls on a plain polyline: along, across, distance. */
@@ -2132,6 +2373,18 @@ type Footway = {
    * middle of an esplanade or walks them off the edge of a lane's kerb.
    */
   halfWidth: number
+  /**
+   * Where the usable band sits across the polyline, positive to the polyline's
+   * left. Zero on a pavement with nothing over either edge of it.
+   *
+   * `halfWidth` alone can only describe a band centred on the line, and a
+   * building standing over one kerb needs the band moved rather than shrunk:
+   * shrinking a 1.3-wide village pavement to nothing because a farmstead is
+   * .3 off one side of it holds everybody to a single file down the middle,
+   * which takes away the room the furniture avoidance needs to work in and puts
+   * them in the bench instead. See `cutFootwaysAroundSolids`.
+   */
+  centre: number
   /** Length × class weight, for choosing where a walker appears. */
   weight: number
   /** Which carriageway this pavement runs beside, or -1. See `FootwaySpec`. */
@@ -2182,7 +2435,7 @@ type Walker = {
   previousWorld: THREE.Vector3
 }
 
-function buildFootway(points: XZ[], closed: boolean, halfWidth: number, weight: number, street: number): Footway | null {
+function buildFootway(points: XZ[], closed: boolean, halfWidth: number, weight: number, street: number, centre: number): Footway | null {
   const count = points.length + (closed ? 1 : 0)
   if (points.length < 2) return null
   const flat = new Float32Array(count * 2)
@@ -2199,7 +2452,7 @@ function buildFootway(points: XZ[], closed: boolean, halfWidth: number, weight: 
   }
   const length = cumulative[count - 1]
   if (length < 1e-3) return null
-  return { points: flat, cumulative, length, closed, halfWidth, weight: length * weight, street, obstacles: [] }
+  return { points: flat, cumulative, length, closed, halfWidth, centre, weight: length * weight, street, obstacles: [] }
 }
 
 /** First index whose `s` is at or past `value`, in a list sorted by `s`. */
@@ -2586,7 +2839,7 @@ export class Crowd {
   constructor(options: CrowdOptions) {
     const defaultHalfWidth = (options.width ?? 1.5) * .5
     for (const way of options.ways) {
-      const built = buildFootway(way.points, way.closed ?? false, way.halfWidth ?? defaultHalfWidth, way.weight ?? 1, way.street ?? -1)
+      const built = buildFootway(way.points, way.closed ?? false, way.halfWidth ?? defaultHalfWidth, way.weight ?? 1, way.street ?? -1, way.centre ?? 0)
       if (built) this.ways.push(built)
     }
     this.instanced = options.instanced
@@ -2606,7 +2859,7 @@ export class Crowd {
     for (const obstacle of options.obstacles ?? []) {
       for (const way of this.ways) {
         const hit = projectOntoWay(way, obstacle.x, obstacle.z)
-        if (hit.distance > way.halfWidth + 1.4 + obstacle.radius) continue
+        if (hit.distance > Math.abs(way.centre) + way.halfWidth + 1.4 + obstacle.radius) continue
         way.obstacles.push({ s: hit.s, d: hit.d, radius: obstacle.radius })
       }
     }
@@ -3330,10 +3583,11 @@ export class Crowd {
       : direction > 0 ? 0 : way.length
     this.sample(way, distance)
     const lateral = (hashUnit(walker.seed + this.spawnCursor * 8.11) * 2 - 1) * way.halfWidth
+    const across = way.centre + lateral * direction
     scratchTarget.set(
-      this.sampleX - this.sampleDz * lateral * direction,
+      this.sampleX - this.sampleDz * across,
       this.lift,
-      this.sampleZ + this.sampleDx * lateral * direction,
+      this.sampleZ + this.sampleDx * across,
     )
     if (!unseen(scratchTarget, 1.2, this.fogDistance)) return false
 
@@ -3605,9 +3859,11 @@ export class Crowd {
         for (; cursor < way.obstacles.length; cursor += 1) {
           const obstacle = way.obstacles[cursor]
           if (obstacle.s > far) break
-          // `lateral` is measured with the walker's own direction applied, so
-          // an obstacle's stored offset has to be read the same way round.
-          const offset = obstacle.d * walker.direction
+          // `lateral` is measured from the middle of the *usable band* with
+          // the walker's own direction applied, so an obstacle's offset — which
+          // is stored across the polyline — has to be moved onto that band and
+          // then read the same way round.
+          const offset = (obstacle.d - way.centre) * walker.direction
           const clear = obstacle.radius + .34
           if (Math.abs(walker.lateral - offset) > clear) continue
           crowded = true
@@ -3695,10 +3951,11 @@ export class Crowd {
       this.sample(way, walker.distance)
       const forwardX = this.sampleDx * walker.direction
       const forwardZ = this.sampleDz * walker.direction
+      const across = way.centre + walker.lateral * walker.direction
       scratchTarget.set(
-        this.sampleX - this.sampleDz * walker.lateral * walker.direction,
+        this.sampleX - this.sampleDz * across,
         this.lift,
-        this.sampleZ + this.sampleDx * walker.lateral * walker.direction,
+        this.sampleZ + this.sampleDx * across,
       )
       walker.root.position.lerp(scratchTarget, 1 - Math.exp(-9 * step))
       walker.heading = approachAngle(walker.heading, Math.atan2(forwardX, forwardZ), 6.5, step)
@@ -3741,7 +3998,7 @@ export class Crowd {
       let distance = (offset + this.elapsed * speed * direction) % way.length
       if (distance < 0) distance += way.length
       this.sample(way, distance)
-      const lateral = (hashUnit(seed * 3.1) * 2 - 1) * way.halfWidth
+      const lateral = way.centre + (hashUnit(seed * 3.1) * 2 - 1) * way.halfWidth
       scratchTarget.set(
         this.sampleX - this.sampleDz * lateral,
         this.lift,
