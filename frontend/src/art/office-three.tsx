@@ -7,6 +7,7 @@ import { clientCastSeed } from './assets'
 import { officeGroupEconomics } from './office-earnings'
 import { OfficeEarningsReadout, type OfficeReadoutTarget } from './office-earnings-readout'
 import { OFFICE_ASSET_MANIFEST, officeEnvironmentFor, officeLayoutFor, officeStaffStationFor, officeVisualFor, type OfficeStaffStation, type OfficeVisualZone } from './office-manifest'
+import { buildOfficeWindowView } from './office-window-view'
 import { IllustratedRenderPass } from './render-style'
 import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
 import {
@@ -192,28 +193,32 @@ type OfficeLook = {
   darkWood: number
   accent: number
   upholstery: number
-  sky: number
-  exterior: 'forest' | 'street' | 'city' | 'harbor' | 'world' | 'ocean' | 'orbit' | 'lunar' | 'nexus'
 }
 
-// Every headquarters level has its own material and exterior language. The
-// geometry grows progressively; these palettes keep adjacent upgrades legible.
+// Every headquarters level has its own material language. The geometry grows
+// progressively; these palettes keep adjacent upgrades legible.
+//
+// What used to be here as well: a `sky` colour and an `exterior` name per
+// level, driving a strip of cardboard skyline stood up on the glass. Both are
+// gone. What is out of the window is a property of where on the map the firm
+// is standing, not of how its walls are finished, and `office-window-view`
+// derives it from the tier's map region instead.
 const OFFICE_LOOKS: OfficeLook[] = [
-  { wall: 0x493226, floor: 0x38251d, wood: 0x65432f, darkWood: 0x2b1d17, accent: 0x3a3935, upholstery: 0x4d4035, sky: 0x101c24, exterior: 'forest' },
-  { wall: 0x82705b, floor: 0x4c3427, wood: 0x76513a, darkWood: 0x34241d, accent: 0x796343, upholstery: 0x43535a, sky: 0x172936, exterior: 'street' },
-  { wall: 0x69786f, floor: 0x493226, wood: 0x744a32, darkWood: 0x30211b, accent: 0x8c7446, upholstery: 0x31534f, sky: 0x18303a, exterior: 'street' },
-  { wall: 0x273846, floor: 0x3e2b22, wood: 0x70452f, darkWood: 0x271b18, accent: 0x96713d, upholstery: 0x253e4a, sky: 0x102638, exterior: 'city' },
-  { wall: 0x3b3338, floor: 0x35241f, wood: 0x6d4431, darkWood: 0x251a18, accent: 0xa47a3e, upholstery: 0x49333b, sky: 0x132a3e, exterior: 'city' },
-  { wall: 0x2b4147, floor: 0x382a25, wood: 0x674634, darkWood: 0x211c1a, accent: 0x9d8552, upholstery: 0x294d52, sky: 0x12384a, exterior: 'harbor' },
-  { wall: 0x222f3a, floor: 0x302722, wood: 0x5a4032, darkWood: 0x1a1818, accent: 0xb08a43, upholstery: 0x243b4a, sky: 0x112b41, exterior: 'world' },
-  { wall: 0x1d3440, floor: 0x292421, wood: 0x513c31, darkWood: 0x17181a, accent: 0xb49b5d, upholstery: 0x1f4b50, sky: 0x102e44, exterior: 'world' },
-  { wall: 0x203544, floor: 0x27231f, wood: 0x4b382f, darkWood: 0x15181b, accent: 0xc09648, upholstery: 0x274650, sky: 0x0c2942, exterior: 'world' },
-  { wall: 0x233832, floor: 0x2c2721, wood: 0x503a2e, darkWood: 0x161a18, accent: 0xc4a45c, upholstery: 0x2c4940, sky: 0x102b3d, exterior: 'city' },
-  { wall: 0x202d36, floor: 0x252525, wood: 0x483a32, darkWood: 0x14191d, accent: 0x66a8a5, upholstery: 0x263e49, sky: 0x0d3040, exterior: 'city' },
-  { wall: 0x173443, floor: 0x222a2e, wood: 0x453b34, darkWood: 0x101a20, accent: 0x65b8b1, upholstery: 0x1e4957, sky: 0x08374a, exterior: 'ocean' },
-  { wall: 0x20283b, floor: 0x262b36, wood: 0x493d35, darkWood: 0x121722, accent: 0x8faeb5, upholstery: 0x2b3d55, sky: 0x080f25, exterior: 'orbit' },
-  { wall: 0x2a3038, floor: 0x303238, wood: 0x55483d, darkWood: 0x171a20, accent: 0xb8c6c9, upholstery: 0x3a4652, sky: 0x090e1c, exterior: 'lunar' },
-  { wall: 0x151d2a, floor: 0x24242b, wood: 0x493a31, darkWood: 0x0d1118, accent: 0xd0aa55, upholstery: 0x203c46, sky: 0x070b18, exterior: 'nexus' },
+  { wall: 0x493226, floor: 0x38251d, wood: 0x65432f, darkWood: 0x2b1d17, accent: 0x3a3935, upholstery: 0x4d4035 },
+  { wall: 0x82705b, floor: 0x4c3427, wood: 0x76513a, darkWood: 0x34241d, accent: 0x796343, upholstery: 0x43535a },
+  { wall: 0x69786f, floor: 0x493226, wood: 0x744a32, darkWood: 0x30211b, accent: 0x8c7446, upholstery: 0x31534f },
+  { wall: 0x273846, floor: 0x3e2b22, wood: 0x70452f, darkWood: 0x271b18, accent: 0x96713d, upholstery: 0x253e4a },
+  { wall: 0x3b3338, floor: 0x35241f, wood: 0x6d4431, darkWood: 0x251a18, accent: 0xa47a3e, upholstery: 0x49333b },
+  { wall: 0x2b4147, floor: 0x382a25, wood: 0x674634, darkWood: 0x211c1a, accent: 0x9d8552, upholstery: 0x294d52 },
+  { wall: 0x222f3a, floor: 0x302722, wood: 0x5a4032, darkWood: 0x1a1818, accent: 0xb08a43, upholstery: 0x243b4a },
+  { wall: 0x1d3440, floor: 0x292421, wood: 0x513c31, darkWood: 0x17181a, accent: 0xb49b5d, upholstery: 0x1f4b50 },
+  { wall: 0x203544, floor: 0x27231f, wood: 0x4b382f, darkWood: 0x15181b, accent: 0xc09648, upholstery: 0x274650 },
+  { wall: 0x233832, floor: 0x2c2721, wood: 0x503a2e, darkWood: 0x161a18, accent: 0xc4a45c, upholstery: 0x2c4940 },
+  { wall: 0x202d36, floor: 0x252525, wood: 0x483a32, darkWood: 0x14191d, accent: 0x66a8a5, upholstery: 0x263e49 },
+  { wall: 0x173443, floor: 0x222a2e, wood: 0x453b34, darkWood: 0x101a20, accent: 0x65b8b1, upholstery: 0x1e4957 },
+  { wall: 0x20283b, floor: 0x262b36, wood: 0x493d35, darkWood: 0x121722, accent: 0x8faeb5, upholstery: 0x2b3d55 },
+  { wall: 0x2a3038, floor: 0x303238, wood: 0x55483d, darkWood: 0x171a20, accent: 0xb8c6c9, upholstery: 0x3a4652 },
+  { wall: 0x151d2a, floor: 0x24242b, wood: 0x493a31, darkWood: 0x0d1118, accent: 0xd0aa55, upholstery: 0x203c46 },
 ]
 
 function seeded(index: number) {
@@ -379,6 +384,55 @@ function screenTexture() {
   return texture
 }
 
+/**
+ * The front wall, with the window opening cut out of it.
+ *
+ * A shape with a hole rather than four boxes around the void, because the wall
+ * carries a bump-mapped board texture at tier zero and four separate quads
+ * would each restart it. `ShapeGeometry` writes the vertex positions into the
+ * UV channel, which for a fifteen-metre wall would tile the boards a dozen
+ * times over, so the UVs are renormalised to the wall's own extent — exactly
+ * what the `PlaneGeometry` this replaces already gave.
+ *
+ * Triangulating a rectangle with a rectangular hole costs eight triangles
+ * against the plane's two.
+ */
+function frontWallGeometry(
+  width: number,
+  height: number,
+  centerY: number,
+  opening: [left: number, right: number, bottom: number, top: number],
+) {
+  const halfWidth = width / 2
+  const halfHeight = height / 2
+  const shape = new THREE.Shape()
+    .moveTo(-halfWidth, -halfHeight)
+    .lineTo(halfWidth, -halfHeight)
+    .lineTo(halfWidth, halfHeight)
+    .lineTo(-halfWidth, halfHeight)
+    .lineTo(-halfWidth, -halfHeight)
+  const [left, right, bottom, top] = opening
+  shape.holes.push(
+    new THREE.Path()
+      .moveTo(left, bottom - centerY)
+      .lineTo(left, top - centerY)
+      .lineTo(right, top - centerY)
+      .lineTo(right, bottom - centerY)
+      .lineTo(left, bottom - centerY),
+  )
+  const geometry = new THREE.ShapeGeometry(shape)
+  const uv = geometry.getAttribute('uv') as THREE.BufferAttribute
+  const position = geometry.getAttribute('position') as THREE.BufferAttribute
+  for (let index = 0; index < uv.count; index += 1) {
+    uv.setXY(
+      index,
+      (position.getX(index) + halfWidth) / width,
+      (position.getY(index) + halfHeight) / height,
+    )
+  }
+  return geometry
+}
+
 function addMesh(
   parent: THREE.Object3D,
   geometry: THREE.BufferGeometry,
@@ -493,6 +547,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     // frame. Nothing here compiles a shader that a developer has not already
     // seen compile, so the check earns its cost in development and not after.
     renderer.debug.checkShaderErrors = import.meta.env.DEV
+    // The style pass draws twice per frame — the scene into its target, then a
+    // fullscreen triangle onto the canvas — and three resets the counters at
+    // the head of every `render`. Left on automatic, anything read afterwards
+    // describes the composite triangle and nothing else, so in development the
+    // frame owns the reset and the totals cover both passes.
+    if (import.meta.env.DEV) renderer.info.autoReset = false
 
     // Build-phase stopwatch. Attributing a half-second scene build needs to be
     // a measurement rather than a guess, and a CPU profile cannot tell the
@@ -550,7 +610,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     // offset moves away from the wall being viewed, preserving comfortable
     // sightlines through a full 360-degree turn.
     const baseCameraFov = rustic ? 58 : 59
-    const camera = new THREE.PerspectiveCamera(baseCameraFov, 1, .1, 80)
+    // The far plane has to clear the horizon now that there is one: the window
+    // view's sky sits about eighty metres beyond the glass, and the camera is
+    // another seven back from that. A 24-bit depth buffer at this near plane
+    // still resolves millimetres at the far wall, so the extra range costs no
+    // precision anywhere the room can be seen from.
+    const camera = new THREE.PerspectiveCamera(baseCameraFov, 1, .1, 120)
     // Open on a composed three-quarter view instead of looking over the back
     // of the partner chair. The higher sightline reveals the working floor,
     // keeps the single primary workstation legible, and still leaves the user
@@ -703,12 +768,46 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const pickTargets: PickTarget[] = []
 
     phase('materials+textures')
+    // The window opening, established before the wall it is cut out of.
+    //
+    // It used to be a picture hung on a solid wall: a sky-coloured plane with a
+    // strip of cardboard skyline stood up in front of it, all inside four
+    // centimetres. It is now a hole, with the district on the other side of it
+    // at its real distance, which is the only way a window reads as a window —
+    // parallax, occlusion and the contour pass all follow from the depth being
+    // true, and none of them can be faked on a plane.
+    const windowWidth = rustic ? 2.85 : 3.5 + Math.min(.65, level * .045)
+    const windowHeight = rustic ? 2.55 : 3.45 + Math.min(.35, level * .025)
+    const windowX = rustic ? -3.62 : -3.2
+    const windowY = rustic ? 3.22 : 3.25
+    const openingLeft = windowX - windowWidth / 2
+    const openingRight = windowX + windowWidth / 2
+    const openingBottom = windowY - windowHeight / 2
+    const openingTop = windowY + windowHeight / 2
+    /**
+     * The lengths a horizontal member spanning the front wall may occupy.
+     *
+     * Boards, wainscot and cap rails all run the full width of the room and all
+     * of them crossed where the glass now is. Rather than shortening them
+     * everywhere — which would redraw the whole front elevation for the sake of
+     * one bay — each one asks what it is allowed to cover at its own height and
+     * comes back with either the full run or the two lengths either side of the
+     * opening.
+     */
+    const frontWallSpans = (bottom: number, top: number): Array<[number, number]> => {
+      if (top <= openingBottom || bottom >= openingTop) return [[-roomHalf, roomHalf]]
+      const spans: Array<[number, number]> = []
+      if (openingLeft > -roomHalf + .1) spans.push([-roomHalf, openingLeft])
+      if (openingRight < roomHalf - .1) spans.push([openingRight, roomHalf])
+      return spans
+    }
+
     // Architectural shell: tier zero is a genuinely built timber shack. Each
     // later level keeps the volume but upgrades its finish, structure and trim.
     const sideWallColor = new THREE.Color(look.wall).lerp(new THREE.Color(look.darkWood), rustic ? .54 : .28).getHex()
     const sideWall = new THREE.MeshStandardMaterial({ color: sideWallColor, roughness: rustic ? .98 : .86 })
     addMesh(root, new THREE.PlaneGeometry(roomWidth, 11), new THREE.MeshStandardMaterial({ map: floorMap, bumpMap: floorMap, bumpScale: rustic ? .045 : .016, color: look.floor, roughness: rustic ? .95 : .62 }), [0, 0, .5], [-Math.PI / 2, 0, 0])
-    addMesh(root, new THREE.PlaneGeometry(roomWidth, 6.8), wall, [0, 3.35, -4.1])
+    addMesh(root, frontWallGeometry(roomWidth, 6.8, 3.35, [openingLeft, openingRight, openingBottom, openingTop]), wall, [0, 3.35, -4.1])
     addMesh(root, constantGeometry('PlaneGeometry:10,6.8', () => new THREE.PlaneGeometry(10, 6.8)), sideWall, [-roomHalf + .05, 3.35, .35], [0, Math.PI / 2, 0])
     addMesh(root, constantGeometry('PlaneGeometry:10,6.8', () => new THREE.PlaneGeometry(10, 6.8)), sideWall, [roomHalf - .05, 3.35, .35], [0, -Math.PI / 2, 0])
     const rearWallZ = 5.38
@@ -780,12 +879,21 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       // room silhouette before any furniture is added.
       for (let row = 0; row < 10; row += 1) {
         const y = .32 + row * .67
-        addMesh(root, new THREE.BoxGeometry(roomWidth + .05, .61, .18 + seeded(row + 40) * .05), wall, [(seeded(row + 9) - .5) * .09, y, -3.98], [0, 0, (seeded(row + 70) - .5) * .008])
+        const drift = (seeded(row + 9) - .5) * .09
+        for (const [from, to] of frontWallSpans(y - .305, y + .305)) {
+          addMesh(root, new THREE.BoxGeometry(to - from + .05, .61, .18 + seeded(row + 40) * .05), wall, [(from + to) / 2 + drift, y, -3.98], [0, 0, (seeded(row + 70) - .5) * .008])
+        }
       }
       const postCount = Math.max(6, Math.round(roomWidth / 2.5))
       for (let post = 0; post < postCount; post += 1) {
         const x = -roomHalf + .72 + post * ((roomWidth - 1.44) / Math.max(1, postCount - 1))
-        addMesh(root, constantGeometry('BoxGeometry:.22,6.75,.34', () => new THREE.BoxGeometry(.22, 6.75, .34)), darkWood, [x, 3.36, -3.72])
+        // A post standing in the middle of the glazing is a post the framer
+        // would have moved. Any that lands inside the opening goes to the
+        // nearer jamb, where it does the job the jamb needs doing anyway.
+        const clear = x > openingLeft && x < openingRight
+          ? (x < windowX ? openingLeft - .22 : openingRight + .22)
+          : x
+        addMesh(root, constantGeometry('BoxGeometry:.22,6.75,.34', () => new THREE.BoxGeometry(.22, 6.75, .34)), darkWood, [clear, 3.36, -3.72])
       }
       addMesh(root, new THREE.BoxGeometry(roomWidth, .32, .44), darkWood, [0, .19, -3.65])
       addMesh(root, constantGeometry('BoxGeometry:.25,5.4,.34', () => new THREE.BoxGeometry(.25, 5.4, .34)), darkWood, [4.65, 3.15, -3.62], [0, 0, -.62])
@@ -805,11 +913,19 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       // tiers retain timber wainscot; city tiers gain panel bays and crown
       // moulding; international/frontier tiers introduce stone and metal.
       const lowerWallMaterial = !executive ? wood : !international ? darkWood : charcoal
-      addMesh(root, new THREE.BoxGeometry(roomWidth - .2, 1.42 + Math.min(.45, level * .04), .18), lowerWallMaterial, [0, .76 + Math.min(.2, level * .02), -3.82])
-      addMesh(root, new THREE.BoxGeometry(roomWidth - .08, .12, .28), level >= 8 ? brass : darkWood, [0, 1.52 + Math.min(.38, level * .04), -3.72])
+      const wainscotHeight = 1.42 + Math.min(.45, level * .04)
+      const wainscotY = .76 + Math.min(.2, level * .02)
+      const capY = 1.52 + Math.min(.38, level * .04)
+      for (const [from, to] of frontWallSpans(wainscotY - wainscotHeight / 2, wainscotY + wainscotHeight / 2)) {
+        addMesh(root, new THREE.BoxGeometry(to - from - .2, wainscotHeight, .18), lowerWallMaterial, [(from + to) / 2, wainscotY, -3.82])
+      }
+      for (const [from, to] of frontWallSpans(capY - .06, capY + .06)) {
+        addMesh(root, new THREE.BoxGeometry(to - from - .08, .12, .28), level >= 8 ? brass : darkWood, [(from + to) / 2, capY, -3.72])
+      }
       const panelCount = Math.min(international ? 10 : 8, 3 + Math.floor(roomWidth / 3))
       for (let panel = 0; panel < panelCount; panel += 1) {
         const x = -roomHalf + .9 + panel * ((roomWidth - 1.8) / Math.max(1, panelCount - 1))
+        if (x > openingLeft - .1 && x < openingRight + .1 && capY > openingBottom) continue
         addMesh(root, new THREE.BoxGeometry(level >= 10 ? .09 : .13, 1.18, .08), level >= 8 ? brass : darkWood, [x, .79, -3.65])
       }
       addMesh(root, new THREE.BoxGeometry(roomWidth, .22, .31), level >= 10 ? brass : darkWood, [0, 6.35, -3.64])
@@ -823,13 +939,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     }
 
     phase('shell')
-    // Window: the first office looks over scrub and crooked roofs; each later
-    // headquarters gets an exterior appropriate to its named region.
-    const windowWidth = rustic ? 2.85 : 3.5 + Math.min(.65, level * .045)
-    const windowHeight = rustic ? 2.55 : 3.45 + Math.min(.35, level * .025)
-    const windowX = rustic ? -3.62 : -3.2
     const windowGroup = new THREE.Group()
-    windowGroup.position.set(windowX, rustic ? 3.22 : 3.25, -3.94)
+    windowGroup.position.set(windowX, windowY, -3.94)
     root.add(windowGroup)
     const windowAnchor = new THREE.Object3D()
     windowAnchor.position.set(0, 0, .28)
@@ -837,49 +948,41 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const empireAnchor = new THREE.Object3D()
     empireAnchor.position.set(windowWidth * .32, .12, .3)
     windowGroup.add(empireAnchor)
-    addMesh(windowGroup, new THREE.PlaneGeometry(windowWidth, windowHeight), new THREE.MeshBasicMaterial({ color: look.sky }), [0, 0, .015])
-    const exterior = new THREE.Group()
-    const exteriorMovers: THREE.Object3D[] = []
-    windowGroup.add(exterior)
-    // Exterior movers keep their own material: the draw loop writes a per-object
-    // phase into it, so interning them would lock the whole skyline into one
-    // pulse.
-    if (look.exterior === 'forest') {
-      addMesh(exterior, constantGeometry('CircleGeometry:.23,20', () => new THREE.CircleGeometry(.23, 20)), sharedBasic({ color: 0xb3a47a }), [.72, .72, .06])
-      for (let index = 0; index < 12; index += 1) {
-        const height = .5 + seeded(index + 9) * .92
-        const tree = addMesh(exterior, new THREE.ConeGeometry(.14 + height * .12, height, 7), new THREE.MeshStandardMaterial({ color: index % 2 ? 0x13251f : 0x1a2f27, roughness: 1 }), [-1.34 + index * .24, -1.25 + height / 2, .08])
-        tree.castShadow = false
-        tree.userData.restRotation = tree.rotation.z
-        exteriorMovers.push(tree)
-      }
-      addMesh(exterior, constantGeometry('BoxGeometry:1.2,.48,.05', () => new THREE.BoxGeometry(1.2, .48, .05)), sharedStandard({ color: 0x271b18, roughness: 1 }), [-.58, -1.03, .1])
-      addMesh(exterior, constantGeometry('ConeGeometry:.88,.45,4', () => new THREE.ConeGeometry(.88, .45, 4)), sharedStandard({ color: 0x38251e, roughness: 1 }), [-.58, -.69, .1], [0, 0, Math.PI / 4])
-    } else if (look.exterior === 'ocean') {
-      for (let band = 0; band < 5; band += 1) addMesh(exterior, new THREE.PlaneGeometry(windowWidth, .12), sharedBasic({ color: band % 2 ? 0x245b68 : 0x337786, transparent: true, opacity: .6 }), [0, -1.15 + band * .15, .07])
-    } else if (look.exterior === 'orbit' || look.exterior === 'lunar' || look.exterior === 'nexus') {
-      const planetColor = look.exterior === 'lunar' ? 0xbec1ba : look.exterior === 'nexus' ? 0x427d91 : 0x315f78
-      addMesh(exterior, new THREE.CircleGeometry(look.exterior === 'nexus' ? .62 : .88, 32), sharedStandard({ color: planetColor, emissive: planetColor, emissiveIntensity: .12, roughness: .84 }), [.56, -.08, .07])
-      for (let index = 0; index < 28; index += 1) addMesh(exterior, new THREE.CircleGeometry(.008 + seeded(index) * .013, 6), sharedBasic({ color: index % 4 ? 0xb7cad1 : 0xd6b76a }), [-windowWidth / 2 + seeded(index * 2) * windowWidth, -windowHeight / 2 + seeded(index * 2 + 1) * windowHeight, .09])
-    } else {
-      const count = 12 + Math.min(12, level)
-      for (let index = 0; index < count; index += 1) {
-        const width = .14 + seeded(index + 2) * .25
-        const height = .35 + seeded(index + 9) * (look.exterior === 'street' ? .8 : 1.48)
-        const moving = index % 4 === 0
-        const material = moving
-          ? new THREE.MeshStandardMaterial({ color: index % 3 ? 0x0c1826 : 0x14283b, emissive: 0x6e5730, emissiveIntensity: .18 + level * .01 })
-          : sharedStandard({ color: index % 3 ? 0x0c1826 : 0x14283b, emissive: 0x07101a, emissiveIntensity: .18 + level * .01 })
-        const building = addMesh(exterior, new THREE.BoxGeometry(width, height, .06), material, [-windowWidth / 2 + .18 + index * ((windowWidth - .36) / Math.max(1, count - 1)), -windowHeight / 2 + height / 2, .08])
-        building.castShadow = false
-        if (moving) {
-          exteriorMovers.push(building)
-        }
-      }
-      if (look.exterior === 'harbor') addMesh(exterior, new THREE.PlaneGeometry(windowWidth, .42), sharedBasic({ color: 0x174759, transparent: true, opacity: .72 }), [0, -windowHeight / 2 + .2, .1])
-    }
-    const glass = addMesh(windowGroup, new THREE.PlaneGeometry(windowWidth, windowHeight), new THREE.MeshStandardMaterial({ color: rustic ? 0x465f62 : 0x5d899f, transparent: true, opacity: rustic ? .34 : .22, roughness: rustic ? .34 : .2, metalness: .05 }), [0, 0, .14])
+
+    // The district on the other side of the glass, at its real distance. Built
+    // from the map region this tier's headquarters stands in, and from how far
+    // up the building the firm has climbed. The override exists so a harness
+    // can price the view against the same room without it.
+    const windowView = buildOfficeWindowView({
+      tier: level,
+      openingWidth: windowWidth,
+      openingHeight: windowHeight,
+      // Where the eye actually is relative to this window, which is what decides
+      // which way the view has to face and how much of the world it has to
+      // cover. Measured off the camera rig rather than guessed: the pivot is the
+      // middle of the room and the window is in the front-left wall, so the eye
+      // is several metres to the side of the opening and the cone through it is
+      // raked by nearly thirty degrees.
+      standoff: Math.abs(windowGroup.position.z - cameraPivot.z) + cameraOrbitHome,
+      lateralOffset: cameraPivot.x - windowX,
+      verticalOffset: Math.abs(cameraPivot.y - windowY) + 1,
+    })
+    if (devQuery?.get('officeWindowView') !== '0') windowGroup.add(windowView.root)
+
+    const glass = addMesh(windowGroup, new THREE.PlaneGeometry(windowWidth, windowHeight), new THREE.MeshStandardMaterial({
+      color: rustic ? 0x465f62 : 0x5d899f,
+      transparent: true,
+      opacity: rustic ? .2 : .12,
+      roughness: rustic ? .34 : .2,
+      metalness: .05,
+      // The pane must not own the depth at these pixels. The contour pass finds
+      // its lines in the depth buffer, so a sheet of glass writing depth across
+      // the whole opening would flatten everything behind it into one plane and
+      // the view would come back outlined as a rectangle and blank inside.
+      depthWrite: false,
+    }), [0, 0, .14])
     glass.castShadow = false
+    glass.receiveShadow = false
     const frameMaterial = rustic ? darkWood : brass
     addMesh(windowGroup, new THREE.BoxGeometry(windowWidth + .3, rustic ? .19 : .12, .18), frameMaterial, [0, windowHeight / 2 + .11, .19])
     addMesh(windowGroup, new THREE.BoxGeometry(windowWidth + .3, rustic ? .22 : .12, .18), frameMaterial, [0, -windowHeight / 2 - .11, .19])
@@ -898,7 +1001,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     }
     const rainGeometry = new THREE.BufferGeometry()
     rainGeometry.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3))
+    // Rain belongs to the storm mood only. Against the daylit exterior view the
+    // permanent streaks read as scratches on the glass rather than weather.
     const rain = new THREE.LineSegments(rainGeometry, new THREE.LineBasicMaterial({ color: 0xa5d1dc, transparent: true, opacity: .42 }))
+    rain.visible = false
     windowGroup.add(rain)
 
     // Storage grows from a hand-built shelf into a full legal library.
@@ -2489,7 +2595,13 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       sideFill.lookAt(0, 2.15, .55)
       scene.add(sideFill)
     }
-    const windowLight = new THREE.SpotLight(rustic ? 0x668892 : 0x8fc5d1, rustic ? .82 : 1.42, 14, .82, .82, 1.3)
+    // The daylight the window throws into the room is the view's own light. A
+    // cool northern spill under The Circuit's afternoon, or a warm one under
+    // the Treaty Sea's overcast, is the kind of disagreement nobody names and
+    // everybody sees.
+    const windowSpillBase = rustic ? .82 : 1.42
+    const windowSpill = windowSpillBase * windowView.daylightStrength
+    const windowLight = new THREE.SpotLight(windowView.daylight, windowSpill, 14, .82, .82, 1.3)
     windowLight.position.set(windowX, 3.7, -2.8)
     windowLight.target.position.set(-1.2, 0, 2.8)
     scene.add(windowLight, windowLight.target)
@@ -3182,6 +3294,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const draw = (now = performance.now()) => {
       frame = 0
       if (disposed || !surfaceVisible || document.hidden) return
+      if (import.meta.env.DEV) renderer.info.reset()
       const delta = Math.min(.05, Math.max(0, (now - previousFrame) / 1000))
       previousFrame = now
       elapsed += delta
@@ -3307,7 +3420,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       const cozy = office?.classList.contains('is-cozy') ?? false
       const awake = office?.classList.contains('cat-awake') ?? false
       deskLight.intensity = THREE.MathUtils.damp(deskLight.intensity, focus ? (rustic ? 3.15 : 3.7) : (rustic ? 1.72 : 2.05), 5, delta)
-      windowLight.intensity = THREE.MathUtils.damp(windowLight.intensity, storm ? (rustic ? 1.8 : 2.7) : (rustic ? .82 : 1.42), 3.7, delta)
+      windowLight.intensity = THREE.MathUtils.damp(windowLight.intensity, storm ? windowSpill * 1.9 : windowSpill, 3.7, delta)
       ;(screen as THREE.MeshStandardMaterial).emissiveIntensity = .52 + Math.sin(elapsed * 1.1) * .07
       if (lanternFlame) {
         lanternFlame.scale.y = .84 + Math.sin(elapsed * 8.2) * .11 + Math.sin(elapsed * 13.7) * .05
@@ -3379,10 +3492,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       catActor.tail.rotation.y = Math.sin(elapsed * (awake ? 4.4 : 1.25)) * (awake ? .34 : .16)
       catActor.tail.rotation.z = .08 + Math.sin(elapsed * .72) * .055
       books.forEach((book, index) => { if (index % 11 === 0) book.rotation.z = Math.sin(elapsed * .16 + index) * .012 })
-      exteriorMovers.forEach((object, index) => {
-        if (look.exterior === 'forest') object.rotation.z = (object.userData.restRotation ?? 0) + Math.sin(elapsed * .42 + index * .71) * .015
-        else if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) object.material.emissiveIntensity = .13 + Math.sin(elapsed * .55 + index) * .045 + level * .008
-      })
+      // A train on the viaduct, a barge on the canal, a launch crossing the
+      // harbour: a handful of matrix writes, and the only thing that stops the
+      // district reading as a photograph of itself.
+      windowView.update(elapsed)
       if (!reduced) {
         timed('humanoid', () => staffDirector.update(delta))
         // Cap the number of characters paying full price per frame. Actors
@@ -3410,19 +3523,21 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       })
       dust.rotation.y = elapsed * .009
 
-      const rainAttribute = rainGeometry.getAttribute('position') as THREE.BufferAttribute
-      const rainArray = rainAttribute.array as Float32Array
-      const rainSpeed = storm ? .038 : .018
-      for (let index = 0; index < rainCount; index += 1) {
-        const base = index * 6
-        rainArray[base + 1] -= rainSpeed * delta * 60
-        rainArray[base + 4] -= rainSpeed * delta * 60
-        if (rainArray[base + 4] < -windowHeight / 2 - .1) {
-          rainArray[base + 1] = windowHeight / 2 + .08
-          rainArray[base + 4] = windowHeight / 2 - (rustic ? .07 : .12)
+      rain.visible = storm
+      if (storm) {
+        const rainAttribute = rainGeometry.getAttribute('position') as THREE.BufferAttribute
+        const rainArray = rainAttribute.array as Float32Array
+        for (let index = 0; index < rainCount; index += 1) {
+          const base = index * 6
+          rainArray[base + 1] -= .038 * delta * 60
+          rainArray[base + 4] -= .038 * delta * 60
+          if (rainArray[base + 4] < -windowHeight / 2 - .1) {
+            rainArray[base + 1] = windowHeight / 2 + .08
+            rainArray[base + 4] = windowHeight / 2 - (rustic ? .07 : .12)
+          }
         }
+        rainAttribute.needsUpdate = true
       }
-      rainAttribute.needsUpdate = true
 
       const steamAttribute = steamGeometry.getAttribute('position') as THREE.BufferAttribute
       const steamArray = steamAttribute.array as Float32Array
@@ -3443,6 +3558,24 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         phase('first-render')
         if (import.meta.env.DEV) {
           ;(window as unknown as { __officeBuildPhases?: unknown }).__officeBuildPhases = phases
+          // What the first frame actually cost to draw. The phase list says how
+          // long the room took to assemble; this says how much of a room it
+          // assembled, which is the number a geometry budget is argued in.
+          ;(window as unknown as { __officeSceneStats?: unknown }).__officeSceneStats = {
+            triangles: renderer.info.render.triangles,
+            calls: renderer.info.render.calls,
+            geometries: renderer.info.memory.geometries,
+            textures: renderer.info.memory.textures,
+            // Which room this actually is. A harness that asks for a tier and is
+            // quietly given another one reports a confident number about the
+            // wrong scene, which is worse than reporting nothing.
+            level,
+            // The view's own share, so its cost is a subtraction from this frame
+            // rather than a second build of the whole room.
+            windowRegion: windowView.region,
+            windowTriangles: windowView.triangles,
+            windowMeshes: windowView.meshes,
+          }
         }
         canvas.classList.add('is-ready')
         // The room is on screen; the rest of the animation library can be baked
