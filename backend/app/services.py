@@ -3,10 +3,11 @@ from __future__ import annotations
 import random
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+from typing import NamedTuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import current_app
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
@@ -570,7 +571,11 @@ def serialize_session(session: StudySession, include_item: bool = True) -> dict:
 
 
 def eligible_question_count() -> int:
-    return Question.query.filter(Question.source.like(f"{SOURCE_PREFIX}%")).count()
+    # `Query.count()` would wrap the whole entity — twelve columns including three
+    # text bodies — in a `SELECT count(*) FROM (…)`. Nothing is transferred either
+    # way, but naming the column keeps the statement honest about what it reads,
+    # which is what the query-budget test can then hold everything else to.
+    return db.session.query(func.count(Question.id)).filter(Question.source.like(f"{SOURCE_PREFIX}%")).scalar() or 0
 
 
 def _seen_question_ids(user_id: str) -> set[str]:
@@ -585,6 +590,66 @@ def _seen_question_ids(user_id: str) -> set[str]:
     }
 
 
+class QuestionFact(NamedTuple):
+    """The four columns choosing a run actually reads.
+
+    Building a session used to load every eligible question as a full ORM
+    instance — 7,101 of them on this bank — with each one's stimulus, stem and
+    explanation attached, only to pick eight and discard the rest. The selection
+    never looks at any of that text: it groups by `passage_id`, biases by
+    `question_type`, times by `section`, and identifies by `id`.
+
+    Four scalar columns instead of twelve, and a tuple instead of an instrumented
+    ORM object, is the whole difference between a 720 ms selection and a 25 ms
+    one. The questions that survive selection are loaded whole in
+    `_load_questions_in_order`, because deciding which techniques a question can
+    be paired with does read the stimulus.
+    """
+
+    id: str
+    question_type: str | None
+    passage_id: str | None
+    section: str | None
+
+
+def _eligible_question_facts(question_type: str | None) -> list[QuestionFact]:
+    query = db.session.query(
+        Question.id,
+        Question.question_type,
+        Question.passage_id,
+        Question.section,
+    ).filter(Question.source.like(f"{SOURCE_PREFIX}%"))
+    if question_type:
+        query = query.filter(Question.question_type == question_type)
+    return [QuestionFact(*row) for row in query.all()]
+
+
+def _load_questions_in_order(facts: list[QuestionFact]) -> list[Question]:
+    """The chosen questions, whole, in the order selection put them in.
+
+    One `IN (…)` for the eight that were picked, rather than a lazy load apiece:
+    the bank scan used to leave every candidate in the identity map, so the
+    per-question reads downstream were free by accident. They are real queries
+    now, so they are batched here on purpose.
+
+    The passage comes with them. `strategies._candidate_keys` reads
+    `question.passage.canonical_text` on every Reading Comprehension question to
+    decide whether a comparative or viewpoint technique applies, which was a
+    lazy load per RC question in the run.
+    """
+    return _questions_by_id([fact.id for fact in facts])
+
+
+def _questions_by_id(ids: list[str]) -> list[Question]:
+    if not ids:
+        return []
+    by_id = {
+        question.id: question
+        for question in Question.query.options(joinedload(Question.passage)).filter(Question.id.in_(ids))
+    }
+    return [by_id[question_id] for question_id in ids if question_id in by_id]
+
+
 def select_random_questions(
     count: int,
     question_type: str | None = None,
@@ -593,27 +658,27 @@ def select_random_questions(
     exclude_ids: set[str] | None = None,
     focus_types: list[str] | None = None,
 ) -> list[Question]:
-    query = Question.query.filter(Question.source.like(f"{SOURCE_PREFIX}%"))
-    if question_type:
-        query = query.filter(Question.question_type == question_type)
     # Excluding here rather than from `unseen` alone matters: the fallback below
     # widens the pool to already-seen questions, and a question seeded as a
     # repair is by definition seen. Filtering only `unseen` would let it come
     # back through the fallback and appear twice in one run.
     blocked = exclude_ids or set()
-    eligible = [question for question in query.all() if question.id not in blocked]
+    eligible = [fact for fact in _eligible_question_facts(question_type) if fact.id not in blocked]
     if not eligible:
         return []
     # Hoisted out of the comprehension below: calling this once here instead of
     # once per candidate question turned a single-query lookup into an N+1 that
     # ran thousands of times per session creation on the full bank.
     seen_ids = _seen_question_ids(user_id) if user_id else set()
-    unseen = [question for question in eligible if question.id not in seen_ids]
-    pool = unseen if len(unseen) >= count else unseen + [question for question in eligible if question not in unseen]
-    return _weight_toward_focus(pool, count, focus_types)
+    unseen = [fact for fact in eligible if fact.id not in seen_ids]
+    # `fact.id in seen_ids` rather than `fact not in unseen`: the two describe the
+    # same complement, but the second is a list scan inside a list comprehension,
+    # so widening the pool on the full bank was fifty million comparisons.
+    pool = unseen if len(unseen) >= count else unseen + [fact for fact in eligible if fact.id in seen_ids]
+    return _load_questions_in_order(_weight_toward_focus(pool, count, focus_types))
 
 
-def _passage_blocks(pool: list[Question]) -> list[list[Question]]:
+def _passage_blocks(pool: list[QuestionFact]) -> list[list[QuestionFact]]:
     """Group a candidate pool into the units a run may serve.
 
     A Reading Comprehension question is not a question on its own — the passage
@@ -625,13 +690,13 @@ def _passage_blocks(pool: list[Question]) -> list[list[Question]]:
     times assume the first question on a passage pays for the reading and the
     rest do not.
     """
-    grouped: dict[str, list[Question]] = defaultdict(list)
+    grouped: dict[str, list[QuestionFact]] = defaultdict(list)
     for question in pool:
         grouped[question.passage_id or f"solo:{question.id}"].append(question)
     return [sorted(block, key=lambda question: question.id) for block in grouped.values()]
 
 
-def _fill_blocks(blocks: list[list[Question]], budget: int, selected: list[list[Question]]) -> None:
+def _fill_blocks(blocks: list[list[QuestionFact]], budget: int, selected: list[list[QuestionFact]]) -> None:
     """Add whole blocks to `selected` until `budget` questions are chosen.
 
     Never overshoots and never splits a block, so a run comes out at the
@@ -649,7 +714,9 @@ def _fill_blocks(blocks: list[list[Question]], budget: int, selected: list[list[
         total += len(block)
 
 
-def _weight_toward_focus(pool: list[Question], count: int, focus_types: list[str] | None) -> list[Question]:
+def _weight_toward_focus(
+    pool: list[QuestionFact], count: int, focus_types: list[str] | None
+) -> list[QuestionFact]:
     """Fill most of a run from the mega-litigation's weak types, the rest at random.
 
     Deliberately a bias and not a filter. Drilling only the weak types would
@@ -668,7 +735,7 @@ def _weight_toward_focus(pool: list[Question], count: int, focus_types: list[str
     blocks = _passage_blocks(pool)
     random.shuffle(blocks)
     wanted = set(focus_types or ())
-    selected: list[list[Question]] = []
+    selected: list[list[QuestionFact]] = []
     if wanted:
         preferred = [block for block in blocks if any(question.question_type in wanted for question in block)]
         preferred_ids = {id(block) for block in preferred}
@@ -874,7 +941,17 @@ def create_study_session(
     # `_pause_other_active_practice_sessions` for why this matters. Deferred
     # to this point so a validation failure above never has the side effect
     # of pausing a run that was otherwise left untouched.
+    # Read before the pause below, which commits. A commit expires every instance
+    # in the session, and an expired instance reloads in full on the first
+    # attribute read — including its own primary key — so asking these objects
+    # what they are afterwards costs one statement each. Their ids are plain
+    # strings and survive.
+    chosen_ids = [question.id for question in questions]
+
     _pause_other_active_practice_sessions(user.id)
+    # One statement to bring the whole run back, rather than eight refreshes and
+    # eight passage reads spread through the loop below.
+    questions = _questions_by_id(chosen_ids)
 
     session = StudySession(
         user_id=user.id,

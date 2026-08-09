@@ -70,6 +70,8 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.orm import joinedload
+
 from .models import Attempt, Question, ReviewQueueItem, utcnow
 
 
@@ -352,7 +354,18 @@ def due_for_review(user_id: str, count: int, *, now: datetime | None = None) -> 
         cards,
         key=lambda card: (card_retrievability(card, now), _aware(card.due_at) if card.due_at else now),
     )
-    return [card.question for card in ranked[:count] if card.question]
+    # Ranking touches every card; only the weakest `count` are handed back, so
+    # their questions are fetched in one statement rather than one lazy load
+    # apiece. The passage rides along because the technique assignment that
+    # follows reads it on every Reading Comprehension question.
+    weakest = ranked[:count]
+    by_id = {
+        question.id: question
+        for question in Question.query.options(joinedload(Question.passage)).filter(
+            Question.id.in_([card.question_id for card in weakest])
+        )
+    }
+    return [by_id[card.question_id] for card in weakest if card.question_id in by_id]
 
 
 def queue_pressure(user_id: str, *, now: datetime | None = None) -> dict:

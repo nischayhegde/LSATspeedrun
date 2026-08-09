@@ -136,12 +136,12 @@ def loaded_account(app):  # noqa: F811 - the shared fixture from test_progress
         counter = Counter()
         counter.install(db.engine)
 
-    return app, client, counter
+    return app, client, counter, headers
 
 
 @pytest.mark.parametrize("path,budget", sorted(BUDGETS.items()))
 def test_a_dashboard_read_costs_a_fixed_number_of_statements(loaded_account, path, budget):
-    _app, client, counter = loaded_account
+    _app, client, counter, _headers = loaded_account
     issued = counter.count(client, path)
     assert issued <= budget, (
         f"{path} issued {issued} statements for an account with {ANSWERS} answers, "
@@ -158,7 +158,7 @@ def test_reading_the_firm_costs_one_write_and_not_several(loaded_account):
     split around the reads it interleaved with, which is two round trips and two
     chances to contend for the row it holds a lock on.
     """
-    _app, client, counter = loaded_account
+    _app, client, counter, _headers = loaded_account
     counter.count(client, "/v1/game")
 
     writes = counter.writes
@@ -167,10 +167,58 @@ def test_reading_the_firm_costs_one_write_and_not_several(loaded_account):
         assert writes[0].startswith("UPDATE player_profiles"), writes[0]
 
 
+def test_starting_a_run_never_reads_the_text_of_a_question_it_did_not_choose(loaded_account):
+    """Choosing eight questions must not load the whole bank.
+
+    `select_random_questions` used to answer `Question.query.filter(source LIKE
+    …).all()` and sort the result in Python. Every eligible question came back as
+    a full ORM instance with its stimulus, its stem and its explanation attached —
+    7,101 of them on the development bank — so that eight could be kept. That was
+    480 ms of the 790 ms it took to press "start practice", and it grows with the
+    question bank, which is the direction a question bank only ever moves.
+
+    A statement count cannot express this, because the bug was a single statement
+    that happened to return seven thousand wide rows. The shape of the SQL can:
+    selection reads four scalar columns, and the only queries allowed to pull a
+    question's *text* are the ones restricted to the ids that were chosen. If a
+    wide read ever goes out unbounded again this fails, whatever it costs in
+    milliseconds on the machine that runs it.
+    """
+    _app, client, counter, headers = loaded_account
+
+    # A twenty-question run, so that "one query per chosen question" would be
+    # unmistakable in the count below rather than lost in the fixed overhead.
+    client.post("/v1/study-sessions", json={"size": 4}, headers=headers)  # warm
+    counter.statements.clear()
+    counter.armed = True
+    try:
+        response = client.post("/v1/study-sessions", json={"size": 20}, headers=headers)
+    finally:
+        counter.armed = False
+    assert response.status_code in (200, 201), response.get_data(as_text=True)[:300]
+
+    wide = [
+        statement
+        for statement in counter.statements
+        if "questions.stimulus" in statement and "questions.id IN" not in statement and "questions.id = ?" not in statement
+    ]
+    assert not wide, (
+        "starting a run read whole question rows without restricting to the questions "
+        f"it chose:\n  " + "\n  ".join(statement[:200] for statement in wide)
+    )
+
+    questions_read = [statement for statement in counter.statements if " FROM questions" in statement]
+    assert len(questions_read) <= 10, (
+        f"starting a 20-question run issued {len(questions_read)} queries against questions, "
+        "which is the shape of one read per question rather than one for the run: "
+        + "; ".join(statement[:120] for statement in questions_read)
+    )
+
+
 def test_the_focus_read_does_not_scale_with_the_form_it_reads(loaded_account):
     """`diagnostic_focus_detail` is also on the question-serving path, so its own
     budget is asserted directly rather than only through `/performance`."""
-    application, _client, counter = loaded_account
+    application, _client, counter, _headers = loaded_account
     from app.focus import diagnostic_focus_detail
 
     with application.app_context():
