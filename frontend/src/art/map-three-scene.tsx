@@ -1549,6 +1549,18 @@ function tintForRegion(region: MapRegionKey, record: InstancedBlockRecord, index
 const WALKER_HALF_BEAM = .16
 
 /**
+ * The village footway beside a country lane: the two edges of the paving, and
+ * the line the crowd walks down the middle of it, as offsets from the lane.
+ *
+ * Named because the paving and the pedestrian route were two unrelated literals
+ * standing four hundred lines apart, and the route was a tenth of a unit off
+ * the middle of its own paving.
+ */
+const VILLAGE_FOOTWAY_IN = 1.05
+const VILLAGE_FOOTWAY_OUT = 1.66
+const VILLAGE_FOOTWAY_MID = (VILLAGE_FOOTWAY_IN + VILLAGE_FOOTWAY_OUT) / 2
+
+/**
  * Whether planned buildings are reconciled against the corridors before they
  * are instanced.
  *
@@ -3102,7 +3114,10 @@ function addCircuitTown(root: THREE.Group, trees: TreeRecord[], town: TownPlan, 
       lamp.position.set(market.x + side * market.width * .38, .07, market.z + market.depth * .3)
       root.add(lamp)
     }
-    footWays(root).push({ points: [[market.x - market.width * .4, market.z + market.depth * .34], [market.x + market.width * .4, market.z + market.depth * .34]] })
+    const marketWalk = market.z + market.depth * .34
+    footWays(root).push({
+      points: [[market.x - market.width * .4, marketWalk], [market.x + market.width * .4, marketWalk]],
+    })
   }
 
   renderPlannedBuildings(root, 'nation', clearReserved(buildings, reserved), { cullRadius: 12 + town.size * 6 })
@@ -3795,7 +3810,7 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
         if (to - from < .8) continue
         const built = village((from + to) / 2) > .55
         if (built) {
-          const footway = mesh(corridorPatchGeometry(corridor, from, to, 1.05 * side, 1.66 * side, Math.max(2, Math.round((to - from) / .8))), material(0x8d8778, .97))
+          const footway = mesh(corridorPatchGeometry(corridor, from, to, VILLAGE_FOOTWAY_IN * side, VILLAGE_FOOTWAY_OUT * side, Math.max(2, Math.round((to - from) / .8))), material(0x8d8778, .97))
           footway.position.y = .062
           footway.castShadow = false
           root.add(footway)
@@ -3814,11 +3829,24 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
       }
     }
     // Pavement in the villages is where the few people out here actually walk.
+    //
+    // Deliberately still handed over with no `halfWidth`, so it inherits
+    // `CROWD_FOOTWAY_HALF`, even though the paving laid above is only .61
+    // across and .65 either side of this line is nearly twice that. Declaring
+    // the paved figure here is the obvious repair and it measured worse:
+    // .5203 -> .5287 walkers-in-any-solid over 900 frames, because the cut
+    // reads `halfWidth` too, a narrower way puts both its kerbs inside the
+    // frontage that lines it, and the village lanes were then cut back until
+    // the crowd redistributed onto the planned-street pavements that run past
+    // the farmsteads. The width these people actually get is decided by
+    // `cutFootwaysAroundSolids`, against what is standing there.
     townS.forEach((centre) => {
       const from = Math.max(.6, centre - 3.2)
       const to = Math.min(corridor.length - .6, centre + 3.2)
       const points: XZ[] = []
-      for (let step2 = 0; step2 <= 8; step2 += 1) points.push(corridor.at(from + (to - from) * (step2 / 8), 1.36 * side))
+      for (let step2 = 0; step2 <= 8; step2 += 1) {
+        points.push(corridor.at(from + (to - from) * (step2 / 8), VILLAGE_FOOTWAY_MID * side))
+      }
       footWays(root).push({ points })
     })
   }
@@ -8393,6 +8421,10 @@ export function MapThreeScene({
       // defect, and a run where it is zero has not done anything.
       solidNarrowed: solidPlan.narrowed,
       solidNarrowedBy: solidPlan.narrowedFrom,
+      // Pieces the cut found to be standing inside a solid for most of their
+      // length. These keep their links and lose their people. See
+      // `FootwaySpec.obstructed`.
+      solidObstructed: solidPlan.obstructed,
       railCuts: railPlan.cut,
       railUnwalkable: railPlan.unwalkable,
       railBlockedLength: railPlan.blocked,
