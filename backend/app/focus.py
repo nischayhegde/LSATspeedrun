@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from .models import Attempt, SessionItem, StudySession
+from .models import Attempt, Question, SessionItem, StudySession
 
 
 # Enough of a sample that one unlucky question cannot brand a type a weakness,
@@ -44,21 +44,28 @@ def diagnostic_focus_detail(user_id: str) -> dict:
     if not session:
         return {"types": [], "session_id": None, "completed_at": None, "baseline_accuracy": None}
 
-    attempts = (
-        Attempt.query.join(SessionItem, Attempt.session_item_id == SessionItem.id)
+    # Two columns, joined in the database. Loading mapped `Attempt` rows and
+    # walking `.session_item.question` to reach the type instead cost two lazy
+    # statements per answer: 162 of the 174 statements `GET /performance` issued
+    # on a 77-item form came from this loop, and `select_random_questions` and
+    # `assign_strategy_trial` pay the same bill every time a question is served.
+    rows = (
+        Attempt.query.with_entities(Attempt.is_correct, Question.question_type)
+        .join(SessionItem, Attempt.session_item_id == SessionItem.id)
+        .join(Question, Question.id == SessionItem.question_id)
         .filter(SessionItem.session_id == session.id)
         .all()
     )
-    if not attempts:
+    if not rows:
         return {"types": [], "session_id": session.id, "completed_at": session.completed_at, "baseline_accuracy": None}
 
-    baseline = sum(attempt.is_correct for attempt in attempts) / len(attempts)
-    grouped: dict[str, list[Attempt]] = defaultdict(list)
-    for attempt in attempts:
-        grouped[attempt.session_item.question.question_type].append(attempt)
+    baseline = sum(row.is_correct for row in rows) / len(rows)
+    grouped: dict[str, list[bool]] = defaultdict(list)
+    for row in rows:
+        grouped[row.question_type].append(row.is_correct)
 
     scored = [
-        (sum(value.is_correct for value in values) / len(values), -len(values), name)
+        (sum(values) / len(values), -len(values), name)
         for name, values in grouped.items()
         if len(values) >= MIN_TYPE_ATTEMPTS
     ]

@@ -99,12 +99,13 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import NamedTuple
 
-from sqlalchemy.orm import joinedload
+from sqlalchemy import select
 
 from .extensions import db
-from .models import Attempt, ScoreProjection, SessionItem, StudySession, User, utcnow
+from .models import Attempt, Question, ScoreProjection, SessionItem, StudySession, User, utcnow
 
 
 # Bumped when the tables or the weighting change, so a stored snapshot always
@@ -310,7 +311,72 @@ def _sampling_sd(effective_sample: float) -> float:
     return SCALED_POINTS_PER_ITEM * FORM_ITEMS * 0.5 / math.sqrt(posterior_n)
 
 
-def _weight(attempt: Attempt, now) -> float:
+class AttemptFact(NamedTuple):
+    """One filed answer, reduced to the columns the account-wide aggregates read.
+
+    Every dashboard read that summarises a whole history — the projected score,
+    `/performance`, the trial calendar — used to load the answer as a mapped
+    `Attempt`, eager-joined to its `SessionItem` and that item's `Question`. It
+    only ever reads the twelve scalars below off that graph, but a mapped entity
+    arrives whole: `attempts.reasoning_text`, `attempts.strategy_artifact_json`,
+    `session_items.draft_reasoning_text`, `questions.stimulus` and
+    `questions.stem` all came too. On a 1,099-answer account that is 400 kB of
+    question prose read out of the database, decoded, and attached to 3,500
+    instrumented ORM instances so that `section` and `question_type` could be
+    read off them.
+
+    Selecting the columns instead costs one query and no identity map. It is a
+    read model on purpose: these rows are immutable, they are never written back,
+    and the flat shape means a future field cannot be added to the aggregates
+    without also being added to the query — which is the property the eager-load
+    version silently lacked.
+    """
+
+    created_at: datetime
+    is_correct: bool
+    evidence_class: str
+    server_elapsed_ms: int
+    explanation_score: float | None
+    confidence: int | None
+    question_id: str
+    question_type: str
+    section: str
+    target_time_seconds: int
+    timer_compromised: bool
+    from_review_queue: bool
+
+
+def attempt_facts(user_id: str) -> list[AttemptFact]:
+    """Every answer this account has filed, oldest first, as flat rows.
+
+    Inner joins rather than the outer joins an eager load would emit, which is
+    the same set of rows: `attempts.session_item_id` and
+    `session_items.question_id` are both NOT NULL foreign keys.
+    """
+    rows = db.session.execute(
+        select(
+            Attempt.created_at,
+            Attempt.is_correct,
+            Attempt.evidence_class,
+            Attempt.server_elapsed_ms,
+            Attempt.explanation_score,
+            Attempt.confidence,
+            SessionItem.question_id,
+            Question.question_type,
+            Question.section,
+            SessionItem.target_time_seconds,
+            SessionItem.timer_compromised,
+            SessionItem.from_review_queue,
+        )
+        .join(SessionItem, SessionItem.id == Attempt.session_item_id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .where(Attempt.user_id == user_id)
+        .order_by(Attempt.created_at.asc())
+    ).all()
+    return [AttemptFact._make(row) for row in rows]
+
+
+def _weight(attempt: AttemptFact, now) -> float:
     created = attempt.created_at
     if created.tzinfo is None:
         from datetime import timezone
@@ -384,7 +450,7 @@ def _band(point_scaled: float, total_sd: float) -> tuple[int, int, int]:
     return scaled, scaled - half, scaled + half
 
 
-def project_score(user: User, *, attempts: list[Attempt] | None = None, now=None) -> dict:
+def project_score(user: User, *, attempts: list[AttemptFact] | None = None, now=None) -> dict:
     """Estimate where this student's LSAT score currently sits, with a band.
 
     Pipeline, in order:
@@ -404,30 +470,23 @@ def project_score(user: User, *, attempts: list[Attempt] | None = None, now=None
     """
     now = now or utcnow()
     if attempts is None:
-        # Eager-loaded down the whole chain this function reads. Left lazy, the
-        # loop below fires two statements per attempt — 2,100 statements and
+        # One statement for the five columns this function reads. Left lazy, the
+        # loop below fired two statements per attempt — 2,100 statements and
         # 308ms for one dashboard load on a 1,099-attempt account, and worse
         # against RDS than against local SQLite because every one of them is a
-        # network round trip.
-        attempts = (
-            Attempt.query.options(
-                joinedload(Attempt.session_item).joinedload(SessionItem.question)
-            )
-            .filter(Attempt.user_id == user.id)
-            .order_by(Attempt.created_at.asc())
-            .all()
-        )
+        # network round trip. Eager-loading the mapped graph fixed the statement
+        # count and left the payload: see `AttemptFact`.
+        attempts = attempt_facts(user.id)
 
-    first_by_question: dict[str, Attempt] = {}
+    first_by_question: dict[str, AttemptFact] = {}
     for attempt in attempts:
-        first_by_question.setdefault(attempt.session_item.question_id, attempt)
+        first_by_question.setdefault(attempt.question_id, attempt)
 
     by_section: dict[str, list[tuple[float, bool]]] = defaultdict(list)
     counts: dict[str, int] = defaultdict(int)
     for attempt in first_by_question.values():
-        section = attempt.session_item.question.section
-        by_section[section].append((_weight(attempt, now), attempt.is_correct))
-        counts[section] += 1
+        by_section[attempt.section].append((_weight(attempt, now), attempt.is_correct))
+        counts[attempt.section] += 1
 
     lr_observed, _, lr_effective = _section_estimate(by_section.get("Logical Reasoning", []))
     rc_observed, _, rc_effective = _section_estimate(by_section.get("Reading Comprehension", []))
@@ -634,7 +693,7 @@ def projection_history(user: User, limit: int = 60) -> list[dict]:
     ]
 
 
-def projection_snapshot(user: User, *, record: bool = False, attempts: list[Attempt] | None = None) -> dict:
+def projection_snapshot(user: User, *, record: bool = False, attempts: list[AttemptFact] | None = None) -> dict:
     """The whole projected-score payload the dashboard renders.
 
     `attempts` lets `/performance`, which has already loaded the account's

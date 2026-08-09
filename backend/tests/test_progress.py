@@ -588,16 +588,22 @@ _HISTORY_OFFSET = [1_000]
 
 
 def write_history(user, total: int, correct) -> list:
-    """Write `total` attempts straight to the database, oldest first.
+    """Write `total` attempts straight to the database and read them back as the
+    flat rows the projection consumes, oldest first.
 
     Deliberately bypasses the HTTP flow. A prefix sweep needs hundreds of
     answers on hundreds of *distinct* questions — only a first attempt per
     question is evidence — and playing that through the API would take minutes
     to assert something about arithmetic.
+
+    Reading back through `attempt_facts` rather than returning mapped `Attempt`
+    rows is what `project_score` is actually handed in production, so the sweep
+    below exercises the real query as well as the arithmetic.
     """
     from datetime import timedelta
 
     from app.models import Attempt, SessionItem, StudySession, utcnow
+    from app.scoring import attempt_facts
 
     session = StudySession(
         user_id=user.id,
@@ -640,7 +646,7 @@ def write_history(user, total: int, correct) -> list:
             )
         )
     db.session.commit()
-    return Attempt.query.filter_by(user_id=user.id).order_by(Attempt.created_at.asc()).all()
+    return attempt_facts(user.id)
 
 
 @pytest.mark.parametrize(

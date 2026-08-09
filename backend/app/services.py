@@ -25,8 +25,10 @@ from .game import (
 from . import enforcement, scheduling
 from .models import AiJob, Attempt, Question, ReviewQueueItem, SessionItem, SkillProgress, StudySession, User, utcnow
 from .scoring import (
+    AttemptFact,
     FORM_ITEMS,
     FORM_RC_ITEMS,
+    attempt_facts,
     project_score,
     projection_snapshot,
     record_projection,
@@ -1876,9 +1878,23 @@ def _skill_breakdown(attempts: list[Attempt]) -> list[dict]:
 
 
 def calculate_session_summary(session: StudySession) -> dict:
+    # Eager, and narrowed to the four joined columns the summary reads. Left
+    # lazy this fired two extra statements per answer — the item, then its
+    # question — which for a 77-item mega-litigation is 155 statements to
+    # summarise one run. It went unnoticed because `/performance` used to load
+    # the whole account's attempt graph before calling this eleven times over,
+    # so the identity map happened to be warm; narrowing that load to the
+    # columns it actually needed left this one exposed, which is what an
+    # accidental dependency on someone else's eager load looks like.
     attempts = (
         Attempt.query.join(SessionItem)
         .filter(SessionItem.session_id == session.id)
+        .options(
+            joinedload(Attempt.session_item)
+            .load_only(SessionItem.section_index, SessionItem.timer_compromised)
+            .joinedload(SessionItem.question)
+            .load_only(Question.section, Question.question_type)
+        )
         .order_by(Attempt.created_at)
         .all()
     )
@@ -1945,21 +1961,15 @@ def calculate_session_summary(session: StudySession) -> dict:
 
 
 def performance_snapshot(user: User) -> dict:
-    attempts = (
-        Attempt.query.filter_by(user_id=user.id)
-        .join(SessionItem)
-        .options(
-            joinedload(Attempt.session_item).joinedload(SessionItem.question),
-        )
-        .order_by(Attempt.created_at.asc())
-        .all()
-    )
+    # The twelve columns the aggregates below read, not the mapped graph they
+    # used to be read off. See `scoring.AttemptFact`.
+    attempts = attempt_facts(user.id)
 
-    def summarize(values: list[Attempt]) -> dict:
+    def summarize(values: list[AttemptFact]) -> dict:
         reasoning = [attempt.explanation_score * 100 for attempt in values if attempt.explanation_score is not None]
-        pace_values = [attempt for attempt in values if not attempt.session_item.timer_compromised]
+        pace_values = [attempt for attempt in values if not attempt.timer_compromised]
         pace_hits = [
-            attempt.server_elapsed_ms <= attempt.session_item.target_time_seconds * 1000
+            attempt.server_elapsed_ms <= attempt.target_time_seconds * 1000
             for attempt in pace_values
         ]
         return {
@@ -1972,9 +1982,9 @@ def performance_snapshot(user: User) -> dict:
 
     # One first attempt per question prevents memorized repeats from inflating the
     # headline evidence while review attempts remain available in their own class.
-    first_by_question: dict[str, Attempt] = {}
+    first_by_question: dict[str, AttemptFact] = {}
     for attempt in attempts:
-        first_by_question.setdefault(attempt.session_item.question_id, attempt)
+        first_by_question.setdefault(attempt.question_id, attempt)
     first_attempts = list(first_by_question.values())
     overall = summarize(first_attempts)
     recent = summarize(attempts[-20:])
@@ -1992,9 +2002,9 @@ def performance_snapshot(user: User) -> dict:
     )
     overall["evidence"] = "baseline" if len(attempts) < 10 else "emerging" if len(attempts) < 30 else "directional" if len(attempts) < 80 else "stable"
 
-    grouped: dict[str, list[Attempt]] = defaultdict(list)
+    grouped: dict[str, list[AttemptFact]] = defaultdict(list)
     for attempt in first_attempts:
-        grouped[attempt.session_item.question.question_type].append(attempt)
+        grouped[attempt.question_type].append(attempt)
     skills = []
     for name, values in grouped.items():
         skill = summarize(values)
@@ -2060,7 +2070,7 @@ def performance_snapshot(user: User) -> dict:
             "projection_note": "A scaled score is withheld until the form has a validated conversion.",
         }
 
-    by_evidence: dict[str, list[Attempt]] = defaultdict(list)
+    by_evidence: dict[str, list[AttemptFact]] = defaultdict(list)
     for attempt in attempts:
         by_evidence[attempt.evidence_class].append(attempt)
     evidence_classes = {name: summarize(values) for name, values in by_evidence.items()}
@@ -2073,12 +2083,12 @@ def performance_snapshot(user: User) -> dict:
     coached_practice = summarize(
         [attempt for attempt in first_attempts if attempt.evidence_class == "coached_practice"]
     )
-    lr_samples = sum(attempt.session_item.question.section == "Logical Reasoning" for attempt in test_values)
-    rc_samples = sum(attempt.session_item.question.section == "Reading Comprehension" for attempt in test_values)
+    lr_samples = sum(attempt.section == "Logical Reasoning" for attempt in test_values)
+    rc_samples = sum(attempt.section == "Reading Comprehension" for attempt in test_values)
     completed_diagnostics = StudySession.query.filter_by(user_id=user.id, mode="diagnostic", status="completed").count()
     readiness_status = "ready" if lr_samples >= 40 and rc_samples >= 20 and completed_diagnostics else "forming"
     queue = review_queue_snapshot(user)
-    review_values = [attempt for attempt in attempts if attempt.session_item.from_review_queue]
+    review_values = [attempt for attempt in attempts if attempt.from_review_queue]
     review_recovery = round(sum(value.is_correct for value in review_values) / len(review_values) * 100) if review_values else None
     confidence_values = [attempt for attempt in first_attempts if attempt.confidence is not None]
     high_confidence = [attempt for attempt in confidence_values if (attempt.confidence or 0) >= 4]
