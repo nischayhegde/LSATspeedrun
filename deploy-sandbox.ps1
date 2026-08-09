@@ -834,8 +834,8 @@ try {
         throw "The deployed API is not fully configured."
     }
     $indexResponse = Invoke-WebRequest -Uri $applicationUrl -UseBasicParsing -TimeoutSec 30
-    if ($indexResponse.StatusCode -ne 200 -or $indexResponse.Content -notmatch '<title>LSAT Tycoon</title>') {
-        throw "CloudFront is not serving the LSAT Tycoon frontend."
+    if ($indexResponse.StatusCode -ne 200 -or $indexResponse.Content -notmatch '<title>Lawyer Tycoon</title>') {
+        throw "CloudFront is not serving the Lawyer Tycoon frontend."
     }
     $authConfig = Invoke-RestMethod -Uri "$($applicationUrl.TrimEnd('/'))/v1/auth/config" -TimeoutSec 30
     if (-not $authConfig.google_client_id -or $authConfig.dev_auth_enabled) {
