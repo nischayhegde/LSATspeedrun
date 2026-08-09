@@ -14,6 +14,7 @@
 
 import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { api, ApiError } from './api'
 import { LockedChoicesNotice, useStrategyGate } from './strategy-enforcement'
@@ -44,6 +45,7 @@ function Harness() {
     armed: applied === true,
     selectedLabel: selected,
     locked: Boolean(session?.pending_result),
+    onDrop: () => setApplied(false),
   })
 
   const boot = useCallback(async () => {
@@ -142,10 +144,16 @@ function Harness() {
         {item.question.stimulus && <p data-testid="stimulus">{item.question.stimulus}</p>}
         <h2 data-testid="stem">{item.question.stem}</h2>
         {gate.choicesHidden && item.strategy_gate ? (
-          <LockedChoicesNotice gate={item.strategy_gate} />
+          <LockedChoicesNotice gate={item.strategy_gate} count={item.question.choices.length} />
         ) : (
-          <div className="harness-choices" role="radiogroup" aria-label="Answer choices" data-testid="choices">
-            {item.question.choices.map((choice) => {
+          <div
+            className="harness-choices"
+            role="radiogroup"
+            aria-label="Answer choices"
+            data-testid="choices"
+            data-gate-revealed={gate.justRevealed ? 'true' : undefined}
+          >
+            {item.question.choices.map((choice, choiceIndex) => {
               const stricken = gate.strickenLabels.includes(choice.label)
               return (
                 <button
@@ -154,6 +162,7 @@ function Harness() {
                   role="radio"
                   aria-checked={selected === choice.label}
                   disabled={stricken}
+                  style={{ ['--sg-index' as string]: choiceIndex }}
                   data-testid={`choice-${choice.label}`}
                   className={selected === choice.label ? 'is-on' : ''}
                   onClick={() => setSelected(choice.label)}
@@ -189,8 +198,16 @@ function Harness() {
   )
 }
 
+// The gate reads the student's own record with the strategy through the same
+// query cache the app uses, so the harness has to provide one. Retries off:
+// a harness that silently waits three times on a dev backend that is down
+// looks like a harness that is broken.
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Harness />
+    <QueryClientProvider client={queryClient}>
+      <Harness />
+    </QueryClientProvider>
   </StrictMode>,
 )

@@ -340,6 +340,14 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     armed: strategyApplied === true,
     selectedLabel: selected,
     locked: Boolean(result),
+    // Dropping the approach mid-question is the escape hatch that lets the
+    // gate be strict at all. It records the honest thing — this one was
+    // answered without the technique — rather than quietly unarming, because
+    // the trial compares what was actually done.
+    onDrop: () => {
+      setStrategyApplied(false)
+      void play('paper', { seed: `${item?.id}:strategy-drop`, intensity: .25 })
+    },
   })
   const [mobileCasePane, setMobileCasePane] = useState<'passage' | 'question'>(() => item?.question.passage ? 'passage' : 'question')
   // Scratch ink over the case file. It belongs to the question on screen and
@@ -753,9 +761,17 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           {question.stimulus && <div className="stimulus">{question.stimulus}</div>}
           <span className="question-label">QUESTION PRESENTED</span>
           <h1>{question.stem}</h1>
-          {strategyGate.choicesHidden && strategyGate.gate ? <LockedChoicesNotice gate={strategyGate.gate} /> : (
-          <div className="choices" role="radiogroup" aria-label="Answer choices">
-            {question.choices.map((choice) => {
+          {strategyGate.choicesHidden && strategyGate.gate ? <LockedChoicesNotice gate={strategyGate.gate} count={question.choices.length} /> : (
+          <div
+            className="choices"
+            role="radiogroup"
+            aria-label="Answer choices"
+            // Set only on the render where a sequencing gate has just let the
+            // choices through, so the unsealing runs once, when it means
+            // something, and never on an ordinary question.
+            data-gate-revealed={strategyGate.justRevealed ? 'true' : undefined}
+          >
+            {question.choices.map((choice, choiceIndex) => {
               const chosen = (result?.feedback?.selected_label || selected) === choice.label
               const correct = result?.feedback?.correct_label === choice.label
               const wrongSelected = Boolean(result && chosen && !correct)
@@ -767,6 +783,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                   aria-checked={chosen}
                   disabled={Boolean(result) || strategyDecisionRequired || (stricken && !result)}
                   className={`choice ${chosen ? 'selected' : ''} ${correct ? 'correct' : ''} ${wrongSelected ? 'incorrect' : ''} ${stricken && !result ? 'gate-struck' : ''}`}
+                  style={{ ['--sg-index' as string]: choiceIndex }}
                   key={choice.label}
                   onClick={() => {
                     if (selected !== choice.label) void play('select', { seed: `${item.id}:${choice.label}`, intensity: .36 })
