@@ -1731,7 +1731,19 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const evidenceInstallation = makeInstallation('evidence', [3.85, 4.62, -3.68], 1.15)
     if (evidenceInstallation) addDataPanel(evidenceInstallation.installation, 3.0, 1.15 + evidenceInstallation.stage * .12, 3 + evidenceInstallation.stage * 2)
 
-    const simulationInstallation = makeInstallation('simulation', [-2.1, 3.95, -3.68], 1.1)
+    // This screen used to hang at -2.1, which is inside the glazing: it covered
+    // about a fifth of the opening, and the fitter who drilled into a window to
+    // mount it would have been sent home. It only ever looked survivable because
+    // the view outside was a flat card; now that the window shows the district
+    // the firm is actually standing in, the opening is worth keeping clear.
+    //
+    // Same rule the wall posts already follow - anything landing in the opening
+    // moves to the nearer clear span - except this slides right rather than to
+    // the jamb, because the room's other wall furniture sits right and the
+    // camera is already looking that way.
+    const simulationWidth = 2.15
+    const simulationX = Math.max(openingRight + simulationWidth / 2 + .12, -2.1)
+    const simulationInstallation = makeInstallation('simulation', [simulationX, 3.95, -3.68], 1.1)
     if (simulationInstallation) {
       const { installation, stage } = simulationInstallation
       addDataPanel(installation, 2.15, 1.15, 3 + stage)
