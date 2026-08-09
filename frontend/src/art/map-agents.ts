@@ -1633,6 +1633,15 @@ const SOLID_SETBACK = .12
  */
 const SOLID_STEP = .02
 
+/**
+ * What a way's share of the crowd is multiplied by when the cut could not leave
+ * a walkable piece of it. See the `!keep.length` branch.
+ *
+ * A route rather than a place: enough that the connection is still used, little
+ * enough that the district's people stand on pavement that exists.
+ */
+const OBSTRUCTED_WEIGHT = .15
+
 /** A point on a way and the unit normal across it, at arc length `s`. */
 function sampleWay(points: XZ[], cumulative: number[], s: number) {
   const total = cumulative[cumulative.length - 1]
@@ -1806,8 +1815,24 @@ export function cutFootwaysAroundSolids(
       // way is so beset that no walkable piece is left, the honest reading is
       // that the region has no alternative route and losing the connection
       // costs more than the overlap does.
+      //
+      // Kept, but not kept *equal*. The connection is the reason to keep it and
+      // is all it is being kept for: nowhere on it is a place a walker can stand
+      // clear, so it should not be drawing its full share of the district's foot
+      // traffic. Spawn weight is per metre of pavement (`buildFootway` stores
+      // `length * weight`), so a way kept whole here otherwise competes for
+      // people on the strength of the very length that is obstructed, and the
+      // pieces cut out of its neighbours make it competitive in proportion to
+      // how much of the district is blocked. Measured on The Circuit, which is
+      // 43 ways and 99 units of pavement for nine people: declaring its
+      // buildings took its fully-blocked ways from five to eight, and its
+      // walkers-in-a-planned-building share from 0 to .1616 with no other change
+      // to the network.
+      //
+      // Deliberately not zero, and deliberately not a deletion. Both starve the
+      // connection, and deletion is the recorded dead end above.
       unwalkable += 1
-      out.push(way)
+      out.push({ ...way, weight: (way.weight ?? 1) * OBSTRUCTED_WEIGHT })
       continue
     }
     for (const [from, to] of keep) {
@@ -2542,8 +2567,10 @@ export class Crowd {
    * turned twenty-seven ways into several hundred.
    */
   private readonly spawnCumulative: Float32Array
-  /** How many conflicts came from the lane-sharing branch. See `networkReport`. */
+  /** How many conflicts came from a link lying *along* a lane. See `networkReport`. */
   private inLaneConflicts = 0
+  /** How many came from a link running *into* one and stopping. Same place. */
+  private intoLaneConflicts = 0
   /** How many links the connectivity repair had to add. See `stitch`. */
   private stitched = 0
   /** How many candidate links were refused for running through something solid. */
@@ -2877,37 +2904,6 @@ export class Crowd {
   }
 
   /**
-   * Which carriageways one crossing puts a walker into.
-   *
-   * Derived from the road graph rather than declared, on the same principle as
-   * the pavement furniture: the footways and the road network were both
-   * contributed by the scene as it drew the streets, so anything that tied them
-   * together by hand would drift from the art the first time a street moved. A
-   * link that turns out to cross nothing — a path over a green, the two ends of
-   * a quay — gets an empty list and keeps the plain timer behaviour, which is
-   * the correct answer for it.
-   *
-   * Two geometries. The first is the crossing proper: the link cuts the
-   * carriageway, and the conflict sits where they intersect.
-   *
-   * The second used to be the common case and is now the exception, which is
-   * the whole point of the pavement work. A link that lies *along* a lane
-   * rather than across it puts a walker in the road lengthwise, where there is
-   * no intersection to find; in the Old Quarter 56 of 80 crossings were that
-   * shape, because pavements ran uncut through junctions and could only end at
-   * the district boundary. With the pavements cut at their junctions and
-   * `linkVerdict` refusing anything that shares a lane at its midpoint, that
-   * shape should not be generated at all any more.
-   *
-   * It is kept, and sampled along the link rather than only at its midpoint,
-   * because "should not" is a property of the geometry the scene happens to
-   * hand over, and this module cannot see the next street someone draws.
-   * `linkVerdict` rejects on one sample; this watches five, so a link that dips
-   * into a lane near one end while its midpoint sits on paving still holds the
-   * traffic. Both run once, at build time.
-   * `networkReport().inLaneConflicts` counts what it catches.
-   */
-  /**
    * Join up whatever the crossing rules left stranded.
    *
    * The rules above are deliberately strict, and strictness costs reach: a
@@ -2995,6 +2991,44 @@ export class Crowd {
     }
   }
 
+  /**
+   * Which carriageways one crossing puts a walker into.
+   *
+   * The question is "does this link put a body on that road surface", and it
+   * has one answer with two ways of finding it. The link may *cut* the
+   * carriageway, in which case the conflict sits at the intersection and is
+   * found exactly. Or it may occupy the carriageway without ever reaching its
+   * centreline, in which case there is no intersection to find and the link is
+   * walked instead, with the conflict recorded at the sample nearest its
+   * midpoint.
+   *
+   * The second used to be tested only for links within forty-five degrees of
+   * parallel with the lane, and that gate is the bug this note records. It came
+   * from the shape the branch was written for — a pavement running uncut down a
+   * lane, which in the Old Quarter was 56 of 80 crossings before the pavements
+   * were cut at their junctions — and it silently excluded the opposite shape:
+   * a link that runs *square* at a road and stops inside it, because the
+   * pavement it is heading for begins between the kerbs. That link crosses no
+   * centreline and lies parallel to nothing, so it got an empty conflict list,
+   * was marked `kerbside` for having no carriageway under it, and was then
+   * walked straight out into the traffic against a 3% refusal instead of the
+   * 12% and the gap check a crossing gets. Measured on the Sovereign Arc, which
+   * is the region whose pavements begin inside carriageways: 22 links, against
+   * none in the Old Quarter and none on The Circuit.
+   *
+   * Angle is now not consulted at all, which is the honest form of the test: a
+   * walker standing in a lane is in the lane whichever way it is facing.
+   * `networkReport()` reports the two shapes separately as `inLaneConflicts`
+   * and `intoLaneConflicts`, because they say different things about the
+   * network that produced them.
+   *
+   * Nothing here is declared. The footways and the road network were both
+   * contributed by the scene as it drew the streets, so anything tying them
+   * together by hand would drift from the art the first time a street moved. A
+   * link that turns out to touch nothing — a path over a green, the two ends of
+   * a quay — gets an empty list and keeps the plain timer behaviour, which is
+   * the correct answer for it. Run once, at build time.
+   */
   private resolveConflicts(
     graph: RoadGraph | undefined,
     a: { x: number; z: number },
@@ -3029,11 +3063,14 @@ export class Crowd {
         found.push({ edge: edgeIndex, distance, at: hit.t, approaches: buildApproaches(graph, edgeIndex, distance) })
         continue
       }
-      if (Math.abs(dirX * edge.dx + dirZ * edge.dz) < IN_LANE_PARALLEL) continue
+      // Sampled at a fixed spacing on the ground rather than at five points on
+      // the link, so a long repair link cannot step over a lane between two
+      // samples.
+      const steps = Math.max(4, Math.ceil(length / .2))
       let inLaneAt = -1
       let inLaneAlong = 0
-      for (let sample = 0; sample <= 4; sample += 1) {
-        const t = sample / 4
+      for (let sample = 0; sample <= steps; sample += 1) {
+        const t = sample / steps
         const px = a.x + (b.x - a.x) * t
         const pz = a.z + (b.z - a.z) * t
         const along = (px - from.x) * edge.dx + (pz - from.z) * edge.dz
@@ -3041,14 +3078,19 @@ export class Crowd {
         if (Math.abs((px - from.x) * edge.dz - (pz - from.z) * edge.dx) > reach) continue
         // The midpoint if it qualifies, since that is where the walker is most
         // exposed and where `claimRoadway` centres its window; otherwise the
-        // sample nearest to it.
+        // sample nearest to it. Not the *deepest* sample, which reads better
+        // and measures worse: `claimRoadway` holds the traffic only within a
+        // window either side of this point, so moving it towards the end of a
+        // four-metre link stops the walker claiming the lane it is actually
+        // standing in halfway across.
         if (inLaneAt < 0 || Math.abs(t - .5) < Math.abs(inLaneAt - .5)) {
           inLaneAt = t
           inLaneAlong = along
         }
       }
       if (inLaneAt < 0) continue
-      this.inLaneConflicts += 1
+      if (Math.abs(dirX * edge.dx + dirZ * edge.dz) >= IN_LANE_PARALLEL) this.inLaneConflicts += 1
+      else this.intoLaneConflicts += 1
       const distance = THREE.MathUtils.clamp(inLaneAlong, 0, edge.length)
       found.push({ edge: edgeIndex, distance, at: inLaneAt, approaches: buildApproaches(graph, edgeIndex, distance) })
     }
@@ -3130,8 +3172,10 @@ export class Crowd {
       crossings: this.crossings.length,
       kerbsideJoins: this.crossings.filter((link) => link.kerbside).length,
       crossingsWithConflicts: this.conflicts.filter((found) => found.length).length,
-      /** Conflicts found by the lane-sharing branch rather than by intersection. */
+      /** Conflicts found by a link lying along a lane rather than by intersection. */
       inLaneConflicts: this.inLaneConflicts,
+      /** Conflicts found by a link running into a lane and stopping in it. */
+      intoLaneConflicts: this.intoLaneConflicts,
       /** Links the connectivity repair had to add. See `stitch`. */
       stitched: this.stitched,
       /** Links refused for passing through a solid footprint. See `linkThroughSolid`. */
