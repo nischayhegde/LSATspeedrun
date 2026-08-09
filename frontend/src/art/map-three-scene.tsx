@@ -39,6 +39,7 @@ import {
   Crowd,
   TrafficSim,
   buildRoadGraph,
+  corridorFootprints,
   cutFootwaysAroundSolids,
   markDocks,
   planFootways,
@@ -577,26 +578,48 @@ const CROWD_FOOTWAY_HALF = .65
  * Whether pavements are taken out from under solid footprints before the crowd
  * is built. See `cutFootwaysAroundSolids`.
  *
- * A switch rather than an assumption, because the pass is a real improvement in
- * two regions and a real cost in the third, and the next person to work here
- * should be able to see both halves of that and turn it over in one line rather
- * than reconstructing it from a six-hundred-frame run. Walkers-in-any-solid over
- * 600 deterministic frames, on the .12 test radius the series has always used:
+ * Per region rather than globally, on the precedent of The Circuit's `verge:
+ * false`: the pass is a clear win in two districts and a clear cost in the
+ * third, and the third's cost is not a tuning problem. Walkers-in-any-solid over
+ * 600 deterministic frames, on the .12 test radius the series has always used,
+ * with the railway subtraction below present in every column:
  *
- * | region                     | off   | on    |
- * | -------------------------- | ----- | ----- |
- * | Old Quarter (`city`)       | .1299 | .0801 |
- * | The Circuit (`nation`)     | .2928 | .2659 |
- * | Sovereign Arc (`continent`)| .0535 | .0767 |
+ * | region                     | no cut | cut   | shipped |
+ * | -------------------------- | ------ | ----- | ------- |
+ * | Old Quarter (`city`)       | .1299  | .0184 | cut     |
+ * | The Circuit (`nation`)     | .2928  | .3295 | cut     |
+ * | Sovereign Arc (`continent`)| .0535  | .2384 | no cut  |
  *
- * Vehicle-in-building stays at zero in all three either way, and wrong-side
- * frames stay at zero. The Arc pays for it in two places — that share, and
- * walker-to-vehicle contacts, which rise as the cut moves people nearer kerbs —
- * and the reason is understood but not yet fixed: the Arc's pavements are the
- * narrowest in the game at a halfWidth of .09 to .18 while carrying the densest
- * authored frontage, so it has the least room to give and gives it anyway.
+ * Vehicle-in-building is zero in all three regions in every column, wrong-side
+ * frames are zero, and `moverHitsPerFrame` is unchanged.
+ *
+ * Why the Arc is excluded, since "the narrowest pavements in the game" was the
+ * previous guess and is not the reason. The Arc's share is not a diffuse
+ * property of the district, it is one or two people standing in one thing: over
+ * ten seconds of simulated time with fourteen walkers, a single walker parked in
+ * a wall *is* nine per cent of the region. The site list is different in every
+ * arm ever measured, and the sites this cut moves people onto are geometry the
+ * routing pass cannot see at all — instanced tree and hedge rows carry no
+ * per-instance footprint — reached along pavement whose centreline is inside a
+ * carriageway to begin with. So the cut does not make the Arc worse by cutting
+ * too much. It makes it worse by moving people onto faults that were already
+ * there, and the fix is those faults rather than this switch;
+ * `.maps/keep/takeover5/NOTES.md` names them and their sites.
+ *
+ * The Circuit is kept on a narrower margin than it used to have — .2659 before
+ * the railway subtraction, .3295 after, against .2928 with no cut at all — and
+ * it stays because a walker inside a *building* is the defect that was reported:
+ * its facade share goes .226 to 0, and its pedestrian contacts are zero either
+ * way. Nine walkers and two rail cuts moved that share, which is the same
+ * sensitivity the Arc has.
  */
-const FOOTWAY_SOLID_CUT_ENABLED = true
+const FOOTWAY_SOLID_CUT: Record<MapRegionKey, boolean> = {
+  city: true,
+  nation: true,
+  continent: true,
+  ocean: true,
+  orbit: true,
+}
 /**
  * How much of the district's foot traffic each class of street carries.
  *
@@ -1018,6 +1041,22 @@ function createLevelBuilding(point: MapSceneTier, definition: ArcDefinition) {
   group.add(box([width + .35, .18, 2.3], trim, [0, .28, 0]))
   group.add(box([width, height, 1.75], facade, [0, .38 + height / 2, 0]))
   group.add(box([width + .16, .15, 1.94], trim, [0, .42 + height, 0]))
+  // The plan, declared, because the office the player is walking to was the
+  // largest thing on the map that routing could not see.
+  //
+  // These carry `playerOccluder` and a selection collider and nothing else, so
+  // `crowdObstacles` — which only looks at an object that has a
+  // `footprintRadius` — skipped every one of them, and `planFootways` therefore
+  // ran pavement straight through the headquarters. Measured on the shipped
+  // tree: 17.5 units of Sovereign Arc footway inside the tier-two office at
+  // `11.4,2.95`, its single worst pedestrian site in every arm ever taken, and
+  // 27.4 units through four of the five Old Quarter offices.
+  //
+  // The plinth, on `createCourthouse`'s precedent: it is the widest course and
+  // it is the one at ankle height, so it is what a walker on the pavement
+  // actually meets.
+  markSolidBox(group, (width + .65) / 2, 1.275)
+  group.userData.footprintRadius = (width + .65) / 2
 
   const columns = Math.max(3, Math.min(6, floors))
   for (let floor = 0; floor < floors; floor += 1) {
@@ -1075,6 +1114,12 @@ function createRivalBuilding(point: MapSceneRival, index: number, definition: Ar
   const trim = material(definition.stone, .85)
   group.add(box([width + .5, .18, 2.15], material(0x625f55, .95), [0, .1, 0]))
   group.add(box([width, height, 1.6], facade, [0, .24 + height / 2, 0]))
+  // Declared for the same reason a tier office is, and it is the same fault: a
+  // rival compound is a two-and-a-half-storey building with a click target on
+  // it, and the pedestrian router could not see it either. 8.5 units of
+  // Sovereign Arc pavement ran through the compound at `13,-7`.
+  markSolidBox(group, (width + .5) / 2, 1.075)
+  group.userData.footprintRadius = (width + .5) / 2
   // A firm under pressure keeps fewer lights on, floor by floor, as its people
   // are raided away and its filings stall.
   const floors = Math.floor(height / .65)
@@ -8236,7 +8281,7 @@ export function MapThreeScene({
     // this line handed the enlarged figure to `obstacles` as well. Routing gets
     // the circumscribing radius, because for routing the radius is only a
     // bounding test around the rectangle underneath it.
-    const solidFootprints = crowdProps
+    const propSolids = crowdProps
       .filter((prop) => prop.solid)
       .map(({ x, z, radius, hx, hz, rotationY }) => ({
         x,
@@ -8246,18 +8291,83 @@ export function MapThreeScene({
         hz,
         rotationY,
       }))
-    const solidPlan = FOOTWAY_SOLID_CUT_ENABLED
-      ? cutFootwaysAroundSolids(pedestrianPlan.ways, solidFootprints, { defaultHalfWidth: CROWD_FOOTWAY_HALF })
-      : { ways: pedestrianPlan.ways, cut: 0, unwalkable: 0, blocked: 0 }
+    /**
+     * And the buildings, which are the reason this pass exists and were the one
+     * class of solid it never contained.
+     *
+     * `crowdObstacles` can only see an object that carries a `footprintRadius`,
+     * and `renderPlannedBuildings` articulates the few blocks nearest the camera
+     * — those go through `createBlockBuilding`, which declares one — and
+     * *instances* all the rest. An `InstancedMesh` has no per-instance userData,
+     * so the overwhelming majority of the solid volume in every district was
+     * absent from the list the cut and the link guard work from. It is the same
+     * blindness the harness itself had two passes ago, when the instanced
+     * facades were invisible to the collision grid and a building-clearance arm
+     * therefore "agreed to the last digit" with its control.
+     *
+     * Measured on the shipped tree, footway centreline standing in solid
+     * geometry at body height with nothing declared there: 22.5 units on the
+     * Sovereign Arc and 7.4 on The Circuit are inside a planned building.
+     *
+     * `buildingAudit` is the list `keepBuildingsClear` produced and
+     * `renderPlannedBuildings` actually built, so this is exactly what was drawn
+     * rather than a reconstruction from instance matrices, and `ARTICULATION` is
+     * the same margin `createBlockBuilding` declares for the cornice and awning
+     * that hang off the planned rectangle. Articulated blocks appear in both
+     * lists; overlapping cut spans merge, so that costs nothing.
+     */
+    const plannedSolids = ((world.userData.buildingAudit ?? []) as Array<
+      { x: number; z: number; width: number; depth: number; rotationY: number }
+    >).map((record) => {
+      const hx = record.width / 2 + ARTICULATION
+      const hz = record.depth / 2 + ARTICULATION
+      return { x: record.x, z: record.z, radius: Math.hypot(hx, hz), hx, hz, rotationY: record.rotationY }
+    })
+    const solidFootprints = [...propSolids, ...plannedSolids]
+    /**
+     * And take the pavement off the railway, which nothing was doing.
+     *
+     * `planFootways` cuts pavements at every carriageway and deliberately
+     * ignores the rail line, on the grounds that a railway is not a kerb. It
+     * is not — it is worse. A road can be crossed: the crowd waits at the kerb,
+     * judges a gap against the traffic's own time-to-arrival and steps out. A
+     * train is a `TransportPath` on a fixed curve with no perception and no
+     * brakes, there is no gap logic that can be asked about it, and the walker
+     * has nothing to yield to. So the right-of-way the region already declares
+     * for the buildings is subtracted from the pedestrian network too.
+     *
+     * This is where the Sovereign Arc's walker-to-vehicle contacts were coming
+     * from, and they were not vehicles. Measured over 600 frames, all 401 of
+     * them were the shuttle and none of them were cars, 345 on the single
+     * ring-boulevard pavement that runs over the line at `11,7`, and for 119 of
+     * those frames the body was inside the train's own box rather than merely
+     * inside the generous disc the harness grows around a five-unit object.
+     *
+     * Unconditional, and separate from the switch below: a level crossing with
+     * a crowd standing on it is a defect either way, and the experiment that
+     * switch carries is about buildings.
+     */
+    const railBlocks = ((world.userData.clearanceCorridors ?? []) as ClearanceCorridor[])
+      .filter((corridor) => corridor.label === 'rail')
+      .flatMap((corridor) => corridorFootprints(corridor.points, corridor.halfWidth, corridor.closed ?? false))
+    const railPlan = cutFootwaysAroundSolids(pedestrianPlan.ways, railBlocks, { defaultHalfWidth: CROWD_FOOTWAY_HALF })
+    const solidPlan = FOOTWAY_SOLID_CUT[region]
+      ? cutFootwaysAroundSolids(railPlan.ways, solidFootprints, { defaultHalfWidth: CROWD_FOOTWAY_HALF })
+      : railPlan
     const crowdWays = solidPlan.ways
     world.userData.pedestrianPlan = {
       ways: crowdWays.length,
       cuts: pedestrianPlan.cuts,
       unsliced: pedestrianPlan.unsliced,
       solids: solidFootprints.length,
+      propSolids: propSolids.length,
+      plannedSolids: plannedSolids.length,
       solidCuts: solidPlan.cut,
       solidUnwalkable: solidPlan.unwalkable,
       solidBlockedLength: solidPlan.blocked,
+      railCuts: railPlan.cut,
+      railUnwalkable: railPlan.unwalkable,
+      railBlockedLength: railPlan.blocked,
     }
     // No pedestrians on the Treaty Sea.
     //
@@ -8304,7 +8414,12 @@ export function MapThreeScene({
         // carriageway between them, which is exactly what the crossing pass
         // calls a kerbside corner, and relinking one puts the walker back
         // through the building the cut just took them out of.
-        solids: solidFootprints,
+        //
+        // The right-of-way rides in the same list, and has to: cutting the
+        // pavement at the tracks leaves two ends facing each other across them
+        // with no carriageway between, which is the textbook kerbside corner and
+        // would be relinked straight back over the line.
+        solids: [...solidFootprints, ...railBlocks],
         // Wide enough for the two kerbs of the widest street in any region
         // (the high street, at 2.85 between its pavements) with a little to
         // spare. It used to be 4.6, which mattered less when pavements only

@@ -1529,6 +1529,52 @@ export type SolidFootprint = {
 }
 
 /**
+ * A strip of ground, as solid footprints: one oriented rectangle per segment.
+ *
+ * Written for the railway, which is the one corridor on the map that a
+ * pedestrian route must not touch at all. A carriageway may be crossed, and
+ * `planFootways` cuts pavements at one so the crowd can wait, look and step
+ * across; a railway may not, because a transport runs on a fixed curve and
+ * cannot see, steer or stop, and the crowd has no yielding behaviour for it. So
+ * the right-of-way is subtracted from the pedestrian network exactly as a
+ * building's footprint is, and the same link guard that refuses a crossing
+ * through a farmstead refuses one over the tracks.
+ *
+ * Measured before this existed: the Sovereign Arc's ring-boulevard pavement
+ * runs across the line at `11,7`, and over 600 frames a walker's body was
+ * inside a moving train for 119 of them.
+ */
+export function corridorFootprints(
+  points: XZ[],
+  halfWidth: number,
+  closed = false,
+): SolidFootprint[] {
+  const out: SolidFootprint[] = []
+  const count = closed ? points.length : points.length - 1
+  for (let index = 0; index < count; index += 1) {
+    const [ax, az] = points[index]
+    const [bx, bz] = points[(index + 1) % points.length]
+    const dx = bx - ax
+    const dz = bz - az
+    const length = Math.hypot(dx, dz)
+    if (length < 1e-4) continue
+    const hx = length / 2
+    out.push({
+      x: (ax + bx) / 2,
+      z: (az + bz) / 2,
+      radius: Math.hypot(hx, halfWidth),
+      hx,
+      hz: halfWidth,
+      // `solidDistance` reads `rotationY` as an object's own rotation, so the
+      // angle wanted here is the one whose local +x lands along the segment:
+      // a y-rotation of `a` sends local +x to world `(cos a, -sin a)`.
+      rotationY: Math.atan2(-dz / length, dx / length),
+    })
+  }
+  return out
+}
+
+/**
  * Distance from a point to a solid footprint's surface, zero inside it.
  *
  * A disc unless the caller gave half extents, in which case the oriented
