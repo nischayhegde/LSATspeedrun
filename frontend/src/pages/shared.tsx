@@ -58,6 +58,24 @@ export function TabStrip<Key extends string>({
   active: Key
   onSelect: (key: Key) => void
 }) {
+  /**
+   * Keeps the selected tab inside the visible part of the rail.
+   *
+   * On a phone these strips are horizontal scrollers — six dashboard tabs are
+   * 633px of rail in a 390px window — so the tab that is actually selected can
+   * sit entirely off the right-hand edge with nothing on screen saying which
+   * one is open. Clicking a tab scrolls it into view by itself; arriving on the
+   * page with a tab already chosen, or restoring one from the URL, does not.
+   *
+   * `inline: 'nearest'` so a tab that is already fully visible is left alone
+   * rather than being centred, and `block: 'nearest'` so a sticky rail is never
+   * scrolled up the page just to satisfy a horizontal request.
+   */
+  useEffect(() => {
+    const node = document.getElementById(`${id}-tab-${active}`)
+    node?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [active, id])
+
   const move = (event: KeyboardEvent<HTMLButtonElement>, current: Key) => {
     const index = tabs.findIndex((tab) => tab.key === current)
     let target: number | null = null

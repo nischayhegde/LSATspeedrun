@@ -1694,10 +1694,13 @@ body {
     overflow-y: hidden;
     border: 1px solid rgba(67, 45, 28, .35);
     border-radius: 14px;
-    background: rgba(219, 197, 148, .94);
+    /* Opaque, and no backdrop blur. This rail is sticky and full width, so a
+       backdrop-filter on it is a blur of a strip of the page recomputed on
+       every scrolled frame — the most expensive kind of layer there is on a
+       phone — and at 94% opacity there was nothing legible behind it to blur.
+       Taking the last 6% of transparency out buys the blur's removal for free. */
+    background: #dbc594;
     box-shadow: 0 8px 22px rgba(65,44,26,.12);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
   }
   .firm-tabs button,
   .firm-tabs button.active { min-width: 104px; min-height: 52px; flex: 0 0 104px; border-width: 1px; border-radius: 10px; box-shadow: none; }
@@ -3058,6 +3061,18 @@ body {
   }
   .dash-tabs::-webkit-scrollbar,
   .practice-tabs::-webkit-scrollbar { display: none; }
+  /* A rail with its scrollbar hidden and a tab ending flush at the edge looks
+     like a rail with nothing after it. Three of six dashboard tabs and four of
+     seven on the Firm were off the right-hand side with nothing to say so.
+     Fading the last few pixels is what makes the cut read as "continues"
+     rather than "ends", and it costs nothing at runtime — a mask on a
+     scrolling box is composited, not repainted. */
+  .dash-tabs,
+  .practice-tabs,
+  .firm-tabs {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent 100%);
+  }
   .dash-tabs button,
   .practice-tabs button {
     flex: 0 0 auto;

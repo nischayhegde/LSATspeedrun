@@ -353,7 +353,43 @@
   .strategy-section-lift { font-size: 17px; }
   .strategy-section-detail { padding: 13px 12px 14px; }
   .diagnostic-lab { padding: 20px 16px; }.diagnostic-copy ul { grid-template-columns: 1fr; }.diagnostic-score { min-height: 190px; }
-  .skill-table { overflow-x: auto; }.skill-row { min-width: 690px; }
+  /* The skill matrix stacks rather than scrolling sideways.
+
+     Holding the desktop's five columns and letting the table scroll put 690px
+     of row in a 352px window, so a phone saw the question type and the sample
+     size and had to drag the table to reach accuracy, pace and reasoning —
+     that is, everything the matrix is for, hidden behind a gesture with no
+     affordance saying it was there. Two lines per row fits all five in the
+     width, and each figure carries its own label since the header row that
+     used to name the columns cannot follow them down.
+
+     Row height goes from 48px to about 68px, which is a better target as well
+     as a more legible one. */
+  .skill-table { overflow-x: visible; }
+  .skill-row.header { display: none; }
+  .skill-row {
+    min-width: 0;
+    padding: 10px 30px 12px 11px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 10px 8px;
+    overflow: visible;
+  }
+  .skill-row strong { grid-column: 1 / -1; font-size: 13px; }
+  .skill-row > span { display: grid; gap: 3px; font-size: 12.5px; }
+  .skill-row > span::before {
+    color: #789a99;
+    font-family: var(--font-pixel);
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .09em;
+  }
+  .skill-row > span:nth-of-type(1)::before { content: "SAMPLE"; }
+  .skill-row > span:nth-of-type(2)::before { content: "ACCURACY"; }
+  .skill-row > span:nth-of-type(3)::before { content: "PACE"; }
+  .skill-row > span:nth-of-type(4)::before { content: "REASON"; }
+  /* The accuracy bar underlines its own figure, so it moves up with it. */
+  .skill-row > span i { bottom: -3px; }
   .learning-mode-banner { align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; }.learning-mode-banner > strong { flex: 1 1 100%; font-size: 12px; line-height: 1.4; }
   .readiness-grid,.review-summary-hero,.review-next-actions { grid-template-columns: 1fr; }.review-score,.review-score-pair .review-score { min-width: 0; }.review-score-pair { grid-template-columns: 1fr; }.review-signal-row { grid-template-columns: 1fr 1fr; }
   .answer-audit-shell { display: block; }.answer-audit-index { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.08); }.answer-audit-list { display: flex; overflow-x: auto; padding-bottom: 4px; }.answer-audit-list button { min-width: 112px; }
