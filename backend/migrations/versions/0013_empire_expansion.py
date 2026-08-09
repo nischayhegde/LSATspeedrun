@@ -17,55 +17,42 @@ depends_on = None
 def upgrade():
     # Batch mode safely recreates the SQLite table while PostgreSQL performs
     # the equivalent constraint/type changes transactionally.
-    sqlite = op.get_bind().dialect.name == "sqlite"
-    if sqlite:
-        # SQLite implements batch alteration by replacing the parent table.
-        # Foreign keys must be disabled outside a transaction or ON DELETE
-        # CASCADE would erase existing assets, contracts, and daily progress.
-        with op.get_context().autocommit_block():
-            op.execute(sa.text("PRAGMA foreign_keys=OFF"))
-    try:
-        with op.batch_alter_table("player_profiles") as batch_op:
-            batch_op.drop_constraint("ck_profile_office_tier_range", type_="check")
-            batch_op.create_check_constraint(
-                "ck_profile_office_tier_range",
-                "office_tier >= 0 and office_tier <= 14",
-            )
+    #
+    # This revision used to switch `PRAGMA foreign_keys` off and back on around
+    # these two blocks, because recreating a cascade parent under SQLite empties
+    # its children. That protection now covers the whole run from
+    # `migrations/env.py`, and doing it here as well was actively harmful: the
+    # `finally` turned enforcement back *on* partway down the chain, which is
+    # what left `0016_learning_modes` exposed to the very thing this guard was
+    # written for.
+    with op.batch_alter_table("player_profiles") as batch_op:
+        batch_op.drop_constraint("ck_profile_office_tier_range", type_="check")
+        batch_op.create_check_constraint(
+            "ck_profile_office_tier_range",
+            "office_tier >= 0 and office_tier <= 14",
+        )
 
-        with op.batch_alter_table("attempt_settlements") as batch_op:
-            batch_op.alter_column(
-                "base_fee",
-                existing_type=sa.Integer(),
-                type_=sa.BigInteger(),
-                existing_nullable=False,
-            )
-    finally:
-        if sqlite:
-            with op.get_context().autocommit_block():
-                op.execute(sa.text("PRAGMA foreign_keys=ON"))
+    with op.batch_alter_table("attempt_settlements") as batch_op:
+        batch_op.alter_column(
+            "base_fee",
+            existing_type=sa.Integer(),
+            type_=sa.BigInteger(),
+            existing_nullable=False,
+        )
 
 
 def downgrade():
-    sqlite = op.get_bind().dialect.name == "sqlite"
-    if sqlite:
-        with op.get_context().autocommit_block():
-            op.execute(sa.text("PRAGMA foreign_keys=OFF"))
-    try:
-        with op.batch_alter_table("attempt_settlements") as batch_op:
-            batch_op.alter_column(
-                "base_fee",
-                existing_type=sa.BigInteger(),
-                type_=sa.Integer(),
-                existing_nullable=False,
-            )
+    with op.batch_alter_table("attempt_settlements") as batch_op:
+        batch_op.alter_column(
+            "base_fee",
+            existing_type=sa.BigInteger(),
+            type_=sa.Integer(),
+            existing_nullable=False,
+        )
 
-        with op.batch_alter_table("player_profiles") as batch_op:
-            batch_op.drop_constraint("ck_profile_office_tier_range", type_="check")
-            batch_op.create_check_constraint(
-                "ck_profile_office_tier_range",
-                "office_tier >= 0 and office_tier <= 6",
-            )
-    finally:
-        if sqlite:
-            with op.get_context().autocommit_block():
-                op.execute(sa.text("PRAGMA foreign_keys=ON"))
+    with op.batch_alter_table("player_profiles") as batch_op:
+        batch_op.drop_constraint("ck_profile_office_tier_range", type_="check")
+        batch_op.create_check_constraint(
+            "ck_profile_office_tier_range",
+            "office_tier >= 0 and office_tier <= 6",
+        )

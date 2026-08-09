@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from logging.config import fileConfig
 
 import sqlalchemy as sa
@@ -68,6 +69,57 @@ def widen_version_table(engine):
             return
 
 
+@contextmanager
+def sqlite_foreign_keys_suspended(connection):
+    """Stop SQLite's cascades from firing while a migration reshapes a table.
+
+    `app/extensions.py` enables `PRAGMA foreign_keys` on every SQLite
+    connection, which is what the running application wants. It is the wrong
+    setting for a migration. SQLite has no real `ALTER TABLE`, so Alembic's
+    `batch_alter_table` adds a column or a constraint by building a replacement
+    table, copying the rows across, dropping the original and renaming — and
+    with foreign keys enforced, `DROP TABLE` performs an implicit `DELETE FROM`
+    first. On a table that other tables cascade from, that implicit delete walks
+    `ON DELETE CASCADE` into the children and empties them.
+
+    This is not hypothetical. `study_sessions` is the parent of `session_items`,
+    which is the parent of `attempts`, and two revisions batch-alter it:
+    `0016_learning_modes` and `0023_blind_review`. Upgrading the local
+    development database took 3,543 attempts and 4,446 session items to zero and
+    reported a successful upgrade — the migration ran, the schema was correct,
+    and every answer anybody had ever filed was gone.
+
+    Suspending enforcement for the run rather than inside each revision is
+    deliberate: the hazard belongs to "SQLite plus batch mode", not to any one
+    migration, and asking every future author to remember a guard is how both of
+    those revisions came to be missing it. Integrity is re-checked on the way
+    out, so a migration that genuinely orphans a row still fails loudly instead
+    of leaving the damage behind.
+
+    Postgres needs none of this: it alters tables in place and never recreates
+    one to add a column.
+    """
+    if connection.dialect.name != "sqlite":
+        yield
+        return
+    # `PRAGMA foreign_keys` is a no-op inside a transaction, and it is
+    # connection state rather than transaction state, so it has to be set on the
+    # migration's own connection before Alembic opens its transaction.
+    connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+    try:
+        yield
+    finally:
+        violations = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        if violations:
+            sample = ", ".join(
+                f"{row[0]} rowid={row[1]} -> {row[2]}" for row in violations[:5]
+            )
+            raise RuntimeError(
+                f"the migration left {len(violations)} foreign-key violation(s) behind: {sample}"
+            )
+
+
 def run_migrations_offline():
     context.configure(
         url=str(get_engine().url).replace("%", "%%"),
@@ -88,8 +140,9 @@ def run_migrations_online():
             target_metadata=get_metadata(),
             compare_type=True,
         )
-        with context.begin_transaction():
-            context.run_migrations()
+        with sqlite_foreign_keys_suspended(connection):
+            with context.begin_transaction():
+                context.run_migrations()
 
 
 if context.is_offline_mode():
