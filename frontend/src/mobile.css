@@ -1283,17 +1283,22 @@ body {
       + var(--mobile-ledger-gap) + var(--mobile-ledger-height) + 14px
     );
     /* The office and the world map stand the ledger down and put their own HUD
-       in that corner instead — the brief toggle, the district guide — anchored
-       one gap higher than the strip and taller than it. Anything floating over
-       a scene clears this figure rather than the one above; the narrative
-       layer reads it for exactly that (see narrative.css), since it renders
-       beside `.app-shell` and cannot select the scene itself. */
-    --mobile-scene-hud-gap: 24px;
-    --mobile-scene-hud-height: 44px;
-    --mobile-scene-clearance: calc(
-      var(--mobile-dock-height) + var(--mobile-safe-bottom)
-      + var(--mobile-scene-hud-gap) + var(--mobile-scene-hud-height) + 14px
-    );
+       in that corner instead — the brief and inventory toggles, the district
+       guide. Anything floating over a scene clears this figure rather than the
+       one above; the narrative layer reads it for exactly that (see
+       narrative.css), since it renders beside `.app-shell` and cannot select
+       the scene itself.
+
+       Measured rather than modelled. The arithmetic that used to be here —
+       dock plus a gap plus one control's height — described neither scene: the
+       two anchor their HUD from different parents, so at 390x844 the office
+       inventory toggle reaches 132px above the viewport floor and the map's
+       district guide toggle reaches 177px, against the 154px this token used
+       to produce. That 23px shortfall is why the district guide toggle kept
+       being reported as covered. The figure is the higher of the two plus a
+       gap, so it clears both. */
+    --mobile-scene-hud-reach: 177px;
+    --mobile-scene-clearance: calc(var(--mobile-scene-hud-reach) + 12px);
   }
 
   .app-shell:not(.wide-scene-shell):not(.active-case) > main {
@@ -2915,9 +2920,14 @@ body {
   .epilogue-primary,
   .epilogue-secondary { width: 100%; min-height: 48px; justify-content: center; }
   .epilogue-standing { grid-template-columns: 1fr; }
-  .chapter-prompt-actions { flex-direction: column; }
-  .chapter-prompt-open,
-  .chapter-prompt-later { width: 100%; min-height: 44px; }
+  /* One row, not two. Stacking these was 50px of card height spent on a layout
+     the width does not require: at 360px the card's inner width is 308px, and
+     a compact "Not now" beside a flexible "Take the meeting" fits it with room
+     to spare. Both keep the 44px height the coarse-pointer rule in
+     narrative.css gives them, so nothing shrinks below a thumb. */
+  .chapter-prompt-actions { flex-direction: row; align-items: stretch; gap: 7px; }
+  .chapter-prompt-open { flex: 1 1 auto; min-height: 44px; }
+  .chapter-prompt-later { flex: 0 0 auto; min-height: 44px; padding: 0 11px; }
 }
 
 /* The panel-scoped selectors continue below: these narrow-width rules refine

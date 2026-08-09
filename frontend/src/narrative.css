@@ -38,13 +38,20 @@
    card renders beside `.app-shell` rather than inside it: a descendant selector
    can never see which route is up, and this is the whole reason a single
    hardcoded offset kept being wrong somewhere. */
+/* How far the card's bottom edge sits above the viewport floor.
+   
+   One token, read by two things that must agree: the card's own `bottom`, and
+   the room the document leaves at its end so its last row can be scrolled out
+   from under the card. Every previous round of this bug came from those two
+   being written as separate numbers and then drifting apart. */
+:root { --chapter-prompt-bottom: 24px; }
 .chapter-prompt {
   width: min(370px, calc(100vw - 24px));
   padding: 22px 22px 20px;
   position: fixed;
   z-index: 130;
   right: 24px;
-  bottom: 24px;
+  bottom: var(--chapter-prompt-bottom);
   border: 3px solid #171d28;
   color: #2a2418;
   background: linear-gradient(148deg, #f7ebc9, #eadcb4);
@@ -63,8 +70,8 @@
    window is 80px short in a 900px-tall one. Measured at y=677, hence a bottom
    edge held above 663 whatever the height — and never lower than the offset
    that works in the shortest window, for the case where there is no room. */
-html:has(.wide-scene-shell) .chapter-prompt {
-  bottom: var(--mobile-scene-clearance, max(158px, calc(100dvh - 663px)));
+html:has(.wide-scene-shell) {
+  --chapter-prompt-bottom: var(--mobile-scene-clearance, max(158px, calc(100dvh - 663px)));
 }
 .chapter-prompt-seal {
   width: 38px;
@@ -168,43 +175,76 @@ html:has(.wide-scene-shell) .chapter-prompt {
    underneath the dock with nothing but the close glyph left to reach. The two
    breakpoints have to be the same number. */
 @media (max-width: 900px) {
+  /* `--mobile-dock-clearance` is the room mobile.css reserves at the end of
+     every scrolling route for the dock and the economy strip resting on it.
+     The lowest a floating card can sit without covering either is the same
+     measurement, so it is the same token rather than a copy of its value.
+     Weaker than the `html:has(.wide-scene-shell)` rule above, which is what
+     keeps a scene's taller HUD winning over this on the office and the map. */
+  :root { --chapter-prompt-bottom: var(--mobile-dock-clearance); }
+  /* Narrower as well as shorter. At 366px on a 390px screen this card spanned
+     the full width of the phone, so a scene's bottom-left control — the map's
+     district guide — was under it as surely as a bottom-right one. Held to
+     300px it is a corner card again on any phone, and the left corner is free
+     for whatever the surface underneath keeps there. */
   .chapter-prompt {
-    /* `--mobile-dock-clearance` is the room mobile.css reserves at the end of
-       every scrolling route for the dock and the economy strip resting on it.
-       The lowest a floating card can sit without covering either is the same
-       measurement, so it is the same token rather than a copy of its value. */
-    bottom: var(--mobile-dock-clearance);
+    width: min(300px, calc(100vw - 24px));
     right: max(12px, env(safe-area-inset-right));
-    padding: 16px 16px 14px;
+    padding: 13px 14px 12px;
     /* A prompt is an interruption, not a screen. Capped and scrolled, it can
        never take more of a short viewport than this, which is what stops a
        landscape phone from having most of its page covered by one. */
-    max-height: min(42dvh, 260px);
+    max-height: min(38dvh, 210px);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  .chapter-prompt h2 { font-size: 21px; }
+  /* 235px of an 844px phone is a third of the screen, and a card that size
+     covers something on every route no matter where it is anchored — the Firm
+     tab rail and its catalog filters, the caseboard's start button. The card
+     keeps every part it has on a desktop; what changes is that it stops being
+     laid out like a document. That is worth roughly 80px. */
+  .chapter-prompt h2 { margin: 5px 0 4px; font-size: 18px; }
+  .chapter-prompt p {
+    font-size: 12.5px;
+    line-height: 1.4;
+    /* Two lines is enough to say who is waiting; the chapter itself is one tap
+       away and says the rest. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .chapter-prompt-actions { margin-top: 11px; }
   /* The seal overhangs the top-left corner, which a scrolling box would clip. */
   .chapter-prompt-seal { display: none; }
+  .chapter-prompt-close { width: 40px; height: 40px; right: 0; top: 0; }
+  .chapter-prompt-eyebrow { padding-right: 34px; font-size: 8px; }
 }
 
 /* A fixed card sits over the page, so the page has to be able to get out from
    under it. Everything on a scrolling route can be scrolled clear except what
    the document ends with, which at maximum scroll has nowhere further to go —
-   the dashboard's last skill rows and the caseboard's last queued run both sat
-   under the card with no way to move them. Reserving the card's own height at
-   the foot of the page is what makes "scroll it out of the way" true for the
-   last row as well as the first.
+   the caseboard's discard button and the Firm catalog's last upgrade card both
+   sat under the card with no way to move them. Reserving the band the card
+   occupies at the foot of the page is what makes "scroll it out of the way"
+   true for the last row as well as the first.
+
+   The band is the card's own height plus the gap it is held off the floor by,
+   and both are now facts rather than estimates: `--chapter-prompt-height` is
+   measured from the live element by narrative.tsx, and the offset is the same
+   token that places the card. The constant this replaces was 210px against a
+   card that occupies 221px on a desktop and more when its title wraps to two
+   lines, which is precisely the residual overlap that kept being reported.
+
+   The fallback in the `var()` matters: it is what applies for the one frame
+   between the card mounting and the observer's first callback, so it is the
+   taller of the two typical cases rather than the shorter.
 
    Weighted past mobile.css's `> main` reset, which zeroes this padding so that
-   each page can own its own; measured off the same cap the card is given above,
-   so the two cannot disagree. */
-:root { --chapter-prompt-reserve: 210px; }
-@media (max-width: 900px) {
-  :root { --chapter-prompt-reserve: calc(min(42dvh, 260px) + 18px); }
-}
+   each page can own its own. */
 html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > main {
-  padding-bottom: var(--chapter-prompt-reserve);
+  padding-bottom: calc(var(--chapter-prompt-height, 240px) + var(--chapter-prompt-bottom) + 18px);
 }
 
 /* --------------------------------------------- entry points on the pages */

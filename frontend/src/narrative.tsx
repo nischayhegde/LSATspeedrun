@@ -38,6 +38,48 @@ type ChapterView = 'cutscene' | 'prompt' | 'dismissed'
 /** The two states a chapter can be put off *to*; `cutscene` is never a deferral. */
 type ChapterDeferral = Exclude<ChapterView, 'cutscene'>
 
+/**
+ * Publishes the corner card's real height as `--chapter-prompt-height`.
+ *
+ * Every previous attempt to keep this card off the page's own controls picked a
+ * constant — 210px — and reserved that much at the foot of the document. The
+ * card is not that tall. It is whatever its title wraps to, which is two lines
+ * for "The Sterling Invitation" and one for "The Harrow File", and the reserve
+ * was 11px short of the card's own occupied band even in the shorter case. That
+ * is exactly the overlap that was being reported on the caseboard and the Firm
+ * catalog: the last row of the document could be scrolled to the top of the
+ * card and no further.
+ *
+ * So the figure is measured instead of assumed, and everything that needs to
+ * clear the card reads it. A ResizeObserver rather than a one-shot measurement
+ * because the card's height changes with the viewport: it is capped and
+ * scrollable on a short screen, and rotating a phone changes which case applies.
+ */
+function usePublishedPromptHeight(open: boolean) {
+  const card = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const node = card.current
+    const root = document.documentElement
+    if (!open || !node) {
+      root.style.removeProperty('--chapter-prompt-height')
+      return
+    }
+    // `offsetHeight`, not the bounding rect: the card animates in from
+    // `scale(.97)`, and a rect measured mid-animation is 3% short — which is
+    // the whole point of measuring, so a reserve 6px under the truth would put
+    // the bug straight back.
+    const publish = () => root.style.setProperty('--chapter-prompt-height', `${node.offsetHeight}px`)
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(node)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--chapter-prompt-height')
+    }
+  }, [open])
+  return card
+}
+
 function chapterDeferralKey(gameId: string, chapterKey: string) {
   return `lsat-tycoon:chapter-deferred:${gameId}:${chapterKey}`
 }
@@ -234,6 +276,9 @@ function PendingChapterLayer({ game, muted }: { game: GameState; muted: boolean 
     openChapter()
   }, [chapterKey, openChapter, play])
 
+  const promptOpen = Boolean(chapter) && !muted && view === 'prompt' && !blockedByModal
+  const promptCard = usePublishedPromptHeight(promptOpen)
+
   if (!chapter || muted) return null
 
   if (view === 'cutscene') {
@@ -243,7 +288,7 @@ function PendingChapterLayer({ game, muted }: { game: GameState; muted: boolean 
   if (blockedByModal || view === 'dismissed') return null
 
   return (
-    <aside className="chapter-prompt" role="dialog" aria-labelledby="chapter-prompt-title">
+    <aside className="chapter-prompt" role="dialog" aria-labelledby="chapter-prompt-title" ref={promptCard}>
       <div className="chapter-prompt-seal" aria-hidden="true"><ScrollText size={17} /></div>
       <button
         type="button"

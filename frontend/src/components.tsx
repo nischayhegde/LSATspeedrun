@@ -22,7 +22,7 @@ import { AlertSealMark, FocusMark, ScalesMark } from './art-2d/marks'
 import { EconomyLedger } from './economy-ledger'
 import { SoundControls, useSound, useSoundProfile } from './sound'
 import { replayGuidedTour } from './guided-tour-replay'
-import { CHAPTER_DOCK_ID, clearOverlayNote, readOverlayNote, useBlockingOverlay, writeOverlayNote } from './overlays'
+import { clearOverlayNote, readOverlayNote, useBlockingOverlay, writeOverlayNote } from './overlays'
 import { preloadArtForIntent } from './art/scene-loaders'
 import { routeForPath } from './routes'
 import type { GameState, User } from './types'
@@ -518,10 +518,6 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           )}
         </div>
       </header>
-      {/* Filled by the narrative layer when a story chapter is waiting; empty
-          and zero-height otherwise. In flow rather than floating so the prompt
-          reflows the page instead of covering a card on it — see overlays.tsx. */}
-      <div id={CHAPTER_DOCK_ID} className="chapter-dock" />
       <main><RestoreChromeContext.Provider value={setChromeRestored}>{children}</RestoreChromeContext.Provider></main>
       {game && !isActiveCase && mobileMenuOpen && (
         <aside className="mobile-site-menu" role="dialog" aria-modal="true" aria-labelledby="mobile-site-menu-title">

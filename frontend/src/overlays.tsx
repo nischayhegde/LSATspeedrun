@@ -81,23 +81,6 @@ export const OVERLAY_PRIORITY = {
 
 export type OverlayKey = keyof typeof OVERLAY_PRIORITY
 
-/**
- * The shell's slot for chrome that is *not* a blocking overlay but still comes
- * from outside the page — currently only the waiting-chapter prompt.
- *
- * It exists because "float it in the corner" is not free: a 370×197 fixed card
- * bottom-right sat on top of a dashboard metric card, and a fixed element
- * cannot be made to stop covering content by reserving space at the end of the
- * document. Rendered into this slot the prompt is in normal flow under the
- * header, so it pushes the page down instead of landing on it, and no hit test
- * can find it in front of anything interactive.
- *
- * `AppShell` renders the slot; the narrative layer portals into it, which keeps
- * that layer one self-contained module rather than a prop threaded through the
- * shell.
- */
-export const CHAPTER_DOCK_ID = 'chapter-dock'
-
 type OverlayRegistry = {
   /** `dismiss` reports whether it actually handled the request. */
   claim: (key: OverlayKey, dismiss: () => boolean) => void
