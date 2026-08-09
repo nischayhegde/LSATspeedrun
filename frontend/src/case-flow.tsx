@@ -723,7 +723,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         <section className={`strategy-tip ${strategyApplied === true ? 'is-applied' : strategyApplied === false ? 'is-skipped' : ''}`} aria-label={`Suggested approach: ${strategyTrial.plain_title}`}>
           <div className="strategy-tip-head">
             <span><Brain size={15} /> PARTNER TIP</span>
-            {!result && <small>Pick one before you answer</small>}
+            {!result && strategyApplied === null && <small>Pick one before you answer</small>}
           </div>
           <h2>{strategyTrial.plain_title}</h2>
           <p>{strategyTrial.plain_line}</p>

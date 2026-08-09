@@ -764,7 +764,12 @@
 .case-instrument .strategy-tip.is-applied h2,
 .case-instrument .strategy-tip.is-skipped h2 { margin: 3px 0 0; font-size: 17px; }
 .strategy-tip.is-applied .strategy-tip-actions,
-.strategy-tip.is-skipped .strategy-tip-actions { margin-top: 9px; }
+.strategy-tip.is-skipped .strategy-tip-actions { margin-top: 9px; gap: 12px; }
+/* A full-width button is right for a decision. Once the decision is made the
+   pair is a record of it, and on a phone those two stacked rows are most of
+   the reason the answer choices start below the fold. */
+.strategy-tip.is-applied .strategy-tip-use,
+.strategy-tip.is-skipped .strategy-tip-use { width: auto; }
 
 /* ============================================================
    THE CONTROL ARM
