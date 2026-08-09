@@ -660,6 +660,20 @@ Resources:
               curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
               dnf install -y nodejs
 
+              # This box has 1 GiB and the template pins it to t3.micro, while
+              # `vite build` peaks well above that. The deploy of 451a992 died
+              # inside "rendering chunks" having sent no signal at all, which is
+              # what the OOM killer looks like: node exiting non-zero would have
+              # tripped the ERR trap and failed the stack in seconds instead of
+              # timing out after twenty minutes. Swap costs disk rather than a
+              # change to the pinned instance size.
+              if [ ! -f /swapfile ]; then
+                fallocate -l 2G /swapfile
+                chmod 600 /swapfile
+                mkswap /swapfile
+                swapon /swapfile
+              fi
+
               useradd --system --home-dir /opt/lsat-speedrun --shell /sbin/nologin lsatapp || true
               install -d -o lsatapp -g lsatapp /opt/lsat-speedrun /var/lib/lsat-speedrun
 
@@ -678,7 +692,11 @@ Resources:
 
               cd /opt/lsat-speedrun/frontend
               VITE_API_URL=/v1 npm ci
-              VITE_API_URL=/v1 npm run build
+              # Left at its default, node sizes the old space against physical
+              # memory alone and will not reach into the swap above, so it is
+              # told the budget explicitly. 1536 keeps a margin under the 3 GiB
+              # of RAM plus swap now available.
+              NODE_OPTIONS=--max-old-space-size=1536 VITE_API_URL=/v1 npm run build
               install -d /var/www/lsat-speedrun
               cp -a dist/. /var/www/lsat-speedrun/
 
@@ -796,7 +814,9 @@ Resources:
     CreationPolicy:
       ResourceSignal:
         Count: 1
-        Timeout: PT20M
+        # Building against swap is slower than building in RAM, and the penalty
+        # for guessing short is a twenty-minute round trip to find out.
+        Timeout: PT30M
     Properties:
       LaunchTemplate:
         LaunchTemplateId: !Ref WebLaunchTemplate
