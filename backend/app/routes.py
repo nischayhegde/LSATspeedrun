@@ -25,7 +25,7 @@ from .game import (
     secure_district,
     select_client,
     set_wardrobe,
-    settle_upkeep,
+    settle_upkeep_for_user,
     serialize_game,
     serialize_settlement,
     serialize_wardrobe,
@@ -287,10 +287,8 @@ def update_me():
 
 
 def _game_profile():
-    profile = g.current_user.game_profile
-    if profile:
-        settle_upkeep(profile)
-    return profile
+    """The account's firm, settled up to now, in one locking statement."""
+    return settle_upkeep_for_user(g.current_user.id)
 
 
 @api.get("/game")

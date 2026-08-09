@@ -71,6 +71,14 @@ class Counter:
         assert response.status_code == 200, f"{path} -> {response.status_code}"
         return len(self.statements)
 
+    @property
+    def writes(self) -> list[str]:
+        return [
+            statement
+            for statement in self.statements
+            if statement.lstrip()[:6].upper() in {"INSERT", "UPDATE", "DELETE"}
+        ]
+
 
 @pytest.fixture()
 def loaded_account(app):  # noqa: F811 - the shared fixture from test_progress
@@ -141,6 +149,22 @@ def test_a_dashboard_read_costs_a_fixed_number_of_statements(loaded_account, pat
         "is reaching through a relationship inside a loop — read the columns in the "
         "query instead (see scoring.attempt_facts)."
     )
+
+
+def test_reading_the_firm_costs_one_write_and_not_several(loaded_account):
+    """`GET /game` legitimately writes: office rent accrues in real time, so the
+    read settles it. What it must not do is turn one row's worth of changes into
+    several statements. The accrual used to land as two `UPDATE player_profiles`
+    split around the reads it interleaved with, which is two round trips and two
+    chances to contend for the row it holds a lock on.
+    """
+    _app, client, counter = loaded_account
+    counter.count(client, "/v1/game")
+
+    writes = counter.writes
+    assert len(writes) <= 1, f"GET /game issued {len(writes)} writes: {writes}"
+    if writes:
+        assert writes[0].startswith("UPDATE player_profiles"), writes[0]
 
 
 def test_the_focus_read_does_not_scale_with_the_form_it_reads(loaded_account):

@@ -1359,10 +1359,14 @@ def _reputation_decay_state(profile: PlayerProfile, owned: set[str] | None = Non
     }
 
 
-def _upkeep_state(profile: PlayerProfile, owned: set[str] | None = None) -> dict:
+def _upkeep_state(
+    profile: PlayerProfile,
+    owned: set[str] | None = None,
+    held: set[str] | None = None,
+) -> dict:
     tier = FIRM_TIERS[profile.office_tier]
     list_rent = int(tier["rent_daily"])
-    daily_rent = _relieved_daily_rent(profile)
+    daily_rent = _relieved_daily_rent(profile, held)
     decay = _reputation_decay_state(profile, owned)
     completed = _game_complete(profile)
     return {
@@ -1456,11 +1460,34 @@ def _touch_daily_streak(profile: PlayerProfile, now) -> None:
 
 
 def _settle_upkeep_locked(profile: PlayerProfile, now=None) -> dict:
-    """Accrue rent and inactivity loss through ``now`` on an already locked profile."""
+    """Accrue rent and inactivity loss through ``now`` on an already locked profile.
+
+    Held in `no_autoflush` because the settlement reads three tables it never
+    writes — held districts for the rent relief, owned assets for the reputation
+    guard, and the story state for completion. Each of those reads is an autoflush
+    point, so the accrual landed as two separate `UPDATE player_profiles`
+    statements split around them (arrears and micros first, then the settled and
+    active timestamps) where it is one row and one set of changes. Nothing in here
+    reads back a row it has written, so there is nothing for a flush to be
+    ordered against, and one statement is one round trip rather than two.
+    """
+    with db.session.no_autoflush:
+        return _settle_upkeep_unflushed(profile, now)
+
+
+def _settle_upkeep_unflushed(profile: PlayerProfile, now=None) -> dict:
     now = _as_utc(now or utcnow())
     settled_at = _as_utc(profile.upkeep_settled_at) or now
     last_active_at = _as_utc(profile.last_active_at) or settled_at
     _touch_daily_streak(profile, now)
+
+    # Read once and pass down, the way `serialize_game` already threads `owned`.
+    # The rent relief needs the held districts and the reputation guard needs the
+    # owned assets, and both are read again by `_upkeep_state` on the way out, so
+    # leaving them to be looked up at each use cost two extra round trips per
+    # settlement — on every protected route.
+    held = _held_district_keys(profile)
+    owned = _owned_keys(profile)
 
     if _game_complete(profile):
         profile.game_completed_at = profile.game_completed_at or now
@@ -1471,9 +1498,9 @@ def _settle_upkeep_locked(profile: PlayerProfile, now=None) -> dict:
         )
         profile.upkeep_settled_at = now
         profile.last_active_at = now
-        return _upkeep_state(profile)
+        return _upkeep_state(profile, owned, held)
 
-    daily_rent = _relieved_daily_rent(profile)
+    daily_rent = _relieved_daily_rent(profile, held)
     active_until = last_active_at + ACTIVE_RENT_WINDOW
     active_end = min(now, active_until)
     active_micros = _rent_segment_micros(daily_rent, settled_at, active_end)
@@ -1494,7 +1521,7 @@ def _settle_upkeep_locked(profile: PlayerProfile, now=None) -> dict:
     uncapped_arrears = arrears_before + newly_due
     profile.rent_arrears = min(arrears_cap, uncapped_arrears)
 
-    decay = _reputation_decay_state(profile)
+    decay = _reputation_decay_state(profile, owned)
     decay_start = max(settled_at, last_active_at + REPUTATION_GRACE_PERIOD)
     inactive_decay_seconds = max(0.0, (now - decay_start).total_seconds())
     reputation_before = profile.reputation
@@ -1515,7 +1542,7 @@ def _settle_upkeep_locked(profile: PlayerProfile, now=None) -> dict:
     )
     profile.upkeep_settled_at = now
     profile.last_active_at = now
-    state = _upkeep_state(profile)
+    state = _upkeep_state(profile, owned, held)
     state["settlement"] = {
         "new_rent": int(newly_due),
         "paid": paid,
@@ -1530,6 +1557,26 @@ def settle_upkeep(profile: PlayerProfile, now=None) -> dict:
     state = _settle_upkeep_locked(profile, now)
     db.session.commit()
     return state
+
+
+def settle_upkeep_for_user(user_id: str, now=None) -> PlayerProfile | None:
+    """Take the account's settlement lock, settle through ``now``, and hand the firm back.
+
+    Every protected game route needs the same two things: the account's firm, and
+    its upkeep brought up to date. Doing that as `user.game_profile` followed by
+    `settle_upkeep` read the same row twice — once through the relationship, then
+    again `FOR UPDATE` to settle against it. The lock is the load here, so there
+    is no reason for the unlocked read to happen first.
+
+    Returns None when the account has no firm yet, which is the caller's cue to
+    answer "no profile" rather than to settle anything.
+    """
+    profile = lock_user_profile(user_id)
+    if profile is None:
+        return None
+    _settle_upkeep_locked(profile, now)
+    db.session.commit()
+    return profile
 
 
 def _requirements_met(definition: dict, profile: PlayerProfile, owned: set[str]) -> bool:
@@ -1738,6 +1785,9 @@ def _daily_reward_amount(profile: PlayerProfile, milestone: int) -> int:
 
 def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict:
     owned = _owned_keys(profile)
+    # Read alongside `owned` for the same reason: the upkeep block and the
+    # territory block each need the held districts, and each used to fetch them.
+    held = _held_district_keys(profile)
     daily = _daily(profile, persist=False)
     active_client = CLIENT_BY_KEY.get(profile.active_client_key, CLIENT_BY_KEY["walk_in"])
     active_client_public = _public_client(active_client, profile, owned)
@@ -1780,8 +1830,8 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
             "cases_remaining": active_contract.cases_remaining if active_contract else profile.client_cases_remaining,
             "effective_key": active_client["key"] if active_client_public["unlocked"] else "walk_in",
         },
-        "upkeep": _upkeep_state(profile, owned),
-        "territory": territory_state(profile),
+        "upkeep": _upkeep_state(profile, owned, held),
+        "territory": territory_state(profile, held),
         "passive_income": _passive_state(profile, owned),
         "daily": {
             "date": daily.activity_date.isoformat(),
