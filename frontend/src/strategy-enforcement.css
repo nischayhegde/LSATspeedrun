@@ -972,10 +972,13 @@
   .app-shell.active-case .strategy-gate,
   .strategy-gate {
     flex: 0 1 auto;
-    /* Without a floor the gate is the first thing the column gives up when the
-       keyboard shrinks the viewport, and it collapses into a couple of rows of
-       its own scrollbar. */
-    min-height: min(150px, 34dvh);
+    /* The floor is the head plus the first control: below that the pane opens
+       on a heading and an instruction with the field the student is being
+       asked to fill already scrolled off the bottom of it. Expressed against
+       `dvh` as well so the on-screen keyboard, which can halve the viewport,
+       takes the gate down with everything else rather than pushing the reading
+       pane out. */
+    min-height: min(228px, 38dvh);
     max-height: min(44dvh, 380px);
     margin: 0;
     overflow-y: auto;
