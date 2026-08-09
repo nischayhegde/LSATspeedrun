@@ -101,16 +101,26 @@ def main() -> int:
     for count, text in statements_by_shape(read_sql)[:8]:
         print(f"  {count:>4}x  {text[:150]}")
 
+    # The case screen is served one question at a time — `current_item` — so the
+    # loop reads the session, answers what it was handed, and reads again. That is
+    # the shape of a real run, and it means the session read is on the interactive
+    # path once per question rather than once per session.
     rows = []
-    for index, item in enumerate(items[: args.answers]):
-        label = (item.get("question") or {}).get("choices", [{}])[0].get("label") or "A"
+    for index in range(args.answers):
+        current = client.get(f"/v1/study-sessions/{session_id}").get_json()["session"]
+        item = current.get("current_item")
+        if not item:
+            print(f"\nno current item at index {index}; the run ended early")
+            break
+        label = ((item.get("question") or {}).get("choices") or [{}])[0].get("label") or "A"
         response, ms, stmts, writes, sql = timed(
             "post",
             f"/v1/study-sessions/{session_id}/attempts",
             json={
                 "item_id": item["id"],
                 "selected_label": label,
-                "reasoning": "Benchmark answer: the stimulus supports this reading most directly.",
+                "reasoning": "Benchmark answer: the stimulus supports this reading most directly, and the "
+                "alternatives each overreach the scope the argument actually establishes.",
                 "confidence": 3,
             },
             headers={"Idempotency-Key": f"bench-{session_id}-{index}"},
