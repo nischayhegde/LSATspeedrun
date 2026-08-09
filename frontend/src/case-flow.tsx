@@ -816,6 +816,8 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           </div>
           )}
 
+          {!result && strategyGate.submitPanel}
+
           {!result && requiresReasoning && (
             <div className="reasoning-box">
               <div className="reasoning-heading">

@@ -744,6 +744,8 @@ export type StrategyGateController = {
   gate: StrategyGateSpec | null
   /** Render this under the strategy card. */
   panel: React.ReactNode
+  /** Render this under the answer choices. Null unless a step is owed there. */
+  submitPanel: React.ReactNode
   /** True while a sequence gate is still holding the answer choices back. */
   choicesHidden: boolean
   /** True on the render where a sequence gate has just let the choices through. */
@@ -954,9 +956,23 @@ export function useStrategyGate(
       />
     ) : null
 
+  const submitPanel =
+    gate && item && armed && selectedLabel && preSubmitFields.length ? (
+      <SubmitStep
+        gate={gate}
+        item={item}
+        fields={preSubmitFields}
+        values={values}
+        setValue={setValue}
+        errorFor={errorFor}
+        locked={locked}
+      />
+    ) : null
+
   return {
     gate,
     panel,
+    submitPanel,
     choicesHidden,
     justRevealed,
     justCommitted,
@@ -1006,12 +1022,10 @@ export function GatePanel({
   const instrument = instrumentFor(gate)
   const Mark = instrument.icon
   const [exampleOpen, setExampleOpen] = useState(false)
-  const visibleFields = gate.fields.filter((field) => field.stage === 'pre_answer' || selectedLabel || !blocking)
-  // A `pre_submit` step (citing the line that proves the answer) is not done
-  // when the rest is, so it stays out of the fold and keeps its own panel.
-  const pendingLater = selectedLabel
-    ? gate.fields.filter((field) => field.stage === 'pre_submit' && !isComplete(field, values, item))
-    : []
+  // Only the work owed before answering. A `pre_submit` step is owed *after*,
+  // so it is not part of this panel and not part of what folds away — it is
+  // rendered beside the answer choices by `SubmitStep`.
+  const visibleFields = gate.fields.filter((field) => field.stage === 'pre_answer')
   const done = preAnswerDone
   const digest = gate.fields
     .filter((field) => field.stage === 'pre_answer')
@@ -1134,23 +1148,65 @@ export function GatePanel({
         </>
       )}
 
-      {folded && pendingLater.length > 0 && (
-        <div className="sg-fields is-later">
-          {pendingLater.map((field) => (
-            <GateField
-              key={field.key}
-              field={field}
-              gate={gate}
-              item={item}
-              value={values[field.key]}
-              values={values}
-              setValue={setValue}
-              error={errorFor(field)}
-              disabled={locked}
-            />
-          ))}
+    </section>
+  )
+}
+
+/**
+ * The step that is owed after the answer rather than before it — today only
+ * "which line proves your answer", on `textual_proof`.
+ *
+ * It is rendered under the answer choices rather than inside the gate,
+ * because by the time it is owed the gate has folded and, on desktop, scrolled
+ * off the top of the screen. A required field the student cannot see is a
+ * submit button that refuses for reasons off-screen.
+ */
+export function SubmitStep({
+  gate,
+  item,
+  fields,
+  values,
+  setValue,
+  errorFor,
+  locked,
+}: {
+  gate: StrategyGateSpec
+  item: SessionItem
+  fields: StrategyGateField[]
+  values: GateValues
+  setValue: (key: string, value: unknown) => void
+  errorFor: (field: StrategyGateField) => string | null
+  locked: boolean
+}) {
+  const instrument = instrumentFor(gate)
+  const Mark = instrument.icon
+  return (
+    <section className={`strategy-gate is-submit-step sg-accent-${instrument.accent}`} aria-label="One step left before you submit">
+      <header className="sg-head">
+        <span className="sg-mark" aria-hidden="true">
+          <Mark size={17} />
+        </span>
+        <div className="sg-title">
+          <span className="sg-eyebrow">{instrument.eyebrow}</span>
+          <h3>One step left</h3>
+          <p>{gate.copy.locked_submit}</p>
         </div>
-      )}
+      </header>
+      <div className="sg-fields">
+        {fields.map((field) => (
+          <GateField
+            key={field.key}
+            field={field}
+            gate={gate}
+            item={item}
+            value={values[field.key]}
+            values={values}
+            setValue={setValue}
+            error={errorFor(field)}
+            disabled={locked}
+          />
+        ))}
+      </div>
     </section>
   )
 }

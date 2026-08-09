@@ -197,7 +197,15 @@
   display: grid;
   gap: 16px;
 }
-.sg-fields.is-later { border-top: 1px solid var(--sg-hair); }
+
+/* The step owed after the answer, sitting under the choices. It is a
+   requirement, not a suggestion, so it keeps the gate's shell — but it sits
+   inside the answer card rather than above the reading surface, so it drops
+   the shadow that would make it read as a second floating panel. */
+.strategy-gate.is-submit-step {
+  margin: 16px 0 0;
+  box-shadow: none;
+}
 
 .sg-field {
   min-width: 0;
@@ -680,7 +688,6 @@
 }
 .sg-reopen:hover { border-color: var(--sg-accent); color: var(--sg-ink); }
 .strategy-gate.is-folded { margin-bottom: 10px; }
-.strategy-gate.is-folded .sg-fields.is-later { border-top: 1px solid var(--sg-hair); }
 
 /* -------------------------------------------------------- withheld choices */
 
@@ -978,10 +985,28 @@
      gets the difference. */
   .app-shell.active-case .strategy-gate.is-folded,
   .strategy-gate.is-folded {
+    /* `flex: 0 0` and not `0 1`: the strip is 46px and already the smallest
+       thing in the column, so letting the column take its shrink out of this
+       one only spills the record over the tray below it. */
+    flex: 0 0 auto;
     min-height: 0;
     max-height: none;
     overflow: visible;
   }
+  /* The rules above turn the gate into a bounded pane in the reader's column.
+     The submit step is not in that column — it is inside the answer card,
+     which scrolls itself — so it stays an ordinary card. */
+  .app-shell.active-case .strategy-gate.is-submit-step,
+  .strategy-gate.is-submit-step {
+    flex: 0 0 auto;
+    min-height: 0;
+    max-height: none;
+    margin: 14px 0 0;
+    overflow: visible;
+    border-width: 1px;
+    border-radius: 12px;
+  }
+
   .app-shell.active-case .sg-head,
   .sg-head { padding: 11px 13px 10px; }
   /* A nowrap button in the third column leaves the heading about 200px on a

@@ -173,6 +173,7 @@ function Harness() {
             })}
           </div>
         )}
+        {gate.submitPanel}
         <label className="harness-reasoning">
           <span>Reasoning</span>
           <textarea value={reasoning} rows={3} onChange={(event) => setReasoning(event.target.value)} />
