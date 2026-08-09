@@ -57,12 +57,17 @@ function useRailOpen() {
 
 export function CaseRunRail({ session }: { session: StudySession }) {
   const isDiagnostic = session.mode === 'diagnostic'
+  const isBlindReview = session.mode === 'blind_review'
+  // Both halves of a diagnostic keep their answers sealed, so neither may show
+  // a running accuracy or colour a cell right or wrong — a blind review that
+  // told you how you were doing would not be blind.
+  const scoreWithheld = isDiagnostic || isBlindReview
   const answered = Math.min(session.current_index, session.total_items)
   const [open, toggleOpen] = useRailOpen()
   const history = useQuery({
     queryKey: ['run-attempts', session.id, answered],
     queryFn: () => api.attemptHistory({ session_id: session.id, limit: 200 }),
-    enabled: !isDiagnostic && answered > 0,
+    enabled: !scoreWithheld && answered > 0,
     staleTime: 30_000,
   })
   const attempts = useMemo(
@@ -87,7 +92,7 @@ export function CaseRunRail({ session }: { session: StudySession }) {
   const cells: Cell[] = Array.from({ length: session.total_items }, (_, index) => {
     const attempt = attempts.find((entry) => entry.position === index)
     const isCurrent = index === answered
-    if (attempt && !isDiagnostic) {
+    if (attempt && !scoreWithheld) {
       return {
         key: `q${index}`,
         className: [
@@ -108,7 +113,9 @@ export function CaseRunRail({ session }: { session: StudySession }) {
     }
   })
 
-  const headline = isDiagnostic
+  const headline = isBlindReview
+    ? `${answered} of ${session.total_items} retried`
+    : isDiagnostic
     ? `${answered} of ${session.total_items} answered${blockIndex ? ` · ${block!.label}` : ''}`
     : answered === 0
       ? `First case of ${session.total_items}`
@@ -118,7 +125,7 @@ export function CaseRunRail({ session }: { session: StudySession }) {
     <section className="case-run-rail" aria-label="Progress through this run">
       <div className="case-run-rail-head">
         <div>
-          <span>{isDiagnostic ? 'THIS SITTING' : 'THIS RUN'}</span>
+          <span>{isBlindReview ? 'THIS BLIND REVIEW' : isDiagnostic ? 'THIS SITTING' : 'THIS RUN'}</span>
           <strong>{headline}</strong>
         </div>
         <button
@@ -135,7 +142,26 @@ export function CaseRunRail({ session }: { session: StudySession }) {
         {cells.map((cell) => <li key={cell.key} className={cell.className} title={cell.label} aria-label={cell.label} />)}
       </ol>
 
-      {open && (isDiagnostic ? (
+      {open && (isBlindReview ? (
+        <>
+          <div className="case-run-stats">
+            <div>
+              <span>RETRIED</span>
+              <strong>{answered}<small> / {session.total_items}</small></strong>
+              <small>{session.total_items - answered} still to revisit</small>
+            </div>
+            <div>
+              <span>CLOCK</span>
+              <strong>None</strong>
+              <small>nothing here is paced</small>
+            </div>
+          </div>
+          <p className="case-run-rail-note">
+            These are the questions the timed form missed. Nothing is scored until the retry closes, which
+            is what makes the comparison with the timed run worth reading.
+          </p>
+        </>
+      ) : isDiagnostic ? (
         <>
           <div className="case-run-stats">
             <div>
