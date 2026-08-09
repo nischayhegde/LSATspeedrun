@@ -44,9 +44,6 @@ body {
 .office-mobile-brief-sheet,
 .mobile-scene-menu-scrim { display: none; }
 
-@media (max-width: 640px) and (orientation: portrait) {.mobile-landscape-card .eyebrow { color: #82cfc2; font-size: 9px; }.mobile-landscape-card .secondary-button { width: 100%; min-height: 46px; font-size: 10px; }
-}
-
 @keyframes mobile-scene-rotate {
   0%, 18% { transform: rotate(0deg) scale(.94); }
   48%, 78% { transform: rotate(90deg) scale(1.06); }
@@ -87,7 +84,6 @@ body {
 .story-page > *,
 .story-hero,
 .story-hero > *,
-.strategy-leader-grid > *,
 .daily-docket > *,
 .office-upkeep-strip > *,
 .office-milestone-strip > * {
@@ -883,7 +879,6 @@ body {
      natural swipe affordance. */
   .daily-docket-track,
   .how-scoring-works > div,
-  .strategy-leader-grid,
   .office-gamebar,
   .achievement-grid,
   .client-roster-grid,
@@ -899,14 +894,12 @@ body {
   }
   .daily-docket-track::-webkit-scrollbar,
   .how-scoring-works > div::-webkit-scrollbar,
-  .strategy-leader-grid::-webkit-scrollbar,
   .office-gamebar::-webkit-scrollbar,
   .achievement-grid::-webkit-scrollbar,
   .client-roster-grid::-webkit-scrollbar,
   .asset-management-grid::-webkit-scrollbar { display: none; }
   .daily-docket-track > *,
   .how-scoring-works > div > *,
-  .strategy-leader-grid > *,
   .office-gamebar > *,
   .achievement-grid > *,
   .client-roster-grid > *,
@@ -914,8 +907,7 @@ body {
     scroll-snap-align: start;
   }
   .daily-docket-track > *,
-  .how-scoring-works > div > *,
-  .strategy-leader-grid > * { flex: 0 0 min(82vw, 330px); }
+  .how-scoring-works > div > * { flex: 0 0 min(82vw, 330px); }
   .office-gamebar > *,
   .achievement-grid > *,
   .client-roster-grid > *,
@@ -928,9 +920,7 @@ body {
     scrollbar-width: none;
   }
   .client-grid::-webkit-scrollbar { display: none; }
-  .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }.performance-hero h1,
-  .review-summary-hero h1 { font-size: var(--mobile-title); line-height: 1.04; }
-  .performance-hero p,
+  .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }.review-summary-hero h1 { font-size: var(--mobile-title); line-height: 1.04; }
   .review-summary-hero p { font-size: var(--mobile-body); }/* The office's real Three.js room becomes the hero. The lawyer remains in
      the same scene as a compact picture-in-picture identity card instead of
      consuming a separate full-width row. */
@@ -1941,24 +1931,13 @@ body {
     width: calc(100% - 24px);
     margin-inline: auto;
     padding: 12px 0 var(--mobile-dock-clearance);
-  }.speedrun-index .index-ring {
-    width: 82px;
-    height: 82px;
-    padding: 8px;
-    grid-row: 1 / 3;
-  }
-  .speedrun-index .index-ring strong { font-size: 31px; }/* Practice: centered headline and a compact client dossier. */
+  }/* Practice: centered headline and a compact client dossier. */
   .case-lobby {
     width: calc(100% - 24px);
     max-width: 520px;
     margin-inline: auto;
     padding: 12px 0 var(--mobile-dock-clearance);
-  }.docket-copy .eyebrow { display: block; text-align: center; }.docket-copy .primary-button { margin-inline: auto; }.case-brief-card .lobby-client-portrait {
-    width: 68px;
-    height: 76px;
-    margin: 0;
-    grid-row: 2 / 4;
-  }.daily-docket { margin-top: 14px; border-radius: 16px; }
+  }.docket-copy .eyebrow { display: block; text-align: center; }.docket-copy .primary-button { margin-inline: auto; }.daily-docket { margin-top: 14px; border-radius: 16px; }
   .daily-docket > header { padding: 18px 16px; gap: 14px; }
   .daily-docket h2 { font-size: 25px; }
   /* Active questions use the full viewport. RC keeps both documents visible
@@ -2044,8 +2023,6 @@ body {
    edge-to-edge task surfaces; active RC cases use a linked two-pane reader.
    ======================================================================== */
 
-.mobile-training-home,
-.mobile-practice-home,
 .mobile-case-reader-header,
 .mobile-open-question { display: none; }
 
@@ -2177,17 +2154,9 @@ body {
   /* `.mobile-training-home` below carries all five of these measures, so the
      desktop hero, evidence strip, and metrics row are the ones that go — this
      is the single authoritative rule for them at phone widths. */
-  .performance-page > .performance-hero,
-  .performance-page > .evidence-strip,
-  .performance-page > .performance-metrics { display: none !important; }.mobile-metric-cell:active,
-  .mobile-metric-cell.is-expanded { background: rgba(224, 199, 135, .09); }.mobile-metric-cell strong.stat-empty { color: rgba(238, 240, 232, .42); font-weight: 400; }.mobile-metric-detail .metric-breakdown,
-  .mobile-metric-detail .metric-detail-action { font-family: var(--font-pixel); }
-  .mobile-metric-detail .metric-trend-up { color: #79d0be; }
-  .mobile-metric-detail .metric-trend-down { color: #e2ad6f; }
+  .performance-page > .performance-metrics { display: none !important; }
   /* The dashboard's own active-run chip, shown above the primary actions
-     when a case run is already open. */
-  .mobile-training-home .active-run-chip { margin: 20px 0 0; }.mobile-training-actions .primary-button,
-  .mobile-training-secondary {
+     when a case run is already open. */.mobile-training-actions .primary-button {
     width: 100%;
     min-height: 52px;
     border-radius: 14px;
@@ -2195,20 +2164,6 @@ body {
   }
   .mobile-training-actions .primary-button { color: #17202a; background: #e1bf68; box-shadow: none; }  /* The dashboard is the dark "instrument panel" sub-theme end to end, so the
      analysis deck stays on the same navy the training surface above it uses. */
-  .performance-page .mobile-performance-deck {
-    margin: 0;
-    padding: 24px 0 0;
-    background: #0f1b27;
-    scroll-margin-top: 58px;
-  }
-  .performance-page .mobile-performance-deck-heading { margin: 0 16px 12px; border: 0; box-shadow: none; }
-  .performance-page .mobile-performance-deck-track { padding: 0 16px 16px; }
-  .performance-page .mobile-performance-deck-track > * {
-    width: calc(100vw - 32px);
-    flex-basis: calc(100vw - 32px);
-    border-radius: 14px;
-    box-shadow: none;
-  }
 
   /* Practice ------------------------------------------------------------ */
   .case-lobby {
@@ -2268,7 +2223,7 @@ body {
     padding-inline: 8px;
     border-radius: 11px;
     font-size: 11.5px;
-  }.mobile-practice-client .client-portrait { width: 34px; height: 38px; border-width: 1px; box-shadow: none; }/* Case reader --------------------------------------------------------- */
+  }/* Case reader --------------------------------------------------------- */
   .app-shell.active-case,
   .app-shell.active-case > main,
   .app-shell.active-case .session-page {
@@ -2436,16 +2391,6 @@ body {
     font: 650 10px var(--font-pixel);
   }
   .mobile-case-pane-tabs button.active { color: #17222c; background: #e0c170; }
-  .app-shell.active-case .strategy-trial {
-    max-height: 44dvh;
-    margin: 0;
-    padding: 12px;
-    flex: 0 0 auto;
-    overflow-y: auto;
-    border-width: 0 0 1px;
-    border-radius: 0;
-    box-shadow: none;
-  }
   .app-shell.active-case .question-content,
   .app-shell.active-case .question-content.with-passage {
     width: 100%;
@@ -2640,7 +2585,7 @@ body {
   .mobile-site-menu h2 { font-family: var(--font-pixel); font-size: 22px; font-weight: 750; }
   .mobile-site-menu nav a,
   .mobile-site-menu-tools > button { min-height: 54px; border-radius: 12px; }
-  .mobile-site-menu footer { margin-top: 2px; padding-top: 10px; }.mobile-practice-client .client-portrait { width: 46px; height: 50px; border-width: 1px; border-radius: 10px; }/* Sizing for this header lives in the earlier `max-width: 640px` block; only
+  .mobile-site-menu footer { margin-top: 2px; padding-top: 10px; }/* Sizing for this header lives in the earlier `max-width: 640px` block; only
      the column order differs here. */
   .mobile-case-reader-header { grid-template-columns: minmax(0, 1fr) auto; }
   .mobile-case-reader-meta { min-width: 0; }
@@ -2938,20 +2883,8 @@ body {
     border-radius: 0;
     -webkit-overflow-scrolling: touch;
   }
-  .app-shell.active-case .gate-segment,
-  .app-shell.active-case .gate-pill,
-  .app-shell.active-case .gate-strike,
-  .app-shell.active-case .gate-add { min-height: 44px; touch-action: manipulation; }
   /* Pills carrying one or two characters (the negation scale) are otherwise
      only as wide as their glyph. */
-  .app-shell.active-case .gate-pill { min-width: 44px; }
-  .app-shell.active-case .gate-text {
-    min-height: 88px;
-    font-size: 16px;
-    line-height: 1.5;
-  }
-  .app-shell.active-case .gate-inline-label select,
-  .app-shell.active-case .gate-inline-label input { min-height: 44px; font-size: 16px; }
   .app-shell.active-case .gate-choices li { padding: 11px 12px; }
   .app-shell.active-case .answer-card,
   .app-shell.active-case .question-content.with-passage .answer-card {
@@ -3033,7 +2966,6 @@ body {
      next tap elsewhere, so a hover lift becomes a card that is stuck
      in the air. Presses are the only pointer state a phone really
      has, so they are the only one kept. */
-  .practice-lab .case-brief-card:hover,
   .practice-lab .run-queue-item:hover,
   .how-scoring-works article:hover { transform: none; }
 
@@ -3042,12 +2974,10 @@ body {
      every press below is a transform, which moves the paint without
      touching the box the finger is aiming at. */
   .mobile-nav a,
-  .mobile-docket-next,
   .mobile-site-menu button {
     transition: transform var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
   }
   .mobile-nav a:active,
-  .mobile-docket-next:active,
   .mobile-site-menu button:active { transform: translateY(1px) scale(.985); }
 
   /* The dock is fixed and always on screen. Anything continuous here
@@ -3229,7 +3159,6 @@ body {
   }
   .case-lobby .practice-guide > summary { min-height: 52px; padding-inline: 16px; }
   .case-lobby .practice-guide-body { padding: 0 16px 22px; }
-  .practice-loop { grid-template-columns: 1fr; }
 }
 
 /* ---------------------------------------------------------------------------

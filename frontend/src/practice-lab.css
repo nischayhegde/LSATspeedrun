@@ -149,12 +149,6 @@
 .practice-guide-body > * { min-width: 0; }
 .practice-guide-body h2 { margin: 0; color: #f0e4c8; font: 600 20px/1.15 var(--font-display); }
 .practice-guide-body p { max-width: var(--prose-measure); margin: 6px 0 0; color: #a3b0aa; font-size: 13px; line-height: 1.6; }
-.practice-loop { margin: 13px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4,1fr); gap: 9px; list-style: none; }
-.practice-loop li { padding: 15px; position: relative; border: 1px solid var(--lab-hair); border-radius: 11px; background: rgba(5,13,20,.3); }
-.practice-loop li > b { position: absolute; top: 13px; right: 14px; color: rgba(240,210,127,.28); font: 600 22px/1 var(--font-display); }
-.practice-loop li > svg { width: 19px; color: #70cabb; }
-.practice-loop h3 { margin: 11px 0 5px; color: #f0e4c8; font: 600 17px/1.15 var(--font-display); }
-.practice-loop p { margin: 0; color: #a3b0aa; font-size: 11.5px; line-height: 1.5; }
 
 /* ------------------------------------------------------------- run queue */
 
@@ -250,7 +244,6 @@
   .practice-lab .practice-action {
     box-shadow: 0 0 0 4px #f2eee5, 0 0 0 5px rgba(200,155,75,.32), 0 18px 36px -16px rgba(5,10,17,.4);
   }
-  .practice-loop { grid-template-columns: repeat(2,1fr); }
 }
 
 /* Below 640px `mobile.css` owns this page outright: full-bleed panels, its own
@@ -355,10 +348,6 @@
    press that does not exist. The card lights instead, and what lights is
    the step numeral: the one part of it that is about sequence, which is
    what the diagram is for. */
-.practice-loop li { transition: border-color var(--mo-2) var(--mo-out), background var(--mo-1) linear; }
-.practice-loop li > b { transition: color var(--mo-2) var(--mo-out); }
-.practice-loop li:hover { background: rgba(5,13,20,.46); }
-.practice-loop li:hover > b { color: rgba(240,210,127,.62); }
 
 /* The disclosure is the page's one piece of chrome that changes the page's
    height, so the body it reveals arrives rather than appearing. */
@@ -371,5 +360,4 @@
    press. Only the press survives, and it stays small. */
 @media (max-width: 640px) {
   .practice-lab .run-queue-item:hover { translate: none; }
-  .practice-loop li:hover { background: rgba(5,13,20,.3); }
 }

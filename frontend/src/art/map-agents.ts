@@ -1673,17 +1673,6 @@ const NARROW_STEP = .05
 const NARROW_LATERAL = .02
 
 /**
- * How much worse than a wall a carriageway is, when a pavement has no offset
- * that clears both and the width pass has to pick the least bad one.
- *
- * Only ever consulted in that dead heat. Large enough that a hair of tarmac
- * beats any depth of masonry, because the two failures are not comparable: a
- * walker whose shoulder is in a shopfront is an artefact, and one on the
- * carriageway is in front of a car.
- */
-const ROAD_PRIORITY = 40
-
-/**
  * What a way's share of the crowd is multiplied by when the cut could not leave
  * a walkable piece of it. See the `!keep.length` branch.
  *
@@ -1884,6 +1873,64 @@ export function cutFootwaysAroundSolids(
     const bandLow = new Float64Array(stations + 1).fill(bandCentre - halfWidth)
     const bandHigh = new Float64Array(stations + 1).fill(bandCentre + halfWidth)
 
+    /**
+     * How much of the band one footprint takes, before asking whether it takes
+     * all of it. Distance to a convex body is 1-Lipschitz along the cross line,
+     * so a station whose whole remaining band is further off than the body
+     * cannot be constrained by this footprint at all, and that reject is what
+     * keeps a per-station search affordable.
+     */
+    const narrowAgainst = (solid: SolidFootprint, reachOfBody: number, along: number) => {
+      const reach = solid.radius + reachOfBody + halfWidth + Math.abs(bandCentre)
+      const first = Math.max(0, Math.floor((along - reach) / NARROW_STEP))
+      const last = Math.min(stations, Math.ceil((along + reach) / NARROW_STEP))
+      for (let station = first; station <= last; station += 1) {
+        const lowEdge = bandLow[station]
+        const highEdge = bandHigh[station]
+        if (highEdge <= lowEdge) continue
+        const at = sampleWay(loop, cumulative, Math.min(total, station * NARROW_STEP))
+        if (!at) continue
+        const reachOf = (offset: number) => solidDistance(solid, at.x + at.nx * offset, at.z + at.nz * offset)
+        // Nothing in the band can be within a body of a footprint that is
+        // further than that plus the band's own extent from the polyline.
+        if (reachOf(0) >= reachOfBody + Math.max(Math.abs(lowEdge), Math.abs(highEdge))) continue
+        // The offsets this solid takes are one interval, because distance to a
+        // convex body along the cross line is convex. One sweep finds it; the
+        // longer clear side of it is what the band becomes, which moves the
+        // band off the building rather than shrinking it onto its own
+        // centreline — the difference between a walker who can still sidestep
+        // a bench and one who has nowhere left to sidestep into.
+        let takenFrom = Infinity
+        let takenTo = -Infinity
+        let least = -Infinity
+        let leastAt = lowEdge
+        for (let offset = lowEdge; offset <= highEdge + 1e-9; offset += NARROW_LATERAL) {
+          const room = reachOf(offset)
+          if (room > least) { least = room; leastAt = offset }
+          if (room >= reachOfBody) continue
+          if (offset < takenFrom) takenFrom = offset
+          takenTo = offset
+        }
+        if (takenFrom > takenTo) continue
+        const belowRoom = takenFrom - NARROW_LATERAL - lowEdge
+        const aboveRoom = highEdge - (takenTo + NARROW_LATERAL)
+        if (belowRoom <= 0 && aboveRoom <= 0) {
+          // Every offset touches, so the band becomes the single offset that is
+          // least far inside. The midpoint of what was there is the obvious
+          // alternative and is wrong where this matters: The Circuit has a lane
+          // that runs *through* a building at `10,-7`, so "off the wall" and
+          // "off the tarmac" have no common answer there, and splitting the
+          // difference parks the walker in the middle of the carriageway.
+          bandLow[station] = leastAt
+          bandHigh[station] = leastAt
+        } else if (belowRoom >= aboveRoom) {
+          bandHigh[station] = takenFrom - NARROW_LATERAL
+        } else {
+          bandLow[station] = takenTo + NARROW_LATERAL
+        }
+      }
+    }
+
     const nearby = (solid: SolidFootprint, body: number) => {
       const reach = solid.radius + body + halfWidth + Math.abs(bandCentre)
       if (solid.x < minX - reach || solid.x > maxX + reach) return false
@@ -1891,89 +1938,22 @@ export function cutFootwaysAroundSolids(
       return true
     }
 
-    /**
-     * Which footprints reach which stations, so the width search below is over
-     * the two or three things standing beside a given step of a pavement rather
-     * than over every solid in the district.
-     */
-    const bucketed = (list: SolidFootprint[], reachOfBody: number) => {
-      const buckets: SolidFootprint[][] = []
-      for (const solid of list) {
-        if (!nearby(solid, reachOfBody)) continue
-        const reach = solid.radius + reachOfBody + halfWidth + Math.abs(bandCentre)
-        const along = projectOntoPolyline(loop, cumulative, solid.x, solid.z).s
-        const first = Math.max(0, Math.floor((along - reach) / NARROW_STEP))
-        const last = Math.min(stations, Math.ceil((along + reach) / NARROW_STEP))
-        for (let station = first; station <= last; station += 1) (buckets[station] ??= []).push(solid)
-      }
-      return buckets
-    }
-    /** The solids this way is anywhere near, kept for the standing-in-it test. */
-    const near = solids.filter((solid) => nearby(solid, Math.max(clearance, body)))
-    const solidAt = bucketed(near, body)
-    const keepAt = bucketed(keepOut, keepOutBody)
-
-    /**
-     * The usable band at one station, solved against the buildings and the
-     * tarmac together rather than against one and then the other.
-     *
-     * Taking them in turn is the obvious reading of "narrow off this, then off
-     * that", and it loses whenever the first constraint leaves nothing: a band
-     * already reduced to a single offset cannot be moved by the second, so the
-     * order silently decides the answer. On The Circuit's village lanes the
-     * carriageway went first, pinned the band against the far kerb, and the
-     * frontage behind that kerb then had no say — which is how a walker ended
-     * up held on a line .45 off the pavement's centre and a third of a metre
-     * inside a rival's plinth.
-     *
-     * So: score every offset once, against both, and keep the widest run that
-     * owes nothing to either. Where no such run exists the least-bad offset is
-     * taken with the tarmac weighted far above the masonry, because standing in
-     * a wall looks wrong and standing in a lane gets a walker run over.
-     */
-    for (let station = 0; station <= stations; station += 1) {
-      const walls = solidAt[station]
-      const tarmac = keepAt[station]
-      if (!walls && !tarmac) continue
-      const at = sampleWay(loop, cumulative, Math.min(total, station * NARROW_STEP))
-      if (!at) continue
-      const lowEdge = bandLow[station]
-      const highEdge = bandHigh[station]
-      // Distance to a convex body is 1-Lipschitz along the cross line, so
-      // anything further off the polyline than a body plus the band's own reach
-      // cannot touch any offset in it. Checked once per footprint here rather
-      // than once per offset below.
-      const span = Math.max(Math.abs(lowEdge), Math.abs(highEdge))
-      const reaching = walls?.filter((solid) => solidDistance(solid, at.x, at.z) < body + span)
-      const kerbing = tarmac?.filter((edge) => solidDistance(edge, at.x, at.z) < keepOutBody + span)
-      if (!reaching?.length && !kerbing?.length) continue
-      let runFrom = NaN
-      let runTo = NaN
-      let bestFrom = NaN
-      let bestTo = NaN
-      let leastAt = lowEdge
-      let least = Infinity
-      for (let offset = lowEdge; offset <= highEdge + 1e-9; offset += NARROW_LATERAL) {
-        const x = at.x + at.nx * offset
-        const z = at.z + at.nz * offset
-        let road = 0
-        if (kerbing) for (const edge of kerbing) road = Math.max(road, keepOutBody - solidDistance(edge, x, z))
-        let wall = 0
-        if (reaching) for (const solid of reaching) wall = Math.max(wall, body - solidDistance(solid, x, z))
-        const penalty = Math.max(0, road) * ROAD_PRIORITY + Math.max(0, wall)
-        if (penalty < least) { least = penalty; leastAt = offset }
-        if (penalty > 0) { runFrom = NaN; continue }
-        if (Number.isNaN(runFrom)) runFrom = offset
-        runTo = offset
-        if (Number.isNaN(bestFrom) || runTo - runFrom > bestTo - bestFrom) { bestFrom = runFrom; bestTo = runTo }
-      }
-      if (Number.isNaN(bestFrom)) { bandLow[station] = leastAt; bandHigh[station] = leastAt }
-      else { bandLow[station] = bestFrom; bandHigh[station] = bestTo }
+    // The band first, off everything, including the tarmac. Then the cut, off
+    // the solids only: a carriageway beside a pavement is where the pavement is
+    // supposed to be and is never a reason to remove one.
+    for (const edge of keepOut) {
+      if (!nearby(edge, keepOutBody)) continue
+      narrowAgainst(edge, keepOutBody, projectOntoPolyline(loop, cumulative, edge.x, edge.z).s)
     }
 
     const spans: Array<[number, number]> = []
-    for (const solid of near) {
+    /** The solids this way is anywhere near, kept for the standing-in-it test. */
+    const near: SolidFootprint[] = []
+    for (const solid of solids) {
+      if (!nearby(solid, Math.max(clearance, body))) continue
+      near.push(solid)
       const hit = projectOntoPolyline(loop, cumulative, solid.x, solid.z)
+      narrowAgainst(solid, body, hit.s)
 
       // Both kerbs, because the blocked set across the way is an interval: the
       // distance to a convex body along a straight line is a convex function of
