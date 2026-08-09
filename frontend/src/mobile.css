@@ -640,12 +640,31 @@ body {
   .strategy-tip-skip,
   .active-run-pause,
   .focus-sprint-button,
-  .uw-district-guide-toggle { min-height: 44px; }
+  .uw-district-guide-toggle,
+  /* "Resume active run" — the only way back into a paused case from the
+     lobby, and 38px until the phone is held upright. */
+  .practice-action-secondary { min-height: 44px; }
 
   /* The map's client anchor is the one zone that opts out of the 44px sizing
      the other zones pick up at this breakpoint. */
   .world-zone.is-client-anchor { width: 44px; height: 44px; }
   .world-zone.is-client-anchor > i { left: 17px; top: 17px; }
+
+  /* The caseboard's controls were the smallest left on any route: "Play this
+     chapter" at 33px, "Show on the map" at 32px, and the acquire and locked
+     buttons on every rival card at 38px. They are full-width or near it, so
+     the height was the only thing wrong with them and the only thing changed
+     here.
+
+     On the pointer rather than the width, because these first went into the
+     640px block and a phone stops matching that the moment it is turned
+     sideways — an iPhone in landscape is 844 CSS pixels wide and still has no
+     cursor, and measured there they came straight back at 32 and 33px. */
+  .chapter-play-button,
+  .wr-locate,
+  .wr-acquire,
+  .wr-target-detail button,
+  .quest-grid article button { min-height: 44px; }
 }
 
 /* -------------------------------------------------------------------------
@@ -1749,17 +1768,6 @@ body {
      the narrow story column that resolves to a 10px indent, making it the only
      section that does not share its siblings' left edge. */
   .rival-war-room { margin-inline: 0; padding: 30px 16px 26px; border-width: 3px; }
-
-  /* The caseboard's controls were the smallest left on any route: "Play this
-     chapter" at 33px, "Show on the map" at 32px, and the acquire and locked
-     buttons on every rival card at 38px. They are full-width or near it, so
-     the height was the only thing wrong with them and the only thing changed
-     here. */
-  .chapter-play-button,
-  .wr-locate,
-  .wr-acquire,
-  .wr-target-detail button,
-  .quest-grid article button { min-height: 44px; }
 
   /* The chapter arc and the rival strip are horizontal carousels — six chapter
      cards run 865px past the right edge, fourteen rivals nearly 2000px — and
