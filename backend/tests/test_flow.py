@@ -5347,3 +5347,94 @@ def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
         user = User.query.filter_by(email="mega-report@example.test").one()
         kinds = {entry.kind for entry in LedgerEntry.query.filter_by(user_id=user.id)}
         assert kinds == {"opening_balance", "mega_litigation_promotion"}
+
+
+def _current_item(client, headers, session_id: str) -> dict | None:
+    body = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+    return body.get("current_item") or body.get("pending_item")
+
+
+def _save_draft(client, headers, session_id: str, item_id: str, reasoning: str):
+    return client.patch(
+        f"/v1/study-sessions/{session_id}/items/{item_id}/draft",
+        json={"selected_label": "B", "reasoning": reasoning},
+        headers=headers,
+    )
+
+
+def test_draft_autosave_covers_every_openable_run_and_404s_only_once_the_run_is_gone(app):
+    """The autosave is the only copy of reasoning a student is part-way through
+    writing, so the shapes it accepts are a contract rather than an accident.
+
+    `_owned_session` scopes by owner *and* by a mode allow-list, and both the
+    draft path and the sibling `/attempts` path go through it. Narrowing either
+    filter — adding a fourth mode, or excluding a run that is merely paused —
+    would turn a legitimate save into a 404, and a 404 here is silently
+    discarded written work rather than a visible failure. That is exactly the
+    shape a QA sweep flagged, so it is pinned here in both directions: every run
+    the case page can display accepts a draft, and a 404 is reserved for a run
+    that genuinely is not there.
+    """
+    client = app.test_client()
+    headers = login(client, "draft-autosave@example.test")
+    create_game(client, headers)
+
+    # A live practice run: the ordinary case page.
+    first = client.post("/v1/study-sessions", json={"size": 3}, headers=headers).json["session"]
+    first_item = _current_item(client, headers, first["id"])
+    saved = _save_draft(client, headers, first["id"], first_item["id"], "The conclusion needs the missing link.")
+    assert saved.status_code == 200
+    assert saved.json["saved"] is True
+    assert saved.json["draft"]["reasoning"] == "The conclusion needs the missing link."
+    with app.app_context():
+        assert db.session.get(SessionItem, first_item["id"]).draft_reasoning_text == (
+            "The conclusion needs the missing link."
+        )
+
+    # Opening a second run auto-pauses the first. A queued run is still on a
+    # student's docket and still holds their typing, so it must keep accepting
+    # drafts — scoping the lookup to `in_progress` alone would lose that work.
+    second = client.post("/v1/study-sessions", json={"size": 3}, headers=headers).json["session"]
+    with app.app_context():
+        assert db.session.get(StudySession, first["id"]).status == "paused"
+    paused_save = _save_draft(client, headers, first["id"], first_item["id"], "Still mine while it waits.")
+    assert paused_save.status_code == 200
+    assert paused_save.json["draft"]["reasoning"] == "Still mine while it waits."
+
+    # A diagnostic is a different mode through the same lookup.
+    diagnostic = client.post("/v1/diagnostics", json={"length": 1}, headers=headers)
+    assert diagnostic.status_code == 201
+    diagnostic_session = diagnostic.json["session"]
+    diagnostic_item = _current_item(client, headers, diagnostic_session["id"])
+    assert _save_draft(
+        client, headers, diagnostic_session["id"], diagnostic_item["id"], "Reading the stimulus first."
+    ).status_code == 200
+
+    # Someone else's run is not found rather than forbidden: whether a given id
+    # exists is not something an unrelated account gets to learn.
+    intruder = app.test_client()
+    intruder_headers = login(intruder, "draft-intruder@example.test")
+    create_game(intruder, intruder_headers)
+    assert _save_draft(
+        intruder, intruder_headers, first["id"], first_item["id"], "Not mine to write on."
+    ).status_code == 404
+
+    # And the honest 404: a run that has been removed underneath an open tab —
+    # which is what `scripts/seed_demo.py` does to the demo account every time
+    # it is re-run. The draft path and the sibling attempts path must agree,
+    # because a client that sees one succeed and the other fail cannot tell
+    # whether the work it is holding was kept.
+    second_item = _current_item(client, headers, second["id"])
+    with app.app_context():
+        db.session.delete(db.session.get(StudySession, second["id"]))
+        db.session.commit()
+    gone_draft = _save_draft(client, headers, second["id"], second_item["id"], "Typed into a run that is gone.")
+    assert gone_draft.status_code == 404
+    assert gone_draft.json["error"]["code"] == "session_not_found"
+    gone_attempt = client.post(
+        f"/v1/study-sessions/{second['id']}/attempts",
+        json={"item_id": second_item["id"], "selected_label": "C", "reasoning": explanation("gone"), "confidence": 3},
+        headers=headers,
+    )
+    assert gone_attempt.status_code == 404
+    assert gone_attempt.json["error"]["code"] == "session_not_found"

@@ -353,6 +353,10 @@
 .case-instrument .reasoning-box textarea::placeholder { color: #6f8b88; }
 .case-instrument .reasoning-box textarea:focus { outline: 2px solid rgba(114,208,192,.45); border-color: rgba(114,208,192,.45); }
 .case-instrument .reasoning-box > p { color: var(--ci-mute); font-size: 10.5px; }
+.case-instrument .draft-save-notice.is-saving, .case-instrument .draft-save-notice.is-saved { color: var(--ci-mute); }
+.case-instrument .draft-save-notice.is-saved { color: #72d0c0; }
+.case-instrument .reasoning-box > .draft-save-notice.is-unsaved { color: #ffd9cd; background: rgba(140,52,34,.34); border-color: rgba(228,124,96,.55); }
+.case-instrument .draft-save-notice.is-recovered { color: #e9dec3; background: rgba(201,166,92,.18); border-color: rgba(201,166,92,.45); }
 
 /* The dashboard's segmented control (`.answer-log-outcome`), at five stops. */
 .case-instrument .confidence-check {
