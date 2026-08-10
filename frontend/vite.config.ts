@@ -256,6 +256,8 @@ const ROUTE_ENTRY_CHUNKS: [RegExp, string][] = [
  */
 const SHEET_ORDER = [
   'src/performance.css',
+  // Behind the dashboard sheet whose panel shell it matches.
+  'src/exam-report.css',
   'src/narrative.css',
   'src/trial-calendar.css',
   'src/wardrobe.css',

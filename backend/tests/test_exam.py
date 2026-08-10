@@ -163,6 +163,31 @@ def sheet_items(form: dict) -> list[str]:
     return [entry["item_id"] for entry in form["exam"]["answer_sheet"]]
 
 
+def _end_intermission(session_id: str) -> None:
+    """Wind a running intermission back so the next section can be begun."""
+    db.session.execute(
+        update(StudySession)
+        .where(StudySession.id == session_id)
+        .values(intermission_started_at=utcnow() - timedelta(hours=1))
+    )
+    db.session.commit()
+
+
+def _expire_running_section(session_id: str) -> None:
+    """Move the running section's bell into the past, leaving its status alone.
+
+    Written straight to the column so the sitting stays exactly as the student
+    left it: what each caller is testing is what the *next* request does when it
+    finds the clock already spent.
+    """
+    db.session.execute(
+        update(SessionSection)
+        .where(SessionSection.session_id == session_id, SessionSection.status == "in_progress")
+        .values(deadline_at=utcnow() - timedelta(minutes=1))
+    )
+    db.session.commit()
+
+
 # --- Timing is the server's ---------------------------------------------------
 
 
@@ -426,11 +451,24 @@ def test_a_form_arms_no_strategy_prompt_and_leaves_the_estimator_alone(app):
     is four percent of a thirty-five-minute section, and a form is the one
     surface whose accuracy the score projection is anchored on.
 
-    Suppression is free of cost to the trial because a form's questions were
-    never in the estimator's population. Every strategy contrast filters on
-    `strategy_key IS NOT NULL`, and the mandatory contrast additionally
-    requires a recorded `forcing_propensity` — so a form's rows are excluded by
-    a fact on the row rather than by questions quietly leaving a pool.
+    Suppression is free of cost to the trial, and the reason is structural
+    rather than lucky. `prompt_required` is a sub-arm of the prompt side, so
+    the headline prompt-versus-control draw is a separate draw that a form
+    never enters: the propensity of being offered a technique at all stays at
+    0.75 in every stratum whatever forms get sat, because the questions on a
+    form are not drawn from that pool either.
+
+    The forcing contrast is the one that could have been damaged, and it is not
+    damaged here because a form's questions never join its pool rather than
+    leaving it. `plan_forced_arms` writes a propensity onto the losers of the
+    draw as well as the winners — that is what identifies it — and it is only
+    ever called for a practice run. So an exam row carries a null stratum and a
+    null `forcing_propensity`, and `_pooled` excludes it on that null.
+
+    That is the difference the design turns on: an excluded row that says on
+    its face "this was never in a pool" is honest, and a row that was in a pool
+    and then quietly stopped appearing would be a biased sample. Both are
+    asserted below, on the item and on the attempt copied from it.
     """
     client = app.test_client()
     headers = login(client, "no-prompt@example.test")
@@ -458,11 +496,20 @@ def test_a_form_arms_no_strategy_prompt_and_leaves_the_estimator_alone(app):
         assert {item.strategy_key for item in items} == {None}
         assert {item.strategy_variant for item in items} == {None}
         assert {item.strategy_enforcement_level for item in items} == {"none"}
+        # Never in either pool, and saying so. A null here is the row's own
+        # account of why it takes no part in the comparison; a form's questions
+        # are not drawn for the prompt arm, so `plan_forced_arms` — which is
+        # only ever called for a practice run — never sees them.
+        assert {item.strategy_stratum for item in items} == {None}
+        assert {item.strategy_forcing_propensity for item in items} == {None}
 
         attempts = Attempt.query.join(SessionItem).filter(SessionItem.session_id == session_id).all()
         assert attempts
         assert {attempt.strategy_key for attempt in attempts} == {None}
         assert {attempt.strategy_gate_status for attempt in attempts} == {None}
+        # Copied through to the attempt, which is the table the contrasts read.
+        assert {attempt.strategy_stratum for attempt in attempts} == {None}
+        assert {attempt.strategy_forcing_propensity for attempt in attempts} == {None}
 
         # No form question can be dealt an approach even if something asked for
         # one, so nothing downstream has to remember to exclude them.
@@ -471,6 +518,99 @@ def test_a_form_arms_no_strategy_prompt_and_leaves_the_estimator_alone(app):
         # And a form's attempts are invisible to the estimator, which reads
         # only rows that carry a strategy key.
         assert strategy_performance(user.id)["results"] == []
+
+
+def test_the_section_is_handed_over_whole_and_only_while_it_is_running(app):
+    """Free navigation has to be free of the clock, so the section arrives at once.
+
+    One fetch per hop would charge a student time for going back to check
+    number four, which the real test does not do. The counterpart rule is that
+    a section not yet begun is not something they are allowed to have read, so
+    this hands over the running one and nothing else.
+    """
+    client = app.test_client()
+    headers = login(client, "section-papers@example.test")
+    session_id = start_form(client, headers)["id"]
+
+    delivered = client.get(f"/v1/study-sessions/{session_id}/section", headers=headers)
+    assert delivered.status_code == 200
+    papers = delivered.json["items"]
+    assert [paper["number"] for paper in papers] == list(range(1, LR_PER_SECTION + 1))
+    assert all(paper["question"]["choices"] for paper in papers)
+    assert {paper["selected_label"] for paper in papers} == {None}
+    # The next section's questions are not in it, at any price.
+    assert len(papers) == LR_PER_SECTION
+
+    # An answer marked on the sheet comes back on the paper, so a reload lands
+    # a student on the section as they left it rather than on a blank one.
+    client.put(
+        f"/v1/study-sessions/{session_id}/answers/{papers[2]['id']}",
+        json={"selected_label": "C", "flagged": True},
+        headers=headers,
+    )
+    again = client.get(f"/v1/study-sessions/{session_id}/section", headers=headers).json["items"]
+    assert again[2]["selected_label"] == "C"
+    assert again[2]["flagged"] is True
+
+    # Between sections there is nothing to hand over. "During the time allotted
+    # for each section of the Test, you may work only on that section" — LSAC
+    # Candidate Agreement 2026-2027, § 15.
+    client.post(f"/v1/study-sessions/{session_id}/sections/0/submit", headers=headers)
+    closed = client.get(f"/v1/study-sessions/{session_id}/section", headers=headers)
+    assert closed.status_code == 409
+    assert closed.json["error"]["code"] == "no_section_running"
+
+
+def test_the_dashboard_reads_the_administration_and_not_a_reconstruction(app):
+    """The section read-out is only offered for a form that had sections.
+
+    A sitting from before them had no bell and no halves, so there is nothing
+    to back-fill and a panel of zeroes would claim there was.
+    """
+    client = app.test_client()
+    headers = login(client, "dash-report@example.test")
+    session_id = start_form(client, headers)["id"]
+    section_count = len(read(client, headers, session_id)["exam"]["sections"])
+
+    # Two right at the top of each section and then the bell, which is both the
+    # cheaper walk and the more interesting one: it gives the panel the states
+    # it exists to show rather than three clean hundreds.
+    for index in range(section_count):
+        form = read(client, headers, session_id)
+        if form["exam"]["stage"] != "in_section":
+            with app.app_context():
+                _end_intermission(session_id)
+            started = client.post(f"/v1/study-sessions/{session_id}/sections/{index}/start", headers=headers)
+            assert started.status_code == 200, started.json
+            form = read(client, headers, session_id)
+        for entry in form["exam"]["answer_sheet"][:2]:
+            client.put(
+                f"/v1/study-sessions/{session_id}/answers/{entry['item_id']}",
+                json={"selected_label": "C"},
+                headers=headers,
+            )
+        with app.app_context():
+            _expire_running_section(session_id)
+        read(client, headers, session_id)
+
+    assert read(client, headers, session_id)["status"] == "completed"
+    report = client.get("/v1/performance", headers=headers).json["performance"]["diagnostic"]["exam"]
+    assert report["administered"] is True
+    assert len(report["sections"]) == section_count
+    for section in report["sections"]:
+        assert section["correct"] == 2
+        assert section["answered"] == 2
+        assert section["unanswered"] == section["questions"] - 2
+        assert section["ran_out_of_time"] is True
+        # Answering only what was reachable is not the same as being right
+        # about the section, and the panel shows both numbers for that reason.
+        assert section["accuracy"] == round(100 * 2 / section["questions"])
+        assert section["answered_accuracy"] == 100
+        # The halves partition the section, so the falloff bar cannot lie about
+        # how much of it each half stands for.
+        assert section["opening"]["questions"] + section["closing"]["questions"] == section["questions"]
+    assert report["sections_expired"] == section_count
+    assert report["unanswered"] == sum(entry["unanswered"] for entry in report["sections"])
 
 
 def test_a_form_pays_nothing_and_attaches_no_case(app):

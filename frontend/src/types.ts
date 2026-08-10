@@ -901,6 +901,8 @@ export type PerformanceSnapshot = {
     form_total: number
     form_accuracy: number | null
     sections: NonNullable<PracticeSummary['sections']>
+    /** Null on a form sat before sections existed, which had no bell to report. */
+    exam: ExamReport | null
     promotion: MegaLitigationPromotion | null
     time_limit_minutes: number
     elapsed_minutes: number

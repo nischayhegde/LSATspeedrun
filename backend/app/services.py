@@ -2350,6 +2350,12 @@ def performance_snapshot(user: User) -> dict:
             "form_total": latest_diagnostic.total_items,
             "form_accuracy": summary.get("form_accuracy"),
             "sections": summary.get("sections", []),
+            # The administration's own read-out, absent on a form sat before
+            # sections existed. The dashboard branches on its presence rather
+            # than back-filling one, because the numbers in it — blanks at the
+            # bell, the split between the halves of a section — are not
+            # recoverable from a sitting that had no bell and no halves.
+            "exam": summary.get("exam"),
             "promotion": summary.get("promotion"),
             # One clock means pace is a property of the sitting, not of any one
             # question: how much of the budget went out, and how much of the
