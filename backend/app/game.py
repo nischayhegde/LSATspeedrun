@@ -1162,6 +1162,88 @@ DISTRICT_KEYS_BY_REGION = {
 }
 
 
+def _district_connection_gate() -> dict[str, str]:
+    """Which connection a district's institutions want to see before they sign.
+
+    Connections were the one asset class whose entire stated benefit was an
+    unlock, and the unlock was worth nothing. `_rebalance_client_catalog`
+    equalises expected commercial value across every client at a tier on
+    purpose -- that is what makes a client a play-style choice rather than an
+    income choice -- so "unlocks the corporate clients" cannot make anyone
+    richer. What was left was a purchase that, at every one of the fourteen
+    tiers it appears in, costs more than the best upgrade at the same tier and
+    pays a smaller `payout_mult` than it. There was no board state in which
+    buying one was correct.
+
+    Rather than inflate them into a better upgrade -- the catalog has thirty-five
+    of those already -- they now gate the mechanic they read like: a standing
+    retainer over a whole district. That is what a professional network is for,
+    it is the only Firm-tab purchase whose effect lands on the map, and it moves
+    no money: districts already carry their own price, standing, and rent
+    relief, all apportioned by `_price_district_catalog`.
+
+    A district asks for the most developed network that is no more advanced than
+    the district itself, so the requirement always sits at or below the tier the
+    player has already reached. The two tier-0 districts stay ungated, which
+    keeps a new player's first retainer and the onboarding path exactly as they
+    were.
+    """
+    ladder = sorted(
+        (item for item in ASSETS if item["type"] == "connection"),
+        key=lambda item: (item["tier"], item["cost"], item["key"]),
+    )
+    tiers = sorted({item["tier"] for item in ladder})
+    # Two connections share tier 3, and two districts sit at tier 3 with them.
+    # Handing both districts to whichever one sorts last would leave the other
+    # gating nothing, which is the defect this whole change exists to remove, so
+    # districts are dealt round-robin across the connections they answer to.
+    at_tier = {tier: [item["key"] for item in ladder if item["tier"] == tier] for tier in tiers}
+    dealt: dict[int, int] = {}
+    gate: dict[str, str] = {}
+    for district in DISTRICTS:
+        eligible = [tier for tier in tiers if tier <= district["tier"]]
+        if not eligible:
+            continue
+        group = at_tier[eligible[-1]]
+        index = dealt.get(eligible[-1], 0)
+        gate[district["key"]] = group[index % len(group)]
+        dealt[eligible[-1]] = index + 1
+    return gate
+
+
+DISTRICT_CONNECTION_GATE = _district_connection_gate()
+
+
+def _connection_district_names() -> dict[str, list[str]]:
+    """The districts each connection opens, for its catalog copy."""
+    opened: dict[str, list[str]] = {}
+    for district_key, connection_key in DISTRICT_CONNECTION_GATE.items():
+        opened.setdefault(connection_key, []).append(DISTRICT_BY_KEY[district_key]["name"])
+    return opened
+
+
+def _describe_connection_unlocks() -> None:
+    """Replace "unlocks N clients" with the districts the network actually opens.
+
+    The client half of the sentence was the part that was not worth acting on,
+    and a benefit line that promises nothing measurable is worse than a shorter
+    one. `_rebalance_asset_catalog` has already rewritten the payout clause by
+    the time this runs, so only the trailing clause is replaced.
+    """
+    opened = _connection_district_names()
+    for item in ASSETS:
+        if item["type"] != "connection":
+            continue
+        names = opened.get(item["key"], [])
+        parts = [part.strip() for part in item["benefit"].split("·") if "unlock" not in part.lower()]
+        if names:
+            parts.append(f"Retainers open in {names[0]}" if len(names) == 1 else f"Retainers open in {len(names)} districts")
+        item["benefit"] = " · ".join(parts)
+
+
+_describe_connection_unlocks()
+
+
 def _iso_utc(value) -> str | None:
     if value is None:
         return None
@@ -1219,12 +1301,17 @@ def _relieved_daily_rent(profile: PlayerProfile, held: set[str] | None = None) -
     return max(0, daily_rent - daily_rent * relief_bps // 10_000)
 
 
-def _district_locks(profile: PlayerProfile, district: dict) -> list[str]:
+def _district_locks(profile: PlayerProfile, district: dict, owned: set[str] | None = None) -> list[str]:
     locks: list[str] = []
     if profile.office_tier < district["tier"]:
         locks.append(f"Requires a {FIRM_TIERS[district['tier']]['name']}")
     if profile.reputation < district["reputation"]:
         locks.append(f"Requires {district['reputation']} reputation")
+    connection_key = DISTRICT_CONNECTION_GATE.get(district["key"])
+    if connection_key:
+        owned = owned if owned is not None else _owned_keys(profile)
+        if connection_key not in owned:
+            locks.append(f"Requires the {ASSET_BY_KEY[connection_key]['name'].lower()}")
     return locks
 
 
@@ -1234,9 +1321,12 @@ def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dic
     totals = _territory_totals(held)
     daily_rent = int(FIRM_TIERS[profile.office_tier]["rent_daily"])
     districts = []
+    # Read once for the whole board: the connection gate is checked per district
+    # and this is the only place that walks all thirty-eight of them.
+    owned_assets = _owned_keys(profile)
     for district in DISTRICTS:
         owned = district["key"] in held
-        locks = [] if owned else _district_locks(profile, district)
+        locks = [] if owned else _district_locks(profile, district, owned_assets)
         districts.append(
             {
                 "key": district["key"],
