@@ -5656,14 +5656,25 @@ def test_draft_autosave_covers_every_openable_run_and_404s_only_once_the_run_is_
     assert paused_save.status_code == 200
     assert paused_save.json["draft"]["reasoning"] == "Still mine while it waits."
 
-    # A diagnostic is a different mode through the same lookup.
+    # A form is the one run the autosave has nothing to hold. It is found
+    # through the same lookup — the mode allow-list still admits it — and then
+    # refused on its own terms, because a sectioned administration has no
+    # reasoning box to be part-way through: `grade_exam_answer` writes
+    # `reasoning_text=None` whatever is on the row. Refusing is the honest
+    # answer rather than the convenient one. Accepting would let a stale tab
+    # keep saving text that is silently dropped at the bell, which is the
+    # failure this test exists to prevent, wearing the opposite mask.
     diagnostic = client.post("/v1/diagnostics", json={"length": 1}, headers=headers)
     assert diagnostic.status_code == 201
     diagnostic_session = diagnostic.json["session"]
     diagnostic_item = _current_item(client, headers, diagnostic_session["id"])
-    assert _save_draft(
+    refused = _save_draft(
         client, headers, diagnostic_session["id"], diagnostic_item["id"], "Reading the stimulus first."
-    ).status_code == 200
+    )
+    assert refused.status_code == 409
+    assert refused.json["error"]["code"] == "exam_uses_answer_sheet"
+    with app.app_context():
+        assert db.session.get(SessionItem, diagnostic_item["id"]).draft_reasoning_text is None
 
     # Someone else's run is not found rather than forbidden: whether a given id
     # exists is not something an unrelated account gets to learn.

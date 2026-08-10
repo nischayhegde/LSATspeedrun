@@ -27,16 +27,16 @@ triaged and a browser-only flag would not survive a reload. `answer_revisions`
 counts replacements on the sheet, which replaces a client-reported
 `answer_changed` boolean with something observed.
 
-Revision ID: 0035_sectioned_exam
-Revises: 0034_comparative_passages
+Revision ID: 0036_sectioned_exam
+Revises: 0035_forced_strategy_arms
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0035_sectioned_exam"
-down_revision = "0034_comparative_passages"
+revision = "0036_sectioned_exam"
+down_revision = "0035_forced_strategy_arms"
 branch_labels = None
 depends_on = None
 
