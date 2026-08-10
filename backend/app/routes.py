@@ -10,7 +10,7 @@ from google.oauth2 import id_token
 from .auth import clear_auth_cookies, issue_auth_cookies, issue_mobile_token, require_auth
 from .coaching import CoachingProviderError, coaching_diagnostics, provider_ready
 from .enforcement import GateRejection
-from . import history
+from . import exam, history
 from .extensions import db
 from .game import (
     activate_quest,
@@ -809,6 +809,10 @@ def save_item_draft(session_id: str, item_id: str):
         return error("session_not_found", "That practice session was not found.", 404)
     if session.pending_attempt_id:
         return error("review_required", "Continue after reviewing the current answer.", 409)
+    if exam.is_sectioned(session):
+        # A form's answer sheet has its own endpoint, because saving an answer
+        # there is not a draft: it is the answer, until the bell.
+        return error("exam_uses_answer_sheet", "Use the form's answer sheet to record an answer.", 409)
     item = SessionItem.query.filter_by(id=item_id, session_id=session.id).first()
     if session.status not in {"in_progress", "paused"} or not item or item.position != session.current_index:
         return error("invalid_session_item", "Drafts can only be saved for the current question.", 409)
@@ -830,6 +834,130 @@ def save_item_draft(session_id: str, item_id: str):
             },
         }
     )
+
+
+# --- Sectioned mega-litigation ------------------------------------------------
+#
+# A timed form is not a practice run with a countdown on it, so it does not
+# reuse the practice run's verbs. Answers are written to a sheet and revised
+# freely; a section is begun once and ends once; and every one of these refuses
+# work that the administration itself would refuse. See `app/exam.py`.
+
+EXAM_ERRORS = {
+    "no_section_running": ("Nothing is open right now. Begin the next section when you are ready.", 409),
+    "section_already_running": ("A section is already running.", 409),
+    "section_not_running": ("That section is not the one on the clock.", 409),
+    "section_out_of_order": ("Sections are sat in order. You cannot start a later one early.", 409),
+    "no_section_pending": ("Every section on this form has been sat.", 409),
+    "intermission_in_progress": ("The intermission is still running.", 409),
+    "item_outside_active_section": ("That question belongs to a different section of this form.", 409),
+    "invalid_session_item": ("That question is not on this form.", 404),
+    "invalid_choice": ("Choose one of the available answers.", 400),
+    "session_complete": ("This form is finished.", 409),
+}
+
+
+def _exam_error(exc: Exception):
+    code = str(exc)
+    message, status = EXAM_ERRORS.get(code, ("That request was refused by the form.", 409))
+    return error(code, message, status)
+
+
+def _sectioned_session(session_id: str):
+    session = _owned_session(session_id)
+    if not session:
+        return None, error("session_not_found", "That form was not found.", 404)
+    if not exam.is_sectioned(session):
+        return None, error("not_a_sectioned_form", "That run is not administered in sections.", 409)
+    return session, None
+
+
+@api.post("/study-sessions/<session_id>/sections/<int:section_index>/start")
+@require_auth
+def start_exam_section(session_id: str, section_index: int):
+    session, failure = _sectioned_session(session_id)
+    if failure:
+        return failure
+    # Before anything else, because the section this is being asked to follow
+    # may have expired while nobody was looking.
+    if exam.enforce_exam_clock(session):
+        return jsonify({"session": serialize_session(session), "summary": session.summary_json})
+    try:
+        exam.start_section(session, section_index)
+    except exam.ExamError as exc:
+        return _exam_error(exc)
+    return jsonify({"session": serialize_session(session)})
+
+
+@api.post("/study-sessions/<session_id>/sections/<int:section_index>/submit")
+@require_auth
+def submit_exam_section(session_id: str, section_index: int):
+    session, failure = _sectioned_session(session_id)
+    if failure:
+        return failure
+    try:
+        exam.submit_section(session, section_index)
+    except exam.ExamError as exc:
+        if str(exc) == "session_complete":
+            return jsonify({"session": serialize_session(session), "summary": session.summary_json})
+        return _exam_error(exc)
+    payload = {"session": serialize_session(session)}
+    if session.status == "completed":
+        payload["summary"] = session.summary_json or calculate_session_summary(session)
+    return jsonify(payload)
+
+
+@api.put("/study-sessions/<session_id>/answers/<item_id>")
+@require_auth
+def record_exam_answer(session_id: str, item_id: str):
+    """Mark, change, clear or flag one answer on the running section's sheet."""
+    session, failure = _sectioned_session(session_id)
+    if failure:
+        return failure
+    payload = request.get_json(silent=True) or {}
+    flagged = payload.get("flagged")
+    try:
+        item = exam.record_answer(
+            session,
+            item_id,
+            # Absent means "leave the answer alone, this is a flag change";
+            # present and empty means "take my answer off the sheet", which the
+            # real interface's Reset Response button also does.
+            selected_label=payload.get("selected_label") if "selected_label" in payload else None,
+            flagged=None if flagged is None else bool(flagged),
+        )
+    except exam.ExamError as exc:
+        if str(exc) == "session_complete":
+            return jsonify({"session": serialize_session(session), "summary": session.summary_json})
+        return _exam_error(exc)
+    return jsonify(
+        {
+            "saved": True,
+            "answer": {
+                "item_id": item.id,
+                "position": item.position,
+                "selected_label": item.draft_selected_label,
+                "flagged": bool(item.flagged),
+            },
+            "exam": exam.serialize_exam(session),
+        }
+    )
+
+
+@api.post("/study-sessions/<session_id>/focus/<int:position>")
+@require_auth
+def focus_exam_item(session_id: str, position: int):
+    """Move to another question inside the running section."""
+    session, failure = _sectioned_session(session_id)
+    if failure:
+        return failure
+    try:
+        exam.focus_item(session, position)
+    except exam.ExamError as exc:
+        if str(exc) == "session_complete":
+            return jsonify({"session": serialize_session(session), "summary": session.summary_json})
+        return _exam_error(exc)
+    return jsonify({"session": serialize_session(session)})
 
 
 @api.get("/study-sessions/<session_id>")
@@ -1032,6 +1160,7 @@ def create_attempt(session_id: str):
             "idempotency_conflict": "That request identifier was already used.",
             "debrief_required": "Review the current answer before continuing.",
             "diagnostic_expired": "Time is up. Your mega-litigation has been submitted as it stood.",
+            "exam_uses_answer_sheet": "This form records answers on its section sheet, not one at a time.",
             "session_complete": "This practice session is already complete.",
             "invalid_session_item": "This is not the current question. Refresh and try again.",
             "invalid_choice": "Choose one of the available answers.",

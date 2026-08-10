@@ -23,8 +23,19 @@ from .game import (
     settle_attempt,
     snapshot_case_context,
 )
-from . import enforcement, scheduling
-from .models import AiJob, Attempt, Question, ReviewQueueItem, SessionItem, SkillProgress, StudySession, User, utcnow
+from . import enforcement, exam, scheduling
+from .models import (
+    AiJob,
+    Attempt,
+    Question,
+    ReviewQueueItem,
+    SessionItem,
+    SessionSection,
+    SkillProgress,
+    StudySession,
+    User,
+    utcnow,
+)
 from .scoring import (
     AttemptFact,
     FORM_ITEMS,
@@ -193,12 +204,19 @@ def find_resumable_session(user: User) -> StudySession | None:
 
 
 def diagnostic_remaining_ms(session: StudySession) -> int | None:
-    """Milliseconds left on a mega-litigation's whole-form clock.
+    """Milliseconds left on whichever mega-litigation clock is running.
 
-    None for anything without a deadline: coached practice, and diagnostics
-    started before the whole-form clock existed.
+    On a sectioned form that is the current section's thirty-five minutes, or
+    the intermission's ten, or nothing at all while the form waits for the
+    student to begin the next section. On a form started before sections
+    existed it is the whole-form deadline it was created under. None for
+    anything with no clock: coached practice and blind reviews.
     """
-    if session.mode != "diagnostic" or not session.deadline_at:
+    if session.mode != "diagnostic":
+        return None
+    if exam.is_sectioned(session):
+        return exam.remaining_ms(session)
+    if not session.deadline_at:
         return None
     return max(0, int((_aware_utc(session.deadline_at) - utcnow()).total_seconds() * 1000))
 
@@ -251,8 +269,16 @@ def enforce_diagnostic_deadline(session: StudySession) -> bool:
     it, and until then nothing can be written to it.
 
     Returns True when this call finalized the run.
+
+    A sectioned form has three clocks rather than one and its own state machine
+    to advance, so it delegates; forms started before sections existed keep the
+    single whole-form deadline below, unchanged.
     """
-    if session.mode != "diagnostic" or not session.deadline_at:
+    if session.mode != "diagnostic":
+        return False
+    if exam.is_sectioned(session):
+        return exam.enforce_exam_clock(session)
+    if not session.deadline_at:
         return False
     if session.status not in {"in_progress", "paused"}:
         return False
@@ -478,6 +504,11 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
         and item.position == item.session.current_index
         and not item.completed_at
         and not item.timer_started_at
+        # On a sectioned form the question at `current_index` during an
+        # intermission is the *next* section's first one. Starting its timer
+        # there would charge a student for a question they have not been shown
+        # and are not allowed to see yet.
+        and (not exam.is_sectioned(item.session) or exam.active_section(item.session) is not None)
     ):
         item.timer_activated_at = item.timer_activated_at or now
         item.timer_started_at = now
@@ -530,6 +561,7 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
         "served_at": _iso_utc(item.served_at),
         "elapsed_ms": _elapsed_ms(item),
         "target_time_seconds": item.target_time_seconds,
+        "flagged": bool(item.flagged),
         "case_terms": (
             {
                 "client_key": client["key"],
@@ -576,6 +608,14 @@ def serialize_session(session: StudySession, include_item: bool = True) -> dict:
     }
     if session.mode == "diagnostic" and session.status == "completed":
         payload["blind_review"] = blind_review_status(session)
+    if exam.is_sectioned(session):
+        payload["exam"] = exam.serialize_exam(session)
+        # Progress on a form is how much of the paper is filled in, not how far
+        # the cursor has travelled: with free navigation the cursor can be
+        # anywhere and mean nothing.
+        payload["progress_percent"] = round(
+            100 * payload["exam"]["answered"] / max(1, session.total_items)
+        )
     if session.pending_attempt_id:
         pending_attempt = db.session.get(Attempt, session.pending_attempt_id)
         if pending_attempt:
@@ -583,6 +623,12 @@ def serialize_session(session: StudySession, include_item: bool = True) -> dict:
             payload["pending_item"] = serialize_item(pending_attempt.session_item, commit=False)
             return payload
     if include_item and session.status == "in_progress":
+        # Between sections there is no current question, and saying so is the
+        # point: the next section's first item must not cross the wire before
+        # its clock has started.
+        if exam.is_sectioned(session) and not exam.active_section(session):
+            payload["current_item"] = None
+            return payload
         item = SessionItem.query.filter_by(
             session_id=session.id,
             position=session.current_index,
@@ -1054,7 +1100,12 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
     questions, section_indexes, section_plan = select_diagnostic_questions(int(current_app.config["DIAGNOSTIC_SESSION_SIZE"]))
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
-    target_minutes = max(1, round(sum(section["minutes"] for section in section_plan) * accommodation_multiplier))
+    # Thirty-five minutes a section, plus the intermission, exactly as the real
+    # administration is budgeted. `target_minutes` stays the sum of the working
+    # sections — the break is not time a student is being measured over, and
+    # every pace figure downstream divides by this.
+    section_seconds = max(60, round(exam.SECTION_SECONDS * accommodation_multiplier))
+    target_minutes = max(1, round(len(section_plan) * section_seconds / 60))
     started_at = utcnow()
     session = StudySession(
         user_id=user.id,
@@ -1063,9 +1114,9 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
         feedback_policy="delayed",
         blind_review_required=True,
         accommodation_multiplier=accommodation_multiplier,
-        # The blocks keep their labels and boundaries but lose their minutes:
-        # under one whole-form clock a per-section budget would be a number the
-        # server does not enforce and the student cannot act on.
+        # The blocks are the sections now, and each one carries its own clock
+        # on its own row. What stays here is the map the results screen reads:
+        # which questions belong to which section, and in what order.
         section_plan_json=[
             {key: value for key, value in section.items() if key != "minutes"}
             for section in section_plan
@@ -1073,17 +1124,13 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
         target_minutes=target_minutes,
         total_items=len(questions),
         started_at=started_at,
-        deadline_at=started_at + timedelta(minutes=target_minutes),
     )
     db.session.add(session)
     db.session.flush()
-    # One clock for the form means one budget per question: the student is free
-    # to spend it unevenly, and the even split is what "on pace" is measured
-    # against. The old 150s/330s targets belong to coached practice, where a
-    # written explanation is part of the work, and summed to well over twice
-    # this form's budget.
-    per_question_seconds = max(30, round(target_minutes * 60 / len(questions)))
+    sections = exam.build_sections(session, section_plan, multiplier=accommodation_multiplier)
+    by_index = {section.section_index: section for section in sections}
     for position, question in enumerate(questions):
+        section = by_index[section_indexes[position]]
         db.session.add(
             SessionItem(
                 session_id=session.id,
@@ -1091,10 +1138,19 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
                 position=position,
                 section_index=section_indexes[position],
                 requires_reasoning=False,
-                target_time_seconds=per_question_seconds,
+                # An even split of *this section's* clock across *this
+                # section's* questions. Under section timing that is the only
+                # target that can actually run out on a student, which is what
+                # makes "over target" mean something on the results screen.
+                target_time_seconds=exam.section_target_seconds(section),
             )
         )
     db.session.commit()
+    # The POST that creates a form is the student saying they are sitting it
+    # now — the confirmation gate happens in the client before it — so section
+    # one starts here rather than leaving an armed-but-not-started state to
+    # reason about. Sections two and three are begun explicitly.
+    exam.start_section(session, sections[0].section_index)
     return session
 
 
@@ -1206,10 +1262,12 @@ def finalize_diagnostic(session: StudySession, *, completed_at=None) -> dict:
 
 
 def pause_study_session(session: StudySession) -> StudySession:
-    # A mega-litigation is one sitting. Its clock is wall-clock and nothing stops
-    # it, so "paused" would be a lie the interface told about a run that is
-    # still burning down.
-    if session.mode == "diagnostic" and session.deadline_at:
+    # A mega-litigation is one sitting. Its clocks are wall-clock and nothing
+    # stops them, so "paused" would be a lie the interface told about a run
+    # that is still burning down. On a sectioned form this holds between
+    # sections too, where no section clock is running but the sitting's own
+    # grace period is.
+    if session.mode == "diagnostic" and (session.deadline_at or exam.is_sectioned(session)):
         raise ValueError("diagnostic_no_pause")
     if session.status == "paused":
         return session
@@ -1234,7 +1292,7 @@ def pause_study_session(session: StudySession) -> StudySession:
 
 
 def resume_study_session(session: StudySession) -> StudySession:
-    if session.mode == "diagnostic" and session.deadline_at:
+    if session.mode == "diagnostic" and (session.deadline_at or exam.is_sectioned(session)):
         # Nothing pauses it, so nothing resumes it. An expired run finalizes here
         # rather than pretending it can be picked back up.
         enforce_diagnostic_deadline(session)
@@ -1675,6 +1733,67 @@ def _schedule_review(attempt: Attempt) -> None:
     scheduling.apply_review(existing, attempt)
 
 
+def grade_exam_answer(session: StudySession, item: SessionItem, *, ended_at) -> Attempt | None:
+    """Turn one filled-in answer on a closed section's sheet into an attempt.
+
+    The counterpart to `submit_attempt` for a sectioned mega-litigation, and
+    the reason it is separate: on the real test an answer is not an event. It
+    is a mark on a sheet that can be changed until the bell, and only the bell
+    decides what was written. So nothing here is reachable while the section is
+    open, and everything here runs for the whole section at once.
+
+    Deliberately absent, and each one for the same reason — it is not part of
+    the administration and would cost a student clock they are being measured
+    on: no confidence rating, no written reasoning, no game context, no fee, no
+    strategy prompt. What is recorded instead is what the section itself
+    produced: the answer, the time spent on that question across every visit to
+    it, whether it was flagged, and how many times the answer was changed.
+
+    Returns None if the item was already graded, so closing a section twice
+    cannot double-count it.
+    """
+    if item.attempt:
+        return item.attempt
+    label = item.draft_selected_label
+    if not label:
+        return None
+    question = item.question
+    # Clamped the same way `submit_attempt` clamps, so pace statistics pool
+    # across practice and exam attempts without one of them carrying outliers
+    # the other cannot produce.
+    elapsed_ms = max(1000, min(item.active_elapsed_ms or 0, 15 * 60 * 1000))
+    is_correct = label == question.correct_answer
+    _update_skill(session.user_id, question, is_correct, elapsed_ms)
+    attempt = Attempt(
+        user_id=session.user_id,
+        session_item_id=item.id,
+        # One key per item, so a retried close is idempotent by construction
+        # rather than by the caller remembering to check.
+        idempotency_key=f"exam:{item.id}",
+        selected_label=label,
+        is_correct=is_correct,
+        reasoning_text=None,
+        confidence=None,
+        # Measured rather than reported: free navigation means the server sees
+        # every replacement.
+        answer_changed=bool(item.answer_revisions),
+        evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "diagnostic")),
+        server_elapsed_ms=elapsed_ms,
+        client_elapsed_ms=None,
+        capm_points=0,
+        pace_scored=False,
+        xp_earned=0,
+        feedback_json=_feedback(question, label, is_correct, None),
+        coaching_status="pending",
+    )
+    db.session.add(attempt)
+    db.session.flush()
+    _schedule_review(attempt)
+    item.completed_at = item.completed_at or ended_at
+    item.draft_updated_at = item.draft_updated_at or ended_at
+    return attempt
+
+
 def submit_attempt(
     user: User,
     session: StudySession,
@@ -1683,6 +1802,11 @@ def submit_attempt(
 ) -> tuple[Attempt, bool]:
     if not user.game_profile:
         raise ValueError("onboarding_required")
+    if exam.is_sectioned(session):
+        # A sectioned form has no per-question submit. Answers go onto the
+        # sheet and the section's close grades them, which is what lets an
+        # answer be changed and what makes the bell final.
+        raise ValueError("exam_uses_answer_sheet")
     requested_item_id = payload.get("item_id")
     existing = Attempt.query.filter_by(idempotency_key=idempotency_key).first()
     if existing:
@@ -2101,6 +2225,26 @@ def calculate_session_summary(session: StudySession) -> dict:
         },
         "timing_compromised": any(attempt.session_item.timer_compromised for attempt in attempts),
     }
+    if exam.is_sectioned(session):
+        report = exam.exam_summary(session)
+        summary["exam"] = report
+        # The section block the results screen already renders, but built from
+        # the sections themselves rather than from whichever attempts happen to
+        # exist — otherwise a section the clock ended with eight blanks reports
+        # the accuracy of the seventeen that got answered.
+        summary["sections"] = [
+            {
+                "index": entry["index"],
+                "label": entry["label"],
+                "correct": entry["correct"],
+                "questions": entry["questions"],
+                "answered": entry["answered"],
+                "accuracy": entry["accuracy"],
+                "elapsed_minutes": round(entry["seconds_on_questions"] / 60, 1),
+                "timing_compromised": False,
+            }
+            for entry in report["sections"]
+        ]
     # A promotion is granted once and recorded on the run that earned it. This
     # function is called again whenever a summary is refreshed, so carry it
     # across rather than dropping the one field that is not recomputable.
