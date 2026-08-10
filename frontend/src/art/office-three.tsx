@@ -2451,7 +2451,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       return Math.max(widest, Math.abs(bay.x * planScale) + run)
     }, 0)
     const framing = Math.min(1, Math.max(
-      activeStaff.length > 1 ? .55 : 0,
+      // One person is not an empty room, and used to be framed as though it
+      // were. Measured at tier zero with a single hire, the intake
+      // specialist's feet sat at ndc y -1.37: the first employee a player
+      // ever buys, cropped off the bottom of the first office they ever see.
+      // A room with nobody in it is still left exactly as authored.
+      activeStaff.length > 1 ? .55 : activeStaff.length ? .4 : 0,
       (activeStaff.length - 1) / Math.max(1, floorCapacity - 1),
       activeStaff.length > 1 ? .55 + (planExtent + 1.2 - 3.98) / 7.07 : 0,
     ))

@@ -20,7 +20,7 @@
 //     floor   practice | chambers
 //     roster  all   the whole hireable firm, capped by the tier's own capacity
 //             none  an empty floor, which is what makes staff cost a subtraction
-//             a+b+c an explicit list of staff keys
+//             a+b+c an explicit list of catalog keys, staff and fittings alike
 //     mode    wide  screenshot the whole canvas as the owner sees it (default)
 //             none  measure only
 //   --switch  after the run, click the directory from floor one to floor two and
@@ -74,11 +74,18 @@ async function waitForCdp() {
   throw new Error(`headless shell did not expose CDP on port ${CDP_PORT}`)
 }
 
-/** Roster spec to the query the scene and the directory both read. */
+/**
+ * Roster spec to the query the scene and the directory both read.
+ *
+ * An explicit list goes to `officeAssets`, which owns the purchase set and the
+ * shift together — a starter office is a room with two things in it *and* one
+ * person in it, and asking for the staff alone leaves whatever the seeded save
+ * happened to have bought standing behind them.
+ */
 function rosterQuery(roster) {
   if (roster === 'all') return 'officeAll=1'
   if (roster === 'none') return 'officeAssets=none&officeStaff=none'
-  return `officeStaff=${roster.split('+').join(',')}`
+  return `officeAssets=${roster.split('+').join(',')}`
 }
 
 await waitForCdp()
@@ -111,6 +118,15 @@ try {
     }
     window.WebSocket.prototype = RealWebSocket.prototype
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 })
+    // The office opens on whatever story beat the seeded firm left off on, and
+    // the card that announces it sits over the room. It is dismissable and the
+    // dismissal is tried first, but a shot of the office should never be a shot
+    // of a card, so the card is also not allowed to draw.
+    document.addEventListener('DOMContentLoaded', () => {
+      const sheet = document.createElement('style')
+      sheet.textContent = '.chapter-prompt, .story-cutscene, .cutscene, .av-cutscene { display: none !important; }'
+      document.head.append(sheet)
+    })
   })
   const errors = []
   const reloads = []
@@ -140,13 +156,18 @@ try {
   // it directly is the honest cheaper path. Where reachability *is* the claim —
   // the floor switch — the real click is tried first and this is the fallback,
   // and the report says which one landed.
-  const forceClick = async (locator) => {
-    if (await locator.count() === 0) return false
-    await locator.first().evaluate((element) => element.click())
-    return true
+  const forceClick = async (locator, timeout = 20000) => {
+    if (await locator.count({ timeout }).catch(() => 0) === 0) return false
+    return locator.first().evaluate((element) => element.click(), null, { timeout })
+      .then(() => true)
+      .catch(() => false)
   }
+  // Narrative cards are dismissed if the page will let go of the main thread
+  // long enough to take the click, and hidden if it will not. Under load the
+  // second path is the one that runs, and for a picture of the room a hidden
+  // card and a dismissed one are the same picture.
   const dismissCutscenes = async () => {
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
       const defer = page.locator('.cutscene-defer, .cutscene-continue, .chapter-prompt-later')
       if (!await forceClick(defer)) return
       await page.waitForTimeout(350)
@@ -154,9 +175,33 @@ try {
   }
   await dismissCutscenes()
 
-  /** Everything the probes know about the room currently on screen. */
+  /**
+   * Everything the probes know about the room currently on screen.
+   *
+   * `staff[].frame` is the part that answers the composition question without
+   * an opinion in it. The pose probe reports world positions for each body's
+   * head and both feet; projecting those through the scene's own camera says
+   * whether a person the player has paid for is actually on the screen. A foot
+   * at ndc y below -1 is a body cropped by the bottom edge, which is what a
+   * nearly empty office used to do to its single hire.
+   */
   const readRoom = async () => page.evaluate(() => {
     const pose = window.__officePose?.() ?? null
+    const debug = window.__officeDebug
+    const project = (point) => {
+      if (!debug || !point) return null
+      const vector = new debug.THREE.Vector3(point[0], point[1], point[2]).project(debug.camera)
+      return [Number(vector.x.toFixed(3)), Number(vector.y.toFixed(3))]
+    }
+    const framing = (person) => {
+      const head = project(person.head)
+      const feet = [project(person.lFoot), project(person.rFoot)].filter(Boolean)
+      if (!head || !feet.length) return null
+      const low = Math.min(...feet.map((foot) => foot[1]))
+      const wide = Math.max(Math.abs(head[0]), ...feet.map((foot) => Math.abs(foot[0])))
+      return { head, low: Number(low.toFixed(3)), wide: Number(wide.toFixed(3)), whole: low > -1 && head[1] < 1 && wide < 1 }
+    }
+    window.__frameOf = framing
     const directory = [...document.querySelectorAll('.office-floor-button')].map((button) => ({
       storey: button.querySelector('.office-floor-storey')?.textContent ?? '',
       name: button.querySelector('.office-floor-name')?.textContent ?? '',
@@ -167,7 +212,10 @@ try {
       url: location.pathname + location.search,
       scene: window.__officeSceneStats ?? null,
       phases: window.__officeBuildPhases ?? null,
-      staff: pose ? pose.staff.map((person) => ({ key: person.key, station: person.station, state: person.state, x: person.x, z: person.z, lod: person.lod })) : [],
+      staff: pose ? pose.staff.map((person) => ({
+        key: person.key, station: person.station, state: person.state, x: person.x, z: person.z, lod: person.lod,
+        frame: framing(person),
+      })) : [],
       directory,
     }
   })
@@ -225,7 +273,8 @@ try {
       return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
     })
     if (!box) throw new Error(`no canvas for tier ${tier} ${floor}`)
-    await page.screenshot({ path: `${outDir}/tier-${String(tier).padStart(2, '0')}-${floor}-${roster === 'all' ? 'full' : roster}.png`, clip: box })
+    const label = roster === 'all' ? 'full' : roster === 'none' ? 'empty' : `${roster.split('+').length}-owned`
+    await page.screenshot({ timeout: 120000, path: `${outDir}/tier-${String(tier).padStart(2, '0')}-${floor}-${label}.png`, clip: box })
   }
 
   // Written before the switch test, because the switch is the part most likely
@@ -292,6 +341,14 @@ try {
     )
     const missing = entry.directory.map((floor) => `${floor.name}:${floor.seated}${floor.current ? '*' : ''}`).join('  ')
     if (missing) process.stdout.write(`         directory  ${missing}\n`)
+    const cropped = entry.staff.filter((person) => person.frame && !person.frame.whole)
+    if (entry.staff.length) {
+      process.stdout.write(
+        `         framing    ${entry.staff.length - cropped.length}/${entry.staff.length} whole`
+        + (cropped.length ? `  cropped: ${cropped.map((person) => `${person.key}(low ${person.frame.low}, wide ${person.frame.wide})`).join(', ')}` : '')
+        + '\n',
+      )
+    }
   }
   if (switchResult) {
     process.stdout.write(
