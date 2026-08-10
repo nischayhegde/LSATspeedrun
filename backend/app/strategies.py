@@ -266,35 +266,65 @@ def _stable_fraction(value: str) -> float:
     return int.from_bytes(digest[:8], "big") / float(2**64 - 1)
 
 
-# A comparative reading set is two passages printed together under one heading,
-# and this bank does not label them anywhere: every Reading Comprehension
-# passage carries the literal `passage_type` "Reading Comprehension", and no
-# `question_type` has ever contained the word "comparative". Asking the
-# metadata therefore returned False on all 2,366 Reading Comprehension
-# questions, which is why `comparative_matrix` sat in the catalogue with a gate
-# built for it and was never once offered to anybody.
+# A comparative reading set is two passages printed together as one set, and
+# this bank labels none of them: every Reading Comprehension passage carries the
+# literal `passage_type` "Reading Comprehension", and no `question_type` has
+# ever contained the word "comparative". Asking the metadata therefore returned
+# False on all 2,366 Reading Comprehension questions, which is why
+# `comparative_matrix` sat in the catalogue with a gate built for it and was
+# never once offered to anybody.
 #
-# The format is instead read off the two things that do carry it. The headings
-# are matched case-sensitively and with the body of Passage A required between
-# them, because "passage a" appears in ordinary prose ("in this passage a
-# reader will find") and a lone capitalised mention is not a set.
-_COMPARATIVE_HEADINGS = re.compile(r"Passage A\b[\s\S]{100,}?Passage B\b")
-# Twelve questions sit on sets whose stored text lost its headings, and their
-# stems still say what the passage no longer does.
-_COMPARATIVE_STEM = re.compile(r"\bboth passages\b|\bthe two passages\b", re.IGNORECASE)
-_COMPARATIVE_STEM_NAMED = re.compile(r"\bPassage [AB]\b")
+# The format is read off the headings the sets are printed with. Two details in
+# this pattern are load-bearing:
+#
+# * The match is case-sensitive and demands the body of Passage A between the
+#   two headings, because "passage a" occurs in ordinary prose ("in this passage
+#   a reader will find") and a lone capitalised mention is not a set.
+# * The heading ends in a negative lookahead for a lowercase letter rather than
+#   a word boundary. Six of the thirty-two sets in the bank stored the heading
+#   with the following space eaten — "Passage AUntil recently, conservationists"
+#   — and `\b` cannot match between "A" and "U". The lookahead still rejects
+#   "Passage About" and "Passage Analysis", so what it admits is a capital
+#   letter directly after the heading letter, which in English is a heading that
+#   ran into its own first sentence and essentially nothing else.
+#
+# Read the six back and the detection reproduces the format's actual history
+# exactly: every one of the thirty US forms in the bank dated June 2007 or later
+# carries exactly one comparative set in four, every one of the forty-seven
+# forms before it carries none, and Comparative Reading was introduced in June
+# 2007. Under the word-boundary version six of those thirty forms had none,
+# which is the shape of a detector missing sets rather than of a bank lacking
+# them.
+_COMPARATIVE_HEADINGS = re.compile(r"Passage A(?![a-z])[\s\S]{100,}?Passage B(?![a-z])")
+
+
+def detect_comparative(canonical_text: str | None, passage_type: str | None = None) -> bool:
+    """Whether this passage prints two passages as one set.
+
+    Called once per passage at ingest and written to `passages.comparative`;
+    `is_comparative` below reads that column and never re-decides. Deciding the
+    format at read time worked but asked a question with a fixed answer on every
+    request, and had to lean on question stems to reach the sets whose headings
+    it could not match — which put the decision on the question rather than on
+    the set it belongs to, so a stem mentioning "Passage A" made one question
+    comparative while its siblings on the same set stayed single.
+
+    `passage_type` is consulted first so a bank that does label the format is
+    believed rather than re-derived. This one never does.
+    """
+    if "compar" in (passage_type or "").lower():
+        return True
+    return bool(_COMPARATIVE_HEADINGS.search(canonical_text or ""))
 
 
 def is_comparative(question: Question) -> bool:
-    """Whether this question belongs to a comparative reading set."""
-    if "compar" in (question.question_type or "").lower():
-        return True
-    if question.passage and "compar" in (question.passage.passage_type or "").lower():
-        return True
-    if question.passage and _COMPARATIVE_HEADINGS.search(question.passage.canonical_text or ""):
-        return True
-    stem = question.stem or ""
-    return bool(_COMPARATIVE_STEM.search(stem) or _COMPARATIVE_STEM_NAMED.search(stem))
+    """Whether this question belongs to a comparative reading set.
+
+    A read of the flag, which is a property of the passage and therefore shared
+    by every question on it. A question with no passage is Logical Reasoning and
+    cannot be comparative.
+    """
+    return bool(question.passage and question.passage.comparative)
 
 
 def _candidate_keys(question: Question) -> list[str]:

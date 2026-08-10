@@ -12,6 +12,7 @@ from flask import current_app
 
 from .extensions import db
 from .models import Passage, Question, QuestionChoice
+from .strategies import detect_comparative
 
 
 DATASET_SERVER_ROWS_URL = "https://datasets-server.huggingface.co/rows"
@@ -208,6 +209,11 @@ def _upsert_row(
             passage.canonical_text = context
             passage.source = f"{SOURCE_PREFIX}rc"
             passage.review_status = "published"
+        # Recomputed on the update branch as well as the insert one: the id is a
+        # hash of the text, so a passage whose text changed is a different row,
+        # but a re-ingest that rewrites `canonical_text` must not leave a flag
+        # behind that describes text this passage no longer has.
+        passage.comparative = detect_comparative(context, passage.passage_type)
         passages[passage_id] = passage
 
     question = questions.get(question_id)

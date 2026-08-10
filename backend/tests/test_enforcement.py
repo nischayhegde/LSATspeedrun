@@ -25,7 +25,13 @@ from app.enforcement import (
 from app.extensions import db
 from app.models import Attempt, Passage, Question, QuestionChoice, SessionItem, StudySession, utcnow
 from app.seed import SOURCE_PREFIX
-from app.strategies import STRATEGIES, _candidate_keys, is_comparative, strategy_performance
+from app.strategies import (
+    STRATEGIES,
+    _candidate_keys,
+    detect_comparative,
+    is_comparative,
+    strategy_performance,
+)
 
 
 LR_STIMULUS = (
@@ -1262,6 +1268,12 @@ def test_a_degraded_gate_lets_the_student_through_instead_of_demanding_an_artifa
 # test asked the bank's labels whether a set was comparative, and this bank
 # labels every Reading Comprehension passage identically, so the answer was no
 # on all 2,366 of them and the gate below had never been served to anybody.
+#
+# The format is now decided once, at ingest, by `detect_comparative`, and stored
+# on `passages.comparative`. Every fixture below writes the flag the way ingest
+# does — by running the detector over the passage text — rather than asserting
+# the answer by hand, so a detector that stopped recognising this set would fail
+# these tests instead of being papered over by the fixture.
 # ---------------------------------------------------------------------------
 
 
@@ -1275,15 +1287,18 @@ COMPARATIVE_PASSAGE = (
 )
 
 
-def add_comparative_question(index: int, *, stem: str, passage_id: str) -> str:
+def add_comparative_question(
+    index: int, *, stem: str, passage_id: str, passage_text: str = COMPARATIVE_PASSAGE
+) -> str:
     if not db.session.get(Passage, passage_id):
         db.session.add(
             Passage(
                 id=passage_id,
-                canonical_text=COMPARATIVE_PASSAGE,
+                canonical_text=passage_text,
                 # Exactly what the real bank stores on every passage it has,
                 # comparative or not. The detection cannot lean on this.
                 passage_type="Reading Comprehension",
+                comparative=detect_comparative(passage_text, "Reading Comprehension"),
                 source=f"{SOURCE_PREFIX}rc",
                 review_status="published",
             )
@@ -1367,27 +1382,83 @@ def test_a_two_passage_set_is_recognised_from_the_set_itself_not_from_its_labels
         assert "comparative_matrix" not in _candidate_keys(single)
 
 
-def test_a_stem_that_asks_about_both_passages_counts_even_without_the_headings(app):
-    """Some sets lost their headings in transcription; the stems did not."""
+def test_the_format_belongs_to_the_set_so_every_question_on_it_is_comparative(app):
+    """Being comparative is a property of the two passages, not of one stem.
+
+    The read-time version decided this per question and had to fall back to the
+    stem to reach sets whose headings it could not match, which split a single
+    set in two: the question that said "both passages" was comparative and its
+    siblings on the same two passages were not. The flag cannot do that.
+    """
     with app.app_context():
-        single_passage_id = Question.query.filter_by(section="Reading Comprehension").first().passage_id
-        orphan = Question(
-            id="hf-lsat-rc:enforce-orphan",
-            passage_id=single_passage_id,
+        add_comparative_question(
+            4,
+            stem="Both passages were written primarily in order to answer which one of the following?",
+            passage_id="whole-set-passage",
+        )
+        silent_id = add_comparative_question(
+            5,
+            # Says nothing at all about there being two passages.
+            stem="The author of the passage would be most likely to agree with which one of the following?",
+            passage_id="whole-set-passage",
+        )
+        db.session.commit()
+
+        silent = db.session.get(Question, silent_id)
+        assert is_comparative(silent)
+        assert "comparative_matrix" in _candidate_keys(silent)
+
+
+def test_a_stem_naming_passage_a_does_not_make_a_single_passage_comparative(app):
+    """The false positive the read-time version carried, closed.
+
+    A stem that names "Passage A" used to be enough on its own, so a question
+    sitting on one ordinary passage was offered an approach whose three steps
+    ask for a second passage that does not exist.
+    """
+    with app.app_context():
+        single = Question.query.filter_by(section="Reading Comprehension").first()
+        assert not single.passage.comparative
+        namer = Question(
+            id="hf-lsat-rc:enforce-namer",
+            passage_id=single.passage_id,
             section="Reading Comprehension",
             question_type="Inference",
             difficulty=3,
             stimulus=None,
-            stem="Both passages were written primarily in order to answer which one of the following questions?",
+            stem="Passage A, but not passage B, asserts which one of the following?",
             correct_answer="C",
             source=f"{SOURCE_PREFIX}rc · train",
             license_status="upstream_terms_apply",
             review_status="published",
         )
-        db.session.add(orphan)
+        db.session.add(namer)
         db.session.commit()
-        assert is_comparative(orphan)
-        assert "comparative_matrix" in _candidate_keys(orphan)
+
+        assert not is_comparative(namer)
+        assert "comparative_matrix" not in _candidate_keys(namer)
+
+
+def test_a_heading_that_ran_into_its_own_first_sentence_is_still_a_heading(app):
+    """Six of the bank's thirty-two sets store "Passage AUntil recently, ...".
+
+    A word boundary cannot match between "A" and "U", so the first version of
+    this detection missed all six — which is exactly the six forms dated after
+    June 2007 that came out with no comparative set at all, when the format has
+    appeared once in every Reading Comprehension section since.
+    """
+    eaten_space = COMPARATIVE_PASSAGE.replace("Passage A W", "Passage AW").replace(
+        "Passage B G", "Passage BG"
+    )
+    assert "Passage AW" in eaten_space and "Passage BG" in eaten_space
+    assert detect_comparative(eaten_space, "Reading Comprehension")
+
+    # And the prose the tolerance must still refuse: a capitalised "Passage A"
+    # that is the start of an ordinary word rather than a heading.
+    assert not detect_comparative(
+        "Passage About the harbour commission and its many disputes. " + "x" * 200 + " Passage Ability",
+        "Reading Comprehension",
+    )
 
 
 def test_the_comparative_gate_hides_the_choices_until_both_passages_are_mapped(app):

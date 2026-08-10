@@ -72,6 +72,13 @@ class Passage(db.Model):
     title = db.Column(db.String(255), nullable=True)
     canonical_text = db.Column(db.Text, nullable=False)
     passage_type = db.Column(db.String(40), nullable=True)
+    # Two passages printed together as one set. Written at ingest by
+    # `strategies.detect_comparative`, never inferred at read time: the format is
+    # a fixed property of the set, so deciding it once is both cheaper and more
+    # answerable than re-deciding it on every request. Defaults to false so a
+    # passage written by a path that has not learned about the flag is treated
+    # as an ordinary single passage rather than crashing the allocator.
+    comparative = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     source = db.Column(db.String(255), nullable=True)
     review_status = db.Column(db.String(60), nullable=False, default="development_only")
 
