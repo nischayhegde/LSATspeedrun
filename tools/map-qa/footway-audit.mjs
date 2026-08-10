@@ -95,6 +95,42 @@ function audit(settings) {
       return
     }
     if (child.isSkinnedMesh) return
+
+    /*
+     * A static batch goes in a triangle at a time, an ordinary mesh whole.
+     *
+     * `batchStaticScenery` merges every prop sharing a material family into one
+     * mesh, so a batch's bounding box is the union of props that may stand
+     * thirty metres apart, and pavement inside that box need not be inside any
+     * of them. Measured against the whole box, one batch on The Circuit claimed
+     * 10.94 of 32.5 blocked metres on its own, which made the headline share an
+     * upper bound rather than a number. `inside.mjs` has always done this the
+     * honest way; this is that branch, ported, so the two probes can at least be
+     * argued about on the same terms.
+     */
+    if (child.userData?.staticBatch) {
+      const position = child.geometry.attributes?.position
+      if (!position) return
+      const indices = child.geometry.index
+      const count = indices ? indices.count : position.count
+      for (let triangle = 0; triangle + 2 < count; triangle += 3) {
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, top = -Infinity
+        for (let corner = 0; corner < 3; corner += 1) {
+          const at = indices ? indices.getX(triangle + corner) : triangle + corner
+          vertex.fromBufferAttribute(position, at).applyMatrix4(child.matrixWorld)
+          if (vertex.x < minX) minX = vertex.x
+          if (vertex.x > maxX) maxX = vertex.x
+          if (vertex.z < minZ) minZ = vertex.z
+          if (vertex.z > maxZ) maxZ = vertex.z
+          if (vertex.y > top) top = vertex.y
+        }
+        if (top < floorY + headroom) continue
+        if (minX < -70 || maxX > 70 || minZ < -70 || maxZ > 70) continue
+        solids.push({ minX, maxX, minZ, maxZ, top, name: 'static-batch' })
+      }
+      return
+    }
+
     // A non-instanced mesh: use its world axis-aligned footprint, which is what
     // the collision harness's grid effectively does too.
     const geometry = child.geometry
@@ -134,9 +170,41 @@ function audit(settings) {
     }
     return null
   }
+  /*
+   * Splitting the batches turned a few hundred solid boxes into a few hundred
+   * thousand, and a linear scan per sample is then hours rather than seconds.
+   * A one-metre bucket grid over the same ±70 the collector already clips to
+   * keeps the probe at the speed its "no frames, so it is quick" promise was
+   * made at.
+   */
+  const CELL = 1
+  const ORIGIN = -72
+  const SPAN = 145
+  const cellOf = (x, z) => (
+    Math.min(SPAN - 1, Math.max(0, Math.floor((z - ORIGIN) / CELL))) * SPAN
+    + Math.min(SPAN - 1, Math.max(0, Math.floor((x - ORIGIN) / CELL)))
+  )
+  const buckets = new Map()
+  for (let index = 0; index < solids.length; index += 1) {
+    const box = solids[index]
+    const x0 = Math.min(SPAN - 1, Math.max(0, Math.floor((box.minX - ORIGIN) / CELL)))
+    const x1 = Math.min(SPAN - 1, Math.max(0, Math.floor((box.maxX - ORIGIN) / CELL)))
+    const z0 = Math.min(SPAN - 1, Math.max(0, Math.floor((box.minZ - ORIGIN) / CELL)))
+    const z1 = Math.min(SPAN - 1, Math.max(0, Math.floor((box.maxZ - ORIGIN) / CELL)))
+    for (let cz = z0; cz <= z1; cz += 1) {
+      for (let cx = x0; cx <= x1; cx += 1) {
+        const key = cz * SPAN + cx
+        const found = buckets.get(key)
+        if (found) found.push(box)
+        else buckets.set(key, [box])
+      }
+    }
+  }
   const inSolid = (x, z) => {
-    for (let index = 0; index < solids.length; index += 1) {
-      const box = solids[index]
+    const bucket = buckets.get(cellOf(x, z))
+    if (!bucket) return null
+    for (let index = 0; index < bucket.length; index += 1) {
+      const box = bucket[index]
       if (x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ) return box
     }
     return null
