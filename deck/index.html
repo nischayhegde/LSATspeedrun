@@ -10,13 +10,26 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23102735' stroke='%23c89b4b' stroke-width='3'/%3E%3Cpath d='M32 14v34M20 22h24M17 22 10 36h14L17 22Zm30 0-7 14h14l-7-14ZM23 49h18' fill='none' stroke='%23f5e8c8' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Presented from a laptop that may well be on conference wifi, so the two
-         display families are the only network request the deck makes outside the
-         demo iframes, and they are `display=swap` so nothing is ever hidden
-         waiting for them. Everything else — art, textures, geometry — is either
-         procedural or served from `public/`. -->
+    <!-- Presented from a laptop that may well be on conference wifi, so this is the
+         only network request the deck makes outside the demo iframes, and it is
+         `display=swap` so nothing is ever hidden waiting for it. Everything else —
+         art, textures, geometry — is either procedural or served from `public/`.
+
+         One family, four weights. Fraunces was requested here until the display
+         face moved to Archivo; it was then a face nothing rendered, costing 5.4KB
+         of render-blocking CSS and 24 dead `@font-face` registrations, plus a
+         forced 67.4KB download because `start/warm-up.ts` was still asking for it
+         by name. The app itself is still set in Fraunces and loads it separately,
+         so the live demo slides are unaffected.
+
+         The four weights are not optional. Google serves Archivo's latin subset as
+         one variable file, so asking for four instances costs the same bytes as
+         asking for one — but a weight left out of this list is *synthesised* by the
+         browser rather than drawn, and 800 in particular is the display face.
+         There is deliberately no italic: Archivo's italic is not served here, so
+         any `font-style: italic` would be a sheared roman. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <title>Lawyer Tycoon</title>

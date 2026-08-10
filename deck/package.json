@@ -11,8 +11,12 @@
     "prepare-demo": "node scripts/prepare-demo.mjs",
     "stage-demo": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply",
     "stage-demo:fast": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply --no-model",
-    "reset-demo": "npm run stage-demo && npm run prepare-demo",
-    "shoot": "node scripts/shoot.mjs"
+    "reset-demo": "npm run stage-demo && npm run prepare-demo -- --skip-seed",
+    "shoot": "node scripts/shoot.mjs",
+    "verify:cold-start": "node scripts/verify-cold-start.mjs",
+    "verify:continuity": "node scripts/verify-demo-continuity.mjs",
+    "verify:sizing": "node scripts/verify-demo-sizing.mjs",
+    "verify": "npm run verify:cold-start && npm run verify:continuity && npm run verify:sizing"
   },
   "dependencies": {
     "react": "^19.2.8",

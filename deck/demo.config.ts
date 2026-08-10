@@ -42,6 +42,34 @@ export type DemoConfig = {
    */
   verdictSessionId: string
   /**
+   * Session id of the fifteen-question run the app drives itself through, and
+   * the credited answers for it, in item order — `'ACEBACAEBEAADBD'` means item
+   * 0's answer is A, item 1's is C, and so on.
+   *
+   * The key has to be carried here because the app is never told it: the API's
+   * `serialize_question` omits `correct_answer` on purpose, so a driver reading
+   * only what the client is sent could not answer anything. `stage_demo.py`
+   * computes both values when it stages the run and `prepare-demo.mjs` pins them
+   * here, so they are always written together and cannot drift apart.
+   *
+   * They are the two halves of one URL — see `{autoplay}` in
+   * `src/demo/demo-runtime.ts`. Either one empty means "not staged", and a slide
+   * asking for autoplay falls back to the ordinary live case rather than to a
+   * URL that would answer nothing.
+   *
+   * Nothing in the deck requests this today. The app ignores `?autoplay=`
+   * unless it is present, so pinning these changes no slide until one asks.
+   */
+  autoplaySessionId: string
+  autoplayAnswerKey: string
+  /**
+   * The account the demo data is seeded under, and the one the deck signs itself
+   * in as during preflight so the presenter never sees a login screen. Must match
+   * the email `seed_demo.py` and `stage_demo.py` stage against, or the deck will
+   * be signed in as a user with no demo data.
+   */
+  demoEmail: string
+  /**
    * Force every demo slide to its still image regardless of what the health
    * check says. Flip this to `true` for a dry run on a machine with no stack
    * running, or on stage if the app is misbehaving and you want no surprises.
@@ -51,7 +79,10 @@ export type DemoConfig = {
 
 export const demoConfig: DemoConfig = {
   appOrigin: 'http://localhost:5173',
-  liveSessionId: '2e5ef6d0-429c-40d1-a205-3e8392b1d864',
-  verdictSessionId: '8c6a1061-915c-4347-a7f1-2621c84c6590',
+  liveSessionId: '9b6ed193-b08a-49db-ae8c-21d9a408d664',
+  verdictSessionId: '95fde78d-f8c9-491a-87fd-1806b7e69ccb',
+  autoplaySessionId: '67b5e565-39d1-40f7-be3e-bc93e59596d0',
+  autoplayAnswerKey: 'ACEBACAEBEAADBD',
+  demoEmail: 'student@localhost.test',
   useStills: false,
 }

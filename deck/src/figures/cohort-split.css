@@ -256,8 +256,7 @@
 
 .fig-cs-verdict b {
   font-family: var(--font-display);
-  font-variation-settings: 'opsz' 30;
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   font-size: clamp(1.3rem, 1.8vw, 1.85rem);
   white-space: nowrap;
 }

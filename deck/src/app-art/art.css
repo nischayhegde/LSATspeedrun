@@ -4,7 +4,19 @@
    ============================================================ */
 
 :root {
-  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  /* Archivo, not the product's Fraunces.
+     This layer is a port of the app's own art, so Fraunces was the faithful
+     choice and was what the app still sets. But the deck's display face moved to
+     Archivo, and `deck/index.html` no longer requests Fraunces at all — a face
+     named here and not loaded does not degrade gracefully, it substitutes Georgia
+     silently, on a projector, in about a dozen small labels.
+
+     The divergence is deliberate and small: the labels this token reaches are
+     11-26px chrome — floor names, counsel plaques, event headings — not the
+     product's signature. The product's own type is unaffected and still Fraunces,
+     because the live demo slides frame the real app, which loads its own fonts.
+     Worth revisiting if the app's display face ever changes to match the deck. */
+  --font-display: Archivo, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-pixel: "Archivo", Inter, ui-sans-serif, system-ui, sans-serif;
   --muted: #5c635c;
   --av-brass: #c89b4b;

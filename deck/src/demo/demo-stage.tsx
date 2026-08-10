@@ -122,10 +122,24 @@ type Props = {
  * instruction: `zoom` keeps meaning exactly what it meant, and the base it
  * multiplies is capped at what is legible. A slide that deliberately asks for a
  * narrower viewport than this still gets it, because the cap is a `min`.
+ *
+ * ## Raised to 1400 when the demo slides went full-bleed
+ *
+ * Everything above was reasoned against a slot 1101px wide. Full-bleed made the
+ * slot about 1610px, and at a 1150 cap the app was being rendered at 1027 logical
+ * pixels and blown up 1.46x — which magnifies the type past the point of
+ * usefulness and, worse, *shrinks what is on screen*: a 642px logical viewport
+ * shows 39% of the case page's 1658px height, so the audience reads a third of the
+ * thing being demonstrated.
+ *
+ * 1400 lands the scale near 1.15, still a magnification, while showing about half
+ * the page. The rest is bought back by the autoplay driver scrolling the app to
+ * whatever it is about to touch, which is a better answer than either number: the
+ * audience sees the part that matters at the moment it matters.
  */
-const LEGIBILITY_WIDTH = 1150
+const LEGIBILITY_WIDTH = 1400
 /** Used only when a slide names no width at all. */
-const DEFAULT_WIDTH = 1150
+const DEFAULT_WIDTH = 1400
 /** 16:10 rather than 16:9 — the app's dashboard is tall, and a 16:9 slot crops it. */
 const ASPECT = 16 / 10
 
@@ -154,6 +168,14 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
   const slide = slides[index]
   const demo = slide?.demo
   const sessionId = status.sessionId || demoConfig.liveSessionId
+  const authEpoch = status.authEpoch
+  /**
+   * The epoch the frame's current contents were loaded under. Differs from
+   * `authEpoch` only in the window between a cold iframe load and the preflight's
+   * automatic sign-in landing, which is exactly when the frame is holding a login
+   * screen that a reload will replace with the app.
+   */
+  const loadedUnderEpoch = useRef(authEpoch)
   const needsSession = Boolean(demo?.route.includes('{session}'))
   const sessionMissing = needsSession && !sessionId
   /**
@@ -258,6 +280,8 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
     }
 
     const url = `${demoConfig.appOrigin}${routeFor(demo, sessionId)}`
+    const staleAuth = authEpoch !== loadedUnderEpoch.current
+    loadedUnderEpoch.current = authEpoch
 
     // 1 — a new run.
     if (!run || !previousDemo) {
@@ -278,8 +302,11 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
       believed.current = url
       return
     }
-    // 3 — the frame is already where this slide wants it.
-    if (believed.current === url) return
+    // 3 — the frame is already where this slide wants it. Unless the deck signed
+    // this profile in since the frame was loaded, in which case the frame is
+    // sitting on the login screen it was given when it had no cookie, and the same
+    // URL will now answer with the app.
+    if (believed.current === url && !staleAuth) return
     // 4 — a deliberate navigation of the surviving element. Imperative, so that
     // React's own view of `src` never enters into it.
     believed.current = url
@@ -288,7 +315,7 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
     // `run` is read, not depended on: including it would re-run the policy on
     // every change and re-decide a decision already taken.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, showStill, sessionId])
+  }, [index, showStill, sessionId, authEpoch])
 
   // --- `L` reloads the current slide's route ------------------------------
   // The escape hatch for rule 3 above. Imperative rather than through state,

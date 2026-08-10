@@ -2,7 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 import { demoConfig } from '../../demo.config'
 import type { DemoSpec } from '../slides/types'
-import { getStatus, registerSlot, resolveRoute, runtimeVersion, subscribeRuntime } from './demo-runtime'
+import { describeSurface, presenterChrome, registerSlot, runtimeVersion, subscribeRuntime } from './demo-runtime'
 
 /**
  * The frame around a live embed of the running product: its chrome, its caption,
@@ -75,13 +75,9 @@ type Props = {
 
 export function DemoFrame({ demo, stills, active }: Props) {
   useSyncExternalStore(subscribeRuntime, runtimeVersion)
-  const status = getStatus()
   const slot = useRef<HTMLDivElement | null>(null)
 
-  const sessionId = status.sessionId || demoConfig.liveSessionId
-  const route = resolveRoute(demo.route, sessionId)
-  const sessionMissing = demo.route.includes('{session}') && !sessionId
-  const showStill = stills || demoConfig.useStills || demo.stillOnly || sessionMissing || status.health === 'unreachable'
+  const { showStill, label, route } = describeSurface(demo, stills)
 
   /**
    * Published under this slide's own `DemoSpec`, and only while this layer is the
@@ -103,16 +99,6 @@ export function DemoFrame({ demo, stills, active }: Props) {
     return () => registerSlot(demo, null)
   }, [active, demo])
 
-  const label = sessionMissing
-    ? 'no seeded session'
-    : stills || demoConfig.useStills || demo.stillOnly
-      ? 'stills'
-      : status.health === 'live'
-        ? 'live'
-        : status.health === 'checking'
-          ? 'connecting'
-          : 'app not running'
-
   return (
     <figure className="demo">
       <div className="demo-chrome">
@@ -128,7 +114,11 @@ export function DemoFrame({ demo, stills, active }: Props) {
             </svg>
           </span>
           <code>{demoConfig.appOrigin.replace(/^https?:\/\//, '')}{route}</code>
-          <span className={`demo-lamp is-${label.replace(/\s+/g, '-')}`} title={label}>{label}</span>
+          {/* Presenter-only: see `presenterChrome`. The audience has no use for
+              "live" versus "stills" and reads the chip as a debug badge. */}
+          {presenterChrome ? (
+            <span className={`demo-lamp is-${label.replace(/\s+/g, '-')}`} title={label}>{label}</span>
+          ) : null}
         </header>
 
         {/* Measured by the stage, which positions the live embed over it. The

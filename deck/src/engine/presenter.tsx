@@ -1,3 +1,6 @@
+import { useSyncExternalStore } from 'react'
+
+import { describeSurface, runtimeVersion, subscribeRuntime } from '../demo/demo-runtime'
 import { SECTION_LABELS, TOTAL_BUDGET_SECONDS } from '../slides'
 import type { SlideSpec } from '../slides/types'
 
@@ -34,8 +37,12 @@ type Props = {
 }
 
 export function Presenter({ slides, index, elapsed, frameMs, memory, stills, onClose }: Props) {
+  // Subscribed so the `showing` line follows the app's health rather than only
+  // changing when the slide does: the origin can go down mid-slide.
+  useSyncExternalStore(subscribeRuntime, runtimeVersion)
   const slide = slides[index]
   const upcoming = slides[index + 1]
+  const surface = slide.demo ? describeSurface(slide.demo, stills) : null
   const budgetSoFar = slides
     .slice(0, index + 1)
     .reduce((sum, entry) => sum + (entry.budgetSeconds ?? 45), 0)
@@ -81,6 +88,16 @@ export function Presenter({ slides, index, elapsed, frameMs, memory, stills, onC
               <dd>
                 {slide.demo.route}
                 {slide.demo.annotations?.length ? ` · ${slide.demo.annotations.length} callouts (A)` : ''}
+              </dd>
+              {/* Live or a still, for this slide, right now. The lamp in the demo
+                  chrome is presenter-only and off by default, so this is where
+                  the presenter finds out whether the thing they are about to
+                  narrate over can actually be clicked. This screen is the one
+                  the audience is not looking at. */}
+              <dt>showing</dt>
+              <dd className={surface?.showStill ? 'is-warn' : 'is-on'}>
+                {surface?.showStill ? `still · ${slide.demo.still}` : 'live app'}
+                {surface ? ` · ${surface.label}` : ''}
               </dd>
             </>
           ) : null}

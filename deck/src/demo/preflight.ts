@@ -1,5 +1,5 @@
 import { demoConfig } from '../../demo.config'
-import { setStatus } from './demo-runtime'
+import { getStatus, setStatus } from './demo-runtime'
 import { probeApp } from './health'
 
 /**
@@ -85,6 +85,51 @@ async function getJson<T>(path: string, timeoutMs: number): Promise<{ status: nu
 }
 
 /**
+ * Sign this browser profile in, without anyone touching a keyboard.
+ *
+ * The presenter must never see or perform a sign-in — not on stage, and not
+ * during setup. The startup sequence is three steps: start the backend, start the
+ * app, open the deck. Anything else is a step that can be forgotten on the one
+ * morning it matters.
+ *
+ * Before this existed the demos worked only because *this* browser profile had
+ * been signed in by hand at some earlier point, and the runbook asked the
+ * presenter to do it. That is invisible state: a fresh profile, another browser,
+ * a guest window, a cleared cookie jar or a borrowed laptop would all have shown
+ * the audience a login screen, and the deck would have looked fine right up until
+ * the first demo slide.
+ *
+ * `POST /v1/auth/dev` is the same endpoint the app's own "Enter local development
+ * firm" button calls. It is CSRF-exempt (`AUTH_EXEMPT_PATHS`) and refuses to
+ * exist unless `DEV_AUTH_ENABLED` is set, so it cannot be reached in production.
+ * Called through `/demo-api`, which makes it same-origin, so the `Set-Cookie`
+ * lands on host `localhost` — and cookies ignore the port, so the app on :5173
+ * is signed in by a request made from the deck on :5180.
+ *
+ * Only called when `/me` has already answered 401, which is what makes it
+ * idempotent: an established session is a no-op, not a re-login.
+ */
+async function establishSession(timeoutMs: number): Promise<{ ok: boolean; status: number }> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(`${API}/auth/dev`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: demoConfig.demoEmail }),
+      signal: controller.signal,
+    })
+    return { ok: response.ok, status: response.status }
+  } catch {
+    return { ok: false, status: 0 }
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+/**
  * The one check that needs no network and is the most common cause of a login
  * screen on a projector.
  *
@@ -125,12 +170,30 @@ function checkOrigin(): Check {
 export async function runPreflight(): Promise<PreflightResult> {
   const origin = checkOrigin()
 
-  const [appHealth, health, me, current] = await Promise.all([
+  const [appHealth, health, firstMe, firstCurrent] = await Promise.all([
     probeApp(demoConfig.appOrigin, 4000),
     getJson<{ status?: string; questions?: { total?: number } }>('/health', 6000),
     getJson<{ email?: string }>('/me', 8000),
     getJson<{ session?: { id?: string } }>('/study-sessions/current', LOOKUP_TIMEOUT_MS),
   ])
+
+  // Sign in if this profile is not signed in, then ask both questions again. In
+  // the ordinary case — the deck reopened in a browser that already has the
+  // cookie — none of this runs and the cost is zero. On a cold profile it is one
+  // extra round trip, spent while the room is looking at the title card.
+  let me = firstMe
+  let current = firstCurrent
+  /** Null when nothing was attempted, which is the common case. */
+  let signIn: { ok: boolean; status: number } | null = null
+  if (me.status === 401 && health.body) {
+    signIn = await establishSession(8000)
+    if (signIn.ok) {
+      ;[me, current] = await Promise.all([
+        getJson<{ email?: string }>('/me', 8000),
+        getJson<{ session?: { id?: string } }>('/study-sessions/current', LOOKUP_TIMEOUT_MS),
+      ])
+    }
+  }
 
   const app: Check = appHealth === 'live'
     ? { id: 'app', label: 'App', state: 'ok', detail: `${demoConfig.appOrigin} is answering` }
@@ -157,17 +220,45 @@ export async function runPreflight(): Promise<PreflightResult> {
         : `the backend answered ${health.status} on /v1/health. Start it with: cd backend && PORT=5001 DEV_AUTH_ENABLED=true ../.venv/bin/python run.py`,
     }
 
+  // No branch here asks the presenter to sign in. If the session cannot be
+  // established automatically that is a setup fault to be fixed now, at the start
+  // card, with the command that fixes it — not a chore handed to whoever is about
+  // to speak. The failure has to be legible during setup rather than at the first
+  // demo slide, where it would be a login screen in front of an audience.
   const auth: Check = me.body
-    ? { id: 'auth', label: 'Signed in', state: 'ok', detail: `signed in as ${me.body.email ?? 'the demo account'}` }
-    : me.status === 401
+    ? {
+      id: 'auth',
+      label: 'Signed in',
+      state: 'ok',
+      detail: signIn
+        ? `signed in automatically as ${me.body.email ?? demoConfig.demoEmail} — nothing to do`
+        : `already signed in as ${me.body.email ?? demoConfig.demoEmail}`,
+    }
+    : signIn && signIn.status === 404
       ? {
         id: 'auth',
         label: 'Signed in',
         state: 'bad',
-        detail: 'this browser profile is not signed in. Open '
-          + `${demoConfig.appOrigin}/login and click "Enter local development firm", then reload the deck.`,
+        detail: 'the backend refuses development sign-in, so no demo can load. Restart it with '
+          + 'DEV_AUTH_ENABLED=true: cd backend && PORT=5001 DEV_AUTH_ENABLED=true ../.venv/bin/python run.py',
       }
-      : { id: 'auth', label: 'Signed in', state: 'warn', detail: 'could not check — the backend did not answer /v1/me' }
+      : signIn
+        ? {
+          id: 'auth',
+          label: 'Signed in',
+          state: 'bad',
+          detail: `automatic sign-in failed (${signIn.status || 'no response'}). Every demo will show a login screen. `
+            + 'Check the backend is up on :5001 and re-open the deck.',
+        }
+        : me.status === 401
+          ? {
+            id: 'auth',
+            label: 'Signed in',
+            state: 'bad',
+            detail: 'not signed in, and the backend could not be reached through /demo-api to fix it. '
+              + 'Start the backend, then re-open the deck.',
+          }
+          : { id: 'auth', label: 'Signed in', state: 'warn', detail: 'could not check — the backend did not answer /v1/me' }
 
   const resolved = current.body?.session?.id ?? ''
   const pinned = demoConfig.liveSessionId
@@ -210,7 +301,13 @@ export async function runPreflight(): Promise<PreflightResult> {
   }
 
   const checks = [origin, app, api, auth, session] as const
-  setStatus({ sessionId })
+  // Publishing the epoch is what closes the race between this check and the warm
+  // iframe: if the sign-in happened just now, any embed that already loaded did so
+  // without a cookie and is sitting on `/login`, and the stage has to be told that
+  // the same URL will answer differently if asked again.
+  setStatus(signIn?.ok
+    ? { sessionId, authEpoch: getStatus().authEpoch + 1 }
+    : { sessionId })
 
   return { checks, sessionId, sessionSource, ok: !checks.some((check) => check.state === 'bad') }
 }

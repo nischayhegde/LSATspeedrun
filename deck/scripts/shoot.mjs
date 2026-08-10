@@ -152,7 +152,11 @@ shoot — screenshot every slide of the deck and report what broke.
 
   node scripts/shoot.mjs [options]
 
-  --base=<url>      Deck dev server. Default http://127.0.0.1:5180
+  --base=<url>      Deck dev server. Default http://localhost:5180
+                    Must be spelled "localhost" for the live demo embeds to be
+                    signed in; see --no-auth below.
+  --no-auth         Do not sign the browser in before shooting. The six live
+                    demo slides will render the app's sign-in page.
   --out=<dir>       Output directory. Default .deck-shots
   --slides=<list>   Comma-separated slide ids and/or indices, or "all".
                     Default all.
@@ -185,7 +189,7 @@ if (flags.has('help')) {
   console.log(HELP)
   process.exit(0)
 }
-const KNOWN = new Set(['base', 'out', 'slides', 'width', 'height', 'scale', 'settle', 'timeout', 'stills', 'presenter', 'grid', 'full', 'help'])
+const KNOWN = new Set(['base', 'out', 'slides', 'width', 'height', 'scale', 'settle', 'timeout', 'stills', 'presenter', 'grid', 'full', 'help', 'no-auth', 'app', 'email'])
 const unknown = [...flags.keys()].filter((name) => !KNOWN.has(name))
 if (unknown.length) {
   console.error(`shoot: unknown flag${unknown.length > 1 ? 's' : ''} --${unknown.join(' --')}\n\n${HELP}`)
@@ -202,7 +206,16 @@ const number = (name, fallback) => {
   return value
 }
 
-const BASE = (flags.get('base') || 'http://127.0.0.1:5180').replace(/\/$/, '')
+// `localhost`, not `127.0.0.1`. The two are the same server and different
+// *sites* to a browser, and the app's session cookies are `SameSite=Lax`, so on
+// the dotted spelling they are not sent into the demo iframes and all six live
+// demo slides render the app's sign-in page. This default used to be
+// `127.0.0.1`, which produced exactly that: a full screenshot pass in which
+// every demo slide looked plausible and showed a login screen.
+const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
+/** The app the demo slides frame. Must be `localhost` for the same cookie reason. */
+const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
+const NO_AUTH = flags.has('no-auth')
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots')
 const WANTED = (flags.get('slides') || 'all').trim()
 const WIDTH = number('width', 1920)
@@ -475,16 +488,48 @@ async function captureSlide(context, { id, index }, options) {
   const consoleErrors = []
   const pageErrors = []
   const failedRequests = []
+  /** Hoisted: the console handler reads it, and is installed before it is filled. */
+  const expected = { aborted: 0, unauthorized: 0 }
 
   const page = await context.newPage()
   page.on('pageerror', (error) => pageErrors.push(String(error?.message ?? error).slice(0, 300)))
   page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text().slice(0, 300))
+    if (message.type() !== 'error') return
+    const text = message.text().slice(0, 300)
+    // The browser's own line for the two expected preflight 401s below. It names
+    // no URL, so it can only be recognised by shape, and only while one of those
+    // probes has actually just 401'd.
+    if (expected.unauthorized && /Failed to load resource.*401/.test(text)) return
+    consoleErrors.push(text)
   })
+  /**
+   * Counted, then reported as a note rather than as a failure.
+   *
+   * Two things a healthy cold-profile run does look like network errors and are
+   * not. A report that calls them failures is a report people learn to skim, which
+   * is how a real signal gets missed — the failure mode this whole pass exists to
+   * prevent.
+   *
+   * - `net::ERR_ABORTED` on the app's origin: the start card warms two scene
+   *   routes in frames it then discards, and on a cold profile the preflight
+   *   reloads an embed that loaded before the session cookie existed. Both cancel
+   *   a navigation in flight. A genuinely broken embed is caught by `mounted`,
+   *   `blank` and `signedOutEmbed`, which read the DOM rather than the wire.
+   * - `401` on `/me` and `/study-sessions/current`: these two are what *trigger*
+   *   the deck's automatic sign-in. Their absence would be the surprise.
+   */
+  const PREFLIGHT_PROBES = /\/demo-api\/v1\/(me|study-sessions\/current)$/
+
   page.on('requestfailed', (request) => {
-    failedRequests.push({ url: request.url().slice(0, 200), reason: request.failure()?.errorText ?? 'unknown' })
+    const reason = request.failure()?.errorText ?? 'unknown'
+    if (reason === 'net::ERR_ABORTED' && request.url().startsWith(APP)) { expected.aborted += 1; return }
+    failedRequests.push({ url: request.url().slice(0, 200), reason })
   })
   page.on('response', (response) => {
+    if (response.status() === 401 && PREFLIGHT_PROBES.test(new URL(response.url()).pathname)) {
+      expected.unauthorized += 1
+      return
+    }
     if (response.status() >= 400) failedRequests.push({ url: response.url().slice(0, 200), reason: `HTTP ${response.status()}` })
   })
 
@@ -534,6 +579,33 @@ async function captureSlide(context, { id, index }, options) {
       if (!memory) return null
       return { geometries: memory.geometries ?? null, textures: memory.textures ?? null, cached: memory.cached ?? null }
     }).catch(() => null)
+
+    // A demo slide showing the app's sign-in page is the most dangerous failure
+    // this script can photograph, because it looks fine: a real screenshot of a
+    // real app, correctly framed, with the right URL in the chrome above it. It
+    // has already been reported once as six broken slides in the deck. So it is
+    // named here explicitly rather than left for a human to notice.
+    const embed = page.frames().find((frame) => /^https?:\/\/localhost:5173/.test(frame.url()) && !frame.url().includes('deck-warm'))
+    if (embed) {
+      const inner = await embed.evaluate(() => ({
+        path: window.location.pathname,
+        signIn: /Enter your firm|Continue with Google|Enter local development firm/i.test(document.body.innerText || ''),
+      })).catch(() => null)
+      if (inner && (inner.signIn || inner.path === '/login')) {
+        result.notes.push('THE EMBED IS SHOWING THE APP\u2019S SIGN-IN PAGE, not the deep-linked route. '
+          + `This shot is not evidence of anything. Embed is on ${inner.path}. `
+          + 'Shoot from http://localhost:5180 (never 127.0.0.1) with the app and backend up; '
+          + 'this script signs in for you unless --no-auth or --stills was passed.')
+        result.signedOutEmbed = true
+      }
+    }
+
+    // Recorded, not hidden: a reader who wants to know whether the deck signed
+    // itself in on this run can see that it did, without it being called a failure.
+    // Kept out of `notes`, which drives the `warn` mark: these are not warnings,
+    // and a clean run flagged `warn` teaches the same lesson as a broken run
+    // flagged `ok`.
+    result.expected = expected
 
     const file = `${pad(index)}-${id}${options.suffix}.png`
     const path = `${options.out}/${file}`
@@ -640,6 +712,64 @@ try {
     reducedMotion: 'no-preference',
   })
 
+  // -------------------------------------------------------------------------
+  // Make the live demo embeds work, or say loudly that they will not.
+  // -------------------------------------------------------------------------
+  //
+  // Three separate things are required for a demo slide to photograph as the
+  // running app rather than as a sign-in page, and a harness that gets any one of
+  // them wrong still produces a full set of plausible-looking screenshots. That
+  // has now happened: a 24-slide pass reported six demo slides "loading the
+  // sign-in landing page", which was the harness, not the deck.
+  //
+  //   1. The deck must be served from `localhost`. Same server as `127.0.0.1`,
+  //      different *site* to a browser, and the app's cookies are `SameSite=Lax`.
+  //   2. This browser profile must hold a session cookie. Playwright starts with
+  //      an empty jar, so a screenshot harness is signed out unless it signs in.
+  //      Measured: signed out, every embed lands on /login with 6 API 401s —
+  //      whichever spelling of localhost is used.
+  //   3. The app's guided tour must be marked complete, or a 21-step overlay
+  //      opens inside the iframe and covers the thing being photographed.
+  // Enforced only when live embeds are in play. A `--stills` pass mounts no
+  // iframes, so no cookie has to cross an origin and the spelling cannot matter.
+  const deckHost = new URL(BASE).hostname
+  if (deckHost !== 'localhost' && !STILLS && !NO_AUTH) {
+    console.error(`\nshoot: --base is ${BASE}, whose host is "${deckHost}".\n\n`
+      + 'The live demo embeds will all render the app\'s sign-in page: the app\'s\n'
+      + 'session cookies are SameSite=Lax, and a browser treats "localhost" and\n'
+      + `"${deckHost}" as different sites, so the cookies are not sent into the\n`
+      + 'iframes. Re-run with --base=http://localhost:' + (new URL(BASE).port || '80') + '\n')
+    await browser.close()
+    process.exit(2)
+  }
+
+  // Belt and braces since the deck signs itself in during preflight: doing it here
+  // too only saves the couple of 401s and the one embed reload that recovery costs.
+  // `--no-auth` leaves it to the deck, which is the presenter's path exactly.
+  if (!NO_AUTH && !STILLS) {
+    const app = APP
+    const email = flags.get('email') || 'student@localhost.test'
+    const signIn = await context.request.post(`${app}/v1/auth/dev`, { data: { email } })
+      .then((response) => (response.ok() ? null : `${response.status()}`))
+      .catch((error) => String(error.message ?? error))
+    if (signIn) {
+      console.error(`\nshoot: could not sign in at ${app}/v1/auth/dev (${signIn}).\n\n`
+        + 'Every live demo slide would photograph as a sign-in page. Start the app\n'
+        + '(cd frontend && npm run dev) and the backend with DEV_AUTH_ENABLED=true,\n'
+        + 'or pass --stills to shoot the fallback images instead, or --no-auth to\n'
+        + 'shoot signed out on purpose.\n')
+      await browser.close()
+      process.exit(2)
+    }
+    console.log(`       signed in as ${email} — demo embeds will be authenticated`)
+
+    // Same key the runbook has the presenter paste by hand. Set for the app's
+    // origin, which is where the tour reads it from.
+    await context.addInitScript(() => {
+      try { window.localStorage.setItem('lsat-tycoon:guided-tour:v6', 'complete') } catch { /* not our origin */ }
+    })
+  }
+
   const probe = await context.newPage()
   await probe.goto(`${BASE}/?start=0`, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await probe.waitForSelector('.deck-layer.is-live', { timeout: 15000 }).catch(() => {})
@@ -689,9 +819,16 @@ try {
       }
       result.pass = pass.suffix || 'main'
       results.push(result)
-      const mark = result.pageErrors.length ? 'ERR' : result.blank ? 'BLANK' : !result.mounted ? 'DEAD' : result.notes.length ? 'warn' : 'ok'
+      const mark = result.signedOutEmbed ? 'NOAUTH' : result.pageErrors.length ? 'ERR' : result.blank ? 'BLANK' : !result.mounted ? 'DEAD' : result.notes.length ? 'warn' : 'ok'
+      // The cold-profile bookkeeping, appended to the line rather than given one:
+      // it is context for the numbers beside it, not an event.
+      const cold = [
+        result.expected?.unauthorized ? `${result.expected.unauthorized} pre-sign-in 401` : '',
+        result.expected?.aborted ? `${result.expected.aborted} cancelled nav` : '',
+      ].filter(Boolean).join(', ')
       console.log(`  ${mark.padEnd(5)} ${pad(slide.index)}-${slide.id}${pass.suffix}  ${result.ms}ms`
         + (result.stats ? `  sd ${result.stats.stdDev} colours ${result.stats.colours}` : '  (undecodable)')
+        + (cold ? `  [${cold}]` : '')
         + (result.notes.length ? `\n        ${result.notes.join('\n        ')}` : ''))
     }
 
@@ -729,6 +866,7 @@ const blanks = results.filter((result) => result.blank === true)
 const withConsole = results.filter((result) => result.consoleErrors.length)
 const withRequests = results.filter((result) => result.failedRequests.length)
 const undecodable = results.filter((result) => result.file && !result.stats)
+const signedOut = results.filter((result) => result.signedOutEmbed)
 
 console.log(`\n${'-'.repeat(64)}`)
 console.log(`captured   ${results.filter((result) => result.file).length}/${results.length}  ->  ${OUT}`)
@@ -738,10 +876,22 @@ console.log(`blank captures   ${blanks.length}${blanks.length ? `  (${blanks.map
 console.log(`console errors   ${withConsole.length}${withConsole.length ? `  (${withConsole.map((r) => r.id).join(', ')})` : ''}`)
 console.log(`failed requests  ${withRequests.length}${withRequests.length ? `  (${withRequests.map((r) => r.id).join(', ')})` : ''}`)
 if (undecodable.length) console.log(`undecodable PNGs ${undecodable.length}  (blank check did not run on these)`)
+console.log(`signed-out embeds ${signedOut.length}${signedOut.length ? `  (${signedOut.map((r) => r.id).join(', ')})` : ''}`)
 console.log(`report           ${OUT}/report.json`)
 
-if (withPageErrors.length || blanks.length || unmounted.length) {
-  console.log('\nFAILED — a slide threw, did not mount, or rendered nothing.')
+if (signedOut.length) {
+  console.log(`\n${'!'.repeat(64)}`)
+  console.log(`${signedOut.length} demo slide(s) photographed the app's SIGN-IN PAGE instead of the app:`)
+  console.log(`  ${signedOut.map((r) => r.id).join(', ')}`)
+  console.log('\nThose shots look like working slides and are not. Do not use them to judge')
+  console.log('the deck. Shoot from http://localhost:5180 — never 127.0.0.1 — with the app')
+  console.log('on :5173 and the backend on :5001, after `cd deck && npm run reset-demo`.')
+  console.log('See "Shooting a screenshot pass" in deck/DEMO-NOTES.md.')
+  console.log(`${'!'.repeat(64)}`)
+}
+
+if (withPageErrors.length || blanks.length || unmounted.length || signedOut.length) {
+  console.log('\nFAILED — a slide threw, did not mount, rendered nothing, or was signed out.')
   process.exit(1)
 }
 console.log('\nOK')

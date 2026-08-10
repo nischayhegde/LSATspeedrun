@@ -20,8 +20,20 @@ That runs, in order:
 
 | Step | What it does | Time |
 | --- | --- | --- |
-| `stage_demo.py --apply` | Pins the question, pre-pastes the reasoning, rewinds the question timer, re-grades the verdict twin through the real model | ~20-40s |
-| `prepare-demo.mjs` | Resolves the live session id and writes it into `demo.config.ts` | ~10-20s |
+| `stage_demo.py --apply` | Pins the question, pre-pastes the reasoning, rewinds the question timer, silences the guided tour server-side (§10), re-grades the verdict twin through the real model | ~20-40s |
+| `prepare-demo.mjs --skip-seed` | Resolves **both** session ids and writes them into `demo.config.ts`, then proves a framed page stays signed in | ~10-20s |
+
+`--skip-seed` is not optional. `prepare-demo.mjs` runs the seeder by default, and
+the seeder builds fresh practice runs — so the previous ordering staged the demo
+and then immediately replaced the sessions it had just staged. Run the seeder on
+its own if the database is empty.
+
+Both ids are resolved, which is also new. `stage_demo.py` rebuilds the graded
+verdict twin under a new id every time it grades, and `prepare-demo.mjs` used to
+pin only `liveSessionId` — so `reset-demo` reliably left `verdictSessionId`
+pointing at a session it had just deleted, breaking the payoff beat with the
+command whose job is to make the demo work. The twin is now found by what it is
+rather than by its id: the paused run holding an already-graded attempt.
 
 Between rehearsals, when the verdict text has not changed and you only need the
 case rewound:
@@ -33,6 +45,12 @@ cd deck && npm run stage-demo:fast   # ~6s, skips the model call
 `stage-demo:fast` leaves the previously graded verdict in place, so it is the
 one to use in a tight rehearsal loop. Run the full `reset-demo` at least once on
 the machine and network you will present from.
+
+> It did not always. `--no-model` was implemented as "build a fresh twin, skip
+> the grading", which deleted the good verdict and left an ungraded one under a
+> new id — so the command documented as the safe rehearsal loop was emptying the
+> payoff slide and staling the pinned id on every run. It now keeps an existing
+> graded twin for the pinned question and reports `mechanism: kept`.
 
 **Why a reset is needed at all.** Each rehearsal consumes the seeded state: the
 case gets answered, and the per-question timer keeps counting from the moment
@@ -128,11 +146,23 @@ Reasoning is already in the box. **Alan never types.**
 
 | s | Action |
 | --- | --- |
-| 0-4 | Point at the strategy brief. Say its name: **Prephrase Before Choices**. Do not read its three steps. |
+| 0-4 | Point at the strategy brief. Say its name: **Prephrase Before Choices**. Do not read its three steps. Then click **Use it**. |
 | 4-9 | Drag-highlight exactly one clause in the stimulus. One drag. |
 | 9-12 | Select **(C)**. Do not read the other four choices. |
 | 12-18 | Scroll the pre-filled reasoning into view. Read its **first clause only**. |
 | 18-20 | Click confidence 4. **Do not submit** — advance the slide. |
+
+**The "Use it" click is required, not decoration.** Until the strategy brief is
+answered the app disables the answer choices, the reasoning box and the
+confidence row — so skipping it leaves the presenter unable to do anything else
+on this slide. It cannot be pre-staged: the choice is local state in
+`case-flow.tsx` with no draft field behind it, so there is nothing for
+`stage_demo.py` to write. `verify-demo-continuity.mjs` performs this click and
+fails if the case stays locked afterwards.
+
+It is also the on-message beat — "the strategy is inside the question" is a slide
+of its own (`pov-strategy-inside-the-question`), and this is the room watching
+that claim be true.
 
 Submitting would create a fresh attempt and put a 20-40 second model call on
 stage. The verdict you want is already waiting on the next slide.
@@ -386,13 +416,243 @@ surviving iframe anyway. Before the second half was added, the live `/progress`
 app was painted pixel-for-pixel on top of the focus-mode still — the slide
 headlined "Or delete all of it." was showing the audience a dashboard.
 
-**Loose end, owned by whoever owns `slides/index.ts`:** the slide's `route` is
-still `/progress`, so the deck's chrome caption reads `localhost:5173/progress`
-above a still captured at `/office`. Harmless to the argument and the lamp
-honestly reads "stills", but the caption contradicts the frame. Changing that
-route to `/office` fixes it and, because the slide is `stillOnly`, cannot cause
-a load.
+**Closed:** the slide's `route` was `/progress` while the still was captured at
+`/office`, so the frame's caption contradicted its own picture. It is `/office`
+now. Because the slide is `stillOnly` that cannot cause a load, and it matters
+more than it did: the status lamp is presenter-only now (§9), so the caption and
+the eyebrow are the only cues the audience gets about what they are looking at.
 
 The office and map demos (26s combined) are worth their clock: they are the only
 place the game layer is visible, and a still cannot show the tier transition that
 is the whole point of `demo-office-transformation`.
+
+---
+
+## 8. Shooting a screenshot pass against the live demos
+
+**Read this before judging the deck from screenshots.** A 24-slide pass once
+reported that all six live-demo slides "load the app's sign-in landing page
+instead of their deep-linked routes", with 24 console errors from `401`s. The
+deck was fine. The harness was signed out and on the wrong spelling of
+localhost, and the resulting shots looked entirely plausible: a real screenshot
+of a real app, correctly framed, with the right URL printed in the chrome above
+it. Nothing in the image said "this is a login screen".
+
+### The one command
+
+```bash
+cd deck && node scripts/shoot.mjs                    # all 24 slides
+cd deck && node scripts/shoot.mjs --slides=demo-case-answer,demo-map-and-firm
+```
+
+It defaults to `http://localhost:5180`, signs itself in, and suppresses the app's
+guided tour. If it cannot do those things it stops and says so rather than
+producing a set of misleading pictures.
+
+### What has to be true, and what happens when it is not
+
+Measured one variable at a time on `demo-case-answer`. The first four rows are the
+original measurement, taken before the deck could sign itself in; the last row is
+the same test after §10, and it is the one that matters now:
+
+| Deck origin | Profile signed in | Deck self-signs-in | Embed lands on | API 401s |
+| --- | --- | --- | --- | --- |
+| `127.0.0.1:5180` | no | no | `/login` | 6 |
+| `localhost:5180` | no | no | `/login` | 6 |
+| `127.0.0.1:5180` | yes | no | `/login` | 6 |
+| `localhost:5180` | yes | no | `/cases/<session>` | 0 |
+| **`localhost:5180`** | **no** | **yes** | **`/cases/<session>`** | **2, then recovers** |
+
+1. **The deck must be served from `localhost`, never `127.0.0.1`.** They are the
+   same server and, to a browser, different *sites*. The app's session cookies
+   are `SameSite=Lax`, so on the dotted spelling they are not sent into the demo
+   iframes and every embed bounces to `/login` — and no amount of signing in fixes
+   it, as row three shows. This is the one condition that is still fatal.
+   `shoot.mjs` refuses to run against any other host and prints the corrected
+   command, and the deck's dev server now binds the name `localhost`, so the wrong
+   spelling refuses the connection instead of serving a broken deck.
+2. **Nothing has to sign in any more.** This was the second necessary condition and
+   the actual cause of the false alarm: Playwright starts with an empty cookie jar,
+   so every ad-hoc harness in that run was signed out. It is no longer a condition
+   at all — the deck establishes its own session during preflight (§10), which is
+   what the last row of the table measures. `shoot.mjs` still posts to
+   `/v1/auth/dev` itself, which only makes it faster: it skips the couple of `401`s
+   and the one embed reload the deck would otherwise recover from. `--no-auth`
+   leaves that to the deck.
+3. **The servers must be up and the demo staged.** App on `:5173`, backend on
+   `:5001` with `DEV_AUTH_ENABLED=true`, and `npm run reset-demo` run first so
+   `demo.config.ts` points at sessions that exist (§1). `DEV_AUTH_ENABLED` is now
+   load-bearing rather than convenient — without it the deck cannot sign itself in
+   and every embed is a login screen.
+
+### The loud signal
+
+`shoot.mjs` reads inside each embed and, if it finds the app's sign-in page,
+marks that slide `NOAUTH`, prints a banner naming every affected slide, and exits
+non-zero. A signed-out demo slide can no longer be mistaken for a working one, by
+a person or by an agent summarising a report.
+
+The same principle runs the other way, which is why a clean pass prints
+`[2 cancelled nav]` beside a slide rather than counting two failed requests. On a
+cold profile the warm-up frames and the post-sign-in embed reload each cancel a
+navigation, and a report that files those under "failed requests: 6" is a report
+whose numbers get skimmed — which is how the real signal gets missed.
+
+This class of bug — *a screenshot that looks right and is not* — has now
+appeared three times in three disguises: a still that was actually the live app
+painted over it (§7), five corrupted stills that all weighed a plausible 87 KB,
+and this. Prefer a check that reads the pixels or the DOM over one that checks a
+file exists.
+
+### Ad-hoc harnesses
+
+If you must write your own, the only rule left is the origin: serve and open the
+deck as `localhost:5180`. `shoot.mjs` is the reference. `verify-demo-continuity.mjs`
+also signs in explicitly, which is why it passed honestly on the same afternoon the
+screenshot pass failed honestly — both reports were true.
+
+One thing to know: the start card warms the app's `/office` and `/map` routes in
+hidden iframes, tagged `?deck-warm=1`. A harness that finds the embed by origin
+alone can pick one of those up and measure it instead of the slide's embed, so
+exclude any frame whose URL contains `deck-warm`. All four scripts in `scripts/`
+do.
+
+---
+
+## 9. Presenter-only chrome — `?hud`
+
+Two affordances exist for the person driving and are **off by default**:
+
+- the **status lamp** in the demo frame's title bar (`live` / `stills` /
+  `connecting` / `app not running` / `no seeded session`)
+- the **demo budget bar**, the depleting rule and second count
+
+Both are instruments, not information for the room. A chip reading `STILLS` on a
+projector is honest and still reads as a debug badge; a countdown tells the
+audience only that the demo is timed. They follow the precedent the debug HUD
+set: opt in with `?hud`, so nothing operational is on screen unless it was asked
+for.
+
+```
+http://localhost:5180/            the room sees this
+http://localhost:5180/?hud        rehearse with this
+```
+
+**The presenter has not lost the live-versus-still signal.** The presenter view
+(`P`) now carries a `showing` line for any demo slide — `live app`, or
+`still · <filename>` — coloured green or gold, driven by the same
+`describeSurface()` the frame itself uses so the two cannot disagree. That screen
+is not the projected one. `verify-demo-continuity.mjs` asserts both directions:
+the lamp and the bar are absent by default, and `?hud` brings them back with the
+lamp reading `stills` on the `?stills=1` path.
+
+One consequence, already handled: on `demo-focus-mode` the audience's only cue
+that the frame is frozen is the eyebrow ("Act V — the switch", never "live") and
+the route caption, which is why that caption had to be corrected to `/office`.
+
+---
+
+## 10. Nobody signs in — the invisible-state defect and its fix
+
+The startup sequence is three steps: backend, frontend, deck. **There is no
+sign-in step, and there must never be one again.**
+
+### What was actually wrong
+
+The screenshot false alarm in §8 was a harness artifact, and stopping there would
+have missed the real defect underneath it. The demos worked on this machine
+because *this browser profile* had been signed in by hand at some earlier point,
+and the runbook's step 4 asked the presenter to do exactly that: open the app's
+login page, click **Enter local development firm**, then paste a localStorage key
+into a devtools console to stop the guided tour opening over the demos.
+
+Both were **invisible per-profile state**. Neither survives a fresh profile, a
+different browser, a guest window, a cleared cookie jar, or a borrowed
+projector-connected laptop — which is a fair description of presentation morning.
+The deck would have looked perfect through eleven slides and then shown an
+audience a login screen, and the presenter's only recourse would have been to sign
+in on the projector.
+
+That is the same shape as the three bugs in §7 and §8: *something that looks right
+and is not*, deferred to the worst possible moment.
+
+### The two fixes
+
+**The session.** `StartGate` runs `runPreflight()` on mount — on a deep link as
+well as from the start card, since a presenter who reloads mid-talk needs it just
+as much. When `/v1/me` answers `401`, the preflight posts to `/v1/auth/dev`
+through the deck's own `/demo-api` proxy. Three properties make that work:
+
+- **Same-origin**, so no CORS: the proxy is why these calls are possible at all
+  (see the long note in `vite.config.ts`).
+- **Cookies ignore the port.** The `Set-Cookie` lands on host `localhost`, so a
+  request made by the deck on `:5180` signs in the app on `:5173`. This is the
+  same mechanism that makes the `localhost`/`127.0.0.1` distinction fatal, used
+  deliberately.
+- **`/v1/auth/dev` is in `AUTH_EXEMPT_PATHS`** and returns `404` unless
+  `DEV_AUTH_ENABLED` is set, so it cannot exist in production.
+
+It is idempotent by construction: it is only reached when `/me` has already
+answered `401`, so a reload is a no-op rather than a second `AuthSession` row.
+
+**The guided tour.** `GuidedTour` opens for any account that has not finished it,
+checking `oriented || dismissed` — the server's `guided_tour_completed` or a
+localStorage key. The runbook used the local half, which is per-profile. So
+`stage_demo.py` now sets the server half (`guided_tour_completed_at`), which holds
+for every browser at once and needs nobody to remember anything. It reports
+`guided_tour: silenced now | already silenced`.
+
+### The race, and the epoch that closes it
+
+The deck mounts behind the start card from the first frame, so a demo iframe can
+load *before* the sign-in lands, take a `/login` page, and sit on it — the URL it
+was asked for never changed, so nothing would reload it.
+
+`DemoStatus.authEpoch` is bumped when the preflight signs in. `demo-stage.tsx`
+compares it against the epoch the frame's contents were loaded under, and treats a
+mismatch as "the same URL will answer differently now". This is the only case in
+which the stage reloads a frame whose URL it believes to be correct. On a cold
+profile the cost is two `401`s and one reload, both while the title card is up. On
+a warm profile the epoch never changes and nothing happens.
+
+### Fail loudly, at the start card
+
+The `Signed in` check no longer tells anyone to go and sign in. If automatic
+sign-in is refused it says the backend needs restarting with `DEV_AUTH_ENABLED=true`
+and prints the command; if it fails otherwise it says every demo will show a login
+screen. Both raise the panel headed **"The live demos will not work yet"** on the
+start card, with a red dot, before the talk begins.
+
+### The only honest test
+
+```bash
+cd deck && node scripts/verify-cold-start.mjs
+```
+
+Four checks, each in a browser context created seconds earlier with an empty
+cookie jar, and **nothing in it signs in**. Testing this from the profile you have
+been working in passes for the wrong reason, which is precisely how the original
+defect stayed hidden for so long.
+
+1. A cold browser opens the deck, and the preflight comes back clean, an
+   `lsat_session` cookie exists, the case slide embeds `/cases/<session>`, and no
+   guided tour is over it.
+2. A cold browser deep-links straight to a demo slide, skipping the start card.
+3. A reload does not sign in again and does not replace the cookie.
+4. With `/auth/dev` forced to `404`, the start card refuses to look fine and names
+   `DEV_AUTH_ENABLED`.
+
+Green on 2026-08-10, all four. If this script is ever changed so that it signs
+itself in, it has stopped testing anything.
+
+### The nine seconds that step 4 also hid
+
+That deleted runbook step did one more useful thing: it asked the presenter to
+visit `/office` and `/map` once, paying Vite's cold transform of the two scene
+modules — about nine seconds each against 1.4 warm — before the talk. Deleting the
+step without replacing that would have moved the stall onto the office slide.
+
+`startWarmUp` now loads both routes in hidden, off-screen iframes while the start
+card is up and discards them immediately; only the dev server's transform cache is
+wanted. They are tagged `?deck-warm=1` so harnesses can tell them from a real
+embed, and the queue is abandoned the moment Start is pressed.

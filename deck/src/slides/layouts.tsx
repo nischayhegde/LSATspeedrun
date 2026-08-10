@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 
 import { DemoFrame } from '../demo/demo-frame'
+import { presenterChrome } from '../demo/demo-runtime'
 import { Figure } from '../figures'
 import type { SlideSpec } from './types'
 
@@ -79,15 +80,20 @@ function Credit({ text }: { text?: string }) {
 }
 
 /**
- * The demo budget bar.
+ * The demo budget bar: a depleting rule and a second count.
  *
- * The one piece of chrome the narrative puts on the audience screen during a
- * demo, and the only defence against the failure the founders named as their
- * biggest: the demo running long. The number is in the DOM as text and again as
- * a data attribute, so the stylesheet can deplete a bar over exactly that many
- * seconds without the value being written down twice in two places.
+ * The defence against the failure the founders named as their biggest, the demo
+ * running long — which makes it an instrument for the person driving, not
+ * information for the room. A countdown on a product demo tells the audience
+ * only that the demo is timed, so it is drawn with the rest of the
+ * presenter-only chrome and off by default. See `demo/demo-runtime.ts`.
+ *
+ * The number is in the DOM as text and again as a data attribute, so the
+ * stylesheet can deplete the bar over exactly that many seconds without the
+ * value being written down twice in two places.
  */
 function DemoBudget({ seconds }: { seconds: number }) {
+  if (!presenterChrome) return null
   return (
     <div className="demo-budget" data-seconds={seconds}>
       <span className="demo-budget-value">{seconds}s</span>
@@ -199,20 +205,30 @@ function PovBody({ slide }: BodyProps) {
   )
 }
 
+/**
+ * Product-first: the running app is the slide and the words are a plate on top.
+ *
+ * The demo used to sit in the right-hand 70% of a two-column grid, which measured
+ * out at 36.5% of a 1920x1080 projector with 693px of deck copy beside it. The
+ * frame is 16:9 and so is the slide, so the embed now takes the whole screen and
+ * the copy moves onto it — the same treatment `SceneBody` gives a 3D scene, for
+ * the same reason. Geometry lives in `demo/demo-stage.css`; see the long note
+ * there for the height problem this arrangement had to solve.
+ */
 function DemoBody({ slide, stills, annotations, active }: BodyProps) {
   return (
     <div className="body body-demo" data-speaker={slide.speaker}>
-      {slide.demo ? <DemoBudget seconds={slide.demo.budgetSeconds} /> : null}
+      {slide.demo ? (
+        <DemoFrame demo={slide.demo} stills={stills} annotations={annotations} active={active} />
+      ) : null}
       <div className="demo-copy">
+        {slide.demo ? <DemoBudget seconds={slide.demo.budgetSeconds} /> : null}
         <Eyebrow text={slide.eyebrow} />
-        <Headline text={slide.headline} className="display md" />
+        <Headline text={slide.headline} className="display sm" />
         <Deck text={slide.deck} />
         <Points items={slide.points} dense />
         <Credit text={slide.credit} />
       </div>
-      {slide.demo ? (
-        <DemoFrame demo={slide.demo} stills={stills} annotations={annotations} active={active} />
-      ) : null}
     </div>
   )
 }

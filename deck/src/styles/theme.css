@@ -46,10 +46,68 @@
   --pixel-shadow: #090d15;
   --pixel-border: 3px solid var(--pixel-ink);
 
-  /* --- families ------------------------------------------------- */
-  --font-display: Fraunces, "Iowan Old Style", Georgia, serif;
+  /* --- families -------------------------------------------------
+     ## Why the display face is no longer Fraunces
+
+     The founders asked three separate times for the deck to feel modern,
+     and the display face was the largest single thing working against
+     that. Fraunces is an old-style revival: at the `opsz 144` this deck
+     used for headlines it is very high contrast with ball terminals, and
+     it reads as a luxury magazine masthead — handsome, and squarely
+     heritage rather than contemporary.
+
+     It was tuned first, as the cheaper fix. Neither axis available helps.
+     `index.html` requests only `opsz` and `wght`, so `SOFT` and `WONK` —
+     the axes that exist to dial Fraunces' quirk down — are not even served
+     and sit at their defaults. Dropping `opsz` to 72 and then to 24 was
+     rendered and looked at: the contrast falls, but what arrives is a
+     sturdier traditional serif, not a modern one. There is no setting of
+     the two axes on offer that makes an old-style revival contemporary.
+
+     So the display face is Archivo, which the deck already loads and sets
+     every word of body copy in. That is the most coherent change available
+     — the same family the app's own interface uses, so nothing about the
+     identity drifts — and it costs no new network request.
+
+     The obvious risk is the one worth naming: a deck set entirely in a
+     neutral grotesque reads as a template. What keeps this from being that
+     is that display and text are pulled hard apart — 800 weight against
+     500, a large scale jump, and the tight negative tracking below, which
+     is a deliberate contemporary editorial treatment rather than a default.
+     The character in this deck is carried by colour, space and the 3D; the
+     type's job is to be confident and get out of the way.
+
+     `--font-serif` is deliberately absent. A serif kept "for special
+     occasions" is exactly the ad hoc per-slide choice that reads as
+     unfinished. */
+  --font-display: Archivo, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-ui: Archivo, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-pixel: "Courier New", "Lucida Console", ui-monospace, monospace;
+
+  /* --- tracking, by size ------------------------------------------
+     One rule, applied everywhere, rather than a letter-spacing invented
+     per slide: type tightens as it gets bigger and opens as it gets
+     smaller. That is how optical spacing actually works, and holding
+     every slide to it is a large part of what makes a deck feel like one
+     designed object.
+
+       display   the headline sizes, where tight is what reads modern
+       lead      sub-heads and standfirsts, barely negative
+       body      running copy, untouched
+       micro     eyebrows, labels and rails, opened right up because
+                 uppercase at small sizes needs the air to stay legible */
+  --track-display: -.035em;
+  --track-lead: -.012em;
+  --track-body: 0;
+  --track-micro: .18em;
+
+  /* --- weights ------------------------------------------------------
+     Three, and no others, so weight carries meaning instead of being
+     chosen per element. Anything heavier than `display` is not available
+     on purpose. */
+  --weight-display: 800;
+  --weight-strong: 600;
+  --weight-body: 500;
 
   /* --- the deck's own stage --------------------------------------
      A presentation is watched in a dark room, so the deck inverts the

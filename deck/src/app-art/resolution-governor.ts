@@ -64,9 +64,18 @@ const FAST_ENOUGH_MS = 13.5
  *
  *  Short on purpose. A slide is spoken over for ten or fifteen seconds and the
  *  correction has to be finished long before the presenter's second sentence,
- *  so the window buys just enough samples for a median to mean something. */
-const SETTLE = 12
-const WINDOW = 30
+ *  so the window buys just enough samples for a median to mean something.
+ *
+ *  Shorter than it first looks, because these are *frames* and the scenes that
+ *  need governing are by definition not producing sixty of them a second. At 12
+ *  and 30 a single decision cost forty-two frames, which is seven tenths of a
+ *  second on a healthy scene and a second and a half on the one actually being
+ *  corrected — and the office needed three decisions, so the audience watched
+ *  it soften in steps for eight seconds. Distinguishing 27ms from 17ms does not
+ *  need thirty samples; eighteen is still a median rather than a reading, and
+ *  frames over 100ms are thrown away before they reach it. */
+const SETTLE = 8
+const WINDOW = 18
 
 /** Enough to cross a factor of two, and few enough that the last one lands
  *  inside the first few seconds of the slide. */
@@ -142,12 +151,26 @@ export function createResolutionGovernor(options: {
       // halving the buffer in that state costs the product shot its sharpness
       // and returns nothing.
       //
-      // So a reduction has to prove itself. If it did not move the median by a
-      // real margin, the previous ratio is restored — the sharper of two
-      // equally fast pictures — and the governor retires.
+      // So a reduction has to prove itself — but "did not pay" and "is fast
+      // enough" are two different questions, and conflating them was a bug.
+      //
+      // The rule used to be: if the reduction did not move the median by a real
+      // margin, restore the previous ratio as the sharper of two equally fast
+      // pictures, and retire. The flaw is in "equally fast". Restoring is only
+      // right when the scene is *already inside budget*, and the office is the
+      // case that proves it: at a 1292×727 buffer it sat at 27ms, the reduction
+      // to 0.67 bought under eight percent, and the governor duly put the
+      // resolution back up and stopped — retiring the scene at thirty frames a
+      // second with a sharper picture nobody asked for. Softness is a bad trade
+      // against nothing; it is a good trade against dropped frames.
+      //
+      // So the restore now requires the scene to be within budget. If a
+      // reduction did not pay and the frame is still long, the lower ratio is
+      // kept — it is never worse — and the governor carries on, because
+      // whatever fixed cost is dominating may still be crossed by the next step.
       if (before) {
         const gained = (before.median - median) / before.median
-        if (gained < .08) {
+        if (gained < .08 && median <= TOO_SLOW_MS) {
           apply(before.ratio)
           stopped = true
           return
@@ -156,12 +179,19 @@ export function createResolutionGovernor(options: {
       }
 
       if (median > TOO_SLOW_MS && ratio > FLOOR) {
-        // Damped, because frame time is not perfectly linear in pixel count —
-        // there is a fixed cost per frame that no amount of shrinking removes,
-        // and correcting as though there were none overshoots into a soft
-        // picture on the first step.
-        const ideal = Math.sqrt(TARGET_MS / median)
-        const damped = 1 - (1 - ideal) * .8
+          // Damped, because frame time is not perfectly linear in pixel count —
+          // there is a fixed cost per frame that no amount of shrinking removes,
+          // and correcting as though there were none overshoots into a soft
+          // picture on the first step.
+          //
+          // Except when the scene is nowhere near budget. Under-correcting from
+          // 27ms just buys another slow window and another visible step, and
+          // three small steps are far more noticeable than one large one: the
+          // audience reads a picture that keeps changing as a fault and a
+          // picture that changed once as the picture. So past half again the
+          // target, the correction is taken at face value.
+          const ideal = Math.sqrt(TARGET_MS / median)
+          const damped = median > TARGET_MS * 1.5 ? ideal : 1 - (1 - ideal) * .8
         before = { median, ratio }
         apply(Math.max(FLOOR, ratio * Math.max(.66, damped)))
         steps += 1

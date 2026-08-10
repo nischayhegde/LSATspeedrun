@@ -90,3 +90,95 @@
   text-transform: uppercase;
   color: rgba(246, 223, 170, .7);
 }
+
+/* ================================================================
+   FULL-BLEED DEMO SLIDES
+   ================================================================
+   Owned here rather than in `styles/deck.css` because that stylesheet is being
+   rewritten for a deck-wide baseline grid at the same time as this, and these
+   selectors would collide. Loaded after it — `demo-stage.tsx` imports this, and
+   the component tree is imported after `main.tsx` pulls the base styles — so
+   equal-specificity rules here win without `!important`.
+
+   ## What this replaces, and why
+
+   The demo slides were a 30% copy column beside a 70% embed. Measured on a
+   1920x1080 screen that gave the running product 1101x688 — 36.5% of the
+   projector, with 693px of deck copy beside it. The founders read that as "a lot
+   of white space" and they were right. A 16:9 embed on a 16:9 slide can have the
+   whole screen, so the copy becomes a plate on top of it.
+
+   ## The height that would not resolve
+
+   The first attempt collapsed: `.demo-screen` came out 0px tall and the stage,
+   which mounts its iframe against the slot's measured rectangle, mounted nothing
+   at all. The chain `.body-demo > .demo > .demo-chrome > .demo-screen` ends in a
+   `1fr` row, and every `1fr` in it needs a definite height *above* it to resolve
+   against. `.body` supplies one by being `position: absolute; inset: 0` — until it
+   does not, which is exactly what a concurrent rewrite of the layout system can
+   change underneath this.
+
+   So height is resolved from *width* instead, which is always definite: the slot
+   is given `aspect-ratio`, and every intermediate row is told it may shrink. This
+   holds whatever the ancestors do, which is the point — it is the demo slides'
+   own guarantee rather than a borrowed one. */
+
+.body.body-demo {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: 0;
+  row-gap: 0;
+  position: relative;
+  /* The deck-wide gutter is set for slides made of type. On a demo slide it is
+     246px of projector spent on nothing, so these slides keep a hairline of it
+     for the drop shadow and give the rest to the product. */
+  /* Explicit pixels, not multiples of `--u`: that unit scales with the viewport
+     and is about 48px on a 1080p screen, so a "1.1u" hairline was a 53px band. */
+  padding: 12px;
+}
+
+/* The one definite height in the chain, taken from the viewport rather than from
+   an ancestor, so nothing above this can collapse it. `dvh` because a browser
+   toolbar appearing mid-talk should shrink the demo, not clip it. */
+.body.body-demo > .demo {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  height: calc(100dvh - 24px);
+  /* Sized so the slot inside comes out 16:9 and the frame never letterboxes:
+     viewport height, less the title bar and route caption, times the aspect. 16:10
+     rather than 16:9 because that is the ratio `ASPECT` gives the frame — matching
+     it means the slot is flush and there is no letterbox band at all.
+     `width` and `justify-self` rather than `max-width` and `margin-inline: auto`
+     — an auto inline margin switches off the grid's stretch, which leaves the
+     element shrink-to-fit and it collapsed to the 845px its caption text wanted. */
+  width: min(100%, calc((100dvh - 150px) * 16 / 10));
+  justify-self: center;
+}
+
+.body.body-demo .demo-chrome { min-height: 0; }
+.body.body-demo .demo-screen { min-height: 0; }
+
+/* --- the copy, now a plate over the app ---------------------------- */
+
+.body.body-demo .demo-copy {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 4;
+  grid-column: auto;
+  grid-row: auto;
+  align-self: end;
+  max-width: min(38ch, 30%);
+  padding: 18px 24px 16px;
+  /* Opaque rather than frosted. The app behind it is dense and mid-toned, and a
+     translucent plate turns small type to mush at projector contrast. */
+  background: linear-gradient(180deg, rgba(9, 14, 23, .93), rgba(6, 10, 17, .97));
+  border-top: 1px solid rgba(246, 223, 170, .22);
+  border-right: 1px solid rgba(246, 223, 170, .22);
+  border-radius: 0 10px 0 0;
+  box-shadow: 0 -10px 60px rgba(0, 0, 0, .6);
+}
+
+.body.body-demo .demo-copy .demo-budget { margin-bottom: 10px; }

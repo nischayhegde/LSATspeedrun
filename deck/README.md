@@ -26,16 +26,18 @@ frame are the *same site* — and site is compared by host, not by port.
 and **every embedded demo silently lands on the login screen.** A `file://` page
 fails the same way.
 
-Vite prints `http://127.0.0.1:5180/` in the terminal because the dev server binds
-to that address. Do not click it. Type `localhost` yourself. The same applies to
-signing in: sign in at `http://localhost:5173/login`, not at `127.0.0.1:5173`.
+The deck's dev server binds the name `localhost`, so `127.0.0.1:5180` will refuse
+the connection outright rather than serve you a deck whose demos are all login
+screens. If a link or a script gives you "connection refused" on 5180, that is
+this, and the fix is to type `localhost`.
 
 ---
 
-## Start-up, in order
+## Start-up, on the day
 
-Four terminals, from the repository root. Each step assumes the one before it
-finished.
+Three terminals, three commands, then present. **You will not be asked to sign in,
+and you must not sign in** — the deck signs itself in during preflight, while the
+title card is up. See [Why there is no sign-in step](#why-there-is-no-sign-in-step).
 
 ### 1 — Backend, port 5001
 
@@ -44,79 +46,75 @@ cd backend
 PORT=5001 DEV_AUTH_ENABLED=true ../.venv/bin/python run.py
 ```
 
-5001 is not negotiable: the frontend's Vite proxy targets that port only.
-`DEV_AUTH_ENABLED=true` is what enables the dev-login button in step 4.
+5001 is not negotiable: both Vite proxies target that port only.
+`DEV_AUTH_ENABLED=true` is not optional either — it is what lets the deck
+establish its own session. Without it the start card will tell you so, in red,
+before you begin.
 
-### 2 — Seed the demo account
-
-```bash
-../.venv/bin/python backend/scripts/seed_demo.py --apply
-```
-
-This installs the lived-in demo account and leaves one case open on a strategy
-prompt.
-
-**Expect it to exit 1 with a traceback**, in `_verify()`, on `KeyError: 'status'`.
-That is a known, cosmetic failure: `_verify()` still expects the old shape of
-`strategy_performance()`, it runs *after* every write, and the seeder commits as
-it goes. The account, the firm and the staged live case are fully installed by
-the time it falls over. What is lost is the JSON report, which is why step 5 has
-a fallback.
-
-### 3 — Frontend dev server, port 5173
+### 2 — Frontend dev server, port 5173
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-### 4 — Sign in once, by hand, in the browser you will present from
-
-A Playwright profile is not your Chrome profile, so this cannot be automated for
-you.
-
-1. Open `http://localhost:5173/login`.
-2. Click **Enter local development firm**. That signs you in as
-   `student@localhost.test`.
-3. In that same tab's devtools console, suppress the guided tour:
-   ```js
-   localStorage.setItem('lsat-tycoon:guided-tour:v6', 'complete')
-   ```
-4. While you are there, visit `http://localhost:5173/office` and
-   `http://localhost:5173/map` once each. The first office build of the day takes
-   about nine seconds while Vite transforms the scene module; warm it now, not in
-   front of an audience.
-
-### 5 — Wire the deck to the seeded session
-
-```bash
-cd deck
-npm run prepare-demo
-```
-
-It runs the seeder, works out the open case's session id, writes it into
-`demo.config.ts`, and proves in a headless browser that a localhost page can frame
-the signed-in app. Because the seeder cannot print its report (step 2), the script
-falls back to signing in against the backend directly and reading
-`/v1/study-sessions/current` — the same answer the app's own "Resume current run"
-button uses. It says out loud which of the two routes it took.
-
-Useful flags: `--skip-seed` (re-resolve the session and rewrite the config without
-re-seeding), `--email <address>`, `--help`.
-
-**Re-run this shortly before presenting.** Opening the live case starts its clock,
-so after a rehearsal the case header will read something like 8:26 against a 2:30
-target, in warning colours. Re-running re-seeds and stages a fresh case with the
-timer at zero.
-
-### 6 — The deck, port 5180
+### 3 — The deck, port 5180
 
 ```bash
 cd deck
 npm run dev
 ```
 
-Then open **`http://localhost:5180`** and press `F` for fullscreen.
+Open **`http://localhost:5180`** and press `F` for fullscreen. The start card runs
+five checks and shows five dots at the bottom right; all green means every live
+demo will work. Press <kbd>Enter</kbd> to begin.
+
+That is the whole sequence. Nothing to sign into, nothing to paste into a devtools
+console, no browser profile that has to be the same one as last time.
+
+### Why there is no sign-in step
+
+It used to be step 4 of six: open the app's login page, click **Enter local
+development firm**, then paste a localStorage key to stop the guided tour opening
+over the demos.
+
+Both were invisible per-browser-profile state, and that made the demos a trap. They
+worked on the machine they were built on, and they would have failed on a fresh
+profile, in another browser, in a guest window, after a cookie clear, or on a
+borrowed laptop — by showing an audience a login screen. The two fixes:
+
+- **The session.** `StartGate` runs the preflight on mount, and the preflight calls
+  `POST /v1/auth/dev` — the same endpoint that login button calls — through the
+  deck's own `/demo-api` proxy, so the cookie lands on host `localhost` and is sent
+  to the app on 5173. It only fires when `/v1/me` has already answered 401, so a
+  reload is a no-op rather than a second login.
+- **The guided tour.** `stage_demo.py` marks the demo account as already oriented
+  server-side (`guided_tour_completed_at`), which holds for every browser at once
+  rather than one profile's localStorage.
+
+Verified on a genuinely cold browser context — empty cookie jar, nothing signed in
+— by `node scripts/verify-cold-start.mjs`, which also proves the start card fails
+loudly when the sign-in cannot be made.
+
+### Before the day — stage the demo data
+
+Not part of the three steps, and not needed on presentation morning unless you
+have rehearsed since staging. **A rehearsal consumes the demo state**: opening the
+live case starts its 2:30 clock, so after one run-through the case header reads
+something like 8:26 in warning colours, and the question may be answered.
+
+```bash
+cd deck
+npm run reset-demo
+```
+
+That stages a fresh open case with the timer at zero, keeps the pre-graded verdict
+so the review slide never waits on a model call, silences the guided tour, and
+rewrites both session ids in `demo.config.ts`. It takes a few seconds and is safe
+to run repeatedly. Run it once the night before and once again if you rehearse.
+
+Useful flags on `npm run prepare-demo`: `--skip-seed` (re-resolve the session and
+rewrite the config without re-seeding), `--email <address>`, `--help`.
 
 ### If `prepare-demo` cannot find the session
 
@@ -129,13 +127,17 @@ of the URL — `/cases/<this-part>`. Then edit
 export const demoConfig: DemoConfig = {
   appOrigin: 'http://localhost:5173',
   liveSessionId: '69bb283e-9312-41bd-ae44-837ea1751e3b', // ← paste here
+  verdictSessionId: '...',
+  demoEmail: 'student@localhost.test',
   useStills: false,
 }
 ```
 
-Only `demo-case-answer` needs it — it is the one route with `{session}` in it. An
-empty string is handled: that slide falls back to its still image rather than
-framing a broken URL.
+Only `demo-case-answer` needs `liveSessionId` — it is the one route with
+`{session}` in it — and only `demo-verdict` needs `verdictSessionId`. An empty
+string is handled: those slides fall back to their still images rather than framing
+a broken URL. `demoEmail` is the account the deck signs itself in as, and it has to
+match the one the demo data is seeded under.
 
 ---
 
@@ -198,20 +200,26 @@ theoretical one.
 
 ## Troubleshooting
 
-**Every demo shows the login screen.** You opened the deck on `127.0.0.1` instead
-of `localhost`, or you signed in on `127.0.0.1:5173`. Close the tab, sign in at
-`http://localhost:5173/login`, and reopen the deck at
-`http://localhost:5180`. See [The one rule](#the-one-rule).
+**Every demo shows the login screen.** Do not sign in — that treats the symptom
+and hides the cause. Two things produce this, and the start card names both:
+
+- The deck is on `127.0.0.1:5180` rather than `localhost:5180`, so the framed app
+  is cross-site and its cookie is withheld. See [The one rule](#the-one-rule).
+- The backend was started without `DEV_AUTH_ENABLED=true`, so the deck could not
+  establish its own session. Restart it as in step 1 and reload the deck.
+
+Reloading the deck is always safe: it re-runs the preflight, which re-establishes
+the session if it is missing and reloads any embed that had loaded without it.
 
 **A demo frame says "app not running".** The frontend dev server on 5173 is down,
 or the backend on 5001 is. Press `S` and carry on with stills; the deck is
 designed to be presentable that way. Fix it between acts, not on stage.
 
 **The session expired, or the case shows a wrong timer.** Re-run
-`npm run prepare-demo` in `deck/`. It re-seeds and stages a fresh case at zero,
-and rewrites `demo.config.ts`. If the backend is up but the seeder is being
-difficult, `npm run prepare-demo -- --skip-seed` will at least re-resolve the
-session id.
+`npm run reset-demo` in `deck/`. It stages a fresh case at zero, keeps the
+pre-graded verdict, and rewrites both session ids in `demo.config.ts`. If the
+backend is up but the seeder is being difficult,
+`npm run prepare-demo -- --skip-seed` will at least re-resolve the session id.
 
 **"WebGL context lost", or a scene renders black.** The deck keeps at most three
 app scenes plus its own stage alive, but a projector switch or a GPU hiccup can
@@ -221,8 +229,10 @@ twice, press `S` for the rest of the talk: the slides that use a scene still rea
 and the demo slides fall back to stills.
 
 **The office slide takes forever the first time.** That is Vite transforming the
-office chunk, about nine seconds cold against 1.4 seconds warm. Step 4 exists to
-prevent it. If it happens live, keep talking; do not reload.
+office chunk, about nine seconds cold against 1.4 seconds warm. The start card
+warms both scene routes in hidden frames while it is up, so this should not happen
+— unless you pressed Start within a second or two of the deck loading, which skips
+the warm-up. If it happens live, keep talking; do not reload.
 
 **The projector is not 16:9.** The deck lays out fluidly and the demo frames scale
 to fit their slot, so nothing crops — but a 16:10 or 4:3 projector will letterbox

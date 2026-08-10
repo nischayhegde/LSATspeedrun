@@ -12,13 +12,19 @@
  * What it does:
  *   1. Runs `backend/scripts/seed_demo.py --apply`, which installs the lived-in
  *      demo account and leaves one case open on a strategy prompt.
- *   2. Works out that case's session id and writes it into `demo.config.ts`.
- *   3. Proves, in a headless browser, that a localhost page can frame the
+ *   2. Runs `backend/scripts/stage_demo.py --apply --no-model`, which pins the
+ *      demo question and stages the fifteen-question run the app drives itself
+ *      through. `--no-model` keeps an already-graded verdict rather than
+ *      replacing it, so this is safe to run repeatedly.
+ *   3. Works out the open case's session id, the pre-graded verdict's, and the
+ *      driven run's credited answers, and writes all of them into
+ *      `demo.config.ts`.
+ *   4. Proves, in a headless browser, that a localhost page can frame the
  *      signed-in app — and then tells the presenter the two things they must
  *      still do by hand in their *own* browser, because a Playwright profile
  *      is not the profile that will be on the projector.
  *
- * Flags: --help, --skip-seed, --email <address>.
+ * Flags: --help, --skip-seed, --skip-stage, --email <address>.
  */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -51,6 +57,8 @@ prepare-demo — seed the demo account and wire the deck to it.
                     from the running backend, rewrites demo.config.ts, and does
                     the browser checks. Use this when the account is already
                     seeded and you only want the config and the tour key.
+  --skip-stage      Do not re-run stage_demo.py. Leaves autoplaySessionId and
+                    autoplayAnswerKey in demo.config.ts exactly as they are.
   --email <address> Account to seed. Must end in @localhost.test.
                     Default: student@localhost.test
   --help            This text.
@@ -67,7 +75,10 @@ says so rather than pretending it checked.
 
 const step = (text) => console.log(`\n\u2022 ${text}`)
 const ok = (text) => console.log(`  \u2713 ${text}`)
-const warn = (text) => console.log(`  ! ${text}`)
+const warn = (text, hint) => {
+  console.log(`  ! ${text}`)
+  if (hint) console.log(hint.replace(/^/gm, '    '))
+}
 
 function die(message, hint) {
   console.error(`\nprepare-demo failed: ${message}`)
@@ -85,10 +96,11 @@ if (argv.includes('--help') || argv.includes('-h')) {
   process.exit(0)
 }
 const skipSeed = argv.includes('--skip-seed')
+const skipStage = argv.includes('--skip-stage')
 const emailIndex = argv.indexOf('--email')
 const email = emailIndex === -1 ? 'student@localhost.test' : argv[emailIndex + 1]
 if (emailIndex !== -1 && !email) die('--email needs a value.')
-const KNOWN_FLAGS = ['--help', '-h', '--skip-seed', '--email']
+const KNOWN_FLAGS = ['--help', '-h', '--skip-seed', '--skip-stage', '--email']
 const unknown = argv.filter(
   (value, index) =>
     value.startsWith('-')
@@ -153,6 +165,25 @@ function parseReport(stdout) {
   return null
 }
 
+/** Run one of the backend's scripts, streaming its log and keeping its report. */
+function runPython(script, args) {
+  return new Promise((resolveRun) => {
+    const child = spawn(VENV_PYTHON, [`scripts/${script}`, ...args], {
+      cwd: resolve(REPO_ROOT, 'backend'),
+      env: { ...process.env, DEV_AUTH_ENABLED: 'true' },
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+      process.stderr.write(chunk)
+    })
+    child.on('error', (error) => resolveRun({ code: -1, stdout, stderr: `${stderr}\n${error.message}` }))
+    child.on('close', (code) => resolveRun({ code, stdout, stderr }))
+  })
+}
+
 // ---------------------------------------------------------------------------
 // 1. preflight
 // ---------------------------------------------------------------------------
@@ -202,21 +233,7 @@ if (skipSeed) {
   step('Skipping the seeder (--skip-seed)')
 } else {
   step('Seeding the demo account (this takes about a minute)')
-  const seeded = await new Promise((resolveRun) => {
-    const child = spawn(VENV_PYTHON, ['scripts/seed_demo.py', '--apply', '--email', email], {
-      cwd: resolve(REPO_ROOT, 'backend'),
-      env: { ...process.env, DEV_AUTH_ENABLED: 'true' },
-    })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (chunk) => { stdout += chunk })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk
-      process.stderr.write(chunk)
-    })
-    child.on('error', (error) => resolveRun({ code: -1, stdout, stderr: `${stderr}\n${error.message}` }))
-    child.on('close', (code) => resolveRun({ code, stdout, stderr }))
-  })
+  const seeded = await runPython('seed_demo.py', ['--apply', '--email', email])
   seedExit = seeded.code
   report = parseReport(seeded.stdout)
 
@@ -237,6 +254,46 @@ if (skipSeed) {
 }
 
 // ---------------------------------------------------------------------------
+// 2b. stage the pinned question and the driven run
+// ---------------------------------------------------------------------------
+//
+// The seeder builds a believable account; staging is what makes it presentable
+// in four minutes. It is run here, and not left to the presenter, for one value
+// that cannot be recovered any other way: the credited answers to the
+// fifteen-question run the app drives itself through. Every other id in this
+// config can be re-derived from the running backend, because the API will tell
+// you what sessions exist — but it will never tell you which answer is right
+// (`serialize_question` omits `correct_answer` deliberately), so the key has to
+// be carried out of the database by the script that reads it.
+//
+// `--no-model` because this is the cheap, repeatable half of staging: it keeps
+// an already-graded verdict rather than spending 20-40s regenerating one, which
+// is what makes it safe to sit in a command the presenter runs casually. The
+// full `npm run stage-demo` is still what grades a verdict the first time.
+
+let autoplay = null
+
+if (skipStage) {
+  step('Skipping stage_demo.py (--skip-stage)')
+} else {
+  step('Staging the pinned question and the autoplay run')
+  const staged = await runPython('stage_demo.py', ['--apply', '--no-model', '--email', email])
+  const stagedReport = parseReport(staged.stdout)
+  if (staged.code === 0 && stagedReport?.autoplay?.answer_key) {
+    autoplay = stagedReport.autoplay
+    ok(`case pinned to ${stagedReport.answer_key?.question_id ?? 'the demo question'}`)
+    ok(`autoplay run ${autoplay.session_id}: ${autoplay.questions} questions, `
+      + `${autoplay.question_types?.length ?? '?'} types`)
+  } else {
+    warn(
+      `stage_demo.py exited ${staged.code} without a usable report`,
+      'The autoplay ids below are left as they are. The rest of the demo is\n'
+      + 'unaffected — nothing in the deck requests autoplay by default.',
+    )
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 3. resolve the live session id
 // ---------------------------------------------------------------------------
 
@@ -245,33 +302,32 @@ step('Finding the case left open for the live demo')
 let sessionId = ''
 let sessionSource = ''
 
+// `/v1/auth/dev` is CSRF-exempt (see AUTH_EXEMPT_PATHS in backend/app/auth.py),
+// so a bare fetch can sign in and ask which runs exist. Hoisted out of the
+// lookup below because the verdict session needs the same cookie.
+const login = await fetch(`${BACKEND_ORIGIN}/v1/auth/dev`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email }),
+}).catch(() => null)
+const cookie = (login?.headers.getSetCookie?.() || [])
+  .map((value) => value.split(';')[0])
+  .join('; ')
+
 const reportedUrl = report?.live_demo?.url
 if (typeof reportedUrl === 'string') {
   sessionId = reportedUrl.split('/').filter(Boolean).pop() || ''
   if (sessionId) sessionSource = "the seeder's report"
 }
 
-if (!sessionId) {
-  // `/v1/auth/dev` is CSRF-exempt (see AUTH_EXEMPT_PATHS in backend/app/auth.py),
-  // so a bare fetch can sign in and ask which run is resumable. This is the
-  // same answer the app's "Resume current run" button uses.
-  const login = await fetch(`${BACKEND_ORIGIN}/v1/auth/dev`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email }),
-  }).catch(() => null)
-  const cookie = (login?.headers.getSetCookie?.() || [])
-    .map((value) => value.split(';')[0])
-    .join('; ')
-  if (login?.ok && cookie) {
-    // `find_resumable_session` walks every queued run and re-serves the current
-    // item; measured at 6-14s locally and reported as high as 19s on a cold
-    // process. A 4s budget here failed silently and fell back to a pinned id,
-    // which is how a stale session id reached the stage in the first place.
-    const current = await getJson(`${BACKEND_ORIGIN}/v1/study-sessions/current`, 30000, { headers: { cookie } })
-    sessionId = current?.session?.id || ''
-    if (sessionId) sessionSource = `${BACKEND_ORIGIN}/v1/study-sessions/current`
-  }
+if (!sessionId && login?.ok && cookie) {
+  // `find_resumable_session` walks every queued run and re-serves the current
+  // item; measured at 6-14s locally and reported as high as 19s on a cold
+  // process. A 4s budget here failed silently and fell back to a pinned id,
+  // which is how a stale session id reached the stage in the first place.
+  const current = await getJson(`${BACKEND_ORIGIN}/v1/study-sessions/current`, 30000, { headers: { cookie } })
+  sessionId = current?.session?.id || ''
+  if (sessionId) sessionSource = `${BACKEND_ORIGIN}/v1/study-sessions/current`
 }
 
 if (!sessionId) {
@@ -286,6 +342,51 @@ if (!sessionId) {
 ok(`session ${sessionId} (from ${sessionSource})`)
 
 // ---------------------------------------------------------------------------
+// 3b. resolve the pre-graded verdict session
+// ---------------------------------------------------------------------------
+//
+// `stage_demo.py` deletes and rebuilds the graded twin on every run, so its id
+// changes every time the demo is staged. This step used to be missing, which
+// meant `npm run reset-demo` reliably left `verdictSessionId` pointing at a
+// session that had just been deleted — the payoff beat of the whole deck, broken
+// by the command whose job is to make the demo work.
+//
+// Found by what it is rather than by its id: the twin is a *paused* run that
+// already holds a graded attempt (`pending_result`). `serialize_session` reports
+// that for any session with a `pending_attempt_id`, which is exactly the trick
+// the staging script uses to make the verdict screen a read instead of a live
+// model call. The open case is `in_progress` and has no pending result, so the
+// two can never be confused.
+
+step('Finding the pre-graded verdict session')
+
+let verdictId = ''
+if (cookie) {
+  const active = await getJson(`${BACKEND_ORIGIN}/v1/study-sessions/active`, 30000, { headers: { cookie } })
+  const twins = (active?.sessions || []).filter((entry) => (
+    entry?.id !== sessionId
+    && entry?.status === 'paused'
+    && Boolean(entry?.pending_result?.attempt_id)
+  ))
+  verdictId = twins[0]?.id || ''
+  if (twins.length > 1) {
+    warn(`${twins.length} pre-graded sessions exist; taking ${verdictId}.`,
+      'Re-run `npm run stage-demo` to collapse them to one.')
+  }
+}
+
+if (!verdictId) {
+  warn(
+    'no pre-graded verdict session found',
+    'The verdict slide will point at whatever `verdictSessionId` already says, and\n'
+    + 'may wait on a live model call or bounce. Run `npm run stage-demo` (without\n'
+    + '--no-model, so the coaching is actually generated) and then re-run this.',
+  )
+} else {
+  ok(`verdict session ${verdictId}`)
+}
+
+// ---------------------------------------------------------------------------
 // 4. rewrite demo.config.ts in place
 // ---------------------------------------------------------------------------
 
@@ -294,20 +395,36 @@ step('Writing demo.config.ts')
 const configBefore = await readFile(CONFIG_PATH, 'utf8').catch(() => null)
 if (configBefore === null) die(`cannot read ${CONFIG_PATH}`)
 
-// Only the object literal is quoted; the type declaration reads
-// `liveSessionId: string`, so requiring a quoted value cannot hit it.
-const ASSIGNMENT = /(liveSessionId:\s*)(['"`])([^'"`]*)\2/g
-const matches = [...configBefore.matchAll(ASSIGNMENT)]
-if (matches.length !== 1) {
-  die(
-    `expected exactly one \`liveSessionId: '...'\` in demo.config.ts, found ${matches.length}`,
-    `Set it by hand instead:\n  liveSessionId: '${sessionId}',`,
-  )
+/**
+ * Repoint one `name: '...'` in the config.
+ *
+ * Only the object literal is quoted; the type declarations read
+ * `liveSessionId: string`, so requiring a quoted value cannot hit them.
+ */
+const pin = (source, name, value) => {
+  const assignment = new RegExp(`(${name}:\\s*)(['"\`])([^'"\`]*)\\2`, 'g')
+  const matches = [...source.matchAll(assignment)]
+  if (matches.length !== 1) {
+    die(
+      `expected exactly one \`${name}: '...'\` in demo.config.ts, found ${matches.length}`,
+      `Set it by hand instead:\n  ${name}: '${value}',`,
+    )
+  }
+  const previous = matches[0][3]
+  ok(previous === value ? `${name} unchanged` : `${name} ${previous ? `${previous} \u2192 ` : ''}${value}`)
+  return source.replace(assignment, `$1'${value}'`)
 }
-const previous = matches[0][3]
-const configAfter = configBefore.replace(ASSIGNMENT, `$1'${sessionId}'`)
+
+let configAfter = pin(configBefore, 'liveSessionId', sessionId)
+if (verdictId) configAfter = pin(configAfter, 'verdictSessionId', verdictId)
+if (autoplay) {
+  // Together or not at all: a session id paired with the previous run's answer
+  // key is fifteen wrong answers played to an audience, which reads as a broken
+  // product rather than a broken demo.
+  configAfter = pin(configAfter, 'autoplaySessionId', autoplay.session_id)
+  configAfter = pin(configAfter, 'autoplayAnswerKey', autoplay.answer_key)
+}
 await writeFile(CONFIG_PATH, configAfter)
-ok(previous === sessionId ? 'liveSessionId unchanged' : `liveSessionId ${previous ? `${previous} \u2192 ` : ''}${sessionId}`)
 
 // ---------------------------------------------------------------------------
 // 5. headless proof that a localhost page can frame the signed-in app
@@ -413,6 +530,7 @@ ${'-'.repeat(72)}`)
 console.log(`
 Summary
   live session id  ${sessionId}
+  autoplay run     ${autoplay ? `${autoplay.session_id} (${autoplay.answer_key})` : skipStage ? 'left as-is (--skip-stage)' : 'not staged'}
   written to       ${CONFIG_PATH}
   app origin       ${APP_ORIGIN}   (answering: ${appAnswered ? 'yes' : 'NO'})
   seeder           ${skipSeed ? 'skipped (--skip-seed)' : `exit ${seedExit}${report ? '' : ', no report parsed'}`}

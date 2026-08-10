@@ -170,7 +170,7 @@ export function createTiersScene(context: SceneContext): DeckScene {
     const name = labelPlane(environment.name, .58, {
       pixels: 72,
       weight: 700,
-      font: 'Fraunces, Georgia, serif',
+      font: 'Archivo, Inter, sans-serif',
       color: tier === 14 ? '#f2c75b' : '#e4dbc4',
     })
     name.position.set(3.1, .9, 0)

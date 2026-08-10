@@ -1300,8 +1300,8 @@
   height: auto;
   display: flex;
   flex-direction: column;
-  gap: 1.35em;
-  padding: 2.1em 2em 2.1em 2.4em;
+  gap: 1.7em;
+  padding: 2.5em 2.2em 2.5em 2.6em;
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
   transition: opacity 240ms var(--ease-out);
 }
@@ -1380,13 +1380,17 @@
   transition: left 180ms linear, opacity 120ms linear;
 }
 
-/* Below the question box, ranged to its left edge so the two read as one
-   stacked composition rather than as two objects that happen to be near each
-   other. */
+/* Beside the question box and centred on it, so the two read as one
+   composition rather than as two objects that happen to be near each other.
+
+   Centred by its own middle rather than pinned by its top, because the card it
+   is balanced against is content-sized: give the question another choice and a
+   fixed top would leave the readout riding high against it. */
 .fig-mf-lift {
   position: absolute;
   left: 64%;
-  top: 26%;
+  top: 50%;
+  transform: translateY(-50%);
   width: 31%;
   display: flex;
   flex-direction: column;
@@ -1582,9 +1586,15 @@
   transition: stroke-dashoffset 1700ms var(--ease-in-out);
 }
 
+/* Gold, and crossing the arc rather than sitting beside it.
+   It is the only mark on the dial that is neither the time taken nor the time
+   allowed but the boundary between them, so it is the one thing here allowed
+   to be a third colour. Dim grey over a navy arc was invisible at the back of
+   a room, which is where this comparison has to land. */
 .fig-cr-tick {
-  stroke: var(--on-field-dim);
-  stroke-width: 1.4;
+  stroke: var(--gold);
+  stroke-width: 2.1;
+  stroke-linecap: butt;
   transition: opacity var(--mo-3) var(--ease-out);
 }
 
@@ -1602,12 +1612,18 @@
   opacity: .5;
 }
 
+/* Small enough that its corners clear the hour marks.
+   The marks in `clock-rings.tsx` reach in to radius 30.4 of the viewBox, and a
+   rectangle 54 by 38 puts its corners at 33 — so the card cut straight through
+   the ring of marks and the four it did not cover poked out from behind its
+   edges looking like debris. At 44 by 30 the corners land at 26.6 and all
+   twelve read as one face with a card sitting inside it. */
 .fig-cr-card {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 54%;
-  height: 38%;
+  width: 44%;
+  height: 30%;
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
@@ -2119,10 +2135,14 @@
   min-height: 0;
 }
 
+/* The lane between the two words is set at 21–79 in `gate.tsx`, so a column is
+   allowed a fifth of the frame and no more. At a quarter the arrows had to be
+   pulled back to 27 to clear a word that never actually reached that far, and
+   the picture was two short arrows marooned in the middle of a wide slide. */
 .fig-gt-col {
   position: absolute;
   top: 50%;
-  max-width: 25%;
+  max-width: 19%;
   margin: 0;
   font-family: var(--font-display);
   font-weight: 600;

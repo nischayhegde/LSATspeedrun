@@ -52,8 +52,12 @@ const TIER_STEP = 9
  * "docks" suggested and not what it looked like — a card lying across a border
  * reads as a card that missed. Outside the edge, clear of it by a hair, it
  * reads as attached.
+ *
+ * The height is the marked stem line's, not the card's middle. The method and
+ * the highlight it draws are the same event, and putting the tab level with the
+ * line it marks says so without a connector.
  */
-const DOCK = { x: 8.5, y: 30 } as const
+const DOCK = { x: 8.5, y: 22.5 } as const
 
 /**
  * The card's suggested contents: a stem, a gap, and a list of choices.
@@ -61,6 +65,14 @@ const DOCK = { x: 8.5, y: 30 } as const
  * This box is on screen for twenty of the slide's twenty-two seconds and it is
  * the thing the docked method is docked *to*, so it has to read as a question.
  * Three evenly spaced rules in a tall frame read as a placeholder.
+ *
+ * Four stem lines and five choices, which is what an LSAT question is. The
+ * count is doing two jobs: it is the honest shape of the thing, and it is what
+ * closes the empty band that sat under this figure. The card had three choices
+ * and stopped two thirds of the way down the row, and the alternative — the
+ * same seven rules pushed apart until they filled the space — would have been
+ * whitespace pretending to be content. A question card is allowed to be as tall
+ * as a question.
  *
  * One rule takes the marker. The narrative asks for a live highlight drag on
  * the stimulus "as if the presenter did it", which is the beat that turns the
@@ -71,11 +83,14 @@ const DOCK = { x: 8.5, y: 30 } as const
 const CARD_RULES: ReadonlyArray<{ width: number; mark?: number }> = [
   { width: 92 },
   { width: 84, mark: 58 },
+  { width: 88 },
   { width: 56 },
   { width: 0 },
   { width: 62 },
   { width: 48 },
-  { width: 68 },
+  { width: 71 },
+  { width: 55 },
+  { width: 64 },
 ]
 
 export function MethodFan({ spec, active, reduced }: FigureBody<MethodFanFigure>) {

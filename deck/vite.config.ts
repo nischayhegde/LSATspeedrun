@@ -44,7 +44,14 @@ export default defineConfig({
   server: {
     port: 5180,
     strictPort: true,
-    host: '127.0.0.1',
+    // `localhost`, matching the only URL the deck may be opened from. It used to
+    // bind `127.0.0.1`, which mostly worked — `localhost` usually resolves there —
+    // but it advertised the one spelling that breaks every demo: the app's cookies
+    // are `SameSite=Lax` and host-scoped, so a deck on `127.0.0.1` framing an app
+    // on `localhost` is cross-site and every embed shows a login screen. Binding
+    // the name means the documented URL is the one that is guaranteed to answer,
+    // whichever address `localhost` resolves to on the presenting machine.
+    host: 'localhost',
     proxy: {
       [API_PROXY_PREFIX]: {
         target: 'http://127.0.0.1:5001',

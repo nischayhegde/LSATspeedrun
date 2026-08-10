@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { PreflightStrip } from '../demo/preflight-strip'
-import { FOUNDERS, UT_SEAL } from './founders'
+import { setCoverUp } from '../scenes/cover-stage'
+import { FOUNDERS, PORTRAIT_PX, UT_SEAL } from './founders'
 import './start.css'
 
 /**
@@ -15,17 +16,42 @@ import './start.css'
  * those are exactly the material that belongs before the argument rather than
  * inside it: credentials and faces, shown once, then never again.
  *
+ * ## What this card used to be, and why it was replaced rather than adjusted
+ *
+ * The founders' verdict was "incredibly corny and unprofessional", said twice
+ * in one paragraph. That is a judgement about the concept, so the concept is
+ * what changed.
+ *
+ * The old card was three costumes worn at once: letterpress (an engraved plate
+ * with a double border and a hard drop shadow, a section mark set between two
+ * hairlines), foil (a sheen sweeping across the button every four seconds, a
+ * gold-embossed wordmark), and arcade (bevelled chips with baked-in highlight
+ * and shadow insets, the product's pixel furniture). Over all of it sat
+ * simulated film: animated grain, scanlines and a vignette. Every one of those
+ * is ornament arguing that the thing is serious, and an investor reads a
+ * student project arguing that it is serious as a student project.
+ *
+ * What replaced it is an editorial cover. One typographic statement, one rule,
+ * one accent, and a great deal of deliberate space. The identity is carried by
+ * colour and type — the app's navy, its beige, its display face — rather than
+ * by simulated materials. There is nothing on this card that is here to look
+ * like something; every element is a piece of information the room needs:
+ * what the product is called, what it is, who is presenting, where they are
+ * from, and how to begin.
+ *
+ * The one moving thing is the shutter that takes the card away. Motion is the
+ * transition, not the decoration.
+ *
  * ## The handoff is a curtain, not a route change
  *
  * The deck is already mounted and running *underneath* this card from the first
  * frame of the page. That is the whole performance story: by the time anyone
  * presses Start, the WebGL stage exists, its shaders are compiled, the title
- * slide's hero scene is constructed and rendering, the two Google faces have
- * loaded, and the neighbouring scenes have been warmed. Start therefore has no
- * work to do at all — it closes the deck's own `letterbox` shutter over this
- * card, drops the card inside the black, and opens the shutter onto a scene that
- * has been alive the entire time. Nothing compiles, nothing decodes, nothing
- * pops in.
+ * slide's hero scene is constructed and rendering, and the neighbouring scenes
+ * have been warmed. Start therefore has no work to do at all — it closes the
+ * deck's own `letterbox` shutter over this card, drops the card inside the
+ * black, and opens the shutter onto a scene that has been alive the entire
+ * time. Nothing compiles, nothing decodes, nothing pops in.
  *
  * This is also why the card is opaque and at z-index 2000 rather than being
  * mounted instead of the deck: it has to hide a deck that is already there.
@@ -62,7 +88,7 @@ const wait = (ms: number) => new Promise<void>((resolve) => { window.setTimeout(
 /** The product's mark, the same path the demo frame's title bar uses. */
 function Mark() {
   return (
-    <span className="start-mark bevel" aria-hidden="true">
+    <span className="start-mark" aria-hidden="true">
       <svg viewBox="0 0 24 24" focusable="false">
         <path
           d="M7 20h10v2H7z M10 18h4v2h-4z M11 7h2v11h-2z M10 3h4v3h-4z M3 6h18v2H3z M4 8h1v3H4z M19 8h1v3h-1z M1 11h7l-1.75 3.25h-3.5z M16 11h7l-1.75 3.25h-3.5z"
@@ -76,9 +102,34 @@ function Mark() {
 export function StartScreen({ onEnter, arrival, reduced, slideCount }: Props) {
   const [plateShown, setPlateShown] = useState(arrival === 'immediate' || reduced)
   const shutter = useRef<HTMLDivElement | null>(null)
-  const button = useRef<HTMLButtonElement | null>(null)
+  const plate = useRef<HTMLDivElement | null>(null)
   /** Guards against a second Enter arriving mid-sweep. */
   const sweeping = useRef(false)
+
+  /**
+   * Tell the opening scene it is behind a cover, before that scene exists.
+   *
+   * The hero slide's mark assembles out of nine parts over 4.2 seconds, and
+   * until now nobody had ever seen it: the scene is built the instant the page
+   * loads, so the assembly always finished behind this card, and the shutter
+   * opened on an object that had already put itself together. Holding it means
+   * the deck's opening gesture plays when the presentation opens.
+   *
+   * Raised during render rather than in an effect, deliberately. `deck.tsx`
+   * builds the stage in *its* effect, and effects run after the whole tree has
+   * rendered, so a flag set here is already up when the scene is constructed
+   * and there is no first frame to correct.
+   *
+   * Only for the card's first appearance. Brought back over a running deck with
+   * `T`, the stage may be showing the office or the map and the hero's assembly
+   * is long since over, so a returning card changes nothing behind it.
+   */
+  const claimedCover = useRef(false)
+  const [holdsOpening] = useState(() => arrival === 'immediate' && !reduced)
+  if (!claimedCover.current && holdsOpening) {
+    claimedCover.current = true
+    setCoverUp(true)
+  }
 
   /**
    * Close the shutter, swap what is behind it, open the shutter.
@@ -90,9 +141,20 @@ export function StartScreen({ onEnter, arrival, reduced, slideCount }: Props) {
   const sweep = useCallback(async (showPlateAfter: boolean) => {
     if (sweeping.current) return
     sweeping.current = true
+
+    // Release the opening gesture as the bars start closing, so the mark is
+    // already flying together while the shutter is shut. It takes 4.2 seconds
+    // and the sweep takes 1.24, which leaves about three seconds of assembly
+    // still to run when the black opens — the audience catches the object
+    // building itself, rather than a static mark or the very first frame of a
+    // motion that started on their cue.
+    if (claimedCover.current) {
+      claimedCover.current = false
+      setCoverUp(false)
+    }
+
     const host = shutter.current
     const bars = host ? Array.from(host.querySelectorAll('i')) : []
-    const wordmark = host?.querySelector('b')
 
     if (!reduced && bars.length === 2) {
       const closing = bars.map((bar) => bar.animate(
@@ -101,15 +163,6 @@ export function StartScreen({ onEnter, arrival, reduced, slideCount }: Props) {
         // as a shutter; a smooth interpolation reads as a UI animation.
         { duration: CLOSE, easing: 'steps(6, end)', fill: 'both' },
       ))
-      wordmark?.animate(
-        [
-          { opacity: 0, letterSpacing: '.5em' },
-          { opacity: 1, letterSpacing: '.28em', offset: .55 },
-          { opacity: 1, letterSpacing: '.26em', offset: .8 },
-          { opacity: 0, letterSpacing: '.24em' },
-        ],
-        { duration: CLOSE + HOLD + OPEN * .4, easing: 'linear', fill: 'both' },
-      )
       await Promise.all(closing.map((animation) => animation.finished)).catch(() => undefined)
 
       setPlateShown(showPlateAfter)
@@ -139,11 +192,30 @@ export function StartScreen({ onEnter, arrival, reduced, slideCount }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // The button is the only focusable thing on the card, and it is focused so
-  // that the presenter's very first keystroke lands somewhere sensible whether
-  // or not they have clicked into the window yet.
+  // The flag is global and the scene obeys it, so it must not survive this
+  // component under any exit — including an unmount that never went through
+  // `sweep`, which is what a hot reload during development looks like.
+  useEffect(() => () => {
+    if (claimedCover.current) {
+      claimedCover.current = false
+      setCoverUp(false)
+    }
+  }, [])
+
+  /**
+   * Focus lands on the card itself, not on the button inside it.
+   *
+   * A modal has to take focus or a screen reader is left reading the deck
+   * behind it, but focusing the button meant Chromium painted a focus ring on
+   * the very first frame — programmatic focus counts as `:focus-visible` when
+   * there has been no prior pointer interaction — and the first thing an
+   * investor saw was a button that appeared to have a stray border. Nothing is
+   * lost by focusing the container: Enter and Space are handled on `window` in
+   * the capture phase below, so the keyboard path never depended on the button
+   * holding focus, and Tab still reaches it and rings it properly.
+   */
   useEffect(() => {
-    if (plateShown) button.current?.focus({ preventScroll: true })
+    if (plateShown) plate.current?.focus({ preventScroll: true })
   }, [plateShown])
 
   useEffect(() => {
@@ -174,89 +246,97 @@ export function StartScreen({ onEnter, arrival, reduced, slideCount }: Props) {
   return (
     <div className="start" role="dialog" aria-modal="true" aria-label="Lawyer Tycoon — start the presentation">
       {plateShown ? (
-        <div className="start-plate">
-          <div className="start-rail">
-            <span><Mark /><b className="start-wordmark">Lawyer Tycoon</b></span>
-            <span>Investor presentation · {slideCount} slides</span>
-          </div>
+        <div
+          className="start-plate"
+          ref={plate}
+          tabIndex={-1}
+        >
+          {/* Head. The mark and what this document is, and nothing else: the
+              product's name is the headline below and saying it twice is the
+              kind of small redundancy that reads as unconsidered. */}
+          <header className="start-head">
+            <Mark />
+            <p className="start-kicker">Investor presentation<i aria-hidden="true" />{slideCount} slides</p>
+          </header>
 
-          <div className="start-stage">
-            <div className="start-title">
-              <p className="start-eyebrow">LSAT prep, reimagined</p>
-              <h1 className="start-h1 foil">Lawyer<br />Tycoon</h1>
-              <p className="start-standfirst">The LSAT speedrun app.</p>
-
-              <div className="start-divider" aria-hidden="true"><i /><b>§</b><i /></div>
-
-              <ul className="start-method">
-                <li>Diagnose</li>
-                <li aria-hidden="true"><i>·</i></li>
-                <li>Practice</li>
-                <li aria-hidden="true"><i>·</i></li>
-                <li>Progress</li>
-              </ul>
-
-              <p className="start-pull">“One measured learning loop. No busywork.”</p>
-
-              <div className="start-actions">
-                <button
-                  type="button"
-                  ref={button}
-                  className="start-go bevel"
-                  onClick={leave}
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 4l13 8-13 8z" /></svg>
-                  Start slideshow
-                </button>
-                <p className="start-hint">
-                  <kbd>Enter</kbd> or <kbd>Space</kbd> to begin
-                  <i aria-hidden="true">·</i>
-                  <kbd>T</kbd> returns here
-                  <i aria-hidden="true">·</i>
-                  <kbd>F</kbd> fullscreen
-                </p>
-              </div>
-            </div>
-
-            <aside className="start-card engraved">
-              <img className="start-seal" src={UT_SEAL} alt="The University of Texas at Austin seal" />
-              <p className="start-provenance">
-                Built at UT Austin
-                <small>Student-built · Evidence-first</small>
+          {/* The statement, and the way to act on it, as one object in the
+              middle of the page. Name, then what it is, then begin — that is
+              the order the room reads in, and keeping the button attached to
+              the sentence it follows is what stops the card becoming a stack
+              of unrelated horizontal rails. */}
+          <div className="start-lede">
+            <h1 className="start-h1">Lawyer Tycoon</h1>
+            <p className="start-standfirst">The LSAT speedrun app.</p>
+            <div className="start-actions">
+              <button type="button" className="start-go" onClick={leave}>
+                Start presentation
+              </button>
+              <p className="start-hint">
+                <kbd>Enter</kbd> begins<i aria-hidden="true" /><kbd>F</kbd> fullscreen
               </p>
-              <hr className="start-card-rule" />
-              <p className="start-card-label">Co-founders</p>
-              <ul className="start-founders">
-                {FOUNDERS.map((founder) => (
-                  <li className="start-founder" key={founder.name}>
-                    <img src={founder.plate} alt={founder.name} width={512} height={512} />
-                    <b>{founder.name}</b>
-                    <span>{founder.role}</span>
-                  </li>
-                ))}
-              </ul>
-            </aside>
+            </div>
           </div>
+
+          {/* Foot. Everything the room needs to know about who is talking,
+              set at the size of a byline because that is what it is. */}
+          <footer className="start-foot">
+            <ul className="start-founders">
+              {FOUNDERS.map((founder) => (
+                <li className="start-founder" key={founder.name}>
+                  {/* Drawn at the size the file can honestly carry — see
+                      `PORTRAIT_PX` in `founders.ts` for the arithmetic. Both
+                      portraits take the same two numbers so they read as a
+                      pair rather than as a large one and a small one. */}
+                  <img
+                    src={founder.photo}
+                    alt={founder.name}
+                    width={PORTRAIT_PX}
+                    height={PORTRAIT_PX}
+                    style={{ width: PORTRAIT_PX, height: PORTRAIT_PX }}
+                    // Eager and high priority: this is the first screen of the
+                    // presentation and a portrait that decodes a beat late is a
+                    // pop-in on the one frame that gets a first impression.
+                    // `width`/`height` are also set as attributes so the box is
+                    // reserved before the bytes land and nothing shifts.
+                    loading="eager"
+                    fetchPriority="high"
+                  />
+                  <span>
+                    <b>{founder.name}</b>
+                    {founder.role}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <p className="start-provenance">
+              <img
+                className="start-seal"
+                src={UT_SEAL}
+                alt=""
+                aria-hidden="true"
+                width={64}
+                height={64}
+                loading="eager"
+                fetchPriority="high"
+              />
+              The University of Texas at Austin
+            </p>
+          </footer>
 
           {/* The demo preflight. On the start card because this is the screen
               that is up while the laptop is still being plugged in, and because
               running it is also what resolves the live case session id that the
               demo slides point at. See `demo/preflight-strip.tsx`. */}
-          <div className="start-rail">
-            <span>The University of Texas at Austin</span>
+          <div className="start-preflight">
             <PreflightStrip />
           </div>
-
-          <div className="start-grain" aria-hidden="true" />
-          <div className="start-scanlines" aria-hidden="true" />
-          <div className="start-vignette" aria-hidden="true" />
         </div>
       ) : null}
 
       <div className="start-shutter" ref={shutter} aria-hidden="true">
         <i />
         <i />
-        <b className="foil">Lawyer Tycoon</b>
       </div>
     </div>
   )

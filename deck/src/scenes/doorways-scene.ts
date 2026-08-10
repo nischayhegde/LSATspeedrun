@@ -80,13 +80,33 @@ const DOOR = {
   jamb: .28,
 } as const
 
+/**
+ * The warm light through each opening. One constant, used twice and breathed
+ * around once, because "neither door is brighter" is a requirement rather than
+ * a preference and two numbers would eventually drift apart.
+ *
+ * It was two numbers, briefly, and they had drifted: the lights were built at
+ * 26 and the breath in `update` re-set them to 14 on the first frame, so the
+ * rooms visibly dimmed a frame after the slide arrived.
+ */
+const DOORLIGHT = 34
+
 export function createDoorwaysScene(context: SceneContext): DeckScene {
   const scene = new THREE.Scene()
   // A beige field, in the deck's own paper. This is the only scene in the deck
   // that is lit *light*, which is the point: the close is the second full
   // inversion and the last thing the room looks at.
   scene.background = new THREE.Color(PALETTE.paper)
-  scene.fog = new THREE.Fog(PALETTE.paper, 16, 46)
+  /* Far enough back that it only ever touches the floor running away behind
+     the camera's shoulder.
+  
+     At 16/46 it was the single reason both doorways read as grey stairwells.
+     The rooms behind the openings sit about twenty-four units from the lens,
+     which was a quarter of the way into a fog whose colour is the beige field —
+     so a near-black interior came back mixed a quarter of the way to cream,
+     and every attempt to fix it by darkening the albedo did nothing, because
+     the grey was being added after the shading rather than surviving it. */
+  scene.fog = new THREE.Fog(PALETTE.paper, 34, 88)
 
   const rig = new CameraRig(
     {
@@ -112,9 +132,27 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
   const paperFloor = new THREE.MeshStandardMaterial({ color: 0xece3d2, roughness: .94, metalness: 0 })
   const royal = new THREE.MeshStandardMaterial({ color: PALETTE.navy, roughness: .58, metalness: .1 })
   const royalDeep = new THREE.MeshStandardMaterial({ color: 0x0b1a26, roughness: .82, metalness: .04 })
+  /* The two rooms are lit by their own practicals and by nothing else, and the
+     albedos have to be cut for that.
+  
+     The scene's ambient is several times a normal one — it has to be, because
+     the wall *is* the beige field rather than a backdrop behind it — and an
+     ambient that strong reaches into the openings too, where it is exactly
+     wrong. A navy block under it resolves to about the same value as a grey
+     one, and both doorways came back reading as filing cabinets in a stairwell
+     rather than as the deep, glowing rooms the narrative asks for. Cutting the
+     interior albedos to near-black leaves the ambient with almost nothing to
+     lift, so what the audience sees through each opening is the warm practical
+     falling off into the dark — which is what "deep" looks like. */
+  const interiorShell = new THREE.MeshStandardMaterial({ color: 0x05090e, roughness: .92, metalness: 0 })
+  const interiorMass = new THREE.MeshStandardMaterial({ color: 0x0e1f2e, roughness: .74, metalness: .06 })
+  const interiorMassAlt = new THREE.MeshStandardMaterial({ color: 0x060d15, roughness: .86, metalness: .03 })
   const gold = new THREE.MeshStandardMaterial({ color: PALETTE.gold, roughness: .32, metalness: .8 })
   const cream = new THREE.MeshStandardMaterial({ color: PALETTE.goldSoft, roughness: .6, metalness: .04 })
-  const materials = [paper, paperFloor, royal, royalDeep, gold, cream]
+  const materials = [
+    paper, paperFloor, royal, royalDeep, gold, cream,
+    interiorShell, interiorMass, interiorMassAlt,
+  ]
 
   // --- floor and wall ------------------------------------------------------
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 44), paperFloor)
@@ -188,7 +226,7 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
     // depth rather than being a hole onto the background.
     const room = new THREE.Mesh(
       new THREE.BoxGeometry(DOOR.width + .6, DOOR.height + .5, 9),
-      royalDeep,
+      interiorShell,
     )
     room.material.side = THREE.BackSide
     room.position.set(0, (DOOR.height + .5) / 2, -4.6)
@@ -197,7 +235,7 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
     // Warm light through the opening. Identical intensity, identical colour,
     // identical distance on both sides — "neither door is brighter" is a
     // requirement, so it is one constant used twice.
-    const practical = new THREE.PointLight(0xffe0a8, 26, 15, 2.1)
+    const practical = new THREE.PointLight(0xffe0a8, DOORLIGHT, 15, 2.1)
     practical.position.set(0, DOOR.height * .62, -1.9)
     group.add(practical)
 
@@ -213,7 +251,7 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
   // whole product for a student who never opens the game, and it has to look
   // sufficient rather than sparse.
   const cardFace = labelPlane('Q', 1.5, {
-    pixels: 128, weight: 700, font: 'Fraunces, Georgia, serif', color: '#1d3a52', align: 'center',
+    pixels: 128, weight: 700, font: 'Archivo, Inter, sans-serif', color: '#1d3a52', align: 'center',
   })
   const card = new THREE.Group()
   const cardPlate = new THREE.Mesh(new THREE.BoxGeometry(1.95, 2.55, .08), cream)
@@ -235,7 +273,7 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
   // opposite. "Lit plainly" is not the same as lit less: the left door is the
   // whole product for a student who never opens the game, and a dim question
   // card beside a glowing office would argue the opposite of the slide.
-  const cardLight = new THREE.PointLight(0xfff0cf, 14, 8, 2)
+  const cardLight = new THREE.PointLight(0xfff0cf, 22, 9, 2)
   cardLight.position.set(-DOOR.offset, 3.6, DOOR.wallZ - 1.6)
   scene.add(cardLight)
 
@@ -252,7 +290,7 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
     for (const side of [-1, 1] as const) {
       const block = new THREE.Mesh(
         new THREE.BoxGeometry(.55 + random() * .4, height, .62),
-        rank % 2 === 0 ? royal : royalDeep,
+        rank % 2 === 0 ? interiorMass : interiorMassAlt,
       )
       block.position.set(side * (.95 + rank * .16), height / 2, depth)
       office.add(block)
@@ -267,7 +305,7 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
   const monitor = new THREE.Mesh(new THREE.BoxGeometry(.95, .6, .06), cream)
   monitor.position.set(0, 1.68, -3.25)
   office.add(monitor)
-  const glow = new THREE.PointLight(0xffcf7a, 18, 10, 2)
+  const glow = new THREE.PointLight(0xffcf7a, 30, 11, 2)
   glow.position.set(0, 2, -3.1)
   office.add(glow)
   office.position.set(DOOR.offset, 0, DOOR.wallZ)
@@ -409,8 +447,8 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
         // favoured one door would undo it.
         const left = leftDoor.children.find((child) => child instanceof THREE.PointLight)
         const right = rightDoor.children.find((child) => child instanceof THREE.PointLight)
-        if (left) (left as THREE.PointLight).intensity = 14 + Math.sin(elapsed * .41) * .5
-        if (right) (right as THREE.PointLight).intensity = 14 + Math.sin(elapsed * .41 + 2.1) * .5
+        if (left) (left as THREE.PointLight).intensity = DOORLIGHT + Math.sin(elapsed * .41) * 1.1
+        if (right) (right as THREE.PointLight).intensity = DOORLIGHT + Math.sin(elapsed * .41 + 2.1) * 1.1
       }
 
       rig.update(delta, context.pointer)

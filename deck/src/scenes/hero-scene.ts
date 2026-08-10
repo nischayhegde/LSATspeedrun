@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { coverIsUp } from './cover-stage'
 import {
   CameraRig,
   PALETTE,
@@ -59,6 +60,12 @@ export function createHeroScene(context: SceneContext): DeckScene {
   // Dense enough that the third rank of the skyline is barely a value change,
   // which is what makes the city read as distance rather than as small boxes.
   scene.fog = new THREE.FogExp2(0x070b14, .0165)
+
+  // Whether this scene is being built behind the start card, which decides
+  // whether the mark is already assembling on its first frame. Read once, here:
+  // the card raises the flag during its own first render, which is before
+  // `deck.tsx`'s effect builds this scene, so it is reliably up by now.
+  const startsCovered = coverIsUp()
 
   const rig = new CameraRig(
     {
@@ -231,14 +238,16 @@ export function createHeroScene(context: SceneContext): DeckScene {
   const rightPan = buildPan(1)
   registerPart(rightPan, new THREE.Vector3(5.5, 6.4, 0), .82, .6)
 
-  // The wordmark, laid into the floor in front of the plinth. Set in Fraunces,
-  // the product's display face, and struck rather than printed: the shadow pass
-  // sits under the face in the app's own foil relief colour.
+  // The wordmark, laid into the floor in front of the plinth, struck rather
+  // than printed: the shadow pass sits under the face in the app's own foil
+  // relief colour. Set in the deck's display face, which is now Archivo — a
+  // wordmark in the 3D that did not match the wordmark in the DOM would be the
+  // most visible possible version of an inconsistent type system.
   const wordShadow = labelPlane('LAWYER TYCOON', 1.06, {
-    pixels: 96, weight: 900, font: 'Fraunces, Georgia, serif', letterSpacing: 9, color: 'rgba(104,68,16,.55)', align: 'center',
+    pixels: 96, weight: 800, font: 'Archivo, Inter, sans-serif', letterSpacing: 9, color: 'rgba(104,68,16,.55)', align: 'center',
   })
   const word = labelPlane('LAWYER TYCOON', 1.06, {
-    pixels: 96, weight: 900, font: 'Fraunces, Georgia, serif', letterSpacing: 9, color: '#f2c75b', align: 'center',
+    pixels: 96, weight: 800, font: 'Archivo, Inter, sans-serif', letterSpacing: 9, color: '#f2c75b', align: 'center',
   })
   for (const [mesh, lift] of [[wordShadow, .014], [word, .02]] as const) {
     mesh.rotation.x = -Math.PI / 2
@@ -313,7 +322,18 @@ export function createHeroScene(context: SceneContext): DeckScene {
   scene.add(motes)
 
   // --- state ---------------------------------------------------------------
+  /**
+   * The assembly is held while the cover is up.
+   *
+   * Without this the deck's opening gesture is wasted: the scene is built the
+   * instant the page loads, `ASSEMBLE_SECONDS` is 4.2, and the presenter spends
+   * a good deal longer than that on the title card before pressing Enter — so
+   * the shutter has always opened on a mark that finished assembling behind it,
+   * unseen. Holding it means the nine parts fly together *as the presentation
+   * begins*, which is when it was written to happen.
+   */
   let assembly = context.reduced ? 1 : 0
+  let covered = startsCovered
 
   const applyAssembly = () => {
     for (const part of parts) {
@@ -339,7 +359,9 @@ export function createHeroScene(context: SceneContext): DeckScene {
     camera: rig.camera,
 
     update(delta, elapsed) {
-      if (!context.reduced) {
+      if (covered && !coverIsUp()) covered = false
+
+      if (!context.reduced && !covered) {
         assembly = Math.min(1, assembly + delta / ASSEMBLE_SECONDS)
         applyAssembly()
 

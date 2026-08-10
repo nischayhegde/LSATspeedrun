@@ -348,11 +348,16 @@ const camera: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
 //
 // `layouts.tsx` renders every headline as one `<span>` per glyph carrying its own
 // index, which is what makes this possible without a text-measuring pass. Each
-// glyph gets the same keyframes on a staggered delay, plus an interpolation along
-// Fraunces' `wght` axis — the display face is variable from 500 to 900, so a
-// headline can genuinely thicken as it lands rather than fading in at a fixed
-// weight. That axis move is the part that reads as typography rather than as
-// animation.
+// glyph gets the same keyframes on a staggered delay.
+//
+// This used to also interpolate the display face's `wght` axis, so a headline
+// thickened as it landed. That went with Fraunces. Google serves Archivo as
+// four static instances rather than a variable font — the CSS is four
+// `@font-face` blocks at 500, 600, 700 and 800, with no axis to move — so a
+// `font-variation-settings` keyframe is silently inert, and animating
+// `font-weight` instead would snap through four faces in a fifth of a second
+// and read as a stutter. The rise and the X rotation were always the substance
+// of this transition; what is left is the part that was doing the work.
 // ---------------------------------------------------------------------------
 const type: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
   const total = TRANSITION_MS.type
@@ -389,12 +394,10 @@ const type: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
       {
         transform: `translate3d(0,${.85 * direction}em,0) rotateX(${-42 * direction}deg)`,
         opacity: 0,
-        fontVariationSettings: '"wght" 500, "opsz" 24',
       },
       {
         transform: 'translate3d(0,0,0) rotateX(0deg)',
         opacity: 1,
-        fontVariationSettings: '"wght" 900, "opsz" 144',
       },
     ], {
       duration: total * .72,
@@ -528,6 +531,23 @@ type MorphSpec = {
   /** Where it lands on the incoming slide. */
   to: string
   /**
+   * Where to *measure* the landing, when the target cannot be measured yet.
+   *
+   * A figure on the incoming slide is at phase zero for the length of the
+   * transition — that is the whole point of the phase system, and it is why the
+   * bar on slide 3 draws itself after the audience has arrived rather than
+   * before. But a bar at phase zero is `width: 0`, and a flight to a zero-width
+   * rectangle reads as the object being deleted, so `runMorph` refuses it. The
+   * morph that was supposed to carry slide 2's bar into slide 3's simply never
+   * ran, silently, for exactly this reason.
+   *
+   * The fix is to separate the two questions the target was answering. What
+   * gets revealed at the end is still `to`; where the box flies to is this —
+   * the track the fill will grow along, which is laid out at full size from the
+   * first frame because nothing about it is animated.
+   */
+  land?: string
+  /**
    * Extra rotation, in degrees, at the midpoint of the flight.
    *
    * `x` tips the object forward like a plank being laid down; `y` turns it
@@ -554,6 +574,7 @@ const MORPHS: readonly MorphSpec[] = [
     id: 'bar-lays-flat',
     from: '.fig-bp-row[data-stub="false"] .fig-bp-run',
     to: '.fig-hb-fill',
+    land: '.fig-hb-bar',
     turn: { x: -74 },
     span: .82,
   },
@@ -606,14 +627,15 @@ function runMorph(context: TransitionContext, batch: Batch, duration: number) {
       spec,
       source: from.querySelector<HTMLElement>(spec.from),
       target: to.querySelector<HTMLElement>(spec.to),
+      landing: spec.land ? to.querySelector<HTMLElement>(spec.land) : null,
     }))
-    .find((match) => match.source && match.target)
+    .find((match) => match.source && match.target && (!match.spec.land || match.landing))
   if (!found?.source || !found?.target) return
 
-  const { spec, source, target } = found
+  const { spec, source, target, landing } = found
   const host = overlay.getBoundingClientRect()
   const start = source.getBoundingClientRect()
-  const end = target.getBoundingClientRect()
+  const end = (landing ?? target).getBoundingClientRect()
   // A zero-area endpoint means the figure has not laid out yet — the incoming
   // slide is in the document but its figure may still be at phase 0. Flying to
   // a point would read as the object being deleted, which is worse than not

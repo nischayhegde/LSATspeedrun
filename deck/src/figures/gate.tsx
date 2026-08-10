@@ -20,7 +20,7 @@ import { DRAW_PX, usePhase, vars, type FigureBody } from './kit'
 const MARKS = [40, 500, 1300, 2200, 2800, 3300] as const
 
 /** The arrows' lane in the viewBox: they run between the two columns, never under them. */
-const RUN = { from: 27, to: 73, forwardY: 33, reverseY: 63 } as const
+const RUN = { from: 21, to: 79, forwardY: 33, reverseY: 63 } as const
 
 export function Gate({ spec, active, reduced }: FigureBody<GateFigure>) {
   const phase = usePhase(active, reduced, MARKS)

@@ -157,7 +157,71 @@ for (const id of ids) {
   await page.goto(`${BASE}/#/${id}`, { waitUntil: 'domcontentloaded', timeout: 30000 })
   const mounted = await page.waitForSelector('.demo-stage-frame', { timeout: 20000 }).then(() => true).catch(() => false)
   if (!mounted) {
-    fail(`${id}: no live embed mounted`)
+    // Not necessarily a failure any more. A `stillOnly` slide deliberately has no
+    // live embed — `demo-focus-mode` was cut to a still so it costs no load and
+    // cannot fail — so the absence of a frame has to be told apart from the app
+    // being down. The lamp is exactly that distinction, already computed by
+    // `describeSurface`: "stills" is a choice, "app not running" is a fault. It is
+    // presenter-only chrome, so ask for it with `?hud`.
+    await page.goto(`${BASE}/?hud#/${id}`, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await page.waitForTimeout(2000)
+    const fallback = await page.evaluate(() => {
+      const image = document.querySelector('.demo-still')
+      const slot = document.querySelector('.deck-layer.is-live .demo-screen')?.getBoundingClientRect()
+      const box = image?.getBoundingClientRect()
+      return {
+        lamp: document.querySelector('.demo-lamp')?.textContent ?? null,
+        src: image?.getAttribute('src') ?? null,
+        loaded: image ? image.naturalWidth > 0 : false,
+        pictureAspect: image && image.naturalWidth ? image.naturalWidth / image.naturalHeight : null,
+        boxAspect: box && box.height ? box.width / box.height : null,
+        fit: image ? getComputedStyle(image).objectFit : null,
+        box: box ? { w: Math.round(box.width), h: Math.round(box.height) } : null,
+        coversSlot: box && slot
+          ? Math.abs(box.width - slot.width) <= 2 && Math.abs(box.height - slot.height) <= 2
+          : false,
+      }
+    })
+
+    if (fallback.lamp !== 'stills') {
+      fail(`${id}: no live embed mounted and the lamp reads "${fallback.lamp}", `
+        + 'so this is the app being unreachable rather than a slide that wanted a still')
+    } else if (!fallback.src) {
+      fail(`${id}: a stills-only slide with no still painted`)
+    } else if (!fallback.loaded) {
+      fail(`${id}: the still ${fallback.src} did not load — is the file in deck/public/stills?`)
+    } else {
+      ok(`${id}: stills-only by design, showing ${fallback.src}`)
+      if (!fallback.coversSlot) fail(`${id}: the still does not fill its slot`)
+      else ok(`${id}: the still fills its slot`)
+
+      // `object-fit: contain` is what makes this safe: the picture keeps its own
+      // shape and the slot letterboxes around it, so the still can never appear
+      // stretched. Assert the contract rather than comparing the picture's aspect
+      // to the box's, which differ by design and say nothing about distortion.
+      if (fallback.fit !== 'contain') {
+        fail(`${id}: the still is painted with object-fit: ${fallback.fit}, so a picture `
+          + 'whose shape differs from the slot will be stretched rather than letterboxed')
+      } else {
+        ok(`${id}: painted with object-fit: contain, so it cannot be distorted`)
+      }
+
+      // Stills are captured 16:9 on purpose — `recapture-stills.mjs` lays the app
+      // out at 1152x648 and scales to projector-native 1920x1080. The slot is a
+      // little taller than that, so a few pixels of letterbox are expected. A
+      // picture far off 16:9 is a file that did not come from that pipeline.
+      const aspect = fallback.pictureAspect ?? 0
+      const bars = fallback.box && aspect ? Math.round(fallback.box.h - fallback.box.w / aspect) : 0
+      if (Math.abs(aspect - 16 / 9) > 0.05) {
+        fail(`${id}: the still is ${aspect.toFixed(3)}:1, not the 16:9 the capture pipeline `
+          + 'produces. Re-run `node scripts/recapture-stills.mjs` rather than hand-cropping.')
+      } else {
+        console.log(`    \u00b7 ${id}: 16:9 picture in a ${fallback.boxAspect?.toFixed(3)}:1 slot — `
+          + `${bars}px of letterbox, as the capture size implies`)
+      }
+    }
+    rows.push({ id, stillOnly: true, ...fallback })
+    await page.screenshot({ path: resolve(OUT, `${id.replace(/^demo-/, '')}.png`) })
     await page.close()
     continue
   }
@@ -186,7 +250,7 @@ for (const id of ids) {
     }
   })
 
-  const embedded = page.frames().find((frame) => frame.url().startsWith(APP))
+  const embedded = page.frames().find((frame) => frame.url().startsWith(APP) && !frame.url().includes('deck-warm'))
   const inner = embedded ? await embedded.evaluate(() => {
     const root = document.documentElement
     const body = getComputedStyle(document.body)

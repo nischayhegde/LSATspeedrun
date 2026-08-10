@@ -1228,9 +1228,11 @@ export const SLIDES: readonly SlideSpec[] = [
     id: 'demo-focus-mode',
     section: 'game',
     kind: 'demo',
-    // NOT "Act V — live" like its six siblings, because it is not. The frame
-    // announces `STILLS` in the title bar, and an eyebrow claiming otherwise is
-    // the deck contradicting itself in two places a metre apart.
+    // NOT "Act V — live" like its six siblings, because it is not. The frame no
+    // longer announces `STILLS` to the room — that lamp is presenter-only now —
+    // so this eyebrow is the audience's only cue not to expect an interaction,
+    // and claiming "live" over a frozen frame would be the deck contradicting
+    // itself in two places a metre apart.
     eyebrow: 'Act V — the switch',
     headline: 'Or delete all of it.',
     // STILL, NOT LIVE — founders' call, and the reasoning is worth keeping.

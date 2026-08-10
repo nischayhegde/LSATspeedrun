@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 
+import { demoConfig } from '../../demo.config'
 import { preflight } from '../demo/preflight-strip'
 import { SLIDES } from '../slides'
 import { StartScreen } from './start-screen'
@@ -36,7 +37,17 @@ export function StartGate({ children }: { children: React.ReactNode }) {
     const stills = [...new Set(
       SLIDES.map((slide) => slide.demo?.still).filter((still): still is string => Boolean(still)),
     )].map((still) => `/stills/${still}`)
-    return startWarmUp({ stills })
+    // The two app routes whose scene modules Vite has to transform on first
+    // request. Warmed here so the office slide does not open with a nine-second
+    // stall — the job the runbook used to hand to the presenter.
+    // `deck-warm` is ignored by the app and is there for the verification
+    // scripts, which locate the demo embed by origin: without a marker a warm
+    // frame can be mistaken for the embed and measured instead of it.
+    const routes = [
+      `${demoConfig.appOrigin}/office?deck-warm=1`,
+      `${demoConfig.appOrigin}/map?deck-warm=1`,
+    ]
+    return startWarmUp({ stills, routes })
   }, [gate.showing])
 
   return (

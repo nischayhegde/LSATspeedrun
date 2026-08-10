@@ -20,8 +20,23 @@ import { pct, ringPoint, usePhase, type FigureBody } from './kit'
 /** Cumulative milliseconds: frame, depletion, the still beat, the outer ring, its label. */
 const MARKS = [40, 400, 2300, 3000, 5100] as const
 
-/** Inner geometry in the square viewBox: the used arc, the ghost pace ring, and the tick that marks target. */
-const INNER = { used: 38, ghost: 45, tick: [42, 48] } as const
+/**
+ * Inner geometry in the square viewBox: the used arc, the ghost pace ring, and
+ * the tick that marks target.
+ *
+ * The tick sits *across the used arc*, which is a correction rather than a
+ * placement. It used to straddle the ghost ring at 42–48, and the ghost ring
+ * ends at `target` — the same datum the tick marks — so the two were always
+ * drawn at the identical angle and the tick read as an arrowhead welded to the
+ * end of the arc. It looked like a bug in the arc rather than a mark on the
+ * dial, and it was the single thing making this clock look wrong.
+ *
+ * Moved inward it earns its place: the used arc runs past `target` to `used`,
+ * so a notch at 35–41.5 crosses the blue and shows the overrun. That is the
+ * slide's whole argument — the question took longer than it was given — stated
+ * as geometry instead of as a second copy of a number already on screen.
+ */
+const INNER = { used: 38, ghost: 45, tick: [35, 41.5] } as const
 
 /**
  * Twelve marks around the dial, four of them long.
@@ -33,7 +48,7 @@ const INNER = { used: 38, ghost: 45, tick: [42, 48] } as const
  * of a clock face there is; anything more elaborate starts competing with the
  * two arcs that carry the actual argument.
  */
-const FACE = { count: 12, radius: 33, minor: 2.4, major: 4.6 } as const
+const FACE = { count: 12, radius: 34, minor: 2.2, major: 3.6 } as const
 
 /** The outer ring's radius in a viewBox that gets stretched to the frame. */
 const OUTER_RADIUS = 46
@@ -134,14 +149,6 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
             strokeDasharray="1 1"
             style={{ strokeDashoffset: 1 - (phase >= 1 ? target : 0) }}
           />
-          <line
-            className="fig-cr-tick"
-            x1={tickInner.x}
-            y1={tickInner.y}
-            x2={tickOuter.x}
-            y2={tickOuter.y}
-            style={{ opacity: phase >= 1 ? 1 : 0 }}
-          />
           <circle
             className="fig-cr-used"
             cx={50}
@@ -151,6 +158,18 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
             pathLength={1}
             strokeDasharray="1 1"
             style={{ strokeDashoffset: 1 - (phase >= 2 ? used : 0) }}
+          />
+          {/* Last, so it is on top of the used arc rather than under it.
+              Painted before it, the notch was hidden by the very thing it is
+              meant to cut across, and all that showed was a gold fleck at the
+              ring's outer edge. */}
+          <line
+            className="fig-cr-tick"
+            x1={tickInner.x}
+            y1={tickInner.y}
+            x2={tickOuter.x}
+            y2={tickOuter.y}
+            style={{ opacity: phase >= 1 ? 1 : 0 }}
           />
         </svg>
 
