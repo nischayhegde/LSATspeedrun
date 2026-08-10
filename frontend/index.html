@@ -9,18 +9,32 @@
     <meta name="theme-color" content="#102735" />
     <meta name="description" content="Lawyer Tycoon — master LSAT reasoning and build a legal empire one case at a time." />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23102735' stroke='%23c89b4b' stroke-width='3'/%3E%3Cpath d='M32 14v34M20 22h24M17 22 10 36h14L17 22Zm30 0-7 14h14l-7-14ZM23 49h18' fill='none' stroke='%23f5e8c8' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <!-- The connections are opened now; the request goes out when the app is up.
+
+         These two hops used to be free by accident. The font sheet was fetched
+         at the lowest priority there is, and with nothing on screen until the
+         entry stylesheet and the framework chunk had both landed, it was
+         starved for three seconds — the 35 kB face behind it did not begin
+         downloading until 3582 ms, long after everything that mattered. Once
+         the opening plate painted at 300 ms the pipe was no longer full, the
+         sheet resolved at 375 ms, and the face downloaded from 400 to 1255 ms,
+         straight through the middle of the critical window. On a 1.6 Mbps link
+         35 kB is 175 ms of bandwidth, and that is what it took: measured, the
+         webfonts cost 172 ms of largest contentful paint once the plate stopped
+         starving them, and nothing at all before it.
+
+         So the request is scheduled rather than left to priority. It goes out
+         when the plate leaves, which is the first moment the reader has the app
+         in front of them and the last moment the bytes are contended. The
+         preconnects stay here: a warm socket costs no bandwidth worth counting
+         and takes three round trips off the fetch when it does happen.
+
+         Deleting the families outright was measured too, as the ceiling on what
+         any amount of self-hosting or subsetting could return: 8 ms of first
+         paint across 15 interleaved pairs, against 20 ms of drift. There is
+         nothing there. All of the money is in when the bytes are asked for. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Fetched without blocking the first paint. The families already declare
-         `display=swap`, so text draws immediately in the fallback and swaps
-         when the webfonts arrive instead of waiting on a third-party round
-         trip before anything appears. -->
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap"
-      media="print"
-      onload="this.media='all'"
-    />
     <noscript>
       <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap" rel="stylesheet" />
     </noscript>
@@ -129,11 +143,38 @@
         var css = document.getElementById('app-css')
         var ready = !css || Boolean(css.sheet)
         var mounted = false
-        function leave() {
-          if (ready && mounted && boot.parentNode) boot.parentNode.removeChild(boot)
+        var dressed = false
+        // `media="print"` on the way in, because a stylesheet appended to
+        // `<head>` blocks rendering while it loads exactly as a parsed one
+        // does, and the app is already on screen by now. The families declare
+        // `display=swap`, so the swap itself never hides text.
+        function dressUp() {
+          if (dressed) return
+          dressed = true
+          var f = document.createElement('link')
+          f.rel = 'stylesheet'
+          f.media = 'print'
+          f.onload = function () { f.media = 'all' }
+          f.href = 'https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800'
+            + '&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap'
+          document.head.appendChild(f)
         }
+        // A screen that never arrives should still end up in the right face.
+        setTimeout(dressUp, 6000)
+        function leave() {
+          if (!ready || !mounted) return
+          if (boot.parentNode) boot.parentNode.removeChild(boot)
+          dressUp()
+        }
+        // The entry stylesheet landing is the moment to ask, not the moment the
+        // app appears. Waiting for the app put the face behind the screen it
+        // was for: the login headline drew in the fallback at two lines and
+        // jumped to three when Archivo arrived 400 ms later. Asking here is
+        // still clear of the contended window — the sheet is the last critical
+        // download to finish — and the face is in hand before there is any text
+        // to reflow.
         if (!ready) {
-          var settle = function () { ready = true; leave() }
+          var settle = function () { ready = true; dressUp(); leave() }
           css.addEventListener('load', settle)
           css.addEventListener('error', settle)
         }
