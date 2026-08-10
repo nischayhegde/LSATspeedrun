@@ -7877,7 +7877,15 @@ export function MapThreeScene({
         }),
       )
       const site = new THREE.Vector3(planned.x, asked.y, planned.z)
-      clearAuthoredParcel(world, site, region === 'orbit' ? 2.5 : region === 'ocean' ? 2.2 : 2.05)
+      const parcelRadius = region === 'orbit' ? 2.5 : region === 'ocean' ? 2.2 : 2.05
+      // Both the ground the plan gave it and the ground the table asked for.
+      // The district reserved the asked-for parcel before it laid a street and
+      // still keeps its planned buildings out of it, so leaving the scenery
+      // standing there would be a clearing that half happened — and measured,
+      // that inconsistency was worth more of The Circuit's walker share than
+      // the siting it came with.
+      clearAuthoredParcel(world, site, parcelRadius)
+      if (planned.moved > .05) clearAuthoredParcel(world, asked, parcelRadius)
       if (region === 'ocean') {
         const island = createIslandLandform(2.1, 410 + point.data.tier * 23, index % 2 ? 0x66725e : 0x707666)
         island.position.set(site.x, -.22, site.z)
@@ -8070,6 +8078,7 @@ export function MapThreeScene({
       const x = site.x
       const z = site.z
       clearAuthoredParcel(world, new THREE.Vector3(x, 0, z), 1.85)
+      if (site.moved > .05) clearAuthoredParcel(world, new THREE.Vector3(authoredX, 0, authoredZ), 1.85)
       groundMarker(x, z, 1.95, 620 + index * 29)
       const building = createRivalBuilding(point, index, definition)
       building.position.set(x, .04, z)
