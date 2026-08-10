@@ -4235,26 +4235,6 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
   addTreeField(root, trees)
 }
 
-function createCrane() {
-  const group = new THREE.Group()
-  const steel = material(0x6f6a59, .52, .32)
-  group.add(box([.16, 3.8, .16], steel, [0, 1.9, 0]))
-  group.add(box([3.2, .16, .16], steel, [1.35, 3.7, 0]))
-  group.add(box([.055, 2.4, .055], steel, [2.55, 2.55, 0]))
-  group.add(box([.6, .35, .6], material(0x4c5757, .68), [-.35, 3.42, 0]))
-  group.userData.crane = true
-  return group
-}
-
-/**
- * `createIslandLandform` extrudes an ellipse squashed in z and lifts its top
- * face to y=.34 in local space. Anything standing on an island has to know
- * both numbers, or it ends up hovering over the water beside the island
- * instead of standing on it — which is most of what was wrong with this
- * region's props.
- */
-const ISLAND_SQUASH = .62
-const ISLAND_TOP = .12
 /**
  * How close a train has to be to a level crossing for the road to be held.
  *
@@ -4263,193 +4243,47 @@ const ISLAND_TOP = .12
  * crossing, which is what happens at a real one; erring short costs a collision.
  */
 const LEVEL_CROSSING_GATE = 3.4
-/** Deck width of a quay pier, shared by the pier and the berth beside it. */
-const PIER_WIDTH = .78
-/** Beam of the harbour's vessel, so a berth can be set clear of the deck. */
-const BERTH_BEAM = 1.06
-
 /**
- * A point inside an island's footprint, in the island's own frame.
+ * The Treaty Sea: open water, one vessel, and the three islands the career
+ * itself stands on.
  *
- * `spread` is the fraction of the way to the coast, so .55 is comfortably
- * inland and 1 is the waterline. Every prop out here goes through this rather
- * than adding a hand-picked offset to the island's centre, which is how a
- * warehouse ended up half over the sea.
+ * This region used to be a harbour — five quay islands with warehouses, cranes,
+ * cargo and bollards, five more carrying lighthouses and planting, seven outer
+ * islands with villages and jetties, an embassy, thirty-two channel buoys and a
+ * fleet of nine boats. None of it was doing the work a district's furniture is
+ * supposed to do, because there is no ground out here to stand on and nothing
+ * for a quay to serve: what the player actually sees from a sea district is
+ * water, weather, and whatever is moving on it. Everything else was scenery
+ * competing with the one thing worth looking at.
+ *
+ * So the sea is a sea. The swell and the vessel's Kelvin wake are in
+ * `map-water`, and the only thing built here is the route the vessel runs.
+ *
+ * A standing circuit rather than a channel with portals at either end. The
+ * channel version was the honest model of a working harbour — come in from
+ * somewhere, tie up, leave again — but with one boat and no harbour left for it
+ * to call at, all it produced was a vessel that crossed the bay and then was
+ * not there for a while, which is precisely the appearing and vanishing this
+ * region was asked to stop doing. A closed lane has no ends to leave by, so the
+ * boat is simply always out there. It is set wide of the career route and of
+ * all three island parcels, so the swimmer's line and the vessel's never meet.
  */
-function islandSite(cx: number, cz: number, radius: number, angle: number, spread: number): XZ {
-  const reach = radius * .84 * spread
-  return [cx + Math.cos(angle) * reach, cz + Math.sin(angle) * reach * ISLAND_SQUASH]
-}
-
-function addOceanEnvironment(root: THREE.Group, definition: ArcDefinition) {
-  // The harbour's own navigation. Everything wet here is a lane on the same
-  // graph the streets of the other regions use: a through channel down the
-  // middle of the basin with both ends off the edge of the world, and one
-  // berthing spur per quay. A working harbour is boats coming in from
-  // somewhere, tying up and leaving again, and a lane that stops at a pier
-  // head is what lets the simulation express that instead of circling.
-  const channel: XZ[] = [[-27, -1], [-17, -.7], [-8, -1.2], [0, -.8], [8, -1.2], [17, -.7], [27, -1]]
-  roadWays(root).push({ points: channel, kind: 'water', speed: .95, portal: true })
-  // The outer roads, where deep-draught traffic stands off the harbour.
-  roadWays(root).push({ points: [[-27, -13.5], [-9, -14.2], [9, -14.2], [27, -13.5]], kind: 'water', speed: 1.25, portal: true })
-  const berths: XZ[] = []
-
-  for (const x of [-12, -6, 0, 6, 12]) {
-    const z = x % 12 === 0 ? -6.2 : 5.7
-    // Which way this island faces the basin: the quay is always on the side
-    // the channel is on, and everything on the island is oriented from that.
-    const seaward: 1 | -1 = z < 0 ? 1 : -1
-    const seawardAngle = seaward > 0 ? Math.PI / 2 : -Math.PI / 2
-    const radius = 2.65 + (Math.abs(x) % 3) * .2
-    const portIsland = createIslandLandform(radius, x + 41, 0x637864)
-    portIsland.position.set(x, -.22, z)
-    root.add(portIsland)
-
-    // Warehouses stand back from the quay, on the landward half, so the quay
-    // itself stays a working surface. Two of them, gable-on to the water.
-    for (const offset of [-.55, .55]) {
-      const [wx, wz] = islandSite(x, z, radius, seawardAngle + Math.PI, .34)
-      const warehouse = createBlockBuilding(1.24, 1.05 + hashUnit(x * 7 + offset * 13) * .5, 1.15, x % 12 === 0 ? 0x686f6c : 0x756d61)
-      warehouse.position.set(wx + offset * 1.32, ISLAND_TOP, wz)
-      warehouse.rotation.y = 0
-      root.add(warehouse)
-    }
-
-    // The quay wall itself, along the seaward coast, with the pier running out
-    // from it into the channel.
-    const [qx, qz] = islandSite(x, z, radius, seawardAngle, .74)
-    // The deck runs the length of the working face, so the crane and the
-    // cargo it is lifting both stand on it rather than half off its end.
-    const quay = box([radius * 2, .18, .52], material(0x7d786c, .96), [qx, ISLAND_TOP - .02, qz])
-    quay.castShadow = false
-    root.add(quay)
-    const quayTop = ISLAND_TOP - .02 + .09
-    const pier = createPier(2.6, PIER_WIDTH)
-    pier.position.set(qx, .02, qz + seaward * 1.5)
-    root.add(pier)
-
-    // Cargo sits on the quay beside the crane, where it is being worked, and
-    // the crane stands on the quay rather than out in open water — which is
-    // where all four of them used to be.
-    const crane = createCrane()
-    crane.scale.setScalar(.74)
-    crane.position.set(qx + radius * .72, quayTop, qz - seaward * .1)
-    crane.rotation.y = seaward > 0 ? 0 : Math.PI
-    markAuthoredProp(crane, .7)
-    crane.userData.propAudit = { name: `ocean-crane-${x}`, region: 'ocean' }
-    root.add(crane)
-    const cargo = createCargoStack(Math.abs(x) + 3, .42)
-    cargo.position.set(qx - radius * .78, quayTop, qz - seaward * .12)
-    markSolidProp(cargo, .46)
-    cargo.userData.propAudit = { name: `ocean-cargo-${x}`, region: 'ocean' }
-    root.add(cargo)
-    // Bollards along the quay edge, evenly spaced, as on a real wharf.
-    for (const step of [-.62, 0, .62]) {
-      const bollard = createPromenadeBollard(definition.accent)
-      bollard.scale.setScalar(.62)
-      bollard.position.set(qx + step * radius, quayTop, qz + seaward * .24)
-      markAuthoredProp(bollard, .12)
-      bollard.userData.propAudit = { name: `ocean-bollard-${x}-${step}`, region: 'ocean' }
-      root.add(bollard)
-    }
-
-    // The spur from the channel to this pier, and the quay walk behind it.
-    //
-    // The berth is *alongside* the pier, not on top of it. It used to be a fixed
-    // z that happened to land inside the pier deck, so a vessel that berthed
-    // here sat permanently inside the structure it was tied up to — measured at
-    // 600 frames out of 600 on both of the berths in view. Deriving it from the
-    // pier's own position and beam instead means the two cannot disagree:
-    // half the deck, half a hull and a fender's worth of water.
-    const berthSide = z < 0 ? 1 : -1
-    const berthX = qx + berthSide * (PIER_WIDTH / 2 + BERTH_BEAM / 2 + .25)
-    // Far enough out along the pier that the hull clears the island's own coast
-    // and the quay furniture on it — the ellipse's z squash brings the shore
-    // closer than the radius suggests, and at 1.9 a berthed hull was still
-    // touching the quay apron on every frame of the run.
-    const berthZ = qz + seaward * 2.55
-    roadWays(root).push({ points: [[berthX, -1], [berthX, berthZ]], kind: 'water', speed: .55 })
-    berths.push([berthX, berthZ])
-    footWays(root).push({ points: [[qx - radius * .7, qz - seaward * .3], [qx + radius * .7, qz - seaward * .3]] })
+function addOceanEnvironment(root: THREE.Group) {
+  // Sampled rather than listed so the turns are genuinely circular: a boat
+  // rounding a hand-placed corner cuts a visible angle in its own wake.
+  // Sized to clear everything the region keeps. The furthest of those is the
+  // rival compound at z=8.6 and the career route's own ends at x=±15, so the
+  // lane stands about three units off the first and seven off the second.
+  const CIRCUIT_X = 22.5
+  const CIRCUIT_Z = 13.5
+  const passage: XZ[] = []
+  for (let step = 0; step < 40; step += 1) {
+    const angle = step / 40 * Math.PI * 2
+    passage.push([Math.cos(angle) * CIRCUIT_X, Math.sin(angle) * CIRCUIT_Z])
   }
-  root.userData.dockPoints = berths
-  // The ferries work the same quays the harbour launches do, so they call
-  // there rather than running the shipping lane end to end without stopping.
-  transitStops(root).push(...berths)
-  const embassy = createCourthouse(.72, definition.stone)
-  embassy.position.set(1.5, .18, -5.7)
-  root.add(embassy)
-  // The headquarters islands. A lighthouse belongs on the seaward point, the
-  // planting behind it in the lee — not both stacked near the centre, which is
-  // how they used to end up intersecting one another.
-  const HQ_ISLANDS: Array<[number, number, number, boolean]> = [
-    [-14, -2.8, 2.1, true], [-8, 2.3, 1.8, false], [0, -3, 2.2, false], [7.5, 2.5, 1.9, true], [14, -2.4, 2.2, true],
-  ]
-  HQ_ISLANDS.forEach(([x, z, radius, beacon], index) => {
-    const island = createIslandLandform(radius, Math.round(x * 17 + z * 23 + 90), 0x6f7964)
-    island.position.set(x, -.22, z)
-    root.add(island)
-    // Seaward is towards the channel down the middle of the basin.
-    const seawardAngle = z < 0 ? Math.PI / 2 : -Math.PI / 2
-    if (beacon) {
-      const [lx, lz] = islandSite(x, z, radius, seawardAngle, .72)
-      const lighthouse = createLighthouse(.6 + hashUnit(index * 9) * .14)
-      lighthouse.position.set(lx, ISLAND_TOP, lz)
-      markAuthoredProp(lighthouse, .68)
-      lighthouse.userData.propAudit = { name: `ocean-lighthouse-${index}`, region: 'ocean', groundY: ISLAND_TOP }
-      root.add(lighthouse)
-    }
-    // Planting in the lee, on the far side from the light.
-    // Set wide apart around the island's landward arc rather than close in
-    // beside each other: pulled towards the centre the pair converges and the
-    // canopies interpenetrate, pushed out they sink into the bevelled coast.
-    for (const step of [-1.15, 1.15]) {
-      const [tx, tz] = islandSite(x, z, radius, seawardAngle + Math.PI + step, .36)
-      const tree = createTree(.5 + hashUnit(index * 5 + step * 3) * .16, 0x526754)
-      tree.position.set(tx, ISLAND_TOP, tz)
-      markAuthoredProp(tree, .3)
-      tree.userData.propAudit = { name: `ocean-tree-${index}-${step}`, region: 'ocean', groundY: ISLAND_TOP }
-      root.add(tree)
-    }
-  })
-  // No channel marks. Twenty-two of the thirty-two buoys this harbour carried
-  // were set a metre and a quarter either side of the career route, which runs
-  // within a metre of the shipping channel — so the marks were *in* the fairway
-  // rather than beside it, and a launch on the channel had to sail through them.
-  // They were also, at 1,144 triangles each, 36,608 triangles of the region's
-  // 142,556: the single most expensive thing on the map after the sea itself.
-  // Treaty Sea is now one working vessel on open water, so there is nothing left
-  // for a buoyed channel to organise.
-  const outerIslands: Array<[number, number, number]> = [[-21, -9, 3.4], [-18, 8, 2.7], [-11, -12, 2.5], [-3, 11, 3.1], [8, -11.5, 2.9], [17, 9.5, 3.6], [22, -5, 3.2]]
-  outerIslands.forEach(([x, z, radius], index) => {
-    const island = createIslandLandform(radius, 110 + index * 13, index % 2 ? 0x596e5b : 0x627761)
-    island.position.set(x, -.24, z)
-    root.add(island)
-    // A village is a row of houses along the sheltered shore facing the
-    // harbour, not a handful of boxes offset from the island's centre until
-    // some of them hang over the water.
-    const shoreAngle = Math.atan2(-z, -x)
-    const villageCount = 2 + (index % 3)
-    for (let village = 0; village < villageCount; village += 1) {
-      const spread = (village - (villageCount - 1) / 2) * .46
-      const [hx, hz] = islandSite(x, z, radius, shoreAngle + spread, .52)
-      const house = createBlockBuilding(.72, .68 + hashUnit(index * 7 + village * 3) * .34, .66, index % 2 ? 0x767066 : 0x686f6d)
-      house.position.set(hx, ISLAND_TOP - .02, hz)
-      // Every house faces the water it fronts onto.
-      house.rotation.y = -shoreAngle - Math.PI / 2
-      root.add(house)
-    }
-    // A jetty on the same shore, so the village has a way to the water.
-    if (index % 2 === 0) {
-      const [jx, jz] = islandSite(x, z, radius, shoreAngle, .92)
-      const jetty = createPier(1.5, .5)
-      jetty.position.set(jx, .02, jz)
-      jetty.rotation.y = -shoreAngle
-      markAuthoredProp(jetty, .5)
-      jetty.userData.propAudit = { name: `ocean-jetty-${index}`, region: 'ocean', groundY: .02 }
-      root.add(jetty)
-    }
-  })
+  // Slow. A launch at road speed reads as a jet ski, and the wake shader's
+  // strength saturates at .97 units per second anyway.
+  roadWays(root).push({ points: passage, closed: true, kind: 'water', speed: 1.05 })
 }
 
 /**
@@ -4885,10 +4719,8 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
   const colour = new THREE.Color()
 
   // The Treaty Sea has no ridge line: a ring of cone-shaped hills around
-  // open water reads as mountains encircling a bay, not as a coastline. The
-  // ocean's own horizon comes from its fog/sky gradient and the low, sparse
-  // outer islands built below and in addOceanEnvironment, so the ridge band
-  // is skipped entirely for this one region rather than reused unconditionally.
+  // open water reads as mountains encircling a bay, not as a coastline. Its
+  // horizon is the sea meeting the fog, which is what a horizon is at sea.
   if (region !== 'ocean') {
     // Aerial perspective: each band further out is blended harder towards the
     // fog colour and lit flatter, so the ring reads as distance rather than as
@@ -5524,22 +5356,10 @@ function addPerimeterEnvironment(root: THREE.Group, region: MapRegionKey, defini
   if (region === 'orbit') return
   const corridors = buildingCorridors(root)
   root.add(createHorizonRing(region, definition, corridors.length ? prepareClearance(corridors) : undefined))
-  if (region === 'city' || region === 'nation' || region === 'continent') return
-  for (let index = 0; index < 16; index += 1) {
-    const angle = index / 16 * Math.PI * 2
-    const radiusX = 24 + (index % 3) * 3
-    const radiusZ = 15 + (index % 4) * 2
-    const x = Math.cos(angle) * radiusX
-    const z = Math.sin(angle) * radiusZ - 3
-    const island = createIslandLandform(1.7 + (index % 3) * .55, 220 + index * 17, index % 2 ? 0x4f6255 : 0x586b59)
-    island.position.set(x, -.24, z)
-    root.add(island)
-    if (index % 3 === 0) {
-      const tower = createBlockBuilding(1.2, 2.2 + (index % 2), 1.2, 0x68665f)
-      tower.position.set(x, .08, z)
-      root.add(tower)
-    }
-  }
+  // The Treaty Sea's horizon is the sea. Sixteen islands with towers on a third
+  // of them, set on an ellipse at twenty-four to thirty units, is a ring of land
+  // around a pond rather than open water, and it stood where the region's one
+  // vessel now runs its circuit.
 }
 
 function curveDistanceXZ(curve: THREE.Curve<THREE.Vector3>, position: THREE.Vector3) {
@@ -6520,7 +6340,12 @@ function addProceduralNearDistance(root: THREE.Group, region: MapRegionKey, rout
   // comes out, bales in the fields that have been cut — and a farmstead
   // dropped at a fixed offset from the route by this pass had no relationship
   // to any of it. Every floating hay bale in the audit came from here.
-  if (region === 'city' || region === 'nation') return
+  //
+  // The Treaty Sea is out because it has no near distance to texture: this pass
+  // used to line the shipping lane with fourteen islets and a marsh apiece, and
+  // a chain of identical islets either side of the route is the most obviously
+  // procedural thing that was left on that map.
+  if (region === 'city' || region === 'nation' || region === 'ocean') return
   const canPlace = (object: THREE.Object3D, position: THREE.Vector3) => {
     const footprint = Number(object.userData.footprintRadius ?? .7)
     return !root.children.some((child) => {
@@ -6530,27 +6355,15 @@ function addProceduralNearDistance(root: THREE.Group, region: MapRegionKey, rout
       return Math.hypot(child.position.x - position.x, child.position.z - position.z) < (footprint + other) * .9
     })
   }
-  const sampleCount = region === 'ocean' ? 14 : region === 'continent' ? 12 : 22
+  const sampleCount = region === 'continent' ? 12 : 22
   const samples = Array.from({ length: sampleCount }, (_, index) => (index + .45) / sampleCount)
   samples.forEach((t, index) => {
     const point = route.getPointAt(t)
     const tangent = route.getTangentAt(t).normalize()
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
     const side = index % 2 ? 1 : -1
-    const distance = (region === 'orbit' ? 4.3 : region === 'ocean' ? 5.6 : 4.15) + hashUnit(index * 37 + region.length) * (region === 'ocean' ? 4.2 : 2.8)
+    const distance = (region === 'orbit' ? 4.3 : 4.15) + hashUnit(index * 37 + region.length) * 2.8
     const position = point.clone().add(normal.multiplyScalar(distance * side)).setY(.02)
-
-    if (region === 'ocean') {
-      const island = createIslandLandform(.72 + hashUnit(index * 19) * .55, 900 + index * 31, index % 2 ? 0x5d6e59 : 0x68745e)
-      island.position.set(position.x, -.24, position.z)
-      root.add(island)
-      const marsh = createMarshPatch(70 + index, .58 + hashUnit(index * 7) * .24)
-      marsh.position.set(position.x, .08, position.z)
-      root.add(marsh)
-      // No boat. These sat 1.35 units off an islet at y=-.04 with nothing tying
-      // them to it, which is a boat abandoned rather than a boat moored.
-      return
-    }
 
     const pickProp = () => {
       if (region === 'continent') {
@@ -7692,7 +7505,7 @@ export function MapThreeScene({
 
     if (region === 'city') { addCityEnvironment(world, definition); addCityCorridor(world, routeCurve, definition) }
     else if (region === 'nation') { addNationEnvironment(world, definition, routeCurve); addNationCorridor(world, routeCurve, definition) }
-    else if (region === 'ocean') addOceanEnvironment(world, definition)
+    else if (region === 'ocean') addOceanEnvironment(world)
     else if (region === 'continent') addContinentEnvironment(world, routeCurve)
     else addGlobalEnvironment(world)
     addPerimeterEnvironment(world, region, definition)
@@ -7868,6 +7681,21 @@ export function MapThreeScene({
       orbit: [[-12, -6], [0, 8.7], [12, -6]],
     }
     const rivalSites = rivalSitesByRegion[region]
+    /**
+     * Ground under a marker on the Treaty Sea.
+     *
+     * A rival compound and a docket beacon are click targets rather than
+     * scenery, so they stay when the region's furniture goes — but two of the
+     * three rivals and both dockets were standing on quay islands that went
+     * with it, and a building on open water reads as a bug rather than as a
+     * choice. Each keeps a landform of its own, sized to what stands on it.
+     */
+    const groundMarker = (x: number, z: number, radius: number, seed: number) => {
+      if (region !== 'ocean') return
+      const island = createIslandLandform(radius, seed, 0x66725e)
+      island.position.set(x, -.22, z)
+      world.add(island)
+    }
     // A standing rival reads as a building with a name on it; putting one
     // figure at its door is what makes it read as a firm with people in it —
     // someone the player is actually up against, not a placeholder. Once the
@@ -7894,6 +7722,7 @@ export function MapThreeScene({
       const x = site.x
       const z = site.z
       clearAuthoredParcel(world, new THREE.Vector3(x, 0, z), 1.85)
+      groundMarker(x, z, 1.95, 620 + index * 29)
       const building = createRivalBuilding(point, index, definition)
       building.position.set(x, .04, z)
       building.rotation.y = z < 0 ? 0 : Math.PI
@@ -7936,6 +7765,7 @@ export function MapThreeScene({
     events.forEach((point, index) => {
       const [x, z] = eventSites[index % eventSites.length]
       clearAuthoredParcel(world, new THREE.Vector3(x, 0, z), 1.3)
+      groundMarker(x, z, 1.4, 730 + index * 37)
       const signal = createEventSite(point, definition)
       signal.position.set(x, .04, z)
       world.add(signal)
