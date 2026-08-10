@@ -17,8 +17,17 @@ import { chromium } from '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const BASE = process.env.MAPS_BASE || 'http://127.0.0.1:5173'
+
+/**
+ * Where reports land: this checkout's own `.maps`, not a path typed out once
+ * and then shared by every worktree on the machine. Several checkouts of this
+ * branch are measured side by side, and a hard-coded home directory means two
+ * arms overwrite each other's evidence with the same tag.
+ */
+export const OUT = process.env.MAPS_OUT || fileURLToPath(new URL('../../.maps', import.meta.url))
 
 // Named outright rather than through `channel: 'chromium'`. The channel lookup
 // resolves to the x64 build on this machine and then reports the browser as not
@@ -222,7 +231,12 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
   // way to fail.
   try {
     await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-    await page.locator('button', { hasText: 'Enter local development firm' }).click()
+    // Generous, because the first load of a cold dev server compiles the whole
+    // module graph before the page renders at all, and the default 30 s expires
+    // on a loaded machine while Vite is still optimising dependencies. That
+    // presents as "the dev-login button does not exist", which sends a reader
+    // looking at the backend's auth config instead of at the clock.
+    await page.locator('button', { hasText: 'Enter local development firm' }).click({ timeout: 180000 })
     await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 })
     await page.evaluate(() => localStorage.setItem('lsat-tour-v6', 'done')).catch(() => {})
 

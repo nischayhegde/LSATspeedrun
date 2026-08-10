@@ -11,7 +11,7 @@
  *
  * Usage: node tools/map-qa/whatis.mjs <region> <x,z> [<x,z> ...]
  */
-import { open, region, save, TABS } from './lib.mjs'
+import { open, region, save, TABS, OUT } from './lib.mjs'
 
 const key = process.argv[2] ?? 'nation'
 const points = process.argv.slice(3).map((pair) => {
@@ -144,7 +144,7 @@ try {
     console.log(`\n@ ${site.at} (r=${RADIUS})`)
     for (const object of site.objects) console.log('  ', JSON.stringify(object))
   }
-  save(`/Users/alan/LSATspeedrun/.maps/whatis-${key}.json`, { region: key, radius: RADIUS, sites: result, errors })
+  save(`${OUT}/whatis-${key}.json`, { region: key, radius: RADIUS, sites: result, errors })
 } finally {
   await browser.close().catch(() => {})
 }
