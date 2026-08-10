@@ -2715,6 +2715,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
           insignia: staffLook.insignia,
         })
         rig.root.scale.setScalar(staffScale)
+        rig.root.userData.detail = foreground ? 'full' : 'reduced'
         const actor = new THREE.Group()
         const home = new THREE.Vector3(seat.x, 0, seat.z)
         actor.position.copy(home)
@@ -3328,6 +3329,41 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // per frame just to rank the same actors.
     const staffHumanoids = staffRigs.map((entry) => entry.humanoid)
 
+    /**
+     * What the seated cast submits, walked rather than subtracted.
+     *
+     * A body used to be priced by measuring a full floor against an empty one.
+     * An empty floor is empty of the benches, chairs and departmental fittings
+     * the same purchase set buys, so that subtraction charged sixteen people
+     * for sixteen workstations as well. This walks the actors.
+     */
+    const castCensus = import.meta.env.DEV
+      ? () => {
+        let parts = 0
+        let triangles = 0
+        let full = 0
+        for (const entry of staffRigs) {
+          if (entry.rig.root.userData.detail !== 'reduced') full += 1
+          entry.rig.root.traverse((object) => {
+            if (!(object instanceof THREE.Mesh)) return
+            parts += 1
+            const index = object.geometry.getIndex()
+            const position = object.geometry.getAttribute('position')
+            triangles += (index ? index.count : position ? position.count : 0) / 3
+          })
+        }
+        return {
+          bodies: staffRigs.length,
+          full,
+          reduced: staffRigs.length - full,
+          parts,
+          triangles,
+          partsPerBody: staffRigs.length ? Number((parts / staffRigs.length).toFixed(2)) : 0,
+          trianglesPerBody: staffRigs.length ? Math.round(triangles / staffRigs.length) : 0,
+        }
+      }
+      : () => null
+
     // DEV-only measurement probe. Reports live world-space joint positions and
     // local joint quaternions for the client and each staff actor, plus the
     // measured chair-seat height, so seating and motion claims can be checked
@@ -3895,6 +3931,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
             windowRegion: windowView.region,
             windowTriangles: windowView.triangles,
             windowMeshes: windowView.meshes,
+            // The cast's own share, counted rather than subtracted.
+            //
+            // "What does a body cost" was being answered by measuring a full
+            // floor against an empty one, and an empty floor is empty of the
+            // desks, benches and departmental fittings the same purchase set
+            // buys. That subtraction charged sixteen people for sixteen
+            // workstations as well, and put a body 50% over its real price.
+            // This walks the actors themselves.
+            cast: castCensus(),
           }
         }
         canvas.classList.add('is-ready')

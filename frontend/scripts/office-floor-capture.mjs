@@ -341,6 +341,19 @@ try {
     )
     const missing = entry.directory.map((floor) => `${floor.name}:${floor.seated}${floor.current ? '*' : ''}`).join('  ')
     if (missing) process.stdout.write(`         directory  ${missing}\n`)
+    // The cast's own share, walked from the actors rather than subtracted from
+    // an empty room. An empty room is empty of desks too, so the subtraction
+    // was charging every body for the workstation it sits at.
+    const cast = scene.cast
+    if (cast && cast.bodies) {
+      process.stdout.write(
+        `         cast       ${cast.bodies} bodies (${cast.full} full, ${cast.reduced} reduced)  `
+        + `parts ${String(cast.parts).padStart(4)} (${cast.partsPerBody}/body)  `
+        + `tris ${String(cast.triangles).padStart(6)} (${cast.trianglesPerBody}/body)`
+        + (cast.draws === undefined ? '' : `  draws ${String(cast.draws).padStart(4)} (${cast.drawsPerBody}/body)`)
+        + '\n',
+      )
+    }
     const cropped = entry.staff.filter((person) => person.frame && !person.frame.whole)
     if (entry.staff.length) {
       process.stdout.write(
