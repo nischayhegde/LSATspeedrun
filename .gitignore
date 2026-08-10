@@ -88,6 +88,18 @@ frontend/scratch-*
 # Demo-walkthrough verification scratch (screenshots, harnesses, reports).
 .demo-verify/
 
+# Demo autoplay driver scratch: filmstrip captures (738 PNG, 782 MB), timing
+# and geometry probes, and the harnesses that drive them. All regenerated on
+# demand. Ignored for the `git add --all` reason above: at this size it is the
+# worst thing in the tree to hand to the 1 GiB build box. The driver's own
+# sources live in frontend/src/demo/ and are deliberately not covered here.
+.autoplay/
+
+# Slide-mockup scratch: exported-PDF page renders and the shoot harnesses that
+# produced them, used while matching one slide back to the deck. Regenerated on
+# demand, and the deck's real sources are in deck/src/.
+.deck-slide/
+
 # Alternate build outputs kept while comparing bundles. The QA sweep renames
 # these between runs, so match the shapes rather than one fixed name.
 frontend/dist-qa*/
@@ -102,6 +114,12 @@ deck/node_modules/
 deck/dist/
 deck/.deck-shots/
 deck/tsconfig.tsbuildinfo
+
+# Screenshot-harness scratch from the deck QA sweeps: the probe .mjs files and
+# the 25 MB of PNG they render. Regenerated on demand, and ignored for the same
+# `git add --all` reason as the block above -- excluding it by hand at commit
+# time does not stop the deploy from sweeping it into a release.
+deck/.deck-qa/
 
 # `deck/public/art/` is a byte-identical copy of `frontend/public/art/` (218
 # .webp, 18 MB), which is already tracked — see `deck/src/app-art/PORT.md`. One
