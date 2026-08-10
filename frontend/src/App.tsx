@@ -5,6 +5,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 
 import { api, ApiError } from './api'
 import { AppShell, ErrorNotice, LoadingScreen } from './components'
+import { AUTOPLAY_ENGAGED } from './demo/use-autoplay'
 import { FocusMark } from './art-2d/marks'
 import { preloadArtForRoute, preloadDockArt } from './art/scene-loaders'
 import { routes } from './routes'
@@ -109,7 +110,23 @@ function Protected({ children, gameRequired = true }: { children: React.ReactNod
   if (me.isLoading || (me.data && game.isLoading)) return <LoadingScreen />
   const loadError = me.error || game.error
   if (isAuthenticationError(loadError)) return <Navigate to="/login" replace state={{ from: location.pathname }} />
-  if (loadError) {
+  /*
+   * A driven run does not replace the product with an error card.
+   *
+   * These queries are refetched constantly during a run — the firm's cash is
+   * re-read after every settled case — so a backend that goes away mid-demo
+   * takes the whole screen down and puts "The firm could not be opened" on the
+   * projector, over a question the audience was reading a second earlier.
+   * Whenever the account and firm have already loaded once, the last good
+   * screen is kept instead, and the driver quietly stops issuing actions. The
+   * room sees a case sitting on screen, which is a state a student produces
+   * every time they walk away from one.
+   *
+   * Reached only from a URL that asked for a run; every other visitor still
+   * gets told the connection dropped, which is what they need to hear.
+   */
+  const holdLastGoodScreen = AUTOPLAY_ENGAGED && Boolean(me.data?.user) && Boolean(game.data?.game)
+  if (loadError && !holdLastGoodScreen) {
     return (
       <RouteLoadError
         error={loadError}

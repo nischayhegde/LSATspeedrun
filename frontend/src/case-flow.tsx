@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { api } from './api'
 import { ErrorNotice, formatMoney } from './components'
+import { AUTOPLAY_ENGAGED, useAutoplay } from './demo/use-autoplay'
 import { ClientPortrait, CounselPortrait3D, JudgePortrait } from './game-art'
 import { counselFor, keyHash } from './art/assets'
 import { useSound } from './sound'
@@ -410,7 +411,9 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   }, [formRemaining, queryClient, session.id])
 
   useEffect(() => {
-    if (result) verdictRef.current?.focus()
+    // Focusing scrolls, and during a driven run the driver owns the scroll: the
+    // two together produce a jump followed by a glide to the same place.
+    if (result) verdictRef.current?.focus({ preventScroll: AUTOPLAY_ENGAGED })
   }, [result?.attempt_id])
 
   // The approach has just been discharged, so the panel that was carrying it
@@ -520,12 +523,28 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     },
     onError: () => setPageTurning(false),
   })
+
+  /* The three things a finger does on this screen, named once. The autoplay
+     driver calls these, which is what makes "the demo uses the real product"
+     structural rather than a claim: there is no second path for it to take. */
+  const chooseAnswer = (label: string) => {
+    if (selected !== label) void play('select', { seed: `${item?.id}:${label}`, intensity: .36 })
+    if (selected && selected !== label) setAnswerChanged(true)
+    setSelected(label)
+  }
+  const submitAnswer = () => {
+    void play('submit', { seed: item?.id ?? '', intensity: .68 })
+    submit.mutate()
+  }
+  const goToNextCase = () => void beginPageTurn(() => continueCases.mutateAsync())
+
   const savedCoaching = result?.feedback?.coaching
   const savedReward = result?.game_reward
+  const coachingWanted = Boolean(result?.feedback_released && (!savedCoaching || (!isDiagnostic && !savedReward)))
   const coaching = useQuery({
     queryKey: ['coaching', result?.attempt_id],
     queryFn: () => api.coaching(result!.attempt_id),
-    enabled: Boolean(result?.feedback_released && (!savedCoaching || (!isDiagnostic && !savedReward))),
+    enabled: coachingWanted,
     retry: false,
     // Grading runs on a background worker, so a look that comes back "pending"
     // is polled rather than awaited. Nothing on screen waits for it.
@@ -536,6 +555,33 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const coachingReady = Boolean(coachingFeedback)
   const gradingUnavailable = coaching.data?.status === 'unavailable'
   const gradingPending = !coachingReady && !gradingUnavailable && !coaching.error && Boolean(result?.feedback_released)
+
+  /* Inert unless the URL carries `?autoplay=`, which nothing does by default.
+     Every input below is state this screen already had; the driver adds no
+     endpoint, no second submit path and no state of its own to the case run. */
+  useAutoplay({
+    eligible: !isAssessment && Boolean(item),
+    totalItems: session.total_items,
+    itemId: item?.id,
+    position: item?.position,
+    choiceLabels: item?.question.choices.map((choice) => choice.label) ?? [],
+    resultId: result?.attempt_id,
+    canSubmit: Boolean(
+      item && !result && selected && reasoningComplete && !item.strategy_trial
+      && strategyGate.satisfied && !submit.isPending && !pageTurning,
+    ),
+    submitFailed: Boolean(submit.error),
+    // The next-case endpoint refuses a debrief whose case was never sent for
+    // grading, so the driver waits for the request to have been *made* — never
+    // for the grade, which is a 20-40 second model call.
+    coachingRequested: !coachingWanted || coaching.isFetched || Boolean(coaching.error),
+    advanceFailed: Boolean(continueCases.error),
+    answerCard: answerCardRef,
+    verdict: verdictRef,
+    select: chooseAnswer,
+    submit: submitAnswer,
+    advance: goToNextCase,
+  })
 
   useEffect(() => {
     if (!result) return
@@ -800,11 +846,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                   className={`choice ${chosen ? 'selected' : ''} ${correct ? 'correct' : ''} ${wrongSelected ? 'incorrect' : ''} ${stricken && !result ? 'gate-struck' : ''}`}
                   style={{ ['--sg-index' as string]: choiceIndex }}
                   key={choice.label}
-                  onClick={() => {
-                    if (selected !== choice.label) void play('select', { seed: `${item.id}:${choice.label}`, intensity: .36 })
-                    if (selected && selected !== choice.label) setAnswerChanged(true)
-                    setSelected(choice.label)
-                  }}
+                  onClick={() => chooseAnswer(choice.label)}
                 >
                   <span className="choice-label">{choice.label}</span>
                   <span>{choice.text}</span>
@@ -847,11 +889,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
           {!result && (
             <div className="answer-actions">
-              {submit.error && <ErrorNotice error={submit.error} />}
-              <button className="primary-button verdict-button" disabled={!selected || !reasoningComplete || strategyDecisionRequired || !strategyGate.satisfied || submit.isPending || pageTurning} onClick={() => {
-                void play('submit', { seed: item.id, intensity: .68 })
-                submit.mutate()
-              }}>
+              {/* Suppressed for a driven run: an unattended demo degrades to a
+                  composed still question, never to a red box on a projector. */}
+              {submit.error && !AUTOPLAY_ENGAGED && <ErrorNotice error={submit.error} />}
+              <button className="primary-button verdict-button" disabled={!selected || !reasoningComplete || strategyDecisionRequired || !strategyGate.satisfied || submit.isPending || pageTurning} onClick={submitAnswer}>
                 {strategyDecisionRequired ? 'Pick Use it or Skip first' : submit.isPending || pageTurning ? 'Recording answer…' : !strategyGate.satisfied ? strategyGate.blockedReason : !selected ? 'Select an answer' : !reasoningComplete ? `${minChars - reasoningLength} more characters` : <>{requiresReasoning ? 'Submit reasoning' : session.feedback_policy === 'delayed' ? 'Lock answer' : 'Check answer'} <Scale size={18} /></>}
               </button>
             </div>
@@ -892,7 +933,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
               </div>
             </div>
           )}
-          {result && coaching.error && (!coachingFeedback || !reward) && (
+          {result && coaching.error && !AUTOPLAY_ENGAGED && (!coachingFeedback || !reward) && (
             <div className="coaching-error">
               <ErrorNotice error={coaching.error} />
               <button className="secondary-button" onClick={() => coaching.refetch()}>Retry case review</button>
@@ -910,14 +951,14 @@ export function QuestionFlow({ session }: { session: StudySession }) {
 
           {result && (
             <div className="continue-row">
-              {continueCases.error && <ErrorNotice error={continueCases.error} />}
+              {continueCases.error && !AUTOPLAY_ENGAGED && <ErrorNotice error={continueCases.error} />}
               {/* Never gated on grading. Waiting 20-30 seconds per case for a
                   frontier-model call is hours of dead time across a course, and
                   the settlement does not need the player present to land. */}
               <button
                 className="primary-button next-case-button"
                 disabled={continueCases.isPending || pageTurning}
-                onClick={() => void beginPageTurn(() => continueCases.mutateAsync())}
+                onClick={goToNextCase}
               >
                 {continueCases.isPending || pageTurning ? 'Turning the page…' : <>Next case <ArrowRight size={18} /></>}
               </button>

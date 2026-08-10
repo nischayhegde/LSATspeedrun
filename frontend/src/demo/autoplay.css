@@ -1,0 +1,29 @@
+/*
+ * The only styling a driven run needs, and it is a subtraction.
+ *
+ * `.markup-toolbar` is `position: fixed; bottom: 20px`, so it floats over
+ * whatever has scrolled under it — measured in the deck's embed viewport
+ * (1250x781 logical pixels) it occupies y 713-761 permanently. That is a small
+ * annoyance on a desk, where a reader scrolls past it, and a real problem on a
+ * projector, where the audience cannot scroll at all.
+ *
+ * Framing around it very nearly works. At the reading beat it does: there is a
+ * scroll position that puts the stimulus, the stem, all five choices, the
+ * confidence row and the submit button above y 713. At the confirmation beat
+ * there is not. Keeping the answered choice on screen needs the scroll at or
+ * below 586, and clearing the next-case button needs it at or above 615, so the
+ * two requirements miss each other by 29 pixels — and something has to sit
+ * under the toolbar.
+ *
+ * So during a driven run the toolbar is not there. The driver cannot annotate a
+ * passage, the run is a fifteen-question speed drill rather than a reading
+ * exercise, and the deck's hero case slide already shows the markup tools in
+ * use on a real passage. Removing them here costs the demo nothing and buys
+ * back the 84 pixels that make the confirmation beat fit whole.
+ *
+ * Scoped to `html.autoplay-run`, which only exists when the URL asked for a
+ * driven run. Nothing else in the app can reach this rule.
+ */
+html.autoplay-run .markup-toolbar {
+  display: none;
+}
