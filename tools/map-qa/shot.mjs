@@ -57,6 +57,10 @@ try {
   await shot('survey')
 
   for (const stop of stops) {
+    // Back onto the counsel first. `walkTo` moves the counsel but leaves the
+    // survey zoom and pan where the last shot put them, so without this every
+    // stop after an overview is taken from the district's edge.
+    await page.keyboard.press('f')
     // A fixed walk time rather than one scaled by distance: the follow camera
     // settles on an exponential, so the last stretch of the approach is what
     // decides the framing, and it wants the same number of frames every time.
