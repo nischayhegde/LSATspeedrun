@@ -821,6 +821,30 @@ export class TrafficSim {
         // road that has cleared. One at speed is gone before anyone on foot
         // could reach the lane, so it is ignored — otherwise every walker would
         // stand at the kerb watching the back of a car that had already passed.
+        //
+        // This rule is wrong and is left wrong deliberately. `CRAWLING` is a
+        // speed, and a nose ten centimetres past the point at 1.3m/s reads as a
+        // road that has cleared while most of the car is still standing on the
+        // crossing. It is the direct cause of the Old Quarter's bodies inside a
+        // vehicle at `road@-20,-14` and of the Sovereign Arc's at `road@4,-20`:
+        // the walker steps off into the flank, claims the lane, the car brakes
+        // for the claim, and the two of them end up stationary inside each other.
+        //
+        // Both honest repairs were measured and both were reverted. Reporting the
+        // vehicle as an obstruction until its tail is off the point strangles
+        // crossings outright, because `gapIsSafe` refuses on any answer under the
+        // two or three seconds a crossing takes. Asking only the narrow question
+        // — will it still be there when a body stepping off now arrives — costs
+        // the same. On The Circuit both took walkers inside a solid from 3.4-6.2%
+        // to 16.4% and 15.3% respectively, on every replicate.
+        //
+        // The cost is not the degree of caution, it is caution at all, and the
+        // reason is that on The Circuit the pavements are more dangerous than the
+        // roads. Walkers held at a kerb time out after `KERB_PATIENCE`, turn
+        // back, and spend the time in village lanes whose bands are narrow and
+        // whose barns stand hard against them. Until those pavements are fixed,
+        // any rule that makes a pedestrian wait longer trades one defect for a
+        // larger one, so this wants the pavements first.
         if (approach > -VEHICLE_CLEAR && rival.speed < CRAWLING) return 0
         continue
       }
@@ -2474,6 +2498,13 @@ const CROSS_MARGIN = .9
 /** Width of carriageway a walker has to be clear of before a lane counts as behind them. */
 const LANE_CLEARANCE = 1.1
 /**
+ * How near the far kerb a body has to actually be before the crossing it is on
+ * is given up. Not the same question as the crossing parameter reaching one:
+ * the body is eased onto the line rather than placed on it, so it arrives some
+ * frames after the parameter does, and until then it is still in the road.
+ */
+const CROSS_ARRIVED = .1
+/**
  * How long a walker will hold at a kerb before giving up and walking back the
  * way it came. A real pedestrian waits a long time; the cap exists because a
  * body held at a kerb for the whole mount is a walker permanently withdrawn
@@ -3987,7 +4018,26 @@ export class Crowd {
         walker.root.rotation.y = walker.heading
         walker.pace += ((walker.crossPhase === 'go' ? 1 : 0) - walker.pace) * (1 - Math.exp(-6 * step))
         walker.life -= step
-        if (walker.crossProgress >= 1) {
+        // Off the parameter is not off the road. The body is eased towards the
+        // crossing line rather than placed on it, so when the parameter reaches
+        // the far kerb the walker is still most of a stride short of it and
+        // still over the carriageway — and `land` is what ends the claim, so
+        // releasing on the parameter alone hands the lane back with somebody
+        // standing in it. Every remaining body-inside-a-vehicle frame on The
+        // Circuit, and ninety-nine of the Sovereign Arc's hundred and eight, was
+        // a walker in exactly that state: crossing released, progress a
+        // thousandth past one, no claim, and a car coming through.
+        //
+        // So the crossing is held until the body has caught up with it. The
+        // progress cap is a backstop for a walker whose ease is being fought by
+        // something else; at the pace a crossing is taken it is nearly a second
+        // and a half, and the ease settles in a quarter of that.
+        const shortX = walker.root.position.x - scratchTarget.x
+        const shortZ = walker.root.position.z - scratchTarget.z
+        if (
+          walker.crossProgress >= 1
+          && (shortX * shortX + shortZ * shortZ < CROSS_ARRIVED * CROSS_ARRIVED || walker.crossProgress > 1.9)
+        ) {
           this.land(walker, walker.crossing)
         }
         this.settle(walker, step, cullSquared, animateWithinSquared, false)
