@@ -1305,6 +1305,24 @@ function createPromenadeBollard(accent: number) {
 
 function createMarketStall(index: number) {
   const group = new THREE.Group()
+  /*
+   * The canopy is the footprint, and every caller was declaring the trestle.
+   *
+   * A stall is 1.35 by .94 over the awning and its three placements each
+   * tagged it as a .5 disc, which is the table underneath. The disc is right
+   * for steering — a shoulder brushes past a stall — but the routing pass reads
+   * the same number to decide whether a pavement exists, and a .5 disc leaves
+   * .18 of awning either side of the paving it was supposed to remove. That is
+   * where the market square's two walkers were: the pavement-end trim let the
+   * crowd reach Cooper's Market for the first time, and the stalls it found
+   * there had understated themselves by a shoulder's width in every district
+   * that has one.
+   *
+   * Declared here rather than at the placements, for the reason
+   * `markSolidFootprint` gives: three callers set the radius themselves and
+   * would each have to remember the box beside it.
+   */
+  markSolidBox(group, .68, .47)
   const timber = material(0x493629, .9)
   const canvas = material([0x7e4b3c, 0x5d6d64, 0x8a7246, 0x485f68][index % 4], .86)
   group.add(box([1.15, .08, .74], timber, [0, .55, 0]))
