@@ -4,7 +4,7 @@ import { ArrowRight, BookOpen, BriefcaseBusiness, Building2, Check, Clock3, Map,
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from './api'
-import { useBlockingOverlay } from './overlays'
+import { useBlockingOverlay, useTopOverlay } from './overlays'
 import { useSound } from './sound'
 import { loadStylizedCharacter } from './art/scene-loaders'
 import { TOUR_REPLAY_EVENT } from './guided-tour-replay'
@@ -20,13 +20,20 @@ const StylizedCharacter = lazy(() => loadStylizedCharacter().then((module) => ({
 const TOUR_STORAGE_KEY = 'lsat-tycoon:guided-tour:v6'
 
 /**
- * Where the tour is allowed to start itself. A brand-new account is sent to
+ * Where the tour is allowed to offer itself. A brand-new account is sent to
  * /progress (see `serialize_user`), so that is where orientation belongs. Landing
  * anywhere else — a deep link, a bookmark, a shared URL — is a deliberate
  * destination and does not get interrupted; the header's help button replays the
  * tour from any screen.
+ *
+ * It offers rather than opens. The tour used to put a modal over a brand-new
+ * account unasked and then drive the router itself, step by step, so the first
+ * thing the app did to a new student was take the wheel — which is at its worst
+ * in the case it is most likely to happen in, someone walking another person
+ * through signing up and finding the screen moving on its own. Every step of it
+ * is still here and one click away; nothing navigates until that click.
  */
-const AUTO_START_ROUTES = new Set(['/progress'])
+const OFFER_ROUTES = new Set(['/progress'])
 
 type TourStep = {
   /** `feature` explains a mechanic that has no single element to point at. */
@@ -281,11 +288,18 @@ export function GuidedTour({ oriented }: { oriented: boolean }) {
   const [highlight, setHighlight] = useState<Highlight | null>(null)
   const [practiceChoice, setPracticeChoice] = useState<number | null>(null)
   const [practiceRevealed, setPracticeRevealed] = useState(false)
+  const [offerDeclined, setOfferDeclined] = useState(false)
   const step = steps[index]
   // Keeps the Escape listener stable while still calling the latest `close`.
   const closeRef = useRef<(reason: 'finished' | 'skipped') => void>(() => {})
   // Only one modal layer at a time; see overlays.tsx.
   const visible = useBlockingOverlay('guided-tour', open)
+  // The offer is chrome, not a layer, so it does not claim the screen — but a
+  // brand-new account is also the one most likely to have a story chapter
+  // waiting, and an offer painted underneath a full-screen scrim is one a
+  // player can see the edge of and cannot click. It waits instead, and appears
+  // on its own once the screen is clear.
+  const blockingOverlay = useTopOverlay()
   const alreadyOriented = oriented || dismissed
 
   const recordCompletion = useMutation({
@@ -304,14 +318,10 @@ export function GuidedTour({ oriented }: { oriented: boolean }) {
     return () => window.removeEventListener(TOUR_REPLAY_EVENT, replay)
   }, [])
 
-  // Start once, on the route a new account actually lands on. Latched open from
-  // then on, because the tour navigates between routes as part of its own steps.
-  useEffect(() => {
-    if (open || alreadyOriented) return
-    if (!AUTO_START_ROUTES.has(location.pathname)) return
-    setOpen(true)
-  }, [alreadyOriented, location.pathname, open])
-
+  // The tour moves between routes as part of its own steps. That is the tour
+  // doing what it was asked to do — `open` is now only ever set by a click, on
+  // the offer below or on "Replay tutorial" in either menu — so the navigation
+  // is consented rather than imposed.
   useEffect(() => {
     if (!open || !step) return
     if (step.route && location.pathname !== step.route) navigate(step.route, { replace: true })
@@ -375,6 +385,43 @@ export function GuidedTour({ oriented }: { oriented: boolean }) {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [visible, closeRef])
+
+  /**
+   * The offer: obvious, and only an offer.
+   *
+   * It is deliberately not a modal and deliberately not `useBlockingOverlay`.
+   * It takes no focus, covers nothing, blocks no key, and moves no route, so a
+   * new account can be shown around by a person instead of by the app. Taking
+   * it starts exactly the tour that used to start itself.
+   */
+  if (!open && !alreadyOriented && !offerDeclined && !blockingOverlay && OFFER_ROUTES.has(location.pathname)) {
+    const decline = () => {
+      // Recorded the same way a skip is: this account has now been offered
+      // orientation, so no device or browser asks again. "Replay tutorial" in
+      // the account menu and the mobile menu is how it comes back.
+      window.localStorage.setItem(TOUR_STORAGE_KEY, 'complete')
+      setOfferDeclined(true)
+      setDismissed(true)
+      if (!oriented) recordCompletion.mutate()
+      void play('paper', { seed: 'tour:declined', intensity: .3 })
+    }
+    return (
+      <aside className="tour-offer" aria-label="Guided introduction">
+        <div className="tour-offer-mark" aria-hidden="true"><Scale size={17} /></div>
+        <div className="tour-offer-copy">
+          <span>NEW HERE?</span>
+          <strong>Take the two-minute tour of the firm.</strong>
+          <small>{steps.length} short steps: how practice works, and what the firm does with it.</small>
+        </div>
+        <div className="tour-offer-actions">
+          <button type="button" className="tour-offer-take" onClick={() => { setOpen(true); void play('paper', { seed: 'tour:accepted', intensity: .46 }) }}>
+            Start the tour <ArrowRight size={15} />
+          </button>
+          <button type="button" className="tour-offer-decline" onClick={decline}>Not now</button>
+        </div>
+      </aside>
+    )
+  }
 
   if (!visible || !step) return null
 
