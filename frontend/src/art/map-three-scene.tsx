@@ -725,35 +725,46 @@ function addTreeField(root: THREE.Group, records: TreeRecord[]) {
       label: 'walked',
     })
   }
-  if (walked.length) {
-    const pavements = prepareClearance(walked)
-    let moved = 0
-    let felled = 0
-    kept = kept.flatMap((record) => {
-      const reach = treeCrownReach(record)
-      if (!clearanceIntrusion(pavements, record.x, record.z, reach)) return [record]
-      // Far enough to reach the back of a verge or the far side of a narrow
-      // block, and no further: past that the tree is not the one the plan asked
-      // for, it is a different tree somewhere else, and felling it is the more
-      // honest edit. Eight passes because a district grid puts a second street
-      // behind the first, and leaving one pavement is often entering another.
-      const site = escapeCorridors(pavements, record.x, record.z, reach, 1.8, undefined, 8)
-      if (!site.cleared) { felled += 1; return [] }
-      moved += 1
-      return [{ ...record, x: site.x, z: site.z }]
-    })
-    // Accumulated, because a district plants several fields and a report that
-    // was overwritten by the last of them read as a handful of trees in a city
-    // of hundreds.
-    const running = (root.userData.treesOffPavement ??= { fields: 0, considered: 0, moved: 0, felled: 0 }) as {
-      fields: number; considered: number; moved: number; felled: number
-    }
-    running.fields += 1
-    running.considered += records.length
-    running.moved += moved
-    running.felled += felled
-  }
+  if (walked.length) kept = treesOffPavement(root, kept, prepareClearance(walked))
   root.add(buildInstancedTreeField(kept))
+}
+
+/**
+ * Move a planting off the ground people walk on, and fell what cannot move.
+ *
+ * Shared by the district's own fields and by the outer country's, which plants
+ * from `createHorizonRing` against a clearance field it is handed rather than
+ * one it builds. The far hamlets were the one planting nothing had ever looked
+ * at, and a walker on Sovereign Arc's south radial spent 101 frames of 900
+ * inside a windbreak at `12,-28`, dead centre of the crown.
+ */
+function treesOffPavement(owner: THREE.Group, records: TreeRecord[], pavements: ClearanceField) {
+  let moved = 0
+  let felled = 0
+  const kept = records.flatMap((record) => {
+    const reach = treeCrownReach(record)
+    if (!clearanceIntrusion(pavements, record.x, record.z, reach)) return [record]
+    // Far enough to reach the back of a verge or the far side of a narrow
+    // block, and no further: past that the tree is not the one the plan asked
+    // for, it is a different tree somewhere else, and felling it is the more
+    // honest edit. Eight passes because a district grid puts a second street
+    // behind the first, and leaving one pavement is often entering another.
+    const site = escapeCorridors(pavements, record.x, record.z, reach, 1.8, undefined, 8)
+    if (!site.cleared) { felled += 1; return [] }
+    moved += 1
+    return [{ ...record, x: site.x, z: site.z }]
+  })
+  // Accumulated, because a district plants several fields and a report that was
+  // overwritten by the last of them read as a handful of trees in a city of
+  // hundreds.
+  const running = (owner.userData.treesOffPavement ??= { fields: 0, considered: 0, moved: 0, felled: 0 }) as {
+    fields: number; considered: number; moved: number; felled: number
+  }
+  running.fields += 1
+  running.considered += records.length
+  running.moved += moved
+  running.felled += felled
+  return kept
 }
 
 function footWays(root: THREE.Group) {
@@ -5326,7 +5337,9 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
       group.add(road)
     }
     pavingParts.forEach((part) => part.dispose())
-    if (faubourgTrees.length) group.add(buildInstancedTreeField(faubourgTrees))
+    if (faubourgTrees.length) {
+      group.add(buildInstancedTreeField(clearance ? treesOffPavement(group, faubourgTrees, clearance) : faubourgTrees))
+    }
 
     // The plan, kept for inspection. "The edge thins" is otherwise a claim
     // about a screenshot; with the plan on the group a harness can measure
@@ -5460,7 +5473,9 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
       group.add(track)
     }
     laneParts.forEach((part) => part.dispose())
-    if (hamletTrees.length) group.add(buildInstancedTreeField(hamletTrees))
+    if (hamletTrees.length) {
+      group.add(buildInstancedTreeField(clearance ? treesOffPavement(group, hamletTrees, clearance) : hamletTrees))
+    }
   }
 
   // The outer country is authored from the horizon inwards and never knew about
