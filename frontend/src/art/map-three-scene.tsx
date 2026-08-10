@@ -654,6 +654,16 @@ function clearanceCorridors(root: THREE.Group) {
  * plants: the trees along the Arc's south radial ran out to z=17.7, straight
  * through a river that had not existed until now.
  */
+/**
+ * How far a tree's foliage reaches from its trunk.
+ *
+ * The lower crown layer at its largest, plus the jitter its centre is given —
+ * `buildInstancedTreeField`'s own numbers, so the two cannot drift apart.
+ */
+function treeCrownReach(record: TreeRecord) {
+  return (.56 * 1.16 + .15) * (record.scale ?? 1)
+}
+
 function addTreeField(root: THREE.Group, records: TreeRecord[]) {
   const corridors = clearanceCorridors(root).slice()
   for (const way of roadWays(root)) {
@@ -666,8 +676,83 @@ function addTreeField(root: THREE.Group, records: TreeRecord[]) {
   const field = prepareClearance(corridors)
   // A tree's own footprint is its trunk, not its crown: a bough over a channel
   // is a bough over a channel, and only the trunk has to be on the bank.
-  const kept = records.filter((record) => !clearanceIntrusion(field, record.x, record.z, .16 * (record.scale ?? 1)))
+  let kept = records.filter((record) => !clearanceIntrusion(field, record.x, record.z, .16 * (record.scale ?? 1)))
   root.userData.treesCleared = records.length - kept.length
+
+  /*
+   * And then off the pavement, where the crown is the footprint and not the
+   * trunk.
+   *
+   * A street tree on this map is a metre and a half tall with a crown a third
+   * of a metre across, planted .82 out from a local street's centreline. The
+   * walkable band on that street runs from .65 to .83 out, so the tree is not
+   * beside the pavement — it is standing on it, at chest height, and a walker
+   * is inside the foliage for the whole length of the tree. Measured on the
+   * corrected per-triangle instrument, this is the single largest source of
+   * walkers inside solid geometry anywhere on the map: it is most of Sovereign
+   * Arc's .174 and it is most of the Old Quarter's remainder, and every one of
+   * those sites reports the walker's centre inside the crown box rather than
+   * clipping its edge.
+   *
+   * The tree moves, and the network is not touched. The pass that takes
+   * pavement out from under a solid cannot help here — the band is .09 wide and
+   * the crown is .31, so a cut would delete the pavement rather than narrow it,
+   * and deleting pavement is this job's best-documented way of making the
+   * measured outcome worse. Nothing here is declared to the router either, so
+   * no route can be constrained, disconnected or starved by it.
+   *
+   * `roadWays` is whatever the district has recorded by the time it plants,
+   * which for every district here is its streets; `KERB_TO_PAVEMENT` and
+   * `STREET_PAVEMENT_HALF` are the same two numbers `planFootways` will later
+   * lay the pavements against, so the two passes cannot disagree about where
+   * the paving is.
+   */
+  const walked: ClearanceCorridor[] = []
+  for (const way of roadWays(root)) {
+    if ((way.kind ?? 'road') === 'water') continue
+    walked.push({
+      points: way.points,
+      closed: way.closed,
+      halfWidth: (way.width ?? 1.5) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM,
+      label: 'walked',
+    })
+  }
+  for (const way of footWays(root)) {
+    walked.push({
+      points: way.points,
+      closed: way.closed,
+      halfWidth: (way.halfWidth ?? CROWD_FOOTWAY_HALF) + WALKER_HALF_BEAM,
+      label: 'walked',
+    })
+  }
+  if (walked.length) {
+    const pavements = prepareClearance(walked)
+    let moved = 0
+    let felled = 0
+    kept = kept.flatMap((record) => {
+      const reach = treeCrownReach(record)
+      if (!clearanceIntrusion(pavements, record.x, record.z, reach)) return [record]
+      // Far enough to reach the back of a verge or the far side of a narrow
+      // block, and no further: past that the tree is not the one the plan asked
+      // for, it is a different tree somewhere else, and felling it is the more
+      // honest edit. Eight passes because a district grid puts a second street
+      // behind the first, and leaving one pavement is often entering another.
+      const site = escapeCorridors(pavements, record.x, record.z, reach, 1.8, undefined, 8)
+      if (!site.cleared) { felled += 1; return [] }
+      moved += 1
+      return [{ ...record, x: site.x, z: site.z }]
+    })
+    // Accumulated, because a district plants several fields and a report that
+    // was overwritten by the last of them read as a handful of trees in a city
+    // of hundreds.
+    const running = (root.userData.treesOffPavement ??= { fields: 0, considered: 0, moved: 0, felled: 0 }) as {
+      fields: number; considered: number; moved: number; felled: number
+    }
+    running.fields += 1
+    running.considered += records.length
+    running.moved += moved
+    running.felled += felled
+  }
   root.add(buildInstancedTreeField(kept))
 }
 

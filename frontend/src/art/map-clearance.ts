@@ -261,13 +261,19 @@ function emptyReport(): ClearanceReport {
  * Iterated, because clearing one street can push something into the next one
  * along — which is common at a crossroads, where two corridors overlap and the
  * only clear ground is diagonally out of both. Four passes settles every case
- * in these districts; the fifth has never moved anything.
+ * in these districts; the fifth has never moved one.
+ *
+ * A caller working against the *pedestrian* network needs more. A district grid
+ * puts a second street behind the first, so leaving one pavement is commonly
+ * entering another, and the clear ground is two or three corridors away rather
+ * than one. `passes` is therefore the caller's, and only the callers that ask
+ * for more get more.
  */
-function escape(field: ClearanceField, x: number, z: number, radius: number, limit: number, footprint?: Footprint) {
+function escape(field: ClearanceField, x: number, z: number, radius: number, limit: number, footprint?: Footprint, passes = 4) {
   let atX = x
   let atZ = z
   let first = 0
-  for (let pass = 0; pass < 4; pass += 1) {
+  for (let pass = 0; pass < passes; pass += 1) {
     const intrusion = clearanceIntrusion(field, atX, atZ, radius, footprint)
     if (!intrusion) return { x: atX, z: atZ, first, cleared: true, travelled: Math.hypot(atX - x, atZ - z) }
     if (pass === 0) first = intrusion.depth
@@ -295,8 +301,16 @@ function escape(field: ClearanceField, x: number, z: number, radius: number, lim
  * point when no clear ground is within `limit`, so a caller that cannot honour the
  * correction still gets a usable answer.
  */
-export function escapeCorridors(field: ClearanceField, x: number, z: number, radius: number, limit = 1.6, footprint?: Footprint) {
-  const result = escape(field, x, z, radius, limit, footprint)
+export function escapeCorridors(
+  field: ClearanceField,
+  x: number,
+  z: number,
+  radius: number,
+  limit = 1.6,
+  footprint?: Footprint,
+  passes?: number,
+) {
+  const result = escape(field, x, z, radius, limit, footprint, passes)
   return { x: result.x, z: result.z, moved: result.travelled, cleared: result.cleared, before: result.first }
 }
 
