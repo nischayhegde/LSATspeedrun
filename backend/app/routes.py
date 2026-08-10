@@ -1016,6 +1016,9 @@ def create_attempt(session_id: str):
                         "code": "strategy_gate_unsatisfied",
                         "message": "Finish the approach you chose, or drop it and answer without it.",
                         "fields": rejection.errors,
+                        # Only set on the mandatory arm, where the client needs
+                        # to know whether the way out has opened yet.
+                        **({} if rejection.stand_down is None else {"stand_down": rejection.stand_down}),
                     }
                 }
             ),

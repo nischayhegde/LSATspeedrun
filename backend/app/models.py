@@ -177,6 +177,20 @@ class SessionItem(db.Model):
     # P0-8 / assign_strategy_trial.
     strategy_propensity = db.Column(db.Float, nullable=True)
     strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # --- Mandatory approaches (see strategies.plan_forced_arms) --------------
+    # The approach-by-question-type cell this assignment is charged to, and the
+    # probability this question had of being drawn as a mandatory one. The
+    # propensity is written on the questions that lost the draw as well as the
+    # ones that won it, because the losers are what the winners are compared
+    # against. Null means the question was never in a pool: it has no
+    # counterfactual for that draw and takes no part in that comparison.
+    strategy_stratum = db.Column(db.String(160), nullable=True)
+    strategy_forcing_propensity = db.Column(db.Float, nullable=True)
+    # How many times the server refused this question's artifact. Counted here
+    # rather than in the client because it is what opens the way out of a
+    # mandatory approach, and a client that decided that for itself would have
+    # the skip button back.
+    strategy_gate_rejections = db.Column(db.Integer, nullable=False, default=0)
     # How hard the strategy gate on this question will be: "full" blocks the
     # answer until the approach's operations are done, "light" keeps the prompt
     # but stops blocking once the student has demonstrated the approach enough
@@ -231,9 +245,15 @@ class Attempt(db.Model):
     # These columns are the observable version of the same claim. `satisfied`
     # means the student cleared the gate for the strategy they opted into,
     # `skipped` means they declined it or dropped it partway, `attested` means
-    # a mastery-relaxed gate took their word for it, and `unenforced` means no
-    # gate was armed at all.
+    # a mastery-relaxed gate took their word for it, `stood_down` means the
+    # approach was mandatory and they were let out of it, and `unenforced`
+    # means no gate was armed at all.
     strategy_gate_status = db.Column(db.String(20), nullable=True, index=True)
+    # Copied off the session item at submit time so an analysis never has to
+    # join back to it. See the same three columns on SessionItem.
+    strategy_stratum = db.Column(db.String(160), nullable=True)
+    strategy_forcing_propensity = db.Column(db.Float, nullable=True)
+    strategy_gate_rejections = db.Column(db.Integer, nullable=False, default=0)
     strategy_enforcement_level = db.Column(db.String(12), nullable=True)
     # Which revision of the gates produced this artifact. An analysis must not
     # pool observations taken under different required operations, because that

@@ -7,6 +7,7 @@ import {
   Check,
   Clock3,
   Coins,
+  Gavel,
   Pause,
   RotateCcw,
   Scale,
@@ -379,14 +380,20 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [pageTurning, setPageTurning] = useState(false)
   // Picking "Use it" arms the gate. Everything the gate withholds is withheld
   // from here down, so the wrong order is unreachable rather than discouraged.
+  // A mandatory approach asks for no decision, so there is none to wait for:
+  // the gate arms on arrival and stays armed unless the student withdraws it.
+  const strategyRequired = Boolean(item?.strategy_trial?.required)
+  const strategyArmed = strategyRequired ? strategyApplied !== false : strategyApplied === true
   const strategyGate = useStrategyGate(item, {
-    armed: strategyApplied === true,
+    armed: strategyArmed,
     selectedLabel: selected,
     locked: Boolean(result),
     // Dropping the approach mid-question is the escape hatch that lets the
     // gate be strict at all. It records the honest thing — this one was
     // answered without the technique — rather than quietly unarming, because
-    // the trial compares what was actually done.
+    // the trial compares what was actually done. On the mandatory arm the same
+    // control is the withdrawal, and the panel only offers it once the server
+    // will accept one.
     onDrop: () => {
       setStrategyApplied(false)
       void play('paper', { seed: `${item?.id}:strategy-drop`, intensity: .25 })
@@ -509,7 +516,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         reasoning,
         confidence,
         answer_changed: answerChanged,
-        ...(item?.strategy_trial ? { strategy_applied: strategyApplied ?? undefined, strategy_prompt_ms: strategyPromptMs } : {}),
+        ...(item?.strategy_trial
+          ? {
+              strategy_applied: strategyRequired ? strategyApplied !== false : strategyApplied ?? undefined,
+              strategy_prompt_ms: strategyPromptMs,
+            }
+          : {}),
         ...strategyGate.payload,
       },
       createRequestId(),
@@ -525,8 +537,14 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     },
     onError: (error) => {
       setPageTurning(false)
-      // A rejected gate comes back as a 409 with field-level messages on it.
-      strategyGate.applyServerErrors((error as unknown as { fields?: Array<{ field: string | null; message: string }> }).fields)
+      // A rejected gate comes back as a 409 with field-level messages on it,
+      // and on the mandatory arm with the server's ruling on whether the
+      // approach may be withdrawn yet.
+      const refusal = error as unknown as {
+        fields?: Array<{ field: string | null; message: string }>
+        standDown?: boolean
+      }
+      strategyGate.applyServerErrors(refusal.fields, refusal.standDown)
     },
   })
   const continueCases = useMutation({
@@ -662,7 +680,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   // decline, and demanding an acknowledgement would make the arm cost more
   // than the thing it is the baseline for.
   const strategyNeutral = item.strategy_neutral
-  const strategyDecisionRequired = Boolean(strategyTrial && strategyApplied === null && !result)
+  // Only the suggestion arm waits on a decision. A standing order was already
+  // decided by the client, so nothing is dimmed and nothing is held back.
+  const strategyDecisionRequired = Boolean(
+    strategyTrial && !strategyRequired && strategyApplied === null && !result,
+  )
   const timerRatio = elapsed / Math.max(1, item.target_time_seconds * 1000)
   const caseClient = gameQuery.data?.game?.catalog.clients.find((client) => client.key === item.case_terms?.client_key)
   const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
@@ -767,7 +789,30 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         )}
       </div>
 
-      {strategyTrial && (
+      {/* The mandatory arm's card is deliberately the shorter of the two. The
+          three steps and the Use it / Skip pair are both answers to a question
+          nobody is being asked here, and the gate directly below is already
+          open with the steps in it as fields — so this says who ordered it and
+          gets out of the way. */}
+      {strategyTrial && strategyRequired && (
+        <section
+          className={`strategy-tip is-required ${strategyApplied === false ? 'is-skipped' : ''}`}
+          aria-label={`Required approach: ${strategyTrial.plain_title}`}
+        >
+          <div className="strategy-tip-head">
+            <span><Gavel size={15} /> {item.strategy_gate?.copy.required_eyebrow || 'STANDING ORDER'}</span>
+          </div>
+          <h2>{strategyTrial.plain_title}</h2>
+          <p>{strategyTrial.plain_line}</p>
+          <p className="strategy-tip-order">
+            {strategyApplied === false
+              ? item.strategy_gate?.copy.stand_down_recorded
+              : item.strategy_gate?.copy.required_note}
+          </p>
+        </section>
+      )}
+
+      {strategyTrial && !strategyRequired && (
         <section className={`strategy-tip ${strategyApplied === true ? 'is-applied' : strategyApplied === false ? 'is-skipped' : ''}`} aria-label={`Suggested approach: ${strategyTrial.plain_title}`}>
           <div className="strategy-tip-head">
             <span><Brain size={15} /> PARTNER TIP</span>

@@ -225,6 +225,17 @@
 }
 .case-instrument .strategy-tip-use:hover { border-color: #74d3c1; background: rgba(66,156,143,.25); }
 .case-instrument .strategy-tip-use.active { color: #10202b; background: var(--ci-teal); border-color: var(--ci-teal); box-shadow: none; }
+/* A standing order, in the instrument's rounded idiom. The seal is the whole
+   difference: no step grid and no action row on this arm, so the card is
+   shorter than the tip it replaces rather than taller. */
+.case-instrument .strategy-tip.is-required {
+  padding-left: 21px;
+  border-color: rgba(214,138,96,.4);
+  box-shadow: inset 3px 0 0 #c8703f,0 13px 29px rgba(4,9,15,.23);
+}
+.case-instrument .strategy-tip.is-required > p.strategy-tip-order { color: #e8c9a8; font-weight: 700; }
+.case-instrument .strategy-tip.is-required.is-skipped { box-shadow: inset 3px 0 0 #6d7f7c,0 13px 29px rgba(4,9,15,.23); }
+.case-instrument .strategy-tip.is-required.is-skipped > p.strategy-tip-order { color: #a9b8b4; }
 
 /* ------------------------------------------------------- the reading surface */
 

@@ -59,6 +59,14 @@
 .strategy-tip-skip.active { color: #e7dcc3; text-decoration-thickness: 2px; }
 .strategy-tip.is-skipped { border-color: rgba(148,170,167,.32); }
 .strategy-tip-recorded { display: flex; align-items: center; gap: 8px; color: #8dd4c6; font-size: 11.5px; font-weight: 800; }
+/* A standing order. Shorter than a tip on purpose: no step grid and no action
+   row, because the gate immediately below is already open with the steps in it
+   as fields. The seal down the left edge is the only new ink. */
+.strategy-tip.is-required { padding-left: 22px; border-color: rgba(214,138,96,.55); box-shadow: inset 4px 0 0 #c8703f,0 15px 34px rgba(3,9,14,.28); }
+.strategy-tip.is-required .strategy-tip-head span { color: #eaa877; }
+.strategy-tip-order { margin: 9px 0 0; color: #e8c9a8; font-size: 12px; font-weight: 700; line-height: 1.45; }
+.strategy-tip.is-required.is-skipped { border-color: rgba(148,170,167,.32); box-shadow: inset 4px 0 0 #6d7f7c,0 15px 34px rgba(3,9,14,.28); }
+.strategy-tip.is-required.is-skipped .strategy-tip-order { color: #a9b8b4; }
 
 .case-page-turn { height: min(760px,calc(100vh - 115px)); position: absolute; z-index: 40; inset: 105px 0 auto; overflow: hidden; visibility: hidden; pointer-events: none; perspective: 2600px; perspective-origin: 50% 48%; }
 .case-page-turn.is-turning { visibility: visible; }
@@ -87,6 +95,7 @@
 .question-content.strategy-decision-pending .answer-card,.question-content.strategy-decision-pending .passage-card { box-shadow: 0 9px 24px rgba(28,35,38,.05); }
 @media (max-width: 620px) {
   .strategy-tip { padding: 13px; }
+  .strategy-tip.is-required { padding-left: 17px; }
   .strategy-tip h2 { font-size: 22px; }
   .strategy-tip ol { grid-template-columns: 1fr; }
   .strategy-tip-use { width: 100%; justify-content: center; }

@@ -72,6 +72,40 @@ STATUS_SATISFIED = "satisfied"
 STATUS_SKIPPED = "skipped"
 STATUS_ATTESTED = "attested"
 STATUS_UNENFORCED = "unenforced"
+# The way out of a *mandatory* approach. Held apart from `skipped` because the
+# two are different facts: skipping declined an offer that could be declined,
+# while standing down left one that could not. Pooling them would report a
+# student who was stuck as a student who could not be bothered.
+STATUS_STOOD_DOWN = "stood_down"
+
+# A gate was actually armed on this question, whatever became of it. The
+# denominator of every compliance rate in the app.
+GATED_STATUSES = frozenset({STATUS_SATISFIED, STATUS_SKIPPED, STATUS_ATTESTED, STATUS_STOOD_DOWN})
+# ...and the part of that denominator where the operations did not happen.
+DECLINED_STATUSES = frozenset({STATUS_SKIPPED, STATUS_STOOD_DOWN})
+
+# What it takes to be let out of a mandatory approach.
+#
+# Forcing has to shape behaviour without creating a dead end, and those two
+# pull in opposite directions: an exit that is always one click away is the
+# skip button again under another name, and an exit that never opens strands
+# anybody whose input method the gate cannot drive, or who simply cannot see
+# what the question wants today.
+#
+# So the exit opens on evidence of trying, by either of two routes. Two
+# server-side refusals is the strong one: the artifact was submitted, the
+# checks in this module read it, and they said no — that is the app's own
+# record of an attempt, and it cannot be manufactured by a client that never
+# rendered the gate. Ninety seconds inside the panel is the weak one, and it is
+# weak on purpose: it is client-reported time, so a determined browser can lie
+# about it. That is the right trade. The threat model here is a student
+# avoiding work in their own study app, where the cost of being wrong is that
+# one attempt is recorded as stood down instead of satisfied — against the cost
+# of the strict version, which is a person locked out of a question with no way
+# forward. `strategy_applied` has been an unverified self-report for the whole
+# life of this feature; this is a strictly smaller thing to take on trust.
+STAND_DOWN_AFTER_MS = 90_000
+STAND_DOWN_AFTER_REJECTIONS = 2
 
 # Answer-choice labels never count as words a student "wrote", and single
 # letters break every word-count floor, so text fields normalise them away.
@@ -962,6 +996,14 @@ def mastery_level(user_id: str, strategy_key: str) -> str:
     return LEVEL_LIGHT if correct / len(satisfied) >= MASTERY_MIN_ACCURACY else LEVEL_FULL
 
 
+# The two prompt sub-arms, spelled out rather than imported: `strategies`
+# imports this module for the status vocabulary, so the dependency only runs
+# one way. `strategies.PROMPT_VARIANTS` is the definition; this is a copy of it
+# kept deliberately small.
+_PROMPT_VARIANTS = frozenset({"prompt", "prompt_required"})
+_VARIANT_REQUIRED = "prompt_required"
+
+
 def assign_enforcement_level(user_id: str, strategy_trial: dict | None, session_mode: str) -> str:
     """Decide, at serve time, how hard this question's gate will be.
 
@@ -969,8 +1011,16 @@ def assign_enforcement_level(user_id: str, strategy_trial: dict | None, session_
     all, so it can never carry a gate either; the guard is here anyway because
     a timed full-length form is the one place where scaffolding would do real
     harm to what is being measured.
+
+    A mandatory question is always `full`. Mastery relaxes a gate on the
+    grounds that the student no longer needs the scaffolding, which is a fine
+    reason to stop blocking a *suggestion* and an incoherent one on an approach
+    the interface is refusing to let past — "required, but optional" is not a
+    state worth having. It also never arises in practice, because
+    `plan_forced_arms` leaves mastered approaches out of the pool it draws
+    from; this is the invariant rather than the mechanism.
     """
-    if not strategy_trial or strategy_trial.get("variant") != "prompt":
+    if not strategy_trial or strategy_trial.get("variant") not in _PROMPT_VARIANTS:
         return LEVEL_NONE
     if session_mode == "diagnostic":
         return LEVEL_NONE
@@ -978,7 +1028,20 @@ def assign_enforcement_level(user_id: str, strategy_trial: dict | None, session_
         return LEVEL_NONE
     if strategy_trial["key"] not in GATES:
         return LEVEL_NONE
+    if strategy_trial["variant"] == _VARIANT_REQUIRED:
+        return LEVEL_FULL
     return mastery_level(user_id, strategy_trial["key"])
+
+
+def stand_down_available(item, gate_ms: int) -> bool:
+    """Whether this student has earned the way out of a mandatory approach.
+
+    See `STAND_DOWN_AFTER_MS`. Either route is enough on its own.
+    """
+    return (
+        (item.strategy_gate_rejections or 0) >= STAND_DOWN_AFTER_REJECTIONS
+        or (gate_ms or 0) >= STAND_DOWN_AFTER_MS
+    )
 
 
 def build_gate(item, *, level: str | None = None) -> dict | None:
@@ -1011,12 +1074,21 @@ def build_gate(item, *, level: str | None = None) -> dict | None:
                 for option in _contrapositive_options(item.id)
             ]
         fields.append(rendered)
+    required = item.strategy_variant == _VARIANT_REQUIRED
     return {
         "version": ENFORCEMENT_VERSION,
         "strategy_key": definition["strategy_key"],
         "kind": definition["kind"],
         "strength": definition["strength"],
         "level": level,
+        # Mandatory: this question's approach cannot be declined, so the client
+        # never draws the Use it / Skip pair and arms the gate on arrival. The
+        # way out is `stand_down`, which the server opens rather than the
+        # client — a browser that decided for itself would be the skip button
+        # with extra steps.
+        "required": required,
+        "stand_down_ready": required and stand_down_available(item, 0),
+        "stand_down_after_ms": STAND_DOWN_AFTER_MS,
         # A light gate keeps the prompt and the instruction but stops blocking.
         # The student has cleared this one enough times that the scaffolding is
         # now a tax rather than a lesson.
@@ -1043,6 +1115,20 @@ GATE_COPY = {
     "abandon_confirm": "Drop it and answer without it? This gets recorded as answering without the approach.",
     "locked_choices": "Answer choices unlock when the step above is done.",
     "locked_submit": "Finish the approach first.",
+    # The mandatory arm, in the fiction it lives in. A tycoon's client asking
+    # for the method on the record is a reason a student can act on; a system
+    # message about experimental design is not, and would be the app talking
+    # about itself in the middle of a case.
+    "required_eyebrow": "STANDING ORDER",
+    "required_title": "The client wants this one worked on the record.",
+    "required_note": "No skip on this matter. Work the steps, then answer.",
+    "stand_down_label": "Withdraw the method",
+    "stand_down_confirm": (
+        "Withdraw it? The file will show the method was ordered and not filed. "
+        "Nothing is charged and the case goes on."
+    ),
+    "stand_down_locked": "Work it first. If it will not come, this opens.",
+    "stand_down_recorded": "Method withdrawn. Answered without it.",
     "struck_choice": "Struck. Un-strike it if you want it back.",
     "invalid_title": "Not yet.",
     "timing_note": "This step is timed separately and does not count against your pace.",
@@ -1134,11 +1220,18 @@ def review_artifact(attempt) -> float | None:
 
 
 class GateRejection(Exception):
-    """A gate was not satisfied. Carries per-field messages for the client."""
+    """A gate was not satisfied. Carries per-field messages for the client.
 
-    def __init__(self, errors: list[dict]):
+    `stand_down` is only meaningful on the mandatory arm, where it tells the
+    client whether the way out is open yet. Additive: the error code, the
+    status, and the `fields` list are unchanged, so anything already reading
+    this response — including the deploy canary — keeps reading it.
+    """
+
+    def __init__(self, errors: list[dict], *, stand_down: bool | None = None):
         super().__init__("strategy_gate_unsatisfied")
         self.errors = errors
+        self.stand_down = stand_down
 
 
 def _as_list(value) -> list:

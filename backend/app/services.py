@@ -38,21 +38,26 @@ from .seed import SOURCE_PREFIX
 from .trial import trial_plan
 from .enforcement import (
     ENFORCEMENT_VERSION,
+    GATE_COPY,
     GateRejection,
     LEVEL_LIGHT,
     LEVEL_NONE,
     STATUS_ATTESTED,
     STATUS_SATISFIED,
     STATUS_SKIPPED,
+    STATUS_STOOD_DOWN,
     STATUS_UNENFORCED,
     assign_enforcement_level,
     build_gate,
+    stand_down_available,
     validate_artifact,
 )
 from .strategies import (
+    PROMPT_VARIANTS,
     VARIANT_CONTROL_VISIBLE,
-    VARIANT_PROMPT,
+    VARIANT_PROMPT_REQUIRED,
     assign_strategy_trial,
+    plan_forced_arms,
     serialize_strategy,
     strategy_performance,
 )
@@ -485,17 +490,33 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
     client = CLIENT_BY_KEY.get(client_key, CLIENT_BY_KEY["walk_in"])
     strategy_trial = (
         serialize_strategy(item.strategy_key)
-        if item.strategy_key and item.strategy_variant == VARIANT_PROMPT
+        if item.strategy_key and item.strategy_variant in PROMPT_VARIANTS
         else None
     )
+    strategy_gate = build_gate(item) if strategy_trial else None
+    # A mandatory question whose gate could not be built has nothing to be
+    # mandatory about — `build_gate` returns None when the stimulus does not
+    # split into anything the operations can annotate — so the card falls back
+    # to the ordinary suggestion rather than refusing a skip for steps that
+    # were never shown. The arm label on the row still says what was assigned;
+    # `strategy_gate_status` records that no gate was met.
+    required = bool(strategy_gate and strategy_gate.get("required"))
     return {
         "id": item.id,
         "position": item.position,
         "section_index": item.section_index,
         "requires_reasoning": item.requires_reasoning,
         "reasoning_min_chars": reasoning_min_chars(item.session),
-        "strategy_trial": ({**strategy_trial, "variant": VARIANT_PROMPT} if strategy_trial else None),
-        "strategy_gate": build_gate(item) if strategy_trial else None,
+        "strategy_trial": (
+            {
+                **strategy_trial,
+                "variant": item.strategy_variant,
+                "required": required,
+            }
+            if strategy_trial
+            else None
+        ),
+        "strategy_gate": strategy_gate,
         # Kept as its own field rather than folded into `strategy_trial`, which
         # means "a named technique was offered" everywhere on both sides of the
         # wire — the submit path keys the required decision off it, and a
@@ -963,13 +984,27 @@ def create_study_session(
     )
     db.session.add(session)
     db.session.flush()
+    trials = [
+        (position, question, assign_strategy_trial(user.id, question, practice_style, position, focus_types=focus_types))
+        for position, question in enumerate(questions)
+    ]
+    # Which questions make their approach mandatory is decided for the run as a
+    # whole rather than question by question, because the per-run cap is a
+    # property of the run: a fixed quota drawn from a fixed pool gives every
+    # pool member one exact, writable probability, where a position-by-position
+    # draw would leave each one carrying a different probability for reasons
+    # that have nothing to do with what is being measured. See
+    # `strategies.plan_forced_arms`.
+    forcing = plan_forced_arms(user.id, session.id, trials)
     previous_passage_id = None
-    for position, question in enumerate(questions):
+    for position, question, strategy_trial in trials:
         if question.section == "Logical Reasoning":
             target_time_seconds = 150
         else:
             target_time_seconds = 135 if question.passage_id and question.passage_id == previous_passage_id else 330
-        strategy_trial = assign_strategy_trial(user.id, question, practice_style, position, focus_types=focus_types)
+        drawn = forcing.get(position) or {}
+        if drawn.get("required"):
+            strategy_trial = {**strategy_trial, "variant": VARIANT_PROMPT_REQUIRED}
         db.session.add(
             SessionItem(
                 session_id=session.id,
@@ -979,11 +1014,17 @@ def create_study_session(
                 from_review_queue=question.id in repair_ids,
                 strategy_key=strategy_trial["key"] if strategy_trial else None,
                 strategy_variant=strategy_trial["variant"] if strategy_trial else None,
+                # Still the propensity of being *offered a technique*, which is
+                # the draw the dashboard's ranking rests on and which the
+                # mandatory draw deliberately does not touch. The probability
+                # of the second draw is its own column beside it.
                 strategy_propensity=strategy_trial["propensity"] if strategy_trial else None,
                 strategy_candidates_n=strategy_trial["candidates_n"] if strategy_trial else None,
+                strategy_stratum=drawn.get("stratum"),
+                strategy_forcing_propensity=drawn.get("forcing_propensity"),
                 # Fixed here rather than at serve time so the gate a student
                 # meets is the one their history at session start earned. Only
-                # the prompt arm is ever enforced: leaving the control arm
+                # the prompt arms are ever enforced: leaving the control arm
                 # untouched is what keeps the trial a comparison between an
                 # offer and no offer instead of a comparison between two
                 # different interfaces. See app/enforcement.py.
@@ -1693,10 +1734,16 @@ def submit_attempt(
     strategy_gate_status = None
     strategy_artifact = None
     enforcement_level = item.strategy_enforcement_level or LEVEL_NONE
-    if item.strategy_key and item.strategy_variant == VARIANT_PROMPT:
+    required_arm = item.strategy_variant == VARIANT_PROMPT_REQUIRED
+    if item.strategy_key and item.strategy_variant in PROMPT_VARIANTS:
         raw_strategy_applied = payload.get("strategy_applied")
         if not isinstance(raw_strategy_applied, bool):
-            raise ValueError("strategy_decision_required")
+            # The mandatory arm asks for no decision, so a client that sends
+            # none is answered rather than refused: the approach was ordered,
+            # and not saying otherwise is taking it.
+            if not required_arm:
+                raise ValueError("strategy_decision_required")
+            raw_strategy_applied = True
         strategy_applied = raw_strategy_applied
         try:
             strategy_prompt_ms = max(0, min(int(payload.get("strategy_prompt_ms") or 0), 60_000))
@@ -1713,6 +1760,19 @@ def submit_attempt(
         # is the one that decides, and they met none.
         if enforcement_level == LEVEL_NONE or build_gate(item) is None:
             strategy_gate_status = STATUS_UNENFORCED
+        elif not strategy_applied and required_arm:
+            # The way out of a mandatory approach. It exists because forcing is
+            # meant to shape behaviour rather than to build dead ends, and it
+            # is refused until the student has actually run into the thing —
+            # two refusals from the checks in `enforcement`, or a long enough
+            # spell inside the panel. Nothing is charged either way; the only
+            # consequence is that the file says the method was not filed.
+            if not stand_down_available(item, strategy_gate_ms):
+                raise GateRejection(
+                    [{"field": None, "message": GATE_COPY["stand_down_locked"]}],
+                    stand_down=False,
+                )
+            strategy_gate_status = STATUS_STOOD_DOWN
         elif not strategy_applied:
             # Declining the approach is a legitimate answer, not a failure. It
             # is also the accessibility escape hatch and the way out for anyone
@@ -1728,15 +1788,25 @@ def submit_attempt(
             try:
                 strategy_artifact = validate_artifact(item, payload.get("strategy_artifact"), selected_label)
                 strategy_gate_status = STATUS_SATISFIED
-            except GateRejection:
-                if enforcement_level != LEVEL_LIGHT:
+            except GateRejection as rejection:
+                if enforcement_level == LEVEL_LIGHT:
+                    # A student who has already cleared this gate eight times
+                    # is taken at their word. The prompt still shows, the steps
+                    # are optional, and the attempt is marked so no analysis
+                    # confuses an attestation with a demonstration.
+                    strategy_gate_status = STATUS_ATTESTED
+                    strategy_artifact = None
+                else:
+                    # Counted on the server because it is what opens the way
+                    # out above, and committed before the refusal leaves
+                    # because the request is about to unwind. Every refusal is
+                    # counted, mandatory or not: it is the same fact either
+                    # way, and only the mandatory arm reads it.
+                    item.strategy_gate_rejections = (item.strategy_gate_rejections or 0) + 1
+                    db.session.commit()
+                    if required_arm:
+                        rejection.stand_down = stand_down_available(item, strategy_gate_ms)
                     raise
-                # A student who has already cleared this gate eight times is
-                # taken at their word. The prompt still shows, the steps are
-                # optional, and the attempt is marked so no analysis confuses
-                # an attestation with a demonstration.
-                strategy_gate_status = STATUS_ATTESTED
-                strategy_artifact = None
     elapsed_ms = max(1000, min(_elapsed_ms(item), 15 * 60 * 1000))
     is_correct = selected_label == item.question.correct_answer
     _update_skill(user.id, item.question, is_correct, elapsed_ms)
@@ -1756,6 +1826,9 @@ def submit_attempt(
         strategy_prompt_ms=strategy_prompt_ms,
         strategy_gate_ms=strategy_gate_ms,
         strategy_gate_status=strategy_gate_status,
+        strategy_stratum=item.strategy_stratum,
+        strategy_forcing_propensity=item.strategy_forcing_propensity,
+        strategy_gate_rejections=item.strategy_gate_rejections or 0,
         strategy_enforcement_level=(enforcement_level if item.strategy_key else None),
         strategy_enforcement_version=(ENFORCEMENT_VERSION if strategy_gate_status else None),
         strategy_artifact_json=strategy_artifact or None,

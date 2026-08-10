@@ -67,6 +67,12 @@ def _arm_canary_gate(item: SessionItem) -> None:
     `assign_strategy_trial` does; it is not a decision about whether the gate is
     enforced. The gate below still blocks, still runs every check, and is still
     the copy that decides, because there is no way to ask it not to be.
+
+    The arm pinned is the suggestion one, not the mandatory one. Both arm the
+    same gate with the same checks, and this canary is here to prove that a
+    gate refuses an unfinished approach and accepts a finished one — pinning
+    the arm that has a way out keeps the test about the gate rather than about
+    the withdrawal rules. See `plan_forced_arms` in app/strategies.py.
     """
     item.strategy_key = CANARY_STRATEGY
     item.strategy_variant = "prompt"
