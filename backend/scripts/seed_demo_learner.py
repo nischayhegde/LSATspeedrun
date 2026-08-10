@@ -338,7 +338,11 @@ def _answer_finite_session(
                 # the bulk seeder does not synthesize, so those are recorded as skipped.
                 "strategy_applied": _strategy_applied_for_seed(item),
             },
-            f"{DEMO_VERSION}:{label}:{position}",
+            # Scoped to the learner. Idempotency keys are unique across the whole
+            # attempts table, so an unscoped key let this seed exactly one
+            # account per database and made the second `--email` fail with an
+            # idempotency conflict on its very first question.
+            f"{DEMO_VERSION}:{user.id}:{label}:{position}",
         )
         grade = None if not requires_reasoning else min(94, round(76 + phase * 14 + (position % 4)))
         _attach_demo_coaching(
@@ -406,7 +410,7 @@ def _seed_projection_history(user: User) -> int:
     identical points stamped today.
     """
     from app.models import ScoreProjection
-    from app.scoring import project_score
+    from app.scoring import AttemptFact, project_score
 
     ScoreProjection.query.filter_by(user_id=user.id).delete()
     attempts = (
@@ -416,6 +420,27 @@ def _seed_projection_history(user: User) -> int:
         .order_by(StudySession.completed_at.asc(), Attempt.created_at.asc())
         .all()
     )
+    # `project_score` reads flat rows, not the mapped graph, so the historical
+    # slices have to be handed to it in the same shape `scoring.attempt_facts`
+    # would build. Reducing the query above rather than calling that helper
+    # keeps the run-by-run ordering this reconstruction depends on.
+    facts = [
+        AttemptFact(
+            created_at=attempt.created_at,
+            is_correct=attempt.is_correct,
+            evidence_class=attempt.evidence_class,
+            server_elapsed_ms=attempt.server_elapsed_ms,
+            explanation_score=attempt.explanation_score,
+            confidence=attempt.confidence,
+            question_id=attempt.session_item.question_id,
+            question_type=attempt.session_item.question.question_type,
+            section=attempt.session_item.question.section,
+            target_time_seconds=attempt.session_item.target_time_seconds,
+            timer_compromised=attempt.session_item.timer_compromised,
+            from_review_queue=attempt.session_item.from_review_queue,
+        )
+        for attempt in attempts
+    ]
     boundaries: dict[datetime, int] = {}
     for index, attempt in enumerate(attempts, start=1):
         boundaries[attempt.session_item.session.completed_at] = index
@@ -423,7 +448,7 @@ def _seed_projection_history(user: User) -> int:
     written = 0
     for completed_at, cutoff in sorted(boundaries.items()):
         moment = completed_at if completed_at.tzinfo else completed_at.replace(tzinfo=timezone.utc)
-        projection = project_score(user, attempts=attempts[:cutoff], now=moment)
+        projection = project_score(user, attempts=facts[:cutoff], now=moment)
         if not projection.get("available"):
             continue
         db.session.add(
@@ -457,7 +482,10 @@ def _verify(user: User) -> dict:
         raise RuntimeError("The demo diagnostic was not completed as a robust sectioned form.")
     if performance["readiness"]["status"] != "ready":
         raise RuntimeError("The demo evidence did not reach comparison readiness.")
-    if performance["test_performance"]["attempts"] < 100:
+    # The timed-unseen panel counts diagnostic attempts and nothing else, so the
+    # most this can ever be is one full form. The old bar of 100 was above that
+    # ceiling and failed every run regardless of what the seed produced.
+    if performance["test_performance"]["attempts"] < DIAGNOSTIC_QUESTIONS:
         raise RuntimeError("The demo timed-unseen sample is too small.")
     if performance["review"]["recovery_rate"] is None:
         raise RuntimeError("The demo review history did not produce retention evidence.")
