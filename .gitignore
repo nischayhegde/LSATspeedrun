@@ -65,3 +65,39 @@ frontend/scratch-*
 
 # Mobile/UI verification scratch (screenshot matrices, harnesses, reports).
 .shots/
+
+# Perf/QA sweep scratch from the office-and-map work (screenshot matrices,
+# A/B reports, probe harnesses, LCP filmstrips, layout measurements). These are
+# regenerated on demand. They are listed here because `deploy-sandbox.ps1` runs
+# `git add --all` before it commits the release, so anything untracked at deploy
+# time is pushed to main and then re-fetched onto the 1 GiB build box.
+.cast-shots/
+.deck-gif/
+.lcp-evidence/
+.map-shots/
+.office-evidence/
+.qa-tmp/
+.room-evidence/
+.seam-verify/
+.shots-keep/
+.lcp-notes.md
+.map-notes.md
+.firm-audit.md
+.deploy-preflight.md
+
+# Demo-walkthrough verification scratch (screenshots, harnesses, reports).
+.demo-verify/
+
+# Alternate build outputs kept while comparing bundles. The QA sweep renames
+# these between runs, so match the shapes rather than one fixed name.
+frontend/dist-qa*/
+.qa-dist/
+.qa-dist*/
+
+# Presentation deck sources and exports.
+deck/
+
+# Root-level harness dependencies (playwright, pngjs, gifenc) used by the
+# scratch probes above. The application's own manifests live in frontend/.
+/package.json
+/package-lock.json
