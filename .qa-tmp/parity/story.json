@@ -1,0 +1,134 @@
+{
+  "base": "http://127.0.0.1:4173",
+  "at": "2026-08-10T15:20:23.475Z",
+  "routes": {
+    "_story@phone": {
+      "note": "walk started at /cases/69bb283e-9312-41bd-ae44-837ea1751e3b",
+      "coldPath": "/story",
+      "warmPath": "/story",
+      "coldLinks": [
+        "/assets/narrative.css",
+        "/assets/game-art.css",
+        "/assets/story-page.css",
+        "/assets/index.css",
+        "/assets/mobile-story-page.css",
+        "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+        "/assets/guided-tour.css",
+        "/assets/office-three.css"
+      ],
+      "warmLinks": [
+        "/assets/narrative.css",
+        "/assets/game-art.css",
+        "/assets/case-session-page.css",
+        "/assets/story-page.css",
+        "/assets/index.css",
+        "/assets/mobile-case-session-page.css",
+        "/assets/mobile-story-page.css",
+        "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+        "/assets/guided-tour.css",
+        "/assets/office-three.css"
+      ],
+      "nodes": 688,
+      "diff": {
+        "linkOrder": {
+          "cold": [
+            "/assets/narrative.css",
+            "/assets/game-art.css",
+            "/assets/story-page.css",
+            "/assets/index.css",
+            "/assets/mobile-story-page.css",
+            "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+            "/assets/guided-tour.css",
+            "/assets/office-three.css"
+          ],
+          "warm": [
+            "/assets/narrative.css",
+            "/assets/game-art.css",
+            "/assets/case-session-page.css",
+            "/assets/story-page.css",
+            "/assets/index.css",
+            "/assets/mobile-case-session-page.css",
+            "/assets/mobile-story-page.css",
+            "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+            "/assets/guided-tour.css",
+            "/assets/office-three.css"
+          ]
+        },
+        "structure": null,
+        "styleDiffs": [],
+        "rectDiffs": []
+      },
+      "console": [
+        "(walk) [warning] A preload for 'http://127.0.0.1:4173/assets/game-art-B-sMpAjC.css' is found, but is not used because the request credentials mode does not match. Consider taking a look at crossorigin attribute.",
+        "(walk) [warning] A preload for 'http://127.0.0.1:4173/assets/case-session-page-Cz0Me0S1.css' is found, but is not used because the request credentials mode does not match. Consider taking a look at crossorigin attribute.",
+        "(walk) [warning] A preload for 'http://127.0.0.1:4173/assets/mobile-case-session-page-ByXVxJEE.css' is found, but is not used because the request credentials mode does not match. Consider taking a look at crossorigin attribute.",
+        "(walk) [warning] The resource http://127.0.0.1:4173/assets/mobile-case-session-page-ByXVxJEE.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+        "(walk) [warning] The resource http://127.0.0.1:4173/assets/game-art-B-sMpAjC.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.",
+        "(walk) [warning] The resource http://127.0.0.1:4173/assets/case-session-page-Cz0Me0S1.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally."
+      ]
+    },
+    "_story@desk": {
+      "note": "walk started at /cases/69bb283e-9312-41bd-ae44-837ea1751e3b",
+      "coldPath": "/story",
+      "warmPath": "/story",
+      "coldLinks": [
+        "/assets/narrative.css",
+        "/assets/game-art.css",
+        "/assets/story-page.css",
+        "/assets/index.css",
+        "/assets/mobile-story-page.css",
+        "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+        "/assets/guided-tour.css",
+        "/assets/office-three.css"
+      ],
+      "warmLinks": [
+        "/assets/narrative.css",
+        "/assets/game-art.css",
+        "/assets/case-session-page.css",
+        "/assets/story-page.css",
+        "/assets/index.css",
+        "/assets/mobile-case-session-page.css",
+        "/assets/mobile-story-page.css",
+        "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+        "/assets/guided-tour.css",
+        "/assets/office-three.css"
+      ],
+      "nodes": 688,
+      "diff": {
+        "linkOrder": {
+          "cold": [
+            "/assets/narrative.css",
+            "/assets/game-art.css",
+            "/assets/story-page.css",
+            "/assets/index.css",
+            "/assets/mobile-story-page.css",
+            "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+            "/assets/guided-tour.css",
+            "/assets/office-three.css"
+          ],
+          "warm": [
+            "/assets/narrative.css",
+            "/assets/game-art.css",
+            "/assets/case-session-page.css",
+            "/assets/story-page.css",
+            "/assets/index.css",
+            "/assets/mobile-case-session-page.css",
+            "/assets/mobile-story-page.css",
+            "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+            "/assets/guided-tour.css",
+            "/assets/office-three.css"
+          ]
+        },
+        "structure": null,
+        "styleDiffs": [],
+        "rectDiffs": []
+      },
+      "console": [
+        "(walk) [warning] A preload for 'http://127.0.0.1:4173/assets/game-art-B-sMpAjC.css' is found, but is not used because the request credentials mode does not match. Consider taking a look at crossorigin attribute.",
+        "(walk) [warning] A preload for 'http://127.0.0.1:4173/assets/case-session-page-Cz0Me0S1.css' is found, but is not used because the request credentials mode does not match. Consider taking a look at crossorigin attribute.",
+        "(walk) [warning] A preload for 'http://127.0.0.1:4173/assets/mobile-case-session-page-ByXVxJEE.css' is found, but is not used because the request credentials mode does not match. Consider taking a look at crossorigin attribute."
+      ]
+    }
+  },
+  "signedInAt": "http://127.0.0.1:4173/cases/69bb283e-9312-41bd-ae44-837ea1751e3b"
+}

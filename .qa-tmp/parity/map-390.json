@@ -1,0 +1,60 @@
+{
+  "base": "http://127.0.0.1:4173",
+  "at": "2026-08-10T15:09:40.096Z",
+  "routes": {
+    "_map@phone": {
+      "note": "walk started at /cases/69bb283e-9312-41bd-ae44-837ea1751e3b",
+      "coldPath": "/map",
+      "warmPath": "/map",
+      "coldLinks": [
+        "/assets/narrative.css",
+        "/assets/game-art.css",
+        "/assets/index.css",
+        "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+        "/assets/guided-tour.css",
+        "/assets/office-three.css"
+      ],
+      "warmLinks": [
+        "/assets/narrative.css",
+        "/assets/game-art.css",
+        "/assets/case-session-page.css",
+        "/assets/index.css",
+        "/assets/mobile-case-session-page.css",
+        "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+        "/assets/guided-tour.css"
+      ],
+      "nodes": 299,
+      "diff": {
+        "linkOrder": {
+          "cold": [
+            "/assets/narrative.css",
+            "/assets/game-art.css",
+            "/assets/index.css",
+            "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+            "/assets/guided-tour.css",
+            "/assets/office-three.css"
+          ],
+          "warm": [
+            "/assets/narrative.css",
+            "/assets/game-art.css",
+            "/assets/case-session-page.css",
+            "/assets/index.css",
+            "/assets/mobile-case-session-page.css",
+            "https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap",
+            "/assets/guided-tour.css"
+          ]
+        },
+        "structure": null,
+        "styleDiffs": [],
+        "rectDiffs": []
+      },
+      "console": [
+        "[warning] Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently",
+        "[warning] THREE.WebGLRenderer: KHR_parallel_shader_compile extension not supported.",
+        "(walk) [warning] Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently",
+        "(walk) [warning] THREE.WebGLRenderer: KHR_parallel_shader_compile extension not supported."
+      ]
+    }
+  },
+  "signedInAt": "http://127.0.0.1:4173/cases/69bb283e-9312-41bd-ae44-837ea1751e3b"
+}
