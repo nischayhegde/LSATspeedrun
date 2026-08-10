@@ -176,6 +176,7 @@ const SHEET_ORDER = [
   // Cut out of `styles.css`, which came after every sheet above it, so this
   // ranks last of the route sheets for the same reason.
   'src/case-session-styles.css',
+  'src/firm-page.css',
 ]
 
 /**
