@@ -101,7 +101,23 @@
 /* The rival holding count, in the scene rather than in a header band above it.
    Deliberately the quietest overlay on the frame: no border, no panel, just a
    soft scrim so it stays legible over both water and rooftops. */
-.uw-holdings { padding: 5px 10px 6px; position: absolute; z-index: 8; right: 15px; top: 92px; display: grid; justify-items: end; gap: 1px; border-radius: 7px; background: linear-gradient(180deg, rgba(9, 21, 25, .58), rgba(9, 21, 25, .34)); text-shadow: 0 1px 3px rgba(4, 11, 13, .7); backdrop-filter: blur(7px); pointer-events: none; }
+/* The holdings readout sits over the map canvas, and a 7px backdrop blur there
+   is a per-frame re-read of a surface that is redrawing anyway. It is the same
+   shape of cost as the twenty-six lock scrims on the Firm screen, which were
+   measured on this branch at a median frame of 27 ms against 16.7 without.
+
+   Unlike those, this one cannot be matched pixel for pixel and its saving
+   cannot be quoted. The blur existed to stop the map's own detail reading
+   through the plate, so without it the plate has to do that itself: the
+   gradient is carried from 58/34 percent up to 88/74, which takes the map
+   behind it from smeared to hidden and darkens the readout by about 24 levels
+   of red. The change is confined to this rectangle, 4,323 pixels — a third of
+   one percent of the screen — and the text sits on more contrast than it did.
+
+   The saving is unquoted because it is unmeasurable here rather than absent:
+   the map draws at about one frame a second under this machine's software
+   raster, which swamps anything a plate this size could contribute. */
+.uw-holdings { padding: 5px 10px 6px; position: absolute; z-index: 8; right: 15px; top: 92px; display: grid; justify-items: end; gap: 1px; border-radius: 7px; background: linear-gradient(180deg, rgba(9, 21, 25, .88), rgba(9, 21, 25, .74)); text-shadow: 0 1px 3px rgba(4, 11, 13, .7); pointer-events: none; }
 .uw-holdings b { color: rgba(225, 194, 118, .85); font-family: var(--font-pixel); font-size: 7.5px; letter-spacing: .12em; }
 .uw-holdings span { color: rgba(232, 238, 234, .88); font-family: var(--font-ui); font-size: 10px; white-space: nowrap; }
 

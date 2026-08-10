@@ -54,6 +54,11 @@ const TARGETS = {
     settle: '.uw-holdings',
     selector: '.uw-holdings',
     scroll: 'none',
+    // The map's camera drifts on its own, so two shots a second apart differ
+    // wherever the map is — including through a translucent plate, which is
+    // the one place the diff is supposed to be reading the rule. Asking for
+    // reduced motion stops the drift and makes the region attributable.
+    still: true,
     restore: `
       .uw-holdings { background: linear-gradient(180deg, rgba(9, 21, 25, .58), rgba(9, 21, 25, .34)); backdrop-filter: blur(7px); }
     `,
@@ -184,6 +189,7 @@ try {
   for (const name of wanted) {
     const target = TARGETS[name]
     if (!target) throw new Error(`unknown target ${name}`)
+    await page.emulateMedia({ reducedMotion: target.still ? 'reduce' : 'no-preference' })
     await page.goto(`${baseUrl}${target.route}`, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector(target.settle, { timeout: 90000 })
     await page.waitForTimeout(3000)
