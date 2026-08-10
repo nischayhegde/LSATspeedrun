@@ -215,3 +215,12 @@
 }
 
 @media (max-width: 900px) {  .firm-ledger-scenery { right: 10%; opacity: .18; } }
+
+/* The trophy case. Closed by default and out of the tab strip, because it is a
+   record rather than a decision and it used to cost a whole tab slot. */
+.firm-trophies { grid-column: 1 / -1; margin-top: 14px; }
+.firm-trophies > summary { display: flex; align-items: center; gap: 8px; width: fit-content; padding: 7px 13px; cursor: pointer; list-style: none; font-size: .78rem; letter-spacing: .07em; text-transform: uppercase; color: #6d6a62; border: 1px solid #d8cfc1; border-radius: 999px; background: #fffdf8; }
+.firm-trophies > summary::-webkit-details-marker { display: none; }
+.firm-trophies > summary:hover { color: var(--ink); border-color: #bfb4a3; }
+.firm-trophies > summary b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.firm-trophies[open] > summary { margin-bottom: 14px; }

@@ -33,7 +33,12 @@ import '../firm-page.css'
 import '../mobile/firm-page.css'
 
 
-type FirmTab = 'upgrades' | 'decor' | 'staff' | 'clients' | 'connections' | 'rivals' | 'achievements'
+/* Achievements is not here. It was a seventh tab that rendered read-only cards:
+   no control, and `_achievement_state` computes booleans off counters that
+   nothing grants anything for. A tab slot is navigation the player pays for on
+   every visit, so the trophies moved into a closed disclosure in the heading --
+   the same shape the Practice page already keeps its help in. */
+type FirmTab = 'upgrades' | 'decor' | 'staff' | 'clients' | 'connections' | 'rivals'
 
 const firmTabs: Array<{ key: FirmTab; label: string; icon: typeof Wrench }> = [
   { key: 'upgrades', label: 'Upgrades', icon: Wrench },
@@ -42,7 +47,6 @@ const firmTabs: Array<{ key: FirmTab; label: string; icon: typeof Wrench }> = [
   { key: 'clients', label: 'Clients', icon: BriefcaseBusiness },
   { key: 'connections', label: 'Connections', icon: Handshake },
   { key: 'rivals', label: 'Rivals', icon: Trophy },
-  { key: 'achievements', label: 'Achievements', icon: Award },
 ]
 
 
@@ -125,7 +129,8 @@ export function FirmPage() {
 
   if (gameQuery.isLoading) return <LoadingScreen />
   const game = gameQuery.data!.game!
-  const typeMap: Record<FirmTab, GameAsset['type'] | null> = { upgrades: 'upgrade', decor: 'cosmetic', staff: 'staff', clients: null, connections: 'connection', rivals: 'rival', achievements: null }
+  const typeMap: Record<FirmTab, GameAsset['type'] | null> = { upgrades: 'upgrade', decor: 'cosmetic', staff: 'staff', clients: null, connections: 'connection', rivals: 'rival' }
+  const achieved = game.achievements.filter((item) => item.unlocked).length
   const assets = game.catalog.assets.filter((item) => item.type === typeMap[tab])
   const regions = Array.from(new Set([
     ...game.catalog.tiers.map((tier) => tier.region),
@@ -188,6 +193,16 @@ export function FirmPage() {
             {appearance.isPending ? 'Updating character…' : <>Character: {game.character_gender === 'female' ? 'Female' : 'Male'}<span>Switch</span></>}
           </button>
         </div>
+        <details className="firm-trophies">
+          <summary><Award size={14} /> Trophies <b>{achieved} of {game.achievements.length}</b></summary>
+          <div className="achievement-grid">
+            {game.achievements.map((item, index) => (
+              <article key={item.key} className={item.unlocked ? 'unlocked' : ''}>
+                <div>{item.unlocked ? <Trophy /> : <Lock />}</div><span>{String(index + 1).padStart(2, '0')}</span><h3>{item.name}</h3><p>{item.description}</p>{item.unlocked && <small><Check /> ACHIEVED</small>}
+              </article>
+            ))}
+          </div>
+        </details>
       </section>
       <div className="firm-tabs" role="tablist" aria-label="Firm management sections">
         {firmTabs.map(({ key, label, icon: Icon }, index) => <button key={key} id={`firm-tab-${key}`} type="button" role="tab" aria-selected={tab === key} aria-controls={`firm-panel-${key}`} tabIndex={tab === key ? 0 : -1} className={tab === key ? 'active' : ''} onKeyDown={(event) => moveTab(event, key)} onClick={() => selectTab(key)}><span className="firm-tab-icon"><Icon size={17} /></span><span>{label}</span><small>{String(index + 1).padStart(2, '0')}</small></button>)}
@@ -200,19 +215,17 @@ export function FirmPage() {
             because weakening a firm and then buying it is one move: the grid
             below is only ever the raw price list. */}
         {tab === 'rivals' && <RivalWarRoom game={game} onShowOnMap={(asset) => navigate(`/map?rival=${asset.key}`)} />}
-        {tab !== 'achievements' && (
-          <div className="catalog-toolbar">
-            <div><span>CATALOG VIEW</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
-            <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">
-              {(['all', 'ready', 'owned'] as const).map((view) => <button key={view} className={catalogView === view ? 'active' : ''} onClick={() => selectCatalogView(view)}>{view === 'owned' && tab === 'clients' ? 'Active' : view}</button>)}
-            </div>
-            <label><span>CITY REGION</span><select value={catalogRegion} onChange={(event) => {
-              const nextRegion = event.target.value
-              if (nextRegion !== catalogRegion) void play('select', { seed: nextRegion, intensity: .25 })
-              setCatalogRegion(nextRegion)
-            }}><option value="all">All districts</option>{regions.map((region) => <option key={region} value={region}>{region}</option>)}</select></label>
+        <div className="catalog-toolbar">
+          <div><span>CATALOG VIEW</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
+          <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">
+            {(['all', 'ready', 'owned'] as const).map((view) => <button key={view} className={catalogView === view ? 'active' : ''} onClick={() => selectCatalogView(view)}>{view === 'owned' && tab === 'clients' ? 'Active' : view}</button>)}
           </div>
-        )}
+          <label><span>CITY REGION</span><select value={catalogRegion} onChange={(event) => {
+            const nextRegion = event.target.value
+            if (nextRegion !== catalogRegion) void play('select', { seed: nextRegion, intensity: .25 })
+            setCatalogRegion(nextRegion)
+          }}><option value="all">All districts</option>{regions.map((region) => <option key={region} value={region}>{region}</option>)}</select></label>
+        </div>
         {tab === 'upgrades' && nextTier && (
           <section className="tier-upgrade-banner">
           <div className="tier-preview"><Building2 /><span>TIER {nextTier.tier}</span></div>
@@ -262,14 +275,6 @@ export function FirmPage() {
             ))}
             </div>
           </>
-      ) : tab === 'achievements' ? (
-        <div className="achievement-grid">
-          {game.achievements.map((item, index) => (
-            <article key={item.key} className={item.unlocked ? 'unlocked' : ''}>
-              <div>{item.unlocked ? <Trophy /> : <Lock />}</div><span>{String(index + 1).padStart(2, '0')}</span><h3>{item.name}</h3><p>{item.description}</p>{item.unlocked && <small><Check /> ACHIEVED</small>}
-            </article>
-          ))}
-        </div>
       ) : (
         <div className="management-grid asset-management-grid">
           {visibleAssets.map((item) => (
