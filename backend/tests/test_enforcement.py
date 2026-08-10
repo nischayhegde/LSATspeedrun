@@ -2169,3 +2169,133 @@ def test_the_ranking_pools_both_offers_and_the_mandatory_contrast_stands_apart(a
     section = next(entry for entry in performance["sections"] if entry["section"] == "Logical Reasoning")
     assert section["required_trials"] == 8
     assert sorted(section["itt"]["treated_arms"]) == ["prompt", "prompt_required"]
+
+
+def test_a_real_run_deals_a_standing_order_and_serves_it_as_one(app):
+    """End to end through the allocator, not through the test's own `arm`.
+
+    Everything above this point pins an arm by hand, which is the only way to
+    test one specific gate but which also skips the wiring: the planner running
+    at session creation, the columns it writes, and the card the server draws
+    off them.
+    """
+    from app.strategies import SESSION_FORCED_CAP
+
+    client = app.test_client()
+    headers = login(client, "real-run@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", json={"size": 8}, headers=headers).json["session"]
+
+    with app.app_context():
+        study = db.session.get(StudySession, session["id"])
+        items = sorted(study.items, key=lambda value: value.position)
+        required = [item for item in items if item.strategy_variant == "prompt_required"]
+        assert len(required) == SESSION_FORCED_CAP
+        # Every trialled question is charged to a cell, and the pool the draw
+        # ran in carries its probability on winners and losers alike.
+        assert all(item.strategy_stratum for item in items if item.strategy_key)
+        pooled = [item for item in items if item.strategy_forcing_propensity is not None]
+        assert len(pooled) > len(required)
+        assert len({item.strategy_forcing_propensity for item in pooled}) == 1
+        # And a mandatory question is always fully blocking.
+        assert all(item.strategy_enforcement_level == LEVEL_FULL for item in required)
+
+        # Walk the run to the first standing order rather than answering up to it.
+        study.current_index = required[0].position
+        db.session.commit()
+
+    served = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]["current_item"]
+    assert served["strategy_trial"]["required"] is True
+    assert served["strategy_trial"]["variant"] == "prompt_required"
+    assert served["strategy_gate"]["required"] is True
+    assert served["strategy_gate"]["blocking"] is True
+    assert served["strategy_gate"]["stand_down_ready"] is False
+    # The copy the card draws itself from, in the fiction rather than in the
+    # language of experiments.
+    copy = served["strategy_gate"]["copy"]
+    assert copy["required_eyebrow"] == "STANDING ORDER"
+    assert "client" in copy["required_title"]
+    assert "No skip" in copy["required_note"]
+
+
+# ---------------------------------------------------------------------------
+# The two adjustments the mandatory contrast rests on, shown numerically.
+#
+# Both tests build attempts in memory rather than in the database: what is
+# under test is arithmetic over four attributes, and a fixture that saved rows
+# would add a hundred lines of session plumbing without adding a check.
+# ---------------------------------------------------------------------------
+
+
+def _row(variant: str, propensity: float | None, correct: bool) -> Attempt:
+    return Attempt(
+        strategy_variant=variant,
+        strategy_forcing_propensity=propensity,
+        strategy_gate_status="satisfied" if variant == "prompt_required" else "skipped",
+        is_correct=correct,
+    )
+
+
+def test_the_mandatory_contrast_refuses_the_comparison_that_would_confound_it():
+    """Required questions come from cells picked for being weak. Weak cells are
+    weak partly because they are hard, so comparing them against every optional
+    question on the record would measure the cells and call it enforcement.
+
+    The numbers below are the whole argument: identical rows, read two ways.
+    """
+    from app.strategies import _forcing_contrast
+
+    # One pool, in a hard cell. Enforcement does nothing here: both arms run at
+    # a third.
+    pool = (
+        [_row("prompt_required", 1 / 3, index < 4) for index in range(12)]
+        + [_row("prompt", 1 / 3, index < 8) for index in range(24)]
+    )
+    # Sixty easy questions that were never eligible to be drawn.
+    outside = [_row("prompt", None, index < 54) for index in range(60)]
+
+    honest = _forcing_contrast(pool + outside, 0.5)
+    assert honest["required_sample"] == 12
+    assert honest["optional_sample"] == 24
+    assert abs(honest["adjusted_lift"]) < 3
+
+    # And the same rows with the restriction lifted, which is the reading the
+    # pool exists to refuse: enforcement looks catastrophic, and all it is
+    # measuring is that hard questions are hard.
+    confounded = _forcing_contrast(
+        pool + [_row("prompt", 1 / 3, row.is_correct) for row in outside], 0.5
+    )
+    assert confounded["adjusted_lift"] < -25
+
+
+def test_weighting_the_mandatory_draw_balances_pools_of_different_sizes():
+    """A fixed quota over a varying pool gives a varying probability, on purpose.
+
+    The pool is the strata worth investing in, and how many of a run's questions
+    fall in it moves run to run. That makes the arms unbalanced across cells
+    unless the weights say so, which is the case the propensity column exists
+    for and the case that turns the Hajek estimator from a no-op into the point.
+    """
+    from app.strategies import _arm_rate, _forcing_contrast, _shrink_toward
+
+    # An easy cell drawn at one in two, and a hard cell drawn at one in five.
+    # Enforcement does nothing in either: the arms match inside each cell.
+    rows = (
+        [_row("prompt_required", 0.5, index < 18) for index in range(20)]
+        + [_row("prompt", 0.5, index < 18) for index in range(20)]
+        + [_row("prompt_required", 0.2, index < 1) for index in range(8)]
+        + [_row("prompt", 0.2, index < 4) for index in range(32)]
+    )
+
+    weighted = _forcing_contrast(rows, 0.5)
+    assert abs(weighted["adjusted_lift"]) < 3
+
+    # Unweighted, the required arm is 71% easy questions and the optional arm is
+    # 38% easy ones, so a mechanism that did nothing reads as twenty points.
+    required = [row for row in rows if row.strategy_variant == "prompt_required"]
+    optional = [row for row in rows if row.strategy_variant == "prompt"]
+    unweighted = (
+        _shrink_toward(_arm_rate(required, lambda _row: 1.0), len(required), 0.5)
+        - _shrink_toward(_arm_rate(optional, lambda _row: 1.0), len(optional), 0.5)
+    ) * 100
+    assert unweighted > 15
