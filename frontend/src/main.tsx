@@ -28,6 +28,13 @@ import { SoundProvider } from './sound'
  * gzipped out of the stylesheet every screen blocks on. The clash scan behind
  * that change is `.shots/css-clash.mjs`.
  *
+ * `case-instrument.css`, `markup.css` and `practice-lab.css` left the same way
+ * and for the same reason, and they were the easy three: every rule in the
+ * first is written `.case-instrument …`, the second styles ink that exists only
+ * over a case file, and the third is the practice lobby. Nothing outside
+ * /cases and /cases/:id writes any of their classes, so they now travel with
+ * those two routes.
+ *
  * `performance.css` was the seventh, and it could not simply follow the
  * dashboard chunk: it reads like a dashboard sheet, but it also styles the
  * whole session review on /cases/:id, the docket on /cases and two cards on
@@ -35,13 +42,14 @@ import { SoundProvider } from './sound'
  * `review-panels.css`, which takes the slot below and keeps its old place in
  * the cascade; the 41 kB that only the dashboard can reach stayed in
  * `performance.css` and now travels with the dashboard.
+ *
+ * What is left is the floor: `styles.css` and `mobile.css` are global by
+ * construction, and `.shots/css-owners.mjs` and `.shots/css-media.mjs` are the
+ * two scans that say so.
  */
 import './review-panels.css'
 import './styles.css'
 import './art/art.css'
-import './case-instrument.css'
-import './markup.css'
-import './practice-lab.css'
 import './mobile.css'
 
 /**

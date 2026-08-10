@@ -19,6 +19,13 @@ import { useSound } from '../sound'
 import { TrialCalendar } from '../trial-calendar'
 import type { StudySession } from '../types'
 import { effectiveClient, InertTabPanels, MegaLitigationGate, PanelFallback, TabStrip, useGame } from './shared'
+/**
+ * The lab's own sheet, which this file is the only writer of. It was on the
+ * entry, so every screen downloaded the practice lobby's styling; now it comes
+ * with this route, positioned by `lsat-route-stylesheets` in `vite.config.ts`
+ * exactly where it sat before.
+ */
+import '../practice-lab.css'
 
 // The Practice tab's mega-litigation home carries a paginated history feed and
 // a full results view, both below the fold behind a tab, so it stays out of

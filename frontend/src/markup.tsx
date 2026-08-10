@@ -24,6 +24,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Eraser, Highlighter, MousePointer2, Pencil, Trash2, Undo2 } from 'lucide-react'
 import { useSound } from './sound'
+/**
+ * The ink's own sheet, which used to be pinned to `main.tsx` and downloaded by
+ * every screen. Nothing outside the case file writes any of these classes, so
+ * it travels with the case session instead; `lsat-route-stylesheets` in
+ * `vite.config.ts` keeps it in the same place in the cascade it held there.
+ */
+import './markup.css'
 
 export type MarkupSurface = 'passage' | 'answer'
 export type MarkupTool = 'pointer' | 'pen' | 'highlighter' | 'eraser'

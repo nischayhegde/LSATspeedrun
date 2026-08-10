@@ -171,6 +171,9 @@ const SHEET_ORDER = [
   'src/rival-war-room.css',
   'src/strategy-enforcement.css',
   'src/art/unified-empire-map.css',
+  'src/case-instrument.css',
+  'src/markup.css',
+  'src/practice-lab.css',
 ]
 
 /**
