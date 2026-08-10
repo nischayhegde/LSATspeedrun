@@ -26,6 +26,9 @@ import { effectiveClient, InertTabPanels, MegaLitigationGate, PanelFallback, Tab
  * exactly where it sat before.
  */
 import '../practice-lab.css'
+// The rules in `styles.css` that only this screen can render. Below the lab
+// sheet because that is the order the two had on the entry.
+import '../cases-page.css'
 
 // The Practice tab's mega-litigation home carries a paginated history feed and
 // a full results view, both below the fold behind a tab, so it stays out of

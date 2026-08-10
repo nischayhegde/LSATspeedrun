@@ -181,6 +181,7 @@ const SHEET_ORDER = [
   'src/login-page.css',
   'src/onboarding-page.css',
   'src/story-page.css',
+  'src/cases-page.css',
 ]
 
 /**

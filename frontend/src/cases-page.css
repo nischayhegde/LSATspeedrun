@@ -1,0 +1,43 @@
+/* The docket lobby's share of the global sheet.
+ *
+ * 32 rules that were in `styles.css` and name classes no file but
+ * `pages/cases-page.tsx` writes. It is imported below `practice-lab.css`
+ * because that is the order the two had on the entry, and `SHEET_ORDER` in
+ * `vite.config.ts` keeps them in it.
+ */
+.run-queue-panel { margin-bottom: 22px; padding: 16px 19px 19px; border: 1px solid rgba(238,203,130,.5); border-radius: 14px; color: white; background: linear-gradient(120deg, #0d2d38, #163f4c); box-shadow: 0 14px 30px rgba(4,10,12,.25); }
+.run-queue-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.run-queue-header .eyebrow { color: #d0b36e; }
+.run-queue-header h2 { margin: 3px 0 0; color: white; font-family: Georgia, serif; font-size: 19px; font-weight: 500; }
+.run-queue-full-flag { display: flex; flex: none; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid rgba(233,148,120,.45); border-radius: 999px; color: #f0b79b; background: rgba(233,148,120,.1); font-size: 11.5px; font-weight: 700; }
+.run-queue-list { margin-top: 13px; padding-right: 6px; display: flex; flex-direction: column; gap: 8px; max-height: 308px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(232,201,130,.55) rgba(255,255,255,.06); }
+.run-queue-list::-webkit-scrollbar { width: 6px; }
+.run-queue-list::-webkit-scrollbar-track { border-radius: 999px; background: rgba(255,255,255,.06); }
+.run-queue-list::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(232,201,130,.55); }
+.run-queue-list::-webkit-scrollbar-thumb:hover { background: rgba(232,201,130,.8); }
+.run-queue-item { min-height: 52px; padding: 10px 13px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 11px; background: rgba(5,17,22,.28); }
+.run-queue-item > svg { flex: none; color: #e9c982; }
+.run-queue-item-copy { min-width: 0; flex: 1; }
+.run-queue-item-copy strong { display: block; font-size: 13.5px; font-weight: 700; }
+.run-queue-item-copy span { display: block; margin-top: 2px; overflow: hidden; color: #b9ced4; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.run-queue-status-pill { flex: none; padding: 5px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.run-queue-status-pill.is-running { color: #7bd9b8; background: rgba(123,217,184,.15); }
+.run-queue-status-pill.is-paused { color: #d0b36e; background: rgba(208,179,110,.15); }
+.run-queue-status-pill.is-debrief { color: #f0b79b; background: rgba(240,183,155,.15); }
+.run-queue-item-actions { display: flex; flex: none; align-items: center; gap: 6px; }
+.run-queue-pause,
+.run-queue-discard { display: flex; align-items: center; gap: 5px; padding: 8px 11px; border: 1px solid rgba(255,255,255,.28); border-radius: 9px; color: #dbe7e6; background: transparent; font-size: 12px; font-weight: 600; transition: border-color .16s ease, background .16s ease; }
+.run-queue-pause:hover:not(:disabled),
+.run-queue-discard:hover:not(:disabled) { border-color: rgba(255,255,255,.5); background: rgba(255,255,255,.06); }
+.run-queue-discard:disabled,
+.run-queue-pause:disabled { opacity: .45; cursor: not-allowed; }
+.run-queue-resume { display: flex; align-items: center; gap: 6px; padding: 8px 13px; border: 0; border-radius: 9px; color: var(--navy); background: #e8c77f; font-size: 12px; font-weight: 700; transition: background .16s ease; }
+.run-queue-resume:hover:not(:disabled) { background: #f0d493; }
+.run-queue-resume:disabled { opacity: .6; cursor: not-allowed; }
+@media (max-width: 620px) {
+  .run-queue-header { flex-wrap: wrap; }
+  .run-queue-item { flex-wrap: wrap; }
+  .run-queue-item-actions { width: 100%; justify-content: stretch; }
+  .run-queue-item-actions > button { flex: 1; justify-content: center; } }
+
+.lobby-client-portrait { width: 94px; height: 101px; margin: 4px 0 10px; }.lobby-client-portrait { width: 104px; height: 114px; }
