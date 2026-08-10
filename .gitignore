@@ -118,3 +118,6 @@ deck/public/art/
 # scratch probes above. The application's own manifests live in frontend/.
 /package.json
 /package-lock.json
+
+# Local dev worktrees symlink this to a shared install; the trailing-slash rule above does not match a symlink.
+frontend/node_modules
