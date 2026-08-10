@@ -19,7 +19,7 @@ import { api } from '../api'
 import { ErrorNotice, LoadingScreen } from '../components'
 import { PixelStudyScenery } from '../art/pixel-scenery'
 import { useSound } from '../sound'
-import { readStrategyLabSections, StrategySectionReadings } from '../strategy-sections'
+import { measuredStrategyRows, readStrategyLabSections, StrategySectionReadings } from '../strategy-sections'
 import { TrialCalendar } from '../trial-calendar'
 import { useRollupInt } from '../motion'
 import { InertTabPanels, MegaLitigationGate, PanelFallback, TabStrip } from './shared'
@@ -145,6 +145,10 @@ export function PerformancePage() {
   // trials behind it.
   const { sections: strategySections, note: strategySectionsNote } = readStrategyLabSections(performance.strategy_lab)
   const strategySectionsMeasured = strategySections.some((section) => section.trials > 0)
+  // The roll-up below the readings, built from the readings rather than from the
+  // account-wide totals beside them, so one approach cannot carry two records on
+  // one screen.
+  const strategyRows = measuredStrategyRows(strategySections)
   const chartPoints = trend.length > 1
     ? trend.map((entry, index) => `${20 + index * (560 / Math.max(1, trend.length - 1))},${160 - entry.accuracy * 1.25}`).join(' ')
     : ''
@@ -453,14 +457,14 @@ export function PerformancePage() {
               <div className="strategy-empty-state"><Activity /><div><strong>{strategyLab.empty_state.title}</strong><p>{strategyLab.empty_state.body}</p></div></div>
             )}
 
-            {strategyLab.results.length > 0 && (
+            {strategyRows.length > 0 && (
               <details className="strategy-results-detail">
                 <summary>Every approach you&apos;ve tried <span>{strategyLab.strategies_tested} tried · {strategyLab.trials_completed} questions measured</span></summary>
                 <div className="strategy-results-table">
                   <div className="header"><span>Approach</span><span>With it / without it</span><span>Difference</span><span>Where it stands</span></div>
-                  {strategyLab.results.map((strategy) => (
-                    <div key={strategy.key}>
-                      <strong>{strategy.plain_title}<small>{strategy.section === 'Logical Reasoning' ? 'LR' : 'RC'}</small></strong>
+                  {strategyRows.map((strategy) => (
+                    <div key={`${strategy.measured_in}:${strategy.key}`}>
+                      <strong>{strategy.plain_title}<small>{strategy.short_label}</small></strong>
                       <span>{strategy.with_headline} / {strategy.without_headline}<small>{strategy.sample} with · {strategy.control_sample} without</small></span>
                       <span>{strategy.difference_headline}</span>
                       <span className={`strategy-evidence-badge ${strategy.verdict}`}>{strategy.verdict_label}</span>

@@ -812,6 +812,10 @@ export type StrategySectionResult = {
   with_note: string
   without_headline: string
   without_note: string
+  difference_headline: string
+  /** Never a claim that an approach works; see the panel's own evidence note. */
+  verdict: string
+  verdict_label: string
   /** The two sentences the armed gate's record line shows, both counts rather than claims. */
   summary: string
   detail: string

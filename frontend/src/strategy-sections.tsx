@@ -1,6 +1,6 @@
 import { ChevronDown } from 'lucide-react'
 
-import type { PerformanceSnapshot, StrategySectionReading } from './types'
+import type { PerformanceSnapshot, StrategySectionReading, StrategySectionResult } from './types'
 
 /**
  * The per-section readings inside the Methods tab: the strongest approach for
@@ -24,6 +24,37 @@ export function readStrategyLabSections(lab: PerformanceSnapshot['strategy_lab']
     sections: lab?.sections ?? [],
     note: lab?.sections_note ?? '',
   }
+}
+
+export type MeasuredStrategyRow = StrategySectionResult & {
+  /** The section the figures on this row were measured in, not the catalogue's label for the approach. */
+  measured_in: string
+  short_label: string
+}
+
+/**
+ * Every approach the student has tried, one row per section it was tried in.
+ *
+ * Built from the same per-section readings the panel above it ranks rather than
+ * from the account-wide `results` list, which pools an approach's arms across
+ * sections. Those pooled totals differ from the section figures the moment an
+ * approach is assigned outside its catalogue section, and this table is read
+ * directly beneath the section readings and carries a section badge of its own,
+ * so a pooled number here is a second answer to a question already answered a
+ * few lines above.
+ *
+ * An approach tried in both sections therefore gets a row in each, which is the
+ * honest shape: they are two comparisons, against two baselines, on two pools of
+ * questions.
+ */
+export function measuredStrategyRows(sections: StrategySectionReading[]): MeasuredStrategyRow[] {
+  return sections.flatMap((reading) =>
+    reading.results.map((result) => ({
+      ...result,
+      measured_in: reading.section,
+      short_label: reading.short_label,
+    })),
+  )
 }
 
 const CAPTIONS: Record<StrategySectionReading['status'], (reading: StrategySectionReading) => string> = {
