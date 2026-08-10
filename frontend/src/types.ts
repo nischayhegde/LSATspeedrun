@@ -354,10 +354,24 @@ export type GameState = {
   office: FirmTier
   current_streak: number
   best_streak: number
-  /** Consecutive calendar days the firm has been visited — distinct from the
-   *  validated-win streak above. Advances at most once per day. */
+  /** Consecutive calendar days on which a case was finished — distinct from the
+   *  validated-win streak above. Advances at most once per day, and no longer
+   *  advances merely by loading a page. */
   daily_streak: number
   daily_streak_best: number
+  /** What the win streak is currently worth as a reputation floor, and which of
+   *  the two gates is binding. `day_limited` means more casework today cannot
+   *  raise it and only coming back tomorrow can — the anti-farm gate. */
+  streak_form: {
+    wins: number
+    days: number
+    standing: number
+    earned_standing: number
+    licensed_standing: number
+    cap: number
+    next_win_target: number | null
+    day_limited: boolean
+  }
   total_cases: number
   total_correct: number
   total_validated_correct: number

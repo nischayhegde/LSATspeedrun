@@ -312,6 +312,13 @@ export function FirmPage() {
                   that board is on the map. Same hand-off the rivals tab already
                   makes, so owning one is something you can go and look at. */}
               {item.type === 'connection' && <button type="button" className="asset-locate" onClick={() => navigate(`/map?connection=${item.key}`)}>Show on the map</button>}
+              {/* Decor is kept deliberately cosmetic: it is the one asset class
+                  whose entire value is the office view, and the one that already
+                  satisfied "look at the room and see what you bought" before any
+                  of this work. What it lacked was a route to its own payoff --
+                  you could buy a rug and never be sent to look at it. Same
+                  hand-off the connections above make to the map. */}
+              {item.type === 'cosmetic' && item.owned && <button type="button" className="asset-locate" onClick={() => navigate('/office')}>See it in the office</button>}
             </article>
           ))}
         </div>

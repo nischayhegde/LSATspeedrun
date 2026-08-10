@@ -111,6 +111,11 @@ h1, h2, h3, p { text-wrap: pretty; }
 .header-economy > span { min-height: 32px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border: 1px solid #ded7ca; border-radius: 999px; background: white; color: var(--navy); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
 .header-economy svg { color: var(--gold-dark); }
 .header-economy .streak { color: #9a4a2c; background: #fff3e7; border-color: #f0c9a9; }
+/* Shown only while the win streak is actually holding a reputation floor up, so
+   the header gains a glyph at the moment there is something to defend rather
+   than carrying a permanent zero. */
+.header-economy .streak.is-holding { border-color: #cfae7a; }
+.streak-standing { margin-left: 6px; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border-radius: 999px; color: #3f6b52; background: #e6f1e6; font-variant-numeric: tabular-nums; }
 .header-economy .streak .streak-count { display: inline-block; }
 .header-economy .streak.is-lit { animation: streak-glow-pulse .85s ease-out; }
 .header-economy .streak.is-lit svg { animation: streak-flame-kick .85s ease-out; }
