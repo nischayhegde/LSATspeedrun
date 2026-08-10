@@ -31,6 +31,137 @@ const SCENE_ENTRY_CHUNKS: Record<string, string[]> = {
 }
 
 /**
+ * Every chunk reachable from `names` through static imports, plus the
+ * stylesheets those chunks own, as document-relative urls.
+ *
+ * The CSS matters as much as the JS. Vite does not put a `<link>` in the
+ * document for a stylesheet belonging to an async chunk; it injects one at
+ * runtime, at the moment the chunk is first imported. That request is therefore
+ * only discovered at the very end of the chain — entry, route, scene module —
+ * and lands right in front of the frame it is needed for.
+ *
+ * The entry chunk and its sheet are skipped throughout: both are already real
+ * tags in the document, and hinting them again only duplicates a request.
+ */
+function staticClosure(
+  bundle: Record<string, { type: string; name?: string; isEntry?: boolean; imports?: string[] }>,
+  base: string,
+  names: string[],
+) {
+  const chunksByName = new Map<string, string>()
+  for (const [fileName, output] of Object.entries(bundle)) {
+    if (output.type === 'chunk') chunksByName.set(output.name!, fileName)
+  }
+  const seen = new Set<string>()
+  const css = new Set<string>()
+  const queue = names.map((n) => chunksByName.get(n)).filter((f): f is string => Boolean(f))
+  while (queue.length) {
+    const file = queue.shift()!
+    if (seen.has(file)) continue
+    seen.add(file)
+    const output = bundle[file]
+    if (output && output.type === 'chunk') {
+      queue.push(...(output.imports ?? []))
+      if (!output.isEntry) {
+        const meta = (output as { viteMetadata?: { importedCss?: Set<string> } }).viteMetadata
+        for (const sheet of meta?.importedCss ?? []) css.add(sheet)
+      }
+    }
+  }
+  const js = [...seen]
+    .filter((f) => { const o = bundle[f]; return o && o.type === 'chunk' && !o.isEntry })
+    .map((f) => base + f)
+  return { js, css: [...css].map((f) => base + f) }
+}
+
+/**
+ * Where `/` can actually send a visitor.
+ *
+ * `me` computes `next_route` in `backend/app/services.py` and it is one of
+ * three things: `/onboarding` when the account has no game profile,
+ * `/cases/<id>` when a practice run or a diagnostic is resumable, `/progress`
+ * otherwise. A 401 is the fourth case and means `/login`. No other screen is
+ * reachable from `/`, so no other screen belongs in a table the document has to
+ * carry on the critical path — listing all nine put 6.3 kB raw in `index.html`
+ * to describe five redirects that cannot happen.
+ */
+const REDIRECT_DESTINATIONS = new Set(['login-page', 'onboarding-page', 'case-session-page', 'dashboard-page'])
+
+/**
+ * Lets `/` ask for its screen's chunk as soon as the server has named it,
+ * rather than after the entry bundle has run.
+ *
+ * `/` is the one path that cannot know its screen from the url: it redirects to
+ * whatever `next_route` `me` reports, so `routeForPath` returns null for it and
+ * `main.tsx` has nothing to preload. The chunk is therefore not requested until
+ * the entry and framework chunks have both downloaded and executed, React has
+ * mounted, and the redirect has committed. Measured cold at 390px, 4x CPU and
+ * 1.6 Mbps against a server compressing the way production's CloudFront does,
+ * that put the request for a 2.1 kB route chunk at 1170 ms — behind 82 kB of
+ * framework it does not depend on — and the largest contentful paint at 1712 ms.
+ *
+ * But the answer is not late. `index.html` already starts `me` in the head, and
+ * it comes back at ~345 ms. Nothing was reading it. So the document chains that
+ * promise and hints the route the server named, which is the opposite of the
+ * guess `routes.tsx` rules out: the destination is known, from the server, ~800
+ * ms before the bundle would have got round to asking for it.
+ *
+ * The hints are `modulepreload` and `preload as=style`, so they only warm the
+ * cache. Nothing here decides the cascade — `lsat-route-stylesheets` still owns
+ * where a sheet lands, and the real `<link>` the route's chunk injects resolves
+ * out of these.
+ *
+ * The closure is taken from `ROUTE_ENTRY_CHUNKS`, the same list the route
+ * stylesheets use, and not from `SCENE_ENTRY_CHUNKS`. That is deliberate: the
+ * scene lists name `office-three` and `map-three-scene` on purpose, and pulling
+ * ~717 kB of three.js in behind a redirect is the exact mistake the note above
+ * `SCENE_ENTRY_CHUNKS` records paying for on `/login`. A route's own page chunk
+ * and its static imports is what a redirect needs to draw its first screen.
+ */
+function redirectRouteHints(): Plugin {
+  let config: ResolvedConfig
+  return {
+    name: 'lsat-redirect-route-hints',
+    apply: 'build',
+    configResolved(resolved) { config = resolved },
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        const bundle = ctx.bundle
+        if (!bundle) return html
+        const base = config.base === './' ? '/' : config.base
+
+        const byRoute: [string, string[], string[]][] = []
+        for (const [pattern, name] of ROUTE_ENTRY_CHUNKS) {
+          if (!REDIRECT_DESTINATIONS.has(name)) continue
+          const { js, css } = staticClosure(bundle as never, base, [name])
+          if (js.length || css.length) byRoute.push([pattern.source, js, css])
+        }
+        if (!byRoute.length) return html
+
+        const script = `(function(){try{
+var R=${JSON.stringify(byRoute)},done={};
+window.__lsatHintRoute=function(to){try{
+var p=String(to||'').split('?')[0].replace(/\\/$/,'')||'/';
+if(done[p])return;done[p]=1;
+for(var i=0;i<R.length;i++){if(!new RegExp(R[i][0]).test(p))continue;
+for(var j=0;j<R[i][1].length;j++){var e=document.createElement('link');
+e.rel='modulepreload';e.href=R[i][1][j];e.crossOrigin='anonymous';document.head.appendChild(e);}
+for(var k=0;k<R[i][2].length;k++){var c=document.createElement('link');
+c.rel='preload';c.as='style';c.href=R[i][2][k];document.head.appendChild(c);}
+return;}
+}catch(e){}};
+}catch(e){}})();`
+        return {
+          html,
+          tags: [{ tag: 'script', children: script, injectTo: 'head' as const }],
+        }
+      },
+    },
+  }
+}
+
+/**
  * Nothing on a first paint tells the browser that a 3D scene is coming.
  *
  * Vite emits one `<script type="module">` for the entry chunk and no hints at
@@ -65,59 +196,19 @@ function scenePreloadHints(): Plugin {
         const bundle = ctx.bundle
         if (!bundle) return html
 
-        const chunksByName = new Map<string, string>()
-        for (const [fileName, output] of Object.entries(bundle)) {
-          if (output.type === 'chunk') chunksByName.set(output.name, fileName)
-        }
         const base = config.base === './' ? '/' : config.base
 
         /**
-         * Every chunk reachable from `name` through static imports, plus the
-         * stylesheets those chunks own.
-         *
-         * The CSS matters as much as the JS here. Vite does not put a `<link>`
-         * in the document for a stylesheet belonging to an async chunk; it
-         * injects one at runtime, at the moment the chunk is first imported.
-         * That request is therefore only discovered at the very end of the
-         * chain — entry, route, scene module — and lands right in front of the
-         * frame it is needed for. Since the split moved ~40 kB of painted-art
-         * CSS out of `index.css` and into the game-art chunk, that late
-         * discovery was showing up directly in the first-frame measurement.
-         *
-         * These go out as `preload as=style` rather than as real stylesheets:
-         * the bytes are wanted early, but making them render-blocking would
-         * hand back the first-paint win that moving them out of the entry
-         * bought. The runtime `<link>` Vite injects then resolves from cache.
+         * The stylesheets go out as `preload as=style` rather than as real
+         * stylesheets: the bytes are wanted early, but making them
+         * render-blocking would hand back the first-paint win that moving them
+         * out of the entry bought. The runtime `<link>` Vite injects then
+         * resolves from cache.
          */
-        const closure = (names: string[]) => {
-          const seen = new Set<string>()
-          const css = new Set<string>()
-          const queue = names.map((n) => chunksByName.get(n)).filter((f): f is string => Boolean(f))
-          while (queue.length) {
-            const file = queue.shift()!
-            if (seen.has(file)) continue
-            seen.add(file)
-            const output = bundle[file]
-            if (output && output.type === 'chunk') {
-              queue.push(...output.imports)
-              // The entry's own stylesheet is already a real <link> in the
-              // document; hinting it again just duplicates a request.
-              if (!output.isEntry) {
-                const meta = (output as { viteMetadata?: { importedCss?: Set<string> } }).viteMetadata
-                for (const sheet of meta?.importedCss ?? []) css.add(sheet)
-              }
-            }
-          }
-          // The entry chunk is already in the document as a real script tag;
-          // hinting it again only adds a duplicate line to the head.
-          const js = [...seen]
-            .filter((f) => { const o = bundle[f]; return o && o.type === 'chunk' && !o.isEntry })
-            .map((f) => base + f)
-          return { js, css: [...css].map((f) => base + f) }
-        }
-
         const hints: Record<string, { js: string[]; css: string[] }> = {}
-        for (const [route, names] of Object.entries(SCENE_ENTRY_CHUNKS)) hints[route] = closure(names)
+        for (const [route, names] of Object.entries(SCENE_ENTRY_CHUNKS)) {
+          hints[route] = staticClosure(bundle as never, base, names)
+        }
         if (!Object.values(hints).some((h) => h.js.length || h.css.length)) return html
 
         const script = `(function(){try{
@@ -465,7 +556,7 @@ function openWithAPlate(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), scenePreloadHints(), routeStylesheets(), openWithAPlate()],
+  plugins: [react(), scenePreloadHints(), redirectRouteHints(), routeStylesheets(), openWithAPlate()],
   build: {
     target: ['es2020', 'safari15'],
     cssTarget: 'safari15',

@@ -116,6 +116,22 @@
             })(wanted[i])
           }
           window.__lsatBootstrap = pending
+          // `/` is the one path whose screen is not in the url: it redirects to
+          // whatever `next_route` reports, so nothing — not `routeForPath`, not
+          // the preload scanner — can name that chunk from the document alone,
+          // and it ends up requested only after the entry and framework chunks
+          // have run and the redirect has committed. The answer is not late,
+          // though; it is the response above, and it lands ~800 ms before the
+          // bundle would have asked. So the destination is hinted the moment
+          // the server names it. This is not the guess `routes.tsx` rules out:
+          // a reply that has not arrived hints nothing.
+          if (path === '/' && pending['/me']) {
+            pending['/me'].then(function (r) {
+              if (!r || !window.__lsatHintRoute) return
+              var to = r.ok && r.body && r.body.user ? r.body.user.next_route : !r.ok ? '/login' : null
+              if (to) window.__lsatHintRoute(to)
+            })
+          }
         } catch (e) { /* a missing prefetch only costs the old behaviour */ }
       })()
     </script>
