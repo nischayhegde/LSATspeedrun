@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 from collections import defaultdict
 
 from sqlalchemy.orm import joinedload
@@ -265,13 +266,44 @@ def _stable_fraction(value: str) -> float:
     return int.from_bytes(digest[:8], "big") / float(2**64 - 1)
 
 
+# A comparative reading set is two passages printed together under one heading,
+# and this bank does not label them anywhere: every Reading Comprehension
+# passage carries the literal `passage_type` "Reading Comprehension", and no
+# `question_type` has ever contained the word "comparative". Asking the
+# metadata therefore returned False on all 2,366 Reading Comprehension
+# questions, which is why `comparative_matrix` sat in the catalogue with a gate
+# built for it and was never once offered to anybody.
+#
+# The format is instead read off the two things that do carry it. The headings
+# are matched case-sensitively and with the body of Passage A required between
+# them, because "passage a" appears in ordinary prose ("in this passage a
+# reader will find") and a lone capitalised mention is not a set.
+_COMPARATIVE_HEADINGS = re.compile(r"Passage A\b[\s\S]{100,}?Passage B\b")
+# Twelve questions sit on sets whose stored text lost its headings, and their
+# stems still say what the passage no longer does.
+_COMPARATIVE_STEM = re.compile(r"\bboth passages\b|\bthe two passages\b", re.IGNORECASE)
+_COMPARATIVE_STEM_NAMED = re.compile(r"\bPassage [AB]\b")
+
+
+def is_comparative(question: Question) -> bool:
+    """Whether this question belongs to a comparative reading set."""
+    if "compar" in (question.question_type or "").lower():
+        return True
+    if question.passage and "compar" in (question.passage.passage_type or "").lower():
+        return True
+    if question.passage and _COMPARATIVE_HEADINGS.search(question.passage.canonical_text or ""):
+        return True
+    stem = question.stem or ""
+    return bool(_COMPARATIVE_STEM.search(stem) or _COMPARATIVE_STEM_NAMED.search(stem))
+
+
 def _candidate_keys(question: Question) -> list[str]:
     question_type = (question.question_type or "").lower()
     stem = (question.stem or "").lower()
     if question.section == "Reading Comprehension":
         passage_text = (question.passage.canonical_text or "").lower() if question.passage else ""
         candidates = ["passage_map", "textual_proof"]
-        if "compar" in question_type or (question.passage and "compar" in (question.passage.passage_type or "").lower()):
+        if is_comparative(question):
             candidates.insert(0, "comparative_matrix")
         if any(token in f"{question_type} {stem}" for token in ("purpose", "function", "organization", "method")):
             candidates.insert(0, "paragraph_function")
