@@ -21,6 +21,7 @@ import {
   type OfficeStaffStation,
   type OfficeVisualZone,
 } from './office-manifest'
+import { OfficeCastBatch } from './office-cast-batch'
 import { buildOfficeWindowView } from './office-window-view'
 import { IllustratedRenderPass } from './render-style'
 import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
@@ -2762,6 +2763,21 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       buildDepartment(station, seats, occupants.get(station) ?? [])
     })
 
+    // The cast, drawn from shared batches rather than part by part. See
+    // `office-cast-batch`: the bodies stay in the graph and stay animated, and
+    // what the renderer is handed is one submission per shape-and-finish pair
+    // across the whole floor instead of sixty per person.
+    // `officeCastBatch=0` builds the same floor part by part, so the claim that
+    // the batches are the same picture in fewer submissions can be checked as a
+    // pixel diff of one build against itself rather than of one commit against
+    // another.
+    const castBatch = staffRigs.length && devQuery?.get('officeCastBatch') !== '0'
+      ? new OfficeCastBatch(staffRigs.map((entry) => entry.rig.root))
+      : null
+    // Added to the scene rather than to the room, so the instance transforms it
+    // holds are the world matrices the actors already computed.
+    if (castBatch) scene.add(castBatch.group)
+
     // Overhead pools, one per band rather than one per department.
     //
     // Every light is evaluated for every lit fragment in the room, so this is
@@ -3336,6 +3352,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
      * An empty floor is empty of the benches, chairs and departmental fittings
      * the same purchase set buys, so that subtraction charged sixteen people
      * for sixteen workstations as well. This walks the actors.
+     *
+     * `parts` is what the art authors and `draws` is what the renderer is
+     * asked for. They used to be the same number and are not any more, and
+     * keeping both is what makes the batching claim checkable.
      */
     const castCensus = import.meta.env.DEV
       ? () => {
@@ -3358,7 +3378,11 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
           reduced: staffRigs.length - full,
           parts,
           triangles,
+          draws: castBatch ? castBatch.batchCount : parts,
           partsPerBody: staffRigs.length ? Number((parts / staffRigs.length).toFixed(2)) : 0,
+          drawsPerBody: staffRigs.length
+            ? Number(((castBatch ? castBatch.batchCount : parts) / staffRigs.length).toFixed(2))
+            : 0,
           trianglesPerBody: staffRigs.length ? Math.round(triangles / staffRigs.length) : 0,
         }
       }
@@ -3552,8 +3576,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // cross-origin isolated, which is coarse against a sub-millisecond section,
     // so the harness accumulates over several hundred frames and reads the
     // mean, where the quantisation averages out. Compiled out of production.
-    type FrameBucket = 'humanoid' | 'render'
-    const frameProfile = { humanoid: 0, render: 0, total: 0, frames: 0 }
+    type FrameBucket = 'humanoid' | 'cast' | 'render'
+    const frameProfile = { humanoid: 0, cast: 0, render: 0, total: 0, frames: 0 }
     let profiling = false
     const timed = import.meta.env.DEV
       ? <T,>(bucket: FrameBucket, run: () => T): T => {
@@ -3568,7 +3592,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       ;(window as unknown as { __officeFrameProfile?: unknown }).__officeFrameProfile = {
         start: () => {
           profiling = true
-          frameProfile.humanoid = 0; frameProfile.render = 0
+          frameProfile.humanoid = 0; frameProfile.cast = 0; frameProfile.render = 0
           frameProfile.total = 0; frameProfile.frames = 0
         },
         stop: () => { profiling = false; return { ...frameProfile } },
@@ -3877,6 +3901,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         const blink = reduced || Math.sin(elapsed * .58 + phase * 2.1) <= .996 ? 1 : .14
         rig.eyes.forEach((eye) => { eye.scale.y = blink })
       })
+      // After the clips and the blink, before the frame is drawn: the batches
+      // are the only thing the renderer sees of the cast, so a pose that has
+      // not been copied into them has not happened.
+      if (castBatch) timed('cast', () => castBatch.sync())
       dust.rotation.y = elapsed * .009
 
       rain.visible = storm
@@ -3981,6 +4009,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       // uncached keeps its clips and bindings alive after the scene is gone.
       staffHumanoids.forEach((humanoid) => humanoid.dispose())
       activeClientActor?.humanoid.dispose()
+      // The batches own their instance buffers and their neutralised material
+      // copies. The geometry underneath is the character cache's and outlives
+      // every floor, which is what the traversal below already respects.
+      castBatch?.dispose()
       if (frame) window.cancelAnimationFrame(frame)
       observer.disconnect()
       surfaceObserver.disconnect()

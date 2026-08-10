@@ -230,12 +230,19 @@ try {
       frames: profile.frames,
       frameMs: Number((profile.total / profile.frames).toFixed(3)),
       humanoidMs: Number((profile.humanoid / profile.frames).toFixed(3)),
+      // What copying the cast's pose into its batches costs, kept apart from
+      // the skeletons that produced the pose.
+      castMs: Number(((profile.cast ?? 0) / profile.frames).toFixed(3)),
       renderMs: Number((profile.render / profile.frames).toFixed(3)),
     }
   }
 
   for (const { tier, floor, roster, mode } of specs) {
-    const query = `officeTier=${tier}&officeFloor=${floor}&${rosterQuery(roster)}`
+    // `OFFICE_EXTRA_QUERY` carries whatever dev switch a run is arguing about —
+    // `officeCastBatch=0`, for one — without teaching this script the name of
+    // every one of them.
+    const extra = process.env.OFFICE_EXTRA_QUERY ? `&${process.env.OFFICE_EXTRA_QUERY}` : ''
+    const query = `officeTier=${tier}&officeFloor=${floor}&${rosterQuery(roster)}${extra}`
     await page.goto(`${baseUrl}/office?${query}`, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('.office-three-canvas.is-ready', { timeout: 90000 })
     await dismissCutscenes()
@@ -273,7 +280,8 @@ try {
       return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
     })
     if (!box) throw new Error(`no canvas for tier ${tier} ${floor}`)
-    const label = roster === 'all' ? 'full' : roster === 'none' ? 'empty' : `${roster.split('+').length}-owned`
+    const label = (roster === 'all' ? 'full' : roster === 'none' ? 'empty' : `${roster.split('+').length}-owned`)
+      + (process.env.OFFICE_SHOT_SUFFIX ? `-${process.env.OFFICE_SHOT_SUFFIX}` : '')
     await page.screenshot({ timeout: 120000, path: `${outDir}/tier-${String(tier).padStart(2, '0')}-${floor}-${label}.png`, clip: box })
   }
 
@@ -337,7 +345,7 @@ try {
       `tier ${String(entry.tier).padStart(2)} ${entry.floor.padEnd(9)} ${String(entry.seated).padStart(2)} seated  `
       + `tris ${String(scene.triangles ?? '?').padStart(7)}  draws ${String(scene.calls ?? '?').padStart(5)}  `
       + `geo ${String(scene.geometries ?? '?').padStart(4)}  build ${String(entry.buildMs).padStart(7)} ms  `
-      + `frame ${String(cost.frameMs ?? '-').padStart(7)} ms (skel ${String(cost.humanoidMs ?? '-').padStart(6)})\n`,
+      + `frame ${String(cost.frameMs ?? '-').padStart(7)} ms (skel ${String(cost.humanoidMs ?? '-').padStart(6)}, batch ${String(cost.castMs ?? '-').padStart(6)})\n`,
     )
     const missing = entry.directory.map((floor) => `${floor.name}:${floor.seated}${floor.current ? '*' : ''}`).join('  ')
     if (missing) process.stdout.write(`         directory  ${missing}\n`)
