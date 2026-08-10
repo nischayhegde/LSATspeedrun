@@ -97,6 +97,7 @@ function probe(settings) {
 
   const crossings = crowd.crossings ?? []
   const conflicts = crowd.conflicts ?? []
+  const ways = crowd.ways ?? []
   const audit = {
     crossings: crossings.length,
     kerbside: 0,
@@ -120,6 +121,20 @@ function probe(settings) {
     kerbInLane: [],
     kerbInLaneCount: 0,
     /*
+     * The `Crowd.land` lead, stated structurally.
+     *
+     * `land` picks uniformly among a crossing's destination ends, while
+     * `pickCrossing` only discourages a link when *every* one of them is
+     * obstructed. So a corner where good pavement meets pavement with a building
+     * on it keeps full weight, and a share of the people who take it are set
+     * down inside the building. That only bites where a single corner offers both
+     * kinds of end, so counting those corners settles whether the lead is worth
+     * acting on at all.
+     */
+    mixedCorners: 0,
+    obstructedOnly: 0,
+    cleanOnly: 0,
+    /*
      * The same test against the body rather than against the point. A kerb
      * fifteen centimetres outside the kerb line still puts most of a walker's
      * shoulders over it, and the containment test that counts these frames is
@@ -135,6 +150,14 @@ function probe(settings) {
   for (let link = 0; link < crossings.length; link += 1) {
     const crossing = crossings[link]
     if (crossing.kerbside) audit.kerbside += 1
+    {
+      let obstructed = 0
+      for (const code of crossing.toEnds) if (ways[code >> 1]?.obstructed) obstructed += 1
+      if (!crossing.toEnds.length) void 0
+      else if (obstructed === crossing.toEnds.length) audit.obstructedOnly += 1
+      else if (obstructed === 0) audit.cleanOnly += 1
+      else audit.mixedCorners += 1
+    }
     const found = conflicts[link] ?? []
     if (found.length) audit.withConflicts += 1
     for (const conflict of found) {
@@ -189,7 +212,6 @@ function probe(settings) {
    * rather than down the centreline, since the band is where people actually
    * stand and it is not centred on the polyline.
    */
-  const ways = crowd.ways ?? []
   const pavement = { samples: 0, inLane: 0, bodyInLane: 0, sites: {}, worst: [] }
   for (let index = 0; index < ways.length; index += 1) {
     const way = ways[index]
@@ -419,6 +441,30 @@ function probe(settings) {
   }
   restore.push(() => { delete crowd.gapIsSafe })
 
+  /*
+   * Where `land` actually sets people down.
+   *
+   * The structural count above says how many corners could go wrong; this says
+   * how often one did. A landing only counts against `land` if the corner it
+   * chose from had a clean end available and it took an obstructed one anyway,
+   * which is the whole of the proposed weighting change.
+   */
+  const landings = { total: 0, ontoObstructed: 0, avoidable: 0, kerbside: 0 }
+  const realLand = Object.getPrototypeOf(crowd).land
+  crowd.land = function wrapped(walker, link) {
+    const crossing = crossings[link]
+    const ends = crossing?.toEnds ?? []
+    const clean = ends.filter((code) => !ways[code >> 1]?.obstructed).length
+    realLand.call(this, walker, link)
+    landings.total += 1
+    if (crossing?.kerbside) landings.kerbside += 1
+    if (ways[walker.way]?.obstructed) {
+      landings.ontoObstructed += 1
+      if (clean > 0) landings.avoidable += 1
+    }
+  }
+  restore.push(() => { delete crowd.land })
+
   // The walker body, fixed for the run rather than remeasured per frame: this
   // probe is asking who was at fault, and a threshold that breathes with the
   // crowd's arm poses makes two hits incomparable.
@@ -541,6 +587,7 @@ function probe(settings) {
     network: crowd.networkReport ? crowd.networkReport() : null,
     audit,
     pavement,
+    landings,
     hitFrames,
     hitCount: Object.values(sites).reduce((sum, n) => sum + n, 0),
     sites,
@@ -581,6 +628,14 @@ try {
       kerbInLane: found.audit?.kerbInLaneCount,
       kerbBodyInLane: found.audit?.kerbBodyInLaneCount,
       conflictAtEnd: found.audit?.conflictAtEnd,
+    }))
+    console.log('   land:', JSON.stringify({
+      corners: {
+        mixed: found.audit?.mixedCorners,
+        obstructedOnly: found.audit?.obstructedOnly,
+        cleanOnly: found.audit?.cleanOnly,
+      },
+      ...found.landings,
     }))
     console.log('   pavement:', JSON.stringify({
       samples: found.pavement?.samples,
