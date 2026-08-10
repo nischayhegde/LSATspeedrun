@@ -20,7 +20,18 @@ try {
       window.__mapScene.world.traverse((child) => {
         if (child.userData?.treesOffPavement) trees.push(child.userData.treesOffPavement)
       })
+      // `siteOnPlan`'s log: one row per tier office and rival compound, saying
+      // whether the plan had free ground for it and how far it had to look.
+      const siting = (data.landmarkSiting ?? [])
       return {
+        siting: {
+          parcels: siting.length,
+          onAsked: siting.filter((row) => row.cleared && row.moved === 0).length,
+          resited: siting.filter((row) => row.cleared && row.moved > 0).length,
+          stuck: siting.filter((row) => !row.cleared).map((row) => row.label),
+          furthest: siting.reduce((most, row) => Math.max(most, row.moved), 0),
+          rows: siting.map((row) => `${row.label} ${row.cleared ? row.moved.toFixed(2) : 'STUCK'} @ ${row.x.toFixed(2)},${row.z.toFixed(2)}`),
+        },
         authored: data.authoredClearance ?? null,
         trees: trees.reduce(
           (total, row) => ({

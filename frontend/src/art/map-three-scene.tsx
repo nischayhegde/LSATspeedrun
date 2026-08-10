@@ -707,24 +707,7 @@ function addTreeField(root: THREE.Group, records: TreeRecord[]) {
    * lay the pavements against, so the two passes cannot disagree about where
    * the paving is.
    */
-  const walked: ClearanceCorridor[] = []
-  for (const way of roadWays(root)) {
-    if ((way.kind ?? 'road') === 'water') continue
-    walked.push({
-      points: way.points,
-      closed: way.closed,
-      halfWidth: (way.width ?? 1.5) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM,
-      label: 'walked',
-    })
-  }
-  for (const way of footWays(root)) {
-    walked.push({
-      points: way.points,
-      closed: way.closed,
-      halfWidth: (way.halfWidth ?? CROWD_FOOTWAY_HALF) + WALKER_HALF_BEAM,
-      label: 'walked',
-    })
-  }
+  const walked = pedestrianGround(root)
   if (walked.length) kept = treesOffPavement(root, kept, prepareClearance(walked))
   root.add(buildInstancedTreeField(kept))
 }
@@ -765,6 +748,168 @@ function treesOffPavement(owner: THREE.Group, records: TreeRecord[], pavements: 
   running.moved += moved
   running.felled += felled
   return kept
+}
+
+/**
+ * Every piece of ground the finished plan lets a person stand on.
+ *
+ * The carriageways with their kerb-to-pavement offset and paved half — the two
+ * numbers `planFootways` lays against, so this cannot disagree with the network
+ * that is built later — plus the pavements the district recorded directly, plus
+ * the walker's own beam. Anything that overlaps this is standing on the
+ * pedestrian network whether or not it has been declared to the router.
+ */
+function pedestrianGround(root: THREE.Group): ClearanceCorridor[] {
+  const ground: ClearanceCorridor[] = []
+  for (const way of roadWays(root)) {
+    if ((way.kind ?? 'road') === 'water') continue
+    ground.push({
+      points: way.points,
+      closed: way.closed,
+      halfWidth: (way.width ?? 1.5) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM,
+      label: 'walked',
+    })
+  }
+  for (const way of footWays(root)) {
+    ground.push({
+      points: way.points,
+      closed: way.closed,
+      halfWidth: (way.halfWidth ?? CROWD_FOOTWAY_HALF) + WALKER_HALF_BEAM,
+      label: 'walked',
+    })
+  }
+  return ground
+}
+
+/**
+ * The district's planned buildings, as ground that is already spoken for.
+ *
+ * A rectangle is carried as the corridor along its own longer axis with the
+ * shorter half-extent for a width, which is the stadium that contains it: a
+ * little generous at the four corners and exact everywhere else. That is the
+ * right way round for a keep-out, and it means the same segment field can hold
+ * the pavements and the terraces at once.
+ *
+ * `buildingAudit` is what `renderPlannedBuildings` actually built rather than a
+ * reconstruction from instance matrices, so this sees the instanced rows that
+ * `crowdObstacles` cannot — which is the difference between a landmark that
+ * moves off a pavement and one that moves off a pavement into a cottage.
+ */
+function plannedGround(root: THREE.Group): ClearanceCorridor[] {
+  const audit = (root.userData.buildingAudit ?? []) as Array<
+    { x: number; z: number; width: number; depth: number; rotationY: number }
+  >
+  return audit.map((record) => {
+    const halfWidth = record.width / 2 + ARTICULATION
+    const halfDepth = record.depth / 2 + ARTICULATION
+    const alongX = halfWidth >= halfDepth
+    // Local +x is world (cos, -sin) and local +z is world (sin, cos), matching
+    // `support` in `map-clearance`.
+    const dirX = alongX ? Math.cos(record.rotationY) : Math.sin(record.rotationY)
+    const dirZ = alongX ? -Math.sin(record.rotationY) : Math.cos(record.rotationY)
+    const reach = Math.max(Math.abs(halfWidth - halfDepth), 1e-3)
+    return {
+      points: [
+        [record.x - dirX * reach, record.z - dirZ * reach],
+        [record.x + dirX * reach, record.z + dirZ * reach],
+      ] as XZ[],
+      halfWidth: Math.min(halfWidth, halfDepth),
+      label: 'planned',
+    }
+  })
+}
+
+/** Where a landmark ended up, and how far the plan had to move it to get there. */
+type PlanSite = { x: number; z: number; moved: number; cleared: boolean }
+
+/**
+ * Site an authored landmark on the street plan instead of on its own table.
+ *
+ * The tier offices and the rival compounds are the only buildings in the game
+ * whose coordinates are written down rather than planned: a table names a
+ * position, the district lays its streets, and whichever of the two happens to
+ * be there wins. Sixteen of the seventeen lost, and stood on a pavement. That
+ * is why every improvement to a town plan measured worse than leaving it alone
+ * — widening a pavement is only worth doing if there is not a compound on it,
+ * and giving Ashgate's kerbs their width back put a walker inside a rival firm
+ * for 562 frames of 900.
+ *
+ * So the table stops dictating and starts asking. The authored position is
+ * still the request, and it is still honoured whenever the plan has left that
+ * ground free; when it has not, the nearest free ground wins, searched outwards
+ * so the landmark moves as little as the plan allows.
+ *
+ * Two properties make this structural rather than another nudge:
+ *
+ * - The footprint is the *declared* one, oriented, so the test the siting
+ *   passes is the same test the router and the collision grid apply later. A
+ *   site that clears here cannot be found overlapping there.
+ * - `ground` holds the terraces as well as the pavements, so free ground means
+ *   free of both. That is what the earlier escape passes could not do: they
+ *   moved a compound out of a lane using `crowdObstacles`, which cannot see an
+ *   instanced row, and had no way to tell that the ground they moved it onto
+ *   was a cottage.
+ *
+ * An exhaustive ring rather than a gradient escape, for the same reason a grid
+ * search beats a gradient anywhere: two pavements meeting at a corner give the
+ * gradient a local minimum it cannot leave, which is why the escape pass
+ * reported sixteen of seventeen parcels with no clear ground within 3.4 m.
+ */
+function siteOnPlan(
+  ground: ClearanceField,
+  x: number,
+  z: number,
+  hx: number,
+  hz: number,
+  rotationY: number,
+  /**
+   * How far the landmark may look, and in which direction it prefers to look.
+   *
+   * A headquarters is set back from a named stretch of route, so for it the
+   * two directions are not alike: moving along the setback is a deeper or
+   * shallower forecourt on the same street, and moving across it is a
+   * different address. `lateralCost` is what says so, and it is the whole
+   * reason this is not a plain ring search — the nearest free ground in metres
+   * is regularly the wrong ground in town-planning terms.
+   */
+  reach: { alongX: number; alongZ: number; along: number; lateral: number; lateralCost: number },
+): PlanSite {
+  const footprint = { hx, hz, cos: Math.cos(rotationY), sin: Math.sin(rotationY) }
+  const radius = Math.hypot(hx, hz)
+  const free = (atX: number, atZ: number) => !clearanceIntrusion(ground, atX, atZ, radius, footprint)
+  if (free(x, z)) return { x, z, moved: 0, cleared: true }
+  // Fine enough to find the gap between two village lanes, which is the
+  // tightest thing being searched: The Circuit's alleys are .52 apart at their
+  // closest and the free strip between their pavements is about a third of a
+  // unit wide.
+  const step = .15
+  const candidates: Array<{ along: number; lateral: number; cost: number }> = []
+  for (let a = -Math.round(reach.along / step); a <= Math.round(reach.along / step); a += 1) {
+    for (let l = -Math.round(reach.lateral / step); l <= Math.round(reach.lateral / step); l += 1) {
+      if (!a && !l) continue
+      candidates.push({
+        along: a * step,
+        lateral: l * step,
+        cost: Math.abs(a * step) + Math.abs(l * step) * reach.lateralCost,
+      })
+    }
+  }
+  candidates.sort((left, right) => left.cost - right.cost)
+  const acrossX = -reach.alongZ
+  const acrossZ = reach.alongX
+  for (const candidate of candidates) {
+    const atX = x + reach.alongX * candidate.along + acrossX * candidate.lateral
+    const atZ = z + reach.alongZ * candidate.along + acrossZ * candidate.lateral
+    if (free(atX, atZ)) return { x: atX, z: atZ, moved: Math.hypot(atX - x, atZ - z), cleared: true }
+  }
+  return { x, z, moved: 0, cleared: false }
+}
+
+/** Book one siting decision for `tools/map-qa/authored.mjs`. */
+function recordSiting(root: THREE.Group, label: string, site: PlanSite) {
+  const log = (root.userData.landmarkSiting ??= []) as Array<PlanSite & { label: string }>
+  log.push({ ...site, label })
+  return site
 }
 
 function footWays(root: THREE.Group) {
@@ -6405,9 +6550,12 @@ function decorateLevelParcel(
   roadPoint: THREE.Vector3,
   tangent: THREE.Vector3,
   definition: ArcDefinition,
+  // The parcel's frontage, handed down rather than re-derived: the site the
+  // plan offered may not lie on the perpendicular the table asked for, and the
+  // furniture has to square up with the building rather than with the offset.
+  facing: number,
 ) {
   const towardRoad = roadPoint.clone().sub(site).setY(0).normalize()
-  const facing = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
   const addAt = (object: THREE.Object3D, lateral: number, depth: number, rotation = facing) => {
     object.position.copy(site).add(tangent.clone().multiplyScalar(lateral)).add(towardRoad.clone().multiplyScalar(depth))
     object.position.y = .04
@@ -7670,6 +7818,15 @@ export function MapThreeScene({
 
     const anchors = new Map<string, THREE.Vector3>()
     const travelAnchors = new Map<string, THREE.Vector3>()
+    /*
+     * The finished street plan, as the ground the authored landmarks have to
+     * fit into. Built here rather than beside the vehicle clearance field
+     * below because the tier offices are placed first and they are half the
+     * problem, and built from the district's own records so a landmark is
+     * tested against the pavements that will actually exist rather than
+     * against a guess at them. See `siteOnPlan`.
+     */
+    const planGround = prepareClearance([...pedestrianGround(world), ...plannedGround(world)])
     const tiers = points.filter((point): point is MapSceneTier => point.kind === 'tier')
     const rivals = points.filter((point): point is MapSceneRival => point.kind === 'rival')
     const events = points.filter((point): point is MapSceneEvent => point.kind === 'event')
@@ -7687,7 +7844,39 @@ export function MapThreeScene({
       }
       side.multiplyScalar(authoredSides[region][index] ?? 1)
       const setback: Record<MapRegionKey, number> = { city: 2.8, nation: 3.05, ocean: 3.25, continent: 3.05, orbit: 3.65 }
-      const site = roadPoint.clone().add(side.clone().multiplyScalar(setback[region]))
+      const asked = roadPoint.clone().add(side.clone().multiplyScalar(setback[region]))
+      /*
+       * The setback the table asks for is a request, not an instruction: it is
+       * the distance at which a headquarters *would* front this stretch of
+       * route if the district had left the ground free, and on three districts
+       * in five it has not. The declared plinth is what has to fit — the same
+       * half-extents `createLevelBuilding` marks solid — turned to face the
+       * road exactly as the finished building will be, so the rectangle the
+       * siting clears is the rectangle the router later sees.
+       *
+       * The facing is taken from the asked-for site rather than from the one
+       * the search returns, which keeps the whole parcel — plaza, threshold,
+       * flanking pylons, connector — square to the street the plan set it back
+       * from, instead of skewing it a few degrees for every unit it slides.
+       */
+      const frontage = Math.atan2(roadPoint.x - asked.x, roadPoint.z - asked.z)
+      const plinthHalf = (2.25 + Math.min(1.7, point.data.tier * .105) + .65) / 2
+      const planned = recordSiting(
+        world,
+        `tier-${point.key}`,
+        siteOnPlan(planGround, asked.x, asked.z, plinthHalf, 1.275, frontage, {
+          // The setback's own direction: a deeper forecourt on the same street
+          // is a cheap correction, a slide up the road is an expensive one, and
+          // moving towards the route is bounded by the carriageway itself,
+          // which is in `planGround` and so needs no separate limit.
+          alongX: side.x,
+          alongZ: side.z,
+          along: 2.4,
+          lateral: 1.2,
+          lateralCost: 2.2,
+        }),
+      )
+      const site = new THREE.Vector3(planned.x, asked.y, planned.z)
       clearAuthoredParcel(world, site, region === 'orbit' ? 2.5 : region === 'ocean' ? 2.2 : 2.05)
       if (region === 'ocean') {
         const island = createIslandLandform(2.1, 410 + point.data.tier * 23, index % 2 ? 0x66725e : 0x707666)
@@ -7696,7 +7885,7 @@ export function MapThreeScene({
         const pier = createPier(2.75, .56)
         pier.position.copy(site).lerp(roadPoint, .52)
         pier.position.y = -.01
-        pier.rotation.y = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
+        pier.rotation.y = frontage
         world.add(pier)
       } else if (region === 'orbit') {
         const stationParcel = cylinder(1.92, .24, material(0x34454c, .48, .38), [site.x, -.02, site.z], 32)
@@ -7724,7 +7913,7 @@ export function MapThreeScene({
         const plazaColor = point.state === 'complete' ? 0x688779 : point.state === 'current' ? definition.accent : point.state === 'next' ? 0x9c8f70 : 0x73746e
         const plazaSize: [number, number, number] = region === 'continent' ? [4.25, .14, 2.7] : region === 'nation' ? [3.8, .14, 2.5] : [3.45, .14, 2.4]
         const plaza = box(plazaSize, material(plazaColor, .9), [site.x, .06, site.z])
-        plaza.rotation.y = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
+        plaza.rotation.y = frontage
         world.add(plaza)
         const threshold = box([1.22, .035, .25], material(point.state === 'current' ? 0xe2c270 : 0xb3a57e, .55, .22), [site.x, .148, site.z])
         threshold.rotation.y = plaza.rotation.y
@@ -7734,14 +7923,13 @@ export function MapThreeScene({
         // A mirrored pair of markers on the approach axis is what actually
         // reads as "formal" at the counsel's own eye level, independent of
         // whatever the background skyline is doing.
-        const facing = plaza.rotation.y
-        const lateral = new THREE.Vector3(Math.cos(facing), 0, -Math.sin(facing))
+        const lateral = new THREE.Vector3(Math.cos(frontage), 0, -Math.sin(frontage))
         if (region === 'continent') {
           for (const flankSide of [-1, 1]) {
             const pylon = createCivicPylon(.92, definition.stone, definition.accent)
             pylon.position.copy(site).add(lateral.clone().multiplyScalar(flankSide * (plazaSize[0] * .5 + .55)))
             pylon.position.y = .02
-            pylon.rotation.y = facing
+            pylon.rotation.y = frontage
             world.add(pylon)
           }
         } else if (region === 'city') {
@@ -7759,9 +7947,9 @@ export function MapThreeScene({
       destinationMarker.userData.destinationBaseY = .02
       group.add(destinationMarker)
       group.position.copy(site)
-      group.rotation.y = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
+      group.rotation.y = frontage
       world.add(group)
-      decorateLevelParcel(world, region, point, index, site, roadPoint, tangent, definition)
+      decorateLevelParcel(world, region, point, index, site, roadPoint, tangent, definition, frontage)
       anchors.set(point.key, new THREE.Vector3(site.x, .12, site.z))
       const travelAnchor = roadPoint.clone().add(side.clone().multiplyScalar(region === 'ocean' || region === 'orbit' ? .5 : .32)).setY(.12)
       travelAnchors.set(point.key, travelAnchor)
@@ -7770,7 +7958,7 @@ export function MapThreeScene({
         const towardRoad = roadPoint.clone().sub(site).setY(0).normalize()
         flag.position.copy(site).add(towardRoad.multiplyScalar(region === 'ocean' ? 1.35 : 1.18)).add(tangent.clone().multiplyScalar(1.08))
         flag.position.y = region === 'ocean' ? .16 : .12
-        flag.rotation.y = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
+        flag.rotation.y = frontage
         world.add(flag)
       }
       if (region !== 'ocean' && region !== 'orbit') for (const offset of [-1.7, 1.7]) {
@@ -7859,14 +8047,33 @@ export function MapThreeScene({
       // remaining contact. Correcting the site here rather than nudging the
       // finished building keeps the compound, its emphasis ring, its travel anchor
       // and its selection collider all at the same place.
-      const site = escapeCorridors(clearanceField, authoredX, authoredZ, 1.55, 2.2)
+      // Which way the compound faces is fixed by which side of the route it is
+      // on, and does not depend on where the plan puts it, so the footprint the
+      // siting has to fit is known before the site is.
+      const rivalFacing = authoredZ < 0 ? 0 : Math.PI
+      const site = recordSiting(
+        world,
+        `rival-${point.key}`,
+        siteOnPlan(planGround, authoredX, authoredZ, (2.25 + (index % 2) * .45 + .5) / 2, 1.075, rivalFacing, {
+          // A compound is not set back from anything — it is a firm's own
+          // premises somewhere out in the district — so both directions are
+          // equally good and the search is a plain nearest-free-ground. It has
+          // to look further than a headquarters does because two of the four
+          // on The Circuit were dropped inside a village.
+          alongX: 0,
+          alongZ: 1,
+          along: 5,
+          lateral: 5,
+          lateralCost: 1,
+        }),
+      )
       const x = site.x
       const z = site.z
       clearAuthoredParcel(world, new THREE.Vector3(x, 0, z), 1.85)
       groundMarker(x, z, 1.95, 620 + index * 29)
       const building = createRivalBuilding(point, index, definition)
       building.position.set(x, .04, z)
-      building.rotation.y = z < 0 ? 0 : Math.PI
+      building.rotation.y = rivalFacing
       world.add(building)
       const ring = emphasisRing('rivals', point.key, point.data.owned ? 0x6fb29c : (point.data.discount_bps ?? 0) > 0 ? 0xd8a94f : 0xb36f60, 1.45)
       ring.position.x = x; ring.position.z = z
