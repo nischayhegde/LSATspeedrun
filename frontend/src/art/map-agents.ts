@@ -1440,7 +1440,7 @@ export function planFootways(
   ways: FootwaySpec[],
   roads: CarriagewaySpec[],
   options: { setback?: number; minPiece?: number } = {},
-): { ways: FootwaySpec[]; cuts: number; unsliced: number } {
+): { ways: FootwaySpec[]; cuts: number; unsliced: number; pulled: number } {
   const setback = options.setback ?? KERB_SETBACK
   const minPiece = options.minPiece ?? MIN_PIECE
 
@@ -1461,9 +1461,35 @@ export function planFootways(
     }
   }
 
+  /*
+   * How far a point is inside the nearest carriageway's kerb, or zero.
+   *
+   * The cut above only fires where a pavement *crosses* a carriageway, which is
+   * the right test for a pavement running past a side street and the wrong one
+   * for a pavement that starts in the middle of a road and walks away from it.
+   * Nothing crosses, so nothing is cut, and the end sits in the carriageway.
+   * The Circuit's station lane is drawn from the turnpike it leaves, so its
+   * pavement began .64 inside the turnpike: the walkers waiting there to cross
+   * were standing near the crown of the road while they waited.
+   */
+  let widestHalf = 0
+  for (const bar of bars) if (bar.half > widestHalf) widestHalf = bar.half
+  /** Nearest kerb, signed: negative inside the carriageway. */
+  const kerbGap = (x: number, z: number) => {
+    let nearest = Number.POSITIVE_INFINITY
+    for (const bar of bars) {
+      const length = Math.hypot(bar.bx - bar.ax, bar.bz - bar.az)
+      const along = Math.max(0, Math.min(length, (x - bar.ax) * bar.ux + (z - bar.az) * bar.uz))
+      const gap = Math.hypot(x - (bar.ax + bar.ux * along), z - (bar.az + bar.uz * along)) - bar.half
+      if (gap < nearest) nearest = gap
+    }
+    return nearest
+  }
+
   const out: FootwaySpec[] = []
   let cuts = 0
   let unsliced = 0
+  let pulled = 0
   for (const way of ways) {
     const points = way.points
     if (points.length < 2) continue
@@ -1475,6 +1501,44 @@ export function planFootways(
     }
     const total = cumulative[cumulative.length - 1]
     if (total < 1e-3) continue
+
+    /*
+     * Walks an end of a piece off the carriageway it starts in.
+     *
+     * Bounded by the widest kerb plus the setback, because past that the point
+     * is not an end that overshot a junction but a pavement lying along a road,
+     * and shortening one of those from the end would eat the whole way a step
+     * at a time rather than fixing anything. Bounded below by `minPiece` for
+     * the reason the rest of this file keeps repeating: a pavement may be
+     * shortened, never abolished.
+     */
+    const pullOff = (from: number, to: number): [number, number] => {
+      const limit = widestHalf + setback + .05
+      const step = .05
+      const gapAt = (s: number) => {
+        const at = polylinePointAt(loop, cumulative, s, total)
+        return kerbGap(at[0], at[1])
+      }
+      let start = from
+      let stop = to
+      /*
+       * Triggered on being *inside* the carriageway and satisfied at the
+       * setback, rather than triggered at the setback. The ends the cut above
+       * produces are placed at `half + setback` measured along the pavement,
+       * which on a pavement meeting a street at an angle is nearer the kerb
+       * than that in a straight line — so a test that fired on anything within
+       * the setback would trim almost every piece in the district by a further
+       * metre and take a quarter of the Old Quarter's pavement with it.
+       */
+      if (gapAt(start) < 0) {
+        while (stop - start > minPiece && start - from < limit && gapAt(start) < setback) start += step
+      }
+      if (gapAt(stop) < 0) {
+        while (stop - start > minPiece && to - stop < limit && gapAt(stop) < setback) stop -= step
+      }
+      if (start !== from || stop !== to) pulled += 1
+      return [start, stop]
+    }
 
     const found: Array<{ s: number; half: number }> = []
     for (let index = 1; index < loop.length; index += 1) {
@@ -1498,7 +1562,14 @@ export function planFootways(
       }
     }
     if (!found.length) {
-      out.push(way)
+      // A closed way has no ends to pull off anything.
+      const [from, to] = closed ? [0, total] : pullOff(0, total)
+      if (from === 0 && to === total) out.push(way)
+      else {
+        const piece = subPolyline(loop, cumulative, from, to, total)
+        if (piece.length >= 2) out.push({ ...way, points: piece, closed: false })
+        else out.push(way)
+      }
       continue
     }
     found.sort((a, b) => a.s - b.s)
@@ -1551,12 +1622,13 @@ export function planFootways(
       out.push(way)
       continue
     }
-    for (const [from, to] of spans) {
+    for (const span of spans) {
+      const [from, to] = pullOff(span[0], span[1])
       const piece = subPolyline(loop, cumulative, from, to, total)
       if (piece.length >= 2) out.push({ points: piece, halfWidth: way.halfWidth, centre: way.centre, weight: way.weight, street: way.street, obstructed: way.obstructed })
     }
   }
-  return { ways: out, cuts, unsliced }
+  return { ways: out, cuts, unsliced, pulled }
 }
 
 /**
@@ -2292,25 +2364,27 @@ function projectOntoPolyline(points: XZ[], cumulative: number[], x: number, z: n
  * The part of a polyline between two arc lengths, with the original vertices in
  * between preserved. `wrap` lets a closed way be read past its own end.
  */
-function subPolyline(points: XZ[], cumulative: number[], from: number, to: number, wrap: number): XZ[] {
-  const at = (s: number): XZ => {
-    let target = s
-    if (target > cumulative[cumulative.length - 1]) target -= wrap
-    if (target < 0) target += wrap
-    let low = 0
-    let high = cumulative.length - 1
-    while (low < high - 1) {
-      const middle = (low + high) >> 1
-      if (cumulative[middle] <= target) low = middle
-      else high = middle
-    }
-    const span = cumulative[high] - cumulative[low]
-    const t = span > 1e-5 ? (target - cumulative[low]) / span : 0
-    return [
-      points[low][0] + (points[high][0] - points[low][0]) * t,
-      points[low][1] + (points[high][1] - points[low][1]) * t,
-    ]
+function polylinePointAt(points: XZ[], cumulative: number[], s: number, wrap: number): XZ {
+  let target = s
+  if (target > cumulative[cumulative.length - 1]) target -= wrap
+  if (target < 0) target += wrap
+  let low = 0
+  let high = cumulative.length - 1
+  while (low < high - 1) {
+    const middle = (low + high) >> 1
+    if (cumulative[middle] <= target) low = middle
+    else high = middle
   }
+  const span = cumulative[high] - cumulative[low]
+  const t = span > 1e-5 ? (target - cumulative[low]) / span : 0
+  return [
+    points[low][0] + (points[high][0] - points[low][0]) * t,
+    points[low][1] + (points[high][1] - points[low][1]) * t,
+  ]
+}
+
+function subPolyline(points: XZ[], cumulative: number[], from: number, to: number, wrap: number): XZ[] {
+  const at = (s: number): XZ => polylinePointAt(points, cumulative, s, wrap)
   const result: XZ[] = [at(from)]
   const push = (point: XZ) => {
     const last = result[result.length - 1]
