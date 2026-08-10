@@ -316,6 +316,54 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .office-inventory-list button small { margin-top: 3px; color: #9faeae; font-size: 9.5px; }
 .office-inventory-list button b { padding: 4px 6px; border: 1px solid rgba(223,195,125,.25); border-radius: 6px; color: #d9c27e; font-family: var(--font-pixel); font-size: 7.5px; letter-spacing: .08em; }
 .office-inventory-empty { margin: 9px; color: #a9b4b1; font-size: 11px; text-align: center; }.office-world-shell:has(.office-inventory.is-open) .world-mission-board { opacity: 0; transform: translateY(-8px) rotate(1deg); pointer-events: none; }.office-hotspot.is-active i { background: #fff2b6; box-shadow: 0 0 0 7px rgba(250,216,126,.11),0 0 20px rgba(250,216,126,.82); }@keyframes av-hotspot-breathe { 50% { transform: scale(1.16); opacity: .76; } }
+/* ---------------------------------------------------- building directory
+
+   The firm outgrew one room. Thirty people in a single scene measured 1,277
+   draw calls against 325 for the same room empty, and the visible floor could
+   not seat them in front of the furniture, so the staff are split over two
+   floors and only one is ever built. That makes this control the only route to
+   half the people the player has paid for, which is why it is drawn as a
+   fixture of the building — the brass plate beside a lift — rather than as a
+   view toggle.
+
+   It sits top-left because the inventory owns the bottom-right, and it stays
+   out of the middle third where the room is. On a phone it lies down into a
+   two-button bar across the top, losing the department line but keeping the
+   storey, the name and the headcount, which is everything needed to choose. */
+.office-floors { position: absolute; z-index: 90; left: 16px; top: 16px; width: min(268px, calc(100% - 32px)); padding: 9px 9px 7px; display: flex; flex-direction: column; gap: 5px; border: 1px solid rgba(223,195,125,.42); border-radius: 13px; background: rgba(8,17,27,.92); box-shadow: 0 14px 30px rgba(3,7,12,.46),inset 0 0 0 1px rgba(255,255,255,.035); backdrop-filter: blur(14px); }
+.office-floors-plate { margin: 0 0 1px 5px; color: #d9c27e; font-family: var(--font-pixel); font-size: 8.5px; font-weight: 850; letter-spacing: .19em; text-transform: uppercase; }
+.office-floors-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.office-floor-button { width: 100%; padding: 7px 9px 7px 7px; display: grid; grid-template-columns: 30px minmax(0,1fr) auto; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 9px; color: #eee5d0; background: transparent; text-align: left; cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+.office-floor-button:hover, .office-floor-button:focus-visible { outline: 0; border-color: rgba(223,195,125,.3); background: rgba(64,107,111,.23); transform: translateX(2px); }
+.office-floor-button.is-current { border-color: rgba(223,195,125,.5); background: radial-gradient(120% 160% at 0 0,rgba(50,104,110,.32),transparent 62%),rgba(19,36,48,.85); cursor: default; transform: none; }
+/* The storey number is the one piece of real brass in the panel. */
+.office-floor-storey { width: 30px; height: 30px; display: grid; place-items: center; border: 1.5px solid rgba(240,220,174,.5); border-radius: 50%; color: #2a1e06; background: linear-gradient(170deg,#f2d791,#c89b4b); font-family: var(--font-display); font-size: 14px; font-weight: 800; }
+.office-floor-button:not(.is-current) .office-floor-storey { border-color: rgba(223,195,125,.28); color: #d9c27e; background: rgba(223,195,125,.09); }
+.office-floor-text { min-width: 0; display: grid; }
+.office-floor-name { overflow: hidden; color: #f6f1e2; font-family: var(--font-display); font-size: 14px; font-weight: 640; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.office-floor-blurb { margin-top: 1px; overflow: hidden; color: #9faeae; font-size: 9.5px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.office-floor-count { display: grid; justify-items: center; gap: 1px; }
+.office-floor-count-number { color: #f5e4b9; font-family: var(--font-display); font-size: 15px; font-weight: 700; line-height: 1; }
+.office-floor-count-label { color: #7f9a99; font-family: var(--font-pixel); font-size: 7px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+@media (max-width: 640px) {
+  .office-floors { left: 10px; right: 10px; top: 10px; width: auto; padding: 7px; }
+  .office-floors-plate { display: none; }
+  .office-floors-list { flex-direction: row; }
+  .office-floors-list > li { flex: 1 1 0; min-width: 0; }
+  .office-floor-button { padding: 6px; grid-template-columns: 26px minmax(0,1fr); gap: 7px; transform: none; }
+  .office-floor-button:hover, .office-floor-button:focus-visible { transform: none; }
+  .office-floor-storey { width: 26px; height: 26px; font-size: 12.5px; }
+  .office-floor-name { font-size: 12px; }
+  .office-floor-blurb { display: none; }
+  /* The headcount moves under the name, because a third column at this width
+     squeezes the floor's name down to two characters and an ellipsis. */
+  .office-floor-count { grid-area: 2 / 2; justify-items: start; grid-auto-flow: column; align-items: baseline; gap: 4px; }
+  .office-floor-count-number { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .office-floor-button, .office-floor-button:hover, .office-floor-button:focus-visible { transform: none; transition: none; }
+}
+
 /* site markers (the > span reset guards against the legacy
    .empire-node > span rule in styles.css) */
 .empire-node.av-node > span.av-site,

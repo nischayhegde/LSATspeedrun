@@ -498,10 +498,17 @@ const GROUND_EDGE = 260
  */
 const ORBIT_SLACK = 2.2
 
-export function buildOfficeWindowView({ tier, openingWidth, openingHeight, standoff = 7, lateralOffset = 4.6, verticalOffset = 1.6 }: {
+export function buildOfficeWindowView({ tier, openingWidth, openingHeight, standoff = 7, lateralOffset = 4.6, verticalOffset = 1.6, storeyLift = 0 }: {
   tier: number
   openingWidth: number
   openingHeight: number
+  /**
+   * Extra metres of eye height, for a floor of the building above the one the
+   * tier ladder describes. The chambers floor uses it, and it is the cheapest
+   * honest cue that the lift went up: the street drops, the neighbours' roofs
+   * come into the frame, and more of the window is sky.
+   */
+  storeyLift?: number
   /** How far back the viewer normally stands from the glass. */
   standoff?: number
   /**
@@ -516,7 +523,7 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
 }): OfficeWindowView {
   const region = officeWindowRegionFor(tier)
   const look = LOOKS[region]
-  const eye = eyeHeightFor(tier)
+  const eye = eyeHeightFor(tier) + storeyLift
   const grade = -eye
   const overStreet = eye > STREET_LEVEL
 

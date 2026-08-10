@@ -6,7 +6,21 @@ import type { ActiveOfficeCase, CharacterGender, GameAsset } from '../types'
 import { clientCastSeed } from './assets'
 import { officeGroupEconomics } from './office-earnings'
 import { OfficeEarningsReadout, type OfficeReadoutTarget } from './office-earnings-readout'
-import { OFFICE_ASSET_MANIFEST, officeEnvironmentFor, officeLayoutFor, officeStaffStationFor, officeVisualFor, type OfficeStaffStation, type OfficeVisualZone } from './office-manifest'
+import {
+  OFFICE_ASSET_MANIFEST,
+  OFFICE_HIRE_ORDER,
+  officeAssetOnFloor,
+  officeDepartmentPlanFor,
+  officeEnvironmentFor,
+  officeFloorFor,
+  officeStaffLookFor,
+  officeStaffStationFor,
+  officeVisualFor,
+  type OfficeDepartmentBay,
+  type OfficeFloorKey,
+  type OfficeStaffStation,
+  type OfficeVisualZone,
+} from './office-manifest'
 import { buildOfficeWindowView } from './office-window-view'
 import { IllustratedRenderPass } from './render-style'
 import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
@@ -19,7 +33,14 @@ import {
   type HumanoidState,
 } from './rig'
 
-type OfficeThreeProps = { tier: number; ownedAssets: GameAsset[]; layoutKey?: string; activeCase?: ActiveOfficeCase | null }
+type OfficeThreeProps = {
+  tier: number
+  ownedAssets: GameAsset[]
+  layoutKey?: string
+  activeCase?: ActiveOfficeCase | null
+  /** Which floor of the building to build. Only one is ever resident. */
+  floor?: OfficeFloorKey
+}
 
 // The office is built from a few hundred primitives, and most of them are cut
 // to sizes fixed at authoring time: every key on a keyboard, every baluster on
@@ -100,6 +121,16 @@ const easeTo = (current: number, target: number, rate: number, dt: number, snap:
  * heading and no goal on it.
  */
 type OfficeStaffActor = {
+  /**
+   * Whose body this is.
+   *
+   * The debug surfaces used to recover this by index, on the assumption that
+   * the rigs were built in the same order as the shift list. Seating people by
+   * department broke that assumption silently: every probe kept reporting a
+   * name for each body and every name was the wrong one, which is a worse
+   * failure than crashing. The key travels with the actor now.
+   */
+  key: string
   rig: StylizedCounselRig
   actor: THREE.Group
   /** Skeletal driver for this character. The geometry in `rig` is exactly what
@@ -472,7 +503,7 @@ function addCapsuleBetween(
   return mesh
 }
 
-export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: OfficeThreeProps) {
+export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, floor = 'practice' }: OfficeThreeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   // What the earnings readout is currently showing, and where. The scene writes
   // it from the pointer handlers; the readout below renders it. Held in a ref as
@@ -491,6 +522,11 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    // A rebuild is a rebuild, and the commonest one is now a floor change. The
+    // canvas fades out while the old floor is torn down and back in when the
+    // new one has drawn, so a switch reads as a cut between two rooms rather
+    // than a flicker of the last frame of the one being left.
+    canvas.classList.remove('is-ready')
     // DEV-only inspection overrides. Physical-plausibility problems are
     // station-specific, and the stations a save happens to have hired are an
     // accident of play, so a harness needs to be able to ask for a tier and a
@@ -499,7 +535,6 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     const tierOverride = devQuery?.get('officeTier')
     const level = Math.max(0, Math.min(14, Math.round(tierOverride ? Number(tierOverride) : tier)))
     const environment = officeEnvironmentFor(level)
-    const layoutFamily = officeLayoutFor(level)
     // The purchase set is the other half of what decides a layout, and like the
     // shift it is an accident of play. `officeAssets` names an explicit list and
     // `officeAll` owns the entire catalogue, so the maximum-furnishing case can
@@ -514,12 +549,24 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     )
     const staffOverride = devQuery?.get('officeStaff')?.split(',').filter(Boolean)
       ?? ownedKeys?.filter((key) => officeVisualFor(key)?.zone === 'staff-floor')
-    const staffAssets = staffOverride?.length
+    // One floor is built at a time, and that is the whole performance
+    // argument: a firm of thirty is two rooms of sixteen and fourteen, and
+    // only one of them is ever in the scene graph. Everyone and everything
+    // belonging to the other floor is filtered out here, before anything is
+    // constructed, rather than built and hidden.
+    const floorPlan = officeFloorFor(devQuery?.get('officeFloor') as OfficeFloorKey ?? floor)
+    const practiceFloor = floorPlan.key === 'practice'
+    const onThisFloor = (key: string) => officeAssetOnFloor(key, floorPlan.key)
+    // The firm entire, both floors, because the tier's capacity is counted
+    // over the whole firm before this floor takes its share.
+    const firmStaff = staffOverride?.length
       ? staffOverride.map((key, index) => devAsset(key, index, 'staff'))
       : ownedAssets.filter((asset) => asset.type === 'staff')
-    const visualAssets = ownedKeys
+    const staffAssets = firmStaff.filter((asset) => onThisFloor(asset.key))
+    const visualAssets = (ownedKeys
       ? ownedKeys.filter((key) => officeVisualFor(key)).map((key, index) => devAsset(key, index, 'upgrade'))
-      : ownedAssets.filter((asset) => officeVisualFor(asset.key))
+      : ownedAssets.filter((asset) => officeVisualFor(asset.key)))
+      .filter((asset) => onThisFloor(asset.key))
     const assetsByZone = new Map<OfficeVisualZone, GameAsset[]>()
     visualAssets.forEach((asset) => {
       const visual = officeVisualFor(asset.key)
@@ -620,8 +667,13 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     // of the partner chair. The higher sightline reveals the working floor,
     // keeps the single primary workstation legible, and still leaves the user
     // free to orbit from the centre of the office.
-    const homeYaw = rustic ? -.22 : -.28
-    const homePitch = rustic ? -.22 : -.25
+    // The opening bearing. Both are relaxed once the floor fills up; see the
+    // framing block after the departments are placed.
+    let homeYaw = rustic ? -.22 : -.28
+    let homePitch = rustic ? -.22 : -.25
+    /** Extra field of view bought by headcount, folded into `resize` so a
+     *  window change does not throw it away. */
+    let crowdFov = 0
     const cameraPivot = new THREE.Vector3(0, rustic ? 3.34 : 3.56, rustic ? 1.08 : 1.12)
     const cameraLookDirection = new THREE.Vector3()
     const cameraLookTarget = new THREE.Vector3()
@@ -966,6 +1018,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       standoff: Math.abs(windowGroup.position.z - cameraPivot.z) + cameraOrbitHome,
       lateralOffset: cameraPivot.x - windowX,
       verticalOffset: Math.abs(cameraPivot.y - windowY) + 1,
+      // Chambers is a storey up, and the view is where that has to be true.
+      storeyLift: practiceFloor ? 0 : 4.2,
     })
     if (devQuery?.get('officeWindowView') !== '0') windowGroup.add(windowView.root)
 
@@ -1044,8 +1098,13 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         }
       }
     }
-    if (!rustic && level >= 2) addShelf(-6.15)
-    addShelf(rustic ? 6.05 : 6.15)
+    // The library runs are the practice floor's back wall. Chambers is not a
+    // room where anyone pulls a reporter off a shelf, and leaving them out is
+    // the single clearest cue that the lift went somewhere.
+    if (practiceFloor) {
+      if (!rustic && level >= 2) addShelf(-6.15)
+      addShelf(rustic ? 6.05 : 6.15)
+    }
     if (rustic) {
       // A joined file chest and working cast-iron stove make the room a
       // believable cold-weather practice rather than a collection of props.
@@ -1091,7 +1150,13 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     // The work surface is a scarred trestle table in the shack and becomes a
     // progressively engineered partner desk as the firm rises.
     const desk = new THREE.Group()
-    desk.position.set(rustic ? .92 : 1.08, 0, rustic ? -.98 : -1.34)
+    // Downstairs the desk holds the middle of the room, with the bullpen
+    // arranged around it. Upstairs it is the managing partner's own desk and
+    // it goes where you would actually put one: against the glass on the right
+    // of the room, with the city behind the chair. That also clears the middle
+    // of chambers, which the executive crescent needs — the desk's chair used
+    // to stand in two partners.
+    desk.position.set(rustic ? .92 : practiceFloor ? 1.08 : 4.6, 0, rustic ? -.98 : practiceFloor ? -1.34 : -2.85)
     desk.scale.setScalar(rustic ? .86 : .76)
     root.add(desk)
     if (rustic) {
@@ -1185,7 +1250,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     // Keep the player's chair on the desk centreline. The previous generic
     // origin made the chair look unrelated to the monitor and keyboard when
     // the office was viewed from an angle.
-    const chairHome = new THREE.Vector3(rustic ? .92 : 1.08, 0, rustic ? .62 : .42)
+    // The chair belongs to the desk, so it moves with it when the desk goes
+    // upstairs and turns to face the glass.
+    const chairHome = new THREE.Vector3(desk.position.x, 0, desk.position.z + (rustic ? 1.6 : 1.76))
     const chairHomeRotation = rustic ? .18 : -.05
     const chairStorageKey = `lsat-tycoon:office-layout:${layoutKey ?? 'preview'}:${level}:chair-360-v2`
     chair.position.copy(chairHome)
@@ -1196,8 +1263,11 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       const saved = window.localStorage.getItem(chairStorageKey)
       if (saved) {
         const layout = JSON.parse(saved) as { x?: number; z?: number; rotation?: number }
-        chair.position.x = THREE.MathUtils.clamp(Number(layout.x ?? chairHome.x), -3.25, 3.1)
-        chair.position.z = THREE.MathUtils.clamp(Number(layout.z ?? chairHome.z), -.05, 1.15)
+        // Clamped around wherever this floor's desk is, rather than around the
+        // practice floor's coordinates, or a saved position drags the chambers
+        // chair back through the desk it belongs to.
+        chair.position.x = THREE.MathUtils.clamp(Number(layout.x ?? chairHome.x), chairHome.x - 4.33, chairHome.x + 2.02)
+        chair.position.z = THREE.MathUtils.clamp(Number(layout.z ?? chairHome.z), chairHome.z - .47, chairHome.z + .73)
         chair.rotation.y = Number.isFinite(layout.rotation) ? Number(layout.rotation) : chairHomeRotation
       }
     } catch {
@@ -1698,7 +1768,14 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     // leans back toward the rear wall and rests on the floor. Each rung's Z is
     // offset by its height up the rail so the rungs track the tilted rail
     // instead of detaching from it.
-    const libraryInstallation = makeInstallation('library', [-5.15, 2.17, -3.18], 1.1)
+    // Pushed out to the left flank, as far as the room is wide enough to allow.
+    // The research wall is not only a wall: it puts a rolling ladder and three
+    // book carts on the floor in front of it, and at x -5.15 those stood in
+    // the middle of the casework bench. Out here they are behind the run's
+    // outermost seat with a quarter-metre to spare, and at the bottom of the
+    // ladder, where the room is only fifteen units across, they come back in
+    // rather than through the wall.
+    const libraryInstallation = makeInstallation('library', [-Math.min(8.1, roomHalf - 1.9), 2.17, -3.18], 1.1)
     if (libraryInstallation) {
       const { installation, stage } = libraryInstallation
       const ladderLean = -.2
@@ -1714,7 +1791,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       }
     }
 
-    const conferenceInstallation = makeInstallation('conference', [-3.75, .02, .3], 1.35)
+    const conferenceInstallation = makeInstallation('conference', [-6.5, .02, -.5], 1.35)
     if (conferenceInstallation) {
       const { installation, stage } = conferenceInstallation
       addMesh(installation, new THREE.CylinderGeometry(1.32 + stage * .12, 1.18, .16, 28), wood, [0, .8, 0])
@@ -1751,7 +1828,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       if (stage >= 2) addMesh(installation, constantGeometry('BoxGeometry:1.85,.025,.04', () => new THREE.BoxGeometry(1.85, .025, .04)), glow, [0, -.75, .14])
     }
 
-    const mediaInstallation = makeInstallation('media', [-5.75, .02, -.5], .75)
+    const mediaInstallation = makeInstallation('media', [-8.7, .02, -2.6], .75)
     if (mediaInstallation) {
       const { installation, stage } = mediaInstallation
       for (let cameraIndex = 0; cameraIndex < Math.min(3, 1 + stage); cameraIndex += 1) {
@@ -1762,7 +1839,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       }
     }
 
-    const operationsInstallation = makeInstallation('operations', [4.3, .02, -.45], 1.15)
+    const operationsInstallation = makeInstallation('operations', [6.4, .02, -.5], 1.15)
     if (operationsInstallation) {
       const { installation, stage } = operationsInstallation
       addMesh(installation, new THREE.CylinderGeometry(1.15 + stage * .12, .94, .28, 8), charcoal, [0, .72, 0])
@@ -1797,7 +1874,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       for (let spoke = 0; spoke < 6; spoke += 1) addMesh(installation, constantGeometry('BoxGeometry:.04,.8,.04', () => new THREE.BoxGeometry(.04, .8, .04)), brass, [0, 0, .14], [0, 0, spoke / 6 * Math.PI * 2])
     }
 
-    const jurisdictionInstallation = makeInstallation('jurisdiction', [4.4, 1.78, -.7], .9)
+    const jurisdictionInstallation = makeInstallation('jurisdiction', [1.5, 3.35, -1.3], .9)
     if (jurisdictionInstallation) {
       const { installation, stage } = jurisdictionInstallation
       addMesh(installation, constantGeometry('CylinderGeometry:.48,.62,.16,20', () => new THREE.CylinderGeometry(.48, .62, .16, 20)), brass, [0, -.75, 0])
@@ -1805,7 +1882,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       for (let ring = 0; ring < stage; ring += 1) addMesh(installation, new THREE.TorusGeometry(.55 + ring * .13, .018, 6, 28), ring % 2 ? brass : glow, [0, 0, 0], [Math.PI / 2 + ring * .36, ring * .28, 0])
     }
 
-    const campusInstallation = makeInstallation('campus', [-4.25, .12, -.65], 1.1)
+    const campusInstallation = makeInstallation('campus', [8.7, .12, -2.5], 1.1)
     if (campusInstallation) {
       const { installation, stage } = campusInstallation
       addMesh(installation, constantGeometry('CylinderGeometry:1.45,1.62,.14,28', () => new THREE.CylinderGeometry(1.45, 1.62, .14, 28)), stage >= 2 ? teal : charcoal, [0, .15, 0])
@@ -2282,252 +2359,424 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       })
     }
 
-    // A rotating active shift keeps the room legible. Staff occupy reserved
-    // departmental bays and receive furniture that reflects their work rather
-    // than standing wherever the room happened to have an empty coordinate.
-    const shiftSize = Math.min(environment.staffOnShift, staffAssets.length)
-    const activeStaff: GameAsset[] = []
-    const representedDepartments = new Set<OfficeStaffStation>()
-    // Build a plausible shift: expose as many departments as the room allows,
-    // then fill remaining seats with the most recently hired specialists.
-    ;[...staffAssets].reverse().forEach((asset) => {
-      const station = officeStaffStationFor(asset.key)
-      if (activeStaff.length >= shiftSize || representedDepartments.has(station)) return
-      representedDepartments.add(station)
-      activeStaff.push(asset)
-    })
-    ;[...staffAssets].reverse().forEach((asset) => {
-      if (activeStaff.length < shiftSize && !activeStaff.includes(asset)) activeStaff.push(asset)
-    })
-    // Where the wings sit is now a question about the camera, not the walls.
+    // The whole firm is on the floor.
     //
-    // This used to be measured inward from the side wall, which sounds right
-    // and is the wrong way round. The room widens with tier - fifteen units at
-    // tier zero, twenty at tier four and above - while the camera's orbit
-    // radius does not, so bays pinned to the wall walked steadily out of frame
-    // as the firm grew. At the top tier the outermost desks sat seven to eight
-    // units off centre and were simply not on screen: the reward for hiring
-    // was staff you could not see.
+    // This used to select a rotating shift of at most five and reduce everyone
+    // else to a stud on a board bolted to the side wall, which meant a player
+    // who had hired twenty-one people could see five of them. `staffOnShift`
+    // is now the tier's full hireable roster, so the slice below only ever
+    // binds when a development override asks for more people than the office
+    // can have hired. Hire order is preserved so the floor fills the way the
+    // firm actually grew.
+    const hireRank = (key: string) => {
+      const rank = OFFICE_HIRE_ORDER.indexOf(key as (typeof OFFICE_HIRE_ORDER)[number])
+      return rank < 0 ? OFFICE_HIRE_ORDER.length : rank
+    }
+    // The tier's capacity is a fact about the firm, not about the room, so the
+    // shift is taken across both floors and this floor keeps its share of it.
+    // Capping per floor would let a tier-four office seat twelve people
+    // downstairs when the firm has only hired ten who work there.
+    const activeStaff = [...firmStaff]
+      .sort((left, right) => hireRank(left.key) - hireRank(right.key))
+      .slice(0, Math.min(environment.staffOnShift, firmStaff.length))
+      .filter((asset) => onThisFloor(asset.key))
+    // Where people sit is a question about the camera, not about the walls.
     //
-    // So the run is placed at a distance chosen for the view and then pulled
-    // *in* as the tier rises, which is the opposite of what it did before and
-    // the reason a full house now reads as a full house. Two adjustments on
-    // top of that:
-    //
-    // The tier term closes the wings by up to 0.7 units as the roster grows,
-    // so five people at tier twelve are framed as tightly as two at tier one.
+    // Bays used to be measured inward from the side wall, which sounds right
+    // and is the wrong way round. The room widens with tier — fifteen units at
+    // tier zero, twenty at tier four and above — while the camera's orbit
+    // radius does not, so anything pinned to the wall walked steadily out of
+    // frame as the firm grew. At the top tier the outermost desks sat seven to
+    // eight units off centre and were simply not on screen: the reward for
+    // hiring was staff you could not see. `OFFICE_DEPARTMENT_PLAN` is authored
+    // against the frustum instead, and the family's `spread` closes it *in* as
+    // the tier falls, which is the opposite of what the old placement did.
     //
     // The crowd term handles the other end. One person on an otherwise empty
-    // floor, parked against the far wing, reads as somebody sent to sit in the
-    // corner - which is exactly how tier zero looked. With fewer than three on
-    // shift the room closes up around whoever is actually in it.
-    //
-    // Both are bounded, and both leave far more room behind the desks than the
-    // old placement did: the service strip behind a wing is now around three
-    // units rather than the metre that used to be there.
-    // A lone hire gets a much larger pull than the linear term would give it.
-    // Tier zero seats exactly one person, and at the authored wing distance
-    // they sat outside the opening frame entirely, in the unlit corner of a
-    // room whose whole lighting budget is a hearth and a lantern - which is
-    // the "dark and off to the side" that a single hire has always looked
-    // like. There is no competition for floor when there is one person on it,
-    // so they may as well sit where the camera already is.
-    const crowdPull = activeStaff.length <= 1 ? 1.5 : Math.max(0, 3 - activeStaff.length) * .34
-    const stationWingX = 4.55 - Math.min(.7, level * .06) - crowdPull
-    const stationSlots = {
-      // Workstations live along the side wings and face into the office. The
-      // family cant is a subtle authored offset from that inward orientation,
-      // not the complete rotation; treating it as the latter made monitors
-      // face the entry camera and visually block the partner desk.
-      left: layoutFamily.stationRows.map((z, index) => ({ x: -stationWingX, z, rotation: Math.PI / 2 - layoutFamily.stationCant[index] })),
-      right: layoutFamily.stationRows.map((z, index) => ({ x: stationWingX, z, rotation: -Math.PI / 2 + layoutFamily.stationCant[index] })),
-    }
-    const usedStationSlots = new Set<string>()
-    const sideCount = { left: 0, right: 0 }
-    const preferredSide = (station: OfficeStaffStation) => ['technology', 'leadership', 'diplomatic'].includes(station) ? 'right' as const : 'left' as const
-    const reserveStationSlot = (station: OfficeStaffStation) => {
-      const preferred = preferredSide(station)
-      const other = preferred === 'left' ? 'right' as const : 'left' as const
-      // Balance the two wings instead of exhausting the preferred side first.
-      // Most stations preferred 'left', so the old fill-one-side-then-spill
-      // order packed every hire into the left third of the room and left the
-      // right half as dead floor. Seat each new hire on whichever wing has
-      // fewer people so far, with the station's natural side breaking ties.
-      const sides = sideCount[preferred] <= sideCount[other] ? [preferred, other] : [other, preferred]
-      for (const side of sides) {
-        for (let index = 0; index < stationSlots[side].length; index += 1) {
-          const key = `${side}:${index}`
-          if (usedStationSlots.has(key)) continue
-          usedStationSlots.add(key)
-          sideCount[side] += 1
-          return stationSlots[side][index]
-        }
+    // floor, parked at the far end of a department that will one day hold
+    // seven, reads as somebody sent to sit in the corner — which is exactly
+    // how tier zero looked. With fewer than four on the floor the plan closes
+    // up around whoever is actually in it.
+    const crowdPull = activeStaff.length <= 1 ? .42 : Math.max(0, 4 - activeStaff.length) * .09
+    const planScale = Math.max(.3, 1 - crowdPull)
+    // Nobody is seated where the room has no floor. This only ever binds in
+    // the founding office, whose walls come in to seven and a half units.
+    const seatLimit = roomHalf - .95
+
+    const occupants = new Map<OfficeStaffStation, GameAsset[]>()
+    activeStaff.forEach((asset) => {
+      const station = officeStaffStationFor(asset.key)
+      const group = occupants.get(station) ?? []
+      group.push(asset)
+      occupants.set(station, group)
+    })
+
+    /**
+     * How wide the shot has to be, from nothing to the full house.
+     *
+     * Computed here rather than with the rest of the camera work because the
+     * plan needs it too: the camera opens up as the floor fills, and the plan
+     * has to retreat as it closes in, or the foreground crescent — authored a
+     * few centimetres in front of the lens at a full house — is below the
+     * bottom of the frame at a quarter full. Measured before this existed: at
+     * tier one the intake specialist's feet were at ndc y -1.42.
+     *
+     * Three things ask for width and the widest wins.
+     *
+     * Headcount, against this floor's capacity rather than the firm's, because
+     * a full floor is the widest shot whichever floor it is.
+     *
+     * A floor of .55, because below that the camera is close enough that feet
+     * leave the bottom of the frame however far back the plan is pushed, and
+     * pushing them back further only walks them into the desk behind.
+     *
+     * And the plan's own reach. The first two are proxies for how much floor
+     * is in use and both of them lie at the bottom of the tier ladder, where a
+     * small room's reception pod is pinned out beside the partner desk and so
+     * sits further off the centre line than its three occupants would suggest.
+     * The frame is about 3.98 units wide either side at .55 and 7.16 at full,
+     * measured, hence the arithmetic; the 1.2 is a body's half width and a
+     * little air.
+     */
+    const floorCapacity = floorPlan.plan.reduce((total, bay) => total + bay.capacity, 0)
+    const planExtent = officeDepartmentPlanFor(level, floorPlan.key).reduce((widest, bay) => {
+      const party = occupants.get(bay.station)
+      if (!party?.length) return widest
+      const run = (Math.min(party.length, bay.capacity) - 1) / 2 * bay.seatPitch * Math.abs(Math.cos(bay.rotation))
+      return Math.max(widest, Math.abs(bay.x * planScale) + run)
+    }, 0)
+    const framing = Math.min(1, Math.max(
+      activeStaff.length > 1 ? .55 : 0,
+      (activeStaff.length - 1) / Math.max(1, floorCapacity - 1),
+      activeStaff.length > 1 ? .55 + (planExtent + 1.2 - 3.98) / 7.07 : 0,
+    ))
+    const planPullback = (1 - framing) * 1.2
+
+    type StaffSeat = { x: number, z: number, rotation: number, index: number, of: number, bay: OfficeDepartmentBay }
+    const departmentSeats = new Map<OfficeStaffStation, StaffSeat[]>()
+    officeDepartmentPlanFor(level, floorPlan.key).forEach((authored) => {
+      const party = occupants.get(authored.station)
+      if (!party?.length) return
+      const count = Math.min(party.length, authored.capacity)
+      // Slide the whole run inside the walls rather than clamping the seats
+      // that fall outside them. Clamping per seat looks like it does the same
+      // job and does not: it piles the outermost two chairs on top of each
+      // other and leaves the rest of the run correctly spaced, so the failure
+      // shows up as two people sharing a seat at one end of an otherwise tidy
+      // department. Measured, that was a 0.48 cubic-metre interpenetration.
+      const reachX = Math.abs(Math.sin(authored.rotation)) < .5
+        ? (count - 1) / 2 * authored.seatPitch + .62
+        : 1.1
+      const room = Math.max(0, seatLimit - reachX)
+      const bay = {
+        ...authored,
+        x: THREE.MathUtils.clamp(authored.x * planScale, -room, room),
+        z: authored.z * planScale - planPullback * authored.retreat,
       }
-      return stationSlots[preferred][0]
+      const seats: StaffSeat[] = []
+      for (let index = 0; index < count; index += 1) {
+        // Runs are centred on the bay, so a department that is half full sits
+        // in the middle of its own floor rather than bunched at one end.
+        const along = (index - (count - 1) / 2) * bay.seatPitch
+        let localX = along
+        let localZ = 0
+        let turn = 0
+        if (bay.crescent > 0) {
+          // Seats ride an arc whose centre sits ahead of the middle chair, so
+          // the ends come forward and everyone faces the same focal point.
+          // `crescent` is that radius: larger is gentler.
+          turn = along / bay.crescent
+          localX = bay.crescent * Math.sin(turn)
+          localZ = bay.crescent * (1 - Math.cos(turn))
+        }
+        const rotation = bay.rotation - turn
+        const cos = Math.cos(bay.rotation)
+        const sin = Math.sin(bay.rotation)
+        seats.push({
+          x: bay.x + localX * cos + localZ * sin,
+          z: bay.z - localX * sin + localZ * cos,
+          rotation,
+          index,
+          of: count,
+          bay,
+        })
+      }
+      departmentSeats.set(authored.station, seats)
+    })
+
+    const seatCount = activeStaff.length
+    /**
+     * Which seats are built at full detail.
+     *
+     * Depth decides this, not department: the camera looks into the room from
+     * above and behind, so a face at the window wall lands on a third of the
+     * pixels a face in the foreground does, and the buttons, ears, brows and
+     * mouth line that `reduced` drops are already sub-pixel there. The nearest
+     * dozen keep everything; behind them the silhouette, palette, skeleton and
+     * all four idle clips are identical and only the sub-pixel detail goes.
+     * A quiet office keeps everyone at full detail, because there is nothing
+     * there to pay for.
+     */
+    const foregroundSeats = new Set(
+      [...departmentSeats.values()].flat()
+        .sort((left, right) => right.z - left.z)
+        .slice(0, 12)
+        .map((seat) => seat),
+    )
+    const stationWood = level >= 8 ? charcoal : wood
+    const stationMetal = level >= 9 ? brass : charcoal
+    const stationScreen = sharedStandard({ color: 0x10272d, emissive: 0x174a4c, emissiveIntensity: .24, roughness: .38, metalness: .14 })
+    /** Each department stands on its own colour, which is the cheapest cue in
+     *  the room for "these six people are one team". */
+    const STATION_FLOOR: Record<OfficeStaffStation, number> = {
+      reception: 0x6d5a44,
+      casework: 0x3f4a5c,
+      investigation: 0x4a4436,
+      technology: 0x24414a,
+      leadership: look.accent,
+      diplomatic: 0x32595b,
     }
 
-    const occupiedWings: { x: number, z: number }[] = []
-    const addStaffStation = (station: OfficeStaffStation, asset: GameAsset, index: number) => {
-      const slot = reserveStationSlot(station)
-      const bay = new THREE.Group()
-      bay.position.set(slot.x, 0, slot.z)
-      bay.rotation.y = slot.rotation
-      bay.userData.staffStation = station
-      bay.userData.staffKey = asset.key
-      root.add(bay)
+    /**
+     * A department, built once, with its people seated along it.
+     *
+     * The economy here is the reason thirty is affordable at all. Every hire
+     * used to arrive with a complete private bay — its own mat, its own desk,
+     * its own shelf or pinboard or monitor wall — which came to roughly thirty
+     * meshes a head and would have been nine hundred at a full house. A
+     * department instead builds its floor, its long worktop and its signature
+     * once and shares them, and each person adds a chair, a place at the
+     * bench, a plaque and the two or three objects their own job puts in front
+     * of them. It is also simply what a law firm looks like: people who do the
+     * same work sit together at the same run of desks.
+     */
+    const buildDepartment = (station: OfficeStaffStation, seats: StaffSeat[], party: GameAsset[]) => {
+      const bay = seats[0].bay
+      const count = seats.length
+      const runLength = (count - 1) * bay.seatPitch
+      const department = new THREE.Group()
+      department.position.set(bay.x, 0, bay.z)
+      department.rotation.y = bay.rotation
+      department.userData.staffStation = station
+      root.add(department)
 
-      // Every light is evaluated for every lit fragment in the room, so a light
-      // per bay made the office progressively slower with each hire. The wings
-      // are lit once each instead, below.
-      occupiedWings.push(slot)
-
-      const stationWood = level >= 8 ? charcoal : wood
-      const stationMetal = level >= 9 ? brass : charcoal
-      const stationScreen = sharedStandard({ color: 0x10272d, emissive: 0x174a4c, emissiveIntensity: .24, roughness: .38, metalness: .14 })
-      const matColor = station === 'leadership' ? look.accent : station === 'diplomatic' ? 0x32595b : look.upholstery
-      // Bays sit closer together than their mats are long, so neighbouring mats
-      // overlap. Each shift member's mat therefore gets its own plane instead of
-      // sharing y with the next one, which otherwise z-fights along the seam.
-      addMesh(bay, constantGeometry('PlaneGeometry:2.15,1.72', () => new THREE.PlaneGeometry(2.15, 1.72)), sharedStandard({ color: matColor, roughness: .96 }), [0, .012 + index * .0015, .12], [-Math.PI / 2, 0, 0])
-
-      if (station === 'diplomatic') {
-        // Client-facing counsel share a briefing salon. The lawyer occupies
-        // the head of the table while the two forward seats remain visibly
-        // available for clients, interpreters, or opposing counsel.
-        addMesh(bay, constantGeometry('CylinderGeometry:.78,.72,.12,32', () => new THREE.CylinderGeometry(.78, .72, .12, 32)), stationWood, [0, .78, .22])
-        addMesh(bay, constantGeometry('CylinderGeometry:.14,.22,.72,18', () => new THREE.CylinderGeometry(.14, .22, .72, 18)), stationMetal, [0, .38, .22])
-        for (const x of [-.55, .55]) {
-          addMesh(bay, roundedBox(.38, .13, .38, 3, .055), leather, [x, .42, .82])
-          addMesh(bay, roundedBox(.38, .48, .12, 3, .05), leather, [x, .67, .98], [-.08, 0, 0])
-        }
-        addMesh(bay, constantGeometry('CylinderGeometry:.19,.19,.025,28', () => new THREE.CylinderGeometry(.19, .19, .025, 28)), glow, [0, .86, .22])
+      // The floor. A straight run stands on a rectangle; a crescent stands on
+      // the ring segment its seats actually follow, so the colour does not
+      // spill across the aisle at the ends of the arc.
+      const floorMaterial = sharedStandard({ color: STATION_FLOOR[station], roughness: .96 })
+      if (bay.crescent > 0) {
+        const sweep = runLength / bay.crescent
+        const ring = new THREE.RingGeometry(bay.crescent - 1.05, bay.crescent + .95, 26, 1, Math.PI / 2 - sweep / 2 - .18, sweep + .36)
+        addMesh(department, ring, floorMaterial, [0, .014, bay.crescent], [-Math.PI / 2, 0, 0])
       } else {
-        const leadership = station === 'leadership'
-        const deskWidth = leadership ? 2.02 : 1.72
-        addMesh(bay, roundedBox(deskWidth, .14, .72, 4, .045), leadership ? wood : stationWood, [0, .82, .23])
-        for (const x of [-deskWidth * .39, deskWidth * .39]) addMesh(bay, constantGeometry('BoxGeometry:.1,.76,.55', () => new THREE.BoxGeometry(.1, .76, .55)), leadership ? darkWood : stationMetal, [x, .4, .23])
+        addMesh(department, new THREE.PlaneGeometry(runLength + 2.05, 2.0), floorMaterial, [0, .014, .35], [-Math.PI / 2, 0, 0])
       }
 
+      // The signature. One per department, behind or beside the run rather
+      // than repeated at every chair, which is what stops six technologists
+      // reading as six copies of the same cubicle.
+      //
+      // How far behind is authored per bay, because a metre of clearance is
+      // not something every bay has: a run parked at the window wall has about
+      // sixty centimetres before the glazing, and a fixed offset put its shelf
+      // inside the window frame.
+      const back = bay.signature
       if (station === 'reception') {
-        // Intake is an open L-shaped counter, not an enclosed workstation.
-        addMesh(bay, roundedBox(1.82, .62, .13, 4, .04), wood, [0, .46, .58])
-        addMesh(bay, roundedBox(1.12, .52, .075, 4, .03), wood, [-.53, 1.17, -.7])
-        addMesh(bay, constantGeometry('CylinderGeometry:.1,.13,.08,18', () => new THREE.CylinderGeometry(.1, .13, .08, 18)), charcoal, [-.54, .94, .21])
-        addMesh(bay, new THREE.TorusGeometry(.13, .022, 8, 24, Math.PI * 1.6), charcoal, [-.47, 1.0, .21], [Math.PI / 2, 0, .2])
-        for (let tray = 0; tray < 3; tray += 1) addMesh(bay, roundedBox(.45, .025, .31, 2, .008), tray % 2 ? paper : leather, [.48, .91 + tray * .035, .2])
+        addMesh(department, roundedBox(runLength + 1.9, .66, .14, 4, .04), wood, [0, .48, 1.12])
+        addMesh(department, constantGeometry('CylinderGeometry:.1,.13,.08,18', () => new THREE.CylinderGeometry(.1, .13, .08, 18)), charcoal, [runLength / 2 + .5, .94, .62])
+        addMesh(department, new THREE.TorusGeometry(.13, .022, 8, 24, Math.PI * 1.6), charcoal, [runLength / 2 + .57, 1.0, .62], [Math.PI / 2, 0, .2])
       } else if (station === 'casework') {
-        // Associates receive a quiet drafting desk with reachable authorities
-        // and files; the low shelf preserves sightlines across the firm floor.
-        addMesh(bay, roundedBox(.54, .34, .05, 3, .022), charcoal, [0, 1.22, .02], [-.08, 0, 0])
-        addMesh(bay, constantGeometry('PlaneGeometry:.46,.27', () => new THREE.PlaneGeometry(.46, .27)), stationScreen, [0, 1.22, .052], [-.08, 0, 0])
-        addMesh(bay, roundedBox(.68, .04, .28, 3, .016), charcoal, [0, .91, .34], [-.04, 0, 0])
-        for (let key = 0; key < 8; key += 1) addMesh(bay, roundedBox(.052, .014, .055, 2, .006), key % 3 ? paper : brass, [-.25 + key * .072, .946, .34])
-        for (let file = 0; file < 4; file += 1) addMesh(bay, new THREE.BoxGeometry(.12, .42 - file * .035, .24), file % 2 ? paper : leather, [-.65 + file * .15, 1.08, .18], [0, 0, (file - 1.5) * .025])
-        // Half-width and pushed to one end. Run across the full bay, as this
-        // did, and it becomes a wall behind the chair: the occupant is sealed
-        // between their own desk and their own bookshelf with no way out to
-        // the aisle, which is why this station never went anywhere.
-        addMesh(bay, roundedBox(1.02, .58, .12, 3, .035), darkWood, [-.58, .32, -.72])
-        for (let book = 0; book < 5; book += 1) addMesh(bay, new THREE.BoxGeometry(.16, .34 + (book % 3) * .035, .17), book % 3 === 0 ? leather : paper, [-.94 + book * .18, .67, -.7], [0, 0, (book % 2 ? 1 : -1) * .025])
-      } else if (station === 'investigation') {
-        // Investigators work from a pinboard and wide evidence surface rather
-        // than an office partition or computer cubicle.
-        addMesh(bay, roundedBox(1.42, .72, .055, 3, .025), sharedStandard({ color: 0x6b4a34, roughness: .94 }), [0, 1.42, -.64])
-        for (let note = 0; note < 4; note += 1) addMesh(bay, new THREE.PlaneGeometry(.27 + (note % 2) * .08, .2), paper, [-.5 + note * .32, 1.33 + (note % 2) * .24, -.605], [0, 0, (note - 1.5) * .08])
-        addMesh(bay, constantGeometry('TorusGeometry:.18,.025,10,28', () => new THREE.TorusGeometry(.18, .025, 10, 28)), brass, [.54, 1.04, .18], [Math.PI / 2, 0, 0])
-        addMesh(bay, constantGeometry('CylinderGeometry:.018,.018,.42,10', () => new THREE.CylinderGeometry(.018, .018, .42, 10)), brass, [.68, .89, .18], [0, 0, -.64])
-      } else if (station === 'technology') {
-        // A shared systems bench carries two angled displays, local hardware,
-        // status lights, and a restrained cable rail behind the operator.
-        for (const monitor of [-1, 1]) {
-          addMesh(bay, roundedBox(.52, .34, .05, 3, .022), charcoal, [monitor * .29, 1.24, .02], [-.07, monitor * -.16, 0])
-          addMesh(bay, constantGeometry('PlaneGeometry:.44,.27', () => new THREE.PlaneGeometry(.44, .27)), stationScreen, [monitor * .29, 1.24, .052], [-.07, monitor * -.16, 0])
+        // Low on purpose: a full-height shelf behind a run of four becomes a
+        // wall, and the point of putting associates against the window bay is
+        // that you can see over them to the glass.
+        addMesh(department, roundedBox(runLength + 1.5, .58, .3, 3, .035), darkWood, [0, .3, back])
+        const books = Math.min(16, count * 4)
+        for (let book = 0; book < books; book += 1) {
+          addMesh(department, new THREE.BoxGeometry(.15, .34 + (book % 3) * .035, .17), book % 3 === 0 ? leather : paper,
+            [-runLength / 2 - .58 + book * ((runLength + 1.2) / Math.max(1, books - 1)), .66, back], [0, 0, (book % 2 ? 1 : -1) * .025])
         }
-        addMesh(bay, roundedBox(.82, .04, .3, 3, .016), charcoal, [0, .91, .35], [-.04, 0, 0])
-        for (let key = 0; key < 10; key += 1) addMesh(bay, roundedBox(.05, .014, .055, 2, .006), key % 4 ? paper : glow, [-.31 + key * .069, .946, .35])
-        addMesh(bay, roundedBox(.28, .62, .46, 3, .035), charcoal, [.68, .39, -.02])
-        for (let light = 0; light < 3; light += 1) addMesh(bay, constantGeometry('SphereGeometry:.025,10,8', () => new THREE.SphereGeometry(.025, 10, 8)), light === 0 ? brass : glow, [.68, .53 - light * .1, .23])
-        addMesh(bay, roundedBox(1.06, .18, .1, 3, .03), charcoal, [-.56, .43, -.72])
-        for (let port = 0; port < 4; port += 1) addMesh(bay, constantGeometry('BoxGeometry:.09,.035,.025', () => new THREE.BoxGeometry(.09, .035, .025)), port % 2 ? glow : brass, [-.92 + port * .23, .43, -.655])
+      } else if (station === 'investigation') {
+        addMesh(department, roundedBox(runLength + 1.5, .8, .06, 3, .025), sharedStandard({ color: 0x6b4a34, roughness: .94 }), [0, 1.5, back])
+        const notes = Math.min(10, count * 3)
+        for (let note = 0; note < notes; note += 1) {
+          addMesh(department, new THREE.PlaneGeometry(.26 + (note % 2) * .08, .2), paper,
+            [-runLength / 2 - .5 + note * ((runLength + 1) / Math.max(1, notes - 1)), 1.42 + (note % 2) * .24, back + .035], [0, 0, (note % 4 - 1.5) * .08])
+        }
+      } else if (station === 'technology') {
+        addMesh(department, roundedBox(runLength + 1.4, .2, .12, 3, .03), charcoal, [0, .44, back])
+        for (let port = 0; port < Math.min(10, count * 2); port += 1) {
+          addMesh(department, constantGeometry('BoxGeometry:.09,.035,.025', () => new THREE.BoxGeometry(.09, .035, .025)), port % 2 ? glow : brass,
+            [-runLength / 2 - .4 + port * .38, .44, back + .07])
+        }
+        addMesh(department, roundedBox(.3, .74, .5, 3, .035), charcoal, [runLength / 2 + .74, .45, -.35])
+        for (let light = 0; light < 3; light += 1) {
+          addMesh(department, constantGeometry('SphereGeometry:.025,10,8', () => new THREE.SphereGeometry(.025, 10, 8)), light === 0 ? brass : glow, [runLength / 2 + .74, .66 - light * .1, -.1])
+        }
       } else if (station === 'leadership') {
-        // Partners and directors use a private executive desk with writing
-        // pad and task lamp, kept open to the room rather than boxed in.
-        addMesh(bay, roundedBox(.92, .035, .55, 3, .012), leather, [0, .91, .18])
-        addMesh(bay, constantGeometry('CylinderGeometry:.2,.24,.07,22', () => new THREE.CylinderGeometry(.2, .24, .07, 22)), brass, [.64, .94, .12])
-        addMesh(bay, constantGeometry('CylinderGeometry:.025,.025,.54,12', () => new THREE.CylinderGeometry(.025, .025, .54, 12)), brass, [.64, 1.2, .12], [0, 0, -.18])
-        addMesh(bay, new THREE.ConeGeometry(.22, .26, 22, 1, true), charcoal, [.59, 1.5, .12], [0, 0, Math.PI])
+        // A standard lamp outboard of each end of the crescent: the wing reads
+        // as a boardroom rather than a bench. Outboard and behind, because the
+        // ends of a crescent come forward and a lamp on the run itself is a
+        // lamp in somebody's lap — measured at 17 litres of the partner.
+        for (const side of [-1, 1]) {
+          const x = side * (runLength / 2 + .9)
+          addMesh(department, constantGeometry('CylinderGeometry:.2,.24,.07,22', () => new THREE.CylinderGeometry(.2, .24, .07, 22)), brass, [x, .04, back + .25])
+          addMesh(department, constantGeometry('CylinderGeometry:.035,.035,1.5,12', () => new THREE.CylinderGeometry(.035, .035, 1.5, 12)), brass, [x, .8, back + .25])
+          addMesh(department, new THREE.ConeGeometry(.24, .3, 22, 1, true), stationWood, [x, 1.66, back + .25], [Math.PI, 0, 0])
+        }
+      } else if (station === 'diplomatic') {
+        // A ceremonial rail behind the horseshoe, following its arc so the
+        // curve reads from above, with a standard at every other seat. Kept
+        // below a metre: this bay is at the glass, and a full-height screen
+        // behind it would wall off the one view the room is built around.
+        const sweep = runLength / Math.max(1, bay.crescent)
+        const radius = bay.crescent - back
+        addMesh(department, new THREE.TorusGeometry(radius, .035, 6, 40, sweep + .3), brass,
+          [0, .92, bay.crescent], [Math.PI / 2, 0, -Math.PI / 2 - sweep / 2 - .15])
+        for (let post = 0; post < count; post += 2) {
+          const turn = (post - (count - 1) / 2) * bay.seatPitch / Math.max(1, bay.crescent)
+          addMesh(department, constantGeometry('CylinderGeometry:.04,.05,.94,10', () => new THREE.CylinderGeometry(.04, .05, .94, 10)), brass,
+            [radius * Math.sin(turn), .47, bay.crescent - radius * Math.cos(turn)])
+        }
       }
 
-      addMesh(bay, roundedBox(.7, .12, .32, 3, .04), leather, [0, .45, -.34])
-      addMesh(bay, roundedBox(.7, .62, .12, 3, .04), leather, [0, .75, -.49], [-.08, 0, 0])
-      const plaqueMaterial = station === 'diplomatic' || station === 'leadership' ? brass : teal
-      addMesh(bay, roundedBox(.62, .12, .035, 2, .015), plaqueMaterial, [0, .73, .605])
+      seats.forEach((seat, index) => {
+        const asset = party[index]
+        const place = new THREE.Group()
+        place.position.set(seat.x, 0, seat.z)
+        place.rotation.y = seat.rotation
+        place.userData.staffStation = station
+        place.userData.staffKey = asset.key
+        root.add(place)
 
-      const hash = castHash(asset.key)
-      const staffScale = rustic ? .42 : .46
-      const rig = buildStylizedCounsel(knownStaffGenders[asset.key] ?? (hash % 2 ? 'female' : 'male'), level, { role: 'visitor', paletteSeed: hash, renderScale: staffScale })
-      rig.root.scale.setScalar(staffScale)
-      const actor = new THREE.Group()
-      const localHome = new THREE.Vector3(0, 0, -.48).applyAxisAngle(new THREE.Vector3(0, 1, 0), slot.rotation)
-      const home = new THREE.Vector3(slot.x, 0, slot.z).add(localHome)
-      actor.position.copy(home)
-      actor.rotation.y = slot.rotation
-      // A character is not furniture. Excluding the actor subtree from the
-      // obstacle scan below keeps a body from paving over the floor it is
-      // standing on; bodies avoid each other through agent separation instead.
-      actor.userData.navIgnore = true
-      actor.add(rig.root)
-      root.add(actor)
-      const halo = attachFocus([asset.key], bay, 1.02, .03)
-      focusTargets.set(asset.key, { object: rig.root, halo })
-      // Bind after the character is in the scene graph: the skeleton measures
-      // its own limb lengths from the bind pose in world space, and this rig is
-      // scaled down by its parent.
-      actor.updateWorldMatrix(true, true)
-      const task = deskTaskFor(station, hash)
-      const humanoid = new HumanoidActor(rig, {
-        seed: hash,
-        state: task,
-        reduced,
-      })
-      // Start each character at a different point in its own loop. Without
-      // this, five people who all happen to draw `deskType` begin on the same
-      // frame and strike the same key together for as long as anyone watches.
-      // Rate jitter would eventually pull them apart, but "eventually" is not
-      // good enough for the first thing a player sees when the scene opens.
-      humanoid.advance(((hash % 97) / 97) * 9 + index * 1.7)
-      staffDirector.add(humanoid, STATION_BEHAVIOR[station], hash)
-      staffRigs.push({
-        rig,
-        actor,
-        humanoid,
-        phase: index * 1.37 + (hash % 17) * .11,
-        station,
-        task,
-        home,
-        homeRotation: slot.rotation,
-        behaviorRole: STATION_BEHAVIOR[station],
-        randomState: hash || 1,
+        // The bench. One segment per seat, a hair wider than the pitch so
+        // neighbours abut into a continuous worktop, and legs on alternate
+        // seats because a leg every metre is a leg nobody sees.
+        const topWidth = bay.seatPitch + .06
+        addMesh(place, roundedBox(topWidth, .13, .74, 4, .045), station === 'leadership' ? wood : stationWood, [0, .82, .71])
+        if (index % 2 === 0) {
+          for (const side of [-1, 1]) {
+            addMesh(place, constantGeometry('BoxGeometry:.09,.76,.5', () => new THREE.BoxGeometry(.09, .76, .5)), station === 'leadership' ? darkWood : stationMetal, [side * (topWidth * .42), .4, .71])
+          }
+        }
+        addMesh(place, roundedBox(.7, .12, .32, 3, .04), leather, [0, .45, .14])
+        addMesh(place, roundedBox(.7, .62, .12, 3, .04), leather, [0, .75, -.01], [-.08, 0, 0])
+        addMesh(place, roundedBox(.62, .12, .035, 2, .015), station === 'diplomatic' || station === 'leadership' ? brass : teal, [0, .73, 1.085])
+
+        // What this person's own job puts on the desk in front of them.
+        if (station === 'technology') {
+          for (const monitor of [-1, 1]) {
+            addMesh(place, roundedBox(.5, .33, .05, 3, .022), charcoal, [monitor * .27, 1.25, .5], [-.07, monitor * -.16, 0])
+            addMesh(place, constantGeometry('PlaneGeometry:.42,.26', () => new THREE.PlaneGeometry(.42, .26)), stationScreen, [monitor * .27, 1.25, .53], [-.07, monitor * -.16, 0])
+          }
+        } else if (station === 'casework') {
+          addMesh(place, roundedBox(.54, .34, .05, 3, .022), charcoal, [0, 1.23, .5], [-.08, 0, 0])
+          addMesh(place, constantGeometry('PlaneGeometry:.46,.27', () => new THREE.PlaneGeometry(.46, .27)), stationScreen, [0, 1.23, .532], [-.08, 0, 0])
+          addMesh(place, roundedBox(.66, .04, .27, 3, .016), charcoal, [0, .91, .82], [-.04, 0, 0])
+        } else if (station === 'investigation') {
+          for (let file = 0; file < 3; file += 1) {
+            addMesh(place, new THREE.BoxGeometry(.12, .4 - file * .04, .23), file % 2 ? paper : leather, [-.3 + file * .15, 1.09, .68], [0, 0, (file - 1) * .03])
+          }
+          addMesh(place, constantGeometry('TorusGeometry:.15,.022,8,22', () => new THREE.TorusGeometry(.15, .022, 8, 22)), brass, [.34, .93, .66], [Math.PI / 2, 0, 0])
+        } else if (station === 'reception') {
+          for (let tray = 0; tray < 3; tray += 1) addMesh(place, roundedBox(.44, .025, .3, 2, .008), tray % 2 ? paper : leather, [.1, .91 + tray * .035, .68])
+        } else if (station === 'leadership') {
+          addMesh(place, roundedBox(.88, .035, .52, 3, .012), leather, [0, .91, .68])
+          addMesh(place, roundedBox(.3, .022, .22, 2, .008), paper, [-.02, .93, .66], [0, .08, 0])
+        } else {
+          // Diplomatic: a folio and a water glass, which is what is actually
+          // on a treaty table.
+          addMesh(place, roundedBox(.42, .03, .3, 2, .012), leather, [0, .90, .66])
+          addMesh(place, constantGeometry('CylinderGeometry:.055,.05,.16,14', () => new THREE.CylinderGeometry(.055, .05, .16, 14)), glow, [.31, .96, .62])
+        }
+
+        const hash = castHash(asset.key)
+        const staffScale = rustic ? .42 : .46
+        const staffLook = officeStaffLookFor(asset.key)
+        const foreground = seatCount <= 12 || foregroundSeats.has(seat)
+        const rig = buildStylizedCounsel(knownStaffGenders[asset.key] ?? (hash % 2 ? 'female' : 'male'), level, {
+          role: 'visitor',
+          paletteSeed: hash,
+          renderScale: staffScale,
+          detail: foreground ? 'full' : 'reduced',
+          suitColor: staffLook.suit,
+          hairColor: staffLook.hairColor,
+          hairVariant: staffLook.hair,
+          eyewear: staffLook.eyewear,
+          insignia: staffLook.insignia,
+        })
+        rig.root.scale.setScalar(staffScale)
+        const actor = new THREE.Group()
+        const home = new THREE.Vector3(seat.x, 0, seat.z)
+        actor.position.copy(home)
+        actor.rotation.y = seat.rotation
+        // A character is not furniture. Excluding the actor subtree from the
+        // obstacle scan below keeps a body from paving over the floor it is
+        // standing on.
+        actor.userData.navIgnore = true
+        actor.add(rig.root)
+        root.add(actor)
+        const halo = attachFocus([asset.key], place, .96, .03)
+        focusTargets.set(asset.key, { object: rig.root, halo })
+        // Bind after the character is in the scene graph: the skeleton measures
+        // its own limb lengths from the bind pose in world space, and this rig
+        // is scaled down by its parent.
+        actor.updateWorldMatrix(true, true)
+        const task = deskTaskFor(station, hash)
+        const humanoid = new HumanoidActor(rig, { seed: hash, state: task, reduced })
+        // Start each character at a different point in its own loop. Without
+        // this, a department of five who all happen to draw `deskType` begin on
+        // the same frame and strike the same key together for as long as
+        // anyone watches. Rate jitter would eventually pull them apart, but
+        // "eventually" is not good enough for the first thing a player sees.
+        humanoid.advance(((hash % 97) / 97) * 9 + staffRigs.length * 1.7)
+        staffDirector.add(humanoid, STATION_BEHAVIOR[station], hash)
+        staffRigs.push({
+          key: asset.key,
+          rig,
+          actor,
+          humanoid,
+          phase: staffRigs.length * 1.37 + (hash % 17) * .11,
+          station,
+          task,
+          home,
+          homeRotation: seat.rotation,
+          behaviorRole: STATION_BEHAVIOR[station],
+          randomState: hash || 1,
+        })
       })
     }
 
     phase('assets')
-    activeStaff.forEach((asset, index) => {
-      addStaffStation(officeStaffStationFor(asset.key), asset, index)
+    departmentSeats.forEach((seats, station) => {
+      buildDepartment(station, seats, occupants.get(station) ?? [])
     })
 
-    // One overhead pool per staffed wing, centred on the bays it serves, so the
-    // cost is fixed at two lights however many people are on shift.
-    ;[-1, 1].forEach((side) => {
-      const wing = occupiedWings.filter((slot) => Math.sign(slot.x) === side)
-      if (!wing.length) return
+    // Overhead pools, one per band rather than one per department.
+    //
+    // Every light is evaluated for every lit fragment in the room, so this is
+    // the one part of the floor whose cost is set by how it is lit rather than
+    // by how many people are on it: measured, each additional point light is
+    // worth about a millisecond and a half a frame here. Six departments
+    // therefore share two pools, positioned on the centroid of whoever is
+    // actually seated in each half of the room, which is exactly the budget
+    // the two wings used to cost when the office held five people.
+    const litBands = [
+      staffRigs.filter((entry) => entry.home.z <= -1.9),
+      staffRigs.filter((entry) => entry.home.z > -1.9),
+    ]
+    litBands.forEach((band) => {
+      if (!band.length) return
       // Tier zero is a timber shack lit by a hearth and a lantern, and it was
       // dark enough that its single hire was not merely unflattered but
       // genuinely not visible in the opening frame. Raised to the point where
       // a body at a desk reads, and no further: the gloom is the tier's whole
       // character and the reward for climbing out of it.
-      const light = new THREE.PointLight(0xffdaa0, rustic ? .52 : .48, 7.4, 1.5)
-      light.position.set(wing[0].x, 2.85, wing.reduce((sum, slot) => sum + slot.z, 0) / wing.length)
+      const light = new THREE.PointLight(0xffdaa0, rustic ? .58 : .54, 12.5, 1.4)
+      light.position.set(
+        band.reduce((sum, entry) => sum + entry.home.x, 0) / band.length,
+        3.1,
+        band.reduce((sum, entry) => sum + entry.home.z, 0) / band.length,
+      )
       light.castShadow = false
       root.add(light)
     })
@@ -2544,17 +2793,56 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     // The pivot drops and moves back as the camera retreats, so the extra
     // distance is spent on floor and desks rather than on ceiling. An office
     // with nobody in it is left exactly as it was.
-    // The step per head is small on purpose. The orbit pivot sits inside the
-    // room, so radius buys view only up to the point where the camera reaches
-    // the front wall and starts rendering the inside of it - measured, a 0.46
-    // step put a black slab across the left half of the frame at a full shift.
-    // 0.16 stays inside the shell at every tier and headcount.
-    const shiftFraming = Math.min(activeStaff.length, 5)
-    cameraOrbitHome += shiftFraming * .16
-    cameraPivotHome.y -= shiftFraming * .05
-    cameraPivotHome.z += shiftFraming * .05
+    // Radius alone cannot frame a firm this size, and that is the whole reason
+    // this got harder.
+    //
+    // The orbit pivot sits inside the room, so backing off buys view only up
+    // to the point where the camera reaches the rear wall and starts rendering
+    // the inside of it — measured, a 0.46 step per head put a black slab
+    // across the left half of the frame at a full shift, and even a safe step
+    // tops out long before thirty people are in shot. The floor a camera can
+    // see is set by three other things, and all three now move with headcount:
+    //
+    //   pitch   Looking down is what turns a wall of heads into a floor plan.
+    //           It is also what brings the near edge of the visible floor back
+    //           toward the lens, which is where the foreground department has
+    //           to stand.
+    //   pivot   Dropping it spends the extra pitch on desks instead of ceiling.
+    //   field   The last of it. Seventy-three degrees at a full house is wide
+    //           for an interior and still short of the point where the corners
+    //           of the room start to bend. It is set by the widest bay rather
+    //           than by taste: at sixty-nine the reception pod on the practice
+    //           floor lost a shoulder off the right edge.
+    //
+    // Yaw unwinds at the same time. The opening view is deliberately raked to
+    // the left at a small firm, which is a good three-quarter shot of one desk
+    // and a bad one of six departments: it throws away the right third of the
+    // frame. At a full house the shot squares up, and the trapezoid of visible
+    // floor lands symmetrically on a floor plan that is itself symmetrical.
+    //
+    // The empty office is untouched by all of this. Every term below is scaled
+    // by `framing`, which is zero until the second hire.
+    cameraOrbitHome += framing * 2.3
+    cameraPivotHome.y -= framing * .82
+    // Aim at the staff, not at the carpet in front of them.
+    //
+    // Pushing the pivot forward was the right move when the shot had to reach
+    // the foreground horseshoe of a thirty-person single room. Split over two
+    // floors, the deepest occupied bay is at z -2.9 and the nearest at 0.5, so
+    // a pivot at +1.6 put the centre of the frame on empty rug and pressed
+    // sixteen people into the top third of it. Photographed, then moved.
+    cameraPivotHome.z -= framing * .9
+    homePitch -= framing * .26
+    homeYaw += framing * .2
+    crowdFov = framing * 14
+    camera.fov = baseCameraFov + crowdFov
+    camera.updateProjectionMatrix()
     cameraOrbit = cameraOrbitHome
     cameraPivot.copy(cameraPivotHome)
+    cameraYaw = homeYaw
+    cameraYawTarget = homeYaw
+    cameraPitch = homePitch
+    cameraPitchTarget = homePitch
 
     // Renovations read as architectural improvements, not loose reward props.
     if (!rustic) {
@@ -2577,9 +2865,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       const traceCount = Math.min(9, 3 + Math.floor(level / 2))
       for (let trace = 0; trace < traceCount; trace += 1) addMesh(evidencePanel, new THREE.BoxGeometry(.18 + seeded(trace) * .55, .018, .012), sharedBasic({ color: trace % 3 ? 0x5da39e : look.accent }), [-1.2 + (trace % 4) * .72, -.35 + Math.floor(trace / 4) * .3, .06], [0, 0, (seeded(trace + 4) - .5) * .4])
     }
-    if (frontier) {
+    if (frontier && !practiceFloor) {
       // Orbital/lunar tiers gain one coherent, restrained jurisdiction model.
-      const jurisdiction = new THREE.Group(); jurisdiction.position.set(4.3, 1.85, -.7); root.add(jurisdiction)
+      // It hangs in chambers, which is both where a firm would put it and the
+      // floor with room for it: downstairs it stood in the middle of the
+      // reception pod, and a receptionist inside a planet is a bad look.
+      const jurisdiction = new THREE.Group(); jurisdiction.position.set(7.6, 1.85, -1.9); root.add(jurisdiction)
       addMesh(jurisdiction, constantGeometry('SphereGeometry:.32,20,14', () => new THREE.SphereGeometry(.32, 20, 14)), sharedStandard({ color: level === 13 ? 0xaab2b1 : 0x376f7f, roughness: .54, metalness: .18, emissive: level === 14 ? 0x173d48 : 0x000000, emissiveIntensity: .35 }), [0, 0, 0])
       for (let ring = 0; ring < Math.min(3, level - 11); ring += 1) addMesh(jurisdiction, new THREE.TorusGeometry(.48 + ring * .12, .018, 6, 28), brass, [0, 0, 0], [Math.PI / 2 + ring * .38, ring * .31, 0])
     }
@@ -2811,8 +3102,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       }
       updateDragRay(event)
       if (!raycaster.ray.intersectPlane(floorPlane, floorHit)) return
-      const nextX = THREE.MathUtils.clamp(floorHit.x + dragOffset.x, -3.25, 3.1)
-      const nextZ = THREE.MathUtils.clamp(floorHit.z + dragOffset.z, -.05, 1.15)
+      const nextX = THREE.MathUtils.clamp(floorHit.x + dragOffset.x, chairHome.x - 4.33, chairHome.x + 2.02)
+      const nextZ = THREE.MathUtils.clamp(floorHit.z + dragOffset.z, chairHome.z - .47, chairHome.z + .73)
       const lateral = nextX - chair.position.x
       chair.position.x = nextX
       chair.position.z = nextZ
@@ -2992,7 +3283,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
       // Preserve a useful amount of the room on portrait phones. A fixed
       // desktop FOV turns a tall canvas into an extreme crop even though the
       // WebGL surface itself fills the screen.
-      camera.fov = Math.min(82, baseCameraFov + Math.max(0, .9 - camera.aspect) * 52)
+      camera.fov = Math.min(82, baseCameraFov + crowdFov + Math.max(0, .9 - camera.aspect) * 52)
       camera.updateProjectionMatrix()
     }
     const observer = new ResizeObserver(resize)
@@ -3059,8 +3350,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         rootY: root.position.y,
         seatTopY: Number((root.position.y + (rustic ? .55 : .57)).toFixed(4)),
         client: activeClientActor ? readActor(activeClientActor.humanoid) : null,
-        staff: staffRigs.map((entry, index) => ({
-          key: activeStaff[index]?.key ?? '?',
+        staff: staffRigs.map((entry) => ({
+          key: entry.key,
           station: entry.station,
           x: Number(entry.actor.position.x.toFixed(3)),
           z: Number(entry.actor.position.z.toFixed(3)),
@@ -3095,8 +3386,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
           }
           return {
             floorY: root.position.y,
-            staff: staffRigs.map((entry, index) => ({
-              key: activeStaff[index]?.key ?? '?',
+            staff: staffRigs.map((entry) => ({
+              key: entry.key,
               station: entry.station,
               state: entry.humanoid.state,
               lod: entry.humanoid.lod,
@@ -3124,8 +3415,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
           resting: true,
         }),
         objects: () => ({
-          staff: staffRigs.map((entry, index) => ({
-            key: activeStaff[index]?.key ?? '?',
+          staff: staffRigs.map((entry) => ({
+            key: entry.key,
             station: entry.station,
             group: entry.actor,
             rig: entry.rig,
@@ -3143,9 +3434,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         // longer runs. What a harness can still usefully ask is where things
         // are and what they are doing, so that is what is left.
         bodies: () => [
-          ...staffRigs.map((entry, index) => ({
+          ...staffRigs.map((entry) => ({
             kind: 'staff' as const,
-            key: activeStaff[index]?.key ?? '?',
+            key: entry.key,
             station: entry.station,
             x: entry.actor.position.x,
             z: entry.actor.position.z,
@@ -3513,6 +3804,13 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         // Cap the number of characters paying full price per frame. Actors
         // beyond the budget, and anything far from the camera, drop to a
         // reduced update rate and skip the foot solver.
+        // The budgets are counts, not fractions, so they already hold the line
+        // as the cast grows: a thirty-person floor pays full price for the
+        // same four bodies a five-person one did, gives the next eight the
+        // clip playback and joint clamping that is nearly all of the look, and
+        // runs the remaining eighteen at eighteen hertz with no world-space
+        // post-pass. Those eighteen are the window wall, where a body is a
+        // third of the height of one in the foreground.
         timed('humanoid', () => assignHumanoidLod(staffHumanoids, camera, { fullBudget: 4, mediumBudget: 8 }))
       }
       staffRigs.forEach((entry) => {
@@ -3620,6 +3918,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
     document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
+      // Teardown is half of what a floor change costs and none of it shows up
+      // in the build stopwatch, so it is timed too. Read by `switch.mjs`.
+      const teardownStarted = performance.now()
       disposed = true
       // Mixers hold a cache keyed on the root object, so an actor that is not
       // uncached keeps its clips and bindings alive after the scene is gone.
@@ -3650,11 +3951,14 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase }: O
         }
       })
       floorMap.dispose(); wallMap?.dispose(); screenMap.dispose(); stylePass.dispose(); renderer.dispose()
+      if (import.meta.env.DEV) {
+        ;(window as unknown as { __officeTeardownMs?: number }).__officeTeardownMs = performance.now() - teardownStarted
+      }
     }
   // assetSignature intentionally captures the visual inputs. Depending on the
   // array identity caused the scene to be recreated whenever React produced an
   // equivalent assets array (especially in previews).
-  }, [activeCaseSignature, assetSignature, layoutKey, tier])
+  }, [activeCaseSignature, assetSignature, floor, layoutKey, tier])
 
   return (
     <>

@@ -54,6 +54,18 @@ export type CounselCosmetics = {
   accessory?: string
 }
 
+/**
+ * How much of the figure to actually cut.
+ *
+ * `full` is every feature this file authors. `reduced` keeps the silhouette,
+ * the palette and every joint — so the same clips drive it and it is the same
+ * character — and drops the features that are smaller than the pixels they
+ * would be drawn into. It exists because the office now seats up to thirty
+ * people at once and the ones at the window wall are a third of the height of
+ * the ones in the foreground.
+ */
+export type CounselDetail = 'full' | 'reduced'
+
 type BuildOptions = {
   role?: StylizedCounselRole
   paletteSeed?: number
@@ -66,7 +78,25 @@ type BuildOptions = {
   /** `undefined` defers to the player registry below; `null` forces the
    *  seed-derived look, which is what every NPC in the cast wants. */
   cosmetics?: CounselCosmetics | null
+  detail?: CounselDetail
+  /**
+   * The jacket, chosen by the art rather than by the seed. The office's staff
+   * are designed per role, and a role's colour is the cue that reads first;
+   * see `OFFICE_STAFF_LOOKS`.
+   */
+  suitColor?: number
+  /** Overrides the seed's hair colour, for characters whose age or seniority
+   *  is part of the design. */
+  hairColor?: number
+  /** Which of the three authored haircuts, overriding the seed's roll. */
+  hairVariant?: 0 | 1 | 2
+  /** Spectacles, chosen rather than rolled. */
+  eyewear?: 'none' | 'round' | 'rectangular' | 'tortoiseshell'
+  /** A worn mark of the job, over and above the suit. */
+  insignia?: CounselInsignia
 }
+
+export type CounselInsignia = 'none' | 'headset' | 'lanyard' | 'stole' | 'coat'
 
 /**
  * The signed-in player's wardrobe.
@@ -112,16 +142,29 @@ const materialCache = new Map<string, THREE.Material>()
  */
 let renderScale = 1
 let detailTag = 'd1'
+/**
+ * Whether this build is dropping sub-pixel features. See `CounselDetail`; the
+ * office sets it for everyone outside its front rank.
+ */
+let reducedDetail = false
 
 /**
  * Quantised, so the office's three slightly different body scales (.42, .44,
  * .46) share one set of geometry rather than cutting three near-identical
  * copies of every sphere in the cast.
+ *
+ * The detail level is part of the cache tag for the same reason the scale is:
+ * a reduced build asks for genuinely different geometry, and a key that did
+ * not say so would hand a background body's coarse shoe to the foreground, or
+ * the reverse, depending only on which was built first.
  */
-function setRenderScale(scale: number) {
+function setRenderScale(scale: number, detail: CounselDetail) {
   renderScale = Math.min(1, Math.max(.25, Math.round(scale * 4) / 4))
-  detailTag = `d${renderScale}`
-  silhouetteOnly = renderScale <= .25
+  reducedDetail = detail === 'reduced'
+  detailTag = `d${renderScale}${reducedDetail ? 'r' : ''}`
+  // A reduced body takes the same sampling the map's crowd takes, which is the
+  // rung this file already tunes for a body a few dozen pixels tall.
+  silhouetteOnly = renderScale <= .25 || reducedDetail
 }
 
 /**
@@ -790,6 +833,77 @@ function addBriefcase(hand: THREE.Group) {
   ], .018, trim)
 }
 
+/**
+ * A worn mark of the job.
+ *
+ * The seed can vary a jacket's colour and a haircut's shape, and past that it
+ * has nothing to say about what someone does for a living. These do: a headset
+ * is front-of-house, a badge on a lanyard is the systems bench, a sash is the
+ * treaty wing, a pale coat is the clinician. Each is two or three small
+ * primitives hung off a joint the rig already animates, cut from the same
+ * shared cutters as the rest of the figure, so a department's worth of them
+ * costs no new geometry beyond the first.
+ */
+function addInsignia(
+  insignia: CounselInsignia,
+  parts: { chest: THREE.Group; head: THREE.Group },
+  materials: { ink: THREE.Material; brass: THREE.Material; shirt: THREE.Material; accent: THREE.Material },
+) {
+  if (insignia === 'headset') {
+    // An over-the-crown band and one earpiece. The band is a half torus rather
+    // than a bent bar because a bar reads as a hairslide from the front.
+    const band = addMesh(
+      parts.head,
+      sharedGeometry('insignia-headset-band', () => new THREE.TorusGeometry(.5, .026, 5, 18, Math.PI)),
+      materials.ink,
+      [0, -.02, -.03],
+      [0, 0, 0],
+      [1, 1.05, 1],
+    )
+    band.castShadow = false
+    ellipsoid(parts.head, materials.ink, [.485, -.03, -.03], [.055, .085, .072], 16)
+    // The boom is what makes it a headset rather than headphones, so it stays
+    // even on a reduced body; it is one capsule.
+    const boom = addMesh(parts.head, capsuleGeometry(.014, .30, 3, 8), materials.ink, [.36, -.145, .17])
+    boom.rotation.set(-.30, 0, .95)
+    boom.castShadow = false
+    return
+  }
+  if (insignia === 'lanyard') {
+    if (!silhouetteOnly) {
+      for (const side of [-1, 1] as const) {
+        const strap = addMesh(parts.chest, capsuleGeometry(.014, .58, 3, 8), materials.ink, [side * .20, 1.16, .35])
+        strap.rotation.z = side * .30
+        strap.castShadow = false
+      }
+    }
+    addMesh(parts.chest, softBoxGeometry(.17, .23, .024, .022), materials.shirt, [0, .74, .415])
+    addMesh(parts.chest, softBoxGeometry(.13, .05, .014, .012), materials.accent, [0, .81, .43])
+    return
+  }
+  if (insignia === 'stole') {
+    // A sash from one shoulder to the opposite hip, and the clasp that holds
+    // it. Extruded flat like the lapels, so it sits in the same material
+    // language as the rest of the tailoring.
+    addMesh(
+      parts.chest,
+      garmentGeometry([[-.52, 1.46], [-.28, 1.58], [.36, .28], [.13, .18]], .05, .018),
+      materials.accent,
+      [0, 0, .372],
+    )
+    ellipsoid(parts.chest, materials.brass, [-.38, 1.46, .40], [.055, .055, .03], 16)
+    return
+  }
+  if (insignia === 'coat') {
+    // A pale clinical coat worn over the suit: two fronts a little wider and
+    // longer than the jacket's own, and a stand collar.
+    const cloth = physical(0xe8ece9, .88, .02)
+    addMesh(parts.chest, garmentGeometry([[-.56, .78], [-.07, .66], [-.06, -.34], [-.58, -.24]], .06), cloth, [0, 0, .33])
+    addMesh(parts.chest, garmentGeometry([[.56, .78], [.07, .66], [.06, -.34], [.58, -.24]], .06), cloth, [0, 0, .33])
+    addMesh(parts.chest, garmentGeometry([[-.30, 1.66], [.30, 1.66], [.22, 1.40], [-.22, 1.40]], .07), cloth, [0, 0, .33])
+  }
+}
+
 function addWristwatch(elbow: THREE.Group, side: -1 | 1, brass: THREE.Material) {
   const strap = physical(0x2c2320, .62, .06)
   addMesh(
@@ -803,7 +917,7 @@ function addWristwatch(elbow: THREE.Group, side: -1 | 1, brass: THREE.Material) 
 }
 
 export function buildStylizedCounsel(gender: CharacterGender, tier: number, options: BuildOptions = {}): StylizedCounselRig {
-  setRenderScale(options.renderScale ?? 1)
+  setRenderScale(options.renderScale ?? 1, options.detail ?? 'full')
   const role = options.role ?? 'counsel'
   const paletteSeed = Math.abs(options.paletteSeed ?? (gender === 'female' ? 1 : 0))
   // See `setPlayerCosmetics`: an unseeded counsel is the player, and only the
@@ -822,7 +936,7 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
   const hairstyle = cosmetics?.hair ? HAIRSTYLES[cosmetics.hair] : undefined
   const skin = physical(skinColors[skinIndex], .58, .05)
   const skinShade = physical(new THREE.Color(skinColors[skinIndex]).offsetHSL(0, .01, -.08).getHex(), .64, .025)
-  const hair = physical(hairstyle?.color ?? hairColors[hairIndex], .52, .12)
+  const hair = physical(options.hairColor ?? hairstyle?.color ?? hairColors[hairIndex], .52, .12)
   // A restrained version of the reference's blue jacket: saturated enough to
   // read as a designed character, dark enough to sit inside the app's navy UI.
   const suitPalette = [0x315b84, 0x294f77, 0x24486d, 0x1f4163, 0x1b3857, 0x142f4b]
@@ -830,7 +944,10 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
   const visitorPalette = [0x31524f, 0x3f465c, 0x59434a, 0x315064, 0x4a3f5c, 0x5c4a35, 0x3a5c4a, 0x5c3f42]
   const seedColor = role === 'judge' ? 0x20242d : role === 'visitor' ? visitorPalette[subHash(paletteSeed, SALT_CLOTH) % visitorPalette.length] : suitPalette[stage]
   const chosenSuit = cosmetics?.suit ? SUIT_COLORWAYS[cosmetics.suit] : undefined
-  const roleColor = chosenSuit ?? seedColor
+  // An authored jacket outranks both, because it is the one cue a designed
+  // cast cannot leave to a hash. Everything else about the figure — skin,
+  // hair colour, height, build, face, stance — stays seeded.
+  const roleColor = options.suitColor ?? chosenSuit ?? seedColor
   const suit = physical(roleColor, .72, .10)
   const suitLight = physical(new THREE.Color(roleColor).offsetHSL(.005, -.035, .045).getHex(), .70, .10)
   const trouser = physical(new THREE.Color(roleColor).lerp(new THREE.Color(0x45484f), .70).getHex(), .78, .04)
@@ -863,13 +980,16 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
   const buildVariance = 1 + ((subHash(paletteSeed, SALT_BUILD) % 7) - 3) * .018
   const faceWidthVariance = .96 + (subHash(paletteSeed, SALT_FACE_W) % 9) * .01
   const faceHeightVariance = .97 + (subHash(paletteSeed, SALT_FACE_H) % 7) * .009
-  const hairVariant = hairstyle?.variant ?? subHash(paletteSeed, SALT_HAIRSTYLE) % 3
+  const hairVariant = options.hairVariant ?? hairstyle?.variant ?? subHash(paletteSeed, SALT_HAIRSTYLE) % 3
   const accessoryRoll = subHash(paletteSeed, SALT_ACCESSORY) % 5
+  const authoredEyewear = options.eyewear && options.eyewear !== 'none'
+    ? `eyewear_${options.eyewear}`
+    : options.eyewear === 'none' ? 'eyewear_none' : undefined
   // "As issued" resolves back to whatever the seed rolled, which is how a
   // player who only changes their suit keeps the glasses they started with.
-  const eyewearKey = cosmetics?.eyewear && cosmetics.eyewear !== 'eyewear_as_issued'
+  const eyewearKey = authoredEyewear ?? (cosmetics?.eyewear && cosmetics.eyewear !== 'eyewear_as_issued'
     ? cosmetics.eyewear
-    : accessoryRoll === 0 ? 'eyewear_seed' : 'eyewear_none'
+    : accessoryRoll === 0 ? 'eyewear_seed' : 'eyewear_none')
   const accessoryKey = cosmetics?.accessory && cosmetics.accessory !== 'accessory_as_issued'
     ? cosmetics.accessory
     : accessoryRoll === 1 ? 'accessory_lapel_pin' : 'accessory_none'
@@ -944,7 +1064,9 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
       addMesh(chest, softBoxGeometry(.026, .62, .02, .006), chalk, [x, .35, .402])
     }
   }
-  for (const y of [.42, .82]) ellipsoid(chest, brass, [.08, y, .39], [.045, .045, .025], 18)
+  // Jacket buttons, at four and a half millimetres of world. They survive on a
+  // foreground body and are noise on a background one.
+  if (!reducedDetail) for (const y of [.42, .82]) ellipsoid(chest, brass, [.08, y, .39], [.045, .045, .025], 18)
   // The breast-pocket welt, at 1.8 px.
   if (!silhouetteOnly) addMesh(chest, softBoxGeometry(.24, .035, .04, .014), shirt, [.31, .62, .39])
 
@@ -1029,7 +1151,10 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
   // the rest of its span. Two near-coincident surfaces is the textbook recipe
   // for z-fighting, and it showed up as a band of flickering horizontal stripes
   // beside the head that looked like a torn second face.
-  for (const side of [-1, 1]) {
+  // Ears. Four meshes for a feature the hair covers on two of the three cuts,
+  // and the widest of them is six centimetres, so a background body does
+  // without and loses nothing the eye can find.
+  if (!reducedDetail) for (const side of [-1, 1]) {
     ellipsoid(head, skin, [side * .452 * faceWidthVariance, -.015, -.015], [.062, .105, .068], 24)
     ellipsoid(head, skinShade, [side * .474 * faceWidthVariance, -.018, .01], [.016, .05, .022], 18)
   }
@@ -1049,20 +1174,29 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
     if (!silhouetteOnly) ellipsoid(eye, basic(0xffffff), [-.012, .018, .042], [.009, .011, .005], 14)
     eyes.push(eye)
     pupils.push(pupil)
-    addLine(head, [
-      new THREE.Vector3(side * .22, .205, .382),
-      new THREE.Vector3(side * .145, .228, .40),
-      new THREE.Vector3(side * .075, .210, .393),
-    ], gender === 'female' ? .015 : .018, hair)
+    // A brow is a swept tube of fourteen segments for something under two
+    // millimetres thick. It is a strong cue on a face that fills the frame and
+    // an unresolvable smudge on one across the room.
+    if (!reducedDetail) {
+      addLine(head, [
+        new THREE.Vector3(side * .22, .205, .382),
+        new THREE.Vector3(side * .145, .228, .40),
+        new THREE.Vector3(side * .075, .210, .393),
+      ], gender === 'female' ? .015 : .018, hair)
+    }
   }
+  // The nose stays at every level: it is the one feature that keeps a head
+  // reading as a face rather than an egg once the brows and mouth are gone.
   ellipsoid(head, skinShade, [0, -.05, .392], [.032, .058, .036], 22)
-  addLine(head, [
-    new THREE.Vector3(-.105, -.235, .376),
-    new THREE.Vector3(-.045, -.266, .397),
-    new THREE.Vector3(0, -.271, .402),
-    new THREE.Vector3(.045, -.266, .397),
-    new THREE.Vector3(.105, -.235, .376),
-  ], .012, lip)
+  if (!reducedDetail) {
+    addLine(head, [
+      new THREE.Vector3(-.105, -.235, .376),
+      new THREE.Vector3(-.045, -.266, .397),
+      new THREE.Vector3(0, -.271, .402),
+      new THREE.Vector3(.045, -.266, .397),
+      new THREE.Vector3(.105, -.235, .376),
+    ], .012, lip)
+  }
 
   // Deterministic seed variation, or the player's own choice where they have
   // made one. Either way these reuse the primitives the rest of the rig is
@@ -1070,6 +1204,9 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
   if (role !== 'judge') {
     addEyewear(head, eyewearKey, { ink, brass })
     addChestAccessory(chest, accessoryKey, { brass, suitLight })
+  }
+  if (options.insignia && options.insignia !== 'none') {
+    addInsignia(options.insignia, { chest, head }, { ink, brass, shirt, accent: chalk })
   }
 
   const satchel = new THREE.Group()
