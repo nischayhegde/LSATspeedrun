@@ -159,7 +159,15 @@ function audit(settings) {
     sites[key] = { n: 1, at: [Math.round(x * 10) / 10, Math.round(z * 10) / 10], what, top: Math.round(top * 100) / 100 }
   }
 
-  for (const way of crowd.ways) {
+  // Per-way, because "38% of the network" can be one systematic rule applied to
+  // forty pavements or one pavement drawn through a cathedral, and those are
+  // different jobs. A way is identified by its ends rather than by an index, so
+  // the same pavement can be recognised across a change that renumbers them.
+  const byWay = []
+
+  for (let wayIndex = 0; wayIndex < crowd.ways.length; wayIndex += 1) {
+    const way = crowd.ways[wayIndex]
+    let wayBlocked = 0
     total += way.length
     const count = Math.max(2, Math.ceil(way.length / stride))
     const half = way.halfWidth
@@ -199,10 +207,23 @@ function audit(settings) {
       }
       if (anyFacade || anySolid) {
         blockedLength += way.length / count
+        wayBlocked += way.length / count
         const hit = anyFacade ?? anySolid
         noteSite(px, pz, anyFacade ? 'facade' : (hit.name ?? 'solid'), hit.top)
       }
     }
+    const points = way.points
+    byWay.push({
+      way: wayIndex,
+      from: [Math.round(points[0] * 100) / 100, Math.round(points[1] * 100) / 100],
+      to: [Math.round(points[points.length - 2] * 100) / 100, Math.round(points[points.length - 1] * 100) / 100],
+      length: +way.length.toFixed(2),
+      half: +way.halfWidth.toFixed(3),
+      centre: +(way.centre ?? 0).toFixed(3),
+      obstructed: Boolean(way.obstructed),
+      blocked: +wayBlocked.toFixed(2),
+      share: +(wayBlocked / Math.max(1e-6, way.length)).toFixed(3),
+    })
   }
 
   const worst = Object.values(sites).sort((a, b) => b.n - a.n).slice(0, 20)
@@ -218,6 +239,7 @@ function audit(settings) {
     facadeShare: +(facadeSamples / Math.max(1, samples)).toFixed(4),
     solidShare: +(solidSamples / Math.max(1, samples)).toFixed(4),
     blockedBandShare: +(eitherSamples / Math.max(1, samples)).toFixed(4),
+    byWay: byWay.sort((a, b) => b.blocked - a.blocked),
     worstSites: worst,
     pedestrianPlan: world.userData.pedestrianPlan ?? null,
   }
@@ -225,22 +247,25 @@ function audit(settings) {
 
 const { browser, page, errors } = await open()
 const report = {}
-for (const key of keys) {
-  try {
-    await region(page, TABS[key], { key })
-    report[key] = await page.evaluate(audit, { floorY: .16, headroom: .25, stride: .12 })
-    const r = report[key]
-    console.log(key, JSON.stringify({
-      ways: r.ways, facadeBoxes: r.facadeBoxes, solidBoxes: r.solidBoxes,
-      length: r.totalFootwayLength, blocked: r.blockedLength,
-      blockedShare: r.blockedLengthShare, facadeShare: r.facadeShare, solidShare: r.solidShare,
-    }))
-    console.log('   worst:', JSON.stringify(r.worstSites?.slice(0, 8)))
-  } catch (error) {
-    report[key] = { failed: String(error).split('\n')[0] }
-    console.log(key, 'FAILED', String(error).split('\n')[0])
+try {
+  for (const key of keys) {
+    try {
+      await region(page, TABS[key], { key })
+      report[key] = await page.evaluate(audit, { floorY: .16, headroom: .25, stride: .12 })
+      const r = report[key]
+      console.log(key, JSON.stringify({
+        ways: r.ways, facadeBoxes: r.facadeBoxes, solidBoxes: r.solidBoxes,
+        length: r.totalFootwayLength, blocked: r.blockedLength,
+        blockedShare: r.blockedLengthShare, facadeShare: r.facadeShare, solidShare: r.solidShare,
+      }))
+      console.log('   worst:', JSON.stringify(r.worstSites?.slice(0, 8)))
+    } catch (error) {
+      report[key] = { failed: String(error).split('\n')[0] }
+      console.log(key, 'FAILED', String(error).split('\n')[0])
+    }
+    report._errors = errors.slice(0, 10)
+    save(`${dir}/report.json`, report)
   }
-  report._errors = errors.slice(0, 10)
-  save(`${dir}/report.json`, report)
+} finally {
+  await browser.close().catch(() => {})
 }
-await browser.close()

@@ -257,14 +257,17 @@ async function attribute(settings) {
 
 const { browser, page, errors } = await open()
 const report = {}
-for (const key of keys) {
-  await region(page, TABS[key], { key })
-  report[key] = await page.evaluate(attribute, { frames: FRAMES, floorY: .16, rideOver: .18 })
-  console.log(`\n=== ${key} === solids ${report[key].solids} (facade ${report[key].facades}) share ${report[key].share}`)
-  for (const row of report[key].worst) {
-    console.log(`  ${String(row.frames).padStart(5)}  ${row.what.padEnd(22)} top ${String(row.top).padStart(5)}  depth ${row.depth}  near ${row.near}`)
+try {
+  for (const key of keys) {
+    await region(page, TABS[key], { key })
+    report[key] = await page.evaluate(attribute, { frames: FRAMES, floorY: .16, rideOver: .18 })
+    console.log(`\n=== ${key} === solids ${report[key].solids} (facade ${report[key].facades}) share ${report[key].share}`)
+    for (const row of report[key].worst) {
+      console.log(`  ${String(row.frames).padStart(5)}  ${row.what.padEnd(22)} top ${String(row.top).padStart(5)}  depth ${row.depth}  near ${row.near}`)
+    }
+    report._errors = errors.slice(0, 10)
+    save(`${dir}/report.json`, report)
   }
-  report._errors = errors.slice(0, 10)
-  save(`${dir}/report.json`, report)
+} finally {
+  await browser.close().catch(() => {})
 }
-await browser.close()
