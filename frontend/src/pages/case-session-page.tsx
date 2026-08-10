@@ -22,6 +22,10 @@ import { ErrorNotice, formatMoney, LoadingScreen, useRestoredChrome } from '../c
 import { PauseButton, QuestionFlow } from '../case-flow'
 import { useSound } from '../sound'
 import type { StudySession } from '../types'
+// A sectioned form is a different screen, not a mode of the case screen, so it
+// is a different chunk too — nothing about the proctored surface belongs in the
+// bundle a ten-question practice run pays for.
+const ExamFlow = lazy(() => import('../exam-flow').then((module) => ({ default: module.ExamFlow })))
 // The rules in `styles.css` that only this screen can render. It travels with
 // this chunk, and `lsat-route-stylesheets` keeps it in the slot it had inside
 // the entry sheet.
@@ -312,6 +316,19 @@ export function CaseSessionPage() {
     return <BlindReviewIntro diagnostic={session} />
   }
   if (session.status === 'completed' && !session.pending_result) return <CompletedSessionReview sessionId={session.id} />
+  // A sectioned form takes over the whole screen. It carries its own clock, its
+  // own navigation and its own boundaries, and the case chrome around it —
+  // pause, fee, client — is exactly the set of things a proctored sitting does
+  // not have.
+  if (session.exam && session.status === 'in_progress') {
+    return (
+      <div className="session-page is-exam">
+        <Suspense fallback={<LoadingScreen label="Opening the test booklet…" />}>
+          <ExamFlow session={session} />
+        </Suspense>
+      </div>
+    )
+  }
   return (
     <div className="session-page">
       {/* A mega-litigation runs in one sitting, so there is no pause to offer — the server refuses one. */}

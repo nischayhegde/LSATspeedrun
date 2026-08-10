@@ -139,6 +139,10 @@ class StudySession(db.Model):
     total_items = db.Column(db.Integer, nullable=False, default=0)
     current_index = db.Column(db.Integer, nullable=False, default=0)
     section_plan_json = db.Column(db.JSON, nullable=True)
+    # When the mega-litigation's intermission began. The real LSAT puts a
+    # ten-minute break between the second and third sections; this is the only
+    # clock on the form that is allowed to elapse without a section running.
+    intermission_started_at = db.Column(db.DateTime(timezone=True), nullable=True)
     ended_by_user = db.Column(db.Boolean, nullable=False, default=False)
     summary_json = db.Column(db.JSON, nullable=True)
     pending_attempt_id = db.Column(db.String(36), nullable=True, index=True)
@@ -156,6 +160,57 @@ class StudySession(db.Model):
     user = db.relationship("User")
     diagnostic_session = db.relationship("StudySession", remote_side=[id], uselist=False)
     items = db.relationship("SessionItem", back_populates="session", cascade="all, delete-orphan", order_by="SessionItem.position")
+    sections = db.relationship(
+        "SessionSection",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="SessionSection.section_index",
+    )
+
+
+class SessionSection(db.Model):
+    """One separately timed section of a mega-litigation.
+
+    The real LSAT is not one long run against one clock: it is four (here
+    three, the unscored variable section being omitted) separately timed
+    thirty-five-minute sections, and the rule that makes them sections rather
+    than labels is that time expiring on one ends it permanently. "During the
+    time allotted for each section of the Test, you may work only on that
+    section," and once it expires "no additional inputs may be made" — LSAC
+    Candidate Agreement 2026-2027, § 15.
+
+    This row is the authority on when a section started, when it must end, and
+    whether it has. The client is told how much is left; it is never asked.
+    """
+
+    __tablename__ = "session_sections"
+    __table_args__ = (UniqueConstraint("session_id", "section_index", name="uq_session_section_index"),)
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    session_id = db.Column(db.String(36), db.ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    section_index = db.Column(db.Integer, nullable=False)
+    label = db.Column(db.String(60), nullable=False)
+    # "Logical Reasoning" or "Reading Comprehension", matching `Question.section`.
+    section_type = db.Column(db.String(60), nullable=False)
+    start_position = db.Column(db.Integer, nullable=False)
+    end_position = db.Column(db.Integer, nullable=False)
+    question_count = db.Column(db.Integer, nullable=False)
+    time_limit_seconds = db.Column(db.Integer, nullable=False)
+    # Intermission owed *after* this section, in seconds. Non-zero on exactly
+    # one section per form.
+    break_seconds = db.Column(db.Integer, nullable=False, default=0)
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    # Set the moment the student starts the section, and never moved again: the
+    # deadline is wall-clock from here, so closing a laptop does not buy time.
+    started_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    deadline_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    ended_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # "submitted" (the student ended it early), "expired" (the clock ran out),
+    # or "abandoned" (the sitting was walked away from at a boundary).
+    ended_reason = db.Column(db.String(20), nullable=True)
+    unanswered_count = db.Column(db.Integer, nullable=False, default=0)
+
+    session = db.relationship("StudySession", back_populates="sections")
 
 
 class SessionItem(db.Model):
@@ -209,6 +264,15 @@ class SessionItem(db.Model):
     draft_selected_label = db.Column(db.String(1), nullable=True)
     draft_reasoning_text = db.Column(db.Text, nullable=True)
     draft_updated_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Flagged for review, exactly as the real test's question bar allows. Kept
+    # on the item rather than in the browser because "flagged and never
+    # returned to" is one of the few honest read-outs on how a section was
+    # triaged, and a client-side flag would vanish on reload.
+    flagged = db.Column(db.Boolean, nullable=False, default=False)
+    # How many times the answer on the sheet was replaced with a different one
+    # inside the section. Free navigation makes changing an answer possible for
+    # the first time, so this is measured rather than self-reported.
+    answer_revisions = db.Column(db.Integer, nullable=False, default=0)
     completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     session = db.relationship("StudySession", back_populates="items")

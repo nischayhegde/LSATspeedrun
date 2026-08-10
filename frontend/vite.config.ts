@@ -256,6 +256,8 @@ const ROUTE_ENTRY_CHUNKS: [RegExp, string][] = [
  */
 const SHEET_ORDER = [
   'src/performance.css',
+  // Behind the dashboard sheet whose panel shell it matches.
+  'src/exam-report.css',
   'src/narrative.css',
   'src/trial-calendar.css',
   'src/wardrobe.css',
@@ -267,6 +269,9 @@ const SHEET_ORDER = [
   // Cut out of `styles.css`, which came after every sheet above it, so this
   // ranks last of the route sheets for the same reason.
   'src/case-session-styles.css',
+  // Behind the case sheet, whose passage and choice rules the proctored surface
+  // reuses and whose answer card it overrides.
+  'src/exam-flow.css',
   'src/firm-page.css',
   'src/office-page.css',
   'src/login-page.css',
