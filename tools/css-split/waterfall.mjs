@@ -115,6 +115,37 @@ try {
   })
   if (shot) await client.send('Page.startScreencast', { format: 'jpeg', quality: 70, everyNthFrame: 1 })
 
+  /**
+   * Every largest-contentful-paint candidate, not just the last one.
+   *
+   * The metric is a single number about a single element, and knowing which
+   * element is the difference between a fix and a guess: a candidate that is
+   * superseded 600 ms later by the same text re-measured says the webfont
+   * swapped, and one superseded by a canvas says a scene arrived and took the
+   * title. `element` is read at entry time because the node can be gone by the
+   * time this is read back.
+   */
+  await page.addInitScript(() => {
+    window.__lcp = []
+    const name = (el) => {
+      if (!el) return '(detached)'
+      const id = el.id ? `#${el.id}` : ''
+      const cls = typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}` : ''
+      return `${el.tagName.toLowerCase()}${id}${cls}`
+    }
+    new PerformanceObserver((l) => {
+      for (const e of l.getEntries()) {
+        window.__lcp.push({
+          at: e.startTime,
+          size: e.size,
+          el: name(e.element),
+          text: (e.element?.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 46),
+          url: e.url || '',
+        })
+      }
+    }).observe({ type: 'largest-contentful-paint', buffered: true })
+  })
+
   await page.goto(`http://127.0.0.1:${a.port}${route}`, { waitUntil: 'commit' })
   const paint = await page.evaluate(() => new Promise((ok) => {
     const done = (v) => ok({ fcp: v, origin: performance.timeOrigin })
@@ -127,8 +158,11 @@ try {
     setTimeout(() => done(null), 25000)
   }))
   // Let the tail of the load land so the waterfall shows what follows the paint,
-  // not just what precedes it.
-  await page.waitForTimeout(4000)
+  // not just what precedes it. Six seconds rather than four because the last
+  // largest-contentful-paint candidate on this app arrives past four, and a
+  // window that closes before the final candidate reports the wrong element.
+  await page.waitForTimeout(6000)
+  const lcp = await page.evaluate(() => window.__lcp || [])
   if (shot) { try { await client.send('Page.stopScreencast') } catch { /* already gone */ } }
 
   const nav = [...reqs.values()].find((r) => r.type === 'Document')
@@ -176,6 +210,16 @@ try {
   const total = rows.reduce((n, r) => n + (r.bytes || 0), 0)
   const beforePaint = rows.filter((r) => paint.fcp != null && ms(r.start) <= paint.fcp)
   console.log(`\n  ${rows.length} requests, ${(total / 1000).toFixed(1)} kB on the wire; ${beforePaint.length} started before the paint`)
+
+  if (lcp.length) {
+    console.log('\n  largest contentful paint candidates, in the order they took the title')
+    for (const c of lcp) {
+      console.log(`    ${String(Math.round(c.at)).padStart(6)} ms  ${String(c.size).padStart(7)} px²  ${c.el.padEnd(24)} ${c.url ? short(c.url) : `"${c.text}"`}`)
+    }
+    console.log(`    the metric is the last of these: ${Math.round(lcp[lcp.length - 1].at)} ms`)
+  } else {
+    console.log('\n  no largest-contentful-paint candidate was reported')
+  }
 
   /**
    * A strip either side of the paint, because one frame cannot distinguish
