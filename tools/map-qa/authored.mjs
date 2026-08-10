@@ -14,7 +14,25 @@ const report = {}
 try {
   for (const key of keys) {
     await region(page, TABS[key], { key })
-    report[key] = await page.evaluate(() => window.__mapScene.world.userData.authoredClearance ?? null)
+    report[key] = await page.evaluate(() => {
+      const data = window.__mapScene.world.userData
+      const trees = []
+      window.__mapScene.world.traverse((child) => {
+        if (child.userData?.treesOffPavement) trees.push(child.userData.treesOffPavement)
+      })
+      return {
+        authored: data.authoredClearance ?? null,
+        trees: trees.reduce(
+          (total, row) => ({
+            considered: total.considered + row.considered,
+            moved: total.moved + row.moved,
+            felled: total.felled + row.felled,
+          }),
+          { considered: 0, moved: 0, felled: 0 },
+        ),
+        treeFields: trees.length,
+      }
+    })
     console.log(`\n=== ${key} ===`, JSON.stringify(report[key], null, 1))
   }
   report._errors = errors.slice(0, 10)
