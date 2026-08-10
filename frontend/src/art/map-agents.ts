@@ -462,10 +462,28 @@ const PEDESTRIAN_ABREAST = .45
  */
 const VEHICLE_CLEAR = 1.4
 /**
- * Above this a vehicle straddling a point will be gone by the time anyone on
- * foot could reach it, so it does not need to be treated as an obstruction.
+ * How long a body takes to get from a kerb into the near lane.
+ *
+ * This is the question a walker at a kerb is really asking of a vehicle that is
+ * halfway out of the crossing: not "how fast is it going" but "will it still be
+ * there when I get there". It replaces a flat speed, which could not tell a
+ * nose ten centimetres past the point from a tail a metre and a third past it
+ * and called both of them clear at anything over .8m/s.
+ *
+ * As a speed this is `VEHICLE_CLEAR / LANE_REACH` for a vehicle still fully
+ * over the point — 2m/s, so nothing at road speed is ever waited for — and it
+ * falls away to nothing as the tail comes off, which is the shape a flat
+ * threshold cannot have.
+ *
+ * .45 was tried first and is too cautious for The Circuit, whose villages still
+ * have pavement running through their buildings: it holds walkers at Marlow's
+ * kerbs, they time out, and the district goes .0699 walkers-in-a-solid on every
+ * run against .0094-.0213. At .7 it reads .0213, inside the band it already
+ * had. Anyone widening this again should fix those village pavements first —
+ * 38.8% of The Circuit's pavement length is inside something solid, against
+ * 17.5% on the Arc and 7.5% on the Old Quarter.
  */
-const CRAWLING = .8
+const LANE_REACH = .7
 
 /**
  * Gap left between a body's flank and the kerb it drives beside, and between
@@ -822,30 +840,29 @@ export class TrafficSim {
         // could reach the lane, so it is ignored — otherwise every walker would
         // stand at the kerb watching the back of a car that had already passed.
         //
-        // This rule is wrong and is left wrong deliberately. `CRAWLING` is a
-        // speed, and a nose ten centimetres past the point at 1.3m/s reads as a
-        // road that has cleared while most of the car is still standing on the
-        // crossing. It is the direct cause of the Old Quarter's bodies inside a
-        // vehicle at `road@-20,-14` and of the Sovereign Arc's at `road@4,-20`:
-        // the walker steps off into the flank, claims the lane, the car brakes
-        // for the claim, and the two of them end up stationary inside each other.
+        // Asked as a time rather than as a speed, which is the third of the
+        // three faults behind cars driving into pedestrians and the one that
+        // survived two previous attempts.
         //
-        // Both honest repairs were measured and both were reverted. Reporting the
-        // vehicle as an obstruction until its tail is off the point strangles
-        // crossings outright, because `gapIsSafe` refuses on any answer under the
-        // two or three seconds a crossing takes. Asking only the narrow question
-        // — will it still be there when a body stepping off now arrives — costs
-        // the same. On The Circuit both took walkers inside a solid from 3.4-6.2%
-        // to 16.4% and 15.3% respectively, on every replicate.
+        // How much of the vehicle is still over the point, divided by the speed
+        // it is leaving at, against how long a body takes to get off the kerb
+        // and into the lane. A nose ten centimetres past at 1.3m/s used to read
+        // as a cleared road while a metre and a third of car stood on the
+        // crossing; the walker stepped into the flank, claimed the lane, the
+        // driver braked for the claim, and the two of them ended up stationary
+        // inside each other. That is the Old Quarter's `road@-20,-14` and the
+        // Sovereign Arc's `road@4,-20`.
         //
-        // The cost is not the degree of caution, it is caution at all, and the
-        // reason is that on The Circuit the pavements are more dangerous than the
-        // roads. Walkers held at a kerb time out after `KERB_PATIENCE`, turn
-        // back, and spend the time in village lanes whose bands are narrow and
-        // whose barns stand hard against them. Until those pavements are fixed,
-        // any rule that makes a pedestrian wait longer trades one defect for a
-        // larger one, so this wants the pavements first.
-        if (approach > -VEHICLE_CLEAR && rival.speed < CRAWLING) return 0
+        // The two attempts that were reverted both amounted to holding the
+        // walker until the tail was off the point at any speed, and both cost
+        // The Circuit 16.4% and 15.3% walkers-in-a-solid against 3.4-6.2%,
+        // because a walker held at a kerb times out after `KERB_PATIENCE` and
+        // goes back to a pavement that was more dangerous than the road. The
+        // difference here is not the arithmetic, it is that the pavements have
+        // since been fixed: the pen off the turnpike, the ring chords, and the
+        // pavement ends pulled out of the carriageways they started in.
+        const over = VEHICLE_CLEAR + approach
+        if (over > 0 && over > rival.speed * LANE_REACH) return 0
         continue
       }
       if (approach < .1) return 0
