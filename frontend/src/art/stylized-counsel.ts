@@ -628,6 +628,64 @@ function subHash(seed: number, salt: number) {
   return Math.imul(seed ^ salt, 2654435761) >>> 0
 }
 
+/* ------------------------------------------------------------ hair colour
+ *
+ * A ramp sampled evenly is not a population.
+ *
+ * The palette was eight shades from near-black to silver, drawn with a flat
+ * `% length`. Three of those eight — dark blond, blond, silver — are lighter
+ * than a mid brown, so **every crowd this file dresses was 37.5% fair or grey
+ * by construction**, and it was 12.5% silver whatever the age of the person.
+ * That is not a rare accident of one cast's seeds; it is what a uniform draw
+ * over an evenly spaced ramp has to produce, and it showed up as a thirty-
+ * person firm reading as blondes and retirees (17 of 30 at dark blond or
+ * lighter, measured).
+ *
+ * The ramp itself was fine. What was missing is that the shades are not
+ * equally likely: dark hair is most of any adult population, fair hair is a
+ * minority of it, and grey is a function of age rather than of the same coin
+ * toss. So the shades carry weights and the draw honours them. Nothing is
+ * removed, so no character loses a look that was available to them; what
+ * changes is how often the light end comes up.
+ *
+ * The weights are set per *visual* bucket rather than per entry, because two
+ * adjacent shades on this ramp are one colour at the size these bodies are
+ * drawn: near-black and dark brown are both "dark" across a room, and weighting
+ * them separately is how a palette swings from a firm of blondes to a firm of
+ * black-haired people instead of landing on a firm. So the ramp reads 30% very
+ * dark, 36% brown, 13% chestnut, 12% fair and 9% silver, and the entries inside
+ * a bucket split its share.
+ *
+ * This is an intent about a population and not a fit to any one cast. What the
+ * office's designed thirty are actually dealt is then checked, rather than the
+ * weights being nudged until that particular firm looks right.
+ *
+ * The same draw dresses the map's pedestrians and every client portrait, which
+ * is the point: a pavement that was 37.5% fair had the same bug and nobody had
+ * named it there.
+ */
+const HAIR_SHADES: ReadonlyArray<readonly [color: number, weight: number]> = [
+  [0x1b1613, 15], // near-black
+  [0x2c2523, 15], // dark brown
+  [0x3a2925, 18], // dark chestnut
+  [0x5b3a2a, 18], // mid brown
+  [0x7a4a30, 13], // light chestnut
+  [0x9c7645, 7], //  dark blond
+  [0xab8f5c, 5], //  blond
+  [0x8b8b8d, 9], //  silver
+]
+
+const HAIR_WEIGHT_TOTAL = HAIR_SHADES.reduce((sum, [, weight]) => sum + weight, 0)
+
+function seededHairColor(paletteSeed: number) {
+  let roll = subHash(paletteSeed, SALT_HAIR_COLOR) % HAIR_WEIGHT_TOTAL
+  for (const [color, weight] of HAIR_SHADES) {
+    if (roll < weight) return color
+    roll -= weight
+  }
+  return HAIR_SHADES[0][0]
+}
+
 const SALT_SKIN = 0x9e3779b1
 const SALT_HAIR_COLOR = 0x85ebca6b
 const SALT_CLOTH = 0xc2b2ae35
@@ -930,13 +988,11 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
   // hair) rather than the previous 4-entry palettes, which put half the cast
   // on nearly-identical dark-brown hair.
   const skinColors = [0xf6d2b8, 0xf2bda2, 0xe0a883, 0xd89473, 0xc48660, 0xb87556, 0x9c6248, 0x6f4632]
-  const hairColors = [0x1b1613, 0x2c2523, 0x3a2925, 0x5b3a2a, 0x7a4a30, 0x9c7645, 0xab8f5c, 0x8b8b8d]
   const skinIndex = subHash(paletteSeed, SALT_SKIN) % skinColors.length
-  const hairIndex = subHash(paletteSeed, SALT_HAIR_COLOR) % hairColors.length
   const hairstyle = cosmetics?.hair ? HAIRSTYLES[cosmetics.hair] : undefined
   const skin = physical(skinColors[skinIndex], .58, .05)
   const skinShade = physical(new THREE.Color(skinColors[skinIndex]).offsetHSL(0, .01, -.08).getHex(), .64, .025)
-  const hair = physical(options.hairColor ?? hairstyle?.color ?? hairColors[hairIndex], .52, .12)
+  const hair = physical(options.hairColor ?? hairstyle?.color ?? seededHairColor(paletteSeed), .52, .12)
   // A restrained version of the reference's blue jacket: saturated enough to
   // read as a designed character, dark enough to sit inside the app's navy UI.
   const suitPalette = [0x315b84, 0x294f77, 0x24486d, 0x1f4163, 0x1b3857, 0x142f4b]

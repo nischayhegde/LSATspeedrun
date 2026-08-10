@@ -425,7 +425,17 @@ export type OfficeStaffLook = {
   /** Which of the three authored haircuts, by silhouette: 0 side parting,
    *  1 cropped, 2 full. */
   hair: 0 | 1 | 2
-  /** Overrides the seed's hair colour where age or seniority should show. */
+  /**
+   * Overrides the seed's hair colour where age or seniority should show.
+   *
+   * Two people in the firm have one, and both are earned: the chief justice
+   * strategist is the last hire the ladder allows and the appellate counsel is
+   * the one who has been arguing on the record longest. It used to be four,
+   * and the other two — a silver economist and a blond lunar envoy — were
+   * saying nothing about their jobs while adding to a cast that was already
+   * reading as a firm of blondes and retirees. They are dressed by the seed
+   * like everybody else now.
+   */
   hairColor?: number
   eyewear: 'none' | 'round' | 'rectangular' | 'tortoiseshell'
   insignia: OfficeStaffInsignia
@@ -463,7 +473,7 @@ export const OFFICE_STAFF_LOOKS = {
   // Fieldwork: earth, wear, and no polish.
   private_investigator: { suit: 0x4a4536, hair: 1, eyewear: 'none', insignia: 'none' },
   trial_consultant: { suit: 0x5d3a3f, hair: 0, eyewear: 'round', insignia: 'none' },
-  economist: { suit: 0x6b5a3c, hair: 2, hairColor: 0x8b8b8d, eyewear: 'tortoiseshell', insignia: 'none' },
+  economist: { suit: 0x6b5a3c, hair: 2, eyewear: 'tortoiseshell', insignia: 'none' },
   quantum_analyst: { suit: 0x2f4f4a, hair: 1, eyewear: 'rectangular', insignia: 'lanyard' },
 
   // The systems bench. Everyone here is badged, which is the point of a
@@ -490,7 +500,7 @@ export const OFFICE_STAFF_LOOKS = {
   treaty_architect: { suit: 0x44405c, hair: 1, eyewear: 'round', insignia: 'stole' },
   oceanic_counsel: { suit: 0x1f5a6b, hair: 2, eyewear: 'none', insignia: 'stole' },
   orbital_counsel: { suit: 0x53575e, hair: 1, eyewear: 'rectangular', insignia: 'stole' },
-  lunar_envoy: { suit: 0x6e6a63, hair: 0, hairColor: 0xab8f5c, eyewear: 'none', insignia: 'stole' },
+  lunar_envoy: { suit: 0x6e6a63, hair: 0, eyewear: 'none', insignia: 'stole' },
 } satisfies Record<string, OfficeStaffLook>
 
 /**
