@@ -25,7 +25,7 @@ from app.enforcement import (
 from app.extensions import db
 from app.models import Attempt, Passage, Question, QuestionChoice, SessionItem, StudySession, utcnow
 from app.seed import SOURCE_PREFIX
-from app.strategies import STRATEGIES
+from app.strategies import STRATEGIES, _candidate_keys, is_comparative, strategy_performance
 
 
 LR_STIMULUS = (
@@ -1253,3 +1253,256 @@ def test_a_degraded_gate_lets_the_student_through_instead_of_demanding_an_artifa
         # The self-report is still recorded; it is only the gate that was never
         # armed, and `unenforced` is exactly what a missing gate means.
         assert attempt.strategy_applied is True
+
+
+# ---------------------------------------------------------------------------
+# Comparative reading
+#
+# The one approach in the catalogue that was never reachable. Its candidate
+# test asked the bank's labels whether a set was comparative, and this bank
+# labels every Reading Comprehension passage identically, so the answer was no
+# on all 2,366 of them and the gate below had never been served to anybody.
+# ---------------------------------------------------------------------------
+
+
+COMPARATIVE_PASSAGE = (
+    "Passage A Whitlock maintains that municipal archives belong to the public and should be "
+    "digitized without charge, on the ground that the cost of copying a record has collapsed "
+    "while the cost of travelling to read one has not.\n\n"
+    "Passage B Grimes accepts that principle and doubts the arithmetic. A fee, on this account, "
+    "is what pays the archivists who keep a collection usable at all, and a free copy of a "
+    "catalogue nobody maintains is worth very little."
+)
+
+
+def add_comparative_question(index: int, *, stem: str, passage_id: str) -> str:
+    if not db.session.get(Passage, passage_id):
+        db.session.add(
+            Passage(
+                id=passage_id,
+                canonical_text=COMPARATIVE_PASSAGE,
+                # Exactly what the real bank stores on every passage it has,
+                # comparative or not. The detection cannot lean on this.
+                passage_type="Reading Comprehension",
+                source=f"{SOURCE_PREFIX}rc",
+                review_status="published",
+            )
+        )
+    question_id = f"hf-lsat-rc:enforce-comparative-{index}"
+    db.session.add(
+        Question(
+            id=question_id,
+            passage_id=passage_id,
+            section="Reading Comprehension",
+            question_type="Reading Comprehension",
+            difficulty=3,
+            stimulus=None,
+            stem=stem,
+            correct_answer="C",
+            source=f"{SOURCE_PREFIX}rc · train",
+            license_status="upstream_terms_apply",
+            review_status="published",
+        )
+    )
+    for position, label in enumerate("ABCDE"):
+        db.session.add(
+            QuestionChoice(
+                id=f"{question_id}-{label}",
+                question_id=question_id,
+                label=label,
+                canonical_text=CHOICE_TEXTS[label],
+                position=position,
+            )
+        )
+    return question_id
+
+
+def arm_comparative(app, session_id: str) -> None:
+    """Put a real two-passage set, and its own gate, on the current question."""
+    with app.app_context():
+        question_id = add_comparative_question(
+            0,
+            stem="The authors would be most likely to disagree about which one of the following?",
+            passage_id="enforce-comparative-passage",
+        )
+        db.session.commit()
+        session = db.session.get(StudySession, session_id)
+        item = next(value for value in session.items if value.position == session.current_index)
+        item.question_id = question_id
+        # The allocator has to be willing to offer this before the gate below
+        # means anything; which of the candidates it lands on is a coin toss it
+        # owns, so the item is set by hand from here as everywhere else.
+        assert "comparative_matrix" in _candidate_keys(db.session.get(Question, question_id))
+        item.strategy_key = "comparative_matrix"
+        item.strategy_variant = "prompt"
+        item.strategy_enforcement_level = LEVEL_FULL
+        item.strategy_propensity = 0.75
+        item.strategy_candidates_n = 3
+        db.session.commit()
+
+
+def test_a_two_passage_set_is_recognised_from_the_set_itself_not_from_its_labels(app):
+    with app.app_context():
+        comparative = db.session.get(
+            Question,
+            add_comparative_question(
+                1,
+                stem="The authors would be most likely to disagree about which one of the following?",
+                passage_id="detect-comparative-passage",
+            ),
+        )
+        single = Question.query.filter_by(section="Reading Comprehension").first()
+        db.session.commit()
+
+        # The regression this pins: nothing the bank *says* about either question
+        # distinguishes them, so a candidate test that reads the labels finds no
+        # comparative set anywhere and never offers the approach.
+        assert "compar" not in (comparative.question_type or "").lower()
+        assert "compar" not in (comparative.passage.passage_type or "").lower()
+        assert comparative.passage.passage_type == single.passage.passage_type
+
+        assert is_comparative(comparative)
+        assert not is_comparative(single)
+        assert "comparative_matrix" in _candidate_keys(comparative)
+        assert "comparative_matrix" not in _candidate_keys(single)
+
+
+def test_a_stem_that_asks_about_both_passages_counts_even_without_the_headings(app):
+    """Some sets lost their headings in transcription; the stems did not."""
+    with app.app_context():
+        single_passage_id = Question.query.filter_by(section="Reading Comprehension").first().passage_id
+        orphan = Question(
+            id="hf-lsat-rc:enforce-orphan",
+            passage_id=single_passage_id,
+            section="Reading Comprehension",
+            question_type="Inference",
+            difficulty=3,
+            stimulus=None,
+            stem="Both passages were written primarily in order to answer which one of the following questions?",
+            correct_answer="C",
+            source=f"{SOURCE_PREFIX}rc · train",
+            license_status="upstream_terms_apply",
+            review_status="published",
+        )
+        db.session.add(orphan)
+        db.session.commit()
+        assert is_comparative(orphan)
+        assert "comparative_matrix" in _candidate_keys(orphan)
+
+
+def test_the_comparative_gate_hides_the_choices_until_both_passages_are_mapped(app):
+    client = app.test_client()
+    headers = login(client, "comparative@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+    arm_comparative(app, session["id"])
+
+    gate = gate_of(client, headers, session["id"])
+    assert gate["strategy_key"] == "comparative_matrix"
+    assert gate["hides_choices"] is True
+    assert [field["key"] for field in gate["fields"]] == ["passage_a", "passage_b", "relationship"]
+
+    item_id = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]["current_item"]["id"]
+
+    one_sided = submit(
+        client,
+        headers,
+        session["id"],
+        item_id,
+        {
+            "passage_a": "The first author wants records copied and handed over for nothing.",
+            "passage_b": "The second author wants the archivists paid before anything is copied.",
+            "relationship": "These two writers discuss municipal archives in Halford.",
+        },
+        key="no-relation",
+    )
+    assert one_sided.status_code == 409
+    assert "how they relate" in field_error(one_sided)
+
+    copied = submit(
+        client,
+        headers,
+        session["id"],
+        item_id,
+        {
+            "passage_a": "Passage A Whitlock maintains that municipal archives belong to the public and should be "
+            "digitized without charge, on the ground that the cost of copying a record has collapsed "
+            "while the cost of travelling to read one has not.",
+            "passage_b": "The second author wants the archivists paid before anything is copied.",
+            "relationship": "Both want a usable archive, whereas one counts the reader's costs and the other the keeper's.",
+        },
+        key="copied-passage",
+    )
+    assert copied.status_code == 409
+    assert "in your words" in field_error(copied)
+
+    accepted = submit(
+        client,
+        headers,
+        session["id"],
+        item_id,
+        {
+            "passage_a": "The first author wants records copied and handed over for nothing.",
+            "passage_b": "The second author wants the archivists paid before anything is copied.",
+            "relationship": "Both want a usable archive, whereas one counts the reader's costs and the other the keeper's.",
+        },
+        key="mapped-both",
+    )
+    assert accepted.status_code == 200, accepted.json
+
+    with app.app_context():
+        attempt = Attempt.query.one()
+        assert attempt.strategy_key == "comparative_matrix"
+        assert attempt.strategy_variant == "prompt"
+        assert attempt.strategy_gate_status == "satisfied"
+        assert attempt.strategy_enforcement_version == ENFORCEMENT_VERSION
+        assert set(attempt.strategy_artifact_json) == {"passage_a", "passage_b", "relationship"}
+        assert "whereas" in attempt.strategy_artifact_json["relationship"]
+
+
+def test_a_cleared_gate_leaves_a_running_record_for_the_next_time_it_is_offered(app):
+    """The line the gate panel shows a returning student, end to end.
+
+    `useStrategyGate` looks this approach up by key in `strategy_lab.results`
+    and renders `summary` and `detail` above the fields. Nothing renders until
+    an attempt carrying that key exists, which is why the surface stayed
+    invisible for the one approach that could never be assigned.
+    """
+    client = app.test_client()
+    headers = login(client, "record@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+
+    with app.app_context():
+        user_id = db.session.get(StudySession, session["id"]).user_id
+        assert strategy_performance(user_id)["results"] == []
+
+    arm_comparative(app, session["id"])
+    item_id = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]["current_item"]["id"]
+    assert (
+        submit(
+            client,
+            headers,
+            session["id"],
+            item_id,
+            {
+                "passage_a": "The first author wants records copied and handed over for nothing.",
+                "passage_b": "The second author wants the archivists paid before anything is copied.",
+                "relationship": "Both want a usable archive, whereas one counts the reader's costs and the other the keeper's.",
+            },
+            key="record-run",
+        ).status_code
+        == 200
+    )
+
+    with app.app_context():
+        results = strategy_performance(user_id)["results"]
+        reading = next(result for result in results if result["key"] == "comparative_matrix")
+        # Exactly the two conditions the panel tests before it draws anything.
+        assert reading["sample"] or reading["control_sample"]
+        assert reading["sample"] == 1
+        assert reading["control_sample"] == 0
+        # And the two sentences it draws, which are counts of what just happened
+        # rather than a claim about the approach.
+        assert reading["summary"] == "So far you're at 1/1 with it. Not enough questions without it yet to compare."
+        assert reading["detail"] == "You finished the steps on 1 of the 1 time it was enforced."
