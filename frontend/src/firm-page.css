@@ -311,7 +311,9 @@
    --------------------------------------------------------------------------- */
 .retainer-ledger { margin: 0 4px 20px; padding: 14px; border: 3px solid #231b17; background: #23404a; box-shadow: inset 0 0 0 2px #49606a, 5px 5px #34261e; }
 
-.retainer-totals { display: grid; grid-template-columns: auto 1fr 1fr; gap: 16px; }
+/* Left-packed and capped rather than stretched across the panel: a meter that
+   spans 600px of a 1440 screen reads as a progress bar for the page. */
+.retainer-totals { display: grid; grid-template-columns: auto minmax(150px, 240px) minmax(150px, 270px); justify-content: start; gap: 28px; }
 .retainer-totals > div { min-width: 0; }
 .retainer-totals small { display: block; color: #6fd0c5; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .12em; }
 .retainer-totals strong { display: block; margin-top: 4px; color: #f0cc68; font-family: var(--font-pixel); font-size: 17px; font-variant-numeric: tabular-nums; }

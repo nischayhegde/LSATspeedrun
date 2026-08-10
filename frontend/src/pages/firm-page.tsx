@@ -223,7 +223,11 @@ export function FirmPage() {
     <div className="firm-page page-wrap">
       <section className="page-heading firm-ledger-heading">
         <PixelStudyScenery variant="ledger" className="firm-ledger-scenery" />
-        <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Build a legendary practice.</h1><p>Spend case fees on a living, growing office. Every improvement appears in your firm and makes the next case worth more.</p><div className="ledger-rule"><i /><span>§</span><i /></div></div>
+        {/* No standfirst. It said that spending money on the office improves
+            the office, which the six tabs under it say better, and it cost a
+            band of the screen on every visit — most of it on a phone, where
+            the heading already runs past the fold. */}
+        <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Build a legendary practice.</h1><div className="ledger-rule"><i /><span>§</span><i /></div></div>
         <div className="firm-wallet">
           <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(cashShown ?? game.cash)}</strong>
           {cashDelta !== null && <span className={`wallet-delta ${cashDelta < 0 ? 'is-debit' : 'is-credit'}`} role="status">{formatMoneyDelta(cashDelta)}</span>}
