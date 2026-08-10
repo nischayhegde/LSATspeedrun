@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight } from 'lucide-react'
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 
 import { api, ApiError } from './api'
 import { AppShell, ErrorNotice, LoadingScreen } from './components'
@@ -98,6 +98,50 @@ function DockWarmer() {
       if (timer !== undefined) clearTimeout(timer)
     }
   }, [pathname])
+  return null
+}
+
+
+/**
+ * Opens a newly entered route at its top.
+ *
+ * The document itself is the scroller — `body` and `.app-shell` only set a
+ * `min-height`, so there is no inner overflow container to reset — and nothing
+ * was moving it between routes. React Router does not reset scroll on its own,
+ * so arriving at a short screen from a long one landed part-way down it: from a
+ * scrolled dashboard the Firm tab opened around 748 px in, below its own tab
+ * strip, which reads as a broken page rather than a scrolled one.
+ *
+ * The reset is deliberately narrow, because "scroll to top whenever the URL
+ * changes" breaks the case it does not distinguish:
+ *
+ * - `POP` is the back and forward buttons, where returning to the place you
+ *   left is the whole point. Those are left alone for the browser's own
+ *   restoration to handle.
+ * - A pathname that has not changed is a re-render, or a search/state update on
+ *   the screen already open. Moving someone who is reading is worse than the
+ *   bug being fixed.
+ * - A hash is an explicit request for one part of the page, so it outranks a
+ *   general reset.
+ * - The first paint keeps whatever offset the browser restored for a reload.
+ *
+ * `useLayoutEffect` puts the reset in the same frame as the new screen, so the
+ * old offset is never briefly painted against new content.
+ */
+function ScrollReset() {
+  const { pathname, hash } = useLocation()
+  const navigationType = useNavigationType()
+  const previousPathname = useRef<string | null>(null)
+
+  useLayoutEffect(() => {
+    const previous = previousPathname.current
+    previousPathname.current = pathname
+    if (navigationType === 'POP') return
+    if (previous === null || previous === pathname) return
+    if (hash) return
+    window.scrollTo(0, 0)
+  }, [pathname, hash, navigationType])
+
   return null
 }
 
@@ -265,6 +309,10 @@ export default function App() {
     /* `Protected` carries its own boundary so a protected route keeps the shell
        while its chunk lands. This one is the net for the routes outside it. */
     <Suspense fallback={<LoadingScreen />}>
+    {/* Outside `Routes`, so it observes navigation instead of being torn down
+        and remounted by it — a remount would lose the previous pathname and
+        make every arrival look like a first paint. */}
+    <ScrollReset />
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={<HomeRedirect />} />
