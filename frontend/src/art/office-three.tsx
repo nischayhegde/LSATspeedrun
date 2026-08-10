@@ -22,6 +22,7 @@ import {
   type OfficeVisualZone,
 } from './office-manifest'
 import { OfficeCastBatch } from './office-cast-batch'
+import { OfficeRoomBatch } from './office-room-batch'
 import { buildOfficeWindowView } from './office-window-view'
 import { IllustratedRenderPass } from './render-style'
 import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
@@ -779,6 +780,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       const halo = addMesh(object, new THREE.TorusGeometry(radius, .036, 8, 40), focusMaterial, [0, y, 0], rotation)
       halo.visible = false
       halo.userData.navIgnore = true
+      // A halo breathes and turns while it is up, so it is one of the few
+      // things in the room the static batcher must leave alone.
+      halo.userData.batchSkip = true
       halo.castShadow = false
       halo.receiveShadow = false
       focusHalos.push(halo)
@@ -1022,6 +1026,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       // Chambers is a storey up, and the view is where that has to be true.
       storeyLift: practiceFloor ? 0 : 4.2,
     })
+    // The district beyond the glass keeps its own clock — a train on the
+    // viaduct, a barge on the canal — so none of it can be captured into a
+    // batch that is written once.
+    windowView.root.userData.batchSkip = true
     if (devQuery?.get('officeWindowView') !== '0') windowGroup.add(windowView.root)
 
     const glass = addMesh(windowGroup, new THREE.PlaneGeometry(windowWidth, windowHeight), new THREE.MeshStandardMaterial({
@@ -1106,6 +1114,11 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       if (!rustic && level >= 2) addShelf(-6.15)
       addShelf(rustic ? 6.05 : 6.15)
     }
+    // Every eleventh volume leans a little further as the hour goes on, and
+    // which eleventh it is depends on where the book landed in this array, so
+    // the whole library is kept out of the static batch rather than a ninth of
+    // it.
+    books.forEach((book) => { book.userData.batchSkip = true })
     if (rustic) {
       // A joined file chest and working cast-iron stove make the room a
       // believable cold-weather practice rather than a collection of props.
@@ -1128,6 +1141,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       addMesh(hearth, roundedBox(.78, .46, .04, 3, .04), new THREE.MeshStandardMaterial({ color: 0x17191a, roughness: .74, metalness: .66 }), [0, .93, .4])
       const emberMaterial = new THREE.MeshStandardMaterial({ color: 0x8b2f18, emissive: 0xd54b20, emissiveIntensity: .65, roughness: .88 })
       hearthEmber = addMesh(hearth, constantGeometry('PlaneGeometry:.54,.23', () => new THREE.PlaneGeometry(.54, .23)), emberMaterial, [0, .9, .43])
+      // The fire is written to every frame, and its plane shares a cached
+      // geometry with anything else that happens to be that size.
+      hearthEmber.userData.batchSkip = true
       hearthEmber.castShadow = false
       hearthLight = new THREE.PointLight(0xff7d31, .52, 3.6, 1.8)
       hearthLight.position.set(0, .92, .72)
@@ -1227,6 +1243,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       addMesh(lampGroup, constantGeometry('CylinderGeometry:.22,.28,.1,18', () => new THREE.CylinderGeometry(.22, .28, .1, 18)), charcoal, [0, .74, 0])
       addMesh(lampGroup, new THREE.TorusGeometry(.32, .025, 10, 30, Math.PI), charcoal, [0, .7, 0], [0, 0, 0])
       lanternFlame = addMesh(lampGroup, constantGeometry('ConeGeometry:.07,.28,12', () => new THREE.ConeGeometry(.07, .28, 12)), new THREE.MeshStandardMaterial({ color: 0xffc363, emissive: 0xff7a20, emissiveIntensity: 2.1, roughness: .4 }), [0, .3, 0])
+      lanternFlame.userData.batchSkip = true
     } else {
       addMesh(lampGroup, constantGeometry('CylinderGeometry:.35,.42,.08,28', () => new THREE.CylinderGeometry(.35, .42, .08, 28)), brass, [0, 0, 0])
       addMesh(lampGroup, constantGeometry('CylinderGeometry:.04,.04,1.2,18', () => new THREE.CylinderGeometry(.04, .04, 1.2, 18)), brass, [0, .58, 0], [0, 0, -.16])
@@ -1265,6 +1282,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     chair.rotation.y = chairHomeRotation
     chair.scale.setScalar(rustic ? .82 : .72)
     chair.userData.officeDraggable = 'chair'
+    // The one piece of furniture a player can pick up and put somewhere else,
+    // and the one the pointer raycasts against directly.
+    chair.userData.batchSkip = true
     try {
       const saved = window.localStorage.getItem(chairStorageKey)
       if (saved) {
@@ -1375,12 +1395,17 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
 
       const client = new THREE.Group()
       client.position.set(0, 0, 0)
+      // The body is posed by a mixer and the props it holds drift on a clock of
+      // their own; the chair and the side table under them do not move and are
+      // left in the batcher's reach.
+      client.userData.batchSkip = true
       client.add(rig.root)
       clientStation.add(client)
 
       const folder = new THREE.Group()
       folder.position.set(0, .87, .29)
       folder.rotation.x = -.14
+      folder.userData.batchSkip = true
       clientStation.add(folder)
       addMesh(folder, roundedBox(.72, .045, .46, 3, .018), seed % 2 ? leather : teal, [0, 0, 0])
       addMesh(folder, roundedBox(.32, .014, .17, 2, .008), paper, [0, .034, -.015])
@@ -1402,6 +1427,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
 
       const mug = new THREE.Group()
       mug.position.set(.9, .82, -.12)
+      mug.userData.batchSkip = true
       clientStation.add(mug)
       addMesh(mug, constantGeometry('CylinderGeometry:.09,.075,.2,18', () => new THREE.CylinderGeometry(.09, .075, .2, 18)), seed % 2 ? paper : teal, [0, 0, 0])
       addMesh(mug, new THREE.TorusGeometry(.075, .018, 8, 18, Math.PI * 1.6), seed % 2 ? paper : teal, [.09, 0, 0], [Math.PI / 2, 0, Math.PI / 2])
@@ -1462,12 +1488,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     addMesh(clock, new THREE.CircleGeometry(rustic ? .28 : .34, rustic ? 18 : 36), paper, [0, 0, .075])
     const minuteHand = addMesh(clock, new THREE.BoxGeometry(.025, .25, .025), charcoal, [0, .11, .095])
     minuteHand.geometry.translate(0, -.11, 0)
+    minuteHand.userData.batchSkip = true
     // A fully articulated office cat replaces the old featureless oval. Its
     // face points toward the opening camera while resting, and its patrol stays
     // in authored perimeter lanes so it never walks through desks or clients.
     const cat = new THREE.Group()
     cat.scale.setScalar(rustic ? .69 : .64)
     cat.userData.navIgnore = true
+    // Breathing, blinking and a tail: the cat is an actor, not a fitting.
+    cat.userData.batchSkip = true
     root.add(cat)
     const catFur = new THREE.MeshStandardMaterial({ color: 0x8b5c3f, roughness: .88 })
     const catFurLight = new THREE.MeshStandardMaterial({ color: 0xc49a72, roughness: .92 })
@@ -2725,6 +2754,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         // obstacle scan below keeps a body from paving over the floor it is
         // standing on.
         actor.userData.navIgnore = true
+        // And a character is not still, either: the cast has a batcher of its
+        // own that copies this hierarchy's pose every frame.
+        actor.userData.batchSkip = true
         actor.add(rig.root)
         root.add(actor)
         const halo = attachFocus([asset.key], place, .96, .03)
@@ -2943,14 +2975,28 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({ color: 0xe8d4a5, size: .025, transparent: true, opacity: .22, depthWrite: false }))
     root.add(dust)
 
-    // Static scenery is deliberately NOT merged into batched meshes here, unlike
-    // the world map. Merging was implemented and measured on this room: it cut
-    // draw calls from 953 to 581 at the top tier, and moved the frame time by
-    // 0.2ms, because the office is bound by per-fragment light evaluation rather
-    // than by draw submission — throttling the CPU 4x does not change its frame
-    // time at all. It did cost 123ms of time to first frame to do the merging,
-    // so it was a straight loss. Cutting a light is worth ~1.5ms/frame here;
-    // cutting a draw call is worth nothing measurable.
+    // The room, drawn from shared batches. Built here because this is the last
+    // line at which anything is added to `root`, and a static batch is a
+    // photograph of the graph: whatever is not in it yet is not in it at all.
+    //
+    // Static scenery is still deliberately not *merged*. Merging was tried on
+    // this room once and cost 123 ms of time to first frame to do, because
+    // `mergeGeometries` drops the index when its inputs disagree about having
+    // one and rebuilds every buffer. Instancing keeps one geometry per shape
+    // and adds a matrix per copy, so it costs a walk of the graph and no new
+    // vertices at all — see `office-room-batch`, which does not even cut a
+    // canonical shape, it borrows the first mesh in each group as the shape and
+    // scales the rest to it.
+    //
+    // `officeRoomBatch=0` builds the same floor mesh by mesh, so the claim that
+    // this is the same room in fewer submissions is a pixel diff of one build
+    // against itself rather than of one commit against another.
+    const roomBatch = devQuery?.get('officeRoomBatch') === '0' ? null : new OfficeRoomBatch(root)
+    // Added to the scene rather than to the room, so the instance transforms it
+    // holds are the world matrices the furniture already resolved.
+    if (roomBatch) scene.add(roomBatch.group)
+    phase('room-batch')
+
     const surface = canvas.closest<HTMLElement>('.av-office')
     const dragPointer = new THREE.Vector2()
     const raycaster = new THREE.Raycaster()
@@ -3498,6 +3544,17 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         /** The focus key a harness must send to select the client, or '' if
          *  there is no consultation in progress. */
         clientKey: () => clientFocusKey,
+        /**
+         * Whether the room really did stand still.
+         *
+         * The room's batches are written once, on the theory that furniture is
+         * placed at build time and stays there. A prop that turns out to move
+         * would not raise an error, it would quietly freeze in the batch while
+         * the mesh the rest of the scene reads goes on turning, so the theory
+         * is checked here instead of trusted: this returns every instance whose
+         * world matrix or visibility no longer matches what was captured.
+         */
+        roomDrift: () => roomBatch?.drift() ?? null,
         // Where every body in the room is. This used to carry the crowd
         // state as well - pass radius, errand phase, measured speed, anchor
         // held, seconds stalled - all of which described a simulation that no
@@ -3968,6 +4025,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
             // workstations as well, and put a body 50% over its real price.
             // This walks the actors themselves.
             cast: castCensus(),
+            // And the other half of the frame: what the room the cast sits in
+            // is made of, and how much of it a batch was allowed to hold.
+            room: roomBatch ? roomBatch.census : null,
           }
         }
         canvas.classList.add('is-ready')
@@ -4013,6 +4073,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       // copies. The geometry underneath is the character cache's and outlives
       // every floor, which is what the traversal below already respects.
       castBatch?.dispose()
+      // Same contract: the instance buffers are the batch's, and the geometry
+      // and materials under them belong to the meshes the traversal below
+      // walks.
+      roomBatch?.dispose()
       if (frame) window.cancelAnimationFrame(frame)
       observer.disconnect()
       surfaceObserver.disconnect()
