@@ -2001,6 +2001,11 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
       const row = Math.floor(index / 5)
       stall.position.set(market.x - Math.min(2.6, market.width / 2 - .5) + column * Math.min(1.32, (market.width - 1) / 4), .09, market.z - .85 + row * 1.6)
       stall.rotation.y = row ? Math.PI : 0
+      // Declared, on the market cross's precedent. Ten stalls stood on the
+      // wool-hall block for as long as it has existed and the pedestrian
+      // router could not see one of them, so a walk across the yard went
+      // through all ten.
+      markSolidProp(stall, .5)
       root.add(stall)
     }
     registerLandmark(root, { key: 'city-wool-hall', name: 'Wool Hall Yard', kind: 'market', detail: 'The older of the quarter\u2019s two markets, on the wool-hall block behind the north arterial.', position: [market.x, market.z], radius: 2.5 })
