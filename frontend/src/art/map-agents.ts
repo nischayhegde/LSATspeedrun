@@ -979,6 +979,39 @@ export class TrafficSim {
     agent.object.rotation.y = this.facing === 'x' ? agent.heading - Math.PI / 2 : agent.heading
   }
 
+  /**
+   * File every active agent under the edge it is currently on.
+   *
+   * Run at both ends of `update`, and the second one is not redundant. The list
+   * is the only index into "who is on this edge", and `timeAlong` — the
+   * pedestrian's whole view of the traffic — walks it. An agent that crosses a
+   * node during the integration below has already been given its new `edge`,
+   * `nextEdge` and `distance` by `enterEdge`, while the list still files it
+   * under the edge it left. The two halves of its identity then disagree, and a
+   * caller loses the vehicle completely rather than reading it late: the
+   * approach that names the edge it has joined is looked up in a bucket it is
+   * not in, and the approach that names the edge it is filed under is gated on
+   * a `via` it no longer has, because `nextEdge` moved on with the rest.
+   *
+   * That is a one-frame hole, and one frame is enough. The crowd runs after
+   * every traffic sim, so it reads exactly this state; a walker at a kerb asks
+   * `gapIsSafe` on every one of the six hundred frames it is willing to wait,
+   * and steps off the first time the answer is yes. So a car crossing a node
+   * beside a crossing is invisible for the frame it does it, and the walker
+   * standing there is all but certain to pick that frame. Measured on the Old
+   * Quarter, a walker stepped off in front of a vehicle 1.16m away doing
+   * 2.06m/s, which the crossing read as an empty road.
+   */
+  private refile() {
+    this.edgeHead.fill(-1)
+    for (let index = 0; index < this.agents.length; index += 1) {
+      const agent = this.agents[index]
+      if (!agent.active || agent.edge < 0) continue
+      this.agentNext[index] = this.edgeHead[agent.edge]
+      this.edgeHead[agent.edge] = index
+    }
+  }
+
   update(delta: number, camera: THREE.Camera) {
     if (this.disposed || !this.agents.length || !this.graph.edgesByKind[this.kind].length) return
     const step = Math.min(Math.max(delta, 0), MAX_DELTA)
@@ -990,13 +1023,7 @@ export class TrafficSim {
     // Rebuild the occupancy buckets from last frame's positions. One frame of
     // lag in a following distance is imperceptible and it keeps the whole
     // update to a single pass over the agents.
-    this.edgeHead.fill(-1)
-    for (let index = 0; index < this.agents.length; index += 1) {
-      const agent = this.agents[index]
-      if (!agent.active || agent.edge < 0) continue
-      this.agentNext[index] = this.edgeHead[agent.edge]
-      this.edgeHead[agent.edge] = index
-    }
+    this.refile()
 
     for (let index = 0; index < this.agents.length; index += 1) {
       const agent = this.agents[index]
@@ -1251,6 +1278,11 @@ export class TrafficSim {
     // writes a fresh set. A claim that persisted would hold traffic at a
     // crossing for good the first time anybody used it.
     this.pedestrian.fill(Number.POSITIVE_INFINITY)
+
+    // Everything above may have moved an agent onto a different edge or brought
+    // a new one onto the network, so the list is refiled before anyone outside
+    // this class reads it. See `refile`.
+    this.refile()
   }
 
   /**
