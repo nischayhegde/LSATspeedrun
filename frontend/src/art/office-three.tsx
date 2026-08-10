@@ -1114,11 +1114,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       if (!rustic && level >= 2) addShelf(-6.15)
       addShelf(rustic ? 6.05 : 6.15)
     }
-    // Every eleventh volume leans a little further as the hour goes on, and
-    // which eleventh it is depends on where the book landed in this array, so
-    // the whole library is kept out of the static batch rather than a ninth of
-    // it.
-    books.forEach((book) => { book.userData.batchSkip = true })
+    // Every eleventh volume leans a little further as the hour goes on. Which
+    // eleventh that is depends only on where a book landed in this array, so
+    // the nine that move are resolved here, once, rather than recomputed in the
+    // frame loop against an index the batcher would then have to guess at. The
+    // other eighty-four stand still and can be drawn in pairs: the two library
+    // runs are built by the same loops, so the left shelf's third book on the
+    // second row and the right shelf's are one geometry in one cloth.
+    const leaningBooks = books.filter((_, index) => index % 11 === 0)
+    leaningBooks.forEach((book) => { book.userData.batchSkip = true })
     if (rustic) {
       // A joined file chest and working cast-iron stove make the room a
       // believable cold-weather practice rather than a collection of props.
@@ -3921,7 +3925,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       })
       catActor.tail.rotation.y = Math.sin(elapsed * (awake ? 4.4 : 1.25)) * (awake ? .34 : .16)
       catActor.tail.rotation.z = .08 + Math.sin(elapsed * .72) * .055
-      books.forEach((book, index) => { if (index % 11 === 0) book.rotation.z = Math.sin(elapsed * .16 + index) * .012 })
+      // `order * 11` is the position the book holds in the shelved run, which
+      // is the phase it has always leaned on.
+      leaningBooks.forEach((book, order) => { book.rotation.z = Math.sin(elapsed * .16 + order * 11) * .012 })
       // A train on the viaduct, a barge on the canal, a launch crossing the
       // harbour: a handful of matrix writes, and the only thing that stops the
       // district reading as a photograph of itself.
