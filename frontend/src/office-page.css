@@ -37,6 +37,17 @@
 .office-milestone-strip > p { margin: 0; color: #bfc8c2; font-size: 12px; }
 .office-milestone-strip > button { min-height: 38px; padding: 8px 12px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgba(223,195,125,.4); border-radius: 9px; color: #f5e5b8; background: #294854; box-shadow: inset 0 0 0 1px rgba(255,255,255,.035); font-family: var(--font-pixel); font-size: 9px; font-weight: 850; }
 .office-milestone-strip > button svg { width: 14px; }
+/* The economy ledger is a fixed card in the viewport's bottom-left corner
+   (`.economy-ledger`, styles.css), and this strip is the full-width row that
+   comes to rest in that corner: at 1440x900 the card was printed straight over
+   "NEXT OFFICE" and the tier name beneath it. Reserve the corner instead --
+   the ledger is inset 14px and is 214px wide, so 210px of padding puts this
+   strip's copy clear of its right edge at every width the ledger is shown at,
+   and the card reads as sitting in the gutter rather than on top of the row.
+   Scoped to match the ledger itself, which mobile.css stands down at 900px. */
+@media (min-width: 901px) {
+  .office-milestone-strip { padding-left: 210px; }
+}
 
 .office-gamebar { max-width: 1660px; margin: 19px auto 0; display: grid; grid-template-columns: 1fr 1.12fr .82fr; gap: 13px; }
 .office-gamebar > article { min-height: 116px; border: 3px solid #090d15; background: #f0ddb0; box-shadow: inset 0 0 0 2px #c19b5f, 5px 5px #090d15; }
