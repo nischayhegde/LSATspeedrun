@@ -45,7 +45,15 @@ HEAD_OUT=${3:?treatment output directory}
 shift 3 2>/dev/null || true
 EXTRA=("$@")
 
+# Everything this workstream owns, not just the two files it happened to be
+# editing when the script was written. A file left off this list is restored to
+# neither side, so it is built into the baseline *and* the treatment and the
+# pair silently compares a build against itself — a result of exactly 0 ms that
+# looks like a change that did not work rather than like a harness that did not
+# run. `main.tsx` starts the current route's preload and `routes.tsx` decides
+# which route that is, so both are on the critical path this harness measures.
 MINE=(frontend/index.html frontend/vite.config.ts)
+MINE+=(frontend/src/main.tsx frontend/src/App.tsx frontend/src/routes.tsx)
 MINE+=(frontend/public/fonts/**/*(N.))
 
 restore() {
