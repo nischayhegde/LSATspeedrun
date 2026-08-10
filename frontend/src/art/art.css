@@ -330,7 +330,12 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
    out of the middle third where the room is. On a phone it lies down into a
    two-button bar across the top, losing the department line but keeping the
    storey, the name and the headcount, which is everything needed to choose. */
-.office-floors { position: absolute; z-index: 90; left: 16px; top: 16px; width: min(268px, calc(100% - 32px)); padding: 9px 9px 7px; display: flex; flex-direction: column; gap: 5px; border: 1px solid rgba(223,195,125,.42); border-radius: 13px; background: rgba(8,17,27,.92); box-shadow: 0 14px 30px rgba(3,7,12,.46),inset 0 0 0 1px rgba(255,255,255,.035); backdrop-filter: blur(14px); }
+/* Opaque rather than blurred, because this plate hangs over the office's WebGL
+   canvas and a backdrop filter there is the one thing this project has already
+   measured and removed twice. At 92% there were eight percent of a live 3D
+   room coming through a 14px blur for no legible benefit; at 96% there is a
+   brass plate, which is what it was drawn as. */
+.office-floors { position: absolute; z-index: 90; left: 16px; top: 16px; width: min(268px, calc(100% - 32px)); padding: 9px 9px 7px; display: flex; flex-direction: column; gap: 5px; border: 1px solid rgba(223,195,125,.42); border-radius: 13px; background: rgba(8,17,27,.96); box-shadow: 0 14px 30px rgba(3,7,12,.46),inset 0 0 0 1px rgba(255,255,255,.035); }
 .office-floors-plate { margin: 0 0 1px 5px; color: #d9c27e; font-family: var(--font-pixel); font-size: 8.5px; font-weight: 850; letter-spacing: .19em; text-transform: uppercase; }
 .office-floors-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .office-floor-button { width: 100%; padding: 7px 9px 7px 7px; display: grid; grid-template-columns: 30px minmax(0,1fr) auto; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 9px; color: #eee5d0; background: transparent; text-align: left; cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
@@ -446,7 +451,10 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .av-vignette-person { width: 132px; height: 174px; }
 .av-vignette-person { transition: transform 0.25s ease; }
 .av-vignette:hover .av-vignette-person { transform: translateY(-3px); }
-.av-vignette-locked-person { position: relative; z-index: 2; width: 92px; height: 152px; margin-bottom: 8px; opacity: .34; filter: blur(.35px); }
+/* The silhouette's own blur went with the scrim's. At .35px it was under half
+   a pixel — the rounded corners below already carry more softening than that —
+   and it was another twenty-six filtered layers on the same screen. */
+.av-vignette-locked-person { position: relative; z-index: 2; width: 92px; height: 152px; margin-bottom: 8px; opacity: .34; }
 .av-vignette-locked-person::before { content: ""; position: absolute; left: 25px; top: 2px; width: 42px; height: 46px; border-radius: 48% 48% 44% 44%; background: #101820; }
 .av-vignette-locked-person i { position: absolute; left: 17px; top: 42px; width: 58px; height: 72px; border-radius: 22px 22px 10px 10px; background: #101820; }
 .av-vignette-locked-person b { position: absolute; left: 22px; bottom: 0; width: 18px; height: 54px; border-radius: 9px 9px 5px 5px; background: #101820; box-shadow: 30px 0 #101820; }.av-vignette-site .av-site-img { height: 108px; }
@@ -461,7 +469,28 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .av-vignette-owner .av-bust { width: 30px; height: 34px; }
 .av-vignette-owner strong { display: block; color: #f6f1e2; font-size: 11px; line-height: 1.15; }
 .av-vignette-owner small { display: block; color: #b0a588; font-size: 9px; letter-spacing: 0.06em; }
-.av-vignette-lock { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(9, 14, 21, 0.55); backdrop-filter: blur(2.5px) saturate(0.6); }
+/* The lock scrim, and why the haze behind it moved.
+
+   The Firm screen shows the whole catalogue at once, so this was not one
+   blurred layer, it was twenty-six: every locked card asked the compositor to
+   snapshot its own backdrop, blur it and desaturate it. What sits in that
+   backdrop is a live 3D render of the asset, which is the exact combination —
+   blur over a canvas, on a screen that scrolls — this project has twice
+   measured and removed elsewhere. Scrolled under a 6x CPU throttle it cost a
+   median frame of 26 ms and a p95 of 55.
+
+   The haze was doing real work, so this is not a free swap and it is not a
+   pixel-identical one. A locked card has to read as withheld, and the blur is
+   what was doing that. Moving the same blur onto the art instead of sampling
+   it through the scrim was tried first and measured: it keeps the look almost
+   exactly and only takes the median from 26 ms to 22, because a filtered layer
+   over a live canvas still re-renders. Taking the blur out entirely holds 60Hz
+   — median 16.7, p95 18 — so that is what this does, and the card is held back
+   by a deeper scrim instead of a softer one. Detail behind it is dimmed to
+   about a quarter rather than smeared. That is the visible change, and it is a
+   change; the before and after are in the report this rule was written from.
+   See `scripts/blur-cost-proof.mjs`. */
+.av-vignette-lock { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(11, 13, 17, 0.76); }
 .av-vignette-lock span { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 2px solid rgba(232, 200, 124, 0.5); color: #ffe9a6; background: rgba(13, 20, 32, 0.85); font-family: var(--font-display); font-size: 22px; font-weight: 700; }
 .av-vignette-lock span .mark { width: 22px; height: 22px; }
 .av-vignette-owned { position: absolute; z-index: 5; right: 10px; top: 10px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; border: 2px solid #dff3e8; color: #0d2c1e; background: linear-gradient(170deg, #8fe0bd, #3f9f78); box-shadow: 0 6px 14px rgba(23, 60, 44, 0.45); animation: av-pop-in 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
