@@ -266,6 +266,31 @@ def _current_item(session: StudySession) -> SessionItem | None:
     return SessionItem.query.filter_by(session_id=session.id, position=session.current_index).first()
 
 
+def _move_cursor(session: StudySession, position: int, now: datetime) -> None:
+    """Bank the question being left and start the one being arrived at.
+
+    The clock moves here rather than in serialization because under free
+    navigation a move is a request in its own right: waiting for the next read
+    to start a timer would give away however long the round trip took, on every
+    hop, and a student who bounces between four questions would be credited
+    with less time than they spent.
+    """
+    if position == session.current_index:
+        current = _current_item(session)
+        if current and not current.timer_started_at and not current.completed_at:
+            current.timer_started_at = now
+            current.timer_activated_at = current.timer_activated_at or now
+        return
+    _bank_item_time(_current_item(session), now)
+    session.current_index = position
+    arriving = _current_item(session)
+    if arriving and not arriving.completed_at:
+        arriving.served_at = arriving.served_at or now
+        arriving.timer_activated_at = arriving.timer_activated_at or now
+        arriving.timer_started_at = now
+        arriving.paused_at = None
+
+
 def _items_of(section: SessionSection) -> list[SessionItem]:
     return (
         SessionItem.query.filter(
@@ -307,6 +332,7 @@ def start_section(session: StudySession, section_index: int) -> SessionSection:
     # written here and in `close_section`, nowhere else.
     session.deadline_at = pending.deadline_at
     session.current_index = pending.start_position
+    _move_cursor(session, pending.start_position, now)
     db.session.commit()
     return pending
 
@@ -458,9 +484,7 @@ def focus_item(session: StudySession, position: int) -> SessionItem:
         raise ExamError("no_section_running")
     if not (running.start_position <= position <= running.end_position):
         raise ExamError("item_outside_active_section")
-    if position != session.current_index:
-        _bank_item_time(_current_item(session), utcnow())
-        session.current_index = position
+    _move_cursor(session, position, utcnow())
     db.session.commit()
     return _current_item(session)
 
@@ -495,9 +519,7 @@ def record_answer(
         item.flagged = bool(flagged)
     # Answering is also a navigation: the student is demonstrably on this
     # question, so it is where the clock should be pointing.
-    if item.position != session.current_index and running.start_position <= item.position <= running.end_position:
-        _bank_item_time(_current_item(session), utcnow())
-        session.current_index = item.position
+    _move_cursor(session, item.position, utcnow())
     db.session.commit()
     return item
 
