@@ -305,8 +305,6 @@ body {
   .uw-scene-view-tabs button { min-height: 40px; }
   .uw-map-toolbar { grid-template-columns: repeat(4, 38px); }
   .uw-map-toolbar button { width: 38px; height: 38px; }
-
-  .appearance-button { min-height: 40px; }
   .catalog-view-buttons button { min-width: 40px; min-height: 40px; }.office-mobile-scene-menu > button.is-active { color: #17282b; background: #dbbd6a; }  .office-inventory-toggle { min-width: 136px; min-height: 40px; padding-inline: 9px; }
   .office-inventory-toggle span { font-size: 7px; letter-spacing: .07em; }
 
@@ -320,35 +318,11 @@ body {
   .page-wrap,
   .case-lobby { width: min(100% - 28px, 760px); }
   .contained { width: min(100% - 28px, 760px); }
-  .session-controls,
-  .question-layout { width: min(100% - 24px, 760px); }
-
-  .login-page {
-    min-height: 100dvh;
-    grid-template: 66px auto auto / minmax(0, 1fr);
-  }
-  .login-nav { min-width: 0; padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right)); }
-  .login-hero { padding: 42px clamp(20px, 6vw, 38px) 34px; gap: 28px; }
-  .login-copy h1 { font-size: clamp(34px, 11vw, 52px); line-height: 1.02; }
-  .login-copy > p { font-size: 16px; line-height: 1.58; }
-  .feature-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
-  .feature-list span { min-width: 0; align-items: flex-start; line-height: 1.42; }
-  .feature-list svg { flex: 0 0 auto; margin-top: 1px; }
-  .login-scene { width: 100%; max-height: none; aspect-ratio: 16 / 9.5; }
-  .login-panel-wrap { width: 100%; min-width: 0; padding: 52px clamp(16px, 6vw, 30px) 34px; }
-  .login-panel { width: min(100%, 390px); min-width: 0; }
-
-  .onboarding-page { min-height: calc(100dvh - 62px); }
-  .onboarding-scene-wrap { padding: clamp(20px, 5vw, 32px); }
-  .onboarding-scene-wrap .office-scene { aspect-ratio: 16 / 9.5; }
-  .opening-caption { margin-top: 18px; }
-  .onboarding-panel { padding: 34px clamp(18px, 6vw, 32px) 42px; }  .office-game-page,
+  .onboarding-scene-wrap .office-scene { aspect-ratio: 16 / 9.5; }  .office-game-page,
   .empire-game-page { min-height: calc(100dvh - 62px); }
   .office-explorer { min-height: 470px; }
-  .office-upkeep-terms { padding-bottom: 4px; }
 
   .firm-page { max-width: 760px; }
-  .story-page { max-width: 760px; }
   .cutscene-overlay { min-height: 100dvh; }
 
   /* The tour remains a focused foreground layer and does not collide with the
@@ -369,8 +343,6 @@ body {
   .page-wrap,
   .case-lobby,
   .contained { width: min(100% - 20px, 560px); }
-  .session-controls,
-  .question-layout { width: min(100% - 20px, 560px); }
 
   .app-header { height: 62px; padding-inline: 10px; }
   .header-right { gap: 3px; }
@@ -387,63 +359,7 @@ body {
   /* This is the desktop login composition compressed into one phone
      viewport: the copy, live Three.js office, and account controls remain
      present without turning the entry screen into a separate mobile design. */
-  .login-page {
-    height: 100vh;
-    height: 100dvh;
-    min-height: 100vh;
-    min-height: 100dvh;
-    grid-template: 54px minmax(0, 1fr) auto / minmax(0, 1fr);
-    overflow: hidden;
-  }
-  .login-nav {
-    min-height: 0;
-    padding-left: max(14px, env(safe-area-inset-left));
-    padding-right: max(14px, env(safe-area-inset-right));
-  }
   .login-nav .brand-mark { width: 36px; height: 36px; }
-  .login-hero {
-    min-height: 0;
-    padding: 12px 14px 10px;
-    display: grid;
-    grid-template-rows: auto minmax(92px, 1fr);
-    align-content: stretch;
-    gap: 9px;
-  }
-  .login-copy { min-height: 0; }
-  .login-copy .eyebrow { font-size: 7.5px; line-height: 1.3; }
-  .login-copy h1 {
-    margin: 6px 0 7px;
-    font-size: clamp(25px, 7.8vw, 31px);
-    line-height: 1.02;
-    text-shadow: 3px 3px #0a111d;
-  }
-  .login-copy > p { max-width: none; font-size: 11.5px; line-height: 1.4; }
-  .feature-list {
-    margin-top: 8px;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px 9px;
-    font-size: 7.5px;
-    line-height: 1.25;
-  }
-  .feature-list span { gap: 5px; line-height: 1.25; }
-  .feature-list svg { width: 12px; height: 12px; margin-top: 0; }
-  .login-scene {
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    max-height: none;
-    aspect-ratio: auto;
-    box-shadow: 5px 5px #080c13;
-  }
-  .login-panel-wrap {
-    min-height: 0;
-    padding: 10px 14px max(10px, env(safe-area-inset-bottom));
-  }
-  .login-panel { width: min(100%, 390px); padding: 14px 15px 11px; box-shadow: inset 0 0 0 3px #c59b58, 5px 5px #141721; }
-  .login-panel .eyebrow { font-size: 7.5px; }
-  .login-panel h2 { margin: 4px 0; font-size: 18px; }
-  .login-panel > p { margin: 0 0 7px; font-size: 10px; line-height: 1.35; }
-  .login-panel > small { margin-top: 7px; font-size: 8.5px; }
   .crest {
     width: 34px;
     height: 34px;
@@ -452,22 +368,9 @@ body {
     box-shadow: inset 0 0 0 1px #dbad4e, 3px 3px #141721;
   }
   .crest svg { width: 17px; height: 17px; }
-  .google-button-slot { min-height: 38px; margin: 5px 0 6px; overflow: hidden; }
-  .google-button-slot > div,
-  .google-button-slot iframe { max-width: 100% !important; }
   .login-panel .secondary-button.full { min-height: 38px; margin-top: 4px; padding-block: 7px; font-size: 8.5px; }
-  .login-panel .config-note { margin: 5px 0 7px; padding: 6px 8px; font-size: 9px; }
-
-  .onboarding-scene-wrap { padding: 16px; }
-  .opening-caption h2 { font-size: 27px; }
-  .onboarding-panel { padding: 29px 18px 34px; }
-  .onboarding-panel h1 { font-size: clamp(30px, 9.6vw, 39px); }
-  .character-choice { gap: 9px; }
-  .character-choice button { min-height: 174px; padding-inline: 5px; font-size: 9.5px; }
   .mini-avatar.av-mini-avatar { width: 80px; height: 132px; }
-  .mini-avatar.av-mini-avatar .av-person { width: 74px; height: 128px; }
-  .name-fields { gap: 10px; }
-  .name-fields input { min-height: 46px; font-size: 16px; }.primary-button.jumbo { width: 100%; min-height: 52px; padding-inline: 13px; font-size: 10px; }/* Active case: the passage and response file are independently scrollable
+  .mini-avatar.av-mini-avatar .av-person { width: 74px; height: 128px; }.primary-button.jumbo { width: 100%; min-height: 52px; padding-inline: 13px; font-size: 10px; }/* Active case: the passage and response file are independently scrollable
      panes. A reader never has to shuttle up and down the whole document just
      to compare an RC passage with its question. */
   .session-page {
@@ -476,43 +379,9 @@ body {
     min-height: 0;
     overflow: hidden;
   }
-  .session-controls { padding-top: 11px; }
-  .question-layout { height: calc(100% - 45px); margin-top: 8px; margin-bottom: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .case-file-topbar { gap: 9px; }
-  .matter-tag { min-width: 0; }
-  .matter-tag strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .case-timer { min-width: 0; }
   .case-timer small { display: none; }
-  .progress-track { flex: 0 0 auto; margin: 8px 0 10px; }  .question-content { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
-  .question-content.with-passage {
-    min-height: 0;
-    display: grid;
-    grid-template: minmax(142px, .72fr) minmax(0, 1.28fr) / minmax(0, 1fr);
-    align-items: stretch;
-    gap: 10px;
-    overflow: hidden;
-  }
-  .passage-card,
-  .answer-card { min-height: 0; padding: 16px 14px; }
-  .question-content.with-passage .passage-card,
-  .question-content.with-passage .answer-card {
-    height: 100%;
-    position: relative;
-    top: auto;
-    max-height: 100%;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-  }
-  .question-content.with-passage .passage-text { margin-top: 12px; font-size: 14.5px; line-height: 1.58; }
-  .question-content.with-passage .answer-card h1 { margin-bottom: 16px; }
   .choice { min-height: 48px; }
-  .reasoning-box textarea { min-height: 132px; font-size: 16px; }
-  .case-page-turn {
-    inset: 76px 0 auto;
-    height: min(660px, calc(100vh - 88px));
-    height: min(660px, calc(100dvh - 88px));
-  }
 
   /* Office stays interactive; only supporting controls become more compact.
      The office itself is still a true scene rather than a static replacement. */
@@ -529,22 +398,11 @@ body {
   .av-hero-stage { flex-basis: 43%; }
   .av-hero-plaque { margin: 10px; }.office-inventory { width: calc(100% - 16px); right: 8px; bottom: 8px; }
   .office-inventory-panel { max-height: min(310px, calc(100% - 52px)); }
-  .office-upkeep-strip,
-  .office-milestone-strip { margin-top: 10px; }
-  .office-upkeep-terms { grid-template-columns: repeat(4, minmax(118px, 1fr)); }
-  .office-gamebar { margin-top: 14px; }
 
   .uw-map-frame { min-height: 480px; }
   .uw-location-card { max-height: min(340px, calc(100% - 146px)); overflow: auto; overscroll-behavior: contain; }
 
   .firm-page { width: calc(100% - 14px); padding-inline: 11px; }
-  .firm-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .firm-tabs button { min-width: 0; font-size: 8.5px; }
-  .story-page { padding-inline: 0; }
-  .story-hero-copy { padding: 27px 18px; }
-  .story-hero h1 { font-size: clamp(36px, 12vw, 46px); }
-  .story-resources { grid-template-columns: 1fr 1fr; }
-  .active-caseboard { padding: 24px 17px; }
 
   .guided-tour-card,
   .guided-tour-card.place-left,
@@ -567,31 +425,15 @@ body {
 }
 
 @media (max-width: 360px) {
-  .login-copy h1 { font-size: 24px; }
   .header-economy > span { padding-inline: 5px; }
   .header-economy > span svg { width: 14px; }
   .office-explorer { min-height: 410px; }
-  .story-resources { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) and (max-height: 720px) {
-  .login-page { grid-template-rows: 48px minmax(0, 1fr) auto; }
   .login-nav .brand-mark { width: 32px; height: 32px; }
-  .login-hero { padding: 8px 12px 7px; grid-template-rows: auto minmax(76px, 1fr); gap: 6px; }
-  .login-copy h1 { margin: 4px 0 5px; font-size: clamp(22px, 7vw, 27px); }
-  .login-copy > p { font-size: 10px; line-height: 1.32; }
-  .feature-list { margin-top: 5px; gap: 2px 7px; font-size: 6.8px; }
-  .feature-list svg { width: 10px; height: 10px; }
-  .login-panel-wrap { padding: 7px 12px max(7px, env(safe-area-inset-bottom)); }
-  .login-panel { padding: 10px 12px 8px; }
   .crest { width: 30px; height: 30px; margin: -22px auto 2px; }
-  .login-panel h2 { font-size: 16px; }
-  .login-panel > p { margin-bottom: 4px; font-size: 8.8px; }
-  .google-button-slot { min-height: 34px; margin-block: 3px; }
   .login-panel .secondary-button.full { min-height: 34px; padding-block: 5px; }
-  .login-panel > small { margin-top: 4px; font-size: 7.5px; }
-
-  .question-content.with-passage { grid-template-rows: minmax(118px, .68fr) minmax(0, 1.32fr); }
 }
 
 /* Mobile Safari still benefits from the prefixed compositor path on glass
@@ -710,10 +552,8 @@ body {
   .uw-level-navigator-track button { min-height: 44px; }
   /* The toolbar's pixel-face label type is 9.5px, which is below the size iOS
      Safari zooms into on focus. The select carries UI type instead. */
-  .catalog-toolbar label select { font-family: var(--font-ui); font-size: 16px; }
   /* Short labels such as "All" leave the view filters narrower than they are
      tall, so the padding alone does not reach a thumb-sized target. */
-  .catalog-view-buttons button { min-width: 44px; }
 
   .mobile-nav a {
     min-height: 54px;
@@ -724,154 +564,9 @@ body {
   /* Sign-in is one cinematic composition: a live office fills the viewport,
      the premise sits on readable glass, and authentication is a calm bottom
      sheet. Expo and mobile Safari therefore render the same entry screen. */
-  .login-page {
-    height: 100vh;
-    height: 100dvh;
-    min-height: 0;
-    display: block;
-    position: relative;
-    overflow: hidden;
-    background: #0b1520;
-  }
-  .login-nav {
-    height: calc(58px + env(safe-area-inset-top));
-    min-height: 58px;
-    padding: env(safe-area-inset-top) 12px 0;
-    position: absolute;
-    z-index: 20;
-    inset: 0 0 auto;
-    border-bottom: 1px solid rgba(221, 190, 113, .3);
-    background: linear-gradient(180deg, rgba(10, 19, 30, .98), rgba(12, 24, 36, .9));
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
-  }
-  .login-nav > span { display: none; }
   .login-nav .brand,
   .login-nav .brand-mark { width: 40px; height: 40px; }
-  .login-hero {
-    min-height: 0;
-    padding: 0;
-    display: block;
-    position: absolute;
-    z-index: 1;
-    inset: calc(58px + env(safe-area-inset-top)) 0 0;
-    overflow: hidden;
-    background: #102332;
-  }
-  .login-scene {
-    width: 100%;
-    height: 100%;
-    max-height: none;
-    position: absolute;
-    inset: 0;
-    border: 0;
-    border-radius: 0;
-    opacity: .88;
-    box-shadow: none;
-    transform: none;
-  }
-  .login-scene::after {
-    content: "";
-    position: absolute;
-    z-index: 15;
-    inset: 0;
-    pointer-events: none;
-    background:
-      linear-gradient(180deg, rgba(7, 16, 25, .22), rgba(7, 16, 25, .08) 37%, rgba(7, 16, 25, .72) 72%, #0b1520 100%),
-      linear-gradient(90deg, rgba(7, 16, 25, .4), transparent 72%);
-  }
-  .login-copy {
-    width: calc(100% - 24px);
-    padding: 16px 16px 15px;
-    position: absolute;
-    z-index: 8;
-    top: 14px;
-    left: 12px;
-    border: 1px solid rgba(225, 199, 134, .34);
-    border-radius: 16px;
-    color: #f6ead0;
-    background: linear-gradient(130deg, rgba(10, 27, 39, .9), rgba(12, 27, 38, .65));
-    box-shadow: 0 18px 42px rgba(3, 8, 13, .25), inset 0 1px rgba(255,255,255,.08);
-    -webkit-backdrop-filter: blur(13px);
-    backdrop-filter: blur(13px);
-  }
-  .login-copy .eyebrow { font-size: 9.5px; }
-  .login-copy h1 {
-    margin: 7px 0 8px;
-    font-size: clamp(28px, 8.3vw, 35px);
-    line-height: 1.02;
-    text-shadow: 3px 3px rgba(5, 11, 18, .78);
-  }
-  .login-copy > p {
-    max-width: 35rem;
-    margin: 0;
-    color: #d1dedc;
-    font-size: 13.5px;
-    line-height: 1.45;
-  }
-  .feature-list {
-    margin-top: 11px;
-    padding-bottom: 2px;
-    display: flex;
-    flex-flow: row nowrap;
-    gap: 7px;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
-    font-size: 10px;
-  }
-  .feature-list::-webkit-scrollbar { display: none; }
-  .feature-list span {
-    min-width: min(71vw, 255px);
-    min-height: 38px;
-    padding: 7px 9px;
-    flex: 0 0 auto;
-    align-items: center;
-    scroll-snap-align: start;
-    border: 1px solid rgba(229, 202, 139, .2);
-    border-radius: 9px;
-    background: rgba(255,255,255,.055);
-    line-height: 1.3;
-  }
-  .feature-list svg { width: 15px; height: 15px; }
-  .login-panel-wrap {
-    min-height: 0;
-    padding: 0 12px max(10px, env(safe-area-inset-bottom));
-    display: block;
-    position: absolute;
-    z-index: 12;
-    inset: auto 0 0;
-    color: #2e2a25;
-    background: linear-gradient(180deg, transparent, rgba(7, 15, 24, .78) 22%, rgba(7, 15, 24, .96));
-  }
-  .login-panel {
-    width: min(100%, 430px);
-    margin: 0 auto;
-    padding: 17px 17px 13px;
-    border: 1px solid #d2ad63;
-    border-radius: 18px 18px 10px 10px;
-    background: linear-gradient(155deg, rgba(249, 235, 197, .98), rgba(224, 201, 151, .98));
-    box-shadow: 0 18px 48px rgba(2, 7, 12, .45), inset 0 0 0 2px rgba(110, 76, 35, .18);
-  }
-  .login-panel .crest {
-    width: 40px;
-    height: 40px;
-    margin: -38px auto 5px;
-    border-width: 2px;
-    border-radius: 11px;
-    box-shadow: 0 6px 18px rgba(5, 10, 16, .28), inset 0 0 0 1px #dbad4e;
-  }
-  .login-panel .eyebrow { font-size: 9px; }
-  .login-panel h2 { margin: 4px 0; font-size: 22px; }
-  .login-panel > p { margin: 0 0 9px; font-size: 12px; line-height: 1.4; }
-  .google-button-slot { min-height: 42px; margin: 5px 0 7px; border-radius: 999px; overflow: hidden; }
-  .google-button-slot > div > div > div {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-  }
-  .login-panel .secondary-button.full { min-height: 44px; margin-top: 5px; font-size: 10px; }
-  .login-panel > small { margin-top: 8px; font-size: 9.5px; }.primary-button.jumbo { min-height: 50px; font-size: 10.5px; }  /* Reusable horizontal dossiers preserve information without forcing a long
+  .login-panel .secondary-button.full { min-height: 44px; margin-top: 5px; font-size: 10px; }.primary-button.jumbo { min-height: 50px; font-size: 10.5px; }  /* Reusable horizontal dossiers preserve information without forcing a long
      vertical document. A small portion of the next card remains visible as a
      natural swipe affordance. */
   .daily-docket-track,
@@ -908,17 +603,7 @@ body {
   .office-gamebar > *,
   .achievement-grid > *,
   .client-roster-grid > *,
-  .asset-management-grid > * { flex: 0 0 min(84vw, 350px); }
-  .client-grid {
-    display: flex;
-    gap: 12px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-  .client-grid::-webkit-scrollbar { display: none; }
-  .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }.review-summary-hero h1 { font-size: var(--mobile-title); line-height: 1.04; }
-  .review-summary-hero p { font-size: var(--mobile-body); }/* The office's real Three.js room becomes the hero. The lawyer remains in
+  .asset-management-grid > * { flex: 0 0 min(84vw, 350px); }/* The office's real Three.js room becomes the hero. The lawyer remains in
      the same scene as a compact picture-in-picture identity card instead of
      consuming a separate full-width row. */
   .office-game-page {
@@ -955,10 +640,6 @@ body {
   .av-hero-plaque strong { margin: 0; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
   .av-hero-plaque span { margin-top: 2px; font-size: 7.5px; letter-spacing: .08em; }
   .av-hero-plaque em { margin-top: 3px; font-size: 7.5px; }  .office-inventory { bottom: 9px; }
-  .office-upkeep-strip,
-  .office-milestone-strip { padding: 13px; }
-  .office-upkeep-terms { scroll-snap-type: x mandatory; }
-  .office-upkeep-terms > span { scroll-snap-align: start; }
 
   /* The living map fills the usable screen; its environment picker is a true
      swipeable slide rail rather than five compressed labels. */
@@ -1016,54 +697,15 @@ body {
      horizontal dossiers, preventing a 15-card catalog from becoming a very
      long phone page. */
   .firm-page { padding-bottom: 30px; }
-  .firm-ledger-heading { min-height: 0; padding: 21px 14px 15px; }
-  .firm-heading-copy h1 { font-size: var(--mobile-title); }
-  .firm-heading-copy p { font-size: 13px; }
-  .firm-tabs {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 7px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-  .firm-tabs::-webkit-scrollbar { display: none; }
-  .firm-tabs button,
-  .firm-tabs button.active {
-    min-width: 104px;
-    flex: 0 0 104px;
-    scroll-snap-align: start;
-    font-size: 10px;
-  }
-  .management-card.asset-card { min-height: 490px; }
-  .asset-card .asset-card-copy p { font-size: 13.5px; }
 
   /* Reading surfaces use normal-sized text even when the surrounding chrome
      uses the compact pixel face. */
-  .question-content,
-  .answer-card,
-  .passage-card,
-  .audit-stimulus,
-  .audit-choices,
-  .concise-rationale { font-size: 15px; }
   .choice { font-size: 14px; line-height: 1.42; }
-  .matter-tag strong { font-size: 10px; }
   .case-timer strong { font-size: 15px; }
 }
 
 @media (max-width: 640px) and (max-height: 720px) {
-  .login-copy { top: 9px; padding: 12px 13px 11px; }
-  .login-copy h1 { margin: 5px 0 6px; font-size: clamp(25px, 7.5vw, 30px); }
-  .login-copy > p { font-size: 11.5px; line-height: 1.36; }
-  .feature-list { display: none; }
-  .login-panel { padding: 13px 14px 10px; }
-  .login-panel .crest { width: 34px; height: 34px; margin-top: -31px; }
-  .login-panel h2 { font-size: 18px; }
-  .login-panel > p { margin-bottom: 6px; font-size: 10.5px; }
-  .google-button-slot { min-height: 38px; margin-block: 4px; }
   .login-panel .secondary-button.full { min-height: 40px; }
-  .login-panel > small { margin-top: 5px; font-size: 8.5px; }
   .office-explorer { height: 390px; }
   .uw-map-frame { height: 440px; }
 }
@@ -1096,28 +738,7 @@ body {
   .av-hero-plaque small { display: none; }
   .av-hero-plaque strong { margin: 0; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
   .av-hero-plaque span { margin-top: 2px; font-size: 8px; }
-  .av-hero-plaque em { margin-top: 3px; font-size: 8px; }  .appearance-button { min-height: 42px; }
-  .catalog-view-buttons button { min-width: 42px; min-height: 42px; }
-  .asset-management-grid,
-  .client-grid,
-  .achievement-grid {
-    display: flex;
-    gap: 16px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    overscroll-behavior-inline: contain;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .asset-management-grid::-webkit-scrollbar,
-  .client-grid::-webkit-scrollbar,
-  .achievement-grid::-webkit-scrollbar { display: none; }
-  .asset-management-grid > *,
-  .client-grid > *,
-  .achievement-grid > * {
-    flex: 0 0 min(390px, 72vw);
-    scroll-snap-align: start;
-  }
+  .av-hero-plaque em { margin-top: 3px; font-size: 8px; }
 
   .uw-world-ledger { display: none; }
   .uw-map-frame {
@@ -1130,21 +751,6 @@ body {
    desktop document. RC keeps passage and answers visible side by side, with
    each pane scrolling independently. */
 @media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
-  .asset-management-grid,
-  .client-grid,
-  .achievement-grid {
-    display: flex;
-    gap: 14px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-  }
-  .asset-management-grid::-webkit-scrollbar,
-  .client-grid::-webkit-scrollbar,
-  .achievement-grid::-webkit-scrollbar { display: none; }
-  .asset-management-grid > *,
-  .client-grid > *,
-  .achievement-grid > * { flex: 0 0 min(360px, 48vw); scroll-snap-align: start; }
 
   .office-game-page,
   .empire-game-page {
@@ -1162,7 +768,6 @@ body {
   .app-shell { padding-bottom: 62px; }
   .office-game-page,
   .empire-game-page { height: calc(100dvh - 54px); }
-  .office-world-shell { width: 100%; margin: 0; }
   .av-office-duo { display: block; position: relative; }
   .office-explorer {
     width: 100%;
@@ -1199,77 +804,11 @@ body {
     min-height: 0;
     overflow: hidden;
   }
-  .session-controls {
-    width: min(100% - 20px, 980px);
-    height: 40px;
-    padding-top: 3px;
-  }
   .session-controls .secondary-button { min-height: 34px; padding-block: 5px; }
-  .question-layout {
-    width: min(100% - 20px, 980px);
-    height: calc(100% - 40px);
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .learning-mode-banner,
-  .diagnostic-session-banner,
-  .active-matter-banner {
-    min-height: 36px;
-    max-height: 44px;
-    margin: 0 0 5px;
-    padding: 6px 10px;
-    flex: 0 0 auto;
-    overflow: hidden;
-  }
-  .learning-mode-banner { flex-wrap: nowrap; }
-  .learning-mode-banner > div span { font-size: 9px; }
-  .learning-mode-banner > strong { min-width: 0; font-size: 11px; }
-  .case-file-topbar {
-    min-height: 48px;
-    margin: 0;
-    padding: 5px 9px;
-    flex: 0 0 auto;
-    grid-template-columns: 1fr auto 1fr;
-  }
-  .matter-tag > span { width: 32px; height: 32px; }
-  .matter-tag small { font-size: 8.5px; }
-  .matter-tag strong { font-size: 10.5px; }
-  .question-progress { font-size: 10px; }
-  .question-progress span { display: none; }
   .case-timer small { font-size: 8.5px; }
-  .progress-track { height: 3px; margin: 5px 0 7px; flex: 0 0 auto; }  .question-content,
-  .question-content.with-passage {
-    min-height: 0;
-    flex: 1 1 auto;
-    align-items: stretch;
-    gap: 8px;
-    overflow: hidden;
-  }
-  .question-content.with-passage {
-    grid-template: minmax(0, 1fr) / minmax(0, .92fr) minmax(0, 1.08fr);
-  }
-  .passage-card,
-  .answer-card,
-  .question-content.with-passage .passage-card,
-  .question-content.with-passage .answer-card {
-    height: 100%;
-    min-height: 0;
-    max-height: 100%;
-    padding: 12px 13px;
-    position: relative;
-    top: auto;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-  }
-  .document-heading { padding-bottom: 7px; font-size: 9px; }
   .passage-text,
   .stimulus { margin-top: 9px; font-size: 14px; line-height: 1.55; }
-  .answer-card h1 { margin-bottom: 12px; font-size: 16px; line-height: 1.3; }
   .choice { min-height: 44px; padding: 7px 9px; }
-  .case-page-turn { inset: 45px 0 auto; height: calc(100dvh - 55px); }
 }
 
 /* -------------------------------------------------------------------------
@@ -1421,9 +960,6 @@ body {
   }
 
   /* Full-screen office --------------------------------------------------- */
-  .office-game-page .office-upkeep-strip,
-  .office-game-page .office-milestone-strip,
-  .office-game-page .office-gamebar { display: none; }
   .office-game-page .office-world-shell,
   .office-game-page .av-office-duo,
   .office-game-page .office-explorer {
@@ -1487,47 +1023,8 @@ body {
     bottom: 52px;
     border-radius: 18px;
   }
-  .office-mobile-scene-status {
-    max-width: min(48vw, 230px);
-    padding: 9px 12px;
-    position: fixed;
-    z-index: 92;
-    left: max(12px, env(safe-area-inset-left));
-    top: calc(var(--mobile-chrome-height) + env(safe-area-inset-top) + 10px);
-    display: grid;
-    border-left: 3px solid #d4b560;
-    border-radius: 5px 12px 12px 5px;
-    color: #f2ead5;
-    background: rgba(8, 19, 29, .7);
-    box-shadow: 0 10px 25px rgba(2,7,12,.2);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    pointer-events: none;
-  }
   .office-mobile-scene-status small { color: #7fc4b8; font-family: var(--font-pixel); font-size: 7.5px; letter-spacing: .08em; }
   .office-mobile-scene-status strong { margin-top: 3px; overflow: hidden; font-family: var(--font-display); font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
-  .office-mobile-brief-toggle {
-    min-width: 104px;
-    min-height: 44px;
-    padding: 0 13px;
-    position: fixed;
-    z-index: 93;
-    left: max(12px, env(safe-area-inset-left));
-    bottom: calc(var(--mobile-dock-height) + 24px + env(safe-area-inset-bottom));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border: 1px solid rgba(235, 207, 143, .55);
-    border-radius: 14px;
-    color: #f3e3b8;
-    background: rgba(8, 19, 29, .78);
-    box-shadow: 0 10px 26px rgba(2,7,12,.28);
-    font-family: var(--font-pixel);
-    font-size: 8px;
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-  }
   .office-mobile-brief-sheet {
     width: auto;
     max-height: min(68dvh, 610px);
@@ -1547,50 +1044,10 @@ body {
     background: linear-gradient(150deg, rgba(10, 23, 35, .98), rgba(21, 40, 43, .98));
     box-shadow: 0 24px 70px rgba(2, 7, 11, .55), inset 0 1px rgba(255,255,255,.07);
   }
-  .office-mobile-brief-sheet > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-  .office-mobile-brief-sheet header small { color: #79c4b8; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .12em; }
-  .office-mobile-brief-sheet header h2 { margin: 4px 0 0; font-family: var(--font-display); font-size: 24px; }
-  .office-mobile-brief-sheet header button { width: 44px; height: 44px; border: 1px solid rgba(255,255,255,.14); border-radius: 13px; color: #eee0bd; background: rgba(255,255,255,.05); font-size: 23px; }
-  .office-mobile-current-case {
-    min-height: 82px;
-    padding: 10px;
-    display: grid;
-    grid-template-columns: 58px minmax(0,1fr) auto;
-    align-items: center;
-    gap: 10px;
-    border: 1px solid rgba(227, 198, 126, .28);
-    border-radius: 16px;
-    color: #ece2ca;
-    background: rgba(255,255,255,.045);
-    text-align: left;
-  }
   .office-mobile-current-case .client-portrait { width: 54px; height: 58px; }
-  .office-mobile-current-case span { min-width: 0; }
-  .office-mobile-current-case small,
-  .office-mobile-current-case strong,
-  .office-mobile-current-case em { display: block; }
-  .office-mobile-current-case small { color: #79c4b8; font-family: var(--font-pixel); font-size: 7.5px; }
-  .office-mobile-current-case strong { margin-top: 3px; overflow: hidden; font-family: var(--font-display); font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
-  .office-mobile-current-case em { margin-top: 3px; color: #9fb0aa; font-size: 11px; font-style: normal; }
-  .office-mobile-current-case b { display: flex; align-items: center; gap: 4px; color: #ebca72; font-size: 11px; }
-  .office-mobile-brief-metrics { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
   /* Two rows of three rather than one, since the sheet now carries the three
      economy figures the standing-down ledger took off this route. Each tile
      gives up 12px of height to pay for the second row. */
-  .office-mobile-brief-metrics > span { min-height: 64px; padding: 9px; display: grid; align-content: center; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.035); }
-  .office-mobile-brief-metrics small { color: #7fc4b8; font-family: var(--font-pixel); font-size: 7px; }
-  .office-mobile-brief-metrics strong { margin-top: 4px; color: #f0cf78; font-family: var(--font-display); font-size: 16px; }
-  .office-mobile-brief-metrics em { margin-top: 2px; color: #91a49f; font-size: 9px; font-style: normal; }
-  .office-mobile-next-office { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 12px; border-radius: 14px; background: rgba(223, 191, 105, .08); }
-  .office-mobile-next-office span small,
-  .office-mobile-next-office span strong { display: block; }
-  .office-mobile-next-office span small { color: #83c5ba; font-family: var(--font-pixel); font-size: 7px; }
-  .office-mobile-next-office span strong { margin-top: 4px; font-family: var(--font-display); font-size: 16px; }
-  .office-mobile-next-office > div { height: 8px; position: relative; border-radius: 99px; background: rgba(255,255,255,.1); }
-  .office-mobile-next-office > div i { height: 100%; display: block; border-radius: inherit; background: #d9b75e; }
-  .office-mobile-next-office > div small { margin-top: 6px; display: block; color: #a9b4ae; font-size: 9px; text-align: right; }
-  .office-mobile-brief-sheet > nav { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .office-mobile-brief-sheet > nav button { min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgba(229, 200, 129, .23); border-radius: 13px; color: #ead9ae; background: rgba(255,255,255,.04); font-size: 11px; }
 
   /* Full-screen world map ----------------------------------------------- */
   .empire-game-page .unified-empire,
@@ -1702,55 +1159,8 @@ body {
   .firm-page { width: 100%; margin-inline: 0; padding: 10px 6px var(--mobile-dock-clearance); }
   .firm-page::before { inset: 4px; }
   .firm-page::after { display: none; }
-  .firm-ledger-heading { min-height: 0; margin-bottom: 14px; padding: 18px 12px 14px; display: grid; gap: 16px; }
-  .firm-heading-copy { padding: 0; }
   /* Start past the folded-corner decoration anchored in the heading's top-left
      corner, which otherwise sits on top of the first word. */
-  .firm-heading-copy .eyebrow { margin-left: 22px; font-size: 8.5px; }
-  .firm-heading-copy h1 { margin: 8px 0; font-size: clamp(30px, 9vw, 37px); line-height: 1.04; }
-  .firm-heading-copy p { margin: 0; font-size: 13px; line-height: 1.5; }
-  .ledger-rule { margin-top: 12px; }
-  .firm-wallet { width: 100%; min-width: 0; padding: 15px 15px 13px; }
-  .firm-wallet strong { font-size: 24px; }
-  .firm-tabs {
-    margin: 0 0 16px;
-    padding: 4px;
-    position: sticky;
-    z-index: 18;
-    top: 58px;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 6px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border: 1px solid rgba(67, 45, 28, .35);
-    border-radius: 14px;
-    /* Opaque, and no backdrop blur. This rail is sticky and full width, so a
-       backdrop-filter on it is a blur of a strip of the page recomputed on
-       every scrolled frame — the most expensive kind of layer there is on a
-       phone — and at 94% opacity there was nothing legible behind it to blur.
-       Taking the last 6% of transparency out buys the blur's removal for free. */
-    background: #dbc594;
-    box-shadow: 0 8px 22px rgba(65,44,26,.12);
-  }
-  .firm-tabs button,
-  .firm-tabs button.active { min-width: 104px; min-height: 52px; flex: 0 0 104px; border-width: 1px; border-radius: 10px; box-shadow: none; }
-  .firm-tabs button.active { min-height: 52px; }
-  .firm-tabs button.active::after,
-  .firm-tabs button::before { display: none; }
-
-  .story-page { width: calc(100% - 20px); padding: 12px 0 var(--mobile-dock-clearance); }
-  .story-hero { min-height: 0; display: grid; grid-template-columns: 1fr; border-width: 3px; border-radius: 18px; box-shadow: 0 8px 25px rgba(31,26,18,.18); }
-  .story-hero-copy { padding: 24px 20px 22px; }
-  .story-hero h1 { margin: 10px 0 14px; font-size: clamp(36px, 10.5vw, 44px); line-height: .96; }
-  .story-hero-copy > p { font-size: 14px; line-height: 1.55; }
-  .story-alignment-stamp { margin-top: 18px; }
-  .story-board-art { min-height: 260px; max-height: 300px; }
-  .story-resources { margin: 16px 0 36px; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .story-resources article { min-height: 96px; padding: 12px; }
-  .story-section-heading h2 { font-size: 30px; }
-  .active-caseboard { margin-bottom: 38px; padding: 24px 18px; }
-  .quest-grid article { min-height: 0; }
   /* The desktop rule breaks this section out to the full viewport width. Inside
      the narrow story column that resolves to a 10px indent, making it the only
      section that does not share its siblings' left edge. */
@@ -1765,10 +1175,6 @@ body {
     -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent 100%);
   }
-
-  .onboarding-page { min-height: calc(100dvh - 58px); display: grid; grid-template-columns: 1fr; }
-  .onboarding-scene-wrap { min-height: 32dvh; padding: 12px; }
-  .onboarding-panel { padding: 24px 18px var(--mobile-dock-clearance); }
 
   .app-shell.active-case .app-header { height: 50px; }
   .app-shell.active-case .session-page { height: calc(100dvh - 50px); }
@@ -1912,8 +1318,6 @@ body {
     border-radius: 14px;
     box-shadow: 0 10px 28px rgba(1, 6, 10, .32), inset 0 1px rgba(255,255,255,.08);
   }
-  .office-mobile-brief-toggle,
-  .office-mobile-scene-status { transition: opacity .18s ease, transform .18s ease; }
   .office-game-page:has(.office-mobile-menu-toggle[aria-expanded="true"]) .office-mobile-brief-toggle,
   .office-game-page:has(.office-mobile-menu-toggle[aria-expanded="true"]) .office-mobile-scene-status {
     opacity: 0;
@@ -1923,13 +1327,7 @@ body {
 }
 
 @media (max-width: 640px) {
-  /* Training: one centered performance story, then compact evidence. *//* Practice: centered headline and a compact client dossier. */
-  .case-lobby {
-    width: calc(100% - 24px);
-    max-width: 520px;
-    margin-inline: auto;
-    padding: 12px 0 var(--mobile-dock-clearance);
-  }.docket-copy .eyebrow { display: block; text-align: center; }.docket-copy .primary-button { margin-inline: auto; }.daily-docket { margin-top: 14px; border-radius: 16px; }
+  /* Training: one centered performance story, then compact evidence. *//* Practice: centered headline and a compact client dossier. */.docket-copy .eyebrow { display: block; text-align: center; }.docket-copy .primary-button { margin-inline: auto; }.daily-docket { margin-top: 14px; border-radius: 16px; }
   .daily-docket > header { padding: 18px 16px; gap: 14px; }
   .daily-docket h2 { font-size: 25px; }
   /* Active questions use the full viewport. RC keeps both documents visible
@@ -2014,9 +1412,6 @@ body {
    These are not compressed desktop cards. Training and Practice become
    edge-to-edge task surfaces; active RC cases use a linked two-pane reader.
    ======================================================================== */
-
-.mobile-case-reader-header,
-.mobile-open-question { display: none; }
 
 @media (max-width: 900px) {
   /* Native landscape scenes must occupy the physical display, including the
@@ -2148,15 +1543,6 @@ body {
      analysis deck stays on the same navy the training surface above it uses. */
 
   /* Practice ------------------------------------------------------------ */
-  .case-lobby {
-    width: 100% !important;
-    max-width: none !important;
-    min-height: calc(100dvh - 58px);
-    margin: 0 !important;
-    padding: 0 0 var(--mobile-dock-clearance) !important;
-    color: #e9ecdf;
-    background: #101b27;
-  }
   /* The full docket track is a desktop read of the same two steps the start
      panel already offers as one tap, so the phone keeps the tap and drops the
      track rather than scrolling past a restatement of itself. */
@@ -2164,48 +1550,7 @@ body {
 
   /* Full-bleed on the page's own navy rather than a floating desktop card, and
      no inner scroller: a capped list nested inside page scroll clips rows
-     mid-row on a phone and fights the momentum scroll. */
-  .run-queue-panel {
-    margin: 0;
-    padding: 22px 16px calc(24px + env(safe-area-inset-bottom));
-    border: 0;
-    border-radius: 0;
-    background: #101b27;
-    box-shadow: none;
-  }
-  .run-queue-header { align-items: flex-start; }
-  .run-queue-header h2 { font-family: var(--font-pixel); font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
-  .run-queue-full-flag { padding: 7px 10px; font-size: 10.5px; line-height: 1.3; text-align: left; }
-  .run-queue-list {
-    max-height: none;
-    margin-top: 14px;
-    padding-right: 0;
-    gap: 10px;
-    overflow: visible;
-  }
-  .run-queue-item {
-    padding: 13px 14px;
-    display: grid;
-    grid-template-columns: 22px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 10px 11px;
-    border-radius: 14px;
-  }
-  .run-queue-item-copy strong { font-family: var(--font-pixel); font-size: 14px; }
-  .run-queue-item-copy span { font-size: 11px; white-space: normal; }
-  .run-queue-item-actions {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-  .run-queue-item-actions > button {
-    min-height: 44px;
-    padding-inline: 8px;
-    border-radius: 11px;
-    font-size: 11.5px;
-  }/* Case reader --------------------------------------------------------- */
+     mid-row on a phone and fights the momentum scroll. *//* Case reader --------------------------------------------------------- */
   .app-shell.active-case,
   .app-shell.active-case > main,
   .app-shell.active-case .session-page {
@@ -2265,71 +1610,14 @@ body {
      header), so the header has to reserve its band explicitly. The top row is
      sized to the control's full height; anything shorter let the control hang
      down over the pane tabs. */
-  .mobile-case-reader-header {
-    --case-pause-band: 44px;
-    --case-pause-gutter: 122px;
-    min-height: 0;
-    padding: max(6px, env(safe-area-inset-top)) 12px 6px;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: var(--case-pause-band) auto;
-    align-items: center;
-    gap: 6px 12px;
-    flex: 0 0 auto;
-    border-bottom: 1px solid rgba(229, 201, 137, .19);
-    color: #eee5cf;
-    background: #101c29;
-  }
   /* A mega-litigation swaps the pause button for a narrower "no pause" chip, so
      the reserved band shrinks and the countdown gets the width back. */
-  .mobile-case-reader-header.is-form-sitting { --case-pause-gutter: 94px; }
   /* Only the top row sits beside the fixed pause control. Reserving that gutter
      on the header itself also shortened the pane tabs below it. A margin rather
      than padding so variants of this chip keep the band without restating it. */
-  .mobile-case-reader-time { margin-right: var(--case-pause-gutter); }
-  .mobile-case-reader-meta { display: flex; align-items: center; gap: 8px; }
-  .mobile-case-reader-meta span {
-    min-width: 29px;
-    height: 28px;
-    display: grid;
-    place-items: center;
-    border: 1px solid rgba(224, 190, 108, .5);
-    border-radius: 8px;
-    color: #e6c56f;
-    font-size: 9px;
-    font-weight: 750;
-  }
-  .mobile-case-reader-meta strong { color: #b9c5c0; font-size: 10px; white-space: nowrap; }
-  .mobile-case-reader-time {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 5px;
-    color: #d8cdaf;
-    font-size: 10px;
-    font-variant-numeric: tabular-nums;
-  }
-  .mobile-case-reader-time.over { color: #e3857e; }
   /* The whole-sitting countdown is the one number a mega-litigation student
      must be able to read at a glance, so it gets a chip of its own rather than
      the muted treatment used for a single case's elapsed time. */
-  .mobile-case-reader-time.is-form-clock {
-    min-height: 30px;
-    padding: 0 10px;
-    gap: 6px;
-    border: 1px solid rgba(228, 197, 122, .34);
-    border-radius: 999px;
-    color: #f0d692;
-    background: rgba(228, 197, 122, .1);
-  }
-  .mobile-case-reader-time.is-form-clock span { font-size: 14px; font-weight: 750; letter-spacing: .01em; }
-  .mobile-case-reader-time.is-form-clock small { color: #9db0ad; font-size: 8.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-  .mobile-case-reader-time.is-form-clock.over {
-    border-color: rgba(226, 133, 126, .5);
-    color: #f2a49c;
-    background: rgba(226, 133, 126, .13);
-  }
-  .mobile-case-reader-time.is-form-clock.over small { color: #d69a94; }
 
   /* The full sentence is wider than the gutter reserved beside the header
      clock, so the phone chip carries the short form of the same rule. */
@@ -2349,30 +1637,6 @@ body {
   }
   .app-shell.active-case .one-sitting-note-long { display: none; }
   .app-shell.active-case .one-sitting-note-short { display: block; }
-  .mobile-case-pane-tabs {
-    height: 38px;
-    padding: 3px;
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 3px;
-    border: 1px solid rgba(226, 199, 136, .16);
-    border-radius: 11px;
-    background: rgba(255,255,255,.035);
-  }
-  .mobile-case-pane-tabs button {
-    min-height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    border: 0;
-    border-radius: 8px;
-    color: #8fa39f;
-    background: transparent;
-    font: 650 10px var(--font-pixel);
-  }
-  .mobile-case-pane-tabs button.active { color: #17222c; background: #e0c170; }
   .app-shell.active-case .question-content,
   .app-shell.active-case .question-content.with-passage {
     width: 100%;
@@ -2456,21 +1720,6 @@ body {
     border: 0;
     border-top: 1px solid rgba(24, 44, 58, .15);
     border-radius: 0;
-  }
-  .mobile-open-question {
-    /* Flex alignment does not stretch a button, so the bleed is stated here and
-       opted out of the global `max-width: 100%` guard on form controls. */
-    width: calc(100% + 32px);
-    max-width: none;
-    min-height: calc(60px + env(safe-area-inset-bottom));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    color: #f8eac1;
-    background: #193240;
-    box-shadow: 0 -12px 18px rgba(245, 232, 196, .94);
-    font: 700 11px var(--font-pixel);
   }
   .app-shell.active-case .reasoning-box { border-radius: 12px; }
   /* The compact case view shrinks its prose, but not this: iOS Safari zooms the
@@ -2569,32 +1818,10 @@ body {
   .mobile-site-menu-tools > button { min-height: 54px; border-radius: 12px; }
   .mobile-site-menu footer { margin-top: 2px; padding-top: 10px; }/* Sizing for this header lives in the earlier `max-width: 640px` block; only
      the column order differs here. */
-  .mobile-case-reader-header { grid-template-columns: minmax(0, 1fr) auto; }
-  .mobile-case-reader-meta { min-width: 0; }
-  .mobile-case-reader-meta > div { min-width: 0; }
-  .mobile-case-reader-meta small,
-  .mobile-case-reader-meta strong { display: block; font-family: var(--font-pixel); }
-  .mobile-case-reader-meta small { overflow: hidden; color: #75bdb2; font-size: 8px; font-weight: 700; letter-spacing: .08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-  .mobile-case-reader-meta strong { margin-top: 2px; color: #d8e0d5; font-size: 10px; }
-  .mobile-case-reader-time { grid-column: 2; grid-row: 1; min-width: 50px; margin-right: var(--case-pause-gutter); color: #e1d4ad; }
-  .mobile-case-pane-tabs { grid-column: 1 / -1; grid-row: 2; margin-top: 1px; }
   .app-shell.active-case .passage-card,
   .app-shell.active-case .answer-card,
   .app-shell.active-case .question-content.with-passage .passage-card,
   .app-shell.active-case .question-content.with-passage .answer-card { padding-top: 22px; }
-
-  .paused-case {
-    width: 100% !important;
-    min-height: calc(100dvh - 58px);
-    margin: 0 !important;
-    padding: 32px 24px var(--mobile-dock-clearance);
-    color: #f0ead8;
-    background: radial-gradient(circle at 50% 25%, rgba(80, 127, 120, .2), transparent 33%), #101b27;
-  }
-  .paused-folder { border: 1px solid rgba(238, 208, 144, .45); border-radius: 18px; color: #f1cf75; background: #19313d; box-shadow: 0 14px 32px rgba(0,0,0,.22); }
-  .paused-case .eyebrow { color: #77c1b5; font-family: var(--font-pixel); font-size: 10px; }
-  .paused-case h1 { max-width: 14ch; color: #f2db91; font-family: var(--font-pixel); font-size: clamp(29px, 8vw, 36px); font-weight: 750; line-height: 1.08; }
-  .paused-case p { max-width: 31ch; color: #c5d0c9; font-family: var(--font-pixel); font-size: 12px; line-height: 1.55; }
   .paused-case .primary-button { min-height: 52px; border-radius: 13px; box-shadow: none; font-family: var(--font-pixel); }
 }
 
@@ -2603,72 +1830,9 @@ body {
    an ordinary scrolling page, so it is composed like the other reading routes
    rather than inheriting the reader's locked-height chrome. */
 @media (max-width: 900px) {
-  .session-review-page {
-    width: calc(100% - 24px);
-    max-width: 640px;
-    margin-inline: auto;
-    padding: 14px 0 calc(24px + env(safe-area-inset-bottom));
-  }
-  .review-summary-hero {
-    padding: 22px 18px;
-    grid-template-columns: 1fr;
-    gap: 16px;
-    border-radius: 18px;
-  }
-  .review-summary-hero h1 { margin: 8px 0 10px; }
-  .review-score { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
-  .review-signal-row { margin: 10px 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .review-signal-row article { min-height: 78px; padding: 12px; }
-  .review-signal-row strong { font-size: 24px; }
-
-  .answer-audit-shell { min-height: 0; display: block; border-radius: 14px; }
   /* `overflow: hidden` still rounds the corners but makes the shell a scroll
      container, which silently cancels the sticky index below. `clip` rounds the
      same corners without creating one. */
-  @supports (overflow: clip) {
-    .answer-audit-shell { overflow: clip; }
-  }
-  .answer-audit-index {
-    padding: 13px;
-    position: sticky;
-    z-index: 3;
-    top: 0;
-    border-right: 0;
-    border-bottom: 1px solid rgba(255,255,255,.08);
-    background: #122431;
-  }
-  .answer-audit-index > div:first-child { margin-bottom: 10px; }
-  .brief-filter { margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .brief-filter button { min-height: 40px; border-radius: 9px; }
-  .answer-audit-list {
-    margin: 0 -13px;
-    padding: 2px 13px 6px;
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-  }
-  .answer-audit-list::-webkit-scrollbar { display: none; }
-  .answer-audit-list button { min-width: 118px; flex: 0 0 auto; scroll-snap-align: start; }
-  .answer-audit-list button:hover { transform: none; }
-  .answer-audit-detail { padding: 18px 15px calc(20px + env(safe-area-inset-bottom)); }
-  .answer-audit-detail > h3 { margin: 14px 0 12px; font-size: 20px; line-height: 1.3; }
-  .audit-choices > div { grid-template-columns: 23px minmax(0, 1fr); }
-  .audit-choices small { grid-column: 2; }
-
-  .review-next-actions { padding: 17px; grid-template-columns: 1fr; gap: 14px; }
-  .review-next-actions h2 { font-size: 22px; }
-  .review-next-actions > div:nth-child(2) { display: grid; grid-template-columns: 1fr; gap: 8px; }
-  .review-next-actions button { min-height: 50px; justify-content: center; border-radius: 12px; }
-}
-
-@media (max-width: 640px) {
-  .review-summary-hero h1 { max-width: 16ch; }
-  .review-signal-row article { min-height: 72px; }
-  .answer-audit-index > div:first-child { display: grid; gap: 2px; }
-  .audit-source summary,
-  .audit-stimulus,
-  .concise-rationale p { font-size: 14px; line-height: 1.6; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -3098,30 +2262,10 @@ body {
   }
 
   /* Practice ------------------------------------------------------------- */
-  .case-lobby .practice-action {
-    margin: 0;
-    padding: 20px 16px 22px;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .case-lobby .practice-action-client { gap: 13px; }
-  .case-lobby .practice-action-client .lobby-client-portrait { width: 54px; height: 62px; }
-  .case-lobby .practice-action-client > div > strong { font-size: 20px; }
-  .case-lobby .practice-run { padding: 18px 16px 22px; }
   .case-lobby .practice-run .primary-button.jumbo,
   .case-lobby .practice-action-secondary { width: 100%; min-height: 52px; justify-content: center; }
   /* Stack the "or" above the alternative rather than beside it: side by side,
      the label steals width the button needs at phone measure. */
-  .case-lobby .practice-run-alt { grid-template-columns: 1fr; gap: 8px; justify-items: center; }
-
-  .case-lobby .practice-guide {
-    margin: 0;
-    border-radius: 0;
-    border-width: 1px 0 0;
-    box-shadow: none;
-  }
-  .case-lobby .practice-guide > summary { min-height: 52px; padding-inline: 16px; }
-  .case-lobby .practice-guide-body { padding: 0 16px 22px; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -3144,36 +2288,8 @@ body {
    the tray looks unchanged and simply stops missing.
    --------------------------------------------------------------------------- */
 @media (max-width: 640px) {
-  .markup-tools button {
-    width: 40px;
-    min-height: 40px;
-    justify-content: center;
-  }
-  .markup-history button { width: 40px; height: 40px; }
-  .markup-color {
-    width: 40px;
-    height: 40px;
-    display: grid;
-    place-items: center;
-    border: 0;
-    border-radius: 50%;
-    background: none;
-    box-shadow: none;
-  }
-  .markup-color::before {
-    content: "";
-    width: 21px;
-    height: 21px;
-    border: 2px solid transparent;
-    border-radius: 50%;
-    background: var(--ink);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3);
-  }
-  .markup-color.active::before { border-color: #f0d79a; }
   /* The gaps were sized for 21px dots sitting shoulder to shoulder; at 40px the
      targets already separate themselves. */
-  .markup-colors { gap: 0; }
-  .markup-history { gap: 0; }
 
   /* The trial calendar's own controls, which are the only way to move a trial
      date and were sized for a cursor: the reschedule button at 34px tall, the

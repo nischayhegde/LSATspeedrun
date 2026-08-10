@@ -7,7 +7,11 @@
  * into both halves, and an `@media` chain rebuilt with the wrong params — the
  * three ways this kind of edit goes wrong quietly.
  *
+ * `--ref` names the commit the sheet is compared against, for a split made in
+ * more than one commit.
+ *
  *   node tools/css-split/split-verify.mjs styles.css case-session-styles.css
+ *   node tools/css-split/split-verify.mjs --ref 0d2bbf6 mobile.css mobile/firm-page.css
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -15,8 +19,10 @@ import { join } from 'node:path'
 import postcss from '../../frontend/node_modules/postcss/lib/postcss.mjs'
 
 const SRC = 'frontend/src'
-const original = process.argv[2]
-const parts = process.argv.slice(2)
+const flag = process.argv.indexOf('--ref')
+const ref = flag > 0 ? process.argv[flag + 1] : 'HEAD'
+const parts = process.argv.slice(2).filter((a, i, all) => a !== '--ref' && all[i - 1] !== '--ref')
+const original = parts[0]
 
 const chainOf = (rule) => {
   const stack = []
@@ -36,7 +42,7 @@ const fingerprint = (root) => {
   return out
 }
 
-const before = fingerprint(postcss.parse(execFileSync('git', ['show', `HEAD:${SRC}/${original}`], { encoding: 'utf8' })))
+const before = fingerprint(postcss.parse(execFileSync('git', ['show', `${ref}:${SRC}/${original}`], { encoding: 'utf8' })))
 const after = parts.flatMap((f) => fingerprint(postcss.parse(readFileSync(join(SRC, f), 'utf8'))))
 
 const tally = (xs) => xs.reduce((m, x) => m.set(x, (m.get(x) || 0) + 1), new Map())
@@ -48,7 +54,7 @@ const extra = []
 for (const [k, n] of b) if ((a.get(k) || 0) !== n) missing.push(`${n} -> ${a.get(k) || 0}  ${k.slice(0, 150)}`)
 for (const [k, n] of a) if (!b.has(k)) extra.push(`0 -> ${n}  ${k.slice(0, 150)}`)
 
-console.log(`HEAD:${original}  ${before.length} rules`)
+console.log(`${ref}:${original}  ${before.length} rules`)
 console.log(`${parts.join(' + ')}  ${after.length} rules`)
 console.log(`\n  rules whose count changed: ${missing.length}`)
 for (const m of missing.slice(0, 20)) console.log(`    ${m}`)

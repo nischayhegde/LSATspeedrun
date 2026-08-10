@@ -1,0 +1,21 @@
+@media (max-width: 900px) {
+
+  .onboarding-page { min-height: calc(100dvh - 62px); }
+  .onboarding-scene-wrap { padding: clamp(20px, 5vw, 32px); }
+  .opening-caption { margin-top: 18px; }
+  .onboarding-panel { padding: 34px clamp(18px, 6vw, 32px) 42px; } }
+
+@media (max-width: 640px) {
+
+  .onboarding-scene-wrap { padding: 16px; }
+  .opening-caption h2 { font-size: 27px; }
+  .onboarding-panel { padding: 29px 18px 34px; }
+  .onboarding-panel h1 { font-size: clamp(30px, 9.6vw, 39px); }
+  .character-choice { gap: 9px; }
+  .character-choice button { min-height: 174px; padding-inline: 5px; font-size: 9.5px; }
+  .name-fields { gap: 10px; }
+  .name-fields input { min-height: 46px; font-size: 16px; }
+
+  .onboarding-page { min-height: calc(100dvh - 58px); display: grid; grid-template-columns: 1fr; }
+  .onboarding-scene-wrap { min-height: 32dvh; padding: 12px; }
+  .onboarding-panel { padding: 24px 18px var(--mobile-dock-clearance); } }

@@ -16,14 +16,20 @@ const gz = (dir, href) => gzipSync(readFileSync(`${dir}${href}`), { level: 9 }).
 for (const dist of process.argv.slice(2)) {
   const html = readFileSync(`${dist}/index.html`, 'utf8')
   const entry = `/assets/${readdirSync(`${dist}/assets`).find((f) => /^index-.*\.css$/.test(f))}`
-  const routes = html.match(/var R=(\[.*?\]\]),K=/s)
-  console.log(`\n${dist}   entry ${(gz(dist, entry) / 1024).toFixed(1)} kB gzipped`)
+  // `,K=` is the shape from before a route sheet could be written behind the
+  // entry link; `,B=` is the one with a list for each side. Both are read so
+  // that a build from either side of that change can be weighed.
+  const routes = html.match(/var R=(\[.*?\]\]),[BK]=/s)
+  console.log(`\n${dist}   entry ${(gz(dist, entry) / 1000).toFixed(1)} kB gzipped`)
   if (!routes) { console.log('  no route sheets: every screen blocks on the entry alone'); continue }
-  for (const [pattern, sheets] of JSON.parse(routes[1])) {
+  for (const row of JSON.parse(routes[1])) {
+    // A sheet written behind the entry link blocks the paint exactly as one
+    // written in front of it does, so both count towards what a route waits on.
+    const sheets = [...row[1], ...(row[2] || [])]
     const own = sheets.reduce((n, href) => n + gz(dist, href), 0)
     console.log(
-      `  ${pattern.padEnd(24)} ${((gz(dist, entry) + own) / 1024).toFixed(1)} kB` +
-        `  (entry + ${(own / 1024).toFixed(1)} in ${sheets.length} sheet${sheets.length === 1 ? '' : 's'})`,
+      `  ${row[0].padEnd(24)} ${((gz(dist, entry) + own) / 1000).toFixed(1)} kB` +
+        `  (entry + ${(own / 1000).toFixed(1)} in ${sheets.length} sheet${sheets.length === 1 ? '' : 's'})`,
     )
   }
 }

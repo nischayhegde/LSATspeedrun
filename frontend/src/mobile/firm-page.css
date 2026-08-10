@@ -1,0 +1,116 @@
+@media (max-width: 900px) {
+
+  .appearance-button { min-height: 40px; } }
+
+@media (max-width: 640px) {
+  .firm-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .firm-tabs button { min-width: 0; font-size: 8.5px; }
+  .catalog-toolbar label select { font-family: var(--font-ui); font-size: 16px; }
+  .catalog-view-buttons button { min-width: 44px; }
+  .client-grid {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .client-grid::-webkit-scrollbar { display: none; }
+  .client-grid > * { flex: 0 0 min(84vw, 350px); scroll-snap-align: start; }
+  .firm-ledger-heading { min-height: 0; padding: 21px 14px 15px; }
+  .firm-heading-copy h1 { font-size: var(--mobile-title); }
+  .firm-heading-copy p { font-size: 13px; }
+  .firm-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 7px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .firm-tabs::-webkit-scrollbar { display: none; }
+  .firm-tabs button,
+  .firm-tabs button.active {
+    min-width: 104px;
+    flex: 0 0 104px;
+    scroll-snap-align: start;
+    font-size: 10px;
+  }
+  .management-card.asset-card { min-height: 490px; }
+  .asset-card .asset-card-copy p { font-size: 13.5px; } }
+
+@media (min-width: 641px) and (max-width: 900px) and (min-height: 501px) {  .appearance-button { min-height: 42px; }
+  .catalog-view-buttons button { min-width: 42px; min-height: 42px; }
+  .asset-management-grid,
+  .client-grid,
+  .achievement-grid {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .asset-management-grid::-webkit-scrollbar,
+  .client-grid::-webkit-scrollbar,
+  .achievement-grid::-webkit-scrollbar { display: none; }
+  .asset-management-grid > *,
+  .client-grid > *,
+  .achievement-grid > * {
+    flex: 0 0 min(390px, 72vw);
+    scroll-snap-align: start;
+  } }
+
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  .asset-management-grid,
+  .client-grid,
+  .achievement-grid {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .asset-management-grid::-webkit-scrollbar,
+  .client-grid::-webkit-scrollbar,
+  .achievement-grid::-webkit-scrollbar { display: none; }
+  .asset-management-grid > *,
+  .client-grid > *,
+  .achievement-grid > * { flex: 0 0 min(360px, 48vw); scroll-snap-align: start; } }
+
+@media (max-width: 640px) {
+  .firm-ledger-heading { min-height: 0; margin-bottom: 14px; padding: 18px 12px 14px; display: grid; gap: 16px; }
+  .firm-heading-copy { padding: 0; }
+  .firm-heading-copy .eyebrow { margin-left: 22px; font-size: 8.5px; }
+  .firm-heading-copy h1 { margin: 8px 0; font-size: clamp(30px, 9vw, 37px); line-height: 1.04; }
+  .firm-heading-copy p { margin: 0; font-size: 13px; line-height: 1.5; }
+  .ledger-rule { margin-top: 12px; }
+  .firm-wallet { width: 100%; min-width: 0; padding: 15px 15px 13px; }
+  .firm-wallet strong { font-size: 24px; }
+  .firm-tabs {
+    margin: 0 0 16px;
+    padding: 4px;
+    position: sticky;
+    z-index: 18;
+    top: 58px;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 1px solid rgba(67, 45, 28, .35);
+    border-radius: 14px;
+    /* Opaque, and no backdrop blur. This rail is sticky and full width, so a
+       backdrop-filter on it is a blur of a strip of the page recomputed on
+       every scrolled frame — the most expensive kind of layer there is on a
+       phone — and at 94% opacity there was nothing legible behind it to blur.
+       Taking the last 6% of transparency out buys the blur's removal for free. */
+    background: #dbc594;
+    box-shadow: 0 8px 22px rgba(65,44,26,.12);
+  }
+  .firm-tabs button,
+  .firm-tabs button.active { min-width: 104px; min-height: 52px; flex: 0 0 104px; border-width: 1px; border-radius: 10px; box-shadow: none; }
+  .firm-tabs button.active { min-height: 52px; }
+  .firm-tabs button.active::after,
+  .firm-tabs button::before { display: none; } }

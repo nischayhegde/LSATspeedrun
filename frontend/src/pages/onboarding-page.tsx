@@ -11,6 +11,7 @@ import type { CharacterGender, GameResponse } from '../types'
 import { useGame } from './shared'
 // The rules in `styles.css` that only this screen can render.
 import '../onboarding-page.css'
+import '../mobile/onboarding-page.css'
 
 
 export function OnboardingPage() {

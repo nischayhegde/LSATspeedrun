@@ -22,6 +22,7 @@ import { WardrobePanel } from '../wardrobe'
 import { effectiveClient, useGame } from './shared'
 // The rules in `styles.css` that only this screen can render.
 import '../office-page.css'
+import '../mobile/office-page.css'
 
 
 export function OfficePage() {

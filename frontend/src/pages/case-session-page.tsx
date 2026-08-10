@@ -26,6 +26,7 @@ import type { StudySession } from '../types'
 // this chunk, and `lsat-route-stylesheets` keeps it in the slot it had inside
 // the entry sheet.
 import '../case-session-styles.css'
+import '../mobile/case-session-page.css'
 
 // Shares the Practice tab's mega-litigation chunk, so the post-form results
 // page explains a withheld tier with the same component that tab uses without

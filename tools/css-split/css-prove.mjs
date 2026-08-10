@@ -120,7 +120,27 @@ const PROPS = [
   'border-radius', 'box-shadow', 'width', 'height', 'min-width', 'min-height', 'max-width', 'flex-direction',
   'justify-content', 'align-items', 'gap', 'grid-template-columns', 'opacity', 'overflow', 'transform', 'z-index',
 ]
+/**
+ * Three readings of each class, because a bare element only exercises the rules
+ * that select it on its own.
+ *
+ * Most of `mobile.css` is written `.some-page .some-part`, and a `<div>` with
+ * one class and no ancestors matches none of it — the first version of this
+ * reported zero differences for a reason that had nothing to do with the split
+ * being right. So each class is also read inside a chain that threads every
+ * class the route can render, once in each direction. Between the two, every
+ * ordered pair of the route's classes appears as ancestor and descendant, so
+ * every descendant and child combinator between any two of them resolves. What
+ * is still not covered is a sibling combinator and a compound like `.a.b`;
+ * `cascade-order.mjs` is what covers those, by not needing to match anything.
+ */
 const READ = ([classes, props]) => {
+  const read = (el) => {
+    const cs = getComputedStyle(el)
+    const rec = []
+    for (const p of props) rec.push(cs.getPropertyValue(p))
+    return rec.join('|')
+  }
   const host = document.createElement('div')
   document.body.appendChild(host)
   const out = {}
@@ -128,11 +148,21 @@ const READ = ([classes, props]) => {
     const el = document.createElement('div')
     el.className = cls
     host.appendChild(el)
-    const cs = getComputedStyle(el)
-    const rec = []
-    for (const p of props) rec.push(cs.getPropertyValue(p))
-    out[cls] = rec.join('|')
+    out[cls] = read(el)
     host.removeChild(el)
+  }
+  for (const [tag, order] of [['down', classes], ['up', [...classes].reverse()]]) {
+    let node = host
+    const made = []
+    for (const cls of order) {
+      const el = document.createElement('div')
+      el.className = cls
+      node.appendChild(el)
+      made.push([cls, el])
+      node = el
+    }
+    for (const [cls, el] of made) out[`${cls} (${tag})`] = read(el)
+    if (made.length) made[0][1].remove()
   }
   host.remove()
   return out
@@ -144,6 +174,16 @@ const browser = await chromium.launch()
 let differing = 0
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  /**
+   * The webfonts are a third party and a stopwatch, not part of the cascade.
+   * `index.html` fetches them with `media="print"` and swaps on load, so
+   * whether a face has arrived when the reading is taken changes text metrics —
+   * it reported one element on /cases/7 as a pixel taller in the second build
+   * purely because the font was cached by then. Both builds link the same font
+   * sheet; refusing it leaves both on identical fallback metrics.
+   */
+  await page.route('**://fonts.googleapis.com/**', (r) => r.abort())
+  await page.route('**://fonts.gstatic.com/**', (r) => r.abort())
   for (const [width, height] of [[390, 844], [844, 390], [1440, 900]]) {
     await page.setViewportSize({ width, height })
     for (const [route, pageFile] of Object.entries(ROUTES)) {
@@ -155,12 +195,14 @@ try {
       }
       const before = await at(a.port)
       const after = await at(b.port)
-      const diffs = classes.filter((c) => before[c] !== after[c])
+      const probes = Object.keys(before)
+      const diffs = probes.filter((c) => before[c] !== after[c])
       differing += diffs.length
-      console.log(`  ${`${width}x${height}`.padEnd(9)} ${route.padEnd(12)} ${String(classes.length).padStart(4)} classes it can render, ${diffs.length} differ`)
+      console.log(`  ${`${width}x${height}`.padEnd(9)} ${route.padEnd(12)} ${String(classes.length).padStart(4)} classes it can render, ${String(probes.length).padStart(4)} readings, ${diffs.length} differ`)
       for (const d of diffs.slice(0, 6)) {
         console.log(`        .${d}\n          was ${before[d]}\n          now ${after[d]}`)
       }
+      if (!probes.length) throw new Error(`no probe resolved on ${route}; the reader is not reading`)
     }
   }
   console.log(`\n${differing} computed-style differences across ${Object.keys(ROUTES).length} routes at three viewports\n`)

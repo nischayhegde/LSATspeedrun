@@ -30,6 +30,7 @@ import type { CharacterGender, GameAsset, GameClient, GameState } from '../types
 import { effectiveClient, storeGame, useGame } from './shared'
 // The rules in `styles.css` that only this screen can render.
 import '../firm-page.css'
+import '../mobile/firm-page.css'
 
 
 type FirmTab = 'upgrades' | 'decor' | 'staff' | 'clients' | 'connections' | 'rivals' | 'achievements'

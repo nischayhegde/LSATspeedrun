@@ -25,7 +25,10 @@ MINE+=(frontend/src/mobile/*.css(N) frontend/src/mobile/*.ts(N))
 mkdir -p .verify/mine
 for f in $MINE; do [[ -e $f ]] && cp "$f" ".verify/mine/$(basename $f)"; done
 
-for f in $MINE; do git checkout "$REF" -- "$f" 2>/dev/null || rm -f "$f"; done
+# `git show` rather than `git checkout <ref> -- <path>`, which would stage the
+# old file as well as write it and leave the index holding a revert of this
+# workstream's own commits after the restore below puts the working copy back.
+for f in $MINE; do git show "$REF:$f" >"$f" 2>/dev/null || rm -f "$f"; done
 (cd frontend && npx vite build --outDir "../$OUT" --emptyOutDir >/dev/null)
 
 for f in $MINE; do

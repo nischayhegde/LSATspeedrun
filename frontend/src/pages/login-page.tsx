@@ -9,6 +9,7 @@ import { SoundControls, useSound } from '../sound'
 import { storeAuthenticatedUser } from './shared'
 // The rules in `styles.css` that only this screen can render.
 import '../login-page.css'
+import '../mobile/login-page.css'
 
 /**
  * The office behind the sign-in panel is decoration, but importing it directly
