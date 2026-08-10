@@ -871,8 +871,14 @@ h1, h2, h3 { letter-spacing: -.035em; }
 /* One long lawyer name may not decide whether the row fits. */
 .account-name { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-header { gap: 18px; }
-.desktop-nav a { padding-inline: 13px; }
-.desktop-nav a::after { left: 13px; right: 13px; }
+/* Ellipsizing a label is the correct last resort (see above), but at 1440 --
+   an ordinary desktop width, not a squeeze -- every one of the five was landing
+   2 to 4px short and reading as "Dashbo...". The row needs about 15px in total,
+   so the tabs give back 2px of padding each side: 20px across five tabs, which
+   clears all five with a little slack and leaves the ellipsis to widths that
+   genuinely have no room. */
+.desktop-nav a { padding-inline: 11px; }
+.desktop-nav a::after { left: 11px; right: 11px; }
 
 /* Putting Focus Mode back in the row costs it 38px, and measured across the
    widths, the band from the 1360px reflow up to about 1500px had no 38px to
