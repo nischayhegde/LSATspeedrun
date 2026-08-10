@@ -26,14 +26,6 @@ import { MarkupLayer, MarkupToolbar, useCaseMarkup } from './markup'
 import { MOTION_TIMING } from './motion'
 import { LockedChoicesNotice, useStrategyGate } from './strategy-enforcement'
 import type { AttemptReward, CoachingFeedback, GameResponse, StudySession } from './types'
-/**
- * The case view's sheet. Every rule in it is written `.case-instrument …`, and
- * this file and the rail it lazily loads are the only things that put that
- * class on an element, so it does not belong on the entry where every screen
- * paid for it. `lsat-route-stylesheets` in `vite.config.ts` gives it the same
- * position in the cascade it had there.
- */
-import './case-instrument.css'
 
 /* The case run itself, split out of `components.tsx` so the app shell no
    longer drags the 3D portraits, the strategy gate and the whole verdict

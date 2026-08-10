@@ -28,12 +28,21 @@ import { SoundProvider } from './sound'
  * gzipped out of the stylesheet every screen blocks on. The clash scan behind
  * that change is `.shots/css-clash.mjs`.
  *
- * `case-instrument.css`, `markup.css` and `practice-lab.css` left the same way
- * and for the same reason, and they were the easy three: every rule in the
- * first is written `.case-instrument …`, the second styles ink that exists only
- * over a case file, and the third is the practice lobby. Nothing outside
- * /cases and /cases/:id writes any of their classes, so they now travel with
- * those two routes.
+ * `markup.css` and `practice-lab.css` left the same way and for the same
+ * reason: the first styles ink that exists only over a case file, the second is
+ * the practice lobby, and nothing outside /cases and /cases/:id writes any of
+ * their classes.
+ *
+ * `case-instrument.css` is the one that could not follow them, and it is worth
+ * saying why. It is scoped — every rule in it is written `.case-instrument …` —
+ * and it is reachable from one route, so it looks like the same move. But it
+ * sat *after* `styles.css` here and a route sheet is emitted *before* the entry
+ * sheet, which flips every tie between the two. Those ties are not rare and not
+ * findable by scanning for a shared class: `.case-instrument .case-timer small`
+ * against `.case-timer small` is one, and moving the sheet changed the colour of
+ * the timer, of two labels and of the selected confidence button on the case
+ * screen. It stays on the entry, and it is the reason `.shots/v-case-diff.mjs`
+ * exists.
  *
  * `performance.css` was the seventh, and it could not simply follow the
  * dashboard chunk: it reads like a dashboard sheet, but it also styles the
@@ -50,6 +59,7 @@ import { SoundProvider } from './sound'
 import './review-panels.css'
 import './styles.css'
 import './art/art.css'
+import './case-instrument.css'
 import './mobile.css'
 
 /**
