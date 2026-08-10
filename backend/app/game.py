@@ -1531,14 +1531,88 @@ def _pay_rent_arrears(
     return paid
 
 
-def _touch_daily_streak(profile: PlayerProfile, now) -> None:
-    """Advance the one calendar-day activity streak; a no-op after the first visit each day.
+# The reputation a run of wins guarantees, and the day count that licenses it.
+#
+# Cases are minted on demand and without limit from Practice, so anything that
+# pays per case is farmable per case. The ladder is therefore not the reward --
+# the day count is. A player can hold only as much streak standing as
+# consecutive *working* days support, and a working day is one on which a case
+# was actually finished, so the ceiling on this mechanic is wall-clock time,
+# which is the one resource the game cannot mint.
+#
+# It is also a floor and never a credit: it stops reputation falling, it never
+# pushes it up. Farming a streak cannot buy a tier. It shares the standing
+# argument -- and therefore TERRITORY_STANDING_FLOOR_CEILING -- with district
+# retainers, so the two compose by addition under one shared cap instead of
+# being two separate ladders racing each other to the top of the game.
+STREAK_STANDING_LADDER: tuple[tuple[int, float], ...] = (
+    (3, 1.0), (6, 2.0), (10, 3.0), (15, 4.0), (21, 5.0),
+)
+STREAK_STANDING_CAP = 5.0
+# One day of consecutive casework licenses one point of the ladder.
+STREAK_STANDING_PER_DAY = 1.0
 
-    This is deliberately the only "streak" concept tied to calendar days — it
-    counts consecutive days the firm was visited at all, which already covers
-    every day a practice question gets answered. It does not touch
-    `current_streak`/`best_streak`, which track consecutive validated case
-    wins for the payout bonus and are a different mechanic entirely.
+
+def streak_standing(profile: PlayerProfile) -> float:
+    """Reputation floor earned by the current run of validated wins.
+
+    Two gates, both necessary. Depth is the ladder, which diminishes: the first
+    point costs 3 wins and the fifth costs 6 more. Consistency is the day count,
+    which is what stops a single long sitting from buying the whole ladder.
+    """
+    earned = 0.0
+    for wins, standing in STREAK_STANDING_LADDER:
+        if (profile.current_streak or 0) >= wins:
+            earned = standing
+    licensed = min(STREAK_STANDING_CAP, max(0, profile.daily_streak_current or 0) * STREAK_STANDING_PER_DAY)
+    return min(earned, licensed)
+
+
+def _streak_form(profile: PlayerProfile) -> dict:
+    """What the streak is currently worth, and what the next rung costs.
+
+    Both halves are reported because either one can be the thing holding the
+    player back, and a bar that will not move however many cases are answered is
+    worse than no bar. When the day count is the binding gate the UI can say so
+    instead of implying more casework would help.
+    """
+    wins = profile.current_streak or 0
+    days = max(0, profile.daily_streak_current or 0)
+    earned = 0.0
+    next_at = None
+    for rung_wins, rung_standing in STREAK_STANDING_LADDER:
+        if wins >= rung_wins:
+            earned = rung_standing
+        elif next_at is None:
+            next_at = rung_wins
+    licensed = min(STREAK_STANDING_CAP, days * STREAK_STANDING_PER_DAY)
+    return {
+        "wins": wins,
+        "days": days,
+        "standing": round(min(earned, licensed), 2),
+        "earned_standing": round(earned, 2),
+        "licensed_standing": round(licensed, 2),
+        "cap": STREAK_STANDING_CAP,
+        "next_win_target": next_at,
+        # True when more casework today cannot raise the floor and only coming
+        # back tomorrow can.
+        "day_limited": earned > licensed,
+    }
+
+
+def _touch_daily_streak(profile: PlayerProfile, now) -> None:
+    """Advance the working-day streak; a no-op after the first finished case each day.
+
+    This counts consecutive days on which the player *finished a case*, not days
+    the app was opened. It used to run from `_settle_upkeep_unflushed`, which is
+    on every protected route, so loading any page advanced it -- a streak that
+    rewarded showing up rather than working, and the only streak the UI showed.
+    It is now called from the one place that also ticks `DailyProgress.cases_completed`,
+    so both day counters answer to the same bar: a real attempt with a real
+    argument, not a thin win and not a page load.
+
+    It does not touch `current_streak`/`best_streak`, which count consecutive
+    validated case wins for the payout bonus and are a different mechanic.
     """
     today = now.date()
     last = profile.daily_streak_last_date
@@ -1569,7 +1643,6 @@ def _settle_upkeep_unflushed(profile: PlayerProfile, now=None) -> dict:
     now = _as_utc(now or utcnow())
     settled_at = _as_utc(profile.upkeep_settled_at) or now
     last_active_at = _as_utc(profile.last_active_at) or settled_at
-    _touch_daily_streak(profile, now)
 
     # Read once and pass down, the way `serialize_game` already threads `owned`.
     # The rent relief needs the held districts and the reputation guard needs the
@@ -1909,6 +1982,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
         "best_streak": profile.best_streak,
         "daily_streak": profile.daily_streak_current,
         "daily_streak_best": profile.daily_streak_best,
+        "streak_form": _streak_form(profile),
         "total_cases": profile.total_cases,
         "total_correct": profile.total_correct,
         "total_validated_correct": profile.total_validated_correct,
@@ -2783,6 +2857,11 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     elif validated:
         profile.current_streak += 1
         profile.best_streak = max(profile.best_streak, profile.current_streak)
+    # Before the reputation floor below reads it: today has to be on the board
+    # already, or the first finished case of a new day would be licensed against
+    # yesterday's day count.
+    if reward_eligible or effort_eligible:
+        _touch_daily_streak(profile, settled_at)
     core_payout = round(base_fee * score_mult * firm_mult) if paid_case else 0
     streak_cap = int(context.get("streak_cap_bps") or 2_000) / 10_000
     streak_bonus = round(core_payout * min(streak_cap, profile.current_streak * .02)) if validated else 0
@@ -2840,8 +2919,15 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     maximum_drop *= _reputation_warmup(profile.total_cases)
     reputation_after = round(max(reputation_after, reputation_before - maximum_drop), 1)
     if reward_eligible:
+        # District standing and streak standing are one argument on purpose.
+        # `_career_floor` caps `casework + standing` at
+        # TERRITORY_STANDING_FLOOR_CEILING, so the two add up under a single
+        # shared ceiling rather than forming two ladders that each try to reach
+        # the top of the game on their own.
         career_floor = _career_floor(
-            projected_correct, projected_validated, territory_standing(profile)
+            projected_correct,
+            projected_validated,
+            territory_standing(profile) + streak_standing(profile),
         )
         reputation_after = round(max(reputation_after, career_floor), 1)
         reputation_after = min(100, round(reputation_after + int(context.get("client_reputation_win_bonus_bps") or 0) / 10_000, 1))

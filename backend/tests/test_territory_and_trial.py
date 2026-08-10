@@ -346,6 +346,45 @@ def test_standing_lifts_the_reputation_floor_but_not_past_the_last_gates():
     assert _career_floor(50, 30, 0) > 91
 
 
+def test_a_streak_buys_reputation_standing_but_only_at_the_rate_days_allow():
+    """The anti-farm argument, pinned.
+
+    Cases are minted on demand from Practice, so the ladder alone would be
+    farmable in one sitting. The day count is the real gate: it cannot be minted,
+    and since the working-day streak now needs a finished case, it cannot be
+    idled either.
+    """
+    from backend.app.game import STREAK_STANDING_CAP, STREAK_STANDING_LADDER, streak_standing
+
+    class Fake:
+        def __init__(self, wins, days):
+            self.current_streak, self.daily_streak_current = wins, days
+
+    # A single marathon session cannot buy more than one day's worth, however
+    # many cases it answers -- this is the whole anti-farm claim.
+    assert streak_standing(Fake(500, 1)) == 1.0
+    assert streak_standing(Fake(3, 1)) == 1.0
+    assert streak_standing(Fake(2, 9)) == 0.0
+
+    # And a long habit cannot buy standing without the casework to back it.
+    assert streak_standing(Fake(0, 99)) == 0.0
+
+    # The ladder diminishes: later rungs cost more wins per point.
+    steps = [wins for wins, _ in STREAK_STANDING_LADDER]
+    gaps = [b - a for a, b in zip(steps, steps[1:])]
+    assert gaps == sorted(gaps) and gaps[0] < gaps[-1]
+    assert streak_standing(Fake(999, 99)) == STREAK_STANDING_CAP
+
+    # It composes with district standing by addition under ONE shared ceiling,
+    # so the two mechanics cannot stack their way past the last content gates.
+    cap = TERRITORY_STANDING_CAP
+    assert _career_floor(30, 20, cap + STREAK_STANDING_CAP) == TERRITORY_STANDING_FLOOR_CEILING
+    assert TERRITORY_STANDING_FLOOR_CEILING < 91
+
+    # It is a floor and never a credit: it cannot push a good reputation up.
+    assert _career_floor(60, 40, STREAK_STANDING_CAP) == _career_floor(60, 40, 0)
+
+
 def test_holding_districts_reduces_the_office_lease(app):
     profile = make_profile(tier=4, reputation=100, cash=10**12)
     grant_every_connection(profile)
