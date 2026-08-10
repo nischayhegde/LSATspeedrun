@@ -3221,56 +3221,16 @@ function addCircuitTown(root: THREE.Group, trees: TreeRecord[], town: TownPlan, 
     const paving = box([market.width, .06, market.depth], material(0x8b8577, .98), [market.x, .05, market.z])
     paving.castShadow = false
     root.add(paving)
-    /*
-     * The market place's set-pieces are cut to the block rather than dropped
-     * on it.
-     *
-     * `createCourthouse` is 5.2 by 3.5 at scale 1, so a county seat's bench at
-     * the authored .74 needs a plot 3.85 by 2.59 and a village's at .44 needs
-     * 2.29 by 1.54. Nothing ever checked that the crossroads block had one.
-     * Measured on the corrected per-triangle audit, Fenwick's courthouse stood
-     * over 5.89 m of pavement and Ashgate's over 1.37, with the market cross
-     * adding 1.05 — 8.3 of The Circuit's 18.3 blocked metres, from three
-     * objects placed at a fixed size and a fixed fraction of a block whose
-     * size is whatever the lattice gave.
-     *
-     * This is the same repair as the Old Quarter courthouse's: derive the
-     * scale from the plot, and derive every offset on the plot from the room
-     * actually left. `pavedInset` is in the margin because a village block is
-     * inset only to the kerb, so its outermost half-metre is the paving of the
-     * street around it. Nothing here touches the network: the pavements the
-     * town lays are exactly the ones it laid before, which is the point —
-     * taking pavement away is this job's best-documented dead end.
-     */
-    const margin = market.pavedInset + WALKER_HALF_BEAM
-    const civicScale = Math.min(
-      town.seat ? .74 : .44,
-      (market.width - margin * 2) / 5.2,
-      (market.depth - margin * 2) / 3.5,
-    )
-    const civicDepth = 3.5 * civicScale
-    // Set towards the back of the square, as far as the square allows.
-    const civicShift = Math.max(0, Math.min(market.depth * .26, market.depth / 2 - civicDepth / 2 - margin))
-    const civic = createCourthouse(civicScale, definition.stone)
-    civic.position.set(market.x, .06, market.z - civicShift)
+    const civic = createCourthouse(town.seat ? .74 : .44, definition.stone)
+    civic.position.set(market.x, .06, market.z - market.depth * .26)
     root.add(civic)
-    // The cross stands in the open half of the square, clear of the paving's
-    // own edge. `markSolidProp` declares .5, and that disc is what has to fit,
-    // not the point it is placed at.
-    const crossReach = .5 + margin
-    const crossX = Math.min(market.width * .22, Math.max(0, market.width / 2 - crossReach))
-    const crossZ = Math.min(market.depth * .24, Math.max(0, market.depth / 2 - crossReach))
     const cross = createMarketStall(town.seed)
-    cross.position.set(market.x + crossX, .07, market.z + crossZ)
+    cross.position.set(market.x + market.width * .22, .07, market.z + market.depth * .24)
     markSolidProp(cross, .5)
     root.add(cross)
     for (const side of [-1, 1]) {
       const lamp = createLamp()
-      lamp.position.set(
-        market.x + side * Math.min(market.width * .38, Math.max(0, market.width / 2 - margin)),
-        .07,
-        market.z + Math.min(market.depth * .3, Math.max(0, market.depth / 2 - margin)),
-      )
+      lamp.position.set(market.x + side * market.width * .38, .07, market.z + market.depth * .3)
       root.add(lamp)
     }
     const marketWalk = market.z + market.depth * .34
@@ -4366,7 +4326,7 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
   station.position.set(0, .02, 6.95)
   root.add(station)
   transitStops(root).push([0, 6.95])
-  const stationRow: BlockRect = { x: 0, z: 11.6, width: 15, depth: 2.6, rotation: 0, frontage: 'collector', pavedInset: 0, row: 0, column: 0, seed: 5150 }
+  const stationRow: BlockRect = { x: 0, z: 11.6, width: 15, depth: 2.6, rotation: 0, frontage: 'collector', row: 0, column: 0, seed: 5150 }
   renderPlannedBuildings(root, 'nation', developBlock(stationRow, {
     seed: 5150, lotMin: 1.3, lotMax: 2.6, setback: .3, buildingDepth: 1.15, gap: .28,
     storeyHeight: .72, storeysMin: 1.6, storeysMax: 2.8, palette: [0x6f6a5d, 0x7c7263, 0x625f57, 0x847461], roof: 'pitched',
@@ -5265,7 +5225,6 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
             depth,
             rotation,
             frontage: 'collector',
-            pavedInset: 0,
             row: band,
             column: index,
             seed: blockSeed,

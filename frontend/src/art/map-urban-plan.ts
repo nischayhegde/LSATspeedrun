@@ -74,16 +74,6 @@ export type BlockRect = {
   rotation: number
   /** Class of the widest street this block fronts. */
   frontage: StreetClass
-  /**
-   * Paving that stands *inside* this block, per side.
-   *
-   * Zero whenever the lattice was inset to the paved edge, which is the normal
-   * case. Under `verge: false` the plot line is the kerb, so the footway and
-   * its band lie within the block, and anything placed flush to the block edge
-   * is on somebody's pavement before it has done anything wrong. A consumer
-   * that keeps clear of this is correct under either lattice.
-   */
-  pavedInset: number
   row: number
   column: number
   seed: number
@@ -290,10 +280,6 @@ export function blocksFromGrid(
         depth,
         rotation: options?.rotation?.(column, row) ?? 0,
         frontage: widest,
-        pavedInset: Math.max(
-          0,
-          ...[west, east, north, south].map((street) => streetHalfPaved(street.streetClass) - inset(street.streetClass)),
-        ),
         row,
         column,
         seed: seedBase + column * 131 + row * 617,
@@ -1045,9 +1031,6 @@ export function corridorBackland(corridor: Corridor, crossStreets: CrossStreet[]
           // Blocks are aligned to the street, not to the world.
           rotation: -Math.atan2(tz, tx),
           frontage: row === 0 ? 'collector' : 'local',
-          // Cut from the corridor's own frontage line rather than from a
-          // street lattice, so there is no paving standing inside it.
-          pavedInset: 0,
           row,
           column: index,
           seed: options.seed + index * 419 + row * 71 + (side > 0 ? 2803 : 0),
