@@ -8394,14 +8394,25 @@ export function MapThreeScene({
       // The same default `planFootways` laid the pavements against, so the two
       // passes cannot disagree about where the kerb is.
       .flatMap((road) => corridorFootprints(road.points, (road.width ?? 1.5) / 2, road.closed ?? false))
+    // No width work in this pass, only the cut.
+    //
+    // Its job is to take the pavement off the tracks. The width work is about
+    // buildings, and doing a first, partial round of it here against the one
+    // solid the region declares separately is how the Sovereign Arc — where the
+    // buildings are not declared at all, so this is the *only* pass — ended up
+    // with bands moved for a level crossing and never checked against anything
+    // else. Measured over 900 frames, that is the whole of the Arc's regression
+    // in bodies inside a vehicle: 91 with the width work here, 21 without,
+    // against 17 before any of it existed.
     const railPlan = cutFootwaysAroundSolids(pedestrianPlan.ways, railBlocks, {
       defaultHalfWidth: CROWD_FOOTWAY_HALF,
-      keepOut: carriageways,
+      narrow: false,
     })
     const solidPlan = FOOTWAY_SOLID_CUT[region]
       ? cutFootwaysAroundSolids(railPlan.ways, solidFootprints, {
         defaultHalfWidth: CROWD_FOOTWAY_HALF,
         keepOut: carriageways,
+        avoidWhenInside: true,
       })
       : railPlan
     const crowdWays = solidPlan.ways

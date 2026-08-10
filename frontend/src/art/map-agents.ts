@@ -1814,6 +1814,25 @@ export function cutFootwaysAroundSolids(
      * already puts people", which is all this needs to promise.
      */
     keepOutRadius?: number
+    /**
+     * Whether a piece that ends up standing inside one of these solids should
+     * be marked as somewhere the crowd avoids. See `FootwaySpec.obstructed`.
+     *
+     * Off by default, because the two callers mean different things by
+     * `solids`. A building is a thing that should not have people in it, and
+     * that is what the flag is for. The railway right-of-way is a thing that
+     * should not have a *pavement* on it, which the cut has already dealt with
+     * by taking the pavement off it, and what is left is a level crossing,
+     * which is a place people are supposed to walk through: marking those and
+     * steering the crowd off them moved the Sovereign Arc's walkers onto the
+     * ring boulevard and put 91 frames of a body inside a vehicle.
+     */
+    avoidWhenInside?: boolean
+    /**
+     * Whether to touch the usable width at all, or only to remove the spans
+     * that are wholly blocked. See the right-of-way pass in the scene.
+     */
+    narrow?: boolean
   } = {},
 ): { ways: FootwaySpec[]; cut: number; unwalkable: number; blocked: number; narrowed: number; narrowedFrom: number; obstructed: number } {
   const keepOut = options.keepOut ?? []
@@ -1822,6 +1841,8 @@ export function cutFootwaysAroundSolids(
   const clearance = options.clearance ?? SOLID_CLEARANCE
   const body = options.bodyRadius ?? WALKER_SHOULDER
   const keepOutBody = options.keepOutRadius ?? SOLID_CLEARANCE
+  const avoidWhenInside = options.avoidWhenInside ?? false
+  const narrowing = options.narrow ?? true
   // Shorter than `planFootways` keeps, and deliberately. That figure is about
   // whether a *junction* slice is worth having; this is about whether there is
   // anywhere to stand between two shopfronts, and a stride and a half is.
@@ -1941,7 +1962,7 @@ export function cutFootwaysAroundSolids(
     // The band first, off everything, including the tarmac. Then the cut, off
     // the solids only: a carriageway beside a pavement is where the pavement is
     // supposed to be and is never a reason to remove one.
-    for (const edge of keepOut) {
+    for (const edge of narrowing ? keepOut : []) {
       if (!nearby(edge, keepOutBody)) continue
       narrowAgainst(edge, keepOutBody, projectOntoPolyline(loop, cumulative, edge.x, edge.z).s)
     }
@@ -1953,7 +1974,7 @@ export function cutFootwaysAroundSolids(
       if (!nearby(solid, Math.max(clearance, body))) continue
       near.push(solid)
       const hit = projectOntoPolyline(loop, cumulative, solid.x, solid.z)
-      narrowAgainst(solid, body, hit.s)
+      if (narrowing) narrowAgainst(solid, body, hit.s)
 
       // Both kerbs, because the blocked set across the way is an interval: the
       // distance to a convex body along a straight line is a convex function of
@@ -2027,8 +2048,15 @@ export function cutFootwaysAroundSolids(
      * around.
      */
     const standingInside = (from: number, to: number, band: { centre: number; half: number }) => {
-      if (!near.length) return false
-      const offsets = [band.centre, band.centre - band.half, band.centre + band.half]
+      // Only a pavement with no width left to it. A piece that still has a band
+      // has somewhere on it a body fits, so the crowd can be left to use it:
+      // taking people off every pavement with a building over part of it is a
+      // much larger claim, and it measured as one — the Old Quarter, whose
+      // frontages are continuous and whose pavements are all partly under
+      // something, went .0117 to .0446 walkers-in-a-facade when this was asked
+      // of every piece rather than of the ones with nowhere to stand.
+      if (!avoidWhenInside || band.half > 1e-9 || !near.length) return false
+      const offsets = [band.centre]
       let inside = 0
       let counted = 0
       for (let s = from; s <= to + 1e-9; s += NARROW_STEP) {
