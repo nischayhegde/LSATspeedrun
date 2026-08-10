@@ -25,6 +25,56 @@
       <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap" rel="stylesheet" />
     </noscript>
     <title>Lawyer Tycoon</title>
+    <!-- The opening plate, drawn by the document itself.
+
+         Nothing used to be on screen until three things had all happened: the
+         entry stylesheet had arrived (render-blocking, and the largest single
+         asset on the critical path), the entry and framework chunks had arrived
+         and executed, and React had mounted far enough to commit its first
+         `LoadingScreen`. Measured cold at 390px, 4x CPU and 1.6 Mbps, that was
+         3.3 s of white — and what finally appeared was this plate, not the app.
+         The reader was waiting three seconds for a spinner.
+
+         So the spinner is written here instead, in markup and rules the
+         document already carries. It needs no stylesheet and no script, which
+         makes it the first thing the browser can paint after the HTML lands.
+         `app-css` is loaded without blocking that paint (see
+         `lsat-open-with-a-plate` in `vite.config.ts`), and the plate is held on
+         screen until both it and React are ready, so the app is never shown
+         unstyled and there is no gap between the two.
+
+         It is a copy of `LoadingScreen`, deliberately: the computed styles were
+         read out of the running app at 390px and transcribed, so the plate the
+         document draws and the plate React draws are the same picture and the
+         handover is invisible. If `.loading-screen` or `.legal-spinner` in
+         `styles.css` change, this has to change with them. -->
+    <style>
+      html { background: #f2eee5; }
+      body {
+        margin: 0; min-height: 100vh; background-color: #eee8dc;
+        background-image:
+          radial-gradient(circle at 12% 0%, rgba(255,255,255,.78), rgba(0,0,0,0) 30%),
+          radial-gradient(circle at 92% 16%, rgba(199,171,117,.13), rgba(0,0,0,0) 27%);
+      }
+      #boot {
+        min-height: 65vh; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 13px;
+        background: #111a29; color: #f6dfaa; font-size: 12px;
+        font-family: Archivo, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      #boot i {
+        width: 57px; height: 57px; box-sizing: border-box; display: grid; place-items: center;
+        border: 3px solid #090d15; border-radius: 2px; background: #f1c85f; color: #172131;
+        box-shadow: .43px .43px 0 8.23px rgba(108,87,49,.18);
+        animation: boot-pulse 1.3s ease-in-out infinite;
+      }
+      #boot svg { width: 30px; height: 30px; }
+      #boot g:first-child { fill: rgba(104,68,16,.42); }
+      #boot g:last-child { fill: currentColor; }
+      #boot .beam { transform-origin: 12px 7px; animation: boot-settle 2.1s ease-in-out infinite; }
+      @keyframes boot-pulse { 50% { transform: scale(1.06); box-shadow: 0 0 0 9px rgba(200,155,75,.1); } }
+      @keyframes boot-settle { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
+    </style>
     <!-- Every protected screen blocks on the same two calls before it can draw
          anything at all, and until now the first of them did not leave the
          browser until the application bundle had been downloaded, parsed and
@@ -57,7 +107,45 @@
     </script>
   </head>
   <body>
+    <noscript><style>#boot { display: none; }</style></noscript>
+    <div id="boot" role="status">
+      <i aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><g transform="translate(.9 .9)"><path d="M7 20h10v2H7z M10 18h4v2h-4z M11 7h2v11h-2z M10 3h4v3h-4z"/><path d="M3 6h18v2H3z M4 8h1v3H4z M19 8h1v3h-1z M1 11h7l-1.75 3.25h-3.5z M16 11h7l-1.75 3.25h-3.5z"/></g><g><path d="M7 20h10v2H7z M10 18h4v2h-4z M11 7h2v11h-2z M10 3h4v3h-4z"/><path class="beam" d="M3 6h18v2H3z M4 8h1v3H4z M19 8h1v3h-1z M1 11h7l-1.75 3.25h-3.5z M16 11h7l-1.75 3.25h-3.5z"/></g></svg></i>
+      <span>Opening the firm…</span>
+    </div>
     <div id="root"></div>
+    <!-- The plate leaves when the app can take over, which is later than "React
+         has mounted": the entry stylesheet no longer blocks the paint, so a
+         screen committed before it arrives would be shown unstyled. Both
+         conditions, and no frame with neither the plate nor the app on it —
+         the observer runs as a microtask on the same commit that fills `#root`,
+         so the swap happens before the browser paints either state. -->
+    <script>
+      (function () {
+        var boot = document.getElementById('boot')
+        var root = document.getElementById('root')
+        if (!boot || !root) return
+        // The dev server has no separate entry stylesheet: the rules arrive
+        // inside the module graph, so there is nothing here to wait for.
+        var css = document.getElementById('app-css')
+        var ready = !css || Boolean(css.sheet)
+        var mounted = false
+        function leave() {
+          if (ready && mounted && boot.parentNode) boot.parentNode.removeChild(boot)
+        }
+        if (!ready) {
+          var settle = function () { ready = true; leave() }
+          css.addEventListener('load', settle)
+          css.addEventListener('error', settle)
+        }
+        if (root.firstChild) { mounted = true; leave(); return }
+        new MutationObserver(function (_records, observer) {
+          if (!root.firstChild) return
+          observer.disconnect()
+          mounted = true
+          leave()
+        }).observe(root, { childList: true })
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

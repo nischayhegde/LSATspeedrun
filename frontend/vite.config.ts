@@ -404,8 +404,68 @@ var e0=entry();if(e0)place(e0);
   }
 }
 
+/**
+ * Lets the opening plate in `index.html` paint without waiting for the entry
+ * stylesheet.
+ *
+ * The plate carries its own rules inline, so the only thing standing between
+ * the document arriving and something being on screen is that Vite's entry
+ * `<link rel="stylesheet">` is render-blocking — and it is the biggest asset on
+ * the critical path. Measured cold at 390px, 4x CPU and 1.6 Mbps it finished at
+ * 2816 ms, and the browser drew nothing at all until it had.
+ *
+ * So the link is given `media="print"`, which the browser fetches without
+ * blocking anything, and it is switched back to `all` when it lands. Three
+ * details make that safe rather than clever:
+ *
+ *  - A `preload as=style` goes in front of it. A print stylesheet is fetched at
+ *    the lowest priority there is, which would have moved the entry sheet
+ *    behind every chunk on the page and delayed the real screen to buy an
+ *    earlier plate. The preload asks for the same bytes at the priority a
+ *    render-blocking sheet would have had, and the link resolves out of it.
+ *  - `rel` stays `stylesheet` and the element stays where it was, so the sheet
+ *    keeps its place in the cascade and `lsat-route-stylesheets`, which finds
+ *    it with `link[rel="stylesheet"][href=...]` and slots route sheets either
+ *    side of it, still finds exactly the element it expects.
+ *  - `id="app-css"` is what the document's own script waits on before it takes
+ *    the plate down, so nothing is ever shown with the stylesheet missing.
+ *
+ * This runs after `routeStylesheets` so that plugin sees the single link Vite
+ * emitted rather than the pair this leaves behind.
+ */
+function openWithAPlate(): Plugin {
+  let config: ResolvedConfig
+  return {
+    name: 'lsat-open-with-a-plate',
+    apply: 'build',
+    configResolved(resolved) { config = resolved },
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        const bundle = ctx.bundle
+        if (!bundle) return html
+        const base = config.base === './' ? '/' : config.base
+        let entryCss = ''
+        for (const output of Object.values(bundle)) {
+          if (output.type !== 'chunk' || !output.isEntry) continue
+          const meta = (output as { viteMetadata?: { importedCss?: Set<string> } }).viteMetadata
+          for (const sheet of meta?.importedCss ?? []) entryCss = base + sheet
+        }
+        if (!entryCss) return html
+        const tag = html.match(new RegExp(`<link[^>]*href="${entryCss.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>`))
+        if (!tag) return html
+        return html.replace(
+          tag[0],
+          `<link rel="preload" as="style" href="${entryCss}">\n    `
+            + `<link rel="stylesheet" id="app-css" href="${entryCss}" media="print" onload="this.media='all'">`,
+        )
+      },
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), scenePreloadHints(), routeStylesheets()],
+  plugins: [react(), scenePreloadHints(), routeStylesheets(), openWithAPlate()],
   build: {
     target: ['es2020', 'safari15'],
     cssTarget: 'safari15',
