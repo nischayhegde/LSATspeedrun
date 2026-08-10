@@ -876,6 +876,11 @@ const flush = () => {
   report._frames = FRAMES
   save(`${dir}/report.json`, report)
 }
+// Every path out of here closes the browser. A region that hangs — a rebuild
+// that never publishes, a measure pass that never returns — used to be killed
+// from outside, and killing the runner leaves a full headless Chromium parented
+// to init on a machine this harness has already been blamed for exhausting.
+try {
 for (const key of keys) {
   try {
     await region(page, TABS[key], { key })
@@ -945,4 +950,6 @@ for (const key of keys) {
   flush()
 }
 flush()
-await browser.close()
+} finally {
+  await browser.close().catch(() => {})
+}
