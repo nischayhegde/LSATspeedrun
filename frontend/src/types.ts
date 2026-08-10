@@ -416,7 +416,20 @@ export type StrategyDefinition = {
   sources: Array<{ label: string; url: string }>
 }
 
-export type StrategyTrial = StrategyDefinition & { variant: 'prompt' }
+/**
+ * A named technique was offered on this question.
+ *
+ * `required` is the mandatory arm: the same offer, with no way to decline it
+ * up front. The card drops its Use it / Skip pair and the gate below arms
+ * itself, because there is no decision left to take. It is a property of the
+ * delivered question rather than of the assignment — a mandatory arm whose
+ * gate could not be built arrives here as `false`, since refusing a skip for
+ * steps nobody was shown would be a dead end.
+ */
+export type StrategyTrial = StrategyDefinition & {
+  variant: 'prompt' | 'prompt_required'
+  required: boolean
+}
 
 /**
  * The control arm's card. It carries no technique, no steps, and no gate,
@@ -504,6 +517,11 @@ export type StrategyGateSpec = {
   blocking: boolean
   hides_choices: boolean
   restricts_choices: boolean
+  required: boolean
+  /** True when the server will already accept a withdrawal on this question. */
+  stand_down_ready: boolean
+  /** How long in the panel earns a withdrawal. The server decides; this mirrors it. */
+  stand_down_after_ms: number
   instruction: string
   confirm: string
   fields: StrategyGateField[]

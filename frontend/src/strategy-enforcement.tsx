@@ -760,8 +760,15 @@ export type StrategyGateController = {
   blockedReason: string
   /** Merge into the submit body. */
   payload: { strategy_gate_ms: number; strategy_artifact?: StrategyArtifact }
-  /** Hand a rejected submission back so the failed box can say why. */
-  applyServerErrors: (fields?: Array<{ field: string | null; message: string }>) => void
+  /**
+   * Hand a rejected submission back so the failed box can say why. The second
+   * argument is the server's ruling on whether a mandatory approach may now be
+   * withdrawn, which arrives on the same refusal that earned it.
+   */
+  applyServerErrors: (
+    fields?: Array<{ field: string | null; message: string }>,
+    canStandDown?: boolean,
+  ) => void
 }
 
 export function useStrategyGate(
@@ -777,6 +784,7 @@ export function useStrategyGate(
   const [gateMs, setGateMs] = useState(0)
   const [reopened, setReopened] = useState(false)
   const [justRevealed, setJustRevealed] = useState(false)
+  const [standDown, setStandDown] = useState(false)
   const armedAt = useRef<number | null>(null)
 
   useEffect(() => {
@@ -787,6 +795,7 @@ export function useStrategyGate(
     setGateMs(0)
     setReopened(false)
     setJustRevealed(false)
+    setStandDown(false)
     armedAt.current = null
   }, [item?.id])
 
@@ -797,6 +806,20 @@ export function useStrategyGate(
     if (!armed || !gate?.blocking) return
     if (armedAt.current == null) armedAt.current = Date.now()
   }, [armed, gate?.blocking])
+
+  // Whether the way out of a mandatory approach has opened yet. The server
+  // decides — it counts its own refusals — and this only mirrors the clock so
+  // the button can appear without a round trip. It is checked again on submit,
+  // so a browser that showed it early gets a refusal rather than a free pass.
+  const standDownReady = Boolean(gate?.required) && (standDown || Boolean(gate?.stand_down_ready))
+  useEffect(() => {
+    if (!gate?.required || standDownReady || !armed || locked) return
+    const after = gate.stand_down_after_ms || 90_000
+    const timer = window.setInterval(() => {
+      if (armedAt.current != null && Date.now() - armedAt.current >= after) setStandDown(true)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [gate?.required, gate?.stand_down_after_ms, standDownReady, armed, locked])
 
   const blocking = Boolean(gate?.blocking && armed && !locked)
   const preAnswerFields = useMemo(() => (gate?.fields ?? []).filter((field) => field.stage === 'pre_answer'), [gate])
@@ -885,7 +908,13 @@ export function useStrategyGate(
     setServerErrors((current) => (current[key] ? { ...current, [key]: '' } : current))
   }, [])
 
-  const applyServerErrors = useCallback((fields?: Array<{ field: string | null; message: string }>) => {
+  const applyServerErrors = useCallback((
+    fields?: Array<{ field: string | null; message: string }>,
+    canStandDown?: boolean,
+  ) => {
+    // The server counts refusals, so a rejection is also the message that the
+    // way out has opened. Only ever widens: nothing here can close it again.
+    if (canStandDown) setStandDown(true)
     if (!fields?.length) return
     const next: Record<string, string> = {}
     for (const entry of fields) if (entry.field) next[entry.field] = entry.message
@@ -900,8 +929,12 @@ export function useStrategyGate(
   const choicesHidden = Boolean(gate?.hides_choices && blocking && !preAnswerDone)
 
   const payload = useMemo(() => {
-    if (!gate || !armed) return { strategy_gate_ms: 0 }
-    const hasValues = Object.keys(values).length > 0
+    if (!gate) return { strategy_gate_ms: 0 }
+    const hasValues = armed && Object.keys(values).length > 0
+    // Reported even after the approach has been dropped, because on a
+    // mandatory question the time already spent in the panel is what earns the
+    // withdrawal the student is in the middle of making. The server zeroes it
+    // on a plain skip, so this cannot inflate anybody's pace.
     const elapsed = gateMs || (armedAt.current != null ? Math.min(600_000, Date.now() - armedAt.current) : 0)
     return {
       strategy_gate_ms: elapsed,
@@ -962,7 +995,11 @@ export function useStrategyGate(
         locked={locked}
         folded={folded}
         onFold={setReopened}
-        onDrop={onDrop}
+        // A mandatory approach hides the way out until it is earned, rather
+        // than showing a disabled button the whole time: an exit that is
+        // visibly one click away is the skip button back again, which is the
+        // thing this arm exists not to be.
+        onDrop={gate.required && !standDownReady ? undefined : onDrop}
         reading={reading}
       />
     ) : null
@@ -1086,9 +1123,15 @@ export function GatePanel({
             <div className="sg-title">
               <span className="sg-eyebrow">
                 {instrument.eyebrow}
-                {blocking ? '' : ' · OPTIONAL NOW'}
+                {gate.required ? ` · ${gate.copy.required_eyebrow}` : blocking ? '' : ' · OPTIONAL NOW'}
               </span>
-              <h3>{blocking ? gate.copy.armed_title : gate.copy.light_title}</h3>
+              <h3>
+                {gate.required
+                  ? gate.copy.required_title
+                  : blocking
+                    ? gate.copy.armed_title
+                    : gate.copy.light_title}
+              </h3>
               <p>{blocking ? gate.instruction : gate.confirm}</p>
             </div>
             {/* Only ever offered once the work is done, so this is a way back
@@ -1142,10 +1185,13 @@ export function GatePanel({
                   type="button"
                   className="sg-ghost is-drop"
                   onClick={() => {
-                    if (window.confirm(gate.copy.abandon_confirm || 'Drop the approach?')) onDrop()
+                    const confirmation = gate.required
+                      ? gate.copy.stand_down_confirm
+                      : gate.copy.abandon_confirm
+                    if (window.confirm(confirmation || 'Drop the approach?')) onDrop()
                   }}
                 >
-                  {gate.copy.abandon_label || 'Drop the approach'}
+                  {(gate.required ? gate.copy.stand_down_label : gate.copy.abandon_label) || 'Drop the approach'}
                 </button>
               )}
             </div>
