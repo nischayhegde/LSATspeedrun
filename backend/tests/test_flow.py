@@ -38,6 +38,7 @@ from app.models import (
     QuestionChoice,
     ReviewQueueItem,
     SessionItem,
+    SessionSection,
     StudySession,
     User,
     utcnow,
@@ -961,19 +962,39 @@ def test_diagnostic_is_neutral_and_feeds_performance(app):
     assert session["current_item"]["case_terms"] is None
     assert session["total_items"] >= 1
 
+    # A form takes answers onto its section's sheet, not one attempt at a time:
+    # nothing is graded, and nothing is final, until the section closes.
     item = session["current_item"]
-    answered = client.post(
+    refused = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
-        json={
-            "item_id": item["id"],
-            "selected_label": "A",
-            "strategy_applied": True,
-            "reasoning": "I identified the conclusion and tested A against the exact logical requirement.",
-        },
+        json={"item_id": item["id"], "selected_label": "A"},
         headers={**headers, "Idempotency-Key": "diagnostic-answer-one"},
     )
+    assert refused.status_code == 409
+    assert refused.json["error"]["code"] == "exam_uses_answer_sheet"
+
+    answered = client.put(
+        f"/v1/study-sessions/{session['id']}/answers/{item['id']}",
+        json={"selected_label": "A"},
+        headers=headers,
+    )
     assert answered.status_code == 200
-    assert answered.json["result"]["game_reward"] is None
+    with app.app_context():
+        # Recorded, but not yet an attempt: the section is still open.
+        assert Attempt.query.count() == 0
+
+    closed = client.post(
+        f"/v1/study-sessions/{session['id']}/sections/0/submit",
+        headers=headers,
+    )
+    assert closed.status_code == 200
+    with app.app_context():
+        attempt = Attempt.query.one()
+        # A form pays nothing and grades no reasoning, so the only artefacts a
+        # section leaves are the answer and the time it took.
+        assert attempt.settlement is None
+        assert attempt.reasoning_text is None
+        assert attempt.evidence_class == "diagnostic"
 
     performance = client.get("/v1/performance", headers=headers)
     assert performance.status_code == 200
@@ -4596,38 +4617,72 @@ def test_explanation_floor_boundary_matches_the_published_minimum(app):
     assert exact.status_code == 200
 
 
-def _answer_mega_litigation(client, headers, session: dict, correct: int, marker: str) -> dict:
-    """Sit the whole form, getting exactly ``correct`` questions right.
+def _end_intermission(session_id: str) -> None:
+    """Wind a running intermission back so the next section can be begun."""
+    db.session.execute(
+        update(StudySession)
+        .where(StudySession.id == session_id)
+        .values(intermission_started_at=utcnow() - timedelta(hours=1))
+    )
+    db.session.commit()
+
+
+def _answer_mega_litigation(app, client, headers, session: dict, correct: int) -> dict:
+    """Sit the whole form section by section, getting exactly ``correct`` right.
 
     Every fixture question is keyed "C", so a wrong answer is any other label.
-    The diagnostic releases feedback at the end, so no debrief stands between
-    questions and each answer is followed straight by the next.
+    This walks the administration the way a student does: fill in the running
+    section's sheet, submit it, take the intermission if one is owed, begin the
+    next section. Nothing is graded until a section closes.
     """
     session_id = session["id"]
-    for position in range(session["total_items"]):
+    answered = 0
+    for _ in range(4 * max(1, len(session.get("exam", {}).get("sections", [1])))):
         current = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
-        item = current.get("current_item")
-        if not item:
+        if current["status"] != "in_progress":
             break
-        answered = client.post(
-            f"/v1/study-sessions/{session_id}/attempts",
-            json={"item_id": item["id"], "selected_label": "C" if position < correct else "A"},
-            headers={**headers, "Idempotency-Key": f"{marker}-{position}"},
+        form = current.get("exam") or {}
+        if form.get("stage") == "in_section":
+            for entry in form["answer_sheet"]:
+                recorded = client.put(
+                    f"/v1/study-sessions/{session_id}/answers/{entry['item_id']}",
+                    json={"selected_label": "C" if answered < correct else "A"},
+                    headers=headers,
+                )
+                assert recorded.status_code == 200, recorded.json
+                answered += 1
+            closed = client.post(
+                f"/v1/study-sessions/{session_id}/sections/{form['active_section_index']}/submit",
+                headers=headers,
+            )
+            assert closed.status_code == 200, closed.json
+            continue
+        if form.get("next_section_index") is None:
+            break
+        if form.get("stage") == "intermission":
+            with app.app_context():
+                _end_intermission(session_id)
+        started = client.post(
+            f"/v1/study-sessions/{session_id}/sections/{form['next_section_index']}/start",
+            headers=headers,
         )
-        assert answered.status_code == 200, answered.json
+        assert started.status_code == 200, started.json
     return client.get(f"/v1/study-sessions/{session_id}", headers=headers).json
 
 
-def _expire_mega_litigation(session_id: str) -> None:
-    """Move a running form's deadline into the past without touching its status.
+def _expire_running_section(session_id: str) -> None:
+    """Move the running section's bell into the past without touching its status.
 
     Written straight to the column so the run stays exactly as the student left
     it — the point of each test that calls this is what the *next* request does
     when it finds the clock already spent.
     """
+    section = (
+        SessionSection.query.filter_by(session_id=session_id, status="in_progress").one()
+    )
     db.session.execute(
-        update(StudySession)
-        .where(StudySession.id == session_id)
+        update(SessionSection)
+        .where(SessionSection.id == section.id)
         .values(deadline_at=utcnow() - timedelta(minutes=1))
     )
     db.session.commit()
@@ -4641,11 +4696,11 @@ def test_diagnostic_misses_become_one_untimed_blind_review_before_answers_unlock
     missed = 2
 
     finished = _answer_mega_litigation(
+        app,
         client,
         headers,
         diagnostic,
         diagnostic["total_items"] - missed,
-        "blind-source",
     )
     assert finished["session"]["blind_review"] == {
         "state": "ready",
@@ -4730,11 +4785,11 @@ def test_a_perfect_diagnostic_skips_an_empty_blind_review(app):
     create_game(client, headers)
     diagnostic = client.post("/v1/diagnostics", headers=headers).json["session"]
     finished = _answer_mega_litigation(
+        app,
         client,
         headers,
         diagnostic,
         diagnostic["total_items"],
-        "perfect-blind-source",
     )
 
     assert finished["session"]["blind_review"]["state"] == "not_needed"
@@ -4755,7 +4810,7 @@ def test_a_sealed_diagnostic_keeps_the_active_slot_until_its_blind_review_is_don
     headers = login(client, "sealed-diagnostic@example.test")
     create_game(client, headers)
     diagnostic = client.post("/v1/diagnostics", headers=headers).json["session"]
-    _answer_mega_litigation(client, headers, diagnostic, diagnostic["total_items"] - 1, "sealed-source")
+    _answer_mega_litigation(app, client, headers, diagnostic, diagnostic["total_items"] - 1)
 
     current = client.get("/v1/diagnostics/current", headers=headers).json
     assert current["session"]["id"] == diagnostic["id"]
@@ -4779,35 +4834,195 @@ def test_a_sealed_diagnostic_keeps_the_active_slot_until_its_blind_review_is_don
     assert client.get(f"/v1/study-sessions/{diagnostic['id']}/review", headers=headers).status_code == 200
 
 
-def test_a_mega_litigation_runs_on_one_whole_form_clock(app):
-    """One deadline for the sitting, and one even per-question budget under it.
+def test_a_mega_litigation_runs_on_a_clock_per_section(app):
+    """Three separately timed sections, one of them running, with a break owed.
 
-    The blocks keep their labels and boundaries but lose their minutes: with a
-    single clock, a per-section budget would be a number nothing enforces.
+    The real test is "four (4) separately timed, thirty-five (35) minute
+    sections" with a ten-minute intermission between the second and the third
+    (LSAC Candidate Agreement 2026-2027 § 15; LSAC FAQ). This form omits the
+    unscored variable section, so it runs the three scored ones on the same
+    terms.
     """
     client = app.test_client()
     headers = login(client, "mega-clock@example.test")
     create_game(client, headers)
 
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
-    assert session["deadline_at"]
-    assert session["time_limit_seconds"] == session["target_minutes"] * 60
-    assert 0 < session["remaining_ms"] <= session["time_limit_seconds"] * 1000
-    assert all("minutes" not in block for block in session["section_plan"])
-    assert [block["label"] for block in session["section_plan"]] == [
+    form = session["exam"]
+    assert [section["label"] for section in form["sections"]] == [
         "Logical Reasoning I",
         "Reading Comprehension",
         "Logical Reasoning II",
     ]
+    assert {section["time_limit_seconds"] for section in form["sections"]} == {35 * 60}
+    # The break falls after the second section and nowhere else.
+    assert [section["break_seconds"] for section in form["sections"]] == [0, 10 * 60, 0]
+
+    # Section one is running because creating the form is the student saying
+    # they are sitting it. Nothing after it has a clock yet.
+    assert form["stage"] == "in_section"
+    assert form["active_section_index"] == 0
+    assert [section["status"] for section in form["sections"]] == ["in_progress", "pending", "pending"]
+    assert form["sections"][0]["deadline_at"]
+    assert all(section["deadline_at"] is None for section in form["sections"][1:])
+    # The countdown the client is handed is the section's, never the form's.
+    assert 0 < session["remaining_ms"] <= 35 * 60 * 1000
+    assert form["warning_seconds"] == 5 * 60
+    assert session["target_minutes"] == 3 * 35
 
     with app.app_context():
         record = db.session.get(StudySession, session["id"])
-        assert record.deadline_at - record.started_at == timedelta(minutes=record.target_minutes)
-        even_split = round(record.target_minutes * 60 / record.total_items)
-        targets = {item.target_time_seconds for item in SessionItem.query.filter_by(session_id=record.id)}
-        # One budget for every question, not the old 150s LR / 330s RC targets
-        # that summed to more than twice the form's own clock.
-        assert targets == {even_split}
+        for section in record.sections:
+            targets = {
+                item.target_time_seconds
+                for item in SessionItem.query.filter(
+                    SessionItem.session_id == record.id,
+                    SessionItem.position >= section.start_position,
+                    SessionItem.position <= section.end_position,
+                )
+            }
+            # On pace means an even split of *this section's* clock, which is
+            # the only budget that can actually run out on a student.
+            assert targets == {round(section.time_limit_seconds / section.question_count)}
+
+
+def test_a_form_refuses_work_outside_the_section_on_the_clock(app):
+    """"During the time allotted for each section, you may work only on that section."
+
+    Reaching forward into a section that has not started and back into one that
+    has finished are the same prohibition, and both are refused here rather
+    than merely hidden by the interface.
+    """
+    client = app.test_client()
+    headers = login(client, "mega-boundaries@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    session_id = session["id"]
+    with app.app_context():
+        record = db.session.get(StudySession, session_id)
+        first, second = sorted(record.sections, key=lambda row: row.section_index)[:2]
+        first_ids = [
+            item.id
+            for item in SessionItem.query.filter(
+                SessionItem.session_id == record.id,
+                SessionItem.position >= first.start_position,
+                SessionItem.position <= first.end_position,
+            ).order_by(SessionItem.position)
+        ]
+        ahead_id = SessionItem.query.filter_by(
+            session_id=record.id, position=second.start_position
+        ).one().id
+        ahead_position = second.start_position
+
+    # Ahead: the next section's questions are not answerable, not navigable,
+    # and — the part an interface cannot be trusted with — not even served.
+    assert client.put(
+        f"/v1/study-sessions/{session_id}/answers/{ahead_id}",
+        json={"selected_label": "C"},
+        headers=headers,
+    ).json["error"]["code"] == "item_outside_active_section"
+    assert client.post(
+        f"/v1/study-sessions/{session_id}/focus/{ahead_position}", headers=headers
+    ).json["error"]["code"] == "item_outside_active_section"
+    assert client.post(
+        f"/v1/study-sessions/{session_id}/sections/1/start", headers=headers
+    ).json["error"]["code"] == "section_already_running"
+
+    # Inside the running section, everything is allowed: skip ahead, come back,
+    # change the answer, take it off again, flag it.
+    for item_id in first_ids:
+        assert client.put(
+            f"/v1/study-sessions/{session_id}/answers/{item_id}",
+            json={"selected_label": "B"},
+            headers=headers,
+        ).status_code == 200
+    changed = client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_ids[0]}",
+        json={"selected_label": "C", "flagged": True},
+        headers=headers,
+    )
+    assert changed.json["answer"] == {
+        "item_id": first_ids[0],
+        "position": 0,
+        "selected_label": "C",
+        "flagged": True,
+    }
+    cleared = client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_ids[1]}",
+        json={"selected_label": ""},
+        headers=headers,
+    )
+    assert cleared.json["answer"]["selected_label"] is None
+    sheet = {row["position"]: row for row in cleared.json["exam"]["answer_sheet"]}
+    assert sheet[0] == {**sheet[0], "answered": True, "flagged": True}
+    assert sheet[1]["answered"] is False
+
+    client.post(f"/v1/study-sessions/{session_id}/sections/0/submit", headers=headers)
+
+    # Behind: the section is closed and nothing reopens it. Nothing is running
+    # at all at a boundary, which is the stronger refusal of the two.
+    assert client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_ids[0]}",
+        json={"selected_label": "A"},
+        headers=headers,
+    ).json["error"]["code"] == "no_section_running"
+    client.post(f"/v1/study-sessions/{session_id}/sections/1/start", headers=headers)
+    assert client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_ids[0]}",
+        json={"selected_label": "A"},
+        headers=headers,
+    ).json["error"]["code"] == "item_outside_active_section"
+    with app.app_context():
+        graded = {
+            attempt.session_item.position: attempt.selected_label
+            for attempt in Attempt.query.join(SessionItem).filter(
+                SessionItem.session_id == session_id
+            )
+        }
+        # Three answers on the sheet at the bell, one taken back off it. The
+        # first is the changed one, which is what got graded.
+        assert graded[0] == "C"
+        assert 1 not in graded
+        item = SessionItem.query.filter_by(session_id=session_id, position=0).one()
+        assert item.answer_revisions == 1
+        assert item.flagged is True
+
+
+def test_the_intermission_holds_the_third_section_shut(app):
+    client = app.test_client()
+    headers = login(client, "mega-intermission@example.test")
+    create_game(client, headers)
+    session_id = client.post("/v1/diagnostics", headers=headers).json["session"]["id"]
+
+    client.post(f"/v1/study-sessions/{session_id}/sections/0/submit", headers=headers)
+    # No break after the first section: the next one is startable at once.
+    waiting = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+    assert waiting["exam"]["stage"] == "awaiting_section"
+    assert waiting["exam"]["remaining_ms"] is None
+    # Nothing from the next section crosses the wire before its clock starts.
+    assert waiting["current_item"] is None
+
+    client.post(f"/v1/study-sessions/{session_id}/sections/1/start", headers=headers)
+    client.post(f"/v1/study-sessions/{session_id}/sections/1/submit", headers=headers)
+
+    resting = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+    assert resting["exam"]["stage"] == "intermission"
+    assert resting["exam"]["intermission_ends_at"]
+    assert 0 < resting["exam"]["remaining_ms"] <= 10 * 60 * 1000
+    early = client.post(f"/v1/study-sessions/{session_id}/sections/2/start", headers=headers)
+    assert early.json["error"]["code"] == "intermission_in_progress"
+
+    with app.app_context():
+        _end_intermission(session_id)
+    resumed = client.post(f"/v1/study-sessions/{session_id}/sections/2/start", headers=headers)
+    assert resumed.status_code == 200
+    assert resumed.json["session"]["exam"]["stage"] == "in_section"
+    assert resumed.json["session"]["current_item"]
+
+    # The last section closing ends the form; scoring runs without being asked.
+    finished = client.post(f"/v1/study-sessions/{session_id}/sections/2/submit", headers=headers)
+    assert finished.json["session"]["status"] == "completed"
+    assert finished.json["summary"]["omitted"] == finished.json["session"]["total_items"]
 
 
 def test_a_mega_litigation_is_the_full_reference_form_end_to_end(app):
@@ -4885,63 +5100,97 @@ def test_a_mega_litigation_cannot_be_paused_or_resumed(app):
         assert db.session.get(StudySession, session["id"]).status == "in_progress"
 
 
-def test_the_clock_running_out_submits_the_mega_litigation_as_it_stood(app):
+def test_a_section_whose_clock_runs_out_ends_hard_and_the_form_carries_on(app):
+    """"Once time expires for each section, no additional inputs may be made."
+
+    The bell is not the end of the sitting — two sections are still owed — but
+    it is the end of that section, and it is final: whatever was on the sheet
+    is graded, whatever was not stays blank, and nothing reopens it. The
+    expiry is discovered by the next request rather than by a sweeper, which
+    is what makes shutting the laptop cost the student the time it costs.
+    """
     client = app.test_client()
     headers = login(client, "mega-expired@example.test")
     create_game(client, headers)
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
-    total = session["total_items"]
-
-    client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={"item_id": session["current_item"]["id"], "selected_label": "C"},
-        headers={**headers, "Idempotency-Key": "expired-one"},
+    session_id = session["id"]
+    first_item = session["current_item"]["id"]
+    client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_item}",
+        json={"selected_label": "C"},
+        headers=headers,
     )
-    current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
 
     with app.app_context():
-        _expire_mega_litigation(session["id"])
+        _expire_running_section(session_id)
+        section_size = db.session.get(StudySession, session_id).sections[0].question_count
 
-    late = client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={"item_id": current["current_item"]["id"], "selected_label": "C"},
-        headers={**headers, "Idempotency-Key": "expired-two"},
+    late = client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_item}",
+        json={"selected_label": "A"},
+        headers=headers,
     )
     assert late.status_code == 409
-    assert late.json["error"]["code"] == "diagnostic_expired"
+    assert late.json["error"]["code"] == "no_section_running"
 
-    finished = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json
-    assert finished["session"]["status"] == "completed"
-    assert finished["session"]["remaining_ms"] == 0
-    assert finished["summary"]["questions_completed"] == 1
-    assert finished["summary"]["omitted"] == total - 1
-    # Everything unanswered counts against the paper, so the form score is not
-    # the accuracy of the one question that was reached.
-    assert finished["summary"]["accuracy"] == 100
-    assert finished["summary"]["form_accuracy"] == round(100 / total)
+    after = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+    # The form is not over; the section is.
+    assert after["status"] == "in_progress"
+    assert after["exam"]["stage"] == "awaiting_section"
+    closed = after["exam"]["sections"][0]
+    assert closed["status"] == "completed"
+    assert closed["ended_reason"] == "expired"
+    assert closed["unanswered"] == section_size - 1
 
     with app.app_context():
-        record = db.session.get(StudySession, session["id"])
-        # Credited to the moment the clock ran out, not to whenever the student
-        # next happened to make a request.
-        assert record.completed_at == record.deadline_at
+        record = db.session.get(StudySession, session_id)
+        expired = record.sections[0]
+        # Credited to the bell, not to whenever the student next made a
+        # request: an unattended expiry must not hand back the time it took to
+        # notice it.
+        assert expired.ended_at == expired.deadline_at
+        answered = Attempt.query.join(SessionItem).filter(SessionItem.session_id == session_id).one()
+        assert answered.selected_label == "C"
+        assert answered.session_item.position == 0
 
 
-def test_an_expired_mega_litigation_stops_being_the_active_one(app):
-    """The clock frees the student to start another form without asking anyone."""
+def test_a_sitting_walked_away_from_at_a_boundary_is_closed_out(app):
+    """One sitting, kept a fact rather than a label.
+
+    A section that has not been started has no clock, so without this a form
+    could be begun on Monday and finished on Friday and still enter the score
+    projection as a timed administration. The grace period is generous, and
+    what it protects is the meaning of the number.
+    """
     client = app.test_client()
     headers = login(client, "mega-restart@example.test")
     create_game(client, headers)
     first = client.post("/v1/diagnostics", headers=headers).json["session"]
 
     with app.app_context():
-        _expire_mega_litigation(first["id"])
+        _expire_running_section(first["id"])
+        # Still the active form immediately after the bell: two sections are
+        # owed and the student has an hour to come back for them.
         user = User.query.filter_by(email="mega-restart@example.test").one()
-
         from app.services import find_active_diagnostic
 
+        assert find_active_diagnostic(user).id == first["id"]
+
+        db.session.execute(
+            update(SessionSection)
+            .where(SessionSection.session_id == first["id"], SessionSection.status == "completed")
+            .values(ended_at=utcnow() - timedelta(hours=3))
+        )
+        db.session.commit()
+
         assert find_active_diagnostic(user) is None
-        assert db.session.get(StudySession, first["id"]).status == "completed"
+        record = db.session.get(StudySession, first["id"])
+        assert record.status == "completed"
+        assert [section.ended_reason for section in record.sections] == [
+            "expired",
+            "abandoned",
+            "abandoned",
+        ]
 
     current = client.get("/v1/diagnostics/current", headers=headers).json
     assert current["session"] is None
@@ -4961,7 +5210,7 @@ def test_clearing_a_mega_litigation_promotes_the_firm_and_unlocks_prerequisites(
     total = session["total_items"]
     cleared = int(0.70 * total) + 1
 
-    finished = _answer_mega_litigation(client, headers, session, cleared, "promoted")
+    finished = _answer_mega_litigation(app, client, headers, session, cleared)
     summary = finished["summary"]
     assert summary["correct"] == cleared
     assert summary["form_accuracy"] > 70
@@ -4996,7 +5245,7 @@ def test_a_mega_litigation_under_the_bar_promotes_nothing(app):
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     short = int(0.70 * session["total_items"])
 
-    finished = _answer_mega_litigation(client, headers, session, short, "short")
+    finished = _answer_mega_litigation(app, client, headers, session, short)
     assert finished["summary"]["form_accuracy"] <= 70
     assert "promotion" not in finished["summary"]
 
@@ -5014,7 +5263,7 @@ def test_a_promotion_is_paid_once_however_often_the_form_is_finalized(app):
     profile_id = create_game(client, headers)["id"]
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     cleared = int(0.70 * session["total_items"]) + 1
-    _answer_mega_litigation(client, headers, session, cleared, "once")
+    _answer_mega_litigation(app, client, headers, session, cleared)
 
     with app.app_context():
         from app.services import finalize_diagnostic
@@ -5043,13 +5292,13 @@ def test_a_promotion_at_the_top_of_the_ladder_is_a_no_op(app):
         assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 0
 
 
-def _clear_a_mega_litigation(client, headers, marker: str) -> dict:
+def _clear_a_mega_litigation(app, client, headers) -> dict:
     """Sit a fresh form and clear the promotion bar. Returns its summary."""
     started = client.post("/v1/diagnostics", headers=headers)
     assert started.status_code == 201, started.json
     session = started.json["session"]
     cleared = int(0.70 * session["total_items"]) + 1
-    finished = _answer_mega_litigation(client, headers, session, cleared, marker)
+    finished = _answer_mega_litigation(app, client, headers, session, cleared)
     assert finished["summary"]["form_accuracy"] > 70
     return finished["summary"]
 
@@ -5065,9 +5314,9 @@ def test_a_second_mega_litigation_the_same_day_promotes_nothing(app):
     headers = login(client, "mega-cooldown@example.test")
     profile_id = create_game(client, headers)["id"]
 
-    assert _clear_a_mega_litigation(client, headers, "cooldown-one")["promotion"]["tier"] == 1
+    assert _clear_a_mega_litigation(app, client, headers)["promotion"]["tier"] == 1
 
-    blocked = _clear_a_mega_litigation(client, headers, "cooldown-two")
+    blocked = _clear_a_mega_litigation(app, client, headers)
     assert "promotion" not in blocked
     assert blocked["promotion_status"]["blocked_reason"] == "cooldown"
     assert blocked["promotion_status"]["available"] is False
@@ -5085,13 +5334,13 @@ def test_a_mega_litigation_promotes_again_once_the_day_has_passed(app):
     headers = login(client, "mega-cooldown-elapsed@example.test")
     profile_id = create_game(client, headers)["id"]
 
-    _clear_a_mega_litigation(client, headers, "elapsed-one")
+    _clear_a_mega_litigation(app, client, headers)
     with app.app_context():
         profile = PlayerProfile.query.filter_by(id=profile_id).one()
         profile.mega_litigation_promoted_at = utcnow() - timedelta(hours=25)
         db.session.commit()
 
-    promotion = _clear_a_mega_litigation(client, headers, "elapsed-two")["promotion"]
+    promotion = _clear_a_mega_litigation(app, client, headers)["promotion"]
     assert promotion["tier"] == 2
     assert promotion["allowance"]["used"] == 2
 
@@ -5115,7 +5364,7 @@ def test_free_promotions_stop_at_the_lifetime_allowance(app):
         profile.mega_litigation_promotions = MEGA_LITIGATION_PROMOTION_LIMIT
         db.session.commit()
 
-    spent = _clear_a_mega_litigation(client, headers, "allowance-spent")
+    spent = _clear_a_mega_litigation(app, client, headers)
     assert "promotion" not in spent
     assert spent["promotion_status"]["blocked_reason"] == "lifetime_limit"
     assert spent["promotion_status"]["remaining"] == 0
@@ -5334,7 +5583,7 @@ def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
 
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     total = session["total_items"]
-    _answer_mega_litigation(client, headers, session, total - 1, "report")
+    _answer_mega_litigation(app, client, headers, session, total - 1)
 
     snapshot = client.get("/v1/performance", headers=headers).json["performance"]
     report = snapshot["diagnostic"]
