@@ -10,6 +10,8 @@ import { RivalWarRoom } from '../rival-war-room'
 import { useSound } from '../sound'
 import type { StoryQuest } from '../types'
 import { storeGame, useGame } from './shared'
+// The rules in `styles.css` that only this screen can render.
+import '../story-page.css'
 
 
 const questPresentation: Record<StoryQuest['category'], { label: string; icon: typeof FileSearch; copy: string }> = {
