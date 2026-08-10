@@ -1678,3 +1678,464 @@ def test_the_record_line_and_the_ranking_panel_cannot_report_different_records(a
         assert reading in panel["results"]
         # Every field the line renders has to survive the move to the sections.
         assert reading["summary"] and reading["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Mandatory approaches
+#
+# Two things are under test here and they pull in opposite directions. One is
+# that forcing actually forces: a required question cannot be waved past, and
+# the way out costs something to reach. The other is that forcing did not buy
+# that by wrecking the measurement it was meant to feed — the offer draw is
+# still the offer draw, the mandatory draw is uniform inside the pool it is
+# drawn from, and the rule that picks the pool never looks at whether the
+# student was getting those questions right.
+# ---------------------------------------------------------------------------
+
+
+def _trial(key: str, variant: str = "prompt") -> dict:
+    return {"key": key, "variant": variant, "propensity": 0.75, "candidates_n": 3}
+
+
+def _history(
+    study: StudySession,
+    question,
+    *,
+    key: str,
+    variant: str,
+    gate_status: str | None,
+    correct: bool,
+    count: int,
+    tag: str,
+):
+    """`count` finished attempts on one question, in one arm, with one outcome."""
+    for index in range(count):
+        item = SessionItem(
+            session_id=study.id,
+            question_id=question.id,
+            position=1000 + abs(hash(tag)) % 500 + index,
+            target_time_seconds=150,
+        )
+        db.session.add(item)
+        db.session.flush()
+        db.session.add(
+            Attempt(
+                user_id=study.user_id,
+                session_item_id=item.id,
+                idempotency_key=f"{tag}-{index}",
+                selected_label="C",
+                is_correct=correct,
+                strategy_key=key,
+                strategy_variant=variant,
+                strategy_gate_status=gate_status,
+                server_elapsed_ms=120_000,
+                created_at=utcnow(),
+            )
+        )
+    db.session.commit()
+
+
+def test_information_need_reads_denominators_and_compliance_and_never_accuracy():
+    """The stratum rule is the one place an outcome-driven rule would be fatal.
+
+    Sample size and compliance are both fixed before the question is served, so
+    letting them set the odds of being drawn is randomization conditional on
+    history. Accuracy is not: a rule that invested where the student had been
+    getting things wrong would make the draw a function of the very outcome the
+    contrast is measuring, and the difference would stop meaning anything.
+    """
+    from app.strategies import information_need
+
+    starved = {"prompt": 2, "control": 0, "gated": 2, "declined": 1}
+    measured = {"prompt": 40, "control": 40, "gated": 40, "declined": 20}
+    complied = {"prompt": 40, "control": 40, "gated": 40, "declined": 0}
+    lopsided = {"prompt": 200, "control": 3, "gated": 200, "declined": 100}
+
+    # A cell with almost nothing in it beats a well measured one.
+    assert information_need(starved) > information_need(measured)
+    # At equal size, a cell whose offers are taken up has less to buy: forcing
+    # adds dose, and there is no dose to add where the offer is never declined.
+    assert information_need(measured) > information_need(complied)
+    # A difference is only as strong as its thinner side, so 200 against 3 is
+    # still a starved cell however large the treated arm has grown.
+    assert information_need(lopsided) > information_need(measured)
+
+    # And the score cannot read an accuracy, because it is never handed one.
+    class Watched(dict):
+        def __init__(self, values):
+            super().__init__(values)
+            self.read = set()
+
+        def __getitem__(self, name):
+            self.read.add(name)
+            return super().__getitem__(name)
+
+    watched = Watched(measured)
+    information_need(watched)
+    assert watched.read <= {"prompt", "control", "gated", "declined"}
+
+
+def test_every_question_in_the_pool_carries_the_same_recorded_chance(app):
+    """Winners and losers alike, because the losers are the comparison group."""
+    from app.strategies import SESSION_FORCED_CAP, plan_forced_arms
+
+    with app.app_context():
+        questions = Question.query.filter_by(section="Logical Reasoning").limit(6).all()
+        assignments = [(index, question, _trial("prephrase")) for index, question in enumerate(questions)]
+        plan = plan_forced_arms("nobody", "run-1", assignments)
+
+        assert sum(entry["required"] for entry in plan.values()) == SESSION_FORCED_CAP
+        # One stratum, so the pool is the whole run and one probability covers it.
+        assert {entry["forcing_propensity"] for entry in plan.values()} == {SESSION_FORCED_CAP / 6}
+        assert all(entry["stratum"] == "prephrase|Logical Reasoning|Flaw" for entry in plan.values())
+
+
+def test_the_draw_inside_the_pool_does_not_prefer_any_question(app):
+    """Uniform without replacement. This is the whole identification argument.
+
+    If the mandatory questions were picked for anything about the questions
+    themselves, the arm would correlate with difficulty and the contrast would
+    be measuring the questions rather than the enforcement.
+    """
+    from collections import Counter
+
+    from app.strategies import SESSION_FORCED_CAP, plan_forced_arms
+
+    runs = 240
+    with app.app_context():
+        questions = Question.query.filter_by(section="Logical Reasoning").limit(6).all()
+        assignments = [(index, question, _trial("prephrase")) for index, question in enumerate(questions)]
+        counts = Counter()
+        for run in range(runs):
+            plan = plan_forced_arms("nobody", f"run-{run}", assignments)
+            counts.update(position for position, entry in plan.items() if entry["required"])
+
+    expected = runs * SESSION_FORCED_CAP / len(assignments)
+    assert set(counts) == set(range(len(assignments)))
+    # Three standard deviations either side is about 27 on an expectation of 80.
+    assert all(abs(count - expected) < 30 for count in counts.values()), counts
+
+
+def test_the_offer_draw_is_left_exactly_where_it_was(app):
+    """Forcing happens inside the treated side and never moves its boundary.
+
+    The dashboard's ranking is identified by the prompt-versus-control draw
+    being one fixed threshold. If making questions mandatory had changed who
+    was offered a technique, that argument would be gone.
+    """
+    from app.strategies import CONTROL_PROBABILITY, PROMPT_VARIANTS, plan_forced_arms
+
+    client = app.test_client()
+    headers = login(client, "forced-offer@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).all()
+        for item in items:
+            # The offer-side propensity, not the mandatory one. Two draws, two
+            # columns; pooling them would weight the wrong contrast.
+            if item.strategy_variant in PROMPT_VARIANTS:
+                assert item.strategy_propensity == 1 - CONTROL_PROBABILITY
+            else:
+                assert item.strategy_propensity == CONTROL_PROBABILITY
+
+        # A control question is never made mandatory: gating it would put a
+        # technique on it, and then there would be no control arm.
+        questions = Question.query.filter_by(section="Logical Reasoning").limit(4).all()
+        assignments = [
+            (index, question, _trial("prephrase", "control_visible" if index < 2 else "prompt"))
+            for index, question in enumerate(questions)
+        ]
+        plan = plan_forced_arms("nobody", "mixed", assignments)
+        assert [plan[index]["required"] for index in range(2)] == [False, False]
+        assert [plan[index]["forcing_propensity"] for index in range(2)] == [None, None]
+        # ...and it still carries its stratum, so an analysis can condition on
+        # the cell without knowing which arm the row landed in.
+        assert all(plan[index]["stratum"] for index in range(4))
+
+
+def test_the_weakest_cells_are_the_ones_invested_in(app):
+    """Which strata, chosen for information. This is the "enrich" half."""
+    from app.strategies import plan_forced_arms
+
+    client = app.test_client()
+    headers = login(client, "weak-cells@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+
+    with app.app_context():
+        study = db.session.get(StudySession, session["id"])
+        logical = Question.query.filter_by(section="Logical Reasoning").first()
+        # `argument_core` is thoroughly measured on this cell and complied with
+        # every time, so a mandatory question there buys nothing.
+        _history(study, logical, key="argument_core", variant="prompt", gate_status="satisfied",
+                 correct=True, count=30, tag="core-prompt")
+        _history(study, logical, key="argument_core", variant="control_visible", gate_status=None,
+                 correct=True, count=30, tag="core-control")
+        # `scope_precision` has nothing on it at all.
+        questions = Question.query.filter_by(section="Logical Reasoning").limit(4).all()
+        assignments = [
+            (index, question, _trial("argument_core" if index < 2 else "scope_precision"))
+            for index, question in enumerate(questions)
+        ]
+        plan = plan_forced_arms(study.user_id, "invest", assignments)
+
+    forced = {index for index, entry in plan.items() if entry["required"]}
+    assert forced == {2, 3}
+    # The measured cell is not in the pool, so its rows carry no propensity and
+    # take no part in the mandatory comparison.
+    assert plan[0]["forcing_propensity"] is None
+    assert plan[2]["forcing_propensity"] == 1.0
+
+
+def test_an_approach_the_student_has_proven_is_never_forced(app):
+    """Scaffolding that never comes off is a tax, and there is no dose left to buy."""
+    from app.strategies import plan_forced_arms
+
+    client = app.test_client()
+    headers = login(client, "proven@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+
+    with app.app_context():
+        study = db.session.get(StudySession, session["id"])
+        logical = Question.query.filter_by(section="Logical Reasoning").first()
+        _history(study, logical, key="prephrase", variant="prompt", gate_status="satisfied",
+                 correct=True, count=MASTERY_MIN_SATISFIED, tag="proven")
+        questions = Question.query.filter_by(section="Logical Reasoning").limit(3).all()
+        assignments = [(index, question, _trial("prephrase")) for index, question in enumerate(questions)]
+        plan = plan_forced_arms(study.user_id, "proven-run", assignments)
+
+    assert not any(entry["required"] for entry in plan.values())
+    assert all(entry["forcing_propensity"] is None for entry in plan.values())
+
+
+def test_the_daily_cap_stops_the_forcing_without_stopping_the_run(app):
+    from app.strategies import DAILY_FORCED_CAP, SESSION_FORCED_CAP, plan_forced_arms
+
+    with app.app_context():
+        questions = Question.query.filter_by(section="Logical Reasoning").limit(6).all()
+        assignments = [(index, question, _trial("prephrase")) for index, question in enumerate(questions)]
+
+        assert sum(
+            entry["required"]
+            for entry in plan_forced_arms("nobody", "cap-a", assignments, already_forced_today=0).values()
+        ) == SESSION_FORCED_CAP
+        assert sum(
+            entry["required"]
+            for entry in plan_forced_arms("nobody", "cap-b", assignments, already_forced_today=DAILY_FORCED_CAP - 1).values()
+        ) == 1
+        spent = plan_forced_arms("nobody", "cap-c", assignments, already_forced_today=DAILY_FORCED_CAP)
+        assert not any(entry["required"] for entry in spent.values())
+        # The run still happens and still carries its strata. Only the insisting stops.
+        assert all(entry["stratum"] for entry in spent.values())
+
+
+def test_forcing_stays_off_while_the_gates_are_off(app):
+    """An arm label has to describe the treatment that was delivered."""
+    from app.strategies import plan_forced_arms
+
+    with app.app_context():
+        questions = Question.query.filter_by(section="Logical Reasoning").limit(4).all()
+        assignments = [(index, question, _trial("prephrase")) for index, question in enumerate(questions)]
+        app.config["STRATEGY_ENFORCEMENT_ENABLED"] = False
+        try:
+            plan = plan_forced_arms("nobody", "gates-off", assignments)
+        finally:
+            app.config["STRATEGY_ENFORCEMENT_ENABLED"] = True
+    assert not any(entry["required"] for entry in plan.values())
+
+
+def test_a_required_question_refuses_to_be_waved_past(app):
+    from app.enforcement import STAND_DOWN_AFTER_MS, STATUS_STOOD_DOWN
+
+    client = app.test_client()
+    headers = login(client, "required@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+    arm(app, session["id"], "prephrase", variant="prompt_required")
+
+    gate = gate_of(client, headers, session["id"])
+    assert gate["required"] is True
+    assert gate["blocking"] is True
+    assert gate["stand_down_ready"] is False
+
+    item_id = session["current_item"]["id"]
+    # "I did not use it" is the skip, and there is no skip on this arm.
+    refused = submit(client, headers, session["id"], item_id, None, applied=False, key="waved")
+    assert refused.status_code == 409
+    assert refused.json["error"]["code"] == "strategy_gate_unsatisfied"
+    assert refused.json["error"]["stand_down"] is False
+
+    with app.app_context():
+        assert Attempt.query.count() == 0
+
+    # Long enough inside the panel and the way out opens.
+    stood = submit(
+        client, headers, session["id"], item_id, None,
+        applied=False, gate_ms=STAND_DOWN_AFTER_MS, key="stood-down",
+    )
+    assert stood.status_code == 200
+    with app.app_context():
+        attempt = Attempt.query.one()
+        assert attempt.strategy_gate_status == STATUS_STOOD_DOWN
+        assert attempt.strategy_variant == "prompt_required"
+
+
+def test_two_refusals_open_the_way_out_of_a_required_question(app):
+    """The strong route, and the one a browser cannot manufacture.
+
+    Server-side refusals are the app's own record that the student met the
+    gate and the gate said no. A student who genuinely cannot produce the
+    artifact today gets out; a student who never rendered the panel does not.
+    """
+    from app.enforcement import STAND_DOWN_AFTER_REJECTIONS, STATUS_STOOD_DOWN
+
+    client = app.test_client()
+    headers = login(client, "two-refusals@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+    arm(app, session["id"], "prephrase", variant="prompt_required")
+    item_id = session["current_item"]["id"]
+
+    for index in range(STAND_DOWN_AFTER_REJECTIONS):
+        refused = submit(client, headers, session["id"], item_id, {"prediction": "asdf"}, key=f"junk-{index}")
+        assert refused.status_code == 409
+        # The first refusal is just a refusal. The last one says the door is open.
+        assert refused.json["error"]["stand_down"] is (index == STAND_DOWN_AFTER_REJECTIONS - 1)
+
+    with app.app_context():
+        assert db.session.get(SessionItem, item_id).strategy_gate_rejections == STAND_DOWN_AFTER_REJECTIONS
+
+    accepted = submit(client, headers, session["id"], item_id, None, applied=False, key="after-refusals")
+    assert accepted.status_code == 200
+    with app.app_context():
+        attempt = Attempt.query.one()
+        assert attempt.strategy_gate_status == STATUS_STOOD_DOWN
+        assert attempt.strategy_gate_rejections == STAND_DOWN_AFTER_REJECTIONS
+
+
+def test_a_required_question_that_could_not_build_a_gate_is_not_a_dead_end(app):
+    """`build_gate` returns None when there is nothing to annotate.
+
+    The arm was assigned before anyone could know that, and a student shown no
+    steps must not be refused for not completing them.
+    """
+    from app.enforcement import STATUS_UNENFORCED
+
+    client = app.test_client()
+    headers = login(client, "no-gate@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+    arm(app, session["id"], "passage_map", variant="prompt_required", section="Logical Reasoning")
+
+    with app.app_context():
+        item = db.session.get(SessionItem, session["current_item"]["id"])
+        item.question.stimulus = None
+        item.question.passage_id = None
+        db.session.commit()
+
+    item = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]["current_item"]
+    assert item["strategy_gate"] is None
+    assert item["strategy_trial"]["required"] is False
+
+    accepted = submit(client, headers, session["id"], item["id"], None, applied=False, key="ungateable")
+    assert accepted.status_code == 200
+    with app.app_context():
+        assert Attempt.query.one().strategy_gate_status == STATUS_UNENFORCED
+
+
+def test_being_forced_is_not_an_income_lever(app, monkeypatch):
+    """Compliance must not become a way to earn, or it stops measuring anything.
+
+    Two identical correct answers, one required and one suggested, settle to
+    the same money. Time inside the gate is already held out of the pace score,
+    so the scaffolding does not cost anything either.
+    """
+    from app.services import run_attempt_coaching
+
+    coached(monkeypatch)
+
+    settled = []
+    # A fresh firm each time. Money in this game compounds off reputation and
+    # the case on the board, so answering twice on one account would differ for
+    # reasons that have nothing to do with the arm.
+    for index, variant in enumerate(("prompt", "prompt_required")):
+        client = app.test_client()
+        headers = login(client, f"no-lever-{index}@example.test")
+        create_game(client, headers)
+        session = start(client, headers)
+        arm(app, session["id"], "prephrase", variant=variant)
+        response = submit(
+            client, headers, session["id"], session["current_item"]["id"],
+            {"prediction": "The right answer has to break the link between coffee drinking and sleeplessness."},
+            key=f"lever-{index}", gate_ms=40_000,
+        )
+        assert response.status_code == 200
+        with app.app_context():
+            attempt = db.session.get(Attempt, response.json["result"]["attempt_id"])
+            assert attempt.strategy_gate_status == "satisfied"
+            assert attempt.is_correct is True
+            run_attempt_coaching(attempt)
+            attempt = db.session.get(Attempt, response.json["result"]["attempt_id"])
+            settled.append((attempt.settlement.payout, attempt.xp_earned, attempt.pace_scored))
+            db.session.get(StudySession, session["id"]).pending_attempt_id = None
+            db.session.commit()
+
+    assert settled[0] == settled[1]
+    assert settled[0][0] > 0
+
+
+def test_the_ranking_pools_both_offers_and_the_mandatory_contrast_stands_apart(app):
+    """What the estimator now assumes, asserted rather than described.
+
+    Required and suggested questions are the same offer for the purposes of the
+    contrast the dashboard ranks on, so they pool. The mandatory draw is a
+    second question with a second answer, and it is computed only over the
+    questions that were in a pool and could have gone either way.
+    """
+    client = app.test_client()
+    headers = login(client, "estimator@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+
+    with app.app_context():
+        study = db.session.get(StudySession, session["id"])
+        user_id = study.user_id
+        logical = Question.query.filter_by(section="Logical Reasoning").first()
+        _history(study, logical, key="prephrase", variant="prompt", gate_status="skipped",
+                 correct=False, count=8, tag="opt-loser")
+        _history(study, logical, key="prephrase", variant="prompt_required", gate_status="satisfied",
+                 correct=True, count=8, tag="req-winner")
+        _history(study, logical, key="prephrase", variant="control_visible", gate_status=None,
+                 correct=False, count=8, tag="ctl")
+        # Only the sixteen prompt-arm rows above were in a pool. These four were
+        # never eligible to be drawn, so they have no counterfactual and must
+        # not drift into the mandatory comparison.
+        _history(study, logical, key="prephrase", variant="prompt", gate_status="satisfied",
+                 correct=True, count=4, tag="never-pooled")
+        for tag, propensity in (("opt-loser", 0.25), ("req-winner", 0.25)):
+            for attempt in Attempt.query.filter(Attempt.idempotency_key.like(f"{tag}-%")).all():
+                attempt.strategy_forcing_propensity = propensity
+        db.session.commit()
+
+        performance = strategy_performance(user_id)
+        result = section_result(performance, "Logical Reasoning", "prephrase")
+
+    # Both offers count as treated: twenty prompt-arm rows against eight controls.
+    assert result["sample"] == 20
+    assert result["control_sample"] == 8
+    assert result["required_sample"] == 8
+
+    forcing = result["forcing"]
+    # The four never-pooled rows are out of this contrast and in the one above.
+    assert forcing["required_sample"] == 8
+    assert forcing["optional_sample"] == 8
+    assert forcing["required_complied"] == 8
+    assert forcing["optional_complied"] == 0
+    assert forcing["adjusted_lift"] > 0
+
+    section = next(entry for entry in performance["sections"] if entry["section"] == "Logical Reasoning")
+    assert section["required_trials"] == 8
+    assert sorted(section["itt"]["treated_arms"]) == ["prompt", "prompt_required"]
