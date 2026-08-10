@@ -20,6 +20,9 @@ import { api, ApiError } from './api'
 import { LockedChoicesNotice, useStrategyGate } from './strategy-enforcement'
 import type { SessionItem, StudySession } from './types'
 import './styles.css'
+// The gate's own rules left `styles.css` with the rest of the case screen's,
+// and this rig renders the gate outside that route.
+import './case-session-styles.css'
 import './strategy-enforcement.css'
 
 const EMAIL = 'gate-harness@example.test'

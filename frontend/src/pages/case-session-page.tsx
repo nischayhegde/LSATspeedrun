@@ -22,6 +22,10 @@ import { ErrorNotice, formatMoney, LoadingScreen, useRestoredChrome } from '../c
 import { PauseButton, QuestionFlow } from '../case-flow'
 import { useSound } from '../sound'
 import type { StudySession } from '../types'
+// The rules in `styles.css` that only this screen can render. It travels with
+// this chunk, and `lsat-route-stylesheets` keeps it in the slot it had inside
+// the entry sheet.
+import '../case-session-styles.css'
 
 // Shares the Practice tab's mega-litigation chunk, so the post-form results
 // page explains a withheld tier with the same component that tab uses without

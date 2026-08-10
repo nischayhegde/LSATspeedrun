@@ -52,9 +52,16 @@ import { SoundProvider } from './sound'
  * the cascade; the 41 kB that only the dashboard can reach stayed in
  * `performance.css` and now travels with the dashboard.
  *
- * What is left is the floor: `styles.css` and `mobile.css` are global by
- * construction, and `.shots/css-owners.mjs` and `.shots/css-media.mjs` are the
- * two scans that say so.
+ * `styles.css` and `mobile.css` looked like the floor, and `.shots/css-owners.mjs`
+ * was the scan that said so: 80% of `styles.css` came back as needed by every
+ * route. That was an artefact of its own walk. It follows `import()` as well as
+ * `import`, every page imports `components.tsx`, `components.tsx` imports
+ * `routes.tsx`, and `routes.tsx` `import()`s all nine pages, so the graph closed
+ * on itself and every route reached the same 67 of 73 files. Cutting that one
+ * edge — the router's handles on the pages are the split points, not edges —
+ * shows a third of the sheet belongs to one screen each. What that found for the
+ * case route is `case-session-styles.css`, and `.shots/route-split.mjs` is the
+ * scan, which refuses to cut where the move would change who wins.
  */
 import './review-panels.css'
 import './styles.css'

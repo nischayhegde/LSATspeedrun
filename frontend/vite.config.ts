@@ -173,6 +173,9 @@ const SHEET_ORDER = [
   'src/art/unified-empire-map.css',
   'src/markup.css',
   'src/practice-lab.css',
+  // Cut out of `styles.css`, which came after every sheet above it, so this
+  // ranks last of the route sheets for the same reason.
+  'src/case-session-styles.css',
 ]
 
 /**
