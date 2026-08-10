@@ -19,7 +19,13 @@
  * route *can* render resolving differently, so the set probed on each route is
  * the classes written by the files that route reaches, plus the app shell.
  *
+ * The widths are the two the app is written for plus the landscape phone, which
+ * `mobile.css` treats as a third case of its own: a dozen of its blocks are
+ * written `(max-width: 900px) and (orientation: landscape)` or
+ * `(max-height: 500px)`, and neither of the two portrait sizes enters them.
+ *
  *   node tools/css-split/css-prove.mjs /tmp/css-base/frontend/dist frontend/dist
+ *   ... --styles-only    to skip the first-paint measurement
  */
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -29,7 +35,8 @@ import { execFileSync } from 'node:child_process'
 const PW = process.env.LSAT_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 const { chromium } = await import(PW)
 
-const [baseDist, headDist] = process.argv.slice(2).map((p) => resolve(p))
+const stylesOnly = process.argv.includes('--styles-only')
+const [baseDist, headDist] = process.argv.slice(2).filter((p) => !p.startsWith('--')).map((p) => resolve(p))
 const SRC = resolve('frontend/src')
 const ROUTES = {
   '/login': 'pages/login-page.tsx',
@@ -137,8 +144,8 @@ const browser = await chromium.launch()
 let differing = 0
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
-  for (const width of [390, 1440]) {
-    await page.setViewportSize({ width, height: 900 })
+  for (const [width, height] of [[390, 844], [844, 390], [1440, 900]]) {
+    await page.setViewportSize({ width, height })
     for (const [route, pageFile] of Object.entries(ROUTES)) {
       const classes = classesFor(pageFile)
       const at = async (port) => {
@@ -150,15 +157,17 @@ try {
       const after = await at(b.port)
       const diffs = classes.filter((c) => before[c] !== after[c])
       differing += diffs.length
-      console.log(`  ${String(width).padEnd(5)} ${route.padEnd(12)} ${String(classes.length).padStart(4)} classes it can render, ${diffs.length} differ`)
+      console.log(`  ${`${width}x${height}`.padEnd(9)} ${route.padEnd(12)} ${String(classes.length).padStart(4)} classes it can render, ${diffs.length} differ`)
       for (const d of diffs.slice(0, 6)) {
         console.log(`        .${d}\n          was ${before[d]}\n          now ${after[d]}`)
       }
     }
   }
-  console.log(`\n${differing} computed-style differences across ${Object.keys(ROUTES).length} routes at two widths\n`)
+  console.log(`\n${differing} computed-style differences across ${Object.keys(ROUTES).length} routes at three viewports\n`)
+  if (stylesOnly) process.exitCode = differing ? 1 : 0
 
   // ------------------------------------------------------------ first paint
+  if (!stylesOnly) {
   const fcp = async (port) => {
     const p = await browser.newPage({ viewport: { width: 390, height: 844 } })
     const client = await p.context().newCDPSession(p)
@@ -195,6 +204,7 @@ try {
   console.log(`    baseline ${show(base)}   median ${Math.round(median(base))} ms`)
   console.log(`    now      ${show(head)}   median ${Math.round(median(head))} ms`)
   console.log(`    ${Math.round(median(base) - median(head))} ms faster`)
+  }
 } finally {
   await browser.close()
   a.server.close()

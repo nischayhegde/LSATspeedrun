@@ -24,6 +24,7 @@ import { TrialCalendar } from '../trial-calendar'
 import { useRollupInt } from '../motion'
 import { InertTabPanels, MegaLitigationGate, PanelFallback, TabStrip } from './shared'
 import '../performance.css'
+import '../mobile/dashboard-page.css'
 
 // The dashboard's two heaviest additions — an SVG projection chart with its
 // confidence band, and the full answer wall with its drill-down — are split

@@ -18,10 +18,18 @@
  * and the extracted rules keep their order among themselves because they are
  * emitted by that same global index.
  *
- *   node tools/css-split/route-split2.mjs --owners pages/login-page.tsx --from styles.css,mobile.css --out login-page.css
+ * `--at after` is the mirror of it. A route sheet does not have to go in front
+ * of the entry link; `lsat-route-stylesheets` can put one behind it instead,
+ * which is the only way to cut `mobile.css`, whose whole method is to come last.
+ * Then every extracted rule *follows* every rule that stays, and a rule changes
+ * who it loses to exactly when it ties with a rule that stays and used to come
+ * before it. Same statement, same coverage, one comparison reversed.
+ *
+ *   node tools/css-split/route-split2.mjs --owners pages/login-page.tsx --from styles.css --out login-page.css
+ *   node tools/css-split/route-split2.mjs --owners pages/office-page.tsx --from mobile.css --at after --out mobile/office.css
  */
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import postcss from '../../frontend/node_modules/postcss/lib/postcss.mjs'
 
@@ -35,6 +43,9 @@ const ENTRY = (arg('entry') || 'review-panels.css,styles.css,art/art.css,case-in
 const owners = (arg('owners') || '').split(',').filter(Boolean)
 const from = (arg('from') || 'styles.css').split(',')
 const out = arg('out')
+/** Which side of the entry link the extracted sheet is written on. */
+const at = arg('at') || 'before'
+if (at !== 'before' && at !== 'after') throw new Error('--at takes before or after')
 const write = process.argv.includes('--write')
 
 const files = []
@@ -100,12 +111,8 @@ const ownedRule = (rule) => {
   return true
 }
 
-const extracted = []
-const staying = []
-for (const e of all) {
-  if (from.includes(e.file) && ownedRule(e.rule)) extracted.push(e)
-  else staying.push(e)
-}
+const candidates = new Set()
+for (const e of all) if (from.includes(e.file) && ownedRule(e.rule)) candidates.add(e.at)
 
 // ------------------------------------------------------------- the check
 
@@ -144,38 +151,67 @@ function flatten(entries) {
   return o
 }
 
-const E = flatten(extracted)
-const S = flatten(staying)
-const byKey = new Map()
-for (const s of S) {
-  if (!byKey.has(s.key)) byKey.set(s.key, [])
-  byKey.get(s.key).push(s)
+const tiesFor = (taking) => {
+  const E = flatten(all.filter((e) => taking.has(e.at)))
+  const byKey = new Map()
+  for (const s of flatten(all.filter((e) => !taking.has(e.at)))) {
+    if (!byKey.has(s.key)) byKey.set(s.key, [])
+    byKey.get(s.key).push(s)
+  }
+  const found = []
+  for (const a of E) {
+    for (const b of byKey.get(a.key) || []) {
+      // Moving in front of the entry, a rule that already came later still wins
+      // and nothing has changed; moving behind it, a rule that already came
+      // earlier still loses. Either way only the other half can flip.
+      if (at === 'before' ? b.at > a.at : b.at < a.at) continue
+      if (!nested(a.classes, b.classes)) continue
+      const shared = [...a.props.keys()].filter((p) => b.props.has(p))
+      if (!shared.length) continue
+      const sa = specificity(a.selector) + (a.props.get(shared[0]) ? 1e6 : 0)
+      const sb = specificity(b.selector) + (b.props.get(shared[0]) ? 1e6 : 0)
+      if (sa !== sb) continue
+      found.push({ a, b, shared })
+    }
+  }
+  return found
 }
 
-const flips = []
-for (const a of E) {
-  for (const b of byKey.get(a.key) || []) {
-    if (b.at > a.at) continue // it already beat this rule and still does
-    if (!nested(a.classes, b.classes)) continue
-    const shared = [...a.props.keys()].filter((p) => b.props.has(p))
-    if (!shared.length) continue
-    const sa = specificity(a.selector) + (a.props.get(shared[0]) ? 1e6 : 0)
-    const sb = specificity(b.selector) + (b.props.get(shared[0]) ? 1e6 : 0)
-    if (sa !== sb) continue
-    flips.push({ a, b, shared })
+/**
+ * Every tie is between one rule that would move and one that would not, so the
+ * only lever is to leave the mover behind. Doing that turns it into a rule that
+ * stays, which can put it on the other side of a tie with something still being
+ * taken, so this runs to a fixed point rather than once. Shrinking the set is
+ * the only direction it goes, so it terminates.
+ */
+const taking = new Set(candidates)
+const settle = process.argv.includes('--settle')
+let flips = tiesFor(taking)
+const held = []
+if (settle) {
+  while (flips.length) {
+    const drop = new Set(flips.map((f) => f.a.at))
+    for (const d of drop) { taking.delete(d); held.push(d) }
+    flips = tiesFor(taking)
   }
 }
 
+const extracted = all.filter((e) => taking.has(e.at))
 const bytes = (es) => es.reduce((n, e) => n + e.rule.toString().length, 0)
 const perSheet = new Map()
 for (const e of extracted) perSheet.set(e.file, (perSheet.get(e.file) || 0) + e.rule.toString().length)
 console.log(`owners: ${owners.join(', ')}`)
 console.log(`extractable: ${extracted.length} rules, ${bytes(extracted)} bytes`)
 for (const [f, n] of perSheet) console.log(`    ${String(n).padStart(6)}  from ${f}`)
-console.log(`\nties an extracted rule would newly lose: ${flips.length}`)
+if (held.length) {
+  const kept = all.filter((e) => held.includes(e.at))
+  console.log(`held back to keep a tie's winner: ${held.length} rules, ${bytes(kept)} bytes`)
+  for (const e of kept) console.log(`    #${e.at} ${e.media} ${e.rule.selector.replace(/\s+/g, ' ')}`)
+}
+console.log(`\nties whose winner the move would change: ${flips.length}   (sheet lands ${at} the entry link)`)
 for (const f of flips.slice(0, 30)) {
   console.log(`    ${f.a.file} #${f.a.at} ${f.a.media} ${f.a.selector}`)
-  console.log(`    now loses to ${f.b.file} #${f.b.at} ${f.b.media} ${f.b.selector}`)
+  console.log(`    would ${at === 'before' ? 'now lose to' : 'now beat'} ${f.b.file} #${f.b.at} ${f.b.media} ${f.b.selector}`)
   console.log(`    both set: ${f.shared.join(', ')}`)
 }
 
@@ -211,12 +247,13 @@ for (const file of from) {
   let swept = true
   while (swept) {
     swept = false
-    root.walkAtRules((at) => {
-      if (at.nodes && at.nodes.length === 0 && !/keyframes/.test(at.name)) { at.remove(); swept = true }
+    root.walkAtRules((block) => {
+      if (block.nodes && block.nodes.length === 0 && !/keyframes/.test(block.name)) { block.remove(); swept = true }
     })
   }
   writeFileSync(join(SRC, file), root.toString())
 }
+mkdirSync(dirname(join(SRC, out)), { recursive: true })
 writeFileSync(join(SRC, out), dest.toString())
 const gz = (s) => gzipSync(s, { level: 9 }).length
 for (const file of from) console.log(`  ${file} keeps ${roots.get(file).toString().length} bytes`)

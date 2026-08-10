@@ -185,7 +185,27 @@ const SHEET_ORDER = [
 ]
 
 /**
- * Puts each route's own stylesheets in the document, ahead of the entry sheet.
+ * A route sheet cut out of `mobile.css` has to land *behind* the entry link,
+ * not in front of it, and this is how one is recognised.
+ *
+ * `mobile.css` is last on the entry and its whole method is to come last: it
+ * restates the same properties the sheets above it set, at the same
+ * specificity, and wins on document order alone. A rule taken out of it and
+ * put in front of the entry link therefore stops winning, which is why the
+ * first six splits could only take rules from `styles.css`.
+ *
+ * So these sheets are given the other side of the link. Everything each one
+ * used to beat is still above it and everything that used to beat it — nothing,
+ * it was last — still does. `manualChunks` gives each its own emitted asset so
+ * that a route's `styles.css` rules and its `mobile.css` rules, which need
+ * opposite sides, are not merged into one file, and the `mobile-` prefix on the
+ * asset name is what carries that decision through to the document.
+ */
+const isMobileSheet = (href: string) => /(^|\/)mobile-[^/]*\.css$/.test(href)
+
+/**
+ * Puts each route's own stylesheets in the document, on the side of the entry
+ * sheet they were cut from.
  *
  * Six sheets belong to one screen each but were imported by `main.tsx`, which
  * merged them into `index.css` and made every visitor block on 27 kB gzipped of
@@ -204,9 +224,21 @@ const SHEET_ORDER = [
  * same href before it injects one, so the route's chunk finds these and does
  * not add a duplicate.
  *
+ * The `mobile-` sheets go on the far side of the same link. The script cannot
+ * simply append them, because the parser has not reached the entry link yet and
+ * anything appended now lands in front of it; and it cannot run *after* the
+ * link either, because a script that follows a pending stylesheet waits for it,
+ * which would put these two sheets in series instead of side by side. So each
+ * is started immediately as `preload as=style`, which fetches at exactly the
+ * moment an appended stylesheet would have and takes no position in the
+ * cascade, and the real `<link>` is put in behind the entry sheet as soon as
+ * the parser produces it. Nothing can paint before that: the entry sheet is
+ * render-blocking and still in flight, and inserting the real link is the next
+ * microtask, not the next frame.
+ *
  * The same script then watches `<head>`: a sheet that arrives with a chunk
- * loaded by a *client-side* navigation is moved back in front of the entry
- * sheet. Without that, walking from /office to /firm would give
+ * loaded by a *client-side* navigation is moved to whichever side of the entry
+ * sheet it belongs on. Without that, walking from /office to /firm would give
  * `rival-war-room.css` a precedence a cold load of /firm never gives it, and
  * the two would disagree about the same screen.
  *
@@ -255,10 +287,21 @@ function routeStylesheets(): Plugin {
           return best
         }
 
-        /** Every stylesheet reachable from `name` through static imports. */
+        /**
+         * Every stylesheet reachable from `name` through static imports, split
+         * by the side of the entry link it belongs on.
+         *
+         * The `mobile-` sheets are their own chunks and Vite deletes a chunk
+         * that holds nothing but CSS, folding its stylesheet into the importer's
+         * `importedCss`, so they turn up here on the route chunk itself. Their
+         * order among themselves is not stated: two of them can only ever be in
+         * the document together after a client-side navigation, and every
+         * selector in one names a class only its own route's files write, so
+         * there is nothing for them to disagree about.
+         */
         const closure = (name: string) => {
           const start = chunksByName.get(name)
-          if (!start) return []
+          if (!start) return { before: [] as string[], after: [] as string[] }
           const seen = new Set<string>()
           const css = new Map<string, number>()
           const queue = [start]
@@ -272,31 +315,48 @@ function routeStylesheets(): Plugin {
             const meta = (output as { viteMetadata?: { importedCss?: Set<string> } }).viteMetadata
             for (const sheet of meta?.importedCss ?? []) css.set(base + sheet, rankOf(file))
           }
-          return [...css].sort((a, b) => a[1] - b[1]).map(([href]) => href)
+          const ordered = [...css].sort((a, b) => a[1] - b[1]).map(([href]) => href)
+          return {
+            before: ordered.filter((href) => !isMobileSheet(href)),
+            after: ordered.filter(isMobileSheet).sort(),
+          }
         }
 
-        const byRoute: [string, string[]][] = []
+        const byRoute: [string, string[], string[]][] = []
         for (const [pattern, name] of ROUTE_ENTRY_CHUNKS) {
-          const sheets = closure(name)
-          if (sheets.length) byRoute.push([pattern.source, sheets])
+          const { before, after } = closure(name)
+          if (before.length || after.length) byRoute.push([pattern.source, before, after])
         }
         if (!byRoute.length) return html
 
-        const known = [...new Set(byRoute.flatMap(([, sheets]) => sheets))]
+        const before = [...new Set(byRoute.flatMap(([, sheets]) => sheets))]
+        const after = [...new Set(byRoute.flatMap(([, , sheets]) => sheets))]
         const script = `(function(){try{
-var R=${JSON.stringify(byRoute)},K=${JSON.stringify(known)},E=${JSON.stringify(entryCss)};
-var p=location.pathname.replace(/\\/$/,'')||'/',own=[];
-for(var i=0;i<R.length;i++){if(new RegExp(R[i][0]).test(p)){own=R[i][1];break;}}
-for(var j=0;j<own.length;j++){var l=document.createElement('link');
-l.rel='stylesheet';l.href=own[j];document.head.appendChild(l);}
+var R=${JSON.stringify(byRoute)},B=${JSON.stringify(before)},A=${JSON.stringify(after)},E=${JSON.stringify(entryCss)};
+var p=location.pathname.replace(/\\/$/,'')||'/',own=[[],[]];
+for(var i=0;i<R.length;i++){if(new RegExp(R[i][0]).test(p)){own=[R[i][1],R[i][2]];break;}}
+for(var j=0;j<own[0].length;j++){var l=document.createElement('link');
+l.rel='stylesheet';l.href=own[0][j];document.head.appendChild(l);}
+var waiting=[];
+for(var k=0;k<own[1].length;k++){var w=document.createElement('link');
+w.rel='preload';w.as='style';w.href=own[1][k];document.head.appendChild(w);
+var s=document.createElement('link');s.rel='stylesheet';s.href=own[1][k];waiting.push(s);}
+function entry(){return document.querySelector('link[rel="stylesheet"][href="'+E+'"]');}
+function place(e){if(!waiting.length)return;var host=e?e.parentNode:document.head,
+next=e?e.nextSibling:null;
+for(var m=0;m<waiting.length;m++)host.insertBefore(waiting[m],next);waiting=[];}
+document.addEventListener('DOMContentLoaded',function(){place(entry());});
 new MutationObserver(function(recs){
-var e=document.querySelector('link[rel="stylesheet"][href="'+E+'"]');if(!e)return;
+var e=entry();if(!e)return;
+place(e);
 for(var a=0;a<recs.length;a++){var added=recs[a].addedNodes;
 for(var b=0;b<added.length;b++){var n=added[b];
 if(n.tagName!=='LINK'||n.rel!=='stylesheet')continue;
-if(K.indexOf(n.getAttribute('href'))<0)continue;
-if(n.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_PRECEDING)e.parentNode.insertBefore(n,e);}}
+var h=n.getAttribute('href'),pos=n.compareDocumentPosition(e);
+if(B.indexOf(h)>=0&&pos&Node.DOCUMENT_POSITION_PRECEDING)e.parentNode.insertBefore(n,e);
+else if(A.indexOf(h)>=0&&pos&Node.DOCUMENT_POSITION_FOLLOWING)e.parentNode.insertBefore(n,e.nextSibling);}}
 }).observe(document.head,{childList:true});
+var e0=entry();if(e0)place(e0);
 }catch(e){}})();`
         const link = html.match(new RegExp(`<link[^>]*href="${entryCss.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>`))
         if (!link) return html
@@ -327,6 +387,21 @@ export default defineConfig({
          * only thing that stops the next reader repeating the search.
          */
         manualChunks(id) {
+          /**
+           * One emitted asset per sheet cut out of `mobile.css`.
+           *
+           * Vite gives a chunk one stylesheet, so `src/office-page.css` and
+           * `src/mobile/office-page.css` would be concatenated into a single
+           * `office-page-<hash>.css` — and they cannot share a file, because
+           * one has to go in front of the entry link and the other behind it.
+           * Putting the mobile sheet in a chunk of its own is what keeps them
+           * apart. The chunk holds nothing but CSS, so Rollup's JavaScript for
+           * it is empty and Vite drops that file and hands the stylesheet up to
+           * whichever route chunk imported it; the asset keeps this name, and
+           * the `mobile-` prefix is how `lsat-route-stylesheets` recognises it.
+           */
+          const mobile = id.match(/\/src\/mobile\/([\w-]+)\.css(?:\?|$)/)
+          if (mobile) return `mobile-${mobile[1]}`
           if (id.includes('/node_modules/three/build/')) return 'three'
           /**
            * React, the router and the query client, held apart from the app.

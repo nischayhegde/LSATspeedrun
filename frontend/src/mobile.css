@@ -514,9 +514,6 @@ body {
     height: min(660px, calc(100dvh - 88px));
   }
 
-  .performance-page { padding-inline: 0; }.strategy-results-detail { overflow: hidden; }
-  .strategy-results-table { overflow-x: auto; padding-bottom: 5px; }
-
   /* Office stays interactive; only supporting controls become more compact.
      The office itself is still a true scene rather than a static replacement. */
   .office-game-page,
@@ -1926,12 +1923,7 @@ body {
 }
 
 @media (max-width: 640px) {
-  /* Training: one centered performance story, then compact evidence. */
-  .performance-page {
-    width: calc(100% - 24px);
-    margin-inline: auto;
-    padding: 12px 0 var(--mobile-dock-clearance);
-  }/* Practice: centered headline and a compact client dossier. */
+  /* Training: one centered performance story, then compact evidence. *//* Practice: centered headline and a compact client dossier. */
   .case-lobby {
     width: calc(100% - 24px);
     max-width: 520px;
@@ -2142,19 +2134,9 @@ body {
 
 @media (max-width: 640px) {
   /* Training ------------------------------------------------------------ */
-  .performance-page {
-    width: 100% !important;
-    max-width: none !important;
-    min-height: calc(100dvh - 58px);
-    margin: 0 !important;
-    padding: 0 0 var(--mobile-dock-clearance) !important;
-    color: #edf0e8;
-    background: #0f1b27;
-  }
   /* `.mobile-training-home` below carries all five of these measures, so the
      desktop hero, evidence strip, and metrics row are the ones that go — this
      is the single authoritative rule for them at phone widths. */
-  .performance-page > .performance-metrics { display: none !important; }
   /* The dashboard's own active-run chip, shown above the primary actions
      when a case run is already open. */.mobile-training-actions .primary-button {
     width: 100%;
@@ -3083,28 +3065,9 @@ body {
 
 @media (max-width: 640px) {
   /* Dashboard ------------------------------------------------------------ */
-  .performance-page {
-    width: 100% !important;
-    max-width: none !important;
-    margin: 0 !important;
-    padding: 0 0 var(--mobile-dock-clearance) !important;
-    gap: 0;
-    background: #101b27;
-  }
-  .performance-page .dash-summary {
-    margin: 0;
-    padding: 20px 16px 22px;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .performance-page .dash-title { font-size: clamp(29px, 8.4vw, 36px); }
   /* The ring stays beside its sentence rather than stacking above it: at 96px
      it is shorter than the sentence is tall, so stacking spends a hundred
      pixels to gain nothing. The tiles keep their full-width row underneath. */
-  .performance-page .dash-signal { grid-template-columns: auto minmax(0, 1fr); gap: 14px; }
-  .performance-page .dash-tiles { grid-column: 1 / -1; grid-template-columns: repeat(2, 1fr); }
-  .performance-page .dash-actions { display: grid; grid-auto-flow: row; }
-  .performance-page .dash-actions > * { width: 100%; min-height: 48px; justify-content: center; }
 
   /* The strip is the page's primary control once you are past the head, so
      it sticks under the app bar instead of scrolling away and forcing a

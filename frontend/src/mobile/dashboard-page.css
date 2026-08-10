@@ -1,0 +1,38 @@
+@media (max-width: 640px) {
+
+  .performance-page { padding-inline: 0; }.strategy-results-detail { overflow: hidden; }
+  .strategy-results-table { overflow-x: auto; padding-bottom: 5px; }
+  .performance-page {
+    width: calc(100% - 24px);
+    margin-inline: auto;
+    padding: 12px 0 var(--mobile-dock-clearance);
+  }
+  .performance-page {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: calc(100dvh - 58px);
+    margin: 0 !important;
+    padding: 0 0 var(--mobile-dock-clearance) !important;
+    color: #edf0e8;
+    background: #0f1b27;
+  }
+  .performance-page > .performance-metrics { display: none !important; }
+  .performance-page {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 0 var(--mobile-dock-clearance) !important;
+    gap: 0;
+    background: #101b27;
+  }
+  .performance-page .dash-summary {
+    margin: 0;
+    padding: 20px 16px 22px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .performance-page .dash-title { font-size: clamp(29px, 8.4vw, 36px); }
+  .performance-page .dash-signal { grid-template-columns: auto minmax(0, 1fr); gap: 14px; }
+  .performance-page .dash-tiles { grid-column: 1 / -1; grid-template-columns: repeat(2, 1fr); }
+  .performance-page .dash-actions { display: grid; grid-auto-flow: row; }
+  .performance-page .dash-actions > * { width: 100%; min-height: 48px; justify-content: center; } }
