@@ -40,7 +40,7 @@
 .management-card { min-height: 330px; padding: 21px; display: flex; flex-direction: column; position: relative; overflow: hidden; border: 1px solid #d9d0c2; border-radius: 13px; background: #fffdf8; transition: transform .18s ease, box-shadow .18s ease; }
 .management-card:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(24,32,39,.09); }
 .management-card.owned { background: #f4f0e7; }
-.management-card.just-bought::after { content: "ACQUIRED"; position: absolute; inset: 0; display: grid; place-items: center; color: #ffe7ae; background: rgba(16,39,53,.94); font-family: Georgia, serif; font-size: 28px; letter-spacing: .12em; animation: bought-flash 1.8s forwards; }.card-status { position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 4px; color: #918e85; font-size: 10.5px; font-weight: 900; letter-spacing: .12em; }
+.card-status { position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 4px; color: #918e85; font-size: 10.5px; font-weight: 900; letter-spacing: .12em; }
 .management-card.owned .card-status { color: var(--green); }
 .management-card h3 { margin: 18px 0 7px; color: var(--navy); font-family: Georgia, serif; font-size: 22px; font-weight: 500; }
 .management-card > p { min-height: 53px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
@@ -80,8 +80,6 @@
 .client-card-portrait { width: 86px; height: 92px; margin: -3px 0 -4px; }
 .client-card.selected { box-shadow: inset 0 0 0 3px rgba(200,155,75,.12), 0 13px 28px rgba(117,78,25,.1); }
 .client-card.just-activated { animation: client-card-activate .55s cubic-bezier(.2,1.4,.4,1); }
-.client-activated-flash { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; align-content: center; gap: 8px; color: #ffe5a3; background: rgba(14,42,51,.94); font-family: Georgia, serif; font-size: 20px; font-weight: 700; letter-spacing: .08em; animation: activated-flash 2.2s forwards; }
-.client-activated-flash svg { width: 38px; height: 38px; padding: 7px; border: 2px solid #ffe5a3; border-radius: 50%; }
 @media (max-width: 1120px) {.management-grid { grid-template-columns: repeat(2, 1fr); }
   .achievement-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 900px) {
@@ -166,7 +164,6 @@
 .management-card.asset-card:hover { translate: 0 -5px; transform: none; filter: saturate(1.07); box-shadow: inset 0 0 0 3px #d0a765, 8px 12px #3a2a20; }
 .management-card.asset-card.locked { filter: saturate(.58); }
 .management-card.asset-card.owned { background-color: #e4d5aa; box-shadow: inset 0 0 0 3px #8ca070, 7px 8px #3a2a20; }
-.management-card.asset-card.just-bought::after { content: "ACQUIRED!"; width: auto; height: auto; inset: 0; display: grid; place-items: center; z-index: 100; border: 0; color: #ffe69a; background: rgba(25,50,56,.95); box-shadow: inset 0 0 0 8px #c49d45; font-family: var(--font-pixel); font-size: 23px; letter-spacing: .08em; animation: bought-flash 1.8s forwards; }
 .asset-card .card-status { min-height: 23px; padding: 5px 7px; z-index: 20; right: 22px; top: 26px; border: 2px solid #18141a; color: #f0d6a0; background: #6c5140; box-shadow: 2px 2px #18141a; font-family: var(--font-pixel); font-size: 9.5px; }
 .asset-card.owned .card-status { color: #e3f2bd; background: #3d704f; }
 .asset-card:not(.locked):not(.owned) .card-status { color: #2b251b; background: #f0c85c; animation: available-pulse 2.2s steps(2) infinite; }
@@ -235,6 +232,210 @@
    to go and look, not the purchase. */
 .asset-locate { width: 100%; margin-top: 9px; padding: 8px 12px; cursor: pointer; font: inherit; font-size: .82rem; color: #55606b; border: 1px solid #d8cfc1; border-radius: 9px; background: #fffdf8; }
 .asset-locate:hover { color: var(--ink); border-color: #bfb4a3; }
+
+/* ---------------------------------------------------------------------------
+   Acting on something, and seeing that it happened.
+
+   Every animation here ends on the state worth seeing and is taken off screen
+   by a React timer, never by the tail of its own fade. The global
+   reduced-motion rule collapses `animation-duration` to .01ms with
+   `!important`, so a gesture written to end on `opacity: 0` -- which is how
+   this page's confirmations used to be written -- is invisible from its first
+   frame to exactly the readers who asked for less motion. Landing the end
+   state is the accommodation; withholding the feedback is a bug.
+
+   None of it animates a property that costs layout or paint: transforms,
+   opacity and a clip on a fixed-size box only.
+   --------------------------------------------------------------------------- */
+
+/* The treasury names the movement it just made. */
+.firm-wallet .wallet-delta {
+  position: absolute;
+  right: 12px;
+  top: 46px;
+  padding: 3px 6px;
+  display: block;
+  color: #10251d;
+  background: #7fc79b;
+  box-shadow: 2px 2px #14202a;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  animation: wallet-delta-in var(--mo-3) var(--mo-spring) both;
+}
+.firm-wallet .wallet-delta.is-debit { color: #2a1414; background: #e6a273; }
+@keyframes wallet-delta-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* A stamp on the deed. It sits in the corner the price row leaves free, so the
+   card you just bought stays readable while it confirms. */
+.asset-acquired {
+  position: absolute;
+  z-index: 30;
+  left: 12px;
+  bottom: 14px;
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 2px solid #24503f;
+  color: #eafbe6;
+  background: #2f6f52;
+  box-shadow: 3px 3px #17313a;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  letter-spacing: .06em;
+  rotate: -3deg;
+  animation: stamp-press var(--mo-3) var(--mo-brass) both;
+}
+@keyframes stamp-press {
+  from { opacity: 0; scale: 1.9; rotate: 5deg; }
+  70% { opacity: 1; scale: .94; }
+}
+.management-card.asset-card.just-bought { box-shadow: inset 0 0 0 3px #8ca070, 7px 8px #3a2a20, 0 0 0 4px rgba(114,161,120,.45); }
+/* A client card ends in a full-width button, so the stamp sits above it
+   rather than over the control the reader might click again. */
+.client-card .asset-acquired { bottom: 74px; }
+
+/* A control that answers the pointer. Buying is a commitment, so the button
+   under the finger moves like one instead of only changing colour. */
+.asset-card .purchase-row .primary-button:not(:disabled):active,
+.retainer-plot-buy button:not(:disabled):active,
+.asset-locate:active { translate: 0 2px; }
+.asset-card .purchase-row .primary-button:not(:disabled):active { box-shadow: inset -4px -4px #b67b2e, 1px 1px #17141a; }
+
+/* ---------------------------------------------------------------------------
+   The retainer ledger.
+
+   The map owns where a district is; this owns what the firm holds. Three
+   figures, a region rail, and the districts of one region -- about 400px at
+   1440 and a single scroll-snap row on a phone, because the page it joins is
+   already long.
+   --------------------------------------------------------------------------- */
+.retainer-ledger { margin: 0 4px 20px; padding: 14px; border: 3px solid #231b17; background: #23404a; box-shadow: inset 0 0 0 2px #49606a, 5px 5px #34261e; }
+
+/* Left-packed and capped rather than stretched across the panel: a meter that
+   spans 600px of a 1440 screen reads as a progress bar for the page. */
+.retainer-totals { display: grid; grid-template-columns: auto minmax(150px, 240px) minmax(150px, 270px); justify-content: start; gap: 28px; }
+.retainer-totals > div { min-width: 0; }
+.retainer-totals small { display: block; color: #6fd0c5; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .12em; }
+.retainer-totals strong { display: block; margin-top: 4px; color: #f0cc68; font-family: var(--font-pixel); font-size: 17px; font-variant-numeric: tabular-nums; }
+.retainer-totals strong i { color: rgba(240,204,104,.5); font-size: 11px; font-style: normal; }
+.retainer-totals em { display: block; margin-top: 4px; color: #9fc0c6; font-size: 10.5px; font-style: normal; }
+.retainer-meter { height: 7px; margin-top: 6px; display: block; border: 2px solid #16232b; background: #16232b; }
+.retainer-meter i { height: 100%; display: block; background: #6fd0c5; transition: width var(--mo-4) var(--mo-out); }
+.retainer-meter.is-lease i { background: #e8bf58; }
+
+.retainer-regions { margin-top: 13px; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.retainer-regions::-webkit-scrollbar { display: none; }
+.retainer-regions button {
+  min-height: 36px;
+  padding: 5px 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 2px solid #0f151d;
+  color: #a9bdc2;
+  background: #182a38;
+  box-shadow: inset -2px -2px #0e1c28;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+}
+.retainer-regions button b { color: #e8bf58; }
+.retainer-regions button i { height: 3px; position: absolute; left: 0; bottom: 0; background: rgba(111,208,197,.6); transition: width var(--mo-4) var(--mo-out); }
+.retainer-regions button:hover { color: #eaf5f2; }
+.retainer-regions button.active { color: #172233; background: #e8bf58; box-shadow: inset -3px -3px #a9782f; }
+.retainer-regions button.active b { color: #4c2f0d; }
+.retainer-regions button.active i { background: rgba(23,34,51,.35); }
+
+.retainer-plots { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 9px; }
+.retainer-plot {
+  min-height: 92px;
+  padding: 9px 10px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  border: 2px solid #16232b;
+  background: #1b3039;
+  box-shadow: inset 0 0 0 1px rgba(111,208,197,.12);
+}
+.retainer-plot-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.retainer-plot strong { color: #f4e4b7; font-family: var(--font-pixel); font-size: 10.5px; line-height: 1.35; }
+.retainer-plot em { color: #8fadb5; font-size: 10.5px; font-style: normal; line-height: 1.35; }
+.retainer-plot-map { width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(111,208,197,.35); color: #6fd0c5; background: transparent; }
+.retainer-plot-map:hover { color: #16232b; background: #6fd0c5; }
+.retainer-plot-yield { margin: auto 0 0; padding-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 8px; color: #8fd2a8; font-family: var(--font-pixel); font-size: 9px; }
+.retainer-plot-lock { margin: auto 0 0; padding-top: 6px; color: #e0a184; font-family: var(--font-pixel); font-size: 9px; line-height: 1.5; }
+.retainer-plot-buy { margin: auto 0 0; padding-top: 7px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.retainer-plot-buy b { color: #f0cc68; font-family: var(--font-pixel); font-size: 11px; }
+.retainer-plot-buy button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 2px solid #17141a;
+  color: #222019;
+  background: #eac459;
+  box-shadow: inset -3px -3px #b67b2e, 2px 2px #17141a;
+  font-family: var(--font-pixel);
+  font-size: 9.5px;
+}
+.retainer-plot-buy button:not(:disabled):hover { translate: 0 -2px; background: #f3d675; }
+.retainer-plot-buy button:disabled { color: #6f6455; background: #99917f; box-shadow: inset -2px -2px #7b7264, 2px 2px #17141a; }
+.retainer-plot.is-held { border-color: #3d704f; background: #1d3a33; }
+.retainer-plot.is-held strong { color: #dff0cf; }
+.retainer-plot.is-locked { background: #182530; }
+.retainer-plot.is-locked strong { color: #a9b6b8; }
+
+/* The signature. The row turns held, the seal presses on, and the three
+   figures above it travel to their new values -- so what a retainer is worth
+   is legible at the moment it is bought rather than in a panel somewhere. */
+.retainer-plot.just-signed { border-color: #8fd2a8; box-shadow: 0 0 0 3px rgba(143,210,168,.28); animation: plot-sign var(--mo-4) var(--mo-spring) both; }
+@keyframes plot-sign { from { scale: .96; } 55% { scale: 1.02; } }
+.retainer-plot-seal {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 4px 7px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 2px solid #24503f;
+  color: #eafbe6;
+  background: #2f6f52;
+  box-shadow: 2px 2px #12262c;
+  font-family: var(--font-pixel);
+  font-size: 8.5px;
+  rotate: -4deg;
+  animation: stamp-press var(--mo-3) var(--mo-brass) both;
+}
+.retainer-sweep { margin: 10px 0 0; color: #8fd2a8; font-family: var(--font-pixel); font-size: 9.5px; }
+.retainer-error { margin: 10px 0 0; color: #efad91; font-family: var(--font-pixel); font-size: 9.5px; }
+
+@media (max-width: 900px) {
+  .retainer-totals { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .retainer-totals > div:first-child { grid-column: 1 / 3; display: flex; align-items: baseline; gap: 9px; }
+  .retainer-totals > div:first-child strong { margin: 0; }
+}
+@media (max-width: 640px) {
+  .retainer-ledger { margin-inline: 0; padding: 12px 10px; }
+  /* One snapped row instead of eleven stacked cards: the same shape the client
+     grid already takes on a phone, and it keeps the ledger under a screenful. */
+  .retainer-plots {
+    display: flex;
+    gap: 9px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+  .retainer-plots::-webkit-scrollbar { display: none; }
+  .retainer-plot { flex: 0 0 min(72vw, 250px); scroll-snap-align: start; }
+  .retainer-plot-buy button { min-height: 40px; }
+  .retainer-plot-map { width: 30px; height: 30px; }
+  .firm-wallet .wallet-delta { top: 42px; }
+}
 
 /* The trophy case. Closed by default and out of the tab strip, because it is a
    record rather than a decision and it used to cost a whole tab slot. */

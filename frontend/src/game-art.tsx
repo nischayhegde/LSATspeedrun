@@ -645,6 +645,6 @@ export function ExplorableOffice({
 
 /* ------------------------------------------------------- empire map */
 
-export function EmpireWorldMap({ game, focusRival, focusConnection, onManage, empireValueLabel }: { game: GameState; focusRival?: string | null; focusConnection?: string | null; onManage: (tab: 'upgrades' | 'rivals' | 'connections') => void; empireValueLabel: string }) {
-  return <UnifiedEmpireMap game={game} focusRival={focusRival} focusConnection={focusConnection} onManage={onManage} empireValueLabel={empireValueLabel} />
+export function EmpireWorldMap({ game, focusRival, focusConnection, focusDistrict, onManage, empireValueLabel }: { game: GameState; focusRival?: string | null; focusConnection?: string | null; focusDistrict?: string | null; onManage: (tab: 'upgrades' | 'rivals' | 'connections') => void; empireValueLabel: string }) {
+  return <UnifiedEmpireMap game={game} focusRival={focusRival} focusConnection={focusConnection} focusDistrict={focusDistrict} onManage={onManage} empireValueLabel={empireValueLabel} />
 }

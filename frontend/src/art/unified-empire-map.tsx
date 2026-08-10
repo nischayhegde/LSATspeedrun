@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 
@@ -75,13 +75,25 @@ const landmarkTag: Record<MapLandmarkKind, string> = {
  * treading on the rival acquisitions the same map already carries — those are
  * discrete moves against named firms, priced at a full five cases each.
  *
+ * This board is the *place* half of the mechanic and deliberately no more than
+ * that: the districts of the region on screen, joined to the landmarks the
+ * planner laid out, with the camera flying to one when it is signed. What the
+ * firm holds across all five regions, and the two figures that holding pays,
+ * belong to the retainer ledger on the Firm tab — so the foot of this board
+ * hands off there instead of restating a firm-wide total in the corner of a
+ * map.
+ *
  * Collapsed by default, and it stays a strip on the left rail beside the
  * district guide rather than becoming a board the map has to wear. */
-function RetainerBoard({ game, regionKey, regionName, onTravel, defaultOpen = false }: {
+function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, highlightKey, defaultOpen = false }: {
   game: GameState
   regionKey: MapRegionKey
   regionName: string
   onTravel: (landmarkKey: string) => void
+  onOpenLedger: () => void
+  /** A district the Firm tab named on the way here, marked so the row the
+      player asked for is findable among ten others. */
+  highlightKey?: string | null
   /** Open on arrival when the Firm tab sent the player here to see what a
       connection unlocked. Anything the player was not asked for stays shut. */
   defaultOpen?: boolean
@@ -127,7 +139,7 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, defaultOpen = fa
           </p>
           <div className="uw-retainer-list">
             {districts.map((district) => (
-              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}`} key={district.key}>
+              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}${district.key === highlightKey ? ' is-asked-for' : ''}`} key={district.key}>
                 {/* Not a <header>: inside the mobile Explore sheet a bare
                     header element inherits that sheet's own title styling. */}
                 <div className="uw-retainer-head">
@@ -157,9 +169,10 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, defaultOpen = fa
             {region.swept
               ? `Every district in ${regionName} is retained. +${region.sweep_standing.toFixed(1)} standing for the sweep.`
               : `Hold all ${region.total} for a further +${region.sweep_standing.toFixed(1)} standing.`}
-            {' '}Firm-wide: {game.territory.standing.toFixed(1)} of {game.territory.standing_cap.toFixed(1)} standing,
-            {' '}{(game.territory.rent_relief_bps / 100).toFixed(0)}% of the lease covered.
           </p>
+          <button type="button" className="uw-retainer-ledger-link" onClick={onOpenLedger}>
+            All {game.territory.held} of {game.territory.total} in the ledger <i aria-hidden="true"><ChevronMark /></i>
+          </button>
           {secure.error && <p className="uw-retainer-error">That retainer could not be signed. Try again.</p>}
         </>
       )}
@@ -178,7 +191,7 @@ function tierState(tier: number, officeTier: number): MapSceneTier['state'] {
   return 'locked'
 }
 
-export function UnifiedEmpireMap({ game, focusRival, focusConnection, onManage, empireValueLabel }: {
+export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistrict, onManage, empireValueLabel }: {
   game: GameState
   /** A rival key handed over from the firm tab's "Show on the map". */
   focusRival?: string | null
@@ -187,6 +200,12 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, onManage, 
       region with the board already open — otherwise buying a network changes
       nothing the player can see. */
   focusConnection?: string | null
+  /** A single district, handed over by a row in the Firm tab's retainer
+      ledger. The ledger owns the money and the map owns the place, so this is
+      the ledger asking the map the one question it cannot answer itself:
+      where is it. Lands on the region, opens the board with the row marked,
+      and flies to the landmark as soon as the scene reports one. */
+  focusDistrict?: string | null
   onManage: (tab: 'upgrades' | 'rivals' | 'connections') => void
   empireValueLabel: string
 }) {
@@ -195,8 +214,13 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, onManage, 
   const currentRegion = regionForTier(game.office_tier)
   const focusAsset = focusRival ? game.catalog.assets.find((asset) => asset.key === focusRival && asset.type === 'rival') : undefined
   const focusNetwork = focusConnection ? game.catalog.assets.find((asset) => asset.key === focusConnection && asset.type === 'connection') : undefined
+  const focusPlot = focusDistrict ? game.territory.districts.find((district) => district.key === focusDistrict) : undefined
   const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>(
-    (focusAsset ? regionForTier(focusAsset.tier) : focusNetwork ? regionForTier(focusNetwork.tier) : currentRegion).key,
+    (focusPlot
+      ? regions.find((region) => region.key === focusPlot.region) ?? currentRegion
+      : focusAsset
+        ? regionForTier(focusAsset.tier)
+        : focusNetwork ? regionForTier(focusNetwork.tier) : currentRegion).key,
   )
   const [selectedKey, setSelectedKey] = useState(focusAsset ? `rival-${focusAsset.key}` : '')
   const [viewMode, setViewMode] = useState<MapViewMode>(focusAsset ? 'rivals' : 'career')
@@ -338,6 +362,19 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, onManage, 
     if (landmark) travelToLandmark(landmark)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landmarks])
+
+  // A district named by the ledger cannot be flown to until the scene has
+  // finished laying the region out and reported its directory, which happens
+  // several seconds after this component first renders. Waits for the place to
+  // exist, then goes once — a repeat would fight the player's own camera.
+  const flownTo = useRef<string | null>(null)
+  useEffect(() => {
+    const key = focusPlot?.landmark_key
+    if (!key || flownTo.current === key || focusPlot?.region !== activeRegionKey) return
+    if (!landmarks.some((candidate) => candidate.key === key)) return
+    flownTo.current = key
+    travelToLandmarkKey(key)
+  }, [focusPlot, landmarks, activeRegionKey, travelToLandmarkKey])
 
   const sendCameraCommand = (action: MapCameraAction) => {
     setCameraCommand((command) => ({ id: command.id + 1, action }))
@@ -487,7 +524,9 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, onManage, 
               regionKey={activeRegionKey}
               regionName={activeRegion.name}
               onTravel={(key) => { travelToLandmarkKey(key); setMobileControlsOpen(false) }}
-              defaultOpen={Boolean(focusNetwork)}
+              onOpenLedger={() => onManage('connections')}
+              highlightKey={focusPlot?.key}
+              defaultOpen={Boolean(focusNetwork || focusPlot)}
             />
             <div className="uw-mobile-camera-actions">
               <button type="button" onClick={() => { sendCameraCommand('focus'); setMobileControlsOpen(false) }}>Find counsel</button>
@@ -604,7 +643,9 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, onManage, 
             regionKey={activeRegionKey}
             regionName={activeRegion.name}
             onTravel={travelToLandmarkKey}
-            defaultOpen={Boolean(focusNetwork)}
+            onOpenLedger={() => onManage('connections')}
+            highlightKey={focusPlot?.key}
+            defaultOpen={Boolean(focusNetwork || focusPlot)}
           />
         </div>
 

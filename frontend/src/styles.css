@@ -370,7 +370,6 @@ h1, h2, h3, p { text-wrap: pretty; }
 
 /* Firm management */
 .tier-buy .primary-button { color: var(--navy); background: #e6c77f; }
-@keyframes bought-flash { 0%,70% { opacity: 1; } 100% { opacity: 0; pointer-events: none; } }
 .requirements { margin-top: 13px; color: #82847f; font-size: 8.5px; text-transform: capitalize; }
 .requirements.missing { color: #a55449; }
 .requirements.met { color: var(--green); }
@@ -414,7 +413,6 @@ h1, h2, h3, p { text-wrap: pretty; }
 @keyframes reward-pop { from { opacity: 0; transform: scale(.7) rotate(-4deg); } }
 @keyframes coin-fly { 0% { opacity: 0; transform: translate(0, 18px) rotate(0); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(190px, -45px) rotate(420deg); } }
 @keyframes client-card-activate { 50% { transform: translateY(-6px) rotate(.4deg); } }
-@keyframes activated-flash { 0%,68% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
 
 @media (max-width: 1120px) {
   .desktop-nav a { padding-inline: 10px; }

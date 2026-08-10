@@ -26,6 +26,7 @@ export function ProgressionMapPage() {
         game={game}
         focusRival={searchParams.get('rival')}
         focusConnection={searchParams.get('connection')}
+        focusDistrict={searchParams.get('district')}
         onManage={(tab) => navigate(`/firm?tab=${tab}`)}
         empireValueLabel={formatMoney(game.firm_valuation, true)}
       />

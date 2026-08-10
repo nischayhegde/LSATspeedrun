@@ -355,6 +355,14 @@
 .uw-retainer-row button:disabled { border-color: rgba(150, 161, 159, .3); color: #8b9795; background: transparent; }
 .uw-retainer-foot { margin: 0; padding: 7px 9px 9px; border-top: 1px solid rgba(220, 199, 145, .16); color: #93a59f; font-size: 9.5px; line-height: 1.45; }
 .uw-retainer-error { margin: 0; padding: 0 9px 9px; color: #e39b8f; font-size: 9.5px; }
+/* The row the Firm tab's ledger asked for, so it is findable among ten. */
+.uw-retainer-row.is-asked-for { border-left-color: #6fd0c5; background: rgba(111, 208, 197, .12); box-shadow: inset 0 0 0 1px rgba(111, 208, 197, .35); }
+/* Back to the ledger, which is where the firm-wide totals this foot used to
+   restate now live. */
+.uw-retainer-ledger-link { width: calc(100% - 18px); min-height: 28px; margin: 0 9px 9px; padding: 4px 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px; border: 1px solid rgba(229, 197, 117, .32); border-radius: 5px; color: #e7cf95; background: rgba(224, 195, 119, .08); font-family: var(--font-pixel); font-size: 7px; letter-spacing: .06em; }
+.uw-retainer-ledger-link:hover { color: #fff4d6; border-color: rgba(229, 197, 117, .6); background: rgba(224, 195, 119, .18); }
+.uw-retainer-ledger-link i { display: grid; place-items: center; }
+.uw-retainer-ledger-link svg { width: 11px; height: 11px; }
 
 @media (max-width: 900px) {
   .uw-map-rail > .uw-retainer-board { display: none; }
