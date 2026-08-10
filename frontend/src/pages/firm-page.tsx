@@ -150,7 +150,7 @@ export function FirmPage() {
       storeGame(queryClient, game)
       void play('client', { seed: key, intensity: .72 })
       setJustActivated(key)
-      window.setTimeout(() => setJustActivated(null), MOTION_TIMING.toastMs)
+      window.setTimeout(() => setJustActivated((current) => (current === key ? null : current)), ACQUIRED_HOLD_MS)
     },
   })
   const appearance = useMutation({
@@ -325,7 +325,9 @@ export function FirmPage() {
                 {item.contract && <div className="contract-mini"><span>{item.contract.cases_remaining} to bonus</span><span>{item.contract.loyalty} loyalty</span></div>}
                 <ClientRequirementLine client={item} game={game} />
                 <button className={item.selected ? 'secondary-button full' : 'primary-button full'} disabled={!item.unlocked || item.selected || client.isPending} onClick={() => client.mutate(item.key)}>{client.isPending && client.variables === item.key ? 'Signing…' : item.on_hold ? 'Retained · On hold' : item.selected ? 'Billing this rate' : !item.unlocked ? 'Locked' : `Bill at ${formatMoney(item.base_fee)}`}</button>
-                {justActivated === item.key && <div className="client-activated-flash"><Check /> NEW CLIENT ACTIVE</div>}
+                {/* Same stamp the asset cards take, for the same reason: the
+                    card that just changed is the thing worth looking at. */}
+                {justActivated === item.key && <span className="asset-acquired" aria-hidden="true"><Check size={14} /> ON RETAINER</span>}
               </article>
             ))}
             </div>
