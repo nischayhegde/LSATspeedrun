@@ -178,6 +178,8 @@ const SHEET_ORDER = [
   'src/case-session-styles.css',
   'src/firm-page.css',
   'src/office-page.css',
+  'src/login-page.css',
+  'src/onboarding-page.css',
 ]
 
 /**

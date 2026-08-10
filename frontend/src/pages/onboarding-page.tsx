@@ -9,6 +9,8 @@ import { MiniAvatar, OfficeScene } from '../game-art'
 import { useSound } from '../sound'
 import type { CharacterGender, GameResponse } from '../types'
 import { useGame } from './shared'
+// The rules in `styles.css` that only this screen can render.
+import '../onboarding-page.css'
 
 
 export function OnboardingPage() {

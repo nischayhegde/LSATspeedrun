@@ -296,52 +296,10 @@ h1, h2, h3, p { text-wrap: pretty; }
 .mini-avatar { width: 112px; height: 190px; overflow: visible; }
 
 /* Login */
-.login-page { min-height: 100vh; min-height: 100dvh; display: grid; grid-template: 76px 1fr / minmax(0, 1.6fr) minmax(390px, .65fr); color: white; background: #0e2634; }
-.login-nav { grid-column: 1 / -1; padding: 0 clamp(24px, 5vw, 70px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,.11); }
-.login-nav > span { color: #a8bbc4; font-size: 12px; letter-spacing: .04em; }
-.login-hero { min-width: 0; padding: 52px clamp(32px, 6vw, 90px) 50px; display: flex; flex-direction: column; justify-content: center; gap: 38px; background: radial-gradient(circle at 20% 10%, #23475a, transparent 35%), #102735; overflow: hidden; }
-.login-copy h1 { max-width: 820px; margin: 14px 0 19px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(44px, 5vw, 78px); line-height: .98; letter-spacing: -.045em; font-weight: 500; }
-.login-copy h1 em { color: #e6c27a; font-weight: 400; }
-.login-copy > p { max-width: 760px; margin: 0; color: #bfd0d7; font-size: 17px; line-height: 1.65; }
-.feature-list { margin-top: 27px; display: flex; flex-wrap: wrap; gap: 12px 22px; color: #e4ecef; font-size: 12px; font-weight: 700; }
-.feature-list span { display: flex; align-items: center; gap: 8px; }
-.feature-list svg { width: 17px; color: #e4bd70; }
-.login-scene { max-width: 990px; border: 1px solid rgba(231,197,126,.28); box-shadow: 0 30px 80px rgba(0,0,0,.38); transform: perspective(1200px) rotateX(1deg); }
-.login-panel-wrap { padding: 38px; display: grid; place-items: center; color: var(--ink); background: #eee8dc; }
-.login-panel { width: min(390px, 100%); padding: 38px 35px; position: relative; border: 1px solid #d6cbbb; border-radius: 18px; background: #fffdf7; box-shadow: 0 28px 70px rgba(8,20,27,.22); text-align: center; }
 .crest { width: 58px; height: 58px; margin: -67px auto 24px; display: grid; place-items: center; border: 5px solid #eee8dc; border-radius: 50%; color: #f2d494; background: var(--navy); box-shadow: 0 8px 20px rgba(16,39,53,.2); }
-.login-panel h2 { margin: 9px 0; font-family: Georgia, serif; color: var(--navy); font-size: 34px; font-weight: 500; }
-.login-panel > p { margin: 0 0 24px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.login-panel > small { display: block; margin-top: 22px; color: #8e8e86; font-size: 11.5px; }
-.google-button-slot { min-height: 44px; margin: 9px 0 15px; display: flex; justify-content: center; }
-.config-note { margin: 10px 0 16px; padding: 10px 12px; border-radius: 8px; color: var(--muted); background: #f1ede5; font-size: 12px; }
 
 /* Onboarding */
-.onboarding-page { min-height: calc(100vh - 72px); display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(430px, .65fr); background: #122a37; }
-.onboarding-scene-wrap { min-width: 0; padding: clamp(26px, 5vw, 70px); display: flex; flex-direction: column; justify-content: center; position: relative; background: radial-gradient(circle at 30% 15%, #2a4c5c, transparent 40%), #102735; }
-.onboarding-scene-wrap .office-scene { box-shadow: 0 32px 90px rgba(0,0,0,.5); }
-.opening-caption { margin-top: 25px; color: white; }
-.opening-caption span { color: #e3bd70; font-size: 11px; font-weight: 900; letter-spacing: .19em; }
-.opening-caption h2 { margin: 6px 0; font-family: Georgia, serif; font-size: clamp(27px, 3vw, 43px); font-weight: 400; line-height: 1.06; }
-.opening-caption p { margin: 0; color: #a9bdc6; }
-.onboarding-panel { padding: clamp(35px, 5vw, 70px); display: flex; flex-direction: column; justify-content: center; color: var(--ink); background: #f6f0e5; }
-.step-indicator { color: var(--gold-dark); font-size: 11.5px; font-weight: 900; letter-spacing: .16em; }
-.onboarding-panel h1 { margin: 12px 0 14px; font-family: Georgia, serif; color: var(--navy); font-size: clamp(37px, 4vw, 55px); line-height: 1.03; font-weight: 500; letter-spacing: -.035em; }
-.onboarding-panel > p { max-width: 600px; margin: 0 0 24px; color: var(--muted); line-height: 1.55; }
-.character-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.character-choice button { min-height: 205px; padding: 7px 8px 13px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; overflow: hidden; border: 1px solid #d9d0c1; border-radius: 13px; color: var(--navy); background: #fffdf8; font-size: 12px; font-weight: 800; }
-.character-choice button::before { content: ""; position: absolute; inset: 0; z-index: 0; background: radial-gradient(circle at 50% 45%, #f2dfba, transparent 48%); opacity: .75; }
-.character-choice button > * { position: relative; z-index: 1; }
-.character-choice button.selected { border: 2px solid var(--gold-dark); background: #fff8e9; box-shadow: 0 8px 25px rgba(154,108,40,.13); }
-.character-choice button > svg:last-child { position: absolute; top: 12px; right: 12px; width: 24px; height: 24px; padding: 4px; border-radius: 50%; color: white; background: var(--gold-dark); }
-.name-fields { margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.name-fields label { color: #6d706e; font-size: 11.5px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-.name-fields input { width: 100%; height: 47px; margin-top: 7px; padding: 0 13px; border: 1px solid #d3c9ba; border-radius: 8px; color: var(--navy); background: white; font-size: 14px; font-weight: 650; text-transform: none; letter-spacing: normal; }
-.name-fields input:focus { outline: 3px solid rgba(200,155,75,.15); border-color: var(--gold-dark); }
-.onboarding-cta { width: 100%; min-height: 52px; margin-top: 15px; }
-.onboarding-panel > small { margin-top: 11px; color: #858780; text-align: center; font-size: 11.5px; }
-.field-error { margin: -4px 0 0; color: #b23b3b; font-size: 12px; font-weight: 650; }
-.link-button { padding: 0; border: none; color: inherit; background: none; font-size: inherit; font-weight: 800; text-decoration: underline; cursor: pointer; }@keyframes hotspot { to { transform: scale(1.35); opacity: 0; } }.milestone-card { flex: 1; padding: 24px; box-shadow: 0 18px 45px rgba(14,34,44,.17); }.milestone-card h2 { margin: 18px 0 8px; font-family: Georgia, serif; font-size: 29px; font-weight: 500; }
+.onboarding-scene-wrap .office-scene { box-shadow: 0 32px 90px rgba(0,0,0,.5); }@keyframes hotspot { to { transform: scale(1.35); opacity: 0; } }.milestone-card { flex: 1; padding: 24px; box-shadow: 0 18px 45px rgba(14,34,44,.17); }.milestone-card h2 { margin: 18px 0 8px; font-family: Georgia, serif; font-size: 29px; font-weight: 500; }
 .milestone-card p { margin: 0; color: #b7c7ce; font-size: 12px; line-height: 1.55; }
 .milestone-numbers { margin-top: 30px; display: flex; align-items: baseline; justify-content: space-between; color: #b7c7ce; font-size: 11.5px; }
 .milestone-numbers strong { color: white; font-size: 18px; }
@@ -537,17 +495,7 @@ h1, h2, h3, p { text-wrap: pretty; }
      up by name, least useful first. mobile.css decides how many survive at
      phone widths; this only clears the room the vanished nav used to need. */
   .header-economy > .standing-questions { display: none; }
-  .page-wrap { width: min(100% - 28px, 720px); padding-block: 28px 58px; }
-  .login-page { grid-template: 67px auto auto / 1fr; }
-  .login-nav { padding-inline: 22px; }
-  .login-nav > span { display: none; }
-  .login-hero { padding: 50px 25px 38px; }
-  .login-copy h1 { font-size: clamp(42px, 12vw, 65px); }
-  .login-scene { max-height: 420px; }
-  .login-panel-wrap { padding: 55px 22px 42px; }
-  .onboarding-page { grid-template-columns: 1fr; }
-  .onboarding-scene-wrap { padding: 27px; }
-  .onboarding-panel { padding: 39px 26px 55px; }}
+  .page-wrap { width: min(100% - 28px, 720px); padding-block: 28px 58px; }}
 
 @media (max-width: 620px) {
   .app-header { padding-inline: 14px; }
@@ -559,9 +507,6 @@ h1, h2, h3, p { text-wrap: pretty; }
   .active-matter-banner .client-portrait { width: 60px; height: 65px; }
   .client-roster-status .client-portrait { width: 67px; height: 72px; }.rival-map { padding: 20px; }
   .rival-map > div:last-child { grid-template-columns: 1fr; }
-  .character-choice { gap: 8px; }
-  .character-choice button { min-height: 190px; }
-  .name-fields { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -926,11 +871,8 @@ h1, h2, h3 { letter-spacing: -.035em; }
 /* Just the page title here — the map's own headquarters panel just below
    carries every stat, so this bar stays plain text with no boxed card. */
 @keyframes water-shimmer { 50% { transform: translateX(12px); } }@keyframes boat-bob { 50% { transform: translateY(5px); } }@keyframes map-train { from { transform: translate(-220px, 55px); } to { transform: translate(1150px, -120px); } }@keyframes map-cloud { to { transform: translateX(1500px); } }
-.rival-map-node { z-index: 13; }.rival-building { width: 58px; height: 58px; position: absolute; left: 26px; bottom: 20px; border: 4px solid #26171c; background: #6f3446; box-shadow: inset -6px -6px #442432, inset 5px 0 #9c4b5c, 6px 7px rgba(21,33,29,.28); }.rival-building > i { width: 22px; height: 22px; display: grid; place-items: center; margin: -14px auto 6px; border: 3px solid #251920; color: #ffe498; background: #a7504a; font-family: var(--font-pixel); font-style: normal; font-weight: 900; }.rival-building b { width: 8px; height: 8px; display: inline-block; margin: 5px 3px; background: #efc45c; box-shadow: inset -2px -2px #a8732d; }.rival-map-node.owned .rival-building { background: #3c7655; box-shadow: inset -6px -6px #27533e, inset 5px 0 #63a06e, 6px 7px rgba(21,33,29,.28); }/* Pixel treatment for the rest of the game */
-.login-page { color: #f5e8bd; background: #101725; }
-.login-nav { border-bottom: 4px solid #080c13; background: #111a29; }.login-hero { background-color: #17283a; background-image: linear-gradient(90deg, rgba(105,153,157,.05) 2px, transparent 2px), linear-gradient(rgba(105,153,157,.05) 2px, transparent 2px), radial-gradient(circle at 20% 10%, #2b5662, transparent 38%); background-size: 18px 18px, 18px 18px, auto; }.login-copy h1 { font-family: var(--font-pixel); font-size: clamp(38px, 4.5vw, 68px); font-weight: 900; text-transform: uppercase; text-shadow: 5px 5px #0a111d; }.login-copy h1 em { color: #f0c65c; font-style: normal; }.login-copy > p { color: #b4c9ce; }.feature-list { font-family: var(--font-pixel); font-size: 10.5px; }.login-panel-wrap { color: #2e2a25; background-color: #d5c89f; background-image: linear-gradient(90deg, rgba(49,40,32,.06) 1px, transparent 1px), linear-gradient(rgba(49,40,32,.06) 1px, transparent 1px); background-size: 8px 8px; }.login-panel { border: 4px solid #141721; border-radius: 0; background: #f3e4ba; box-shadow: inset 0 0 0 3px #c59b58, 9px 9px #141721; }.login-panel h2 { font-family: var(--font-pixel); font-size: 26px; font-weight: 900; text-transform: uppercase; }.crest { border: 4px solid #141721; border-radius: 0; background: #1e3548; box-shadow: inset 0 0 0 2px #dbad4e, 5px 5px #141721; }.login-scene { border: 4px solid #080c13; border-radius: 0; box-shadow: 10px 10px #080c13; transform: none; }
+.rival-map-node { z-index: 13; }.rival-building { width: 58px; height: 58px; position: absolute; left: 26px; bottom: 20px; border: 4px solid #26171c; background: #6f3446; box-shadow: inset -6px -6px #442432, inset 5px 0 #9c4b5c, 6px 7px rgba(21,33,29,.28); }.rival-building > i { width: 22px; height: 22px; display: grid; place-items: center; margin: -14px auto 6px; border: 3px solid #251920; color: #ffe498; background: #a7504a; font-family: var(--font-pixel); font-style: normal; font-weight: 900; }.rival-building b { width: 8px; height: 8px; display: inline-block; margin: 5px 3px; background: #efc45c; box-shadow: inset -2px -2px #a8732d; }.rival-map-node.owned .rival-building { background: #3c7655; box-shadow: inset -6px -6px #27533e, inset 5px 0 #63a06e, 6px 7px rgba(21,33,29,.28); }/* Pixel treatment for the rest of the game */.crest { border: 4px solid #141721; border-radius: 0; background: #1e3548; box-shadow: inset 0 0 0 2px #dbad4e, 5px 5px #141721; }
 .office-scene.pixel-scene { border: 4px solid #080c13; border-radius: 0; box-shadow: inset 0 0 0 3px #34465a, 8px 8px #080c13; }
-.onboarding-page { background: #101725; }.onboarding-scene-wrap { background-color: #17283a; background-image: linear-gradient(90deg, rgba(105,153,157,.06) 2px, transparent 2px), linear-gradient(rgba(105,153,157,.06) 2px, transparent 2px); background-size: 18px 18px; }.opening-caption h2, .onboarding-panel h1 { font-family: var(--font-pixel); font-weight: 900; text-transform: uppercase; }.onboarding-panel { background-color: #d8cba4; background-image: linear-gradient(90deg, rgba(49,40,32,.06) 1px, transparent 1px), linear-gradient(rgba(49,40,32,.06) 1px, transparent 1px); background-size: 8px 8px; }.character-choice button { border: 3px solid #171923; border-radius: 0; background: #f3e4ba; box-shadow: 4px 4px #171923; font-family: var(--font-pixel); font-size: 10.5px; }.character-choice button.selected { border: 4px solid #171923; background: #f1d990; box-shadow: inset 0 0 0 3px #bd8b3e, 5px 5px #171923; }.name-fields label { font-family: var(--font-pixel); font-size: 10px; }.name-fields input { border: 3px solid #171923; border-radius: 0; background: #f8edcf; box-shadow: inset 3px 3px #c7ad78; font-family: var(--font-pixel); font-size: 11.5px; }
 .case-lobby, .firm-page { color: #2a2830; }.active-matter-copy > span, .active-matter-fee > span, .matter-tag small, .question-progress, .case-timer small { font-family: var(--font-pixel); }.choice { border: 3px solid #544937; border-radius: 0; box-shadow: 3px 3px #544937; }
 
 @media (max-width: 1120px) {
@@ -1045,7 +987,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
   .app-header { height: 62px; padding-inline: 10px; }
   .brand-mark { width: 36px; height: 36px; }.header-economy > span { font-size: 10.5px; }
   .office-game-page, .empire-game-page { padding: 18px 10px 35px; }
-  .office-explorer { min-height: 500px; aspect-ratio: auto; }.login-copy h1 { font-size: 38px; }
+  .office-explorer { min-height: 500px; aspect-ratio: auto; }
 }@keyframes airport-shuttle{50%{translate:30px 0}}@keyframes orbital-ready{50%{translate:0 -7px;filter:drop-shadow(0 9px #f1b14e)}}@keyframes mega-core-float{50%{translate:0 -6px}}@keyframes mega-particle{50%{translate:8px -15px;opacity:.2}}/* Client archetypes read like case files, and every new portrait has a skyline. */.client-civic .portrait-skyline i{background:#d0bc79}.client-property .portrait-skyline i{background:repeating-linear-gradient(#344d56 0 5px,#e2c468 5px 7px)}.client-health::after{content:"+";position:absolute;right:8px;top:7px;color:#f1e8c4;font-family:var(--font-pixel);font-size:15px}.client-media .portrait-skyline i{background:#e9bd5f;box-shadow:0 0 7px #e9bd5f}.client-orbit::before,.client-lunar::before,.client-nexus::before{content:"";width:54px;height:54px;position:absolute;left:18px;top:17px;border:2px solid rgba(117,225,213,.38);border-radius:50%;box-shadow:0 0 12px rgba(117,225,213,.25)}
 
 /* Higher headquarters transform from global tower to orbital command room. */@keyframes treaty-spin{to{transform:rotate(360deg)}}/* The expanded rival roster uses recognizable architecture families. */

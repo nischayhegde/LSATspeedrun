@@ -7,6 +7,8 @@ import { api } from '../api'
 import { Brand, ErrorNotice } from '../components'
 import { SoundControls, useSound } from '../sound'
 import { storeAuthenticatedUser } from './shared'
+// The rules in `styles.css` that only this screen can render.
+import '../login-page.css'
 
 /**
  * The office behind the sign-in panel is decoration, but importing it directly
