@@ -8,7 +8,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
 from .auth import clear_auth_cookies, issue_auth_cookies, issue_mobile_token, require_auth
-from .coaching import CoachingProviderError, provider_ready
+from .coaching import CoachingProviderError, coaching_diagnostics, provider_ready
 from .enforcement import GateRejection
 from . import history
 from .extensions import db
@@ -162,6 +162,12 @@ def health():
                 "ready": provider_ready(),
                 "model": current_app.config["COACHING_MODEL"],
                 "reasoning_effort": current_app.config["COACHING_REASONING_EFFORT"],
+                # Unreadable model replies settle the attempt anyway, so they
+                # never reach the platform's error metric. Reporting the counts
+                # here gives a check that does not depend on searching logs.
+                # Per process, so a Lambda container resets them; the
+                # `coaching.*` log lines are the durable record.
+                "response_failures": coaching_diagnostics(),
             },
             "async_jobs": {
                 "mode": current_app.config["AI_JOBS_MODE"],

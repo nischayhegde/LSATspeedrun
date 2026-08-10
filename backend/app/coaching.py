@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 import requests
@@ -30,6 +31,165 @@ VERDICTS = {"strong", "mostly_correct", "partial", "misconception", "unsupported
 
 class CoachingProviderError(RuntimeError):
     pass
+
+
+# A settled attempt pays out whether or not coaching arrived, and the Lambda
+# handler returns success for a job that finished with a "coaching unavailable"
+# notice — correctly, because the student was not harmed. The consequence is
+# that the platform error metric reads zero for a model that has stopped
+# returning readable JSON, so the only way this becomes visible is if this
+# module says so itself. These counters are that signal locally and are
+# reported by /v1/health; in Lambda a container is short-lived, so the ERROR
+# log lines below (each with a stable `coaching.*` event token to build a
+# metric filter on) are the durable half.
+_counter_lock = threading.Lock()
+_counters: dict[str, int] = {}
+
+
+def _record(event: str) -> int:
+    with _counter_lock:
+        _counters[event] = _counters.get(event, 0) + 1
+        return _counters[event]
+
+
+def coaching_diagnostics() -> dict[str, int]:
+    """Counts of the response failures this process has seen, newest values."""
+
+    with _counter_lock:
+        return dict(_counters)
+
+
+def _strip_code_fence(text: str) -> str:
+    """Unwrap ```json ... ``` fencing, which several models add despite being
+    asked for an object and which is not itself a defect worth failing on."""
+
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    body = stripped[3:]
+    newline = body.find("\n")
+    if newline != -1 and body[:newline].strip().lower() in {"", "json"}:
+        body = body[newline + 1 :]
+    end = body.rfind("```")
+    return (body[:end] if end != -1 else body).strip()
+
+
+def _close_truncated(text: str) -> str | None:
+    """Shut an object that the model stopped writing part-way through.
+
+    Walks the text tracking string state and the container stack, then closes
+    whatever is still open. A reply cut off mid-token cannot be closed this way,
+    so the caller retries this against progressively earlier commas.
+    """
+
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]":
+            if not stack or stack[-1] != char:
+                return None
+            stack.pop()
+    if not stack:
+        return None
+    repaired = text
+    if in_string:
+        repaired += '"'
+    return repaired + "".join(reversed(stack))
+
+
+def _decode_json_object(content: str) -> tuple[dict | None, str]:
+    """Read one JSON object out of a model reply, or report that it cannot be.
+
+    Returns the object and the name of the step that recovered it, so a caller
+    can log that a reply needed rescuing rather than treating a salvaged
+    response as if the model had behaved. `("clean")` means it parsed as sent.
+
+    The steps are ordered by how much they assume. Surrounding prose and code
+    fences are cosmetic and common; truncation is a real defect, but a body
+    that is whole up to the cut still carries the fields the student needs, and
+    `_validate_coaching` remains the judge of whether enough of it survived.
+    """
+
+    if not isinstance(content, str) or not content.strip():
+        return None, ""
+
+    def attempt(candidate: str) -> dict | None:
+        try:
+            value = json.loads(candidate)
+        except (ValueError, TypeError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    direct = attempt(content)
+    if direct is not None:
+        return direct, "clean"
+
+    unfenced = _strip_code_fence(content)
+    if unfenced != content.strip():
+        fenced = attempt(unfenced)
+        if fenced is not None:
+            return fenced, "fenced"
+
+    start = unfenced.find("{")
+    if start == -1:
+        return None, ""
+    end = unfenced.rfind("}")
+    if end > start:
+        embedded = attempt(unfenced[start : end + 1])
+        if embedded is not None:
+            return embedded, "embedded"
+
+    # Truncated: close what is open, and if the tail is a half-written token,
+    # step back one complete element at a time. Bounded so a pathological reply
+    # cannot spin.
+    body = unfenced[start:]
+    for _ in range(40):
+        closed = _close_truncated(body)
+        if closed is not None:
+            repaired = attempt(closed)
+            if repaired is not None:
+                return repaired, "truncated"
+        cut = _last_top_level_comma(body)
+        if cut is None:
+            break
+        body = body[:cut]
+    return None, ""
+
+
+def _last_top_level_comma(text: str) -> int | None:
+    """Index of the final comma that sits outside any string, so a partial
+    trailing element can be dropped without cutting into a literal."""
+
+    in_string = False
+    escaped = False
+    found = None
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == ",":
+            found = index
+    return found
 
 
 def provider_ready() -> bool:
@@ -69,35 +229,99 @@ def _chat(system: str, data: dict, max_tokens: int = 5000) -> tuple[dict, dict]:
         "response_format": {"type": "json_object"},
         "max_completion_tokens": max_tokens,
     }
-    try:
-        response = requests.post(
-            _endpoint(),
-            headers={
-                "Authorization": f"Bearer {current_app.config['TFY_API_KEY']}",
-                "Content-Type": "application/json",
-                # Every request carries a student's own written reasoning. Ask the
-                # gateway to opt out of logging/retention on its side regardless of
-                # its default tenant configuration; this is a defense-in-depth
-                # header, not a substitute for a signed zero-retention DPA with
-                # whichever provider TFY_URL actually points at in this deployment.
-                "X-TFY-LOGGING-CONFIG": json.dumps({"enabled": False}),
-            },
-            json=body,
-            timeout=120,
+    # One retry, and only for a reply that could not be read. A transport error
+    # or an HTTP status is not retried here: those are the failures where a
+    # second call is most likely to be a rate limit or an outage being made
+    # worse, and the caller is an async job that is free to run again. An
+    # unreadable body is different — it is non-deterministic, the request was
+    # already paid for, and asking once more is the cheapest thing that can
+    # actually fix it. Coaching runs off the settlement path, so the extra
+    # latency costs a student nothing.
+    attempts = 2
+    for attempt_number in range(1, attempts + 1):
+        try:
+            response = requests.post(
+                _endpoint(),
+                headers={
+                    "Authorization": f"Bearer {current_app.config['TFY_API_KEY']}",
+                    "Content-Type": "application/json",
+                    # Every request carries a student's own written reasoning. Ask the
+                    # gateway to opt out of logging/retention on its side regardless of
+                    # its default tenant configuration; this is a defense-in-depth
+                    # header, not a substitute for a signed zero-retention DPA with
+                    # whichever provider TFY_URL actually points at in this deployment.
+                    "X-TFY-LOGGING-CONFIG": json.dumps({"enabled": False}),
+                },
+                json=body,
+                timeout=120,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            choice = payload["choices"][0]
+            content = choice["message"]["content"]
+            finish_reason = choice.get("finish_reason")
+        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as exc:
+            count = _record("transport_failed")
+            current_app.logger.error(
+                "coaching.transport_failed: the coaching request did not return a usable "
+                "HTTP response (error=%s, occurrences_in_process=%d)",
+                type(exc).__name__,
+                count,
+            )
+            raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.") from exc
+
+        parsed, how = _decode_json_object(content)
+        if parsed is not None:
+            if how != "clean":
+                # Salvaged, not clean. Recorded at warning so that a model
+                # drifting into prose or truncation is visible well before it
+                # degrades into the unreadable case below.
+                count = _record(f"salvaged_{how}")
+                current_app.logger.warning(
+                    "coaching.response_salvaged: recovered the coaching object from a reply that "
+                    "was not valid JSON as sent (method=%s, finish_reason=%s, chars=%d, "
+                    "attempt=%d, occurrences_in_process=%d)",
+                    how,
+                    finish_reason,
+                    len(content or ""),
+                    attempt_number,
+                    count,
+                )
+            return parsed, {
+                "model": payload.get("model") or current_app.config["COACHING_MODEL"],
+                "usage": payload.get("usage") or {},
+            }
+
+        if attempt_number < attempts:
+            count = _record("unreadable_retried")
+            current_app.logger.warning(
+                "coaching.response_unreadable_retrying: the model returned no readable JSON "
+                "object; asking once more (finish_reason=%s, chars=%d, occurrences_in_process=%d)",
+                finish_reason,
+                len(content or ""),
+                count,
+            )
+            continue
+
+        # Nothing to show the student and nothing the platform's own error
+        # metric will count, so this is the line that has to carry it. The
+        # reply itself is never logged: it is coaching written about a
+        # student's own reasoning. `finish_reason="length"` distinguishes a
+        # truncation, which is a token-budget problem, from a model that has
+        # started answering in prose.
+        count = _record("unreadable")
+        current_app.logger.error(
+            "coaching.response_unreadable: the model returned no readable JSON object after %d "
+            "attempts and this attempt will settle without coaching (finish_reason=%s, chars=%d, "
+            "occurrences_in_process=%d)",
+            attempts,
+            finish_reason,
+            len(content or ""),
+            count,
         )
-        response.raise_for_status()
-        payload = response.json()
-        content = payload["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-        if not isinstance(parsed, dict):
-            raise ValueError("Response was not an object")
-        return parsed, {
-            "model": payload.get("model") or current_app.config["COACHING_MODEL"],
-            "usage": payload.get("usage") or {},
-        }
-    except (requests.RequestException, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        current_app.logger.warning("TrueFoundry coaching request failed: %s", type(exc).__name__)
-        raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.") from exc
+        raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.")
+
+    raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.")
 
 
 def _question_data(question: Question) -> dict:
