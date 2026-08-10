@@ -70,6 +70,7 @@ export function save(file, data) {
 const CLOCK_SCRIPT = () => {
   const realRequest = window.requestAnimationFrame.bind(window)
   const realCancel = window.cancelAnimationFrame.bind(window)
+  const realNow = performance.now.bind(performance)
   // Captured handles live in their own numeric range so that cancelling one is
   // never confused with cancelling a real frame the page still owns.
   const CAPTURED = 1e9
@@ -77,7 +78,7 @@ const CLOCK_SCRIPT = () => {
   let capturing = false
   let queue = new Map()
   const clock = {
-    now: performance.now(),
+    now: realNow(),
     step: 1000 / 60,
     frames: 0,
     errors: [],
@@ -113,8 +114,27 @@ const CLOCK_SCRIPT = () => {
       clock.release()
       window.requestAnimationFrame = realRequest
       window.cancelAnimationFrame = realCancel
+      performance.now = realNow
     },
   }
+  /*
+   * The wall clock has to go too, not just the frame clock.
+   *
+   * Owning rAF is not enough on its own, and believing it was cost this
+   * harness its credibility for a while: two runs of the same code, same
+   * district, same frame count, reported The Circuit's walkers-in-a-solid as
+   * 4.3% and 7.2%, and bodies-inside-a-vehicle as 118 and 0. The scene reads
+   * `performance.now()` directly in four places the frame timestamp does not
+   * reach — it rebases `previousFrame` on it after a visibility change, and it
+   * measures the idle interval that starts the camera's slow drift from it.
+   * The camera is what decides which spawn points are unseen, and spawning is
+   * what decides who is on the pavement, so a run's population depended on how
+   * long the harness had taken to get there.
+   *
+   * Frozen between ticks and advanced by exactly one step with each, so the two
+   * clocks tell the same time and a district is a function of its frame count.
+   */
+  performance.now = () => (capturing ? clock.now : realNow())
   window.requestAnimationFrame = (callback) => {
     if (!capturing) return realRequest(callback)
     const id = nextId += 1
@@ -138,7 +158,7 @@ const CLOCK_SCRIPT = () => {
       // clamps to zero and every delta after it is exactly one step. Rebasing
       // to the current instant instead would leave the first frame carrying
       // whatever sub-millisecond gap the assignment happened to take.
-      clock.now = performance.now() - 10000
+      clock.now = realNow() - 10000
     },
   })
   window.__clock = clock
