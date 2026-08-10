@@ -573,26 +573,56 @@ async function measure(settings) {
     return Math.max(0, -(lateral - beam))
   }
 
-  // A person's body, measured off an actual rig rather than assumed, so this
-  // cannot drift if walker scale changes.
+  /*
+   * A person's body, measured off an actual rig rather than assumed, so this
+   * cannot drift if walker scale changes.
+   *
+   * Measured off a *standing* one, and this is not a detail. Taking `walkers[0]`
+   * is the obvious way to write it and it silently measured three districts
+   * against three different bodies: that walker is parked and scaled away in
+   * The Circuit, so its box is degenerate, and the region was tested with a 6cm
+   * disc spanning y .13 to .19 while the Old Quarter got a .29 disc spanning
+   * .54 to 1.46. The two are not comparable in either direction — the small
+   * disc catches less, but sitting at ankle height it clears the ride-over rule
+   * against anything over .31 tall instead of anything over .72, so kerbs,
+   * walls and hedges all become walkers-in-a-building. Most of The Circuit
+   * looking an order of magnitude worse than the other two districts was this.
+   *
+   * The median of the plausible ones rather than the first: one walker mid-
+   * stride with its arms out is a wider body than the district's typical
+   * person, and the width pass is tuned against the typical one.
+   */
   let walkerRadius = .12
   let walkerLow = .1
   let walkerHigh = .5
-  if (crowd?.walkers?.length) {
-    const sample = crowd.walkers[0]
-    const root = sample.rig?.root ?? sample.root
-    if (root) {
+  {
+    const bodies = []
+    for (const walker of crowd?.walkers ?? []) {
+      if (!walker.active) continue
+      const root = walker.rig?.root ?? walker.root
+      if (!root || !root.visible) continue
       const box = new THREE.Box3().setFromObject(root)
-      if (!box.isEmpty()) {
-        walkerRadius = Math.max(.06, Math.min(box.max.x - box.min.x, box.max.z - box.min.z) / 2)
-        const height = Math.max(.1, box.max.y - box.min.y)
-        // From knee to shoulder. Starting at the feet would make every kerb and
-        // doorstep a hit; stopping short of the crown ignores a hat brushing an
-        // eave, which is not what anyone means by walking through a building.
-        walkerLow = box.min.y + height * .3
-        walkerHigh = box.min.y + height * .92
-      }
+      if (box.isEmpty()) continue
+      const height = box.max.y - box.min.y
+      // A standing person at map scale. Anything under this is a rig that has
+      // not been adopted, or one scaled away for a fade.
+      if (height < .5) continue
+      bodies.push({
+        radius: Math.min(box.max.x - box.min.x, box.max.z - box.min.z) / 2,
+        low: box.min.y + height * .3,
+        high: box.min.y + height * .92,
+      })
     }
+    if (bodies.length) {
+      const middle = (pick) => {
+        const sorted = bodies.map(pick).sort((a, b) => a - b)
+        return sorted[sorted.length >> 1]
+      }
+      walkerRadius = Math.max(.06, middle((body) => body.radius))
+      walkerLow = middle((body) => body.low)
+      walkerHigh = middle((body) => body.high)
+    }
+    state.walkerBodies = bodies.length
   }
 
   const step = () => {
@@ -800,7 +830,12 @@ async function measure(settings) {
     // The body the two walker tests use, reported rather than assumed: it is
     // read off a live rig, and a rig that has not finished loading gives a
     // different one, which would silently rescale every share below.
-    walkerBody: { radius: +walkerRadius.toFixed(4), low: +walkerLow.toFixed(4), high: +walkerHigh.toFixed(4) },
+    walkerBody: {
+      radius: +walkerRadius.toFixed(4),
+      low: +walkerLow.toFixed(4),
+      high: +walkerHigh.toFixed(4),
+      from: state.walkerBodies,
+    },
     walkerStaticFrames: state.walkerStaticFrames,
     walkerStaticPerFrame: +(state.walkerStaticHits / state.frames).toFixed(3),
     walkerStaticShare: +(state.walkerStaticHits / Math.max(1, state.walkerSamples)).toFixed(4),
@@ -877,6 +912,7 @@ for (const key of keys) {
   // buildings, printed rather than left in the JSON: a fix for either is only
   // credible against a before figure someone actually read.
   console.log('   walkers:', JSON.stringify({
+    body: report[key].walkerBody,
     samples: report[key].walkerSamples,
     inBuildingFrames: report[key].walkerStaticFrames,
     perFrame: report[key].walkerStaticPerFrame,
