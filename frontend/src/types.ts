@@ -54,6 +54,14 @@ export type GameAsset = {
    * so it is never an hourly figure. Absent on cosmetics, which have no effect.
    */
   payout_mult?: number
+  /**
+   * Connections only: the districts this network lets you put on retainer, and
+   * whether each is currently held. The office relationship wall reads this so a
+   * seal can say which network it is and how much of the map that network has
+   * actually been used for.
+   */
+  districts?: Array<{ key: string; name: string; held: boolean }>
+  districts_held?: number
 }
 
 export type ClientContract = {

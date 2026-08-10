@@ -1214,12 +1214,23 @@ def _district_connection_gate() -> dict[str, str]:
 DISTRICT_CONNECTION_GATE = _district_connection_gate()
 
 
-def _connection_district_names() -> dict[str, list[str]]:
-    """The districts each connection opens, for its catalog copy."""
+def _connection_district_keys() -> dict[str, list[str]]:
+    """The districts each connection opens, keyed."""
     opened: dict[str, list[str]] = {}
     for district_key, connection_key in DISTRICT_CONNECTION_GATE.items():
-        opened.setdefault(connection_key, []).append(DISTRICT_BY_KEY[district_key]["name"])
+        opened.setdefault(connection_key, []).append(district_key)
     return opened
+
+
+CONNECTION_DISTRICTS = _connection_district_keys()
+
+
+def _connection_district_names() -> dict[str, list[str]]:
+    """The districts each connection opens, for its catalog copy."""
+    return {
+        connection_key: [DISTRICT_BY_KEY[key]["name"] for key in district_keys]
+        for connection_key, district_keys in CONNECTION_DISTRICTS.items()
+    }
 
 
 def _describe_connection_unlocks() -> None:
@@ -1838,7 +1849,7 @@ def _achievement_state(profile: PlayerProfile, owned: set[str]) -> list[dict]:
     return [{"key": key, "name": name, "description": description, "unlocked": unlocked} for key, name, description, unlocked in values]
 
 
-def _public_asset(item: dict, profile: PlayerProfile, owned: set[str]) -> dict:
+def _public_asset(item: dict, profile: PlayerProfile, owned: set[str], held: set[str] | None = None) -> dict:
     # `payout_mult` and `passive_hourly` are published as numbers because the
     # office scene reports what each item contributes, and it has to be able to
     # tell a genuine hourly earner from a case multiplier from a cosmetic that
@@ -1862,6 +1873,18 @@ def _public_asset(item: dict, profile: PlayerProfile, owned: set[str]) -> dict:
         public["list_cost"] = item["cost"]
         public["discount_bps"] = discount_bps
         public["cost"] = _asset_cost(profile, item)
+    if item["type"] == "connection":
+        # The office draws one seal per connection and, until now, had no way to
+        # tell them apart or to know whether the network had been used for
+        # anything. Publishing the districts it gates lets the relationship wall
+        # read directly off the map: a seal for a network you own, a ribbon for
+        # each district that network let you sign.
+        district_keys = CONNECTION_DISTRICTS.get(item["key"], [])
+        public["districts"] = [
+            {"key": key, "name": DISTRICT_BY_KEY[key]["name"], "held": key in (held or set())}
+            for key in district_keys
+        ]
+        public["districts_held"] = sum(1 for key in district_keys if key in (held or set()))
     public["owned"] = item["key"] in owned
     public["available"] = not public["owned"] and _requirements_met(item, profile, owned)
     public["requirements"] = _requirement_copy(item)
@@ -2021,7 +2044,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
     }
     if include_catalog:
         payload["catalog"] = {
-            "assets": [_public_asset(item, profile, owned) for item in ASSETS],
+            "assets": [_public_asset(item, profile, owned, held) for item in ASSETS],
             "clients": [_public_client(client, profile, owned) for client in CLIENTS],
             "tiers": [
                 {
