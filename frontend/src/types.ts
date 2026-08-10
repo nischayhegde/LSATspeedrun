@@ -812,6 +812,8 @@ export type StrategySectionResult = {
   with_note: string
   without_headline: string
   without_note: string
+  /** The two sentences the armed gate's record line shows, both counts rather than claims. */
+  summary: string
   detail: string
 }
 

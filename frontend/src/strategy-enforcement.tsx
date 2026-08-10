@@ -926,12 +926,23 @@ export function useStrategyGate(
     staleTime: 120_000,
     retry: false,
   })
+  // Read out of the section this question belongs to, which is the same array
+  // the dashboard's strategy panel ranks — so the two surfaces cannot report
+  // different records for the same approach. The account-wide `results` list
+  // next to it pools every section an approach was ever assigned in, and an
+  // approach's totals inside one section are different numbers the moment it
+  // was tried outside its catalogue section. The panel is per-section because
+  // the sections are measured on different approaches against different
+  // baselines; the line below is answering the same question about the same
+  // approach, so it has no business answering it on a different basis.
   const reading = useMemo(() => {
-    const results = record.data?.performance.strategy_lab?.results ?? []
+    const section = item?.question.section
+    const sections = record.data?.performance.strategy_lab?.sections ?? []
+    const results = sections.find((entry) => entry.section === section)?.results ?? []
     const found = results.find((entry) => entry.key === gate?.strategy_key)
     if (!found || (!found.sample && !found.control_sample)) return null
     return { summary: found.summary, detail: found.detail }
-  }, [record.data, gate?.strategy_key])
+  }, [record.data, gate?.strategy_key, item?.question.section])
 
   // Folded once the required work is done, until the student asks for it back
   // or the server refuses the artifact.

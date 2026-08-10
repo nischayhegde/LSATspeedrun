@@ -1531,13 +1531,20 @@ def test_the_comparative_gate_hides_the_choices_until_both_passages_are_mapped(a
         assert "whereas" in attempt.strategy_artifact_json["relationship"]
 
 
+def section_result(performance: dict, section: str, key: str) -> dict:
+    """The figures for one approach inside one section, as the panel reads them."""
+    reading = next(entry for entry in performance["sections"] if entry["section"] == section)
+    return next(result for result in reading["results"] if result["key"] == key)
+
+
 def test_a_cleared_gate_leaves_a_running_record_for_the_next_time_it_is_offered(app):
     """The line the gate panel shows a returning student, end to end.
 
-    `useStrategyGate` looks this approach up by key in `strategy_lab.results`
-    and renders `summary` and `detail` above the fields. Nothing renders until
-    an attempt carrying that key exists, which is why the surface stayed
-    invisible for the one approach that could never be assigned.
+    `useStrategyGate` looks this approach up by key inside the reading for the
+    section the question belongs to, `strategy_lab.sections[...].results`, and
+    renders `summary` and `detail` above the fields. Nothing renders until an
+    attempt carrying that key exists, which is why the surface stayed invisible
+    for the one approach that could never be assigned.
     """
     client = app.test_client()
     headers = login(client, "record@example.test")
@@ -1567,8 +1574,8 @@ def test_a_cleared_gate_leaves_a_running_record_for_the_next_time_it_is_offered(
     )
 
     with app.app_context():
-        results = strategy_performance(user_id)["results"]
-        reading = next(result for result in results if result["key"] == "comparative_matrix")
+        performance = strategy_performance(user_id)
+        reading = section_result(performance, "Reading Comprehension", "comparative_matrix")
         # Exactly the two conditions the panel tests before it draws anything.
         assert reading["sample"] or reading["control_sample"]
         assert reading["sample"] == 1
@@ -1577,3 +1584,97 @@ def test_a_cleared_gate_leaves_a_running_record_for_the_next_time_it_is_offered(
         # rather than a claim about the approach.
         assert reading["summary"] == "So far you're at 1/1 with it. Not enough questions without it yet to compare."
         assert reading["detail"] == "You finished the steps on 1 of the 1 time it was enforced."
+
+
+def test_the_record_line_and_the_ranking_panel_cannot_report_different_records(app):
+    """Two surfaces, one approach, one set of numbers.
+
+    The line under an armed gate and the strategy panel on the dashboard are
+    both answering "how have you done with this approach". They used to answer
+    it from different aggregations: the line read the account-wide
+    `strategy_lab.results`, the panel read the per-section figures. Those are
+    the same number right up until an approach is assigned outside its own
+    catalogue section, and then a student can read two different records for
+    one approach on two screens in the same run.
+
+    Per-section is the basis both now use. The account-wide figure is the one
+    that cannot be right for either surface: it pools arms drawn from different
+    question pools and shrunk toward different baselines, which is exactly what
+    `_section_reading` splits apart, and the split is a thing the sections were
+    asked to have. Scoping the line to the section of the question in front of
+    the student makes it read the identical array the panel ranks, so the two
+    agree by construction rather than by both being maintained the same way.
+    """
+    client = app.test_client()
+    headers = login(client, "two-surfaces@example.test")
+    create_game(client, headers)
+    session = start(client, headers)
+
+    with app.app_context():
+        user_id = db.session.get(StudySession, session["id"]).user_id
+
+    # Once on a real two-passage set, which is where this approach belongs.
+    arm_comparative(app, session["id"])
+    item_id = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]["current_item"]["id"]
+    assert (
+        submit(
+            client,
+            headers,
+            session["id"],
+            item_id,
+            {
+                "passage_a": "The first author wants records copied and handed over for nothing.",
+                "passage_b": "The second author wants the archivists paid before anything is copied.",
+                "relationship": "Both want a usable archive, whereas one counts the reader's costs and the other the keeper's.",
+            },
+            key="in-section",
+        ).status_code
+        == 200
+    )
+
+    # An answered question parks the run on its debrief, and the debrief route
+    # wants the case settled through the game layer first. None of that is what
+    # this test is about, so the run is walked on the way `seed_demo_learner`
+    # walks it.
+    with app.app_context():
+        db.session.get(StudySession, session["id"]).pending_attempt_id = None
+        db.session.commit()
+
+    # And once on a Logical Reasoning question. `_candidate_keys` never offers a
+    # Reading Comprehension approach there, so this is not a state the allocator
+    # produces today; nothing in the schema forbids it, a rename or a widened
+    # candidate list would produce it, and it is the only condition under which
+    # the two surfaces could ever have disagreed.
+    arm(app, session["id"], "comparative_matrix", level=LEVEL_NONE, section="Logical Reasoning")
+    item_id = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]["current_item"]["id"]
+    assert submit(client, headers, session["id"], item_id, None, key="out-of-section").status_code == 200
+
+    with app.app_context():
+        performance = strategy_performance(user_id)
+        account_wide = next(
+            result for result in performance["results"] if result["key"] == "comparative_matrix"
+        )
+        reading = section_result(performance, "Reading Comprehension", "comparative_matrix")
+        logical = section_result(performance, "Logical Reasoning", "comparative_matrix")
+
+        # The disagreement, stated: three different records for one approach.
+        assert account_wide["sample"] == 2
+        assert reading["sample"] == 1
+        assert logical["sample"] == 1
+        assert account_wide["summary"] != reading["summary"]
+        assert (
+            account_wide["summary"]
+            == "So far you're at 2/2 with it. Not enough questions without it yet to compare."
+        )
+        assert (
+            reading["summary"]
+            == "So far you're at 1/1 with it. Not enough questions without it yet to compare."
+        )
+
+        # Both surfaces read the section the question is in, so the record shown
+        # under a gate on a Reading Comprehension question is the Reading
+        # Comprehension one, and it is the same object the panel ranks.
+        panel = next(entry for entry in performance["sections"] if entry["section"] == "Reading Comprehension")
+        assert reading in panel["results"]
+        # Every field the line renders has to survive the move to the sections.
+        assert reading["summary"] and reading["detail"]
