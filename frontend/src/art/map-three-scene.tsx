@@ -4023,12 +4023,30 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
     const farmstead = createFarmstead(.66)
     farmstead.position.set(site.x, .04, site.z)
     farmstead.rotation.y = facing + Math.PI / 2
+    /*
+     * The rails go round the yard the barn stands in, which is the ground the
+     * patch above just paved: `yardD ± 1.15`, and the pen is 2.3 deep. So the
+     * pen belongs at the group's origin.
+     *
+     * It used to be offset `1.55 * site.side`, and that `site.side` was the
+     * fault. `facing` already turns with the side, so the group's local +x is
+     * the corridor's outward normal on whichever side the farm is — multiplying
+     * by the side again cancels that, and the yard is thrown a yard and a half
+     * to the same absolute side of the barn either way. On the north side that
+     * is towards the road: farmstead-0's south rail stood .63 inside the
+     * turnpike's near lane, and it is a rail at .84, so a walker on the
+     * pavement was inside it rather than beside it. That is the 66-frame
+     * `nation-farmstead-0` site, and the walker was dead centre of it because
+     * the pavement runs the length of the fence. On the south side it went the
+     * other way and put farmstead-1's rails across the back lane.
+     */
     const pen = createFieldPen(3.1, 2.3, site.side)
-    pen.position.set(1.55 * site.side, -.01, 0)
+    pen.position.set(0, -.01, -.4 * site.side)
     pen.rotation.y = -Math.PI / 2
     farmstead.add(pen)
     const implement = createFarmImplement(site.seed, .82)
-    implement.position.set(1.5 * site.side, -.01, .85)
+    // In the yard, in the corner away from the road, for the same reason.
+    implement.position.set(.6, -.01, .95)
     implement.rotation.y = .8
     farmstead.add(implement)
     tagProp(farmstead, `farmstead-${index}`, 1.5)
