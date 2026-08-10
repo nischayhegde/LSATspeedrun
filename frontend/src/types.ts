@@ -82,6 +82,13 @@ export type GameClient = {
   region?: string
   archetype?: string
   special?: string
+  /**
+   * How much of this client's value arrives only when the contract closes, in
+   * basis points. Expected value is equalised across every client at a tier, so
+   * this split is the entire difference between signing one and signing another:
+   * money banked per case against money staked on finishing the contract.
+   */
+  close_share_bps?: number
   matter_type?: 'commercial' | 'pro_bono'
   reputation_win_bonus?: number
   reputation_loss_cap?: number

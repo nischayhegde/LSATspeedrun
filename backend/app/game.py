@@ -956,7 +956,104 @@ def _rebalance_client_catalog() -> None:
         )
 
 
+# How much of a client's value waits until the contract closes, from the
+# steadiest client at a tier to the most speculative one.
+CLIENT_CLOSE_SHARE_RANGE = (.08, .22)
+
+
+def _shape_client_contracts() -> None:
+    """Give clients different shapes without giving them different values.
+
+    `_rebalance_client_catalog` equalises expected value across every client at
+    a tier by construction, which is what makes a client a play-style choice
+    rather than an income choice. The problem was that there was very little play
+    style left to choose: `contract_bonus_mult` was 0 for 58 of 69 clients, and
+    the 13 that carry a `payout_mult` premium are compensated by a proportionally
+    lower `base_fee`, so even that reduces to the same money arriving under a
+    different name. The only real separator left was contract length, and its
+    effect shrank all game (below).
+
+    The axis chosen here is *when the money arrives*, not how much. A client's
+    value is split between the per-case fee, which is banked the moment a case is
+    won, and the contract close, which is a lump you only collect by finishing
+    the contract. Longest contract at a tier is the most speculative and shortest
+    is the steadiest, so the `length` the catalog already authored for flavour --
+    a walk-in at 8, a serial plaintiff at 4 -- becomes the thing that decides the
+    shape instead of being cosmetic.
+
+    Why it is a real decision and not just variance: the close is forfeitable.
+    `contract.cases_remaining` only falls on a decisive win, and if reputation
+    slips the client goes on hold and the walk-in bills instead, stranding the
+    progress. So a speculative contract is a bet that you will hold form long
+    enough to close it -- which is exactly what streak standing now protects.
+    Steady clients are correct when your reputation is fragile; speculative ones
+    are correct when a streak is holding your floor up.
+
+    Why it does not move the curve: `payout_mult`, `contract_bonus_mult` and
+    `length` are all inputs to `average_value_factor`, so `base_fee` is re-derived
+    against whatever this writes and expected value per case lands back on
+    `_case_target_for_tier`. This must therefore run before the rebalance.
+
+    It also fixes a collapse. The close was worth 16-39% of a tier-0 client and
+    fell to under 4% by tier 9, because the old close was a flat `2 / length`
+    against a firm multiplier that grows all game. The shape simply evaporated
+    as the player progressed. Solving for a target share instead of a flat bonus
+    keeps the choice alive at every tier.
+    """
+    by_tier: dict[int, list[dict]] = {}
+    for client in CLIENTS:
+        by_tier.setdefault(client["tier"], []).append(client)
+    steadiest, most_speculative = CLIENT_CLOSE_SHARE_RANGE
+    for tier, group in by_tier.items():
+        firm_multiplier = _expected_firm_multiplier(tier)
+        order = sorted(group, key=lambda client: (client["length"], client["key"]))
+        for position, client in enumerate(order):
+            target = (
+                steadiest if len(order) == 1
+                else steadiest + (most_speculative - steadiest) * position / (len(order) - 1)
+            )
+            per_case = 1.20 * firm_multiplier * float(client.get("payout_mult", 1))
+            length = max(1, client["length"])
+            bonus = round(max(0.0, per_case * target / (1 - target) * length - 2), 2)
+            client["contract_bonus_mult"] = bonus
+            # The realised share, not the target. At tier 0 the firm multiplier
+            # is small enough that the hardcoded `+2` base contract multiplier
+            # already exceeds the target on its own and the bonus clamps to zero,
+            # so the two can differ. Publishing what actually happens keeps the
+            # card honest instead of printing an intention.
+            per_close = (2 + bonus) / length
+            client["close_share_bps"] = round(per_close / (per_case + per_close) * 10_000)
+
+
+def _drop_stale_contract_copy() -> None:
+    """Strip the hand-written contract-close claims that `_shape_client_contracts` invalidates.
+
+    Eleven clients carried copy like "+3× contract resolution" or "Contingency
+    finish · +2× contract bonus" that quoted `contract_bonus_mult` directly. That
+    field is now computed, so those clauses would silently start lying. Same
+    treatment `_describe_connection_unlocks` gives connections: split on the
+    separator the copy already uses and drop the clause that makes the claim.
+
+    Nothing is generated to replace them. The split between fee and close is a
+    proportion, and the client card draws it as a bar; a sentence saying the same
+    thing next to the bar would be the redundant text this screen has too much of
+    already. The flavour clauses -- "PRO BONO · +5 Reputation on a win",
+    "Volatile · +25% fee premium" -- describe fields this does not touch and are
+    kept.
+    """
+    quoted = ("contract", "resolution", "recovery bonus", "contingency")
+    for client in CLIENTS:
+        kept = [
+            part.strip()
+            for part in str(client.get("special", "")).split("·")
+            if part.strip() and not any(word in part.lower() for word in quoted)
+        ]
+        client["special"] = " · ".join(kept)
+
+
 _rebalance_asset_catalog()
+_shape_client_contracts()
+_drop_stale_contract_copy()
 _rebalance_client_catalog()
 CLIENTS.sort(key=lambda client: (client["tier"], client["base_fee"], client["name"]))
 

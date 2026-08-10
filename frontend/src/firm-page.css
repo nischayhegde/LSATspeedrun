@@ -105,6 +105,20 @@
   .firm-tabs button { flex: 1 1 calc(33.333% - 6px); } }.page-heading h1 { font-family: var(--font-pixel); font-size: clamp(28px, 4vw, 48px); font-weight: 900; text-transform: uppercase; }.firm-wallet, .tier-upgrade-banner, .client-roster-status { border: 4px solid #10151e; border-radius: 0; box-shadow: inset 0 0 0 2px #41576a, 6px 6px #10151e; }.firm-wallet { background: #20374a; }.firm-wallet small, .firm-wallet strong, .firm-wallet span { font-family: var(--font-pixel); }.firm-tabs { gap: 5px; border: 0; }.firm-tabs button { border: 3px solid #171923; border-radius: 0; background: #dbc89d; box-shadow: 3px 3px #171923; font-family: var(--font-pixel); font-size: 10.5px; }.firm-tabs button.active { color: #162031; border-color: #171923; background: #efc55a; box-shadow: inset -3px -3px #b57a2e, 3px 3px #171923; }.management-card, .achievement-grid article { border: 3px solid #171923; border-radius: 0; background: #f1dfb2; box-shadow: inset 0 0 0 2px #c9a568, 5px 5px #171923; }.management-card h3, .achievement-grid h3 { font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.tier-preview { border: 3px solid #131720; border-radius: 0; color: #efc65c; background: #243d4e; box-shadow: 3px 3px #131720; }.benefit-pill { border-radius: 0; font-family: var(--font-pixel); font-size: 10px; }@media (max-width: 620px) {  .firm-tabs button { font-size: 10px; } }
 .content-location-tag{min-height:18px;margin:2px 0 7px;display:flex;align-items:center;justify-content:space-between;gap:7px;color:#925537;font-family:var(--font-pixel);font-size:9px;letter-spacing:.08em;text-transform:uppercase}.content-location-tag b{padding:3px 5px;color:#e9d59b;background:#304b55;font-size:9px;letter-spacing:0}
 .client-special{min-height:46px;margin:10px 0;padding:7px 8px;display:flex;align-items:center;gap:7px;border:2px solid #493240;color:#63374c;background:#ecd291;box-shadow:inset 0 0 0 2px #f6e5ad,3px 3px rgba(61,42,32,.25);font-family:var(--font-pixel);font-size:9.5px;line-height:1.4}.client-special svg{flex:0 0 auto;color:#a04d4c}.client-special span,.client-special small{display:block}.client-special small{margin-bottom:3px;color:#a0533e;font-size:9px}
+/* The fee/close split. Every client at a tier is worth the same, so this bar is
+   the only thing on the card that differs between them; it sits directly under
+   the fee it qualifies. Filled segment is banked per case, hollow remainder is
+   staked on finishing the contract. */
+.client-shape { margin: 9px 0 0; }
+.client-shape-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-family: var(--font-pixel); font-size: 9px; }
+.client-shape-head b { color: #4a6b52; letter-spacing: .06em; }
+.client-shape-head small { color: #8a7457; font-size: 8.5px; }
+.client-shape-bar { margin-top: 5px; height: 11px; display: block; border: 2px solid #493240; background: repeating-linear-gradient(135deg, #d8c49a 0 3px, #cbb488 3px 6px); box-shadow: inset 0 0 0 1px #f6e5ad; }
+.client-shape-bar i { height: 100%; display: block; background: #6f9a72; box-shadow: inset 0 -2px rgba(41,32,25,.22); }
+.client-shape-balanced .client-shape-head b { color: #8a6a2f; }
+.client-shape-balanced .client-shape-bar i { background: #c2a04e; }
+.client-shape-speculative .client-shape-head b { color: #a04d4c; }
+.client-shape-speculative .client-shape-bar i { background: #bf7350; }
 .client-card-portrait { width: 96px; height: 106px; }
 .firm-ledger-heading { min-height: 170px; margin: 0 0 24px; padding: 23px 25px; align-items: center; border: 3px solid #39291e; background: #f0dfb4; box-shadow: inset 0 0 0 3px #c19a5c, 6px 6px rgba(49,31,20,.28); }
 .firm-ledger-heading::before { content: ""; width: 34px; height: 34px; position: absolute; left: -3px; top: -3px; border-right: 3px solid #39291e; border-bottom: 3px solid #39291e; background: linear-gradient(135deg, #b68b50 48%, #39291e 50%, #e8d3a2 54%); }

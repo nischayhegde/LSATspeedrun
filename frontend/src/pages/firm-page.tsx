@@ -60,6 +60,26 @@ function RequirementLine({ asset, game }: { asset: GameAsset; game: GameState })
 }
 
 
+/* Every client at a tier is worth the same per case -- `_rebalance_client_catalog`
+   equalises that by construction -- so the only thing that distinguishes two
+   cards is how the money is shaped, and until now nothing on the card showed it.
+   The bar is the decision: the left segment is banked when a case is won, the
+   right one only arrives if the contract is finished, and a reputation slip puts
+   the client on hold with the close still owed. Drawn rather than described,
+   because a proportion is what a bar is for. */
+function ClientShape({ client }: { client: GameClient }) {
+  const atClose = Math.round((client.close_share_bps ?? 0) / 100)
+  if (!atClose) return null
+  const shape = atClose <= 12 ? 'STEADY' : atClose <= 18 ? 'BALANCED' : 'SPECULATIVE'
+  return (
+    <div className={`client-shape client-shape-${shape.toLowerCase()}`}>
+      <span className="client-shape-head"><b>{shape}</b><small>{100 - atClose}% per case · {atClose}% at close</small></span>
+      <span className="client-shape-bar"><i style={{ width: `${100 - atClose}%` }} /></span>
+    </div>
+  )
+}
+
+
 function ClientRequirementLine({ client, game }: { client: GameClient; game: GameState }) {
   if (client.unlocked) return <small className="requirements met">Closing bonus every {client.length} wins</small>
   const assetNames = client.requirements.assets.map((key) => game.catalog.assets.find((asset) => asset.key === key)?.name ?? key.replaceAll('_', ' '))
@@ -265,6 +285,7 @@ export function FirmPage() {
                 <div className="content-location-tag">{item.region || `TIER ${item.tier}`}{item.archetype && <b>{item.archetype}</b>}</div>
                 <h3>{item.name}</h3><p>{item.description}</p>
                 <div className="client-fee"><span>Base fee per case</span><strong>{formatMoney(item.base_fee)}</strong></div>
+                <ClientShape client={item} />
                 {item.special && <div className="client-special"><Sparkles size={13} /><span><small>CASE TWIST</small>{item.special}</span></div>}
                 {item.on_hold && <div className="effective-client-note"><BriefcaseBusiness size={13} />Billing {workingClient.name} instead · {formatMoney(workingClient.base_fee)} per case</div>}
                 {item.contract && <div className="contract-mini"><span>{item.contract.cases_remaining} to bonus</span><span>{item.contract.loyalty} loyalty</span></div>}
