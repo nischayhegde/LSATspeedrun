@@ -77,15 +77,18 @@ const landmarkTag: Record<MapLandmarkKind, string> = {
  *
  * Collapsed by default, and it stays a strip on the left rail beside the
  * district guide rather than becoming a board the map has to wear. */
-function RetainerBoard({ game, regionKey, regionName, onTravel }: {
+function RetainerBoard({ game, regionKey, regionName, onTravel, defaultOpen = false }: {
   game: GameState
   regionKey: MapRegionKey
   regionName: string
   onTravel: (landmarkKey: string) => void
+  /** Open on arrival when the Firm tab sent the player here to see what a
+      connection unlocked. Anything the player was not asked for stays shut. */
+  defaultOpen?: boolean
 }) {
   const queryClient = useQueryClient()
   const { play } = useSound()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const secure = useMutation({
     mutationFn: (districtKey: string) => api.secureDistrict(districtKey),
@@ -175,18 +178,26 @@ function tierState(tier: number, officeTier: number): MapSceneTier['state'] {
   return 'locked'
 }
 
-export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel }: {
+export function UnifiedEmpireMap({ game, focusRival, focusConnection, onManage, empireValueLabel }: {
   game: GameState
   /** A rival key handed over from the firm tab's "Show on the map". */
   focusRival?: string | null
-  onManage: (tab: 'upgrades' | 'rivals') => void
+  /** A connection key handed over the same way. A connection's whole effect is
+      the retainer board it opens, so arriving from one lands on that board's
+      region with the board already open — otherwise buying a network changes
+      nothing the player can see. */
+  focusConnection?: string | null
+  onManage: (tab: 'upgrades' | 'rivals' | 'connections') => void
   empireValueLabel: string
 }) {
   const { play } = useSound()
   const navigate = useNavigate()
   const currentRegion = regionForTier(game.office_tier)
   const focusAsset = focusRival ? game.catalog.assets.find((asset) => asset.key === focusRival && asset.type === 'rival') : undefined
-  const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>((focusAsset ? regionForTier(focusAsset.tier) : currentRegion).key)
+  const focusNetwork = focusConnection ? game.catalog.assets.find((asset) => asset.key === focusConnection && asset.type === 'connection') : undefined
+  const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>(
+    (focusAsset ? regionForTier(focusAsset.tier) : focusNetwork ? regionForTier(focusNetwork.tier) : currentRegion).key,
+  )
   const [selectedKey, setSelectedKey] = useState(focusAsset ? `rival-${focusAsset.key}` : '')
   const [viewMode, setViewMode] = useState<MapViewMode>(focusAsset ? 'rivals' : 'career')
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false)
@@ -476,6 +487,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
               regionKey={activeRegionKey}
               regionName={activeRegion.name}
               onTravel={(key) => { travelToLandmarkKey(key); setMobileControlsOpen(false) }}
+              defaultOpen={Boolean(focusNetwork)}
             />
             <div className="uw-mobile-camera-actions">
               <button type="button" onClick={() => { sendCameraCommand('focus'); setMobileControlsOpen(false) }}>Find counsel</button>
@@ -592,6 +604,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
             regionKey={activeRegionKey}
             regionName={activeRegion.name}
             onTravel={travelToLandmarkKey}
+            defaultOpen={Boolean(focusNetwork)}
           />
         </div>
 

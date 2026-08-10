@@ -216,6 +216,12 @@
 
 @media (max-width: 900px) {  .firm-ledger-scenery { right: 10%; opacity: .18; } }
 
+/* A connection's effect is a retainer board on the map, so the card offers the
+   same hand-off the rivals tab does. Quiet, under the price row: it is a place
+   to go and look, not the purchase. */
+.asset-locate { width: 100%; margin-top: 9px; padding: 8px 12px; cursor: pointer; font: inherit; font-size: .82rem; color: #55606b; border: 1px solid #d8cfc1; border-radius: 9px; background: #fffdf8; }
+.asset-locate:hover { color: var(--ink); border-color: #bfb4a3; }
+
 /* The trophy case. Closed by default and out of the tab strip, because it is a
    record rather than a decision and it used to cost a whole tab slot. */
 .firm-trophies { grid-column: 1 / -1; margin-top: 14px; }

@@ -287,6 +287,10 @@ export function FirmPage() {
                   blocker that earning more cannot clear. Leaving it out labelled a
                   disabled button 'Purchase', which reads as an unresponsive click. */}
               <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : !item.available ? 'Locked' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
+              {/* A connection's whole effect is the retainer board it opens, and
+                  that board is on the map. Same hand-off the rivals tab already
+                  makes, so owning one is something you can go and look at. */}
+              {item.type === 'connection' && <button type="button" className="asset-locate" onClick={() => navigate(`/map?connection=${item.key}`)}>Show on the map</button>}
             </article>
           ))}
         </div>
