@@ -382,3 +382,99 @@ no competitor offers.
 - **CAT / adaptive item selection.** Requires calibrated items, which requires response volume on a
   pool that does not yet exist. Attempting it early produces adaptivity driven by noise, which is worse
   than random selection because it is confidently wrong.
+
+---
+
+## 11. Mandatory approaches: what forcing does to the estimate
+
+Shipped. `strategies.plan_forced_arms`, `enforcement.STATUS_STOOD_DOWN`, migration 0035.
+
+### The trap this avoids
+
+An approach offered as a suggestion can be skipped, and a student who skips most of
+them leaves a record made of the questions they already felt confident about. The
+obvious fix — require the approach on the questions where the evidence is thinnest —
+destroys the thing it is meant to feed. §1 established that the estimate reads as
+causal only because the arm is unrelated to the question. Choosing the treated
+questions *for* their characteristics is precisely that relationship, and the result
+would be more data and worse recommendations, with a dashboard that looks better
+while getting worse.
+
+### The split
+
+Two decisions, kept apart:
+
+1. **Which strata to invest in.** Approach × question-type cells, scored by
+   `information_need`: the posterior variance of the cell's current difference
+   (∝ 1 / `_contrast_sample`, prior-damped) times the smoothed rate at which the
+   offer there is being declined. The score reads four counts and no accuracy. This
+   is a legitimate adaptive-design choice and is where "enrich the data" is satisfied.
+2. **Which question inside them.** A fixed quota drawn uniformly without replacement
+   from the pool, so every pool member carries one exact inclusion probability. This
+   is what preserves identification.
+
+### What each estimand now assumes
+
+**Offer versus nothing** (the ranking in `_section_reading`, unchanged in code
+except for pooling both prompt labels). The prompt/control draw is still one fixed
+threshold at 0.25 in every stratum, so the arms still have the same question
+composition and the propensity is still constant. What changed is the *content* of
+the offer on some treated questions. The estimand is therefore the effect of the
+offer regime as deployed — a mixture of suggestions and requirements whose
+proportions move as strata fill — rather than a fixed treatment. `strategy_variant`
+and `strategy_stratum` are on every row so a later analysis can split the mixture
+rather than inherit this pooling.
+
+**Required versus optional** (`_forcing_contrast`, new). Restricted to rows with a
+forcing propensity strictly inside (0, 1), i.e. rows that were in a pool and could
+have gone either way, and Hájek-weighted by that propensity because pool size and
+quota vary run to run. Rows outside a pool have no counterfactual for this draw and
+are excluded; they remain in the offer contrast, where they are still randomized.
+
+Forcing does not add rows. It adds **dose**: an ITT difference measured where half
+the offers are declined is roughly half the effect and needs four times the sample.
+That is the mechanism by which this is an information gain rather than merely more
+enforcement.
+
+### Rejected: Thompson sampling over the forcing decision
+
+Attractive and wrong here, for three reasons.
+
+- The objective is wrong. Which approach to offer is already an adaptive choice
+  (`assign_strategy_trial`); forcing is not a second attempt at that question. Its
+  job is to buy information, and a variance-reduction rule states that directly
+  where a reward-maximising one states it by accident.
+- It would make the draw a function of accumulated *outcomes*. IPW stays valid
+  conditional on history, but the naive within-cell mean on adaptively collected data
+  is biased when the arm proportion tracks the running estimate — and this product
+  lives at 10–30 observations per cell, which is exactly where that bias bites and
+  asymptotics do not help.
+- Propensities sharpen toward 0 and 1 as posteriors concentrate, so weights blow up
+  in the cells with the most data and positivity fails in the rest.
+
+The rule that shipped reads sample sizes and compliance only, both fixed before the
+question is served, which makes the draw randomization conditional on history and
+keeps it independent of the outcome being estimated.
+
+### Rejected: moving the control share
+
+Purely statistically, 25/75 is the wrong split: `_contrast_sample` at n₁ = 0.75N,
+n₀ = 0.25N is 0.1875N against the 0.25N a balanced split would give, so a third of
+the effective sample is being left on the table, and §1's shortfall copy already
+tells students the control side fills slowest. It stays at 25% anyway. Halving the
+share of questions that carry coaching to buy precision on a per-student estimate
+that §10 says will never reach a verdict is paying in the product for something the
+measurement cannot spend. Revisit if the pooled cross-student model lands.
+
+### Caps and the way out
+
+Two mandatory questions per run and six per day, so the mechanism reads as structure
+rather than as nagging. The cap is applied to the run as a whole, which is why the
+draw is planned for the whole run at once: a position-by-position draw under a cap
+makes each position's probability depend on the ones before it, which is a valid
+sequential randomization but leaves every row carrying a different propensity for
+reasons unrelated to its stratum.
+
+Standing down is recorded as `stood_down`, kept apart from `skipped`, and opens after
+two server-side refusals or ninety seconds in the panel. It never costs anything: the
+economy does not read compliance, and gate time is already held out of the pace score.

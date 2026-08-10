@@ -1170,6 +1170,27 @@ def test_the_deploy_canary_arms_a_strategy_that_still_has_a_gate():
     assert [field["key"] for field in gate["fields"]] == ["prediction"]
 
 
+def test_the_deploy_canary_pins_an_arm_that_still_exists_and_still_gates():
+    """The canary writes an arm label straight onto its session item.
+
+    It pins the suggestion arm rather than the mandatory one deliberately: the
+    canary is testing that a gate blocks and can be cleared, and pinning the
+    arm that has a way out keeps that test about the gate rather than about the
+    withdrawal rules. What it must not do is write a label the app no longer
+    treats as an offer, because the gate would then never arm and the deploy
+    would pass while covering nothing.
+    """
+    pytest.importorskip("boto3", reason="the deploy canary imports boto3 at module scope")
+    import inspect
+
+    from app.strategies import PROMPT_VARIANTS
+    from scripts import smoke_async_coaching
+
+    source = inspect.getsource(smoke_async_coaching._arm_canary_gate)
+    pinned = {variant for variant in PROMPT_VARIANTS if f'"{variant}"' in source}
+    assert pinned == {"prompt"}
+
+
 @pytest.mark.parametrize("section", ["Logical Reasoning", "Reading Comprehension"])
 def test_the_deploy_canary_clears_the_gate_it_arms_rather_than_bypassing_it(app, section):
     pytest.importorskip("boto3", reason="the deploy canary imports boto3 at module scope")
