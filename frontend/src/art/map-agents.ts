@@ -2316,9 +2316,28 @@ function subPolyline(points: XZ[], cumulative: number[], from: number, to: numbe
     const last = result[result.length - 1]
     if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 1e-3) result.push(point)
   }
+  /*
+   * Two passes, because a wrapped piece visits the vertex list twice and the
+   * second visit is *after* the first along the arc.
+   *
+   * This used to be one pass that added `wrap` to any vertex sitting before
+   * `from`, and it emitted them in index order, so the vertices past the seam
+   * came out ahead of the ones before it. The result was a polyline that ran
+   * from the cut, jumped backwards across the ring to the seam, ran forward
+   * again, and jumped once more to the far cut — two chords straight through
+   * the middle of the district, drawn as pavement and walked as pavement.
+   *
+   * On the Sovereign Arc, whose plan is three concentric ring roads, that is
+   * the whole of the 6.1% of pedestrian band this district had lying inside a
+   * carriageway: a chord of a ring necessarily crosses every ring inside it.
+   */
   for (let index = 0; index < cumulative.length; index += 1) {
-    const s = cumulative[index] + (cumulative[index] < from && to > wrap ? wrap : 0)
-    if (s > from && s < to) push(points[index])
+    if (cumulative[index] > from && cumulative[index] < to) push(points[index])
+  }
+  if (to > wrap) {
+    for (let index = 0; index < cumulative.length; index += 1) {
+      if (cumulative[index] + wrap < to) push(points[index])
+    }
   }
   push(at(to))
   return result
