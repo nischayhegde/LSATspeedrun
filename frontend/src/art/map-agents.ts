@@ -3273,6 +3273,31 @@ export class Crowd {
   }
 
   /**
+   * The last sample, `across` metres to the side of it, into the target scratch.
+   *
+   * There is one across-frame in this file and it is the one `sampleWay` and
+   * `projectOntoWay` measure in: the normal `(dz, -dx)`. Everything a footway
+   * hands the crowd is stated in it — `Footway.centre`, an obstacle's `d` — so
+   * the step from an offset to a place on the ground has to use it too.
+   *
+   * It used to use the opposite normal, and mirrored both of those. A bench sat
+   * on a walker's left was avoided by stepping right into it, and, since
+   * `cutFootwaysAroundSolids` began moving a band off the buildings standing on
+   * it, a band shifted a foot clear of a wall put people a foot inside it
+   * instead. That second one is why the villages, whose bands move furthest
+   * because their lanes are narrow and their barns sit hard against them, had
+   * four pavements running through a building and a fifth of all frames with
+   * somebody inside one.
+   */
+  private placeAcross(across: number) {
+    scratchTarget.set(
+      this.sampleX + this.sampleDz * across,
+      this.lift,
+      this.sampleZ - this.sampleDx * across,
+    )
+  }
+
+  /**
    * A crossing leaving this kerb, or -1. Not everyone crosses: some proportion
    * of arrivals at any corner have simply got where they were going, and a
    * junction where every single pedestrian steps into the road looks as
@@ -3734,12 +3759,7 @@ export class Crowd {
       : direction > 0 ? 0 : way.length
     this.sample(way, distance)
     const lateral = (hashUnit(walker.seed + this.spawnCursor * 8.11) * 2 - 1) * way.halfWidth
-    const across = way.centre + lateral * direction
-    scratchTarget.set(
-      this.sampleX - this.sampleDz * across,
-      this.lift,
-      this.sampleZ + this.sampleDx * across,
-    )
+    this.placeAcross(way.centre + lateral * direction)
     if (!unseen(scratchTarget, 1.2, this.fogDistance)) return false
 
     walker.active = true
@@ -4102,12 +4122,7 @@ export class Crowd {
       this.sample(way, walker.distance)
       const forwardX = this.sampleDx * walker.direction
       const forwardZ = this.sampleDz * walker.direction
-      const across = way.centre + walker.lateral * walker.direction
-      scratchTarget.set(
-        this.sampleX - this.sampleDz * across,
-        this.lift,
-        this.sampleZ + this.sampleDx * across,
-      )
+      this.placeAcross(way.centre + walker.lateral * walker.direction)
       walker.root.position.lerp(scratchTarget, 1 - Math.exp(-9 * step))
       walker.heading = approachAngle(walker.heading, Math.atan2(forwardX, forwardZ), 6.5, step)
       walker.root.rotation.y = walker.heading
@@ -4149,12 +4164,7 @@ export class Crowd {
       let distance = (offset + this.elapsed * speed * direction) % way.length
       if (distance < 0) distance += way.length
       this.sample(way, distance)
-      const lateral = way.centre + (hashUnit(seed * 3.1) * 2 - 1) * way.halfWidth
-      scratchTarget.set(
-        this.sampleX - this.sampleDz * lateral,
-        this.lift,
-        this.sampleZ + this.sampleDx * lateral,
-      )
+      this.placeAcross(way.centre + (hashUnit(seed * 3.1) * 2 - 1) * way.halfWidth)
       const hidden = scratchTarget.distanceToSquared(cameraPosition) < nearSquared
       scratchScale.setScalar(hidden ? 0 : 1)
       scratchQuaternion.setFromAxisAngle(scratchAxis, Math.atan2(this.sampleDx * direction, this.sampleDz * direction))
