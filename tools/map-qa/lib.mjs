@@ -214,16 +214,27 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
     if (message.type() === 'error') errors.push(message.text().slice(0, 200))
   })
 
-  await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-  await page.locator('button', { hasText: 'Enter local development firm' }).click()
-  await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 })
-  await page.evaluate(() => localStorage.setItem('lsat-tour-v6', 'done')).catch(() => {})
+  // Every failure from here on has to close the browser it opened. Callers put
+  // their own work in a `finally` that closes it, but they cannot reach one
+  // that never returned — and a sign-in that timed out because the backend was
+  // busy left a full headless Chromium parented to init, which on a machine
+  // this harness has already been blamed for exhausting is the worst possible
+  // way to fail.
+  try {
+    await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
+    await page.locator('button', { hasText: 'Enter local development firm' }).click()
+    await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 })
+    await page.evaluate(() => localStorage.setItem('lsat-tour-v6', 'done')).catch(() => {})
 
-  // Interval polling, not the default. The default polls on rAF, which this
-  // document no longer services, so the wait would never resolve.
-  await page.goto(`${BASE}/map`, { waitUntil: 'domcontentloaded' })
-  await page.waitForFunction(() => Boolean(window.__mapScene), { timeout: 120000, polling: 100 })
-  await dismissOverlays(page)
+    // Interval polling, not the default. The default polls on rAF, which this
+    // document no longer services, so the wait would never resolve.
+    await page.goto(`${BASE}/map`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => Boolean(window.__mapScene), { timeout: 120000, polling: 100 })
+    await dismissOverlays(page)
+  } catch (error) {
+    await browser.close().catch(() => {})
+    throw error
+  }
   return { browser, page, errors }
 }
 
