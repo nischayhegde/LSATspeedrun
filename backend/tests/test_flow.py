@@ -573,13 +573,17 @@ def test_claiming_every_daily_goal_is_a_bonus_not_a_free_office(app):
     assert promoted["daily"]["goals"][2]["reward"] > expected[20]
 
 
-def test_daily_activity_streak_advances_resets_and_tracks_best(app):
-    """The calendar-day activity streak is distinct from the validated-win streak.
+def test_the_working_day_streak_counts_finished_cases_not_page_loads(app):
+    """The calendar-day streak is distinct from the validated-win streak.
 
-    It advances once per new day the firm is visited (via `settle_upkeep`,
-    which every `/v1/game` fetch triggers), resets on a missed day, and
-    remembers the best run — independent of `current_streak`/`best_streak`.
+    It advances once per new day on which the player *finishes a case*, resets on
+    a missed day, and remembers the best run -- independent of
+    `current_streak`/`best_streak`. It used to advance from `settle_upkeep`,
+    which runs on every protected route, so simply loading a page kept it alive;
+    this pins the fact that it no longer does.
     """
+    from backend.app.game import _touch_daily_streak
+
     client = app.test_client()
     headers = login(client, "daily-streak@example.test")
     created = create_game(client, headers)
@@ -594,31 +598,33 @@ def test_daily_activity_streak_advances_resets_and_tracks_best(app):
         profile.daily_streak_last_date = now.date()
         db.session.commit()
 
-        # A second visit later the same day does not double-count.
-        settle_upkeep(profile, now + timedelta(hours=6))
+        # Merely being on a page the next day does nothing at all now.
+        settle_upkeep(profile, now + timedelta(days=1))
         profile = PlayerProfile.query.filter_by(id=created["id"]).one()
         assert profile.daily_streak_current == 1
 
-        # A visit exactly one calendar day later extends the streak.
+        # A second finished case later the same day does not double-count.
+        _touch_daily_streak(profile, now + timedelta(hours=6))
+        assert profile.daily_streak_current == 1
+
+        # A case finished exactly one calendar day later extends the streak.
         next_day = now + timedelta(days=1)
-        settle_upkeep(profile, next_day)
-        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        _touch_daily_streak(profile, next_day)
         assert profile.daily_streak_current == 2
         assert profile.daily_streak_best == 2
 
         # Skipping a day resets the current streak but keeps the best one.
         after_gap = next_day + timedelta(days=3)
-        settle_upkeep(profile, after_gap)
-        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        _touch_daily_streak(profile, after_gap)
         assert profile.daily_streak_current == 1
         assert profile.daily_streak_best == 2
 
         # Extending past the old best updates it again.
         for extra_day in range(1, 3):
-            settle_upkeep(profile, after_gap + timedelta(days=extra_day))
-        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+            _touch_daily_streak(profile, after_gap + timedelta(days=extra_day))
         assert profile.daily_streak_current == 3
         assert profile.daily_streak_best == 3
+        db.session.rollback()
 
 
 def test_mixed_active_and_offline_rent_and_inactivity_reputation_decay(app):

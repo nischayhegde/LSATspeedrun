@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Flame,
+  ShieldCheck,
   HelpCircle,
   LayoutGrid,
   LogOut,
@@ -102,19 +103,36 @@ export function useJustIncreased(value: number, holdMs = 850, persistKey?: strin
 }
 
 
-// A single, tasteful indicator for the one calendar-day activity streak
-// (see `daily_streak` on `GameState`) — not the validated-win streak used for
-// the payout bonus elsewhere. Deliberately as quiet as the "922 Q" standing
-// badge beside it: a flame, a number, done.
+// A single, tasteful indicator for the working-day streak (see `daily_streak`
+// on `GameState`) — not the validated-win streak used for the payout bonus.
+// Deliberately as quiet as the "922 Q" standing badge beside it: a flame, a
+// number, done.
+//
+// The shield appears only once the win streak is actually holding a reputation
+// floor up, because that is the only moment the number means anything to defend.
+// The title carries the rest: which of the two gates is binding, since being
+// told to answer more cases when the day count is the limit would be a lie.
 //
 // `justAdvanced` is lifted to the caller (see `AppShell`) rather than computed
 // here, so the header glow and the streak welcome modal read the exact same
 // "did this just tick up" signal instead of two independent hooks that could
 // disagree about the moment.
-function StreakBadge({ streak, justAdvanced }: { streak: number; justAdvanced: boolean }) {
+function StreakBadge({ streak, form, justAdvanced }: { streak: number; form: GameState['streak_form']; justAdvanced: boolean }) {
+  const holding = form && form.standing > 0
+  const detail = !form
+    ? ''
+    : form.day_limited
+      ? ` · ${form.wins}-win run, held at +${form.standing} Reputation until another day's casework licenses more`
+      : form.next_win_target
+        ? ` · ${form.wins}-win run holding +${form.standing} Reputation, next rung at ${form.next_win_target}`
+        : ` · ${form.wins}-win run holding +${form.standing} Reputation, the most a streak can hold`
   return (
-    <span className={`streak${justAdvanced ? ' is-lit' : ''}`} title={`${streak}-day streak: consecutive days you've practiced`}>
+    <span
+      className={`streak${justAdvanced ? ' is-lit' : ''}${holding ? ' is-holding' : ''}`}
+      title={`${streak}-day streak: consecutive days you've finished a case${detail}`}
+    >
       <Flame size={16} /><span className="streak-count">{streak}</span> d
+      {holding && <b className="streak-standing"><ShieldCheck size={12} />+{form.standing}</b>}
     </span>
   )
 }
@@ -445,7 +463,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
                   all. This badge used to read "49 Q", which put it in
                   competition with the two answer counts on the Dashboard. */}
               <span className="standing-questions" title={`${game.total_cases} cases billed by your firm — a case bills once its write-up is scored, and mega-litigation questions are measured rather than billed`}><BriefcaseBusiness size={16} />{game.total_cases} cases</span>
-              <StreakBadge streak={game.daily_streak} justAdvanced={streakJustAdvanced} />
+              <StreakBadge streak={game.daily_streak} form={game.streak_form} justAdvanced={streakJustAdvanced} />
             </div>
           )}
           {/* The tour replay and sign out used to each stake out their own spot on

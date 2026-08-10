@@ -54,6 +54,14 @@ export type GameAsset = {
    * so it is never an hourly figure. Absent on cosmetics, which have no effect.
    */
   payout_mult?: number
+  /**
+   * Connections only: the districts this network lets you put on retainer, and
+   * whether each is currently held. The office relationship wall reads this so a
+   * seal can say which network it is and how much of the map that network has
+   * actually been used for.
+   */
+  districts?: Array<{ key: string; name: string; held: boolean }>
+  districts_held?: number
 }
 
 export type ClientContract = {
@@ -74,6 +82,13 @@ export type GameClient = {
   region?: string
   archetype?: string
   special?: string
+  /**
+   * How much of this client's value arrives only when the contract closes, in
+   * basis points. Expected value is equalised across every client at a tier, so
+   * this split is the entire difference between signing one and signing another:
+   * money banked per case against money staked on finishing the contract.
+   */
+  close_share_bps?: number
   matter_type?: 'commercial' | 'pro_bono'
   reputation_win_bonus?: number
   reputation_loss_cap?: number
@@ -339,10 +354,24 @@ export type GameState = {
   office: FirmTier
   current_streak: number
   best_streak: number
-  /** Consecutive calendar days the firm has been visited — distinct from the
-   *  validated-win streak above. Advances at most once per day. */
+  /** Consecutive calendar days on which a case was finished — distinct from the
+   *  validated-win streak above. Advances at most once per day, and no longer
+   *  advances merely by loading a page. */
   daily_streak: number
   daily_streak_best: number
+  /** What the win streak is currently worth as a reputation floor, and which of
+   *  the two gates is binding. `day_limited` means more casework today cannot
+   *  raise it and only coming back tomorrow can — the anti-farm gate. */
+  streak_form: {
+    wins: number
+    days: number
+    standing: number
+    earned_standing: number
+    licensed_standing: number
+    cap: number
+    next_win_target: number | null
+    day_limited: boolean
+  }
   total_cases: number
   total_correct: number
   total_validated_correct: number

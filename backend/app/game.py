@@ -956,7 +956,104 @@ def _rebalance_client_catalog() -> None:
         )
 
 
+# How much of a client's value waits until the contract closes, from the
+# steadiest client at a tier to the most speculative one.
+CLIENT_CLOSE_SHARE_RANGE = (.08, .22)
+
+
+def _shape_client_contracts() -> None:
+    """Give clients different shapes without giving them different values.
+
+    `_rebalance_client_catalog` equalises expected value across every client at
+    a tier by construction, which is what makes a client a play-style choice
+    rather than an income choice. The problem was that there was very little play
+    style left to choose: `contract_bonus_mult` was 0 for 58 of 69 clients, and
+    the 13 that carry a `payout_mult` premium are compensated by a proportionally
+    lower `base_fee`, so even that reduces to the same money arriving under a
+    different name. The only real separator left was contract length, and its
+    effect shrank all game (below).
+
+    The axis chosen here is *when the money arrives*, not how much. A client's
+    value is split between the per-case fee, which is banked the moment a case is
+    won, and the contract close, which is a lump you only collect by finishing
+    the contract. Longest contract at a tier is the most speculative and shortest
+    is the steadiest, so the `length` the catalog already authored for flavour --
+    a walk-in at 8, a serial plaintiff at 4 -- becomes the thing that decides the
+    shape instead of being cosmetic.
+
+    Why it is a real decision and not just variance: the close is forfeitable.
+    `contract.cases_remaining` only falls on a decisive win, and if reputation
+    slips the client goes on hold and the walk-in bills instead, stranding the
+    progress. So a speculative contract is a bet that you will hold form long
+    enough to close it -- which is exactly what streak standing now protects.
+    Steady clients are correct when your reputation is fragile; speculative ones
+    are correct when a streak is holding your floor up.
+
+    Why it does not move the curve: `payout_mult`, `contract_bonus_mult` and
+    `length` are all inputs to `average_value_factor`, so `base_fee` is re-derived
+    against whatever this writes and expected value per case lands back on
+    `_case_target_for_tier`. This must therefore run before the rebalance.
+
+    It also fixes a collapse. The close was worth 16-39% of a tier-0 client and
+    fell to under 4% by tier 9, because the old close was a flat `2 / length`
+    against a firm multiplier that grows all game. The shape simply evaporated
+    as the player progressed. Solving for a target share instead of a flat bonus
+    keeps the choice alive at every tier.
+    """
+    by_tier: dict[int, list[dict]] = {}
+    for client in CLIENTS:
+        by_tier.setdefault(client["tier"], []).append(client)
+    steadiest, most_speculative = CLIENT_CLOSE_SHARE_RANGE
+    for tier, group in by_tier.items():
+        firm_multiplier = _expected_firm_multiplier(tier)
+        order = sorted(group, key=lambda client: (client["length"], client["key"]))
+        for position, client in enumerate(order):
+            target = (
+                steadiest if len(order) == 1
+                else steadiest + (most_speculative - steadiest) * position / (len(order) - 1)
+            )
+            per_case = 1.20 * firm_multiplier * float(client.get("payout_mult", 1))
+            length = max(1, client["length"])
+            bonus = round(max(0.0, per_case * target / (1 - target) * length - 2), 2)
+            client["contract_bonus_mult"] = bonus
+            # The realised share, not the target. At tier 0 the firm multiplier
+            # is small enough that the hardcoded `+2` base contract multiplier
+            # already exceeds the target on its own and the bonus clamps to zero,
+            # so the two can differ. Publishing what actually happens keeps the
+            # card honest instead of printing an intention.
+            per_close = (2 + bonus) / length
+            client["close_share_bps"] = round(per_close / (per_case + per_close) * 10_000)
+
+
+def _drop_stale_contract_copy() -> None:
+    """Strip the hand-written contract-close claims that `_shape_client_contracts` invalidates.
+
+    Eleven clients carried copy like "+3× contract resolution" or "Contingency
+    finish · +2× contract bonus" that quoted `contract_bonus_mult` directly. That
+    field is now computed, so those clauses would silently start lying. Same
+    treatment `_describe_connection_unlocks` gives connections: split on the
+    separator the copy already uses and drop the clause that makes the claim.
+
+    Nothing is generated to replace them. The split between fee and close is a
+    proportion, and the client card draws it as a bar; a sentence saying the same
+    thing next to the bar would be the redundant text this screen has too much of
+    already. The flavour clauses -- "PRO BONO · +5 Reputation on a win",
+    "Volatile · +25% fee premium" -- describe fields this does not touch and are
+    kept.
+    """
+    quoted = ("contract", "resolution", "recovery bonus", "contingency")
+    for client in CLIENTS:
+        kept = [
+            part.strip()
+            for part in str(client.get("special", "")).split("·")
+            if part.strip() and not any(word in part.lower() for word in quoted)
+        ]
+        client["special"] = " · ".join(kept)
+
+
 _rebalance_asset_catalog()
+_shape_client_contracts()
+_drop_stale_contract_copy()
 _rebalance_client_catalog()
 CLIENTS.sort(key=lambda client: (client["tier"], client["base_fee"], client["name"]))
 
@@ -1162,6 +1259,99 @@ DISTRICT_KEYS_BY_REGION = {
 }
 
 
+def _district_connection_gate() -> dict[str, str]:
+    """Which connection a district's institutions want to see before they sign.
+
+    Connections were the one asset class whose entire stated benefit was an
+    unlock, and the unlock was worth nothing. `_rebalance_client_catalog`
+    equalises expected commercial value across every client at a tier on
+    purpose -- that is what makes a client a play-style choice rather than an
+    income choice -- so "unlocks the corporate clients" cannot make anyone
+    richer. What was left was a purchase that, at every one of the fourteen
+    tiers it appears in, costs more than the best upgrade at the same tier and
+    pays a smaller `payout_mult` than it. There was no board state in which
+    buying one was correct.
+
+    Rather than inflate them into a better upgrade -- the catalog has thirty-five
+    of those already -- they now gate the mechanic they read like: a standing
+    retainer over a whole district. That is what a professional network is for,
+    it is the only Firm-tab purchase whose effect lands on the map, and it moves
+    no money: districts already carry their own price, standing, and rent
+    relief, all apportioned by `_price_district_catalog`.
+
+    A district asks for the most developed network that is no more advanced than
+    the district itself, so the requirement always sits at or below the tier the
+    player has already reached. The two tier-0 districts stay ungated, which
+    keeps a new player's first retainer and the onboarding path exactly as they
+    were.
+    """
+    ladder = sorted(
+        (item for item in ASSETS if item["type"] == "connection"),
+        key=lambda item: (item["tier"], item["cost"], item["key"]),
+    )
+    tiers = sorted({item["tier"] for item in ladder})
+    # Two connections share tier 3, and two districts sit at tier 3 with them.
+    # Handing both districts to whichever one sorts last would leave the other
+    # gating nothing, which is the defect this whole change exists to remove, so
+    # districts are dealt round-robin across the connections they answer to.
+    at_tier = {tier: [item["key"] for item in ladder if item["tier"] == tier] for tier in tiers}
+    dealt: dict[int, int] = {}
+    gate: dict[str, str] = {}
+    for district in DISTRICTS:
+        eligible = [tier for tier in tiers if tier <= district["tier"]]
+        if not eligible:
+            continue
+        group = at_tier[eligible[-1]]
+        index = dealt.get(eligible[-1], 0)
+        gate[district["key"]] = group[index % len(group)]
+        dealt[eligible[-1]] = index + 1
+    return gate
+
+
+DISTRICT_CONNECTION_GATE = _district_connection_gate()
+
+
+def _connection_district_keys() -> dict[str, list[str]]:
+    """The districts each connection opens, keyed."""
+    opened: dict[str, list[str]] = {}
+    for district_key, connection_key in DISTRICT_CONNECTION_GATE.items():
+        opened.setdefault(connection_key, []).append(district_key)
+    return opened
+
+
+CONNECTION_DISTRICTS = _connection_district_keys()
+
+
+def _connection_district_names() -> dict[str, list[str]]:
+    """The districts each connection opens, for its catalog copy."""
+    return {
+        connection_key: [DISTRICT_BY_KEY[key]["name"] for key in district_keys]
+        for connection_key, district_keys in CONNECTION_DISTRICTS.items()
+    }
+
+
+def _describe_connection_unlocks() -> None:
+    """Replace "unlocks N clients" with the districts the network actually opens.
+
+    The client half of the sentence was the part that was not worth acting on,
+    and a benefit line that promises nothing measurable is worse than a shorter
+    one. `_rebalance_asset_catalog` has already rewritten the payout clause by
+    the time this runs, so only the trailing clause is replaced.
+    """
+    opened = _connection_district_names()
+    for item in ASSETS:
+        if item["type"] != "connection":
+            continue
+        names = opened.get(item["key"], [])
+        parts = [part.strip() for part in item["benefit"].split("·") if "unlock" not in part.lower()]
+        if names:
+            parts.append(f"Retainers open in {names[0]}" if len(names) == 1 else f"Retainers open in {len(names)} districts")
+        item["benefit"] = " · ".join(parts)
+
+
+_describe_connection_unlocks()
+
+
 def _iso_utc(value) -> str | None:
     if value is None:
         return None
@@ -1219,12 +1409,17 @@ def _relieved_daily_rent(profile: PlayerProfile, held: set[str] | None = None) -
     return max(0, daily_rent - daily_rent * relief_bps // 10_000)
 
 
-def _district_locks(profile: PlayerProfile, district: dict) -> list[str]:
+def _district_locks(profile: PlayerProfile, district: dict, owned: set[str] | None = None) -> list[str]:
     locks: list[str] = []
     if profile.office_tier < district["tier"]:
         locks.append(f"Requires a {FIRM_TIERS[district['tier']]['name']}")
     if profile.reputation < district["reputation"]:
         locks.append(f"Requires {district['reputation']} reputation")
+    connection_key = DISTRICT_CONNECTION_GATE.get(district["key"])
+    if connection_key:
+        owned = owned if owned is not None else _owned_keys(profile)
+        if connection_key not in owned:
+            locks.append(f"Requires the {ASSET_BY_KEY[connection_key]['name'].lower()}")
     return locks
 
 
@@ -1234,9 +1429,12 @@ def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dic
     totals = _territory_totals(held)
     daily_rent = int(FIRM_TIERS[profile.office_tier]["rent_daily"])
     districts = []
+    # Read once for the whole board: the connection gate is checked per district
+    # and this is the only place that walks all thirty-eight of them.
+    owned_assets = _owned_keys(profile)
     for district in DISTRICTS:
         owned = district["key"] in held
-        locks = [] if owned else _district_locks(profile, district)
+        locks = [] if owned else _district_locks(profile, district, owned_assets)
         districts.append(
             {
                 "key": district["key"],
@@ -1441,14 +1639,88 @@ def _pay_rent_arrears(
     return paid
 
 
-def _touch_daily_streak(profile: PlayerProfile, now) -> None:
-    """Advance the one calendar-day activity streak; a no-op after the first visit each day.
+# The reputation a run of wins guarantees, and the day count that licenses it.
+#
+# Cases are minted on demand and without limit from Practice, so anything that
+# pays per case is farmable per case. The ladder is therefore not the reward --
+# the day count is. A player can hold only as much streak standing as
+# consecutive *working* days support, and a working day is one on which a case
+# was actually finished, so the ceiling on this mechanic is wall-clock time,
+# which is the one resource the game cannot mint.
+#
+# It is also a floor and never a credit: it stops reputation falling, it never
+# pushes it up. Farming a streak cannot buy a tier. It shares the standing
+# argument -- and therefore TERRITORY_STANDING_FLOOR_CEILING -- with district
+# retainers, so the two compose by addition under one shared cap instead of
+# being two separate ladders racing each other to the top of the game.
+STREAK_STANDING_LADDER: tuple[tuple[int, float], ...] = (
+    (3, 1.0), (6, 2.0), (10, 3.0), (15, 4.0), (21, 5.0),
+)
+STREAK_STANDING_CAP = 5.0
+# One day of consecutive casework licenses one point of the ladder.
+STREAK_STANDING_PER_DAY = 1.0
 
-    This is deliberately the only "streak" concept tied to calendar days — it
-    counts consecutive days the firm was visited at all, which already covers
-    every day a practice question gets answered. It does not touch
-    `current_streak`/`best_streak`, which track consecutive validated case
-    wins for the payout bonus and are a different mechanic entirely.
+
+def streak_standing(profile: PlayerProfile) -> float:
+    """Reputation floor earned by the current run of validated wins.
+
+    Two gates, both necessary. Depth is the ladder, which diminishes: the first
+    point costs 3 wins and the fifth costs 6 more. Consistency is the day count,
+    which is what stops a single long sitting from buying the whole ladder.
+    """
+    earned = 0.0
+    for wins, standing in STREAK_STANDING_LADDER:
+        if (profile.current_streak or 0) >= wins:
+            earned = standing
+    licensed = min(STREAK_STANDING_CAP, max(0, profile.daily_streak_current or 0) * STREAK_STANDING_PER_DAY)
+    return min(earned, licensed)
+
+
+def _streak_form(profile: PlayerProfile) -> dict:
+    """What the streak is currently worth, and what the next rung costs.
+
+    Both halves are reported because either one can be the thing holding the
+    player back, and a bar that will not move however many cases are answered is
+    worse than no bar. When the day count is the binding gate the UI can say so
+    instead of implying more casework would help.
+    """
+    wins = profile.current_streak or 0
+    days = max(0, profile.daily_streak_current or 0)
+    earned = 0.0
+    next_at = None
+    for rung_wins, rung_standing in STREAK_STANDING_LADDER:
+        if wins >= rung_wins:
+            earned = rung_standing
+        elif next_at is None:
+            next_at = rung_wins
+    licensed = min(STREAK_STANDING_CAP, days * STREAK_STANDING_PER_DAY)
+    return {
+        "wins": wins,
+        "days": days,
+        "standing": round(min(earned, licensed), 2),
+        "earned_standing": round(earned, 2),
+        "licensed_standing": round(licensed, 2),
+        "cap": STREAK_STANDING_CAP,
+        "next_win_target": next_at,
+        # True when more casework today cannot raise the floor and only coming
+        # back tomorrow can.
+        "day_limited": earned > licensed,
+    }
+
+
+def _touch_daily_streak(profile: PlayerProfile, now) -> None:
+    """Advance the working-day streak; a no-op after the first finished case each day.
+
+    This counts consecutive days on which the player *finished a case*, not days
+    the app was opened. It used to run from `_settle_upkeep_unflushed`, which is
+    on every protected route, so loading any page advanced it -- a streak that
+    rewarded showing up rather than working, and the only streak the UI showed.
+    It is now called from the one place that also ticks `DailyProgress.cases_completed`,
+    so both day counters answer to the same bar: a real attempt with a real
+    argument, not a thin win and not a page load.
+
+    It does not touch `current_streak`/`best_streak`, which count consecutive
+    validated case wins for the payout bonus and are a different mechanic.
     """
     today = now.date()
     last = profile.daily_streak_last_date
@@ -1479,7 +1751,6 @@ def _settle_upkeep_unflushed(profile: PlayerProfile, now=None) -> dict:
     now = _as_utc(now or utcnow())
     settled_at = _as_utc(profile.upkeep_settled_at) or now
     last_active_at = _as_utc(profile.last_active_at) or settled_at
-    _touch_daily_streak(profile, now)
 
     # Read once and pass down, the way `serialize_game` already threads `owned`.
     # The rent relief needs the held districts and the reputation guard needs the
@@ -1675,7 +1946,7 @@ def _achievement_state(profile: PlayerProfile, owned: set[str]) -> list[dict]:
     return [{"key": key, "name": name, "description": description, "unlocked": unlocked} for key, name, description, unlocked in values]
 
 
-def _public_asset(item: dict, profile: PlayerProfile, owned: set[str]) -> dict:
+def _public_asset(item: dict, profile: PlayerProfile, owned: set[str], held: set[str] | None = None) -> dict:
     # `payout_mult` and `passive_hourly` are published as numbers because the
     # office scene reports what each item contributes, and it has to be able to
     # tell a genuine hourly earner from a case multiplier from a cosmetic that
@@ -1699,6 +1970,18 @@ def _public_asset(item: dict, profile: PlayerProfile, owned: set[str]) -> dict:
         public["list_cost"] = item["cost"]
         public["discount_bps"] = discount_bps
         public["cost"] = _asset_cost(profile, item)
+    if item["type"] == "connection":
+        # The office draws one seal per connection and, until now, had no way to
+        # tell them apart or to know whether the network had been used for
+        # anything. Publishing the districts it gates lets the relationship wall
+        # read directly off the map: a seal for a network you own, a ribbon for
+        # each district that network let you sign.
+        district_keys = CONNECTION_DISTRICTS.get(item["key"], [])
+        public["districts"] = [
+            {"key": key, "name": DISTRICT_BY_KEY[key]["name"], "held": key in (held or set())}
+            for key in district_keys
+        ]
+        public["districts_held"] = sum(1 for key in district_keys if key in (held or set()))
     public["owned"] = item["key"] in owned
     public["available"] = not public["owned"] and _requirements_met(item, profile, owned)
     public["requirements"] = _requirement_copy(item)
@@ -1819,6 +2102,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
         "best_streak": profile.best_streak,
         "daily_streak": profile.daily_streak_current,
         "daily_streak_best": profile.daily_streak_best,
+        "streak_form": _streak_form(profile),
         "total_cases": profile.total_cases,
         "total_correct": profile.total_correct,
         "total_validated_correct": profile.total_validated_correct,
@@ -1857,7 +2141,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
     }
     if include_catalog:
         payload["catalog"] = {
-            "assets": [_public_asset(item, profile, owned) for item in ASSETS],
+            "assets": [_public_asset(item, profile, owned, held) for item in ASSETS],
             "clients": [_public_client(client, profile, owned) for client in CLIENTS],
             "tiers": [
                 {
@@ -2693,6 +2977,11 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     elif validated:
         profile.current_streak += 1
         profile.best_streak = max(profile.best_streak, profile.current_streak)
+    # Before the reputation floor below reads it: today has to be on the board
+    # already, or the first finished case of a new day would be licensed against
+    # yesterday's day count.
+    if reward_eligible or effort_eligible:
+        _touch_daily_streak(profile, settled_at)
     core_payout = round(base_fee * score_mult * firm_mult) if paid_case else 0
     streak_cap = int(context.get("streak_cap_bps") or 2_000) / 10_000
     streak_bonus = round(core_payout * min(streak_cap, profile.current_streak * .02)) if validated else 0
@@ -2750,8 +3039,15 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     maximum_drop *= _reputation_warmup(profile.total_cases)
     reputation_after = round(max(reputation_after, reputation_before - maximum_drop), 1)
     if reward_eligible:
+        # District standing and streak standing are one argument on purpose.
+        # `_career_floor` caps `casework + standing` at
+        # TERRITORY_STANDING_FLOOR_CEILING, so the two add up under a single
+        # shared ceiling rather than forming two ladders that each try to reach
+        # the top of the game on their own.
         career_floor = _career_floor(
-            projected_correct, projected_validated, territory_standing(profile)
+            projected_correct,
+            projected_validated,
+            territory_standing(profile) + streak_standing(profile),
         )
         reputation_after = round(max(reputation_after, career_floor), 1)
         reputation_after = min(100, round(reputation_after + int(context.get("client_reputation_win_bonus_bps") or 0) / 10_000, 1))

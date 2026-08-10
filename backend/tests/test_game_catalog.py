@@ -473,6 +473,41 @@ def test_same_tier_commercial_clients_are_all_worth_one_case_target():
         ), client["name"]
 
 
+def test_clients_at_a_tier_differ_in_shape_even_though_they_match_in_value():
+    """Equal value, different shape -- which is what makes signing one a decision.
+
+    The test above pins that no client is worth more than another. That alone
+    made the choice empty: with `contract_bonus_mult` at 0 for 58 of 69 clients,
+    two clients at a tier differed only by the fee needed to equalise them.
+
+    `_shape_client_contracts` splits each client's value between the per-case fee
+    and the contract close, so the axis is WHEN the money arrives, not how much.
+    The close is forfeitable -- it only pays if the contract is finished, and a
+    reputation slip puts the client on hold -- so this is risk against pacing.
+    """
+    by_tier: dict[int, list[dict]] = {}
+    for client in CLIENTS:
+        by_tier.setdefault(client["tier"], []).append(client)
+
+    for tier, group in by_tier.items():
+        shares = [client["close_share_bps"] for client in group]
+        assert all(0 < share < 5_000 for share in shares), tier
+        if len(group) < 3:
+            continue
+        # A real spread at every tier that has clients to choose between. The
+        # old flat `2 / length` close collapsed from 39% of value at tier 0 to
+        # under 4% by tier 9, so the choice evaporated exactly as the player got
+        # enough money for it to matter.
+        assert max(shares) - min(shares) >= 500, (tier, shares)
+
+    # And no card still quotes a contract multiplier at the player. Eleven did,
+    # naming a `contract_bonus_mult` that is now computed, so the copy would have
+    # started lying the moment the shaping changed.
+    for client in CLIENTS:
+        assert "contract" not in client["special"].lower(), client["name"]
+        assert "resolution" not in client["special"].lower(), client["name"]
+
+
 def test_pro_bono_matters_pay_below_the_market_rate_for_their_tier():
     """Service work buys standing, not cash.
 

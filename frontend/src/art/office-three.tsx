@@ -35,6 +35,17 @@ import {
   type HumanoidState,
 } from './rig'
 
+// Enamel colours for the relationship-wall crests. Fourteen jewel tones chosen
+// to sit inside the office's warm wood palette rather than fight it. Combined
+// with a 3-to-8 spoke count, also hashed from the key, this gives 84 possible
+// crests; the catalog's fourteen connections were checked to land on fourteen
+// distinct ones. There is no frontend test runner in this repo to pin that, so
+// if a connection is added, re-check it rather than assuming.
+const SEAL_ENAMELS = [
+  0x7a3b2e, 0x2f5d50, 0x453a72, 0x8a6a1f, 0x2c4a6b, 0x6b2f4a, 0x3f6b2c,
+  0x7a5a2e, 0x2e6b6b, 0x5a2f7a, 0x8a4a2e, 0x2f4a3f, 0x6b6b2c, 0x3a3f5a,
+]
+
 type OfficeThreeProps = {
   tier: number
   ownedAssets: GameAsset[]
@@ -1944,13 +1955,47 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
 
     // Connections and acquisitions receive individual plaques so every item
     // can be found and focused without turning the office floor into clutter.
+    //
+    // The seals used to alternate brass, teal, brass, teal, which made fourteen
+    // distinct purchases into one repeating texture: you could see THAT you had
+    // connections but never WHICH. Each one now carries a stable crest --
+    // enamel colour and spoke count both derived from the asset key, so a
+    // network looks the same every session and regardless of what else is owned
+    // -- and, below it, one tab per district that network is what let you sign.
+    // Signed districts light in the same glow the map uses for a held district;
+    // unsigned ones stay dark wood. A network bought and never used therefore
+    // reads as exactly that from across the room, which is the honest picture.
     const relationshipAssets = zoneAssets('relationship-wall')
     if (relationshipAssets.length) {
       const relationshipWall = new THREE.Group(); relationshipWall.position.set(-roomHalf + .18, 4.15, .8); relationshipWall.rotation.y = Math.PI / 2; root.add(relationshipWall)
+      const unsigned = sharedStandard({ color: 0x3b3229, roughness: .92 })
       relationshipAssets.forEach((asset, index) => {
         const seal = new THREE.Group(); seal.position.set((index % 7) * .28, -Math.floor(index / 7) * .34, 0); relationshipWall.add(seal)
-        addMesh(seal, constantGeometry('CylinderGeometry:.105,.105,.028,24', () => new THREE.CylinderGeometry(.105, .105, .028, 24)), index % 2 ? brass : teal, [0, 0, 0], [Math.PI / 2, 0, 0])
+        let hash = 0
+        for (let letter = 0; letter < asset.key.length; letter += 1) hash = (hash * 31 + asset.key.charCodeAt(letter)) >>> 0
+        const enamel = sharedStandard({ color: SEAL_ENAMELS[hash % SEAL_ENAMELS.length], roughness: .46, metalness: .34 })
+        addMesh(seal, constantGeometry('CylinderGeometry:.105,.105,.028,24', () => new THREE.CylinderGeometry(.105, .105, .028, 24)), enamel, [0, 0, 0], [Math.PI / 2, 0, 0])
         addMesh(seal, constantGeometry('TorusGeometry:.07,.008,6,24', () => new THREE.TorusGeometry(.07, .008, 6, 24)), paper, [0, 0, .02])
+        const spokes = 3 + (Math.floor(hash / SEAL_ENAMELS.length) % 6)
+        for (let spoke = 0; spoke < spokes; spoke += 1) {
+          const angle = spoke / spokes * Math.PI * 2
+          addMesh(
+            seal,
+            constantGeometry('BoxGeometry:.014,.038,.009', () => new THREE.BoxGeometry(.014, .038, .009)),
+            brass,
+            [Math.cos(angle) * .044, Math.sin(angle) * .044, .026],
+            [0, 0, angle],
+          )
+        }
+        const districts = asset.districts ?? []
+        districts.forEach((district, slot) => {
+          addMesh(
+            seal,
+            constantGeometry('BoxGeometry:.026,.062,.008', () => new THREE.BoxGeometry(.026, .062, .008)),
+            district.held ? glow : unsigned,
+            [(slot - (districts.length - 1) / 2) * .038, -.108, .01],
+          )
+        })
         attachFocus([asset.key], seal, .16, 0, [0, 0, 0])
       })
     }

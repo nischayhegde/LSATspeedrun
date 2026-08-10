@@ -209,11 +209,11 @@ export function CasesLobbyPage() {
         <div className="practice-action-client">
           <ClientPortrait kind={workingClient.icon} name={workingClient.name} className="lobby-client-portrait" />
           <div>
-            <small>{game.active_client.on_hold ? 'EFFECTIVE CLIENT' : 'ACTIVE CLIENT'}</small>
+            <small>{game.active_client.on_hold ? 'BILLING INSTEAD' : 'ON RETAINER'}</small>
             <strong>{workingClient.name}</strong>
             <span className="practice-action-terms">
               <b><Coins size={13} /> {formatMoney(workingClient.base_fee)} base fee</b>
-              <b><BriefcaseBusiness size={13} /> {game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} cases left`}</b>
+              <b><BriefcaseBusiness size={13} /> {game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} to bonus`}</b>
               <b><Flame size={13} /> {game.current_streak} validated streak</b>
             </span>
           </div>
@@ -361,7 +361,7 @@ export function CasesLobbyPage() {
             <h2>Client</h2>
             <p>{game.active_client.on_hold
               ? `${game.active_client.name} on hold until Reputation recovers. Walk-in fee ${formatMoney(workingClient.base_fee)}.`
-              : `${workingClient.name}. ${formatMoney(workingClient.base_fee)} base fee. ${game.active_client.cases_remaining} cases left.`}</p>
+              : `${workingClient.name}. ${formatMoney(workingClient.base_fee)} base fee. Retain a better-paying client in the Firm tab.`}</p>
           </section>
         </div>
       </details>
