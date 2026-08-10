@@ -9,6 +9,8 @@ out for a student the gate is not helping.
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 
 from app import create_app
@@ -1697,6 +1699,13 @@ def _trial(key: str, variant: str = "prompt") -> dict:
     return {"key": key, "variant": variant, "propensity": 0.75, "candidates_n": 3}
 
 
+# Positions are unique per session, so history items are handed out of one
+# running counter. Deriving them from the tag looked tidier and was wrong:
+# `hash` is salted per interpreter, so two tags collided on some runs and not
+# others, which is a test that fails once a fortnight for no visible reason.
+_history_position = itertools.count(1000)
+
+
 def _history(
     study: StudySession,
     question,
@@ -1713,7 +1722,7 @@ def _history(
         item = SessionItem(
             session_id=study.id,
             question_id=question.id,
-            position=1000 + abs(hash(tag)) % 500 + index,
+            position=next(_history_position),
             target_time_seconds=150,
         )
         db.session.add(item)
