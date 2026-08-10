@@ -1,0 +1,153 @@
+/* The proctored surface.
+
+   Deliberately plainer than the case screen: no leather, no portraits, no
+   stamps. A student sitting a timed form is being measured, and every piece of
+   decoration is a thing for the eye to go to that the real interface would not
+   have given them. What is kept from the case screen is the parts that carry
+   meaning — the passage column, the choice list — so the reading experience a
+   student has practised in does not change under them on test day. */
+
+.session-page.is-exam { max-width: 1180px; margin: 0 auto; padding: 18px var(--page-gutter, 48px) 56px; }
+
+/* --- the running section --- */
+
+.exam-run { display: flex; flex-direction: column; gap: 14px; }
+
+.exam-bar {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 18px;
+  padding: 14px 20px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface); box-shadow: 0 6px 20px rgba(24,32,39,.06);
+  position: sticky; top: 8px; z-index: 6;
+}
+.exam-bar-section span { display: block; font-size: 10.5px; letter-spacing: .13em; color: var(--muted); font-weight: 700; }
+.exam-bar-section strong { font-size: 16px; }
+.exam-bar-count { text-align: center; }
+.exam-bar-count strong { display: block; font-size: 15px; }
+.exam-bar-count small { color: var(--muted); font-size: 12px; }
+
+.exam-clock {
+  justify-self: end; display: flex; align-items: baseline; gap: 8px;
+  padding: 8px 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--paper);
+}
+.exam-clock svg { align-self: center; color: var(--muted); }
+/* Tabular figures, because a clock whose digits change width twitches once a
+   second in the corner of a student's eye for thirty-five minutes. */
+.exam-clock span { font-size: 25px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.exam-clock small { color: var(--muted); font-size: 11px; }
+.exam-clock.is-warning { border-color: var(--red); background: var(--red-soft); }
+.exam-clock.is-warning span, .exam-clock.is-warning small { color: var(--red); }
+
+/* --- the answer sheet --- */
+
+.exam-sheet {
+  display: flex; gap: 6px; overflow-x: auto; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+  scrollbar-width: thin;
+}
+.exam-sheet-cell {
+  position: relative; flex: 0 0 auto; min-width: 34px; height: 34px; padding: 0 6px;
+  border-radius: 8px; border: 1px solid var(--line); background: #fff;
+  font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted);
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.exam-sheet-cell.is-answered { background: var(--navy); border-color: var(--navy); color: #fff; }
+.exam-sheet-cell.is-current { outline: 2px solid var(--gold); outline-offset: 1px; color: var(--ink); }
+.exam-sheet-cell.is-answered.is-current { color: #fff; }
+/* The flag is a corner mark rather than a colour, so it survives being both
+   answered and flagged — which is the state it is most often in. */
+.exam-sheet-cell.is-flagged i {
+  position: absolute; top: 2px; right: 2px; width: 0; height: 0;
+  border-top: 7px solid var(--gold); border-left: 7px solid transparent;
+}
+
+/* --- the question --- */
+
+.answer-card.exam-card { box-shadow: none; }
+.answer-card.exam-card .question-label { color: var(--muted); }
+
+.exam-item-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.exam-item-actions button {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px;
+  border-radius: 9px; border: 1px solid var(--line); background: var(--surface);
+  font-size: 13px; font-weight: 600; color: var(--muted);
+}
+.exam-item-actions button:hover:not(:disabled) { border-color: var(--navy); color: var(--ink); }
+.exam-flag.is-on { background: var(--gold-soft); border-color: var(--gold); color: var(--gold-dark); }
+
+/* --- the foot --- */
+
+.exam-foot {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px;
+  padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+  position: sticky; bottom: 8px; z-index: 6;
+}
+.exam-step {
+  display: inline-flex; align-items: center; gap: 7px; padding: 10px 16px;
+  border-radius: 10px; border: 1px solid var(--line); background: var(--paper); font-weight: 600;
+}
+.exam-foot .exam-step:last-child { justify-self: end; }
+.exam-submit {
+  padding: 10px 18px; border-radius: 10px; border: 1px solid var(--navy);
+  background: transparent; color: var(--navy); font-weight: 700;
+}
+.exam-submit:hover { background: var(--navy); color: #fff; }
+
+.exam-submit-confirm {
+  display: grid; gap: 8px; justify-items: center; text-align: center;
+  padding: 14px 18px; border-radius: 12px; border: 1px solid var(--gold); background: var(--gold-soft);
+}
+.exam-submit-confirm strong { font-size: 14px; }
+.exam-submit-confirm small { color: var(--gold-dark); font-size: 12px; max-width: 46ch; }
+.exam-submit-confirm div { display: flex; gap: 10px; }
+.exam-submit-confirm div button:first-child {
+  padding: 9px 16px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); font-weight: 600;
+}
+.exam-submit-confirm .primary-button { padding: 9px 18px; }
+
+/* --- boundaries: the gate before a section, and the intermission --- */
+
+.exam-gate, .exam-intermission, .exam-loading {
+  display: grid; justify-items: center; text-align: center; gap: 14px;
+  max-width: 640px; margin: 0 auto; padding: 56px 24px;
+}
+.exam-gate h1, .exam-intermission h1 { margin: 0; font-size: 30px; }
+.exam-intermission h1 { font-size: 54px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.exam-gate-terms, .exam-intermission p { color: var(--muted); max-width: 52ch; margin: 0; line-height: 1.55; }
+.exam-gate-grace { color: var(--red); font-size: 13px; font-weight: 600; margin: 0; }
+.exam-intermission-mark {
+  display: grid; place-items: center; width: 66px; height: 66px; border-radius: 50%;
+  background: var(--gold-soft); color: var(--gold-dark);
+}
+.exam-loading { color: var(--muted); }
+
+.exam-roster { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; width: 100%; text-align: left; }
+.exam-roster-item {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px;
+  padding: 11px 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface);
+}
+.exam-roster-item > span {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--paper); font-size: 12.5px; font-weight: 700; color: var(--muted);
+}
+.exam-roster-item strong { display: block; font-size: 14px; }
+.exam-roster-item small { color: var(--muted); font-size: 12px; }
+.exam-roster-item.is-done { border-color: var(--green); background: var(--green-soft); }
+.exam-roster-item.is-done > span, .exam-roster-item.is-done svg { color: var(--green); }
+.exam-roster-item.is-expired { border-color: var(--red); background: var(--red-soft); }
+.exam-roster-item.is-expired > span, .exam-roster-item.is-expired svg { color: var(--red); }
+.exam-roster-item.is-pending { opacity: .68; }
+
+@media (max-width: 900px) {
+  .session-page.is-exam { padding: 10px 14px 40px; }
+  .exam-bar { grid-template-columns: 1fr auto; gap: 10px; padding: 11px 13px; }
+  .exam-bar-count { grid-column: 1; grid-row: 2; text-align: left; }
+  .exam-clock { grid-row: 1 / span 2; }
+  .exam-clock span { font-size: 22px; }
+  .exam-foot { grid-template-columns: auto 1fr auto; padding: 10px; }
+  .exam-step span { display: none; }
+  .exam-submit-confirm { grid-column: 1 / -1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exam-sheet-cell { transition: none; }
+}

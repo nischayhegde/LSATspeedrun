@@ -960,6 +960,23 @@ def focus_exam_item(session_id: str, position: int):
     return jsonify({"session": serialize_session(session)})
 
 
+@api.get("/study-sessions/<session_id>/section")
+@require_auth
+def get_exam_section(session_id: str):
+    """The running section's questions, delivered once so navigation is free."""
+    session, failure = _sectioned_session(session_id)
+    if failure:
+        return failure
+    # A read, but one that can close an expired section — otherwise the answer
+    # to "give me the section" could be a section that is already over.
+    exam.enforce_exam_clock(session)
+    try:
+        papers = exam.section_papers(session)
+    except exam.ExamError as exc:
+        return _exam_error(exc)
+    return jsonify({"items": papers, "exam": exam.serialize_exam(session)})
+
+
 @api.get("/study-sessions/<session_id>")
 @require_auth
 def get_session(session_id: str):

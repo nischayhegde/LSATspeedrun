@@ -638,6 +638,68 @@ export type AttemptResult = {
   }
 }
 
+/** One separately timed section of a mega-litigation, as the client sees it. */
+export type ExamSection = {
+  index: number
+  label: string
+  section_type: string
+  questions: number
+  start_position: number
+  end_position: number
+  time_limit_seconds: number
+  /** Intermission owed *after* this section. Non-zero on exactly one section. */
+  break_seconds: number
+  status: 'pending' | 'active' | 'ended'
+  started_at: string | null
+  deadline_at: string | null
+  ended_at: string | null
+  ended_reason: 'submitted' | 'expired' | 'abandoned' | null
+  unanswered: number
+  target_time_seconds: number
+}
+
+/** One row of the running section's answer sheet. Says nothing about correctness. */
+export type ExamAnswerSheetEntry = {
+  position: number
+  item_id: string
+  /** Numbered from 1 inside its own section, the way the real interface numbers. */
+  number: number
+  answered: boolean
+  flagged: boolean
+  passage_id: string | null
+}
+
+/** One question of the running section, delivered up front. No case dressing. */
+export type ExamPaper = {
+  id: string
+  position: number
+  number: number
+  selected_label: string | null
+  flagged: boolean
+  target_time_seconds: number
+  question: Question
+}
+
+export type ExamState = {
+  stage: 'awaiting_section' | 'in_section' | 'intermission' | 'completed'
+  sections: ExamSection[]
+  active_section_index: number | null
+  next_section_index: number | null
+  /**
+   * Milliseconds left on whichever clock is running — the section's, or the
+   * intermission's. The client ticks this down between reads for smoothness and
+   * re-reads on every server reply, but the server alone decides when a section
+   * is over: a countdown that reaches zero here only prompts a read.
+   */
+  remaining_ms: number | null
+  warning_seconds: number
+  intermission_ends_at: string | null
+  /** When an unattended boundary gives up and closes the sitting out. */
+  boundary_expires_at: string | null
+  answered: number
+  answer_sheet: ExamAnswerSheetEntry[]
+}
+
 export type StudySession = {
   id: string
   mode: 'practice' | 'diagnostic' | 'blind_review'
@@ -655,10 +717,17 @@ export type StudySession = {
   current_index: number
   progress_percent: number
   started_at: string
-  /** Whole-form deadline. Set only for a mega-litigation. */
+  /** Whole-form deadline. Only on a pre-0036 mega-litigation, which had one. */
   deadline_at?: string | null
   /** Server-authoritative time left on that deadline; the client counts down between polls but never decides. */
   remaining_ms?: number | null
+  /**
+   * Present exactly when the run is administered as separately timed sections,
+   * which is every mega-litigation started since 0036. Its absence on a
+   * diagnostic means a sitting begun under the old whole-form clock, which
+   * finishes under the rules it started with.
+   */
+  exam?: ExamState | null
   time_limit_seconds?: number | null
   completed_at?: string | null
   /** Answer-release stage of a completed diagnostic. Absent on every other run. */
@@ -670,6 +739,42 @@ export type StudySession = {
   current_item?: SessionItem | null
   pending_item?: SessionItem | null
   pending_result?: AttemptResult | null
+}
+
+/** Per-section facts a sitting produced. Rates are over the whole section. */
+export type ExamSectionReport = {
+  index: number
+  label: string
+  section_type: string
+  questions: number
+  answered: number
+  unanswered: number
+  correct: number
+  /** Over every question in the section, blanks included. A blank is a result. */
+  accuracy: number
+  /** Over what was actually answered, so the clock's cost separates from being wrong. */
+  answered_accuracy: number | null
+  time_limit_seconds: number
+  seconds_used: number | null
+  seconds_on_questions: number
+  ended_reason: 'submitted' | 'expired' | 'abandoned' | null
+  ran_out_of_time: boolean
+  flagged: number
+  flagged_unanswered: number
+  answers_changed: number
+  /** Both halves scored over their own whole length, so a collapse reads as one. */
+  opening: { questions: number; correct: number }
+  closing: { questions: number; correct: number }
+}
+
+export type ExamReport = {
+  administered: true
+  sections: ExamSectionReport[]
+  unanswered: number
+  sections_expired: number
+  sections_abandoned: number
+  flagged_unanswered: number
+  answers_changed: number
 }
 
 export type PracticeSummary = {
@@ -684,7 +789,9 @@ export type PracticeSummary = {
   elapsed_minutes: number
   explanation_accuracy?: number | null
   skills: Array<{ name: string; attempts: number; accuracy: number }>
-  sections?: Array<{ index: number; label: string; correct: number; questions: number; accuracy: number; elapsed_minutes: number; timing_compromised: boolean }>
+  sections?: Array<{ index: number; label: string; correct: number; questions: number; answered?: number; accuracy: number; elapsed_minutes: number; timing_compromised: boolean }>
+  /** Only on a sectioned mega-litigation. What the administration itself produced. */
+  exam?: ExamReport
   omitted?: number
   confidence?: { average: number | null; high_confidence_errors: number; high_confidence_attempts: number }
   timing_compromised?: boolean

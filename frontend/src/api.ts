@@ -313,6 +313,43 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(draft),
     }),
+  /* The sectioned mega-litigation. Marking an answer is not submitting it:
+     nothing is graded until a section closes, which is why these four are
+     separate from `submitAttempt` rather than options on it. */
+  startExamSection: (sessionId: string, sectionIndex: number) =>
+    request<{ session: StudySession; summary?: PracticeSummary }>(
+      `/study-sessions/${sessionId}/sections/${sectionIndex}/start`,
+      { method: 'POST' },
+    ),
+  submitExamSection: (sessionId: string, sectionIndex: number) =>
+    request<{ session: StudySession; summary?: PracticeSummary }>(
+      `/study-sessions/${sessionId}/sections/${sectionIndex}/submit`,
+      { method: 'POST' },
+    ),
+  /** The running section's questions, fetched once so navigation costs no clock. */
+  examSection: (sessionId: string) =>
+    request<{ items: import('./types').ExamPaper[]; exam: import('./types').ExamState }>(
+      `/study-sessions/${sessionId}/section`,
+    ),
+  /** Mark, change, clear (`null`) or flag one answer on the running sheet. */
+  recordExamAnswer: (
+    sessionId: string,
+    itemId: string,
+    body: { selected_label?: string | null; flagged?: boolean },
+  ) =>
+    request<{
+      saved: boolean
+      answer: { item_id: string; position: number; selected_label: string | null; flagged: boolean }
+      exam: import('./types').ExamState
+    }>(`/study-sessions/${sessionId}/answers/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  focusExamItem: (sessionId: string, position: number) =>
+    request<{ session: StudySession; summary?: PracticeSummary }>(
+      `/study-sessions/${sessionId}/focus/${position}`,
+      { method: 'POST' },
+    ),
   submitAttempt: (
     sessionId: string,
     body: {

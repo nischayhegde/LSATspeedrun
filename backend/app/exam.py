@@ -489,6 +489,38 @@ def focus_item(session: StudySession, position: int) -> SessionItem:
     return _current_item(session)
 
 
+def section_papers(session: StudySession) -> list[dict]:
+    """Every question in the running section, handed over in one go.
+
+    A student on the real test has the whole section in front of them and turns
+    to any question in it instantly. Fetching one question per hop would make
+    going back to check number four a network round trip on a clock that is
+    running — the navigation would cost time the administration does not charge.
+    So the section is delivered when it starts and the client renders locally.
+
+    Only the running section, and only while it is running: a section that has
+    not begun is not something the student is allowed to have read yet, which is
+    the rule this endpoint exists to keep rather than to work around.
+    """
+    from .services import serialize_question
+
+    running = active_section(session)
+    if not running:
+        raise ExamError("no_section_running")
+    return [
+        {
+            "id": item.id,
+            "position": item.position,
+            "number": item.position - running.start_position + 1,
+            "selected_label": item.draft_selected_label,
+            "flagged": bool(item.flagged),
+            "target_time_seconds": item.target_time_seconds,
+            "question": serialize_question(item.question),
+        }
+        for item in _items_of(running)
+    ]
+
+
 def record_answer(
     session: StudySession,
     item_id: str,
