@@ -164,6 +164,7 @@ const ROUTE_ENTRY_CHUNKS: [RegExp, string][] = [
  * the emitted document honest even after Rollup regroups the chunks.
  */
 const SHEET_ORDER = [
+  'src/performance.css',
   'src/narrative.css',
   'src/trial-calendar.css',
   'src/wardrobe.css',

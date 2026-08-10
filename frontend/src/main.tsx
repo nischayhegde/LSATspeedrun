@@ -28,13 +28,15 @@ import { SoundProvider } from './sound'
  * gzipped out of the stylesheet every screen blocks on. The clash scan behind
  * that change is `.shots/css-clash.mjs`.
  *
- * `performance.css` stayed. It reads like a dashboard sheet and is imported by
- * the dashboard, but it also styles the whole session review on /cases/:id, the
- * strategy sections, and the docket on /cases — 25 of its classes are used by
- * `case-session-page` alone — so deferring it to the dashboard chunk would
- * leave those screens unstyled.
+ * `performance.css` was the seventh, and it could not simply follow the
+ * dashboard chunk: it reads like a dashboard sheet, but it also styles the
+ * whole session review on /cases/:id, the docket on /cases and two cards on
+ * /office. So it was cut along that line instead. What other screens use is
+ * `review-panels.css`, which takes the slot below and keeps its old place in
+ * the cascade; the 41 kB that only the dashboard can reach stayed in
+ * `performance.css` and now travels with the dashboard.
  */
-import './performance.css'
+import './review-panels.css'
 import './styles.css'
 import './art/art.css'
 import './case-instrument.css'
