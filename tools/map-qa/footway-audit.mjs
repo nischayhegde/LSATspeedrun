@@ -19,13 +19,13 @@
 //
 // No simulation frames: this is pure geometry, so it is quick even on a loaded
 // machine and its numbers do not depend on the clock at all.
-import { open, region, save, TABS } from './lib.mjs'
+import { open, region, save, TABS, OUT } from './lib.mjs'
 import { mkdirSync } from 'node:fs'
 
 const tag = process.argv[2] ?? 'base'
 const only = process.argv.slice(3)
 const keys = only.length ? only : ['city', 'nation', 'continent']
-const dir = `/Users/alan/LSATspeedrun/.maps/footway-${tag}`
+const dir = `${OUT}/footway-${tag}`
 mkdirSync(dir, { recursive: true })
 
 function audit(settings) {
@@ -310,6 +310,7 @@ function audit(settings) {
     byWay: byWay.sort((a, b) => b.blocked - a.blocked),
     worstSites: worst,
     pedestrianPlan: world.userData.pedestrianPlan ?? null,
+    authoredClearance: world.userData.authoredClearance ?? null,
   }
 }
 

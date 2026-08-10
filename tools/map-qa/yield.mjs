@@ -26,13 +26,13 @@
  *             separates a wiring fault from a braking one, and the claim array
  *             is cleared at the end of every `update`.
  */
-import { open, region, save, TABS } from './lib.mjs'
+import { open, region, save, TABS, OUT } from './lib.mjs'
 
 const tag = process.argv[2] ?? 'probe'
 const keys = process.argv.slice(3).filter((a) => !a.startsWith('--'))
 const REGIONS = keys.length ? keys : ['city', 'nation', 'continent']
 const FRAMES = Number(process.env.MAPS_FRAMES ?? 900)
-const dir = `/Users/alan/LSATspeedrun/.maps/yield-${tag}`
+const dir = `${OUT}/yield-${tag}`
 
 function probe(settings) {
   const { frames } = settings

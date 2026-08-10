@@ -16,7 +16,7 @@
  *   node tools/map-qa/shot.mjs after nation -3.5,6.4,green 7,-2.4,farmstead
  */
 import { mkdirSync } from 'node:fs'
-import { open, region as toRegion, TABS } from './lib.mjs'
+import { open, region as toRegion, TABS, OUT } from './lib.mjs'
 
 const tag = process.argv[2] ?? 'shot'
 const key = process.argv[3] ?? 'nation'
@@ -25,7 +25,7 @@ const stops = process.argv.slice(4).map((argument) => {
   return { x: Number(x), z: Number(z), label: label || `${x}_${z}` }
 })
 
-const dir = `/Users/alan/LSATspeedrun/.map-shots`
+const dir = `${OUT}/../.map-shots`
 mkdirSync(dir, { recursive: true })
 
 const { browser, page } = await open({ viewport: { width: 1600, height: 1000 } })
