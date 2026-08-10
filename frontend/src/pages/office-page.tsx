@@ -20,6 +20,8 @@ import { openEpilogue } from '../narrative'
 import { useAmbientMusic, useSound } from '../sound'
 import { WardrobePanel } from '../wardrobe'
 import { effectiveClient, useGame } from './shared'
+// The rules in `styles.css` that only this screen can render.
+import '../office-page.css'
 
 
 export function OfficePage() {

@@ -828,9 +828,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .portrait-skyline i { width: 18px; position: absolute; bottom: 0; background: #25465b; }
 .portrait-skyline i:nth-child(1) { left: 3px; height: 21px; }.portrait-skyline i:nth-child(2) { left: 29px; height: 29px; }.portrait-skyline i:nth-child(3) { right: 3px; height: 18px; }
 @keyframes portrait-hop { 50% { transform: translateY(-3px); } }/* The explorable office */
-.office-game-page { min-height: calc(100vh - 68px); padding: 28px clamp(16px, 2.6vw, 42px) 55px; color: #f7e9bd; background: #101724; }
 .pixel-kicker { color: #66c5bd; font-size: 11px; }
-.office-world-shell { max-width: 1660px; margin: auto; position: relative; }
 
 /* ---------------------------------------------------------------------------
    The economy ledger: fixed, always on, and therefore held to a strict budget.
@@ -915,56 +913,15 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .world-zone:hover > span { display: block; }
 .world-zone b, .world-zone small { display: block; }.world-zone b { color: #f2c75b; font-size: 10.5px; text-transform: uppercase; }.world-zone small { margin-top: 4px; color: #a9c0c7; font-size: 10px; }
 @keyframes zone-pulse { 50% { transform: scale(1.35); opacity: .5; } }
-.zone-case { margin: 29px 0 0 -20px; }.zone-firm { margin: 6px 0 0 20px; }.zone-empire { margin: 19px 0 0 -12px; }@keyframes dust-float { from { transform: translate(0, 18px); opacity: 0; } 30% { opacity: .8; } to { transform: translate(17px, -45px); opacity: 0; } }.pixel-meter { height: 12px; padding: 2px; border: 2px solid #3e2c22; background: #8d7652; }.pixel-meter i { height: 100%; display: block; background: #4e9e72; box-shadow: inset 0 -3px #317354; }.office-upkeep-strip { margin-top: 14px; padding: 11px 14px; display: grid; grid-template-columns: minmax(170px,.66fr) minmax(480px,2fr) minmax(190px,.8fr); align-items: center; gap: 16px; border: 1px solid rgba(103,183,170,.3); border-left: 4px solid #579a8f; border-radius: 11px; color: #dce5df; background: linear-gradient(110deg,rgba(15,32,39,.97),rgba(25,43,49,.94)); box-shadow: 0 12px 27px rgba(4,9,14,.22),inset 0 1px rgba(255,255,255,.035); }
-.office-upkeep-heading { display: flex; align-items: center; gap: 9px; }
-.office-upkeep-heading > svg { width: 24px; color: #dfbf70; }
-.office-upkeep-heading span,.office-upkeep-heading small,.office-upkeep-heading strong { display: block; }
-.office-upkeep-heading small,.office-upkeep-terms small { color: #72bdb2; font-family: var(--font-pixel); font-size: 8px; font-weight: 850; letter-spacing: .12em; }
-.office-upkeep-heading strong { margin-top: 3px; color: #f0dfaf; font-family: var(--font-display); font-size: 16px; }
-.office-upkeep-terms { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
-.office-upkeep-terms > span { min-width: 0; padding: 1px 12px; border-left: 1px solid rgba(213,193,143,.16); }
-.office-upkeep-terms strong { display: block; margin-top: 4px; overflow: hidden; color: #e8dfc7; font-family: var(--font-ui); font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-.office-upkeep-terms .is-due strong { color: #efaf8f; }
-.office-upkeep-note { color: #9badab; font-size: 10px; line-height: 1.4; text-align: right; }
-.office-upkeep-strip > p { margin: 0; color: #c1cfca; font-size: 11px; }
-.office-upkeep-strip.has-arrears { border-color: rgba(190,111,86,.42); border-left-color: #bb735b; }
-.office-upkeep-strip.is-complete { border-left-color: #d6b65f; }
-
-.office-milestone-strip { margin-top: 14px; padding: 13px 15px; display: grid; grid-template-columns: minmax(180px,.8fr) minmax(260px,1.35fr) auto; align-items: center; gap: 18px; border: 1px solid rgba(208,178,107,.32); border-radius: 14px; color: #e9e2cf; background: linear-gradient(105deg,rgba(18,31,43,.96),rgba(24,40,50,.92)); box-shadow: 0 14px 30px rgba(4,8,14,.28),inset 0 0 0 1px rgba(255,255,255,.025); }
-.office-milestone-copy span { color: #69c5bd; font-family: var(--font-pixel); font-size: 9px; font-weight: 850; letter-spacing: .14em; }
-.office-milestone-copy h2 { margin: 4px 0 0; color: #f3dfaa; font-family: var(--font-display); font-size: 20px; font-weight: 650; line-height: 1.1; }
-.office-milestone-progress { display: grid; grid-template-columns: minmax(130px,1fr) auto; align-items: center; gap: 4px 12px; }
-.office-milestone-progress .pixel-meter { grid-row: 1 / span 2; height: 12px; padding: 2px; border: 1px solid #6e624b; border-radius: 999px; background: #3c4550; overflow: hidden; }
-.office-milestone-progress .pixel-meter i { border-radius: inherit; }
-.office-milestone-progress p,.office-milestone-progress small { margin: 0; font-family: var(--font-pixel); }
-.office-milestone-progress p { color: #e9dbb5; font-size: 10px; }.office-milestone-progress small { color: #c3aa6b; font-size: 8.5px; font-weight: 800; }
-.office-milestone-strip > p { margin: 0; color: #bfc8c2; font-size: 12px; }
-.office-milestone-strip > button { min-height: 38px; padding: 8px 12px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgba(223,195,125,.4); border-radius: 9px; color: #f5e5b8; background: #294854; box-shadow: inset 0 0 0 1px rgba(255,255,255,.035); font-family: var(--font-pixel); font-size: 9px; font-weight: 850; }
-.office-milestone-strip > button svg { width: 14px; }
-
-.office-gamebar { max-width: 1660px; margin: 19px auto 0; display: grid; grid-template-columns: 1fr 1.12fr .82fr; gap: 13px; }
-.office-gamebar > article { min-height: 116px; border: 3px solid #090d15; background: #f0ddb0; box-shadow: inset 0 0 0 2px #c19b5f, 5px 5px #090d15; }
-.office-gamebar .training-focus-card,
-.office-gamebar .training-evidence-card { color: #172331; }
-.office-gamebar .training-focus-card span,
-.office-gamebar .training-evidence-card span { color: #176965; font-size: 10px; letter-spacing: .11em; }
-.office-gamebar .training-focus-card h3 { color: #172331; font-size: 25px; text-shadow: 0 1px rgba(255,255,255,.3); }
-.office-gamebar .training-focus-card p { color: #545b57; font-size: 12px; font-weight: 650; line-height: 1.35; }
-.office-gamebar .training-evidence-card strong { color: #213746; font-size: 34px; text-shadow: 0 1px rgba(255,255,255,.28); }
-.office-gamebar .training-evidence-card small { color: #565e59; font-size: 11px; font-weight: 700; }
-.office-gamebar .training-focus-card button,
-.office-gamebar .training-evidence-card button { min-height: 44px; padding: 9px 13px; border: 2px solid #b88935; font-size: 10px; box-shadow: 3px 3px #9a712b; }
+.zone-case { margin: 29px 0 0 -20px; }.zone-firm { margin: 6px 0 0 20px; }.zone-empire { margin: 19px 0 0 -12px; }@keyframes dust-float { from { transform: translate(0, 18px); opacity: 0; } 30% { opacity: .8; } to { transform: translate(17px, -45px); opacity: 0; } }
 /* The portrait track is intrinsic rather than a fixed 76px. The rendered
    portrait is `av-portrait`, which art.css sizes to 86px and wins on load
    order, so a fixed track put the portrait 10px into the text column before
    its decorations were counted at all. The badge and the title pill are both
    absolutely positioned, so neither widens the track — `--portrait-overhang`
    reserves the room they hang outside the circle. */
-.client-quest-card { --portrait-overhang: 6px; padding: 12px 12px 20px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
 .client-quest-card .client-portrait { margin-right: var(--portrait-overhang); }
-.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }
-.client-quest-card > div { min-width: 0; }
-.client-quest-card p { overflow-wrap: anywhere; }.client-quest-card span, .daily-quest-card span { color: #945b30; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.client-quest-card h3 { margin: 5px 0; color: #1d2935; font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.client-quest-card p { margin: 0; color: #6d5e4b; font-size: 11px; }.client-quest-card button { min-height: 34px; padding: 0 10px; border: 2px solid #121720; color: #f8e6b5; background: #263f50; box-shadow: 3px 3px #121720; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; }.client-quest-card button { display: flex; align-items: center; gap: 5px; }.client-quest-card button svg { width: 12px; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
+.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }.client-quest-card span, .daily-quest-card span { color: #945b30; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
 .empire-game-page { width: 100%; min-height: calc(100vh - 68px); padding: 27px clamp(16px, 2.7vw, 44px) 48px; color: #f6e8bb; background: #101724; }
 /* Just the page title here — the map's own headquarters panel just below
    carries every stat, so this bar stays plain text with no boxed card. */
@@ -977,10 +934,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .case-lobby, .firm-page { color: #2a2830; }.active-matter-copy > span, .active-matter-fee > span, .matter-tag small, .question-progress, .case-timer small { font-family: var(--font-pixel); }.choice { border: 3px solid #544937; border-radius: 0; box-shadow: 3px 3px #544937; }
 
 @media (max-width: 1120px) {
-  .office-explorer { min-height: 520px; }  .office-upkeep-strip { grid-template-columns: minmax(160px,.55fr) minmax(440px,1.8fr); }
-  .office-upkeep-note { grid-column: 1 / 3; text-align: left; }
-  .office-milestone-strip { grid-template-columns: minmax(170px,.8fr) minmax(230px,1.2fr) auto; gap: 12px; }
-  .office-gamebar { grid-template-columns: 1fr 1fr; }}
+  .office-explorer { min-height: 520px; }}
 
 /* ---------------------------------------------------------------------------
    The laptop header: the one reflow step between the full desktop row and the
@@ -1085,19 +1039,13 @@ h1, h2, h3 { letter-spacing: -.035em; }
   .app-shell { padding-bottom: 66px; }
   .mobile-nav { height: 66px; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); border: 0; border-top: 4px solid #080c13; background: #111a29; backdrop-filter: none; box-shadow: inset 0 3px #2f4860; }
   .mobile-nav a { color: #91a7b1; font-family: var(--font-pixel); font-size: 10px; }.mobile-nav a.active { color: #f2c75b; background: #1d2d41; }
-  .office-explorer { min-height: 480px; aspect-ratio: 4 / 3; }  .office-upkeep-strip { grid-template-columns: 1fr; }
-  .office-upkeep-terms { grid-template-columns: repeat(4,minmax(120px,1fr)); overflow-x: auto; }
-  .office-upkeep-note { grid-column: 1; }
-  .office-milestone-strip { grid-template-columns: 1fr auto; }.office-milestone-progress { grid-column: 1 / 2; }.office-milestone-strip > button { grid-column: 2; grid-row: 1 / span 2; }
-  .office-gamebar { grid-template-columns: 1fr; }}
+  .office-explorer { min-height: 480px; aspect-ratio: 4 / 3; }}
 
 @media (max-width: 620px) {
   .app-header { height: 62px; padding-inline: 10px; }
   .brand-mark { width: 36px; height: 36px; }.header-economy > span { font-size: 10.5px; }
   .office-game-page, .empire-game-page { padding: 18px 10px 35px; }
-  .office-explorer { min-height: 500px; aspect-ratio: auto; }.office-upkeep-strip { padding: 11px; }
-  .office-upkeep-terms { grid-template-columns: repeat(4,130px); }
-  .office-milestone-strip { grid-template-columns: 1fr; padding: 12px; }.office-milestone-progress,.office-milestone-strip > button { grid-column: 1; grid-row: auto; }.office-milestone-strip > button { width: 100%; }.client-quest-card { grid-template-columns: auto minmax(0, 1fr); }.client-quest-card > button { grid-column: 1 / 3; }.login-copy h1 { font-size: 38px; }
+  .office-explorer { min-height: 500px; aspect-ratio: auto; }.login-copy h1 { font-size: 38px; }
 }@keyframes airport-shuttle{50%{translate:30px 0}}@keyframes orbital-ready{50%{translate:0 -7px;filter:drop-shadow(0 9px #f1b14e)}}@keyframes mega-core-float{50%{translate:0 -6px}}@keyframes mega-particle{50%{translate:8px -15px;opacity:.2}}/* Client archetypes read like case files, and every new portrait has a skyline. */.client-civic .portrait-skyline i{background:#d0bc79}.client-property .portrait-skyline i{background:repeating-linear-gradient(#344d56 0 5px,#e2c468 5px 7px)}.client-health::after{content:"+";position:absolute;right:8px;top:7px;color:#f1e8c4;font-family:var(--font-pixel);font-size:15px}.client-media .portrait-skyline i{background:#e9bd5f;box-shadow:0 0 7px #e9bd5f}.client-orbit::before,.client-lunar::before,.client-nexus::before{content:"";width:54px;height:54px;position:absolute;left:18px;top:17px;border:2px solid rgba(117,225,213,.38);border-radius:50%;box-shadow:0 0 12px rgba(117,225,213,.25)}
 
 /* Higher headquarters transform from global tower to orbital command room. */@keyframes treaty-spin{to{transform:rotate(360deg)}}/* The expanded rival roster uses recognizable architecture families. */

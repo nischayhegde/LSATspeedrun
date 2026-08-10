@@ -177,6 +177,7 @@ const SHEET_ORDER = [
   // ranks last of the route sheets for the same reason.
   'src/case-session-styles.css',
   'src/firm-page.css',
+  'src/office-page.css',
 ]
 
 /**
