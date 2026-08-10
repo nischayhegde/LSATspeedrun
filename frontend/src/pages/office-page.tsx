@@ -54,6 +54,15 @@ export function OfficePage() {
   } : null
   const milestone = game.next_milestone
   const milestoneProgress = milestone ? Math.min(100, Math.round(game.cash / Math.max(1, milestone.cost) * 100)) : 100
+  // The day's goals are 5, 10 and 20 cases, so a fixed "/ 10" was only ever
+  // right for the middle one and read as a broken counter once the day went
+  // past it ("41 / 10"). Track the next goal still open, and once they are all
+  // cleared show the count on its own rather than against a target that has
+  // stopped meaning anything.
+  const dailyGoal = game.daily.goals.find((goal) => !goal.complete)
+  const dailyTally = dailyGoal
+    ? `${game.daily.cases_completed} / ${dailyGoal.cases}`
+    : `${game.daily.cases_completed}`
 
   const openCase = () => active ? navigate(`/cases/${active.id}`) : start.mutate()
 
@@ -106,7 +115,7 @@ export function OfficePage() {
             <span><small>CASH</small><strong>{formatMoney(game.cash, true)}</strong><em>on hand</em></span>
             <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><em>{game.reputation_band.name} counsel</em></span>
             <span><small>LEASE</small><strong>{game.upkeep.completed ? 'Closed' : formatMoney(game.upkeep.daily_rent, true)}</strong><em>{game.upkeep.completed ? 'charter complete' : 'per day'}</em></span>
-            <span><small>TRAINING</small><strong>{game.daily.cases_completed}/10</strong><em>questions today</em></span>
+            <span><small>TRAINING</small><strong>{dailyTally}</strong><em>questions today</em></span>
             <span><small>ACCURACY</small><strong>{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</strong><em>{game.total_cases} measured</em></span>
             <span><small>REPUTATION</small><strong>{Math.round(game.reputation).toLocaleString()}</strong><em>standing</em></span>
           </div>
@@ -204,7 +213,7 @@ export function OfficePage() {
         </article>
 
         <article className="training-focus-card">
-          <div><span>TODAY’S TRAINING BLOCK</span><h3>{game.daily.cases_completed} / 10 QUESTIONS</h3><p>Volume builds recognition. Reviewed reasoning makes the volume count.</p></div>
+          <div><span>TODAY’S TRAINING BLOCK</span><h3>{dailyTally} QUESTIONS</h3><p>{dailyGoal ? 'Volume builds recognition. Reviewed reasoning makes the volume count.' : 'Every goal on today’s docket is cleared. Volume past it still counts.'}</p></div>
           <button onClick={openCase}>{active ? 'RESUME' : 'START'} <ArrowRight /></button>
         </article>
 
