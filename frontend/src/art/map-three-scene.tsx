@@ -3816,8 +3816,6 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
     || onReserved(s, side, 1.8)
   )
   for (const side of [-1, 1] as const) {
-    /** The runs that actually got paved, so the crowd can be given those. */
-    const paved: Array<{ from: number, to: number }> = []
     let runFrom: number | null = null
     const step = .35
     for (let s = 0; s <= corridor.length + step; s += step) {
@@ -3830,7 +3828,6 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
         if (to - from < .8) continue
         const built = village((from + to) / 2) > .55
         if (built) {
-          paved.push({ from, to })
           const footway = mesh(corridorPatchGeometry(corridor, from, to, VILLAGE_FOOTWAY_IN * side, VILLAGE_FOOTWAY_OUT * side, Math.max(2, Math.round((to - from) / .8))), material(0x8d8778, .97))
           footway.position.y = .062
           footway.castShadow = false
@@ -3849,39 +3846,27 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
         }
       }
     }
-    /*
-     * The crowd gets the pavement that was laid, and only that.
-     *
-     * This used to be one unbroken 6.4 m polyline per town per side, spanning
-     * `centre ± 3.2` regardless of what the loop above had just decided. The
-     * paving is laid only on runs that clear `edgeBlocked` — cross streets, the
-     * voids, the ford, reserved ground — and only where `village(mid) > .55`,
-     * and the walkable line applied neither test, so the people were routed
-     * over the junctions and through the ford that the paving itself is at
-     * pains to stop at. Taking the runs from `paved` means the two can no
-     * longer disagree: if there is no pavement there, nobody is sent along it.
-     *
-     * Still handed over with no `halfWidth`, so it inherits
-     * `CROWD_FOOTWAY_HALF`, even though the paving above is only .61 across.
-     * Declaring the paved figure here is the obvious repair and it measured
-     * worse: .5203 -> .5287 walkers-in-any-solid over 900 frames, because the
-     * cut reads `halfWidth` too, a narrower way puts both its kerbs inside the
-     * frontage that lines it, and the village lanes were then cut back until
-     * the crowd redistributed onto the planned-street pavements that run past
-     * the farmsteads. The width these people actually get is decided by
-     * `cutFootwaysAroundSolids`, against what is standing there.
-     */
-    for (const run of paved) {
-      const from = Math.max(.6, run.from)
-      const to = Math.min(corridor.length - .6, run.to)
-      if (to - from < .8) continue
-      const segments = Math.max(2, Math.round((to - from) / .8))
+    // Pavement in the villages is where the few people out here actually walk.
+    //
+    // Deliberately still handed over with no `halfWidth`, so it inherits
+    // `CROWD_FOOTWAY_HALF`, even though the paving laid above is only .61
+    // across and .65 either side of this line is nearly twice that. Declaring
+    // the paved figure here is the obvious repair and it measured worse:
+    // .5203 -> .5287 walkers-in-any-solid over 900 frames, because the cut
+    // reads `halfWidth` too, a narrower way puts both its kerbs inside the
+    // frontage that lines it, and the village lanes were then cut back until
+    // the crowd redistributed onto the planned-street pavements that run past
+    // the farmsteads. The width these people actually get is decided by
+    // `cutFootwaysAroundSolids`, against what is standing there.
+    townS.forEach((centre) => {
+      const from = Math.max(.6, centre - 3.2)
+      const to = Math.min(corridor.length - .6, centre + 3.2)
       const points: XZ[] = []
-      for (let step2 = 0; step2 <= segments; step2 += 1) {
-        points.push(corridor.at(from + (to - from) * (step2 / segments), VILLAGE_FOOTWAY_MID * side))
+      for (let step2 = 0; step2 <= 8; step2 += 1) {
+        points.push(corridor.at(from + (to - from) * (step2 / 8), VILLAGE_FOOTWAY_MID * side))
       }
       footWays(root).push({ points })
-    }
+    })
   }
 
   /* --- The brook, the ford and the bridge --------------------------------- */
