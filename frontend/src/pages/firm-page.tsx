@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Award,
   BriefcaseBusiness,
@@ -57,7 +57,7 @@ function RequirementLine({ asset, game }: { asset: GameAsset; game: GameState })
 
 
 function ClientRequirementLine({ client, game }: { client: GameClient; game: GameState }) {
-  if (client.unlocked) return <small className="requirements met">{client.length}-case contract</small>
+  if (client.unlocked) return <small className="requirements met">Closing bonus every {client.length} wins</small>
   const assetNames = client.requirements.assets.map((key) => game.catalog.assets.find((asset) => asset.key === key)?.name ?? key.replaceAll('_', ' '))
   const requirements = [
     client.requirements.reputation > 0 && `${client.requirements.reputation} Reputation`,
@@ -83,7 +83,6 @@ export function FirmPage() {
   const [catalogRegion, setCatalogRegion] = useState('all')
   const queryClient = useQueryClient()
   const gameQuery = useGame()
-  const currentCaseQuery = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession, enabled: tab === 'clients' })
   const [justBought, setJustBought] = useState<string | null>(null)
   const [justActivated, setJustActivated] = useState<string | null>(null)
   const purchase = useMutation({
@@ -146,9 +145,6 @@ export function FirmPage() {
     game.catalog.assets.find((asset) => asset.key === key)?.name ?? key.replaceAll('_', ' '),
   )
   const workingClient = effectiveClient(game)
-  const openSession = currentCaseQuery.data?.session
-  const openCaseItem = openSession?.pending_item || openSession?.current_item
-  const openCaseTerms = openCaseItem?.case_terms
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, current: FirmTab) => {
     const currentIndex = firmTabs.findIndex((item) => item.key === current)
     let nextIndex: number | null = null
@@ -233,15 +229,18 @@ export function FirmPage() {
 
         {tab === 'clients' ? (
           <>
+            {/* This screen sets a rate; it does not hand out work. Cases are
+                minted on demand over on Practice, so anything here phrased as
+                an inventory of waiting matters was describing something that
+                does not exist. The retainer's counter is a progress bar to a
+                bonus that renews itself, not a supply that runs out. */}
             <section className="client-roster-status">
               <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
-              <div><span className="eyebrow">CURRENT WORKING CLIENT</span><h2>{workingClient.name}</h2><p>{game.active_client.on_hold ? `${game.active_client.name} is on hold; new matters use this client instead.` : `${game.active_client.cases_remaining} cases remain in this contract.`}</p></div>
-              <aside className={openCaseTerms ? 'has-open-file' : ''}>
-                <span>{openCaseTerms ? 'OPEN CASE FILE' : 'NEXT CASE FILE'}</span>
-                <strong>{openCaseTerms?.client_name || workingClient.name}</strong>
-                <small>{openCaseTerms
-                  ? openCaseTerms.client_key === workingClient.key ? 'This case matches your current contract.' : `This file stays with ${openCaseTerms.client_name}; the new client starts after it closes.`
-                  : `Your next case will be for ${workingClient.name}.`}</small>
+              <div><span className="eyebrow">ON RETAINER</span><h2>{workingClient.name}</h2><p>{game.active_client.on_hold ? `${game.active_client.name} is on hold until Reputation recovers, so ${workingClient.name} is billing for now.` : `${game.active_client.cases_remaining} more wins closes this retainer for a bonus, then it renews.`}</p></div>
+              <aside>
+                <span>YOUR RATE</span>
+                <strong>{formatMoney(workingClient.base_fee)}</strong>
+                <small>per case, before firm and streak bonuses</small>
               </aside>
             </section>
             <div className="management-grid client-grid">
@@ -249,15 +248,15 @@ export function FirmPage() {
               <article key={item.key} className={`management-card client-card ${item.matter_type === 'pro_bono' ? 'pro-bono-client' : ''} ${item.selected ? 'selected' : ''} ${!item.unlocked ? 'locked' : ''} ${justActivated === item.key ? 'just-activated' : ''}`}>
                 <ClientPortrait kind={item.icon} name={item.name} mood={item.selected ? 'happy' : 'neutral'} className="client-card-portrait" />
                 {item.matter_type === 'pro_bono' && <div className="pro-bono-seal"><HeartHandshake /> PRO BONO</div>}
-                <div className="card-status">{item.on_hold ? <><Lock size={12} /> ON HOLD</> : item.selected ? 'WORKING NOW' : item.unlocked ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
+                <div className="card-status">{item.on_hold ? <><Lock size={12} /> ON HOLD</> : item.selected ? 'ON RETAINER' : item.unlocked ? 'CAN RETAIN' : <><Lock size={12} /> LOCKED</>}</div>
                 <div className="content-location-tag">{item.region || `TIER ${item.tier}`}{item.archetype && <b>{item.archetype}</b>}</div>
                 <h3>{item.name}</h3><p>{item.description}</p>
                 <div className="client-fee"><span>Base fee per case</span><strong>{formatMoney(item.base_fee)}</strong></div>
                 {item.special && <div className="client-special"><Sparkles size={13} /><span><small>CASE TWIST</small>{item.special}</span></div>}
-                {item.on_hold && <div className="effective-client-note"><BriefcaseBusiness size={13} />Cases use {workingClient.name} · {formatMoney(workingClient.base_fee)} base fee</div>}
-                {item.contract && <div className="contract-mini"><span>{item.contract.cases_remaining} left</span><span>{item.contract.loyalty} loyalty</span></div>}
+                {item.on_hold && <div className="effective-client-note"><BriefcaseBusiness size={13} />Billing {workingClient.name} instead · {formatMoney(workingClient.base_fee)} per case</div>}
+                {item.contract && <div className="contract-mini"><span>{item.contract.cases_remaining} to bonus</span><span>{item.contract.loyalty} loyalty</span></div>}
                 <ClientRequirementLine client={item} game={game} />
-                <button className={item.selected ? 'secondary-button full' : 'primary-button full'} disabled={!item.unlocked || item.selected || client.isPending} onClick={() => client.mutate(item.key)}>{client.isPending && client.variables === item.key ? 'Switching files…' : item.on_hold ? 'Current client · On hold' : item.selected ? 'Working these cases' : !item.unlocked ? 'Locked' : `Work for ${item.name}`}</button>
+                <button className={item.selected ? 'secondary-button full' : 'primary-button full'} disabled={!item.unlocked || item.selected || client.isPending} onClick={() => client.mutate(item.key)}>{client.isPending && client.variables === item.key ? 'Signing…' : item.on_hold ? 'Retained · On hold' : item.selected ? 'Billing this rate' : !item.unlocked ? 'Locked' : `Bill at ${formatMoney(item.base_fee)}`}</button>
                 {justActivated === item.key && <div className="client-activated-flash"><Check /> NEW CLIENT ACTIVE</div>}
               </article>
             ))}
