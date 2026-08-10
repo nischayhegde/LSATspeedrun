@@ -7756,7 +7756,22 @@ export function MapThreeScene({
 
     const eventSitesByRegion: Record<MapRegionKey, XZ[]> = {
       city: [[-10.4, 4.15], [10.4, 4.05]],
-      nation: [[0, 5.2]],
+      // Fenwick Green, west of the market cross the village posts its notices
+      // on. The Circuit's docket board used to be at `0,5.2`, which is the
+      // station lane: a board is 1.48 across on a lane 0.54 wide with pavements
+      // .15 either side of `±.58`, so it stood in the carriageway *and* over
+      // both footways, and it is a sign with no footprint declared — invisible
+      // to the pavement cut and to the crowd's obstacle set alike, so a walker
+      // simply passes through it.
+      //
+      // Moving it took walkers-in-a-solid from .0389/.0418/.0629/.0718 over
+      // four runs to .0321 on all four, and that second number is the point:
+      // the district used to settle into three different states and now settles
+      // into one. The board was standing where the counsel's own travel anchor
+      // is, so it was perturbing the pavement plan at the busiest junction on
+      // the map, and the sites it took with it — the green benches at `-1,3`
+      // and `-1,4`, 107 frames between them — were never really about benches.
+      nation: [[-3.5, 5]],
       ocean: [[-6, 7.2], [6, 7.2]],
       continent: [[0, 5.35]],
       orbit: [[-7, 7.8], [7, 7.8]],
