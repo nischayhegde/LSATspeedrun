@@ -102,8 +102,8 @@ function SectionRoster({ sections, activeIndex }: { sections: ExamSection[]; act
   return (
     <ol className="exam-roster" aria-label="Sections of this form">
       {sections.map((section) => {
-        const state = section.status === 'ended'
-          ? (section.ended_reason === 'expired' ? 'expired' : 'done')
+        const state = section.status === 'completed'
+          ? (section.ended_reason === 'submitted' ? 'done' : section.ended_reason ?? 'done')
           : section.index === activeIndex ? 'active' : 'pending'
         return (
           <li key={section.index} className={`exam-roster-item is-${state}`} aria-current={state === 'active' || undefined}>
@@ -111,14 +111,15 @@ function SectionRoster({ sections, activeIndex }: { sections: ExamSection[]; act
             <div>
               <strong>{section.label}</strong>
               <small>
-                {state === 'done' && `${section.questions} questions · submitted`}
-                {state === 'expired' && `${section.unanswered} left blank at the bell`}
-                {state === 'active' && `${section.questions} questions · ${formatSpan(section.time_limit_seconds)}`}
-                {state === 'pending' && `${section.questions} questions · ${formatSpan(section.time_limit_seconds)}`}
+                {state === 'done' && `${section.questions} questions · you ended it`}
+                {state === 'expired' && `${section.unanswered} of ${section.questions} left blank at the bell`}
+                {state === 'abandoned' && 'Not sat — the sitting was closed out'}
+                {(state === 'active' || state === 'pending')
+                  && `${section.questions} questions · ${formatSpan(section.time_limit_seconds)}`}
               </small>
             </div>
             {state === 'done' && <Check size={16} />}
-            {state === 'expired' && <Clock3 size={16} />}
+            {(state === 'expired' || state === 'abandoned') && <Clock3 size={16} />}
             {state === 'pending' && <LockKeyhole size={16} />}
           </li>
         )
@@ -191,12 +192,19 @@ function Intermission({ session, exam }: { session: StudySession; exam: ExamStat
       <span className="eyebrow">INTERMISSION</span>
       <h1>{left != null && left > 0 ? formatClock(left) : 'Break over'}</h1>
       <p>
-        Stand up, get water. The break runs on its own clock and ending it early does not add the time to the
-        next section — on the real test it would not either.
+        Stand up, get water. The break is a fixed length and cutting it short does not add the time to the next
+        section — on the real test it would not either, so the next section opens when the break is over.
       </p>
       {next && (
-        <button className="primary-button" disabled={start.isPending} onClick={() => start.mutate()}>
-          {start.isPending ? 'Starting…' : `Begin section ${next.index + 1}: ${next.label}`} <ArrowRight size={18} />
+        // Offered only once it can actually be taken. The server refuses a
+        // section begun during the break, and a button that hands back an
+        // error is worse than one that says what it is waiting for.
+        <button className="primary-button" disabled={start.isPending || (left ?? 0) > 0} onClick={() => start.mutate()}>
+          {start.isPending
+            ? 'Starting…'
+            : (left ?? 0) > 0
+              ? `Section ${next.index + 1} opens in ${formatClock(left ?? 0)}`
+              : <>Begin section {next.index + 1}: {next.label} <ArrowRight size={18} /></>}
         </button>
       )}
       <SectionRoster sections={exam.sections} activeIndex={null} />
@@ -368,8 +376,10 @@ function SectionRun({ session, exam }: { session: StudySession; exam: ExamState 
 
       <AnswerSheetBar papers={papers} answers={answers} flags={flags} position={position} onJump={jump} />
 
+      {/* Phone-only: at any width that fits the passage and the question side
+          by side there is nothing to switch between. */}
       {paper.question.passage && (
-        <div className="mobile-case-pane-tabs" role="tablist" aria-label="Reading view">
+        <div className="exam-pane-tabs mobile-case-pane-tabs" role="tablist" aria-label="Reading view">
           <button type="button" role="tab" aria-selected={mobilePane === 'passage'} className={mobilePane === 'passage' ? 'active' : ''} onClick={() => setMobilePane('passage')}><BookOpen size={15} /> Passage</button>
           <button type="button" role="tab" aria-selected={mobilePane === 'question'} className={mobilePane === 'question' ? 'active' : ''} onClick={() => setMobilePane('question')}>Question</button>
         </div>

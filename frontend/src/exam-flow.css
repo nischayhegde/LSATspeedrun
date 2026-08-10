@@ -54,10 +54,16 @@
 .exam-sheet-cell.is-current { outline: 2px solid var(--gold); outline-offset: 1px; color: var(--ink); }
 .exam-sheet-cell.is-answered.is-current { color: #fff; }
 /* The flag is a corner mark rather than a colour, so it survives being both
-   answered and flagged — which is the state it is most often in. */
+   answered and flagged — which is the state it is most often in, since the
+   reason to flag something is usually that you answered it unsurely. Sized up
+   from the first attempt, which was invisible against a filled cell. */
+.exam-sheet-cell.is-flagged {
+  border-color: var(--gold);
+}
 .exam-sheet-cell.is-flagged i {
-  position: absolute; top: 2px; right: 2px; width: 0; height: 0;
-  border-top: 7px solid var(--gold); border-left: 7px solid transparent;
+  position: absolute; top: 0; right: 0; width: 0; height: 0;
+  border-top: 12px solid var(--gold); border-left: 12px solid transparent;
+  border-top-right-radius: 7px;
 }
 
 /* --- the question --- */
@@ -104,44 +110,68 @@
 }
 .exam-submit-confirm .primary-button { padding: 9px 18px; }
 
-/* --- boundaries: the gate before a section, and the intermission --- */
+/* --- boundaries: the gate before a section, and the intermission ---
+
+   These two sit on the dark case shell rather than on a page, which is why
+   nothing here uses the light tokens the running section uses: written against
+   `--surface` first, the section title came out maroon-on-navy and the roster
+   came out three identical grey slabs. A boundary is also the one screen a
+   student reads rather than works on, so it is quiet on purpose. */
 
 .exam-gate, .exam-intermission, .exam-loading {
   display: grid; justify-items: center; text-align: center; gap: 14px;
   max-width: 640px; margin: 0 auto; padding: 56px 24px;
+  color: #eee5d0;
 }
-.exam-gate h1, .exam-intermission h1 { margin: 0; font-size: 30px; }
-.exam-intermission h1 { font-size: 54px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
-.exam-gate-terms, .exam-intermission p { color: var(--muted); max-width: 52ch; margin: 0; line-height: 1.55; }
-.exam-gate-grace { color: var(--red); font-size: 13px; font-weight: 600; margin: 0; }
+.exam-gate .eyebrow, .exam-intermission .eyebrow {
+  color: #70cabb; font-size: 10.5px; font-weight: 800; letter-spacing: .15em;
+}
+.exam-gate h1, .exam-intermission h1 { margin: 0; color: #f5df9e; font-size: 32px; }
+.exam-intermission h1 { font-size: 56px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.exam-gate-terms, .exam-intermission p { color: #cbc3ae; max-width: 52ch; margin: 0; line-height: 1.55; }
+.exam-gate-grace { color: #e8a596; font-size: 13px; font-weight: 600; margin: 0; }
 .exam-intermission-mark {
   display: grid; place-items: center; width: 66px; height: 66px; border-radius: 50%;
-  background: var(--gold-soft); color: var(--gold-dark);
+  background: rgba(239,209,124,.14); color: #efd17c;
 }
-.exam-loading { color: var(--muted); }
+.exam-loading { color: #a9b6b1; }
 
 .exam-roster { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; width: 100%; text-align: left; }
 .exam-roster-item {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px;
-  padding: 11px 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface);
+  padding: 11px 14px; border-radius: 11px;
+  border: 1px solid rgba(255,255,255,.1); background: rgba(6,14,21,.4);
 }
 .exam-roster-item > span {
   display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
-  background: var(--paper); font-size: 12.5px; font-weight: 700; color: var(--muted);
+  background: rgba(255,255,255,.07); font-size: 12.5px; font-weight: 700; color: #b9c4bf;
 }
-.exam-roster-item strong { display: block; font-size: 14px; }
-.exam-roster-item small { color: var(--muted); font-size: 12px; }
-.exam-roster-item.is-done { border-color: var(--green); background: var(--green-soft); }
-.exam-roster-item.is-done > span, .exam-roster-item.is-done svg { color: var(--green); }
-.exam-roster-item.is-expired { border-color: var(--red); background: var(--red-soft); }
-.exam-roster-item.is-expired > span, .exam-roster-item.is-expired svg { color: var(--red); }
-.exam-roster-item.is-pending { opacity: .68; }
+.exam-roster-item strong { display: block; color: #e7ded0; font-size: 14px; }
+.exam-roster-item small { color: #93a5a1; font-size: 12px; }
+.exam-roster-item svg { color: #7f918d; }
+.exam-roster-item.is-done { border-color: rgba(114,209,191,.45); background: rgba(38,117,87,.16); }
+.exam-roster-item.is-done > span, .exam-roster-item.is-done svg { color: #72d1bf; }
+.exam-roster-item.is-expired, .exam-roster-item.is-abandoned {
+  border-color: rgba(232,165,150,.4); background: rgba(168,70,69,.16);
+}
+.exam-roster-item.is-expired > span, .exam-roster-item.is-expired svg,
+.exam-roster-item.is-abandoned > span, .exam-roster-item.is-abandoned svg { color: #e8a596; }
+.exam-roster-item.is-active { border-color: rgba(239,209,124,.5); background: rgba(239,209,124,.1); }
+.exam-roster-item.is-active > span, .exam-roster-item.is-active svg { color: #efd17c; }
+.exam-roster-item.is-pending { opacity: .6; }
+
+.exam-pane-tabs { display: none; }
 
 @media (max-width: 900px) {
+  .exam-pane-tabs { display: flex; gap: 6px; }
   .session-page.is-exam { padding: 10px 14px 40px; }
-  .exam-bar { grid-template-columns: 1fr auto; gap: 10px; padding: 11px 13px; }
+  /* The section name gets the full width rather than a column beside the
+     clock, because "Logical Reasoning I" broken over two lines reads as a
+     stray letter rather than a numeral. */
+  .exam-bar { grid-template-columns: 1fr auto; gap: 4px 10px; padding: 11px 13px; }
+  .exam-bar-section { grid-column: 1 / -1; grid-row: 1; }
   .exam-bar-count { grid-column: 1; grid-row: 2; text-align: left; }
-  .exam-clock { grid-row: 1 / span 2; }
+  .exam-clock { grid-column: 2; grid-row: 2; }
   .exam-clock span { font-size: 22px; }
   .exam-foot { grid-template-columns: auto 1fr auto; padding: 10px; }
   .exam-step span { display: none; }

@@ -898,6 +898,11 @@ def submit_exam_section(session_id: str, section_index: int):
     try:
         exam.submit_section(session, section_index)
     except exam.ExamError as exc:
+        # The one place "the form is over" is not a refusal. Ending the section
+        # is what was asked for, and the bell beating the student to it by a
+        # second is the same outcome by another route — so it answers with the
+        # finished form and its summary rather than an error on a request that
+        # got what it wanted.
         if str(exc) == "session_complete":
             return jsonify({"session": serialize_session(session), "summary": session.summary_json})
         return _exam_error(exc)
@@ -927,8 +932,10 @@ def record_exam_answer(session_id: str, item_id: str):
             flagged=None if flagged is None else bool(flagged),
         )
     except exam.ExamError as exc:
-        if str(exc) == "session_complete":
-            return jsonify({"session": serialize_session(session), "summary": session.summary_json})
+        # Including "the form is over", which the shared handler refuses with a
+        # 409 like any other. A reply describes what happened to *this* request,
+        # and a 200 carrying the finished session would say an answer was taken
+        # when none was: the client re-reads on refusal anyway.
         return _exam_error(exc)
     return jsonify(
         {
@@ -954,8 +961,8 @@ def focus_exam_item(session_id: str, position: int):
     try:
         exam.focus_item(session, position)
     except exam.ExamError as exc:
-        if str(exc) == "session_complete":
-            return jsonify({"session": serialize_session(session), "summary": session.summary_json})
+        # Same rule as recording an answer: a move that did not happen is a
+        # refusal, not a success carrying a different payload.
         return _exam_error(exc)
     return jsonify({"session": serialize_session(session)})
 

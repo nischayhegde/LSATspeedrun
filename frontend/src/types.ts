@@ -649,7 +649,7 @@ export type ExamSection = {
   time_limit_seconds: number
   /** Intermission owed *after* this section. Non-zero on exactly one section. */
   break_seconds: number
-  status: 'pending' | 'active' | 'ended'
+  status: 'pending' | 'in_progress' | 'completed'
   started_at: string | null
   deadline_at: string | null
   ended_at: string | null

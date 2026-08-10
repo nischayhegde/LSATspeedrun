@@ -31,6 +31,7 @@ from app.models import (
     User,
     utcnow,
 )
+from app.exam import BOUNDARY_GRACE_SECONDS
 from app.seed import SOURCE_PREFIX
 
 
@@ -559,6 +560,58 @@ def test_the_section_is_handed_over_whole_and_only_while_it_is_running(app):
     closed = client.get(f"/v1/study-sessions/{session_id}/section", headers=headers)
     assert closed.status_code == 409
     assert closed.json["error"]["code"] == "no_section_running"
+
+
+def test_a_finished_form_refuses_writes_and_accepts_the_submit_that_finished_it(app):
+    """A reply describes what happened to the request that asked for it.
+
+    The distinction is deliberate and it is easy to get backwards. Recording an
+    answer on a finished form did not record anything, so a 200 carrying the
+    finished session would be a lie a client cannot detect — it looks exactly
+    like a successful write of a different shape. Ending a section, though, is
+    the one verb whose goal is that the section be over: when the bell beats
+    the student to it by a second the request got precisely what it asked for,
+    and answering that with an error would make the ordinary race — hitting the
+    button as the clock runs out — look like a failure.
+    """
+    client = app.test_client()
+    headers = login(client, "finished-form@example.test")
+    session_id = start_form(client, headers)["id"]
+    last_item = sheet_items(read(client, headers, session_id))[-1]
+
+    with app.app_context():
+        # The first section's bell went, and then the sitting was walked away
+        # from for longer than a boundary is held open — so the next request
+        # finds a form with nothing left to sit and closes the whole thing out.
+        db.session.execute(
+            update(SessionSection)
+            .where(SessionSection.session_id == session_id, SessionSection.status == "in_progress")
+            .values(deadline_at=utcnow() - timedelta(seconds=BOUNDARY_GRACE_SECONDS + 60))
+        )
+        db.session.commit()
+
+    # Submitting into that is the request whose goal has already been met.
+    ended = client.post(f"/v1/study-sessions/{session_id}/sections/0/submit", headers=headers)
+    assert ended.status_code == 200, ended.json
+    assert ended.json["session"]["status"] == "completed"
+    assert ended.json["summary"]
+
+    refused = client.put(
+        f"/v1/study-sessions/{session_id}/answers/{last_item}",
+        json={"selected_label": "C"},
+        headers=headers,
+    )
+    assert refused.status_code == 409
+    assert refused.json["error"]["code"] == "session_complete"
+    assert "saved" not in refused.json
+
+    moved = client.post(f"/v1/study-sessions/{session_id}/focus/0", headers=headers)
+    assert moved.status_code == 409
+    assert moved.json["error"]["code"] == "session_complete"
+
+    with app.app_context():
+        # And nothing was written: the sheet is as the bell left it.
+        assert db.session.get(SessionItem, last_item).draft_selected_label is None
 
 
 def test_the_dashboard_reads_the_administration_and_not_a_reconstruction(app):
