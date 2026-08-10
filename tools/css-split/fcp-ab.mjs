@@ -50,45 +50,12 @@ for (let i = 0; i < argv.length; i += 1) {
 const sessions = Number(opts['--sessions'] || 3)
 const pairs = Number(opts['--pairs'] || 7)
 const route = opts['--route'] || '/'
-const useGzip = Boolean(opts['--gzip'])
+const compress = compressionFromOpts(opts)
 const offlineFonts = Boolean(opts['--offline-fonts'])
 const [baseDist, headDist] = positional.map((p) => resolve(p))
 
-const TYPES = {
-  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.woff2': 'font/woff2',
-  '.woff': 'font/woff', '.ttf': 'font/ttf', '.glb': 'model/gltf-binary', '.webp': 'image/webp',
-}
-// What CloudFront will and will not compress. woff2 is already deflate inside,
-// and compressing it again is what a real CDN declines to do.
-const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.svg', '.json'])
-
-function serve(root) {
-  const server = createServer(async (req, res) => {
-    const url = decodeURIComponent(req.url.split('?')[0])
-    if (url.startsWith('/v1/')) {
-      res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ detail: 'unauthorized', code: 'unauthorized' }))
-      return
-    }
-    let file = join(root, url)
-    if (!existsSync(file) || !extname(file)) file = join(root, 'index.html')
-    try {
-      let body = await readFile(file)
-      const head = { 'content-type': TYPES[extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' }
-      if (useGzip && COMPRESSIBLE.has(extname(file)) && /gzip/.test(req.headers['accept-encoding'] || '')) {
-        body = gzipSync(body, { level: 6 })
-        head['content-encoding'] = 'gzip'
-      }
-      res.writeHead(200, head)
-      res.end(body)
-    } catch { res.writeHead(404); res.end('no') }
-  })
-  return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ server, port: server.address().port })))
-}
-
-const a = await serve(baseDist)
-const b = await serve(headDist)
+const a = await serveLikeProd(baseDist, { compress })
+const b = await serveLikeProd(headDist, { compress })
 const browser = await chromium.launch({ executablePath: CHROME })
 
 /** One cold load. Returns first and largest contentful paint in ms. */
@@ -119,7 +86,32 @@ const run = async (port) => {
     // Largest contentful paint is only final once nothing bigger can arrive.
     // The scene chunks on this app are still landing at 6 s throttled.
     await p.waitForTimeout(8000)
-    return p.evaluate(() => window.__paints)
+    // `return await`, not `return`. A bare return hands the pending promise out
+    // as the try block's completion value and the finally runs on the way past,
+    // so the page is closed while the read of it is still in flight. That is a
+    // race the machine used to win and now loses, and it loses as a thrown
+    // "target closed" in the middle of a session rather than as a bad number.
+    return await p.evaluate(() => window.__paints)
+  } finally {
+    await p.close()
+  }
+}
+
+/**
+ * One untimed, unthrottled load per server before any pair is recorded.
+ *
+ * The compressed body of a file is built the first time it is asked for, and
+ * brotli on the largest chunk is a third of a second of CPU on the same thread
+ * that is answering the socket. Left to happen inside pair 1, that cost lands
+ * in a number that gets a median taken of it. A CDN answers from a warm cache
+ * and so should this; the throwaway load is what warms it, and it costs a
+ * second because nothing about it is throttled.
+ */
+const warm = async (port) => {
+  const p = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  try {
+    await p.goto(`http://127.0.0.1:${port}${route}`, { waitUntil: 'load' }).catch(() => {})
+    await p.waitForTimeout(1500)
   } finally {
     await p.close()
   }
@@ -134,14 +126,17 @@ const r = (x) => (x == null ? '—' : String(Math.round(x)))
 
 try {
   console.log(`\n  base ${baseDist}\n  head ${headDist}`)
-  console.log(`  ${route} at 390px, 4x CPU, 1.6 Mbps / 150 ms rtt${useGzip ? ', gzipped like prod' : ', uncompressed'}${offlineFonts ? ', font origins refused' : ''}`)
+  console.log(`  ${route} at 390px, 4x CPU, 1.6 Mbps / 150 ms rtt, ${describeCompression(compress)}${offlineFonts ? ', font origins refused' : ''}`)
   console.log(`  ${sessions} sessions of ${pairs} interleaved pairs\n`)
+
+  await warm(a.port)
+  await warm(b.port)
 
   const all = { base: { fcp: [], lcp: [] }, head: { fcp: [], lcp: [] } }
   const perSession = []
   for (let s = 0; s < sessions; s += 1) {
     const sess = { base: { fcp: [], lcp: [] }, head: { fcp: [], lcp: [] } }
-    let headWins = 0
+    const wins = { fcp: 0, lcp: 0 }
     for (let i = 0; i < pairs; i += 1) {
       // Alternate which side goes first, so a systematic cost of being the
       // first load in a pair cannot land on the same build every time.
@@ -151,33 +146,49 @@ try {
       const z = baseFirst ? null : await run(a.port)
       const bs = x || z
       for (const k of ['fcp', 'lcp']) { sess.base[k].push(bs[k]); sess.head[k].push(y[k]) }
-      if (bs.fcp != null && y.fcp != null && y.fcp < bs.fcp) headWins += 1
-      process.stdout.write(`    s${s + 1} pair ${String(i + 1).padStart(2)}   base fcp ${r(bs.fcp).padStart(5)} lcp ${r(bs.lcp).padStart(5)}   head fcp ${r(y.fcp).padStart(5)} lcp ${r(y.lcp).padStart(5)}   ${y.fcp < bs.fcp ? 'head' : 'base'}\n`)
+      // A pair only votes if both sides produced the metric; a load that never
+      // painted is not a win for whoever it happened to.
+      const won = (k) => (bs[k] != null && y[k] != null ? y[k] < bs[k] : null)
+      for (const k of ['fcp', 'lcp']) if (won(k)) wins[k] += 1
+      const say = (k) => (won(k) == null ? '—' : won(k) ? 'head' : 'base')
+      process.stdout.write(`    s${s + 1} pair ${String(i + 1).padStart(2)}   base fcp ${r(bs.fcp).padStart(5)} lcp ${r(bs.lcp).padStart(5)}   head fcp ${r(y.fcp).padStart(5)} lcp ${r(y.lcp).padStart(5)}   fcp ${say('fcp')} lcp ${say('lcp')}\n`)
     }
     for (const side of ['base', 'head']) for (const k of ['fcp', 'lcp']) all[side][k].push(...sess[side][k])
-    perSession.push({ sess, headWins })
+    perSession.push({ sess, wins })
     console.log(
       `    session ${s + 1} median   fcp base ${r(median(sess.base.fcp))} head ${r(median(sess.head.fcp))}`
-      + `  (${r(median(sess.base.fcp) - median(sess.head.fcp))} ms)`
+      + `  (${r(median(sess.base.fcp) - median(sess.head.fcp))} ms, head won ${wins.fcp}/${pairs})`
       + `   lcp base ${r(median(sess.base.lcp))} head ${r(median(sess.head.lcp))}`
-      + `   head won ${headWins}/${pairs}\n`,
+      + `  (${r(median(sess.base.lcp) - median(sess.head.lcp))} ms, head won ${wins.lcp}/${pairs})\n`,
     )
   }
 
   const spread = (xs) => `${r(Math.min(...xs))}–${r(Math.max(...xs))}`
-  const sessFcp = (side) => perSession.map((p) => median(p.sess[side].fcp))
-  const totalWins = perSession.reduce((n, p) => n + p.headWins, 0)
+  const sessMed = (side, k) => perSession.map((p) => median(p.sess[side][k]))
   const n = sessions * pairs
   console.log(`  pooled over ${n} pairs`)
-  console.log(`    fcp  base ${r(median(all.base.fcp))} ms   head ${r(median(all.head.fcp))} ms   ${r(median(all.base.fcp) - median(all.head.fcp))} ms faster`)
-    console.log(`    lcp  base ${r(median(all.base.lcp))} ms   head ${r(median(all.head.lcp))} ms   ${r(median(all.base.lcp) - median(all.head.lcp))} ms faster`)
-  console.log(`    head won ${totalWins} of ${n} pairs on fcp`)
-  console.log(`    per-session fcp medians  base ${sessFcp('base').map(r).join(', ')} (spread ${spread(sessFcp('base'))})`)
-  console.log(`                             head ${sessFcp('head').map(r).join(', ')} (spread ${spread(sessFcp('head'))})`)
-  const betweenSession = Math.max(...sessFcp('base')) - Math.min(...sessFcp('base'))
-  const effect = median(all.base.fcp) - median(all.head.fcp)
-  console.log(`\n    the effect is ${r(effect)} ms; the baseline moved ${r(betweenSession)} ms between sessions on its own`)
-  console.log(`    ${Math.abs(effect) > betweenSession ? 'the effect is larger than the drift' : 'THE EFFECT IS INSIDE THE NOISE — do not claim it'}\n`)
+
+  /**
+   * Each metric is judged against its own drift, not against first paint's.
+   * Largest contentful paint on this app moves by whole hundreds of ms between
+   * sessions where first paint moves by tens, so a shared threshold would wave
+   * through an lcp change that is nothing but the machine having a bad minute.
+   */
+  for (const k of ['fcp', 'lcp']) {
+    const wins = perSession.reduce((t, p) => t + p.wins[k], 0)
+    const effect = median(all.base[k]) - median(all.head[k])
+    const drift = Math.max(...sessMed('base', k)) - Math.min(...sessMed('base', k))
+    console.log(`\n    ${k}  base ${r(median(all.base[k]))} ms   head ${r(median(all.head[k]))} ms   ${r(effect)} ms faster   head won ${wins} of ${n}`)
+    console.log(`         per-session medians  base ${sessMed('base', k).map(r).join(', ')} (spread ${spread(sessMed('base', k))})`)
+    console.log(`                              head ${sessMed('head', k).map(r).join(', ')} (spread ${spread(sessMed('head', k))})`)
+    if (sessions < 2) {
+      console.log('         one session, so there is no between-session drift to judge this against — not a result')
+    } else {
+      console.log(`         the effect is ${r(effect)} ms; the baseline moved ${r(drift)} ms between sessions on its own`)
+      console.log(`         ${Math.abs(effect) > drift ? 'the effect is larger than the drift' : 'THE EFFECT IS INSIDE THE NOISE — do not claim it'}`)
+    }
+  }
+  console.log('')
 } finally {
   await browser.close()
   a.server.close()
