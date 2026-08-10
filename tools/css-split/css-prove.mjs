@@ -26,6 +26,7 @@
  *
  *   node tools/css-split/css-prove.mjs /tmp/css-base/frontend/dist frontend/dist
  *   ... --styles-only    to skip the first-paint measurement
+ *   ... --fcp-only       to skip the computed styles and measure only the paint
  */
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -36,6 +37,7 @@ const PW = process.env.LSAT_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwr
 const { chromium } = await import(PW)
 
 const stylesOnly = process.argv.includes('--styles-only')
+const fcpOnly = process.argv.includes('--fcp-only')
 const [baseDist, headDist] = process.argv.slice(2).filter((p) => !p.startsWith('--')).map((p) => resolve(p))
 const SRC = resolve('frontend/src')
 const ROUTES = {
@@ -184,7 +186,7 @@ try {
    */
   await page.route('**://fonts.googleapis.com/**', (r) => r.abort())
   await page.route('**://fonts.gstatic.com/**', (r) => r.abort())
-  for (const [width, height] of [[390, 844], [844, 390], [1440, 900]]) {
+  for (const [width, height] of fcpOnly ? [] : [[390, 844], [844, 390], [1440, 900]]) {
     await page.setViewportSize({ width, height })
     for (const [route, pageFile] of Object.entries(ROUTES)) {
       const classes = classesFor(pageFile)

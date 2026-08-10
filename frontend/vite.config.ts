@@ -237,10 +237,19 @@ const isMobileSheet = (href: string) => /(^|\/)mobile-[^/]*\.css$/.test(href)
  * microtask, not the next frame.
  *
  * The same script then watches `<head>`: a sheet that arrives with a chunk
- * loaded by a *client-side* navigation is moved to whichever side of the entry
- * sheet it belongs on. Without that, walking from /office to /firm would give
+ * loaded by a *client-side* navigation is moved to the place a cold load would
+ * have given it. Without that, walking from /office to /firm would give
  * `rival-war-room.css` a precedence a cold load of /firm never gives it, and
  * the two would disagree about the same screen.
+ *
+ * That means a place and not just a side. Vite appends one link per stylesheet
+ * the arriving chunk owns, in whatever order its dependency list happens to
+ * hold them, and putting each one immediately in front of the entry link — the
+ * first thing this did — preserves that order rather than the cascade's. Walked
+ * to rather than loaded, /story then had `narrative.css` behind `story-page.css`
+ * instead of in front of it, and seven of the nine routes disagreed with their
+ * own cold load. So an arrival is slotted against `B`, which is every sheet in
+ * one sequence, rather than against the entry link alone.
  *
  * The sheets are found from the bundle rather than listed, so the set cannot
  * drift from the build; `SHEET_ORDER` is the one thing stated by hand, because
@@ -299,6 +308,7 @@ function routeStylesheets(): Plugin {
          * selector in one names a class only its own route's files write, so
          * there is nothing for them to disagree about.
          */
+        const rank = new Map<string, number>()
         const closure = (name: string) => {
           const start = chunksByName.get(name)
           if (!start) return { before: [] as string[], after: [] as string[] }
@@ -315,6 +325,7 @@ function routeStylesheets(): Plugin {
             const meta = (output as { viteMetadata?: { importedCss?: Set<string> } }).viteMetadata
             for (const sheet of meta?.importedCss ?? []) css.set(base + sheet, rankOf(file))
           }
+          for (const [href, at] of css) rank.set(href, Math.min(rank.get(href) ?? at, at))
           const ordered = [...css].sort((a, b) => a[1] - b[1]).map(([href]) => href)
           return {
             before: ordered.filter((href) => !isMobileSheet(href)),
@@ -329,8 +340,23 @@ function routeStylesheets(): Plugin {
         }
         if (!byRoute.length) return html
 
-        const before = [...new Set(byRoute.flatMap(([, sheets]) => sheets))]
-        const after = [...new Set(byRoute.flatMap(([, , sheets]) => sheets))]
+        /**
+         * One order for all of them, not one per route.
+         *
+         * The script has to be able to place a sheet that arrives on its own,
+         * after a client-side navigation, and for that it needs to know where
+         * that sheet goes relative to whatever is already in the document —
+         * which may have come from a different route. `rankOf` is a property of
+         * the sheet rather than of the route asking for it, so sorting the whole
+         * set by it gives a single sequence that every route's own list is a
+         * subsequence of. The `mobile-` sheets are sorted by name instead: they
+         * share a rank with their route's other sheet, and every selector in one
+         * names a class only its own route's files write, so there is nothing
+         * for two of them to disagree about and any fixed order will do.
+         */
+        const all = [...rank.keys()]
+        const before = all.filter((href) => !isMobileSheet(href)).sort((x, y) => rank.get(x)! - rank.get(y)!)
+        const after = all.filter(isMobileSheet).sort()
         const script = `(function(){try{
 var R=${JSON.stringify(byRoute)},B=${JSON.stringify(before)},A=${JSON.stringify(after)},E=${JSON.stringify(entryCss)};
 var p=location.pathname.replace(/\\/$/,'')||'/',own=[[],[]];
@@ -346,15 +372,27 @@ function place(e){if(!waiting.length)return;var host=e?e.parentNode:document.hea
 next=e?e.nextSibling:null;
 for(var m=0;m<waiting.length;m++)host.insertBefore(waiting[m],next);waiting=[];}
 document.addEventListener('DOMContentLoaded',function(){place(entry());});
+function behind(x,e){return !!x&&!!(x.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_PRECEDING);}
+function slot(h,L,e){var r=L.indexOf(h),ref=null,found=false,
+links=document.head.querySelectorAll('link[rel="stylesheet"]');
+for(var i=0;i<links.length;i++){var g=links[i].getAttribute('href'),k=L.indexOf(g);
+if(k<0||g===h)continue;
+found=true;
+if(k>r){ref=links[i];break;}
+ref=links[i].nextSibling;}
+if(!found)return L===B?e:e.nextSibling;
+if(L===B)return(ref&&!behind(ref,e))?ref:e;
+return(ref===e||(ref&&!behind(ref,e)))?e.nextSibling:ref;}
 new MutationObserver(function(recs){
 var e=entry();if(!e)return;
 place(e);
 for(var a=0;a<recs.length;a++){var added=recs[a].addedNodes;
 for(var b=0;b<added.length;b++){var n=added[b];
 if(n.tagName!=='LINK'||n.rel!=='stylesheet')continue;
-var h=n.getAttribute('href'),pos=n.compareDocumentPosition(e);
-if(B.indexOf(h)>=0&&pos&Node.DOCUMENT_POSITION_PRECEDING)e.parentNode.insertBefore(n,e);
-else if(A.indexOf(h)>=0&&pos&Node.DOCUMENT_POSITION_FOLLOWING)e.parentNode.insertBefore(n,e.nextSibling);}}
+var h=n.getAttribute('href'),L=B.indexOf(h)>=0?B:A.indexOf(h)>=0?A:null;
+if(!L)continue;
+var ref=slot(h,L,L===B?e:e.nextSibling);
+if(ref!==n&&n.nextSibling!==ref)e.parentNode.insertBefore(n,ref);}}
 }).observe(document.head,{childList:true});
 var e0=entry();if(e0)place(e0);
 }catch(e){}})();`
