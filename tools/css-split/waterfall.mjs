@@ -17,17 +17,24 @@
  * saved, so the claim "this got faster" can be checked against what was
  * actually on the glass.
  *
+ * The bytes go over the wire compressed, because the CloudFront in front of
+ * production compresses them and a waterfall taken without it ranks the
+ * critical path by the wrong sizes — see `prod-serve.mjs`. Every number in this
+ * file's output before that changed was a raw-bytes number and is not
+ * comparable with one taken since.
+ *
  *   node tools/css-split/waterfall.mjs /tmp/lsat-dist-a
  *   ... --route /office     a route other than /
  *   ... --shot out.jpg      also write the frame that covers the first paint
  *   ... --api               answer /v1/* as the real server would, rather than
  *                           letting index.html fall through to every unknown path
+ *   ... --gzip              gzip everywhere, as prod would for a viewer with no brotli
+ *   ... --no-compress       the raw bytes the numbers before this change were taken on
  */
-import { createServer } from 'node:http'
-import { readFile, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { extname, join, resolve } from 'node:path'
+import { writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { homedir } from 'node:os'
+import { compressionFromOpts, describeCompression, serveLikeProd } from './prod-serve.mjs'
 const PW = process.env.LSAT_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 const { chromium } = await import(PW)
 /**
@@ -50,40 +57,8 @@ for (let i = 0; i < argv.length; i += 1) {
 const route = opts['--route'] || '/'
 const shot = typeof opts['--shot'] === 'string' ? opts['--shot'] : null
 const fakeApi = Boolean(opts['--api'])
+const compress = compressionFromOpts(opts)
 const dist = resolve(positional[0])
-
-const TYPES = {
-  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.woff2': 'font/woff2',
-  '.woff': 'font/woff', '.ttf': 'font/ttf', '.glb': 'model/gltf-binary', '.webp': 'image/webp',
-}
-
-/**
- * An unauthenticated answer for the two calls `index.html` starts by hand.
- *
- * Without this the static server hands `index.html` back for `/v1/me`, which is
- * a 200 with an HTML body — the app reads that as a signed-in reader whose game
- * state is an empty object, and renders a different screen than a real visitor
- * ever sees. A 401 is what an actual cold visitor to `/` receives.
- */
-function serve(root) {
-  const server = createServer(async (req, res) => {
-    const url = decodeURIComponent(req.url.split('?')[0])
-    if (fakeApi && url.startsWith('/v1/')) {
-      res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ detail: 'unauthorized', code: 'unauthorized' }))
-      return
-    }
-    let file = join(root, url)
-    if (!existsSync(file) || !extname(file)) file = join(root, 'index.html')
-    try {
-      const body = await readFile(file)
-      res.writeHead(200, { 'content-type': TYPES[extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' })
-      res.end(body)
-    } catch { res.writeHead(404); res.end('no') }
-  })
-  return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ server, port: server.address().port })))
-}
 
 const short = (url) => {
   try {
@@ -93,7 +68,7 @@ const short = (url) => {
   } catch { return url.slice(0, 40) }
 }
 
-const a = await serve(dist)
+const a = await serveLikeProd(dist, { compress, api: fakeApi })
 const browser = await chromium.launch({ executablePath: CHROME })
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
@@ -111,7 +86,13 @@ try {
   })
   client.on('Network.responseReceived', (e) => {
     const r = reqs.get(e.requestId)
-    if (r) { r.status = e.response.status; r.timing = e.response.timing; r.mime = e.response.mimeType }
+    if (r) {
+      r.status = e.response.status
+      r.timing = e.response.timing
+      r.mime = e.response.mimeType
+      const headers = e.response.headers || {}
+      r.encoding = headers['content-encoding'] || headers['Content-Encoding'] || ''
+    }
   })
   client.on('Network.loadingFinished', (e) => {
     const r = reqs.get(e.requestId)
@@ -174,9 +155,9 @@ try {
   const rows = [...reqs.values()].sort((x, y) => x.start - y.start)
   const width = 64
   const span = Math.max(...rows.map((r) => (r.end || r.start))) - t0
-  console.log(`\n${dist}  ${route}   390px, 4x CPU, 1.6 Mbps / 150 ms rtt`)
+  console.log(`\n${dist}  ${route}   390px, 4x CPU, 1.6 Mbps / 150 ms rtt, ${describeCompression(compress)}`)
   console.log(`first contentful paint ${paint.fcp == null ? 'never' : `${Math.round(paint.fcp)} ms`}\n`)
-  console.log(`  ${'start'.padStart(6)} ${'end'.padStart(6)} ${'kB'.padStart(7)}  ${'pri'.padEnd(6)} ${'asset'.padEnd(30)} discovered by`)
+  console.log(`  ${'start'.padStart(6)} ${'end'.padStart(6)} ${'kB'.padStart(7)}  ${'enc'.padEnd(4)} ${'pri'.padEnd(6)} ${'asset'.padEnd(30)} discovered by`)
   for (const r of rows) {
     const s = ms(r.start)
     const e = r.end ? ms(r.end) : null
@@ -187,7 +168,7 @@ try {
     }).join('')
     const kB = r.bytes != null ? (r.bytes / 1000).toFixed(1) : (r.failed ? 'fail' : '—')
     console.log(
-      `  ${String(s).padStart(6)} ${String(e ?? '').padStart(6)} ${String(kB).padStart(7)}  ${String(r.priority || '').padEnd(6)} ${short(r.url).padEnd(30)} ${cause(r)}`,
+      `  ${String(s).padStart(6)} ${String(e ?? '').padStart(6)} ${String(kB).padStart(7)}  ${String(r.encoding || '—').padEnd(4)} ${String(r.priority || '').padEnd(6)} ${short(r.url).padEnd(30)} ${cause(r)}`,
     )
     console.log(`         |${bar}|`)
   }

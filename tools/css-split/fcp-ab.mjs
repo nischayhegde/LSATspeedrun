@@ -16,18 +16,23 @@
  * predecessors moved; largest contentful paint is the check that first paint
  * was not bought by painting something sooner and the actual screen no later.
  *
+ * The bytes go over the wire compressed, because production's CloudFront
+ * compresses them — see `prod-serve.mjs`. That was an opt-in flag here and the
+ * default everywhere was raw, which meant the sizes deciding what sat on the
+ * critical path were inflated about 4.6x for CSS and JS while the fonts, being
+ * deflate inside already, measured true. Numbers taken before that changed are
+ * raw-wire numbers and are not comparable with numbers taken since.
+ *
  *   node tools/css-split/fcp-ab.mjs /tmp/base /tmp/head
  *   ... --sessions 3 --pairs 7    the default shape, 21 pairs
  *   ... --route /office           somewhere other than /
- *   ... --gzip                    compress like the CloudFront in front of prod
+ *   ... --gzip                    gzip everywhere, as prod would for a viewer with no brotli
+ *   ... --no-compress             the raw bytes every number before this was taken on
  *   ... --offline-fonts           refuse the third-party font origins
  */
-import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { gzipSync } from 'node:zlib'
 import { homedir } from 'node:os'
-import { extname, join, resolve } from 'node:path'
+import { resolve } from 'node:path'
+import { compressionFromOpts, describeCompression, serveLikeProd } from './prod-serve.mjs'
 const PW = process.env.LSAT_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 const { chromium } = await import(PW)
 const CHROME = process.env.LSAT_CHROME
