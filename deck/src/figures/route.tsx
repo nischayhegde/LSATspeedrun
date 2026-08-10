@@ -21,8 +21,8 @@ const MARKS = [40, 420, 1000, 1500] as const
 const SKIP_STAGGER_MS = 150
 
 /** The lane the curriculum sits on, and the lane the route ends on, in percent of the frame. */
-const SKIP_LANE = 34
-const TAKEN_LANE = 70
+const SKIP_LANE = 26
+const TAKEN_LANE = 78
 
 /** Where the readout is held when motion is off: a plausible mid-run split rather than a row of zeroes. */
 const FROZEN_MS = 52_400
@@ -103,7 +103,7 @@ export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
               // A struck node greys out rather than disappearing: the audience has
               // to see that the intro course still exists and is simply not on the
               // route.
-              opacity: phase < 1 ? 0 : struck ? 0.42 : 1,
+              opacity: phase < 1 ? 0 : struck ? 0.62 : 1,
               '--fig-delay': delay,
             })}
           >

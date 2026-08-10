@@ -57,13 +57,18 @@ export function Gate({ spec, active, reduced }: FigureBody<GateFigure>) {
             vectorEffect="non-scaling-stroke"
             style={{ strokeDashoffset: phase >= 4 ? 0 : DRAW_PX }}
           />
-          <path
-            className="fig-gt-strike"
-            d={`M ${RUN.from - 3} ${RUN.reverseY + 11} L ${RUN.to + 3} ${RUN.reverseY - 11}`}
-            vectorEffect="non-scaling-stroke"
-            style={{ strokeDashoffset: phase >= 5 ? 0 : DRAW_PX }}
-          />
         </svg>
+
+        {/* The strike is DOM for the same reason the arrowheads are. Drawn in
+            the stretched viewBox it ran the full width of the lane at a few
+            degrees off horizontal — a third line parallel to the two arrows
+            rather than a mark across one of them. A slash is a shape, and a
+            shape has to be square at every aspect. */}
+        <span
+          className="fig-gt-strike"
+          data-struck={phase >= 5 ? 'true' : 'false'}
+          style={{ left: '50%', top: `${RUN.reverseY}%` }}
+        />
 
         <span
           className="fig-gt-chevron"

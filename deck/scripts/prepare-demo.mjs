@@ -264,7 +264,11 @@ if (!sessionId) {
     .map((value) => value.split(';')[0])
     .join('; ')
   if (login?.ok && cookie) {
-    const current = await getJson(`${BACKEND_ORIGIN}/v1/study-sessions/current`, 4000, { headers: { cookie } })
+    // `find_resumable_session` walks every queued run and re-serves the current
+    // item; measured at 6-14s locally and reported as high as 19s on a cold
+    // process. A 4s budget here failed silently and fell back to a pinned id,
+    // which is how a stale session id reached the stage in the first place.
+    const current = await getJson(`${BACKEND_ORIGIN}/v1/study-sessions/current`, 30000, { headers: { cookie } })
     sessionId = current?.session?.id || ''
     if (sessionId) sessionSource = `${BACKEND_ORIGIN}/v1/study-sessions/current`
   }

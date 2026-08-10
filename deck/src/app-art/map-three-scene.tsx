@@ -50,10 +50,12 @@ import {
   type RoadGraph,
   type RoadGraphSpec,
 } from './map-agents'
+import { registerProbe } from '../scenes/probe'
 import { CROWD_RENDER_SCALE, CrowdRenderer, buildCrowdWalker, type CrowdWalker } from './map-crowd-rig'
 import { createRiverBed, createRiverSurface, createSeaSurface, setSeaWake, type RiverOptions } from './map-water'
 import { clearObjects, clearanceIntrusion, escapeCorridors, keepRecordsClear, prepareClearance, type ClearanceCorridor, type ClearanceField } from './map-clearance'
-import { IllustratedRenderPass } from './render-style'
+import { FULL_FRAME_PIXEL_BUDGET, IllustratedRenderPass, budgetedPixelRatio } from './render-style'
+import { createResolutionGovernor } from './resolution-governor'
 import { HumanoidActor } from './rig'
 
 export type MapRegionKey = 'city' | 'nation' | 'ocean' | 'continent' | 'orbit'
@@ -7417,9 +7419,17 @@ export function MapThreeScene({
     const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4
     // Matches the office scene: render at up to 2x instead of upscaling a
     // ~1.35x buffer onto a 3x display, which read as blurry.
+    // And capped again by a drawing-buffer budget, which is what binds when the
+    // map is the deck's whole frame rather than a panel in the app. See
+    // `budgetedPixelRatio`.
     const renderPixelRatio = Math.min(
       window.devicePixelRatio || 1,
       constrainedDevice ? 1.5 : 2,
+      budgetedPixelRatio(
+        Math.max(1, host.clientWidth),
+        Math.max(1, host.clientHeight),
+        FULL_FRAME_PIXEL_BUDGET,
+      ),
     )
     renderer.setPixelRatio(renderPixelRatio)
     renderer.setSize(host.clientWidth, host.clientHeight, false)
@@ -7449,6 +7459,19 @@ export function MapThreeScene({
       bands: 8,
       flatten: .52,
       saturation: 1.3,
+    })
+
+    // Same bargain as the office: hold the frame rate, pay in pixels. The map is
+    // the cheaper of the two — it culls hard and batches its crowd — but it is
+    // also the one most likely to be shown on the largest panel in the room.
+    const governor = createResolutionGovernor({
+      renderer,
+      stylePass,
+      measure: () => ({
+        width: Math.max(1, host.clientWidth),
+        height: Math.max(1, host.clientHeight),
+      }),
+      initialRatio: renderPixelRatio,
     })
 
     const scene = new THREE.Scene()
@@ -9701,6 +9724,7 @@ export function MapThreeScene({
         ;(selectionRing.material as THREE.MeshBasicMaterial).opacity = .58 + Math.sin(elapsed * 2.2) * .18
       }
       stylePass.render(scene, camera)
+      governor.sample(delta)
       if (!disposed && surfaceVisible && !document.hidden) animationFrame = requestAnimationFrame(animate)
     }
     const surfaceObserver = new IntersectionObserver(([entry]) => {
@@ -9709,6 +9733,7 @@ export function MapThreeScene({
         cancelAnimationFrame(animationFrame)
         animationFrame = 0
       } else if (ready && surfaceVisible && !document.hidden && !animationFrame) {
+        governor.restart()
         previousFrame = performance.now()
         animationFrame = requestAnimationFrame(animate)
       }
@@ -9763,6 +9788,21 @@ export function MapThreeScene({
           return { length: curve.getLength(), duration: walking.duration }
         },
       }
+      // The deck's telemetry hatch. `__mapScene` above hands out live objects
+      // for QA tooling to poke at; this is the read-only budget view the deck
+      // uses to check the map's draw calls without turning on the presenter
+      // HUD. See `scenes/probe.ts`.
+      registerProbe('__deckMap', () => ({
+        region,
+        render: { ...renderer.info.render },
+        memory: { ...renderer.info.memory },
+        programs: renderer.info.programs?.length ?? 0,
+        // The crowd is the map's largest population and the whole reason it
+        // has a batching rig, so its own draw cost is reported next to the
+        // frame's rather than hidden inside it.
+        crowdWalkers: crowdWalkers.length,
+        crowdBatches: crowdRenderer ? crowdRenderer.batchCount : 0,
+      }))
       if (!surfaceVisible || document.hidden) return
       previousFrame = performance.now()
       animationFrame = requestAnimationFrame(animate)
@@ -9770,6 +9810,7 @@ export function MapThreeScene({
 
     return () => {
       disposed = true
+      registerProbe('__deckMap', undefined)
       cancelAnimationFrame(animationFrame)
       // The mixer caches its bindings against the rig root, so the actor has
       // to be released explicitly or a remounted map rebinds onto stale ones.

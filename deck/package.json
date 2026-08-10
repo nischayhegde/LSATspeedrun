@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
     "prepare-demo": "node scripts/prepare-demo.mjs",
+    "stage-demo": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply",
+    "stage-demo:fast": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply --no-model",
+    "reset-demo": "npm run stage-demo && npm run prepare-demo",
     "shoot": "node scripts/shoot.mjs"
   },
   "dependencies": {

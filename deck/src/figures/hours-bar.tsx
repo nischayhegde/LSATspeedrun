@@ -32,19 +32,31 @@ import { pct, usePhase, vars, type FigureBody } from './kit'
  */
 const OUTCOME_FRACTION = 0.01
 
-/** Cumulative milliseconds: bar, attributions, sliver, curriculum, price, and the line item nobody mentioned. */
-const MARKS = [40, 900, 1700, 2500, 3100, 3700, 4900] as const
+/**
+ * Cumulative milliseconds: bar, attributions, the two curriculum quotes, the
+ * price, the line item nobody mentions — and last of all the outcome.
+ *
+ * The order is the argument and `NARRATIVE.md` is specific about the end of it:
+ * the sliver draws *last, and slowly*. Drawn third, as it was, the room saw
+ * what the hours buy before it had finished being told what the hours cost, and
+ * the sliver was just a small mark early in a sequence. Drawn after the bill,
+ * against a bar the room has by then watched acquire four separate meanings, a
+ * one-percent smudge at the far right is the punchline. Slowly, because the eye
+ * has to be given time to follow the leader line out to it and find almost
+ * nothing there.
+ */
+const MARKS = [40, 900, 2500, 3100, 3700, 4900, 6100] as const
 
 export function HoursBar({ spec, active, reduced }: FigureBody<HoursBarFigure>) {
   const phase = usePhase(active, reduced, MARKS)
-  const grained = phase >= 4
+  const grained = phase >= 3
 
   return (
     <div className="fig-hb">
       <p className="fig-hb-label">{spec.barLabel}</p>
 
       <div className="fig-hb-plot">
-        <div className="fig-hb-outcome" style={{ opacity: phase >= 3 ? 1 : 0 }}>
+        <div className="fig-hb-outcome" style={{ opacity: phase >= 7 ? 1 : 0 }}>
           <span className="fig-hb-outcome-name">{spec.outcome}</span>
           <span className="fig-hb-outcome-lead" />
         </div>
@@ -59,7 +71,7 @@ export function HoursBar({ spec, active, reduced }: FigureBody<HoursBarFigure>) 
           </div>
           <div
             className="fig-hb-sliver"
-            style={{ width: phase >= 3 ? pct(OUTCOME_FRACTION) : '0%' }}
+            style={{ width: phase >= 7 ? pct(OUTCOME_FRACTION) : '0%' }}
           />
         </div>
 
@@ -99,8 +111,8 @@ export function HoursBar({ spec, active, reduced }: FigureBody<HoursBarFigure>) 
             className="fig-hb-quote"
             key={fragment}
             style={{
-              opacity: phase >= 4 + index ? 1 : 0,
-              transform: phase >= 4 + index ? 'translateY(0)' : 'translateY(.4em)',
+              opacity: phase >= 3 + index ? 1 : 0,
+              transform: phase >= 3 + index ? 'translateY(0)' : 'translateY(.4em)',
             }}
           >
             {fragment}
@@ -111,15 +123,15 @@ export function HoursBar({ spec, active, reduced }: FigureBody<HoursBarFigure>) 
       <div className="fig-hb-bill">
         <div
           className="fig-hb-ribbon"
-          style={{ transform: phase >= 6 ? 'translateX(0)' : 'translateX(-102%)' }}
+          style={{ transform: phase >= 5 ? 'translateX(0)' : 'translateX(-102%)' }}
         >
           <span>{spec.price}</span>
         </div>
         <p
           className="fig-hb-late"
           style={{
-            opacity: phase >= 7 ? 1 : 0,
-            transform: phase >= 7 ? 'translateY(0)' : 'translateY(-.4em)',
+            opacity: phase >= 6 ? 1 : 0,
+            transform: phase >= 6 ? 'translateY(0)' : 'translateY(-.4em)',
           }}
         >
           {spec.lateLineItem}

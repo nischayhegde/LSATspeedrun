@@ -21,10 +21,12 @@ import {
   type OfficeStaffStation,
   type OfficeVisualZone,
 } from './office-manifest'
+import { registerProbe } from '../scenes/probe'
 import { OfficeCastBatch } from './office-cast-batch'
 import { OfficeRoomBatch } from './office-room-batch'
 import { buildOfficeWindowView } from './office-window-view'
-import { IllustratedRenderPass } from './render-style'
+import { FULL_FRAME_PIXEL_BUDGET, IllustratedRenderPass, budgetedPixelRatio } from './render-style'
+import { createResolutionGovernor } from './resolution-governor'
 import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
 import {
   HumanoidActor,
@@ -622,9 +624,21 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // compositor upscale was the reason the scene looked soft. 2x is the point
     // where further density stops being visible on these stylized shapes, so it
     // is the cap rather than the raw device ratio.
+    //
+    // Capped again by a pixel budget, because in the deck this canvas is not a
+    // panel in a page — it is the whole 1920×1080 frame, and 2× of that is
+    // sixteen times the buffer the rule above was written against. See
+    // `budgetedPixelRatio`; on the app's own panel sizes the budget is never
+    // the binding constraint and this is exactly the old expression.
+    const bounds = canvas.getBoundingClientRect()
     const targetPixelRatio = Math.min(
       constrainedDevice ? 1.5 : 2,
       window.devicePixelRatio || 1,
+      budgetedPixelRatio(
+        Math.max(1, bounds.width),
+        Math.max(1, bounds.height),
+        FULL_FRAME_PIXEL_BUDGET,
+      ),
     )
     // Keep one resolution for the lifetime of the scene. Resizing the WebGL
     // drawing buffer after the office appears creates a visible hitch.
@@ -3661,6 +3675,20 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       }
     }
 
+    // Holds 60fps by giving up pixels rather than by giving up the room. The
+    // ratio above is what this machine would like; the governor is what it can
+    // actually afford. See `resolution-governor.ts`.
+    const governor = createResolutionGovernor({
+      renderer,
+      stylePass,
+      measure: () => {
+        const box = canvas.getBoundingClientRect()
+        return { width: Math.max(1, Math.round(box.width)), height: Math.max(1, Math.round(box.height)) }
+      },
+      initialRatio: targetPixelRatio,
+      enabled: !reduced,
+    })
+
     const startedAt = performance.now()
     let frame = 0
     let disposed = false
@@ -3999,6 +4027,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       ;(steam.material as THREE.PointsMaterial).opacity = cozy ? .52 : .22
 
       timed('render', () => stylePass.render(scene, camera))
+      governor.sample(delta)
       if (profiling) {
         frameProfile.total += performance.now() - now
         frameProfile.frames += 1
@@ -4046,6 +4075,21 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       if (!reduced && !disposed && surfaceVisible && !document.hidden) frame = window.requestAnimationFrame(draw)
     }
     draw()
+    // A live read of this scene's own renderer. `__officeSceneStats` above is a
+    // snapshot of the first frame and is DEV-only; the deck needs the current
+    // frame, in any build, to check draw calls in the room without turning on a
+    // debug overlay in front of an audience. See `scenes/probe.ts`.
+    registerProbe('__deckOffice', () => ({
+      level,
+      render: { ...renderer.info.render },
+      memory: { ...renderer.info.memory },
+      programs: renderer.info.programs?.length ?? 0,
+      pixelRatio: Number(governor.ratio.toFixed(3)),
+      governorSteps: governor.steps,
+      buffer: [renderer.domElement.width, renderer.domElement.height],
+      cast: castBatch ? { batches: castBatch.batchCount, parts: castBatch.partCount } : null,
+      room: roomBatch ? roomBatch.census : null,
+    }))
     const surfaceObserver = new IntersectionObserver(([entry]) => {
       surfaceVisible = Boolean(entry?.isIntersecting)
       if (!surfaceVisible && frame) {
@@ -4053,6 +4097,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         frame = 0
       } else if (surfaceVisible && !document.hidden && !reduced && !frame) {
         previousFrame = performance.now()
+        // The frames either side of an appearance are not evidence about fill
+        // rate; the deck is animating a transition over the top of them.
+        governor.restart()
         frame = window.requestAnimationFrame(draw)
       }
     }, { rootMargin: '80px' })
@@ -4063,6 +4110,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         frame = 0
       } else if (!document.hidden && surfaceVisible && !reduced && !frame) {
         previousFrame = performance.now()
+        governor.restart()
         frame = window.requestAnimationFrame(draw)
       }
     }
@@ -4073,6 +4121,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       // in the build stopwatch, so it is timed too. Read by `switch.mjs`.
       const teardownStarted = performance.now()
       disposed = true
+      registerProbe('__deckOffice', undefined)
       // Mixers hold a cache keyed on the root object, so an actor that is not
       // uncached keeps its clips and bindings alive after the scene is gone.
       staffHumanoids.forEach((humanoid) => humanoid.dispose())

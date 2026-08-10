@@ -67,7 +67,14 @@ export const QA: readonly QaEntry[] = [
       + 'writing against a rubric, so the feedback is about your argument rather than about the question. '
       + 'The second difference is that we measure — one named method prompted inside the question, tested against a '
       + 'hidden control arm of your own unprompted attempts, where their stated position is that there are no methods '
-      + 'worth teaching: no diagrams, no jargon.',
+      + 'worth teaching: no diagrams, no jargon. '
+      + 'The third is the one I would actually lead with. Demon still needs the student to decide to show up. Their '
+      + 'answer to that is Ben and Nathan — classes seven days a week, a podcast every day, a Discord — which is a '
+      + 'real answer and a social one. Ours is structural: the only way anything in the game moves is answering '
+      + 'questions, so the thing a student is pulled back by is the thing that raises the score. '
+      + 'On the numbers LSAC published, fifty-one percent of the cohort on their own free platform never finished one '
+      + 'practice exam. That is the problem neither of us can afford to leave unsolved, and we are the only one of the '
+      + 'two whose product is built around it.',
     caveat:
       'Volunteer all four concessions before anyone reaches for them. They got to the drilling thesis first. Their '
       + 'retention engine is Ben and Nathan personally — live classes seven days a week, seven podcast episodes a '
@@ -243,12 +250,107 @@ export const QA: readonly QaEntry[] = [
     id: 'does-the-game-help',
     question: 'Does the game actually help, or does it just entertain?',
     answer:
-      "Honestly, the evidence for gamification is real but modest: Sailer and Homner's meta-analysis puts the cognitive "
-      + 'effect around 0.49 and the behavioral effect around 0.25, and only the cognitive one stayed stable under the more '
-      + 'rigorous studies. That is why the game is a layer and not the product, why it can be switched off entirely, '
-      + 'and why we plan to test the currency loop against a non-gamified control rather than assume it works.',
+      'It does one thing, and we can tell you exactly what: it buys practice volume. Dicheva and colleagues isolated '
+      + 'virtual currency from every other game element and ran it in three courses at three universities — practice '
+      + 'went up between thirty percent and nearly four times per student, and intrinsic motivation and final grades '
+      + 'did not significantly move. So a currency does not teach anybody anything. It gets them to do the reps. '
+      + 'That is the entire job, because slide eight is the reason the job exists: LSAC matched their own free '
+      + "platform's logs to real scores and fifty-one percent of that cohort never completed one practice exam. "
+      + 'The engine underneath is what turns reps into a score. The game is what makes the reps happen.',
+    caveat:
+      'Do not oversell it, and lead with the two nulls — they are why the rest is believed. If pushed on the general '
+      + "literature: Sailer and Homner put gamification's cognitive effect around 0.49, and game fiction was a "
+      + 'positive moderator, which is the evidence for a narrative tycoon frame over a bare points system.',
     topics: ['gamification', 'evidence'],
-    sources: ['Sailer & Homner, meta-analysis', 'Meng et al.', 'Clark et al., 69 samples / 6,868 participants'],
+    sources: [
+      'Dicheva et al. (2023), Higher Education 2(3) — deck/CITATIONS.md §6.1',
+      'LSAC RR 21-01 — deck/CITATIONS.md §7',
+      'Sailer & Homner (2020), meta-analysis',
+    ],
+  },
+  {
+    id: 'game-wears-off',
+    question: "Won't the novelty wear off by month two?",
+    answer:
+      'Probably, and we build for that rather than against it. The behavioural-change meta-analysis has interventions '
+      + 'under an hour at about 1.57, two-to-sixteen weeks at 0.39, and one-to-two years actually negative. An LSAT '
+      + 'cycle sits in the middle band: real, modest, and falling. So the game is an activation and habit device for '
+      + 'the first weeks, and what has to hold somebody by month three is the dashboard showing their score moving — '
+      + 'which is why tiers gate on measured performance on a full-length test rather than on how much cash they have '
+      + 'piled up. If the game were the only thing holding them, we would agree with you that it fails.',
+    caveat:
+      'This is the strongest argument against us and the founders should say the numbers before the questioner does. '
+      + 'Never claim the game holds a student indefinitely. Related trap: the failure mode the literature calls '
+      + '"superficial learning effects" — optimising for the game instead of the score. The answer to that one is the '
+      + 'one-way coupling on `game-never-gates` plus first-attempt-only scoring on the dashboard.',
+    topics: ['gamification', 'evidence', 'product'],
+    sources: ['deck/CITATIONS.md §6.2', 'research/01-learning-science.md §8'],
+  },
+  {
+    id: 'lsac-baseline-confound',
+    question:
+      "Isn't the practice-time effect just baseline? Add the first practice-exam score and it collapses.",
+    answer:
+      'You have read Table 6, and you are right about what it says: adding the first practice-exam score takes '
+      + 'R-squared from point two one to point six four, and the practice term drops away. We would expect that — '
+      + 'where you start is the biggest thing about where you finish, on any test. '
+      + 'But look at who that model is estimated on. It is restricted to students who completed at least one '
+      + 'practice exam, four thousand six hundred and seven of them, because a first-practice-exam score cannot '
+      + 'exist for a student who never sat one. So the baseline-dominant model is a fact about the forty-nine '
+      + 'percent who showed up. Our slide is about the fifty-one percent who did not, and that model has no data '
+      + 'on them at all.',
+    caveat:
+      'This is the single most dangerous question on slide 8 and the answer must be delivered without hedging — '
+      + 'concede the number first, then relocate it. Two supporting details if the questioner keeps going: the '
+      + '+4.3 IS adjusted for undergraduate GPA, Pell status and age, just not for LSAT baseline; and LSAC\'s own '
+      + 'abstract says students with lower initial practice scores benefitted at least as much per practice minute, '
+      + 'which denies the rich-get-richer reading. Do not claim the .02 means practice stops mattering — it is the '
+      + 'slope in the reference quartile, with the interaction terms carrying the rest.',
+    topics: ['evidence', 'sourcing', 'measurement'],
+    sources: ['LSAC RR 21-01, Tables 4-6 — deck/CITATIONS.md §7'],
+  },
+  {
+    id: 'game-competes-with-studying',
+    question: "Won't the game compete with the studying for attention?",
+    answer:
+      "That's fair, and it is the one thing in our own research that argues against us. Kienitz and colleagues "
+      + 'added decorative but interesting material to a lesson and recall got significantly worse — the mechanism '
+      + 'was diversion, and it ran through how relevant learners thought the extras were and how long they spent on '
+      + 'them. But the same study found the fix, and the fix is cheap: telling learners the extras are cosmetic '
+      + 'restored recall. That is exactly why nothing in the game moves while a question is on screen. The fee is '
+      + 'set before you start and settled after you finish, never while you are reading. '
+      + "Clark points the same way — a story that sits outside the content scored about 0.63 against 0.17 for one "
+      + 'woven through it, which is the law firm being outside the LSAT question rather than dressed over it.',
+    caveat:
+      'Quote Kienitz as the reason for a design constraint, never as a general law about narrative: one 537-word '
+      + 'passage, a single 6.5-minute session, and the transfer test had low reliability. Be even-handed about Clark '
+      + 'too — the same meta-analysis found more contextualization associated with smaller effects overall. The '
+      + 'honest combined reading is keep the fiction thin, keep it cosmetic, keep it off the question screen, '
+      + 'which is what the product does.',
+    topics: ['gamification', 'evidence', 'product'],
+    sources: [
+      'Kienitz et al., seductive details — brainlift article 15',
+      'Clark et al., story-relevance split — brainlift article 14',
+    ],
+  },
+  {
+    id: 'no-question-choice-is-controlling',
+    question: "Isn't taking away question choice just controlling the student?",
+    answer:
+      'Self-determination theory draws the line you are reaching for, and it does not fall where you think. Ryan and '
+      + 'Deci separate STRUCTURE — clear expectations, scaffolding, useful feedback — from CONTROL, which is '
+      + 'pressuring somebody toward a prescribed outcome. The best environments are high in both autonomy support '
+      + 'and structure, and they are explicit that a student can act autonomously without options when they accept '
+      + "the activity's value. We tell you why you are getting a question, and the feedback is informational rather "
+      + 'than a verdict. And the real autonomy valve is not question choice, it is Focus Mode: one switch removes '
+      + 'the entire game. What we removed is the override that lets you drill only what you are already good at, '
+      + 'which is the thing every student does and the thing that costs them points.',
+    caveat:
+      'Do not oversell the evidence. Removing question choice is the deck POV with the least support behind it, '
+      + 'and the honest framing is that SDT permits it rather than recommends it. If pressed on whether we have '
+      + 'tested it: no, and it is on the list.',
+    topics: ['pedagogy', 'product'],
+    sources: ['Ryan & Deci, self-determination theory — brainlift article 12'],
   },
   {
     id: 'llm-grader',

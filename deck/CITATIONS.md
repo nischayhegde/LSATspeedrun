@@ -1,8 +1,10 @@
 # Lawyer Tycoon — Citations & Evidence Check
 
-**Prepared 2026-08-10.** Read this before rehearsing. It covers four things: the 610 SAT claim on `turn-610-reader`, ranked replacements for it, the competitor/study-hour claims on `problem-200-hours`, and — added in this revision — **a full competitor reference for the seven products a questioner may name (§4), including LSAT Demon, Kaplan, PowerScore and Khan Academy, none of which the deck previously accounted for.**
+**Prepared 2026-08-10.** Read this before rehearsing. It covers the 610 SAT claim on `turn-610-reader`, ranked replacements for it, the competitor and study-hour claims on `problem-hours-and-price`, and a full competitor reference for the seven products a questioner may name (§4), including LSAT Demon, Kaplan, PowerScore and Khan Academy.
 
-Every entry below gives the claim, the source, the exact numbers, a URL, and the objection a hostile audience member can raise. §4.9 lists everything that could not be verified; nothing in §4 is asserted past what a primary page actually said.
+**§6, §7 and §8 were added when the founders asked whether the deck actually answers two questions: *why gamification* and *why us rather than them*.** §6 is the gamification evidence and, more usefully, its limits. §7 is LSAC's own study of a prep platform — the source behind the new `pov-volume-is-the-constraint` slide and the best citation in the deck. §8 is the register of every sentence the deck says about a competitor while the audience is watching, which is three sentences.
+
+Every entry gives the claim, the source, the exact numbers, a URL, and the objection a hostile audience member can raise. §4.9 lists everything in §4 that could not be verified; §7 ends with the one number in the repo's research notes that nobody has read off the primary page, and which is therefore on no slide.
 
 ---
 
@@ -15,7 +17,10 @@ Every entry below gives the claim, the source, the exact numbers, a URL, and the
 | "200+ hours for a 5–10 point gain" | `problem-200-hours` | **Half-sourced.** Hours are fine; the gain figure needs rewording. |
 | "80+ of those hours are instruction" | `problem-200-hours` | **Not substantiated by competitor materials.** Soften. |
 | "Competitors charge hundreds of dollars monthly" | `problem-200-hours` | **False for the entry tiers. This is the most dangerous line in the deck.** 7Sage starts at $69/mo, LSAT Lab at $65/mo. Fix before you present. |
-| No competitive positioning anywhere in the deck | *(deck-wide)* | **Closed in this revision.** LSAT Demon, Kaplan, PowerScore and Khan Academy were absent entirely; Demon's public thesis is the closest to ours. Full reference in §4, spoken answers in §G of `NARRATIVE.md`, one on-stage line on `pov-reasoning-is-the-work`. |
+| No competitive positioning anywhere in the deck | *(deck-wide)* | **Closed.** LSAT Demon, Kaplan, PowerScore and Khan Academy were absent entirely; Demon's public thesis is the closest to ours. Full reference in §4, spoken answers in §G of `NARRATIVE.md`, and now **three** on-stage lines, registered in §8. |
+| "Virtual currency raised practice 1.4× to 3.7×" | `pov-virtual-currency` | **Directionally right, wrong column.** Those are group totals from unequal groups. Per student it is **1.3× to 3.7×**, published in the same table. Corrected on the slide. §6.1 |
+| Why gamification at all — the causal chain | *(deck-wide)* | **Was missing, now on `pov-volume-is-the-constraint`.** The deck argued the method and then produced a game, with no slide establishing that compliance is the binding constraint. LSAC's own RR 21-01 supplies it. §7 |
+| "Video minutes were not correlated with LSAT scores" | `pov-volume-is-the-constraint` | **Solid, and it is a direct quote from the test maker.** LSAC RR 21-01, read from the primary PDF 2026-08-10. §7 |
 
 ---
 
@@ -348,10 +353,12 @@ The brand a non-expert room recognizes, and therefore the mental anchor, even th
 
 # 5. Summary of slide changes recommended
 
-The first six rows were recommendations and are now applied in `NARRATIVE.md` Revision 3. The last row is this revision's change.
+Rows 3–8 were the original recommendations and are applied in `NARRATIVE.md` Revision 3. Row 2 is Revision 4's. **Row 1 is Revision 6's**, and it is the only change in the file's history that moved the runtime.
 
 | Slide | Change | Severity |
 | --- | --- | --- |
+| **`pov-volume-is-the-constraint`** | **New slide, inserted at position 8**, between `pov-confidence-signal` and the concept. Carries §7: video minutes were not correlated with LSAT scores, practice time was worth +4.3 points across the engagement range, and 51% of the cohort never completed one practice exam. This is the deck's answer to *why gamification* — the game is the compliance mechanism for a method whose binding constraint is compliance — and it is stated before the game is ever named, so the game arrives as an answer rather than as an amenity. **Costs 26s; `pov-virtual-currency` gives back 2. The deck is 10:04.** | Applied |
+| `pov-virtual-currency` | **Rebuilt in Revision 5, corrected in Revision 6.** Argues the mechanism (§6.1) rather than points-against-badges. The three multiples were the paper's group totals and are now its per-student averages — 1.3× / 2.5× / 3.7× — because the experimental and comparison groups are not the same size. Both nulls stay on screen. | Applied |
 | `pov-reasoning-is-the-work` | **Add the competitive line on stage:** a fourth fragment reading *"They explain the question. We grade your explanation."* and one closing sentence in the speaker notes, paid for by compressing the Zhang & Fiorella sentence. No new slide, no comparison table, runtime unchanged at 9:40. Everything else about the competitive field lives in §G and in §4 above. | Applied |
 | `turn-610-reader` | **Remove the 610 figure entirely.** Replace with the LSAC "test of skills" quote plus the ABA bachelor's-degree fact. Full replacement copy and speaker notes in §1.4. The extruded `610` visual should become `0.22` or the word SKILLS. | **Blocking** |
 | `problem-200-hours` | **Replace "hundreds of dollars a month"** with the real range, "$65–$425 a month, plus $124 a year to LSAC." Full replacement notes in §3.4. | **Blocking** |
@@ -361,3 +368,99 @@ The first six rows were recommendations and are now applied in `NARRATIVE.md` Re
 | `problem-coaching-tax` | No change to the numbers. Update the on-screen citation hairline to **"LSAC, Wightman, RR 90-01 (1989 test takers), self-reported."** §Alternative A | Low |
 
 **The two blocking items are the only ones that can cost you the room.** Everything else is a credibility upgrade rather than a repair.
+
+---
+
+# 6. Gamification evidence — what the deck may claim, and what it must not
+
+Added because the founders asked the deck a direct question — *why gamification?* — and the honest answer needed sourcing at the same standard as §1–§4. The short version: **gamification's defensible claim is that it buys practice volume. It does not buy motivation, and it does not buy grades.** Every source below agrees on that shape, and the deck now says it out loud on `pov-virtual-currency` rather than hoping nobody asks.
+
+## 6.1 The one study that isolated virtual currency — `pov-virtual-currency`
+
+- **Citation:** Dicheva, D., et al. (2023). *A Multi-Case Empirical Study on the Impact of Virtual Currency on Student Engagement and Motivation.* ***Trends in Higher Education*** **2(3), 462–476, article 27.** https://doi.org/10.3390/higheredu2030027 · open access at https://www.mdpi.com/2813-4346/2/3/27 *(full text read 2026-08-10)*
+- **Why it is the right source.** Almost every gamification study bundles points, badges, leaderboards and currency together, which makes the individual element's effect unrecoverable. This one does not: virtual currency "was the single gamification element used," in three separate semester-long quasi-experiments, in three subjects, at three institutions with deliberately different student populations. That is the closest thing in the literature to an isolated test of the mechanic Lawyer Tycoon runs on.
+- **Design:** quasi-experimental, not randomized — different class sections served as experimental and comparison groups, with the same syllabus, textbook, lectures, labs, assignments and tests. Fall 2019 – Spring 2021. **171 students total: 91 experimental, 80 comparison.** All three courses gamified on the OneUp platform.
+
+| Case | Course | Institution | Comparison / experimental n | Unique practice sets **per student** | Multiple |
+| --- | --- | --- | --- | ---: | ---: |
+| A | Discrete Mathematics | public HBCU, North Carolina | 19 / 21 | 12.73 → 16.33 | **1.3×** |
+| B | Discrete Structures | private research university, Pennsylvania | 33 / 49 | 29.85 → 74.98 | **2.5×** |
+| C | Computer Networking | private university, Missouri | 28 / 21 | 7.07 → 25.90 | **3.7×** |
+
+- **Use the per-student column, which is what the slide now shows.** The paper's own headline figures are *group totals* — "close to four times (373%)" for Study B and "close to 274%" for Study C, with Study A "close to 50% more" — and the deck used those until the paper was read against them. They are not wrong, but they are not normalised: Study B ran 49 experimental students against 33 comparison students, so roughly a third of that 3.7× is headcount. Both columns are printed in the paper's Table 3, so anyone who opens the source sees the discrepancy immediately. **The per-student multiples are the defensible ones and they still carry the argument.**
+- **The two nulls, in the paper's own words** (abstract): the results "demonstrate a significant increase in student engagement in out-of-class practicing gamified with virtual currency" but "fail to show a significant increase in students' intrinsic motivation and students' final course grades."
+  - *Motivation:* pre/post Basic Psychological Needs Satisfaction Scale, paired-samples t-test, no significant change in autonomy, competence or relatedness.
+  - *Grades:* Study A +3.16 points on the final, not significant. Study B final-grade means 85.85 vs 87.73, **t-test p = 0.48**. Study C no significant improvement, though As-and-Bs went 79% → 86% and Ds-and-Fs 11% → 5%.
+- **Keep both nulls on the slide.** They are the reason a room that distrusts gamification believes the rest of the act. They are also the reason the product is shaped the way it is: a currency that moves volume and nothing else *has* to sit on top of an engine that converts volume into a score, which is exactly what `game-never-gates` claims.
+- **Hostile objections to have ready:**
+  - *Quasi-experimental, not randomised.* Correct, and the paper says so first. Different class sections, some across different semesters — Study A's comparison group was Fall 2019 and its experimental group was Spring 2020, which is the semester COVID moved the course online. Volunteer that.
+  - *Computer science undergraduates, not LSAT candidates.* Correct. The transferable claim is about the mechanic, not the subject.
+  - *The currency bought course benefits — deadline extensions, dropped low scores, extra credit.* True, and it is a real disanalogy: our currency buys a fictional law firm, not grade relief. This cuts against us and should be conceded rather than argued. The counter is that the paper's own discussion attributes the volume effect to the earning side (practice quizzes), and that Clark (§6.3) is the evidence for the fiction working as a reward.
+  - *Small n.* 171 across three sites, the largest cell being 49.
+
+## 6.2 The broader gamification literature — background, not slide copy
+
+- **Sailer, M., & Homner, L. (2020).** *The Gamification of Learning: a Meta-analysis.* Educational Psychology Review 32(1), 77–112. The field's most methodologically careful meta-analysis. **Cognitive learning outcomes g = 0.49**, and *game fiction was a significant positive moderator* — which is the evidence for a narrative tycoon frame rather than a bare points system. **Not currently cited on any slide** and it should stay that way unless a questioner asks whether gamification harms learning; then it is the answer.
+- **Meng, C., Zhao, M., Pan, Z., et al. (2024).** *Investigating the impact of gamification components on online learners' engagement.* Smart Learning Environments 11, 47. https://doi.org/10.1186/s40561-024-00335-4. Was cited on `pov-virtual-currency` in an earlier revision, as the source for "points beat badges." **That citation is now removed from the slide**, because a comparison between two game elements is not a mechanism and the slide argues the mechanism instead. Keep the paper for Q&A.
+- **The novelty-decay finding, which is the strongest argument against us.** `research/01-learning-science.md` §8 records a behavioural-change meta-analysis with the gradient **under one hour ES = 1.57 → 2–16 weeks ES = 0.39 → 1–2 years ES = −0.20**, i.e. gamification's behavioural effect is front-loaded and eventually *inverts*. An LSAT cycle is three to six months, which is the middle band. **Do not claim the game holds a student indefinitely.** The honest answer, and the one the product is actually built for: the game is an activation and habit-formation device for the early weeks, and the dashboard's score movement is what has to hold the student by month three.
+- **The internal tension nobody outside will raise but the founders should know.** `research/01-learning-science.md` §7 concludes that the app "should not measure or reward raw questions-completed or minutes-in-app" but practice *quality*. That is not in conflict with the deck as written, because every rep the deck counts is a graded-reasoning rep with step-level feedback attached — but it is the reason the on-slide language must never be "grind" or "brute force." Volume of a *feedback-carrying* rep is the claim; volume alone is not.
+
+## 6.3 `game-by-design` — the Clark meta-analysis
+
+- **Citation:** Clark, D. B., Tanner-Smith, E. E., & Killingsworth, S. S. (2016). *Digital Games, Design, and Learning: A Systematic Review and Meta-Analysis.* **Review of Educational Research 86(1), 79–122.** https://doi.org/10.3102/0034654315582065
+- The four design splits on the slide are its media-comparison and value-added findings: single-player over competitive, schematic over photoreal, thin narrative over medium, distributed sessions over one long one.
+- **The caveat is already on the slide and must stay.** The hairline credit reads "average participant age ~12–13; RCT subset smaller." Alan says it out loud too. Design guidance, not proof.
+
+---
+
+# 7. Volume, and the active-versus-passive contrast — `pov-volume-is-the-constraint`
+
+This is the evidence behind the slide added in Revision 6, and it is the best single citation in the deck, because it is **the test maker measuring a prep platform against real LSAT scores.** Every number below was read out of the primary PDF on 2026-08-10, not out of a summary.
+
+- **Citation:** Dustman, K., Camilli, G., & Gallagher, A. (2021). *LSAT Takers and Khan Academy Preparation.* LSAC Research Report **RR 21-01**. *(Author order corrected 2026-08-10 against the report's own title page; it had been printed here and on slide 8 as Dustman, Gallagher & Camilli.)*
+- **URL:** https://lsac.org/sites/default/files/research/LSAT-Test-Taker-Khan-Preparation_RR-21-01_full-report.pdf · summary: https://www.lsac.org/blog/study-shows-lsat-score-increases-candidates-who-use-free-khan-academy-prep-tools
+- **Design:** quasi-experimental. Khan Academy platform usage logs matched to the actual LSAT scores those students went on to earn, June 2018 – July 2020. Descriptive sample **12,471** consenting Khan users; regression sample **n = 6,938** (6,550 with at least 2 log practice minutes). Controls: UGPA, Pell Grant status, test-taker age.
+
+**The three findings the slide uses, each verbatim or arithmetic from the report:**
+
+1. **Video did nothing.** *"Other usage variables were examined but were found not to correlate with actual LSAT scores. Video minutes, for example, were not correlated with LSAT scores, but they were positively associated with age (r = 0.16, p < .0001), meaning that older test takers were somewhat more likely to spend time viewing videos."* This is the sentence the slide's "no relationship — LSAC's words, not ours" points at. **Quote it exactly if challenged; do not paraphrase it as "video is useless."**
+2. **Practice did.** Pearson correlation of practice minutes with LSAT score **r = 0.19** (UGPA with LSAT r = 0.33, for scale). Standardised regression slope β = 0.17–0.18 for log practice minutes. Table 5 baselines everything against the 10th percentile of practice time, **26 minutes**: *"students at the 90th percentile of practice time (47 hours) had scores that, on average, were 4.3 points higher than students at the 10th percentile."* Effect sizes in the report are computed against the LSAT SD of **10.7**, so 4.3 points is **d = 0.40**.
+3. **Half never started.** *"About 51% of Khan users did not complete an LSAT practice exam."* And from the discussion: *"While students who took at least one practice exam took an average of 4.5 practice exams, 51% of students in the sample did not complete a full practice exam."* Of those who did complete at least one: 47% did 1–3, 44% did 4–9, 9% did all ten available.
+
+**How much weight the video null is asked to carry — changed 2026-08-10, and this is now the deck's registered position.**
+
+The null used to be *proof* that lecture hours do not work, and in that role it was the softest reasoning on the slide: **the median student in this cohort watched 42 minutes of video**, so a null across that range is not a verdict on a hundred-hour lecture course, and a well-read objector can say so in one sentence.
+
+It is now **corroboration**, and the load moved off it entirely. The audience has independently volunteered the anti-lecture premise — they have said, of their own institution's lecture courses, that passive hours produce bad outcomes — so the deck asserts that in half a sentence and banks the agreement rather than arguing for it. The null's job is the word *even*: **"even the test maker's own data shows video minutes weren't correlated."** Same sentence from LSAC, same slide, same figure. What changed is that if the 42-minute objection lands, nothing falls over, because the proposition was already granted before the null was mentioned.
+
+**The separate claim that competitors sell passive hours rests on their own published curricula (§4), not on this null, and must never be sourced to it.** Two different arguments; keep them apart under questioning.
+
+**Caveats, all of which the founders should volunteer before anyone else does:**
+
+- **It is an association, not a causal effect,** and LSAC says so: the report states plainly that this is quasi-experimental and that "the possibility of alternative explanations cannot be ruled out." Practice volume is confounded with motivation, conscientiousness and free time in ways UGPA, Pell status and age do not capture. **The slide's claim survives this**, because the slide's claim is about the *constraint*, not about a treatment effect — 51% not finishing an exam is a description, and descriptions do not need identification.
+- **The dominant predictor is baseline, not practice.** Adding first-practice-exam score to the model takes R² from 0.21 to 0.64, with FPE β = .68. Practice time is a real but modest increment on top of where the student started. **Never let the +4.3 be heard as "we will move you 4.3 points."** It is the observed spread between the bottom and top deciles of engagement on one free platform.
+- **The ceiling this implies.** 47 hours — the 90th percentile of engagement — was worth 4.3 points. Any claim above about five points from practice volume alone is outside what LSAC's own data supports. This is also the number that keeps `problem-hours-and-price` honest.
+- **Data is 2018–2020**, before the August 2024 removal of Analytical Reasoning.
+- **The platform in question is retired** — see §4.8. Do not describe Khan Academy's LSAT prep in the present tense. The correct framing on stage is past tense: *"LSAC studied their own free platform."*
+
+**One number in the repo's research digest that could NOT be confirmed from the primary PDF.** `research/02-measurement-and-score-prediction.md` records a second dose-response ladder by *number of practice exams* — 1–2 exams +1.59; 3–4 +3.58; 5–6 +4.39; 7–8 +5.59; 9–10 +7.26 points. The report's prose confirms the bins exist and that "taking more practice exams generally resulted in increased LSAT scores," but the per-bin coefficients live in a table whose cells did not survive text extraction, so **nobody has read those five numbers off the page in this revision.** They are deliberately **not on any slide.** If the founders want the exam ladder rather than the practice-time interval, open **Table 8** of the PDF and confirm the five values first. *(This pointer said Table 6 until 2026-08-10; Table 6 is the baseline-confound regression, which is a different argument entirely — see §7 and the `lsac-baseline-confound` entry in `notes/qa.ts`.)*
+
+---
+
+# 8. On-stage competitive claims — the register
+
+Three sentences in the deck compare Lawyer Tycoon to the field. They name nobody, they arrive last in their slide's fragment list, and each one is here with the thing that makes it true. **These three are the whole of the on-stage positioning.** Everything else is §4, §G of `NARRATIVE.md`, and `notes/qa.ts`.
+
+| Slide | On-screen | What backs it | Risk |
+| --- | --- | --- | --- |
+| `pov-reasoning-is-the-work` | *"They explain the question. We grade your explanation."* | §4.1 — no product in the field advertises grading student-written reasoning. Demon ships 10,000+ pre-written and video explanations plus a human Ask reply; 7Sage ships Sage AI, which answers *your* questions. Both are explanation *of the question*. | **Medium.** §4.9(1): unverifiable negative, and LSAT Lab's undescribed "AI Skills Training Center" is the hole. Phrase as the required step in the workflow, and be ready to say "if LSAT Lab's AI centre does this, they have not published it." |
+| `pov-strategy-inside-the-question` | *"Nobody else measures whether it worked."* | §4.2 — a claim about **measurement**, chosen deliberately over "nobody prompts a method," which would be false: Demon's Prediction Mode already prompts a technique inside a question. No product in §4 measures a named method's effect on an individual student against their own control. | **Low.** The narrower claim is the one §4 actually supports. |
+| `pov-volume-is-the-constraint` | *"They sell hours. We sell reps."* | §3.1 and §3.3 — the field sells instruction and prices it in hours: 7Sage's 900+ video lessons and 60+ live sessions a week; LSAT Lab's 90-minute classes five days a week; Kaplan's live hours plus the LSAT Channel; PowerScore's 50–100+ video hours; Blueprint's course; Demon's daily classes and seven podcast episodes a week (§4.2). Against that, §7: video minutes were not correlated with LSAT scores. | **Low, and this is the strongest of the three.** It is the one axis LSAT Demon cannot meet by being cheap or by being AI-driven — Demon's own retention runs on live classes, podcasts and Discord, all of which still require the student to show up. **Be fair about that when it comes up:** it is a genuine moat, it is not gamification, and habit-through-community is a real answer to the same problem. Ours is structural; theirs is social. |
+
+**Three things the deck deliberately does not claim on stage.**
+
+1. **A price.** There is no Lawyer Tycoon price to name. `close-one-stop-shop` says *"Cheaper — no video studio, no live instructors,"* which is a claim about cost structure and is true by construction. **Do not answer "how much?" with a number that has not been decided.** Say what the cost structure removes.
+2. **That the thesis is ours.** §D of `NARRATIVE.md` is emphatic and it is still right: Demon has argued publicly for years that drilling beats lecturing. The differentiation is what happens inside one rep, plus the compliance mechanism — not the diagnosis.
+3. **That competitors have no motivation layer.** §4.9(2). None *advertises* points, currency, levels or streaks. That is a claim about their marketing pages, and it is as far as it can honestly go.
+
+---

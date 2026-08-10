@@ -52,6 +52,8 @@ export type SlideKind =
 export type SceneId =
   | 'hero'
   | 'cast'
+  /** The close: two open doorways with the app's own counsel between them. */
+  | 'doorways'
   | 'office'
   | 'office-transform'
   | 'map'
@@ -138,6 +140,15 @@ export type DemoSpec = {
   /** Logical width the app is given before scaling. Defaults to 1440. */
   width?: number
   caption?: string
+  /**
+   * Never embed the live app for this slide — always paint `still`, even when
+   * the origin is healthy. Distinct from the deck-wide `?stills=1` override,
+   * which is a fallback for when something is broken: this is an editorial
+   * decision that a beat is not worth live time, and it should survive a
+   * perfectly working app. The budget bar and click path still render, because
+   * the presenter is still talking to a picture on a clock.
+   */
+  stillOnly?: boolean
   /** Revealed one at a time with `A`, so the presenter can point without narrating. */
   annotations?: DemoAnnotation[]
   /**

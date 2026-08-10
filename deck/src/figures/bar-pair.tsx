@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
+
 import type { BarPairFigure } from './types'
 import { ExtrudedNumeral } from './extruded-numeral'
 import { pct, usePhase, type FigureBody } from './kit'
@@ -29,13 +31,40 @@ import { pct, usePhase, type FigureBody } from './kit'
  * slow, which is a CSS duration rather than a mark — what these control is the
  * order the *type* lands in, so the audience reads the bar, then its number, then
  * the behaviour that contradicts it.
+ *
+ * The last two marks are the swap: the share tags land in the arrangement the
+ * room expects, hold just long enough to be read that way, and then exchange
+ * places. See `SWAP` below.
  */
-const MARKS = [40, 620, 1900, 2320, 2900] as const
+const MARKS = [40, 620, 1700, 2050, 2500, 3050] as const
+
+/**
+ * THE SWAP, which `NARRATIVE.md` asks for in one clause — "two small
+ * percentages fade in and swap position with a tick" — and which is the whole
+ * reason this slide has share tags at all.
+ *
+ * The tags arrive on the bar each one *ought* to belong to: the larger share
+ * against the larger effect. That is the arrangement the audience is already
+ * holding, and for four hundred milliseconds the chart agrees with them. Then
+ * the two tags travel, vertically, in one column, and trade bars. Nearly half
+ * bought the course; barely a third had finished a real test — and the course
+ * is the stub.
+ *
+ * Two constraints shaped the implementation. A tag travels *whole*, its number
+ * and its sentence together, because "45.5%" and "bought the course" are one
+ * claim and a version of this that swapped only the numerals would put a false
+ * sentence on screen, which this deck does not do even for four hundred
+ * milliseconds. And the distance is measured rather than assumed: the two rows
+ * are different heights — only one of them carries the gap note — so there is
+ * no constant that means "the other bar's tag" at every frame size.
+ */
+const SWAP = { enter: 4, settle: 5 } as const
 
 export function BarPair({ spec, active, reduced }: FigureBody<BarPairFigure>) {
   const phase = usePhase(active, reduced, MARKS)
   const bars = spec.bars
   const peak = Math.max(...bars.map((bar) => Math.abs(bar.value)), Number.EPSILON)
+  const [trackRefs, travel] = useSwapTravel(bars.length)
 
   // Where the two bars end, as fractions of the plotting width. The gap note is
   // drawn between the two extremes rather than between "bar 0" and "bar 1", so a
@@ -53,8 +82,16 @@ export function BarPair({ spec, active, reduced }: FigureBody<BarPairFigure>) {
     return (
       <div className="fig-bp-row" key={bar.label} data-stub={bar.stub ? 'true' : 'false'}>
         <p className="fig-bp-name">{bar.label}</p>
-        <div className="fig-bp-track">
+        <div className="fig-bp-track" ref={trackRefs[index]}>
           <div className="fig-bp-run" style={{ width: phase >= 1 ? pct(end) : '0%' }} />
+          {/* The numeral is the extruded object, not flat type.
+              Slide 4's hero is the same component, and the narrative's whole
+              requirement for that slide is that the room recognises it. An
+              object cannot be recognised if it was never shown: set flat here
+              and extruded there, the callback would be to a number rather than
+              to a thing. At this size the extrusion reads as weight rather
+              than as a effect, which is what it should do while the bars are
+              still the subject. */}
           <div
             className="fig-bp-value"
             style={{
@@ -63,18 +100,28 @@ export function BarPair({ spec, active, reduced }: FigureBody<BarPairFigure>) {
               transform: phase >= numeralPhase ? 'translate(0, -50%)' : 'translate(-.4em, -50%)',
             }}
           >
-            {formatEffect(bar.value)}
+            <ExtrudedNumeral
+              value={formatEffect(bar.value)}
+              spin={8}
+              morph={bar.stub ? 'numeral' : 'bar-numeral'}
+            />
           </div>
           {/* The share tag sits under the *start* of its bar rather than at its
               end. Chased to the end, the tall bar's tag would run off the frame
               into the numeral gutter, and left-aligning both of them stacks
-              45.5% directly above 34.9%, which is the crossover the slide is
-              about. */}
+              45.5% directly above 34.9% in one column — which is what makes the
+              swap below a clean vertical exchange rather than a diagonal
+              scramble. */}
           <div
             className="fig-bp-share"
+            data-swapped={phase >= SWAP.settle ? 'true' : 'false'}
             style={{
-              opacity: phase >= 4 ? 1 : 0,
-              transform: phase >= 4 ? 'translateY(0)' : 'translateY(-.5em)',
+              opacity: phase >= SWAP.enter ? 1 : 0,
+              // Before the swap each tag is displaced onto the *other* bar, so
+              // the pair lands in the expected arrangement and then trades.
+              transform: phase >= SWAP.settle
+                ? 'translateY(0)'
+                : `translateY(${index === 0 ? travel : -travel}px)`,
             }}
           >
             <b>{bar.share}</b>
@@ -91,7 +138,7 @@ export function BarPair({ spec, active, reduced }: FigureBody<BarPairFigure>) {
     <div className="fig-bp-gapstrip" key="gap">
       <div
         className="fig-bp-gap"
-        style={{ left: pct(gapFrom), width: pct(gapTo - gapFrom), opacity: phase >= 5 ? 1 : 0 }}
+        style={{ left: pct(gapFrom), width: pct(gapTo - gapFrom), opacity: phase >= 6 ? 1 : 0 }}
       >
         <span className="fig-bp-gap-rule" />
         <span className="fig-bp-gap-note">{spec.gapNote}</span>
@@ -107,6 +154,50 @@ export function BarPair({ spec, active, reduced }: FigureBody<BarPairFigure>) {
       {rows.slice(1)}
     </div>
   )
+}
+
+/**
+ * How far a share tag has to travel to land on the other bar.
+ *
+ * Measured, once per layout, from the tags' own boxes. The two rows are not the
+ * same height — only the upper one is followed by the gap note — so there is no
+ * constant, and a guess would put the tags a few pixels off their bars at
+ * exactly the moment the audience is looking at where they landed.
+ *
+ * Returns zero until the first measurement, which is the correct degenerate
+ * case: the tags simply fade in on their true bars with no exchange, which is
+ * also what a viewer who asked for reduced motion gets.
+ */
+function useSwapTravel(count: number): [Array<RefObject<HTMLDivElement | null>>, number] {
+  const refs = useRef<Array<RefObject<HTMLDivElement | null>>>([])
+  if (refs.current.length !== count) {
+    refs.current = Array.from({ length: count }, (_, index) => refs.current[index] ?? { current: null })
+  }
+  const [travel, setTravel] = useState(0)
+
+  useLayoutEffect(() => {
+    const [first, second] = refs.current.map((ref) => ref.current)
+    if (!first || !second) return
+
+    // The *tracks* are measured, not the tags. A tag is displaced by its own
+    // transform for most of this slide's life, so measuring one would fold the
+    // displacement back into the distance and compound it on the next resize.
+    // The tracks never move, and the tags are pinned to them at a constant
+    // offset, so the gap between the tracks is exactly the gap between the tags.
+    const measure = () => {
+      setTravel(Math.max(0, second.getBoundingClientRect().top - first.getBoundingClientRect().top))
+    }
+    measure()
+
+    const observer = new ResizeObserver(measure)
+    observer.observe(first)
+    observer.observe(second)
+    const scale = first.closest('.fig-bp-scale')
+    if (scale) observer.observe(scale)
+    return () => observer.disconnect()
+  }, [count])
+
+  return [refs.current, travel]
 }
 
 /**

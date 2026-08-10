@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { AppSceneSlot } from '../engine/use-deck'
+import { setStageOccluded } from './occlusion'
 
 /**
  * The layer that hosts the two **ported app scenes**.
@@ -167,6 +168,15 @@ function Slot({ slot }: { slot: AppSceneSlot }) {
 }
 
 export function AppSceneLayer({ slots }: { slots: AppSceneSlot[] }) {
+  // While one of these is the slide, the stage canvas underneath is covered
+  // edge to edge and can stop drawing. See `occlusion.ts` for the measurement
+  // that made this worth a module.
+  const covered = slots.some((slot) => slot.role === 'current')
+  useEffect(() => {
+    setStageOccluded(covered)
+    return () => setStageOccluded(false)
+  }, [covered])
+
   return (
     <>
       {slots.map((slot) => (
@@ -174,11 +184,28 @@ export function AppSceneLayer({ slots }: { slots: AppSceneSlot[] }) {
           key={slot.key}
           className="deck-appscene"
           data-role={slot.role}
-          // A warm slot is built and rendering but not composited. `visibility`
-          // rather than `display: none`, because a display-none canvas is given no
-          // size and the scene would build against a 0x0 viewport and then have to
-          // rebuild when shown.
-          style={slot.role === 'warm' ? { opacity: 0, pointerEvents: 'none' } : undefined}
+          // A warm slot is built and sized but neither composited nor drawn.
+          //
+          // Not `display: none`: a display-none canvas is given no size, so the
+          // scene would build against a 0x0 viewport and have to rebuild the
+          // moment it was shown, which is the entire cost warming exists to
+          // avoid. And not `opacity: 0` alone, which is what this used to be —
+          // an invisible office is still an office, and it kept its animation
+          // loop running at full price. Measured on a full pass: the two slides
+          // either side of `concept-lawyer-tycoon` ran at 20fps while the room
+          // next door drew 363 calls and 272,000 triangles a frame that nobody
+          // could see. Everything else in the deck held 60.
+          //
+          // Parking it off the viewport is what fixes it, because both ported
+          // scenes already watch their own canvas with an `IntersectionObserver`
+          // and cancel their `requestAnimationFrame` when it stops intersecting
+          // — that is the app's own idiom for an off-screen scene, and it
+          // resumes on the next frame after the transform comes off. Neither
+          // `opacity` nor `visibility` is visible to that observer; only
+          // geometry is.
+          style={slot.role === 'warm'
+            ? { opacity: 0, pointerEvents: 'none', transform: 'translateY(-200vh)' }
+            : undefined}
           aria-hidden={slot.role !== 'current'}
         >
           <Slot slot={slot} />

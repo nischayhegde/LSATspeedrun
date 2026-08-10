@@ -1,227 +1,398 @@
-# Live-demo notes
+# Demo choreography — 4-to-5-minute cut
 
-Everything below was measured on 2026-08-10 against the real stack on this
-machine, not reasoned about. Screenshot paths are absolute and live outside the
-repo, in `/tmp/deck-demo-verify/`, so nothing here is committed by accident.
+Everything here is load-bearing for the talk. Two audiences: the presenter, who
+follows the click order, and the script agent, who budgets spoken words around
+the second counts.
 
-## The short version
+The governing constraint: the audience must see the real product, and must never
+see the product *wait*. Every wait in the original path has been moved off the
+stage into a seeding command.
 
-All seven demo routes frame cleanly inside an authenticated iframe. There is
-one way to get it wrong and it fails silently: **the deck must be opened at
-`http://localhost:5180`, never `http://127.0.0.1:5180`.**
+---
 
-## Startup order that worked
+## 1. One command before every rehearsal and before the talk
 
 ```bash
-# 1. backend — must be 5001, the frontend's Vite proxy targets that port only
-cd backend && PORT=5001 DEV_AUTH_ENABLED=true ../.venv/bin/python run.py
-
-# 2. app dev server — 5173
-cd frontend && npm run dev
-
-# 3. seed the account and wire the deck to it
-cd deck && npm run prepare-demo
-
-# 4. the deck itself — 5180
-cd deck && npm run dev
+cd deck && npm run reset-demo
 ```
 
-Then, once, in the browser you will actually present from (step 3 prints this
-too — a Playwright profile is not your Chrome profile):
+That runs, in order:
 
-1. Open `http://localhost:5173/login`, click **Enter local development firm**.
-2. On that same tab, devtools console:
-   `localStorage.setItem('lsat-tycoon:guided-tour:v6', 'complete')`
-3. Open `http://localhost:5180`.
+| Step | What it does | Time |
+| --- | --- | --- |
+| `stage_demo.py --apply` | Pins the question, pre-pastes the reasoning, rewinds the question timer, re-grades the verdict twin through the real model | ~20-40s |
+| `prepare-demo.mjs` | Resolves the live session id and writes it into `demo.config.ts` | ~10-20s |
 
-## Seeded live session
+Between rehearsals, when the verdict text has not changed and you only need the
+case rewound:
 
-`86377d89-6852-4660-baf9-72ce64147345` — already written into
-`demo.config.ts`. It is a `cases` run, 8 questions, sitting at index 2, and
-question 3 renders the **prephrase** strategy prompt ("Guess before you look").
-
-## Per-route framing results
-
-Framed from `http://localhost:5199/harness.html` — a throwaway static server
-whose one page is a full-viewport iframe and nothing else, listening dual-stack
-so `localhost` reaches it whichever of `::1` / `127.0.0.1` the browser picks.
-Viewport 1440×900, `deviceScaleFactor: 2`. "Ready" is measured from the harness
-navigation, not from the frame's own navigation, so it includes the iframe
-handshake. Numbers are from the third (warm Vite) run; the cold-start column is
-from the first run of the day, before Vite had transformed the office and map
-chunks.
-
-| Route | Framed authenticated | DOM | Ready (warm) | Ready (cold) |
-|---|---|---|---|---|
-| `/progress` | yes | 309 ms | 1.0 s | 1.2 s |
-| `/cases/{id}` | yes | 251 ms | 0.4 s | 0.4 s |
-| `/firm?tab=upgrades` | yes | 226 ms | 1.1 s | 1.3 s |
-| `/office` | yes | 260 ms | 1.4 s | 9.3 s |
-| `/office?officeTier=0` | yes | 1.0 s | 2.6 s | 1.7 s |
-| `/office?officeTier=14&officeAll=1` | yes | 1.2 s | 3.1 s | 1.8 s |
-| `/map` | yes | 450 ms | 2.0 s | 2.5 s |
-
-Nothing had a problem. No route redirected to `/login`, no route showed the
-guided tour, and no route was blocked by `X-Frame-Options` — that header is on
-`/v1` responses only, and the iframes point at the Vite-served HTML.
-
-`DemoFrame` puts `sandbox="allow-same-origin allow-scripts allow-forms
-allow-popups"` on its iframe, which my harness does not, so I re-ran
-`/progress`, the case, and `/office` through a frame carrying that exact
-attribute: all three still authenticated. `allow-same-origin` is what keeps the
-frame's real origin and therefore its cookies; dropping it would give the frame
-an opaque origin and silently sign it out.
-(`/tmp/deck-demo-verify/sandbox-check.mjs`, shots `sandboxed-*.png`.)
-
-Screenshots (`-plus2s` is the same frame two seconds later, to show whether the
-first was caught mid-build):
-
-```
-/tmp/deck-demo-verify/shots/frame-progress.png
-/tmp/deck-demo-verify/shots/frame-case.png
-/tmp/deck-demo-verify/shots/frame-firm-upgrades.png
-/tmp/deck-demo-verify/shots/frame-office.png
-/tmp/deck-demo-verify/shots/frame-office-tier0.png
-/tmp/deck-demo-verify/shots/frame-office-tier14.png
-/tmp/deck-demo-verify/shots/frame-map.png
-/tmp/deck-demo-verify/shots/control-127-progress.png
-/tmp/deck-demo-verify/report.json          machine-readable version of the table
-/tmp/deck-demo-verify/verify.mjs           the harness that produced all of it
+```bash
+cd deck && npm run stage-demo:fast   # ~6s, skips the model call
 ```
 
-### Can the deck afford a live 3D iframe on stage?
+`stage-demo:fast` leaves the previously graded verdict in place, so it is the
+one to use in a tight rehearsal loop. Run the full `reset-demo` at least once on
+the machine and network you will present from.
 
-Yes, with one caveat about the first time.
+**Why a reset is needed at all.** Each rehearsal consumes the seeded state: the
+case gets answered, and the per-question timer keeps counting from the moment
+anything reads the session — so an un-reset case can walk on stage showing
+forty minutes elapsed on one question. `stage_demo.py` is idempotent and rewinds
+all of it.
 
-The `-plus2s` screenshots of `/office` and `/map` are indistinguishable from the
-originals, so both scenes are visually complete at the readiness signal:
-roughly **1.4 s for the office and 2.0 s for the map**, warm. Those are the
-numbers to design the slide around.
+> `prepare-demo.mjs` previously gave `/v1/study-sessions/current` a 4-second
+> budget. That endpoint measures 6-14s locally and has been seen at 19s, so it
+> failed silently and fell back to a pinned id — which is how a stale session id
+> reached the stage. The budget is now 30s.
 
-The caveat is the cold path. On the very first `/office` load after the app dev
-server starts, Vite has to transform the office scene module, and readiness took
-**9.3 s**. The map did not show the same effect (2.5 s cold), because something
-earlier in the deck's flow had already pulled its chunk. The fix is free: visit
-`/office` and `/map` once in the presenting browser before going on stage, or
-let the slide before them warm the iframe. Do not let the first office render of
-the day happen in front of an audience.
+---
 
-Neither scene ever settles into a still image — the office crowd and the map's
-traffic keep animating, and the map camera drifts on its own after a few idle
-seconds. That is a feature on stage, but it means "wait for pixels to stop
-changing" is not a usable readiness test.
+## 2. Answer key — read these words exactly
 
-## Gotchas the presenter must know
+Pinned question, and it is pinned by id rather than chosen adaptively, so it is
+the same on every run.
 
-**1. `localhost` and `127.0.0.1` are different sites.** This is the one that
-will ruin the demo. The app's cookies are `SameSite=Lax` (`lsat_session`,
-`lsat_csrf`, set in `backend/app/auth.py`), so they only ride along with a
-framed request when the framing page and the frame are the same site — and site
-is compared by *host*, not by port. `localhost:5180` framing `localhost:5173` is
-same-site and stays signed in. `127.0.0.1:5180` framing `localhost:5173` is
-cross-site and the cookie is withheld.
+| Field | Value |
+| --- | --- |
+| Question id | `hf-lsat-lr:199809_3-LR2_8_9` |
+| Section / type | Logical Reasoning — **Assumption** |
+| Stem | "The argument depends on assuming which one of the following?" |
+| **Correct answer** | **(C)** |
+| Choice (C) text | "Forecasts of scientific and technological discoveries, or forecasts of their effects, are not entirely reliable." |
+| **Strategy shown** | **Prephrase Before Choices** (`prephrase`) |
+| Strategy one-liner | "Decide what the right answer has to do before you read the choices." |
 
-I ran that as a control, not as a theory: same harness, same routes, only the
-spelling of the framing origin changed, and the iframe landed on
-`http://localhost:5173/login` showing the marketing page and the sign-in card.
-See `/tmp/deck-demo-verify/shots/control-127-progress.png`.
+**Stimulus, in brief.** Scientific and technological discoveries have
+considerable effects on how any society develops. Therefore predictions about
+the future of societies where discovery is *particularly frequent* are
+particularly untrustworthy.
 
-`deck/vite.config.ts` sets `server.host: '127.0.0.1'`. That is fine — the socket
-still answers requests addressed to `localhost` — but it means Vite will print
-`http://127.0.0.1:5180/` in the terminal, which is exactly the URL you must not
-click. Type `localhost` yourself.
+**Why (C) is correct, in one sentence.** The argument only works if the
+discoveries themselves cannot be reliably forecast — if you could predict the
+next twenty breakthroughs, a high-discovery society would be *easier* to
+forecast, not harder.
 
-The same applies to signing in: do it at `http://localhost:5173/login`. Signing
-in at `http://127.0.0.1:5173/login` stores the cookie against the wrong host.
+**The trap worth naming if there is time.** (A) is about discoveries having
+harmful consequences; the argument is about whether predictions can be
+*trusted*, not whether they *hurt*. (E) sets up a comparison between two
+societies, which the argument never needs.
 
-**2. Opening the live case starts its clock.** The seeder freezes question 3 and
-the timer begins when the tab is first opened. By the time you have clicked
-through it in rehearsal, the case header will read something like 8:26 against a
-2:30 target, in warning colours. Re-run `npm run prepare-demo` shortly before
-presenting; it re-seeds and stages a fresh case with the timer at zero. That is
-also why the session id changes on every run and why the config is rewritten
-rather than pinned.
+### What the AI says about the pre-pasted reasoning
 
-**3. The guided tour key is `lsat-tycoon:guided-tour:v6`, value `'complete'`.**
-Verified against `TOUR_STORAGE_KEY` at `frontend/src/guided-tour.tsx:20` and the
-read at line 278. Note that `tools/map-qa/lib.mjs:227` sets a *different*,
-obsolete key (`lsat-tour-v6`) — that harness has not suppressed the tour for
-some time. Do not copy it. The account flag from the server is authoritative and
-`seed_demo.py` sets `onboarding_complete`, so the tour did not appear in any of
-my framed runs even before the key was set; the localStorage key is the belt to
-that pair of braces, and it is cheap.
+Generated by the real coaching model (`gpt-5.6-luna`) and stored. These are the
+words that will be on screen:
 
-**4. Iframes must point at 5173, never 5001.** Every `/v1` response carries
-`X-Frame-Options: DENY` (`backend/app/__init__.py`). The Vite-served HTML carries
-nothing of the kind, which is why this works at all.
+| Field | Value |
+| --- | --- |
+| Explanation grade | **95** |
+| Verdict | **strong** |
+| First error | none |
 
-**5. The backend only listens on `127.0.0.1:5001`.** The browser never talks to
-it directly — `/v1` goes through the Vite dev proxy — so this does not matter for
-framing, but it does mean a probe of `http://localhost:5001` may fail on a
-machine where `localhost` resolves to `::1` first.
+> **Got right:** "You correctly focused on the conclusion's reliability claim
+> rather than on whether discoveries cause harm."
+>
+> **Debrief:** "Your reasoning found the exact gap between discoveries affecting
+> society and predictions becoming unreliable."
 
-## Known breakage: the seeder cannot print its report
+A high grade is deliberate. The beat being sold is "it grades the *reasoning*,
+not the letter", and a 95 with a specific compliment demonstrates that better
+than a low score, which reads as a strawman.
 
-`backend/scripts/seed_demo.py` **exits 1 with a traceback on every run**, and has
-nothing to do with the deck:
+---
 
+## 3. Per-demo second counts
+
+Total live-demo time: **74 seconds** across 6 live slides, plus one still.
+Budget spoken words against these numbers, not against the old ones.
+
+**Slides are identified by id, never by index.** A slide was inserted earlier in
+the deck and every index shifted; anything below written as "slide 12" would now
+be wrong. Ids do not move.
+
+| Slide id | Route | Seconds | Beats |
+| --- | --- | --- | --- |
+| `demo-case-answer` | `/cases/{session}` | **20** | 5 |
+| `demo-case-verdict-review` | `/cases/{verdictSession}` | **14** | 3 |
+| `demo-mega-litigation` | `/progress` | **14** | 3 |
+| `demo-clients-walk-in` | `/office` | **9** | 2 |
+| `demo-office-transformation` | `/office?officeTier=0` | **9** | 3 |
+| `demo-map-and-firm` | `/map` | **8** | 2 |
+| `demo-focus-mode` | *still only* — `demo-focus-mode.png` | **0** live | — |
+
+`demo-focus-mode` is no longer a live embed. It carries `stillOnly` and paints
+`demo-focus-mode.png`, so it costs no load and cannot fail. See §7.
+
+### `demo-case-answer` — the case, 20s
+
+Reasoning is already in the box. **Alan never types.**
+
+| s | Action |
+| --- | --- |
+| 0-4 | Point at the strategy brief. Say its name: **Prephrase Before Choices**. Do not read its three steps. |
+| 4-9 | Drag-highlight exactly one clause in the stimulus. One drag. |
+| 9-12 | Select **(C)**. Do not read the other four choices. |
+| 12-18 | Scroll the pre-filled reasoning into view. Read its **first clause only**. |
+| 18-20 | Click confidence 4. **Do not submit** — advance the slide. |
+
+Submitting would create a fresh attempt and put a 20-40 second model call on
+stage. The verdict you want is already waiting on the next slide.
+
+### `demo-case-verdict-review` — the verdict, 14s
+
+Advancing points the same iframe *element* at a different session — the
+pre-graded one — so the app **does reload**, briefly. It is a warm, already
+authenticated reload rather than a cold start: the element survives, so the
+session cookie and the open connection are kept and no login can appear. The
+presenter should have a line to speak over it; do not wait in silence.
+
+Once it lands, the coaching panel has no spinner, because the feedback is
+already stored and there is nothing to fetch.
+
+> Earlier revisions of this file claimed "nothing reloads" across this seam.
+> That was wrong: the two slides point at different session ids, and the deck
+> and the app are on different origins, so the deck cannot navigate the iframe
+> client-side. See §5 for why that trade is still worth taking.
+
+| s | Action |
+| --- | --- |
+| 0-4 | Read the verdict line in one sentence. Do not itemize answer, explanation and time points. |
+| 4-10 | Open the coaching panel. Point at the **95** and read one clause of the "got right" line. |
+| 10-14 | Click **Dashboard**. Land on the history with the reasoning attached. Do not scroll. |
+
+---
+
+## 4. What is deterministic, and what is not
+
+**Pinned and safe:**
+
+- *The question.* Written by id onto the open session's current item, not chosen
+  by the adaptive selector.
+- *The strategy.* `strategy_key` is written directly, so the same brief appears
+  every run. `prephrase` also carries the shortest gate in the catalogue — one
+  text field rather than a multi-step sequence.
+- *The gate.* Downgraded from `full` to `light`. At `full` the app **hides the
+  answer choices** until a prediction is typed, which is on-stage typing. At
+  `light` the real strategy card still shows — the audience sees the mechanic —
+  but the choices are already unlocked. Verified: `blocking: false`,
+  `hides_choices: false`.
+- *The verdict text.* Stored on the attempt, so it cannot vary between the
+  rehearsal and the talk.
+
+**Not pinned, and what it would take:**
+
+- *The other seven questions in the open session* are still adaptively chosen.
+  They are never shown, but if the presenter overshoots and submits, the next
+  question is whatever the selector picks. Pinning the whole session would mean
+  writing all eight items by id.
+- *The per-question elapsed timer* starts whenever anything reads the session,
+  including preflight. It will show a small non-zero value on stage. Rewound to
+  zero by every reset; there is no way to freeze it without touching
+  `backend/app/`, which this work does not own.
+
+---
+
+## 5. How the model latency was removed
+
+The mechanism, since it matters that this is not a mock: **the real coaching
+pipeline is run ahead of time and its output is stored on the attempt.**
+
+`stage_demo.py` creates a twin case session, answers it with the same reasoning
+paragraph, and calls `generate_attempt_coaching()` — the same function the live
+submit path calls. The validated result is written to `attempt.feedback_json`
+with `coaching_status = "completed"`.
+
+`routes.py` already short-circuits on exactly that state:
+
+```python
+saved = (attempt.feedback_json or {}).get("coaching")
+if attempt.coaching_status == "completed" and saved:
+    return ...   # no model call
 ```
-File "backend/scripts/seed_demo.py", line 1159, in _verify
-  supported = [r for r in lab["results"] if r["status"] == "supported"]
-KeyError: 'status'
+
+So the deck reads a database row. No backend code was changed, the UI is the
+real feedback UI, and the words are real model output — they were simply
+generated last night instead of in front of the room. Measured generation cost
+when it *was* on the critical path: **19-38 seconds**.
+
+The twin session is left `paused` with its `pending_attempt_id` set, rather than
+`completed`. A completed session serves no item and its URL lands on a summary;
+a paused session holding a pending attempt serves the post-submit verdict screen,
+which is the screen `demo-case-verdict-review` needs.
+
+### The cost of this, stated plainly
+
+`demo-case-verdict-review` points at a *different* session id from
+`demo-case-answer`, and the deck and the app are on different origins (`:5180`
+and `:5173`), so the deck cannot reach into the iframe's history to navigate it
+client-side — a route change can only be done by reassigning `src`, which
+reloads the app.
+
+So two seams now cost one warm app boot each, where they previously cost
+nothing:
+
+- `demo-case-answer` → `demo-case-verdict-review`
+- `demo-case-verdict-review` → `demo-mega-litigation`
+
+`verify-demo-continuity.mjs` has been updated to expect exactly one navigation
+across each, and to fail on two or more. What it still holds is the invariant
+that matters: the iframe **element** must survive, so the session cookie and the
+warm connection are kept and no login can appear.
+
+The trade is one reload of a warm, already-authenticated app against a 19-38
+second model call in front of the room. That is worth taking, but it is a trade,
+not a free win: **rehearse the advance into `demo-case-verdict-review`
+specifically**, confirm the loading cover hides the boot rather than flashing
+white, and give the presenter a line to speak across it.
+
+---
+
+## 6. Fallback stills — which still stands in for which route
+
+`deck/public/stills/` is the on-stage fallback when a demo route fails, and it is
+committed. **The app is under active development, so these drift.** A drifted
+still is worse than a visible failure, because it silently misleads the room.
+
+> ### Read this before running any recapture
+>
+> **Always open the regenerated PNGs and look at them, and commit them before
+> you regenerate again.** This is not boilerplate caution — it is written down
+> because it has already gone wrong once, on 2026-08-10.
+>
+> An early version of `recapture-stills.mjs` ran while the backend went down
+> mid-run and wrote the app's "Connection interrupted" card over **five** good
+> stills. Every file was plausible in a directory listing; the only tell was
+> that five unrelated screens had landed at an identical 87 KB. They were
+> recovered with `git checkout -- deck/public/stills/`, and that recovery was
+> only possible because the files had been committed a couple of hours earlier.
+>
+> Two lessons worth keeping:
+>
+> - **git is the recovery path.** Commit stills you are happy with promptly. A
+>   recapture run is destructive by nature and there is no other copy.
+> - **The tool that maintains the fallback can corrupt the fallback**, and these
+>   files are precisely what the talk falls back on when everything else has
+>   already failed. The script now inspects each frame and refuses to write an
+>   error card, a login screen, a spinner or an empty page — but that check is a
+>   list of known failures, not a proof, so the eyeball step stays.
+
+| Still | `--only` key | Stands in for | Used by |
+| --- | --- | --- | --- |
+| `demo-case.png` | `case` | `/cases/{session}` | `demo-case-answer`, `demo-case-verdict-review` |
+| `demo-progress.png` | `progress` | `/progress` | `demo-mega-litigation` |
+| `demo-office.png` | `office` | `/office` | `demo-clients-walk-in` |
+| `demo-office-tier0.png` | `office-tier0` | `/office?officeTier=0` | `demo-office-transformation` |
+| `demo-map.png` | `map` | `/map` | `demo-map-and-firm` |
+| `demo-focus-mode.png` | `focus-mode` | `/office` **with Focus Mode on** | `demo-focus-mode` — its only content |
+| `demo-firm-upgrades.png` | `firm-upgrades` | `/firm?tab=upgrades` | (unused by the current cut) |
+| `demo-office-tier14.png` | `office-tier14` | `/office?officeTier=14&officeAll=1` | (unused by the current cut) |
+| `scene-office-tier0.png`, `scene-office-tier14.png` | — | Deck art, not fallbacks | — |
+
+### Recapturing them
+
+```bash
+cd deck
+node scripts/recapture-stills.mjs                     # all of them
+node scripts/recapture-stills.mjs --only=map,office   # just the drifted ones
+node scripts/recapture-stills.mjs --list              # keys and routes
 ```
 
-`_verify()` still expects the old shape of `strategy_performance()`. That read
-model was rewritten — it now returns `leader` rather than `strongest`, and its
-per-strategy rows have no `status` field (see `backend/app/strategies.py:1072`,
-and the comment there explaining why a per-student verdict was deliberately
-removed). The seeder was not updated with it.
+Needs the app on `:5173`, the backend on `:5001`, and a seeded account
+(`npm run reset-demo`). Roughly 15s per still, most of it deliberate settling
+time for the 3D scenes.
 
-This is cosmetic for us. `_verify()` runs *after* every write, and the seeder
-commits as it goes, so the account, the firm, and the staged live case are all
-fully installed by the time it falls over. What is lost is the JSON report — and
-with it the documented `live_demo.url` that `prepare-demo.mjs` was supposed to
-parse.
+Three details in there are load-bearing:
 
-So `prepare-demo.mjs` does not depend on it. It tries the report first, and when
-there is no report it signs in against the backend with a plain `fetch` (the
-`/v1/auth/dev` endpoint is CSRF-exempt, see `AUTH_EXEMPT_PATHS` in
-`backend/app/auth.py`) and reads `/v1/study-sessions/current`, which is the same
-answer the app's own "Resume current run" button uses. It says loudly which of
-the two it used. Fixing the seeder is a backend change and out of this
-workstream's scope, but it is worth doing — the report also carries the
-verification that the demo account is actually presentable.
+- **It refuses to write a bad frame.** Each capture is inspected before it
+  replaces anything: an error card, the login screen, a spinner, or a near-empty
+  document all abort that one still and leave the existing file alone. This is
+  not hypothetical — an earlier version of this script wrote the app's
+  "Connection interrupted" card over five good stills when the backend went down
+  mid-run, and every file looked plausible in a directory listing. A missing
+  recapture is obvious; a fallback showing an error screen to the room is not.
+- **It captures at the embed's layout, not the projector's.** The page is laid
+  out at 1152x648 — 16:9, just inside the 1150px legibility cap the stage
+  applies to live embeds — and scaled up to 1920x1080 output. Same layout as the
+  live embed, so the fallback does not visibly reflow at the moment of failure,
+  but projector-native pixels.
+- **Focus Mode is turned on for one capture and always turned back off**, in a
+  `finally`. Leaving it on would gate the office, firm and map routes, so every
+  game slide in the talk would open on the "put away" screen. If the script ever
+  reports that it could not restore it, fix that before presenting.
 
-## Fallback stills
+To **check** a still against the route it stands in for without regenerating it,
+shoot the deck twice and compare by eye:
 
-In `deck/public/stills/`. The five route stills were captured at 1600×1000 with
-`deviceScaleFactor: 2` (so 3200×2000 files) against this seeded account, straight
-at the app rather than through an iframe. The two office-tier stills are the
-existing canvas-only crops from `.shots-keep/`, at their native 1045×638, and are
-duplicated under `scene-*` names on purpose so the two slides that use them
-cannot break each other.
+```bash
+node scripts/shoot.mjs --out=.deck-shots/live            # live embeds
+node scripts/shoot.mjs --stills --out=.deck-shots/canned # forced to stills
+```
 
-| File | Source | What it shows |
-|---|---|---|
-| `demo-progress.png` | captured | Dashboard: 58% mega-litigation accuracy, 154–162 projected, "Parallel Reasoning" next up, resume bar at 2 of 8 |
-| `demo-case.png` | captured | Case 3/8 mid-question, prephrase prompt "Guess before you look", timer 1:14 against a 2:30 target, client and opposing-counsel portraits loaded |
-| `demo-firm-upgrades.png` | captured | Firm → Upgrades, $6.66M treasury, Tier 5 Regional Headquarters locked, owned upgrades below |
-| `demo-office.png` | captured | Tier-4 office in 3D with 35 staff, character panel, lease strip |
-| `demo-office-tier0.png` | `.shots-keep/tier-00-practice-2-owned.png` | The rundown shack: one desk, a cat, a stove, near-dark |
-| `demo-office-tier14.png` | `.shots-keep/tier-14-practice-full.png` | Full tier-14 practice floor, two rows of desks, floor directory overlay |
-| `demo-map.png` | captured | Old Quarter district in 3D, café terraces, the lawyer figure mid-street, region rail across the top |
-| `scene-office-tier0.png` | byte copy of `demo-office-tier0.png` | same |
-| `scene-office-tier14.png` | byte copy of `demo-office-tier14.png` | same |
+Check `demo-case.png` after any change to the case UI, and the office and map
+stills after any change to a game scene — those are the ones under active
+development.
 
-The five captured files are 1.5–8.9 MB each because of the 2× scale; `demo-map.png`
-is the big one. They are served from `public/` on localhost so nothing downloads
-them over a network, but if a slide ever needs several at once it is worth
-knowing.
+> All eight stills were regenerated on 2026-08-10 and each was eyeballed. Two
+> were materially wrong before that: `demo-progress.png` was not the dashboard at
+> all, and `demo-office-tier0.png` / `demo-office-tier14.png` were byte-identical
+> copies of the deck's own scene art rather than captures of the app. Recapturing
+> also took `demo-map.png` from 8.9 MB to 2.2 MB and `demo-office.png` from
+> 7.2 MB to 2.7 MB, since the originals carried a 2x device scale factor.
 
-## Servers left running
+---
 
-Both were already up when this work started and are still up. Do not kill them.
+## 7. `demo-focus-mode` is now a still — and why this frame
 
-- backend, pid 56442, `run.py` on `127.0.0.1:5001`, `DEV_AUTH_ENABLED` on (from
-  `backend/.env`, not from the environment)
-- frontend, pid 49059, `frontend/node_modules/.bin/vite` on `:5173`
+Accepted and done. `demo-focus-mode` was the weakest second-for-second beat in
+the deck: pointed at `/progress`, it was the third visit to that route in a
+four-minute talk and cost a live navigation to show the room something it had
+already seen twice. It now carries `stillOnly` and paints a single frame, which
+returns its seconds and removes a failure surface. The point is still spoken.
+
+**The frame is `demo-focus-mode.png`, and it is not the dashboard.** It is
+`/office` with Focus Mode on, which renders the app's focus gate. It was chosen
+to carry one sentence — *the game never gates practice* — rather than merely to
+show a screen, and it earns that sentence three ways at once:
+
+- The **nav has collapsed to Dashboard and Practice**. The audience can see for
+  themselves that what got taken away is the game, not the practice.
+- The panel reads *"The Office is put away… Focus Mode keeps the app to the
+  Dashboard and Practice — the two screens that raise a score."*
+- The footnote reads *"Focus Mode is a preference, never a lock."* That is the
+  claim, in the product's own words, on screen while it is spoken.
+
+The score, case count and streak are all still in the header, so progress
+visibly survives the game being switched off — which is the direction of
+dependency the deck argues for: practice drives game progress, never the reverse.
+
+`demo-progress.png` would not have carried any of that, and in fact did not even
+show the dashboard before it was recaptured.
+
+### Verifying it, and one loose end
+
+```bash
+node scripts/verify-still-only.mjs --base=http://localhost:5185
+```
+
+That advances into the slide from the live demo run — not by deep link, which
+would miss the defect — and asserts the still is alone on screen, that a real
+live demo slide still embeds, that `?stills=1` still wins, and that the
+unreachable-origin fallback still engages.
+
+It exists because `stillOnly` needs **two** things to be true, and only one of
+them is obvious. `demo-frame.tsx` withholds the slot so the stage cannot position
+an embed over the still; `demo-stage.tsx` must *also* count `stillOnly` as a
+reason to show a still, or it treats the slide as live and navigates the
+surviving iframe anyway. Before the second half was added, the live `/progress`
+app was painted pixel-for-pixel on top of the focus-mode still — the slide
+headlined "Or delete all of it." was showing the audience a dashboard.
+
+**Loose end, owned by whoever owns `slides/index.ts`:** the slide's `route` is
+still `/progress`, so the deck's chrome caption reads `localhost:5173/progress`
+above a still captured at `/office`. Harmless to the argument and the lamp
+honestly reads "stills", but the caption contradicts the frame. Changing that
+route to `/office` fixes it and, because the slide is `stillOnly`, cannot cause
+a load.
+
+The office and map demos (26s combined) are worth their clock: they are the only
+place the game layer is visible, and a still cannot show the tier transition that
+is the whole point of `demo-office-transformation`.

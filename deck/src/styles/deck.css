@@ -161,6 +161,13 @@
   --scrim: none;
 }
 
+/* The close keeps `data-field='scene'`, because its beige is a lit wall and
+   not a fill — but the scene scrim is a dark wash for holding pale type over
+   a night exterior, and this is the one scene in the deck that is already
+   paper-coloured and carries navy type. Left on, it dragged the wall to grey
+   from the bottom-left and took the closing words down with it. */
+.deck-layer[data-section='close'] { --scrim: none; }
+
 .deck-layer[data-field='blue'] {
   --field: var(--blue);
   --on-field: var(--beige);
@@ -189,9 +196,18 @@
 }
 
 /* The film layers are tuned for a dark stage and turn a beige field
-   grey, so a lit slide takes them back most of the way. */
-.deck:has(.deck-layer.is-live[data-field='beige']) .deck-vignette { opacity: .28; }
-.deck:has(.deck-layer.is-live[data-field='beige']) .deck-scanlines { opacity: .22; }
+   grey, so a lit slide takes them back most of the way.
+
+   The close is `data-field='scene'` — it paints no field of its own,
+   because the beige it sits on is a lit 3D room rather than a flat
+   colour — but it is a *light* slide all the same, and at full strength
+   the vignette turned a paper-coloured wall into a grey one and undid
+   the inversion the whole close depends on. A field and a lit scene are
+   two ways of being bright; the film has to answer to both. */
+.deck:has(.deck-layer.is-live[data-field='beige']) .deck-vignette,
+.deck:has(.deck-layer.is-live[data-section='close']) .deck-vignette { opacity: .28; }
+.deck:has(.deck-layer.is-live[data-field='beige']) .deck-scanlines,
+.deck:has(.deck-layer.is-live[data-section='close']) .deck-scanlines { opacity: .22; }
 
 .deck-overlay {
   position: absolute;
@@ -502,6 +518,119 @@
 .plate .slide-credit { color: #5c6570; border-top-color: rgba(24, 39, 53, .2); opacity: 1; }
 .plate .pull p { color: var(--navy-2); }
 .plate .pull cite { color: #5c6570; opacity: 1; }
+
+/* ----------------------------------------------------------------
+   THE CLOSE — slide 23, and the only slide that takes the statement
+   layout apart.
+
+   `NARRATIVE.md` composes this frame as a picture with type on it,
+   not as a card over a backdrop: *"Two doorways… the character stands
+   centered between them… Symmetry is the argument: neither door is
+   bigger, neither is brighter. The three closing words set small along
+   the bottom edge."* The statement plate is a 56%-wide opaque card
+   pinned to the left, which is the correct object for every other
+   statement slide in the deck and is, here, a shutter over exactly the
+   half of the composition the argument lives in — it covered one of
+   the two doors and the character's face.
+
+   So on this one slide the plate stops being a card. The type is set
+   directly on the beige the scene is already painting, the headline
+   and its line go to the top where there is only wall behind them, and
+   the three words go along the bottom edge as a row. Nothing about the
+   markup changes; this is the same `.plate` with its surface taken
+   away.
+
+   Held for the whole Q&A, so it is also the frame that has to survive
+   the most looking at.
+   ---------------------------------------------------------------- */
+
+.deck-layer[data-section='close'] .body-statement {
+  grid-template-columns: minmax(0, 100%);
+  align-content: start;
+  justify-content: center;
+  padding-top: calc(2.4 * var(--u));
+}
+
+.deck-layer[data-section='close'] .plate {
+  /* Static, so the row of closing words below anchors to the slide body and
+     lands on the frame's bottom edge rather than just under the last line of
+     type.
+
+     `animation: none` is load-bearing and not tidying. `.is-live .plate` runs
+     `plate-in`, which animates a transform, and an element with a transform is
+     the containing block for its absolutely positioned descendants whatever
+     its own `position` says — so with the entrance still attached, the closing
+     words anchored to the bottom of the *plate's text* instead of to the
+     bottom of the frame and sat in the middle of the character's chest. There
+     is nothing left to animate in here anyway: the plate has no surface on
+     this slide, and its eyebrow, headline and line each carry their own
+     entrance already. */
+  position: static;
+  animation: none;
+  padding: 0;
+  max-width: calc(58 * var(--u));
+  margin-inline: auto;
+  text-align: center;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  /* The scene behind is beige, so the type is the deck's royal blue and
+     not the light-on-dark it would inherit from a scene field. */
+  color: var(--navy);
+}
+
+.deck-layer[data-section='close'] .plate::after { content: none; }
+
+/* Wide and short rather than narrow and tall: the sub-line has to finish
+   above the character's head, and two lines of it clear where three do not. */
+.deck-layer[data-section='close'] .plate .slide-deck {
+  margin-inline: auto;
+  max-width: calc(52 * var(--u));
+  color: #3a4855;
+}
+
+.deck-layer[data-section='close'] .plate .rule { display: none; }
+
+/* The three words, along the bottom edge. Out of the plate's flow and
+   onto the frame, set as one small row — the narrative asks for words
+   rather than a ledger, and a numbered list of three reasons at the end
+   of a pitch reads as a summary slide, which is the one thing the close
+   is not. */
+.deck-layer[data-section='close'] .plate .ledger {
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  /* Clear of the progress rail, which is the deck's only permanent chrome and
+     runs along the very bottom edge. */
+  bottom: calc(3.4 * var(--u));
+  display: flex;
+  justify-content: space-between;
+  gap: calc(2.2 * var(--u));
+  margin: 0;
+  padding: 0;
+}
+
+/* Each reason keeps its own clause, so the row is set to the width of the
+   frame and spaced apart rather than centred as one line — three clauses of
+   this length centred would run off both edges, and shrinking them until they
+   fit would put the deck's last words at a size the back row cannot read. */
+.deck-layer[data-section='close'] .plate .ledger li {
+  flex: 0 1 auto;
+  border-bottom: 0;
+  padding: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(.9rem, 1.12vw, 1.22rem);
+  letter-spacing: .005em;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--navy);
+}
+
+/* The numerals go. Three closing words are a rhythm, not an inventory. */
+.deck-layer[data-section='close'] .plate .ledger i { display: none; }
+
+.deck-layer[data-section='close'] .plate .slide-credit { display: none; }
 
 /* ================================================================
    BODY — POV
@@ -1126,6 +1255,47 @@
     rgba(27, 47, 107, .62) 62%,
     transparent 100%
   );
+}
+
+/* The exposure blow-out that opens Act I. A beige radial centred where
+   slide 1's key light is, not on the frame: a flare on the lamp is the lamp
+   brightening, and a flare in the middle is a camera flash. Painted rather
+   than filtered, because a `brightness()` on a full-screen layer costs a
+   full-screen readback and this one is on screen for most of a second. */
+.tx-flare {
+  position: absolute;
+  inset: -30%;
+  background:
+    radial-gradient(
+      42% 52% at 34% 26%,
+      rgba(255, 250, 236, 1) 0%,
+      rgba(250, 240, 214, .96) 34%,
+      rgba(244, 233, 205, .72) 58%,
+      rgba(240, 229, 200, 0) 82%
+    );
+  will-change: transform, opacity;
+}
+
+/* The object morphs. One box flying between two measured rects, with the
+   turn on an inner element because the box mapping needs a top-left origin
+   and a rotation needs a central one. See `runMorph` in
+   `engine/transitions.ts` for what this is and why it is a stand-in rather
+   than the element itself. */
+.tx-morph {
+  position: absolute;
+  transform-origin: top left;
+  will-change: transform, opacity;
+  perspective: 900px;
+}
+
+.tx-morph > i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  will-change: transform;
 }
 
 /* The act break. `#05080d` bars closing on `steps()` — the app's own
@@ -1836,8 +2006,15 @@ kbd {
    it is taken out of the *visual* composition only, by the same
    clipped-hairline idiom the rest of the deck uses for text that is
    spoken but not shown.
+
+   `problem-hours-and-price` has the same collision and a worse one:
+   its three fragments are the two provider chips and the price ribbon,
+   and the ribbon is the largest object on the slide. Reading "$65–$425
+   a month" as a hairline footnote directly under a full-width band that
+   says "$65–$425 / month" makes the price look like two prices.
    ---------------------------------------------------------------- */
-.body-figure:has(.fig-bar-pair) .figure-foot .fragments {
+.body-figure:has(.fig-bar-pair) .figure-foot .fragments,
+.body-figure:has(.fig-hours-bar) .figure-foot .fragments {
   position: absolute;
   width: 1px;
   height: 1px;

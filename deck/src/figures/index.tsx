@@ -3,7 +3,9 @@ import type { ReactElement, ReactNode } from 'react'
 import type { FigureProps, FigureSpec } from './types'
 import { BarPair } from './bar-pair'
 import { ClockRings } from './clock-rings'
+import { CohortSplit } from './cohort-split'
 import { ConfidenceTiles } from './confidence-tiles'
+import { CurrencyLift } from './currency-lift'
 import { Gate } from './gate'
 import { HoursBar } from './hours-bar'
 import { MethodFan } from './method-fan'
@@ -70,6 +72,8 @@ function body(spec: FigureSpec, active: boolean, reduced: boolean): ReactNode {
       return <ReasoningCard spec={spec} active={active} reduced={reduced} />
     case 'confidence-tiles':
       return <ConfidenceTiles spec={spec} active={active} reduced={reduced} />
+    case 'cohort-split':
+      return <CohortSplit spec={spec} active={active} reduced={reduced} />
     case 'traces':
       return <Traces spec={spec} active={active} reduced={reduced} />
     case 'method-fan':
@@ -80,6 +84,8 @@ function body(spec: FigureSpec, active: boolean, reduced: boolean): ReactNode {
       return <Radial spec={spec} active={active} reduced={reduced} />
     case 'spokes':
       return <Spokes spec={spec} active={active} reduced={reduced} />
+    case 'currency-lift':
+      return <CurrencyLift spec={spec} active={active} reduced={reduced} />
     case 'paired-bars':
       return <PairedBars spec={spec} active={active} reduced={reduced} />
     case 'gate':

@@ -1,0 +1,55 @@
+import { useEffect } from 'react'
+
+import { preflight } from '../demo/preflight-strip'
+import { SLIDES } from '../slides'
+import { StartScreen } from './start-screen'
+import { useStartGate } from './use-start-gate'
+import { startWarmUp } from './warm-up'
+
+export { FOUNDERS, UT_SEAL } from './founders'
+export { startWarmUp } from './warm-up'
+
+/**
+ * The deck, behind a start card.
+ *
+ * `children` is the deck, and it is mounted from the first frame whether the card
+ * is up or not — see `start-screen.tsx` for why that is the whole reason Start is
+ * instant. This component is therefore a *cover*, not a router: it renders the
+ * deck and then, conditionally, something opaque on top of it.
+ */
+export function StartGate({ children }: { children: React.ReactNode }) {
+  const gate = useStartGate()
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  // Started here rather than inside the card, because it has to happen on a deep
+  // link too: resolving the live case session id is what keeps the demo slides
+  // pointing at a session that exists, and a presenter who reloads onto slide 12
+  // needs that as much as one who starts at the top. The card only *displays* it.
+  useEffect(() => { void preflight() }, [])
+
+  // Fetched and decoded while the card is up, then stopped. The stills are the
+  // panic button's ammunition: `S` swaps every live embed for one of these, and
+  // the moment that is wanted is not a moment to be pulling two megabytes off
+  // disk. Deduplicated because several slides share a still.
+  useEffect(() => {
+    if (!gate.showing) return
+    const stills = [...new Set(
+      SLIDES.map((slide) => slide.demo?.still).filter((still): still is string => Boolean(still)),
+    )].map((still) => `/stills/${still}`)
+    return startWarmUp({ stills })
+  }, [gate.showing])
+
+  return (
+    <>
+      {children}
+      {gate.showing ? (
+        <StartScreen
+          onEnter={gate.dismiss}
+          arrival={gate.arrival}
+          reduced={reduced}
+          slideCount={SLIDES.length}
+        />
+      ) : null}
+    </>
+  )
+}

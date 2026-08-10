@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 
 import { Deck } from './deck'
+import { StartGate } from './start'
 import './styles/theme.css'
 import './styles/deck.css'
 
@@ -17,5 +18,17 @@ import './styles/deck.css'
  *
  * The effects here are audited by hand instead: each one that allocates has a
  * matching teardown, and `DeckStage.dispose` is called on unmount.
+ *
+ * ## The start card is a cover, not a route
+ *
+ * `StartGate` renders the deck unconditionally and puts an opaque card over it on
+ * a fresh open. The deck is therefore building its renderer, compiling its
+ * shaders and constructing the title slide's hero scene while the room is still
+ * looking at the card, which is what makes pressing Start cost nothing. See
+ * `start/start-screen.tsx`.
  */
-createRoot(document.getElementById('root')!).render(<Deck />)
+createRoot(document.getElementById('root')!).render(
+  <StartGate>
+    <Deck />
+  </StartGate>,
+)

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { DemoStage } from './demo/demo-stage'
 import { GridOverview } from './engine/grid'
 import { Presenter } from './engine/presenter'
 import { useDeck } from './engine/use-deck'
@@ -114,6 +115,20 @@ export function Deck() {
         {renderLayer('a')}
         {renderLayer('b')}
       </div>
+
+      {/* The one live embed of the product, hoisted out of the slide layers so
+          that a run of consecutive demo slides is one uninterrupted session of
+          the app rather than a fresh load per slide. It positions itself over
+          whichever demo slide's screen slot is live; the chrome around that slot
+          stays in the slide, where the narrative's layout owns it. See
+          `demo/demo-stage.tsx`. */}
+      <DemoStage
+        slides={SLIDES}
+        index={deck.index}
+        stills={deck.stills}
+        annotations={deck.annotations}
+        moving={deck.moving}
+      />
 
       {/* Transition furniture is appended here imperatively by the transition in
           flight and removed when it settles, so nothing accumulates. */}

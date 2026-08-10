@@ -100,13 +100,24 @@
      the deck's root size changes. */
   --fig-bp-numeral: clamp(2rem, 3.4vw, 3.5rem);
   --fig-bp-height: clamp(1.1rem, 2.4vh, 2rem);
-  width: calc(100% - var(--fig-bp-numeral) * 3.2);
+  /* 3.2 ems of the numeral was measured against flat type. The extruded object
+     carries its own depth off the right of the last glyph and its faces are
+     set at a heavier weight, so the gutter buys a little more room — without
+     it the `+` of `+2.77` sits on the end of the bar it is labelling. */
+  width: calc(100% - var(--fig-bp-numeral) * 4.1);
+  text-align: left;
   display: flex;
   flex-direction: column;
   gap: clamp(.5rem, 1.4vh, 1.2rem);
 }
 
+/* Left, against the start of the bar it names. The slide body centres its
+   type and the figure inherits it, which put each series label in the middle
+   of the frame — over the empty span between the two bar ends on one row, and
+   floating clear of its own bar on both. A series label is part of the chart
+   and belongs on the chart's baseline. */
 .fig-bp-name {
+  text-align: left;
   margin: 0 0 .4em;
   font-size: clamp(.95rem, 1.15vw, 1.18rem);
   line-height: 1.2;
@@ -142,14 +153,33 @@
 .fig-bp-value {
   position: absolute;
   top: 50%;
-  margin-left: .45em;
-  font-family: var(--font-display);
-  font-weight: 600;
+  /* Explicit, because the shrink-to-fit width of an absolutely positioned box
+     pinned at `left: 100%` resolves to zero — there is no room to its right in
+     its containing block — and the numeral then rendered centred on that zero
+     box, half of it back over the end of the bar it labels. */
+  width: max-content;
+  /* Clear of the bar tip. The tall bar reaches the full plotting width, so
+     this margin is the only thing between the end of a solid rule and the
+     `+` of the numeral that labels it — at .62em the two touched. */
+  margin-left: .82em;
   font-size: var(--fig-bp-numeral);
   line-height: 1;
-  letter-spacing: -.015em;
   white-space: nowrap;
   transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
+}
+
+/* A shallower step than the hero's. The extrusion is proportional to the
+   glyph, so at this size the default depth would be two pixels and would read
+   as a printing misregistration rather than as a solid; a slightly deeper one
+   keeps the object legible as the same object without turning a chart label
+   into a sculpture. */
+.fig-bp-value .num3d {
+  --num-step: .014em;
+  font-size: 1em;
+}
+
+.fig-bp-value .num3d-face {
+  font-size: 1em;
 }
 
 .fig-bp-share {
@@ -160,10 +190,38 @@
   align-items: baseline;
   gap: .5em;
   white-space: nowrap;
-  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
+  /* The travel is deliberately slower than the fade and eased hard out of the
+     start: the tags have to be *seen leaving*, because the swap is the
+     argument. A crossfade at these two positions would read as two tags
+     appearing rather than as one pair changing its mind. */
+  transition:
+    opacity var(--mo-3) var(--ease-out),
+    transform 520ms var(--ease-spring);
+}
+
+/* The tick. A short rule struck through the numeral at the instant the tags
+   trade, on the tag that has just taken the *larger* share onto the *smaller*
+   bar — which is the one fact the slide exists to deliver. */
+.fig-bp-share[data-swapped='true'] b::after {
+  content: '';
+  position: absolute;
+  left: -.25em;
+  right: -.25em;
+  top: 50%;
+  border-top: 2px solid currentColor;
+  transform: scaleX(1);
+  transform-origin: left center;
+  animation: fig-bp-tick 420ms var(--ease-out) both;
+}
+
+@keyframes fig-bp-tick {
+  0% { transform: scaleX(0); opacity: 1; }
+  45% { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
 }
 
 .fig-bp-share b {
+  position: relative;
   font-family: var(--font-display);
   font-weight: 600;
   font-size: clamp(1.35rem, 2.1vw, 2.1rem);
@@ -276,7 +334,11 @@
   bottom: -.3em;
   right: 0;
   background: currentColor;
-  transition: width 900ms var(--ease-in-out);
+  /* Slowly, per the narrative. A one-percent bar has about nine pixels to
+     travel and at 900ms that is a blink; over two and a half seconds the room
+     watches something take a long time to arrive at almost nothing, which is
+     the joke the slide has been building for thirty seconds. */
+  transition: width 2500ms var(--ease-out);
 }
 
 .fig-hb-outcome {
@@ -531,20 +593,41 @@
   transition: stroke-dashoffset 420ms var(--ease-out);
 }
 
+/* THE LABEL SITS ABOVE ITS DOT, AND HAS TO.
+   The route is a line through these dots — horizontal into the first one,
+   diagonal away from it, horizontal again into the last — so the band
+   immediately *below* a dot is exactly where the line is. With the labels
+   under the dots, `intro course` was struck through by the route itself and
+   `first real question` sat on its own horizontal, which read as two crossed
+   marks rather than as a node and its name. Above the dot, the only thing in
+   that band is beige. */
 .fig-rt-node {
   position: absolute;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   align-items: center;
-  gap: .55em;
-  transform: translate(-50%, -50%) scale(var(--fig-scale, 1));
+  gap: .7em;
+  /* The *dot* goes on the lane, not the box. With the label stacked above it
+     the two are no longer the same point, and centring the box put the dot
+     half a label below the route it is supposed to be a node on — which on the
+     destination, where the route runs horizontally through it, read as a line
+     passing under a circle rather than through it. `--fig-dot` is half the dot,
+     which is what brings its centre back up onto the lane. */
+  --fig-dot: .5em;
+  transform: translate(-50%, calc(-100% + var(--fig-dot))) scale(var(--fig-scale, 1));
+  transform-origin: bottom center;
   transition:
     opacity var(--mo-3) var(--ease-out) var(--fig-delay),
     transform var(--mo-3) var(--ease-out) var(--fig-delay);
 }
 
+/* Struck, not shrunk to nothing. At .66 the three skipped nodes rendered at
+   about ten pixels on a 1080 frame, which is under the size the back of a room
+   can resolve — and a node the room cannot read is a node that was deleted,
+   which is the opposite of the point. The route has to visibly *decline* three
+   things that are still there. */
 .fig-rt-node[data-struck='true'] {
-  --fig-scale: .66;
+  --fig-scale: .86;
 }
 
 .fig-rt-dot {
@@ -553,6 +636,14 @@
   height: 1em;
   border-radius: 50%;
   background: currentColor;
+}
+
+.fig-rt-node[data-taken='true'] {
+  --fig-dot: .75em;
+  /* The destination's name is set at display scale and the route runs straight
+     through the dot underneath it, so this one label needs more air than the
+     three it is being contrasted with. */
+  gap: 1.1em;
 }
 
 .fig-rt-node[data-taken='true'] .fig-rt-dot {
@@ -601,9 +692,14 @@
   font-size: clamp(1.2rem, 1.85vw, 1.85rem);
 }
 
+/* Beside the dot, not above it: above is where the label went. To the right
+   is the only side that is free of both the label and the route, and it puts
+   the tick where a speedrun HUD would put it — next to the thing it is
+   ticking off. */
 .fig-rt-tick {
   position: absolute;
-  top: -1.7em;
+  bottom: -.1em;
+  left: calc(50% + .95em);
   width: 1.15em;
   height: 1.15em;
 }
@@ -1167,7 +1263,10 @@
 .fig-tr-baseline-label {
   position: absolute;
   left: 3.5%;
-  transform: translateY(-150%);
+  /* Well clear of the rule it names. All three traces leave from this exact
+     point, so the few pixels that were enough on a bare baseline put the
+     label inside the fan the moment the first trace drew. */
+  transform: translateY(-250%);
   font-family: var(--font-pixel);
   font-size: clamp(.88rem, 1.02vw, 1.04rem);
   letter-spacing: .02em;
@@ -1192,28 +1291,52 @@
    across the bottom rule of the question. */
 .fig-mf-question {
   position: absolute;
-  left: 24%;
-  top: 10%;
-  width: 58%;
-  height: 52%;
+  left: 15%;
+  top: 8%;
+  width: 45%;
+  /* Sized by its contents. A fixed height left the rules stacked in the top
+     third of a tall empty rectangle, which reads as a box that failed to load
+     rather than as a question. */
+  height: auto;
   display: flex;
   flex-direction: column;
-  gap: .9em;
-  padding: 1.5em 1.7em 1.5em 2.6em;
+  gap: 1.35em;
+  padding: 2.1em 2em 2.1em 2.4em;
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
   transition: opacity 240ms var(--ease-out);
 }
 
+/* Tinted rather than faded. `opacity` composites the whole element including
+   its children, so the marker drawn inside a rule at .18 came out at a tenth
+   and was invisible; mixing the colour instead leaves the child at full
+   strength. */
 .fig-mf-question-rule {
+  position: relative;
   display: block;
-  height: .5em;
-  background: currentColor;
-  opacity: .18;
+  height: .62em;
+  background: color-mix(in srgb, currentColor 20%, transparent);
 }
 
-.fig-mf-question-rule:nth-child(1) { width: 92%; }
-.fig-mf-question-rule:nth-child(2) { width: 84%; }
-.fig-mf-question-rule:nth-child(3) { width: 56%; }
+/* THE HIGHLIGHT DRAG.
+   Taller than the rule it covers and offset above it, the way a marker is
+   always slightly off the line it was aimed at — a highlight that fitted its
+   text exactly would read as a selection rectangle. It sits at full opacity
+   against a rule that is already at .18, so it reads as ink laid over ink. */
+.fig-mf-mark {
+  position: absolute;
+  left: -.25em;
+  top: -.22em;
+  height: calc(100% + .44em);
+  background: color-mix(in srgb, currentColor 46%, transparent);
+  /* A hand's speed. Slower than anything else on the slide, and eased out
+     rather than in, because a stroke decelerates at the end of a word. */
+  transition: width 520ms var(--ease-out) 120ms;
+}
+
+/* The break between the stem and the choices. It is the one piece of white
+   space in the box that means something, so it is a real element rather than a
+   larger gap on one rule. */
+.fig-mf-question-gap { display: block; height: 1.1em; }
 
 .fig-mf-card {
   position: absolute;
@@ -1262,24 +1385,37 @@
    other. */
 .fig-mf-lift {
   position: absolute;
-  left: 24%;
-  top: 70%;
-  width: 34%;
+  left: 64%;
+  top: 26%;
+  width: 31%;
   display: flex;
   flex-direction: column;
-  gap: .35em;
+  gap: 1.4em;
   transition: opacity 220ms var(--ease-out);
 }
 
 .fig-mf-lift-row {
   display: flex;
-  align-items: center;
-  gap: .5em;
+  flex-direction: column;
+  gap: .45em;
+}
+
+.fig-mf-lift-head {
+  display: flex;
+  align-items: baseline;
+  gap: .55em;
+  margin: 0;
+}
+
+.fig-mf-lift-name {
+  font-size: clamp(.9rem, 1.05vw, 1.08rem);
+  line-height: 1.2;
+  color: var(--on-field-dim);
 }
 
 .fig-mf-lift-track {
-  flex: 1;
-  height: .5em;
+  display: block;
+  height: .75em;
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
 }
 
@@ -1290,19 +1426,25 @@
   transition: width 260ms var(--ease-out) var(--fig-delay);
 }
 
+/* The control, at half weight. `--on-field-dim` is a hairline colour and over
+   a solid bar it read as an empty track — which put the comparison's second
+   number on screen with nothing to compare against. */
 .fig-mf-lift-row[data-role='baseline'] .fig-mf-lift-run {
-  background: var(--on-field-dim);
+  background: color-mix(in srgb, currentColor 40%, transparent);
 }
 
+/* At display scale. These two numbers are the evidence for the fourth
+   fragment's claim; set as a pixel-font caption they were a footnote to a
+   diagram of a filter, which inverts the slide's priorities. */
 .fig-mf-lift-value {
-  min-width: 2.8em;
-  text-align: right;
-  font-family: var(--font-pixel);
-  font-size: clamp(.88rem, 1.02vw, 1.04rem);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.5rem, 2.4vw, 2.3rem);
+  line-height: 1;
 }
 
 .fig-mf-lift-note {
-  margin: .25em 0 0;
+  margin: -.7em 0 0;
   font-family: var(--font-pixel);
   font-size: clamp(.85rem, .98vw, .98rem);
   line-height: 1.25;
@@ -1366,18 +1508,32 @@
 
 .fig-cr-outer-label {
   position: absolute;
+  /* Shrink-to-fit measures the room between `left` and the containing block's
+     right edge, and this label is pinned near that edge by construction — it
+     belongs at the ring's open end. Without `max-content` the box collapsed to
+     about sixty pixels and set five words on four lines, which read as a note
+     stuck to the slide rather than as a caption on the gap. */
+  width: max-content;
   max-width: 11em;
+  padding: .25em .5em;
   font-size: clamp(.92rem, 1.12vw, 1.14rem);
   line-height: 1.25;
+  /* A halo in the field's own colour. The label belongs at the ring's open
+     end — that is the whole point of it — and the ring runs through where it
+     has to sit. Moving it clear would put it off the bottom of the row on a
+     wide frame; knocking the rule out behind the words is what a drawing does.
+     Falls back to transparent on a slide with no painted field, where there is
+     nothing to knock out. */
+  background: var(--field, transparent);
   transition: opacity var(--mo-4) var(--ease-out);
 }
 
 .fig-cr-outer-label[data-side='right'] {
-  transform: translate(.8em, -50%);
+  transform: translate(.6em, -50%);
 }
 
 .fig-cr-outer-label[data-side='left'] {
-  transform: translate(calc(-100% - .8em), -50%);
+  transform: translate(calc(-100% - .6em), -50%);
   text-align: right;
 }
 
@@ -1432,6 +1588,20 @@
   transition: opacity var(--mo-3) var(--ease-out);
 }
 
+/* Inside the used arc, not outside it: the hours belong to the face and the
+   arc is the hand sweeping over them. Outside, they read as a second scale. */
+.fig-cr-hour {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: .3;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-cr-hour[data-long='true'] {
+  stroke-width: 1.6;
+  opacity: .5;
+}
+
 .fig-cr-card {
   position: absolute;
   left: 50%;
@@ -1471,10 +1641,20 @@
    15 · radial — the measurement surface
    ================================================================ */
 
+/* SQUARE, SO THE RING IS A RING.
+   Every coordinate in `radial.tsx` is a percentage of this box, so this box's
+   aspect *is* the ring's aspect. At the row's own 1674 by 507 the outer ring
+   drew 602 across and 182 down — the labels on the left and right then sat on
+   a curve that was travelling almost horizontally through them. A square as
+   tall as the row costs nothing: the width it gives up becomes the margin the
+   eleven labels radiate into. */
 .fig-rd {
   position: relative;
-  width: 100%;
   height: 100%;
+  aspect-ratio: 1;
+  /* On a frame narrow enough that the square would be wider than the row, the
+     width wins and the figure simply gets smaller. It stays square either way. */
+  max-width: 100%;
 }
 
 .fig-rd-wires {
@@ -1521,7 +1701,17 @@
   position: absolute;
   display: flex;
   align-items: center;
-  gap: .45em;
+  /* Shrink-to-fit measures from `left` to the plot's right edge, and the plot
+     is only as wide as the row is tall. A node at 91% of it had forty-five
+     pixels to set its name in, so "Trend vs. your previous window" came out
+     four lines deep and lay across the ring. The labels are *meant* to leave
+     the plot — that is what the square's side margins are for. */
+  width: max-content;
+  /* A label two or three lines tall is centred on its dot, so it reaches above
+     and below the ring — and the ring is curving away from it the whole time.
+     The gap is what keeps the text off the line: at .45em the tallest labels on
+     the right sat across it. */
+  gap: .95em;
   transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
 }
 
@@ -1565,9 +1755,13 @@
   opacity: 1;
 }
 
+/* Wide enough that the longest of them — "Trend vs. your previous window" —
+   sets on two lines rather than four. The square plot handed back nearly six
+   hundred pixels of margin on each side; spending it on fewer line breaks is
+   what that margin was for. */
 .fig-rd-label {
   display: block;
-  max-width: 9.5em;
+  max-width: 12em;
   font-size: clamp(.9rem, 1.08vw, 1.1rem);
   line-height: 1.18;
   color: var(--on-field-dim);
@@ -2032,14 +2226,20 @@
 /* 140ms and linear. A strike-through that eases looks like a flourish; this
    one is a refusal. Drawn in `--on-field`, because verdict red is spent on
    slides 6 and 7 and this is not one of them. */
+/* One short steep slash across the reverse arrow, drawn in 140ms with no
+   easing worth the name. `clip-path` rather than a scale, so the mark grows
+   from the end the pen would start at instead of unfolding from its middle. */
 .fig-gt-strike {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 7;
-  stroke-linecap: butt;
-  stroke-dasharray: 4000;
-  transition: stroke-dashoffset 140ms linear;
+  position: absolute;
+  width: clamp(2.4rem, 4.4vw, 4rem);
+  height: 4px;
+  transform: translate(-50%, -50%) rotate(-56deg);
+  background: currentColor;
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 140ms linear;
 }
+
+.fig-gt-strike[data-struck='true'] { clip-path: inset(0 0 0 0); }
 
 .fig-gt-denied {
   position: absolute;
@@ -2052,8 +2252,9 @@
   font-size: clamp(.95rem, 1.15vw, 1.18rem);
   line-height: 1.25;
   color: var(--on-field-dim);
-  text-decoration-line: line-through;
-  text-decoration-thickness: 1px;
+  /* No line through it. The slash above is the refusal; striking the caption
+     as well says the same thing twice and makes the words harder to read at
+     the one moment the room is trying to read them. */
   transition: opacity var(--mo-3) var(--ease-out) 220ms;
 }
 

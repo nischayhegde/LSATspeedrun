@@ -2,6 +2,8 @@ import * as THREE from 'three'
 
 import { IllustratedRenderPass } from '../app-art/render-style'
 import { InkDissolve } from './ink-dissolve'
+import { isStageOccluded } from './occlusion'
+import { registerProbe } from './probe'
 import type { DeckScene, SceneContext, SceneFactory } from './types'
 
 /**
@@ -154,6 +156,12 @@ export class DeckStage {
       event.preventDefault()
       console.error('deck: WebGL context lost — reload the deck')
     })
+
+    // A function rather than an object, so a caller gets this frame's values
+    // instead of a snapshot taken when the deck booted. Read-only by
+    // construction — every field is copied out — so nothing on the far side of
+    // it can reach into the renderer. See `probe.ts`.
+    registerProbe('__deckStage', () => this.stats)
   }
 
   register(id: string, factory: SceneFactory) {
@@ -262,6 +270,26 @@ export class DeckStage {
     return { ...this.renderer.info.memory, cached: this.cache.size }
   }
 
+  /**
+   * Everything the render budget is judged on, in one object.
+   *
+   * `info.reset()` runs at the top of each tick and the counters are filled by
+   * that tick's draws, so reading between frames reports the frame just
+   * finished rather than a partial one.
+   */
+  get stats() {
+    return {
+      scene: this.active?.id ?? null,
+      frameMs: Number(this.frameMs.toFixed(2)),
+      fps: this.frameMs > 0 ? Number((1000 / this.frameMs).toFixed(1)) : 0,
+      blending: this.blend !== null,
+      cached: this.cache.size,
+      memory: { ...this.renderer.info.memory },
+      render: { ...this.renderer.info.render },
+      programs: this.renderer.info.programs?.length ?? 0,
+    }
+  }
+
   start() {
     if (this.running) return
     this.running = true
@@ -277,6 +305,7 @@ export class DeckStage {
 
   dispose() {
     this.stop()
+    registerProbe('__deckStage', undefined)
     window.removeEventListener('resize', this.handleResize)
     window.removeEventListener('pointermove', this.handlePointer)
     for (const scene of this.cache.values()) scene.dispose()
@@ -355,6 +384,17 @@ export class DeckStage {
     this.previousTime = now
     this.sceneElapsed += delta
 
+    // Accounted before anything can return early, so the telemetry hatch still
+    // reports honest frame pacing on a slide where this renderer is idle
+    // because an app scene is covering it.
+    this.frameAccumulator += delta * 1000
+    this.frameSamples += 1
+    if (this.frameSamples >= 30) {
+      this.frameMs = this.frameAccumulator / this.frameSamples
+      this.frameAccumulator = 0
+      this.frameSamples = 0
+    }
+
     // Parallax is smoothed rather than followed: a camera pinned to the pointer
     // is nauseating on a large panel, and the presenter's mouse is not part of
     // the composition.
@@ -366,7 +406,15 @@ export class DeckStage {
     if (!active) return
 
     this.renderer.info.reset()
+    // `update` runs whether or not the frame is drawn: it is CPU-side camera
+    // tweening and behaviour, it costs almost nothing, and a scene that had
+    // been paused would jump when it was uncovered.
     active.scene.update(delta, this.sceneElapsed)
+
+    // Covered by an app scene. Nothing this renderer produces can be seen, and
+    // producing it costs the frame the visible renderer needed. See
+    // `occlusion.ts`.
+    if (isStageOccluded() && !this.blend) return
 
     if (this.blend) {
       this.blend.elapsed += delta
@@ -385,14 +433,6 @@ export class DeckStage {
       if (progress >= 1) this.blend = null
     } else {
       this.pass.render(active.scene.scene, active.scene.camera)
-    }
-
-    this.frameAccumulator += delta * 1000
-    this.frameSamples += 1
-    if (this.frameSamples >= 30) {
-      this.frameMs = this.frameAccumulator / this.frameSamples
-      this.frameAccumulator = 0
-      this.frameSamples = 0
     }
   }
 }

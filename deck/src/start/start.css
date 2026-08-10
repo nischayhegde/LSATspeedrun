@@ -1,0 +1,496 @@
+/* ================================================================
+   THE START CARD
+   ================================================================
+   Scoped: every selector in this file is a descendant of `.start`, and
+   nothing here is emitted by any component outside `src/start/`. The
+   global stylesheet is owned elsewhere and is not touched — the three
+   utility classes this file leans on (`bevel`, `engraved`, `foil`) are
+   used, not redefined.
+
+   The card is measured in the deck's own unit so it scales with the
+   projector exactly as the slides do: `--u` is one percent of the
+   largest 16:9 box that fits the viewport, so on a 16:10 or 4:3
+   projector the whole card shrinks together and letterboxes rather
+   than reflowing or clipping. ================================================================ */
+
+.start {
+  --u: min(1vw, 1.7778vh);
+  position: fixed;
+  inset: 0;
+  /* Above every layer in `deck.css`, whose highest is the grid at 1010. */
+  z-index: 2000;
+  /* Transparent and inert at the root: during the curtain sweep the plate
+     below is gone and only the bars should be on screen, and neither
+     should ever be in front of a click aimed at the deck. */
+  pointer-events: none;
+}
+
+/* --- the landing itself --------------------------------------------- */
+
+.start-plate {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* The row gap is the only thing keeping the two rails off the composition.
+     Without it the middle band grows until the eyebrow is touching the
+     wordmark and the shortcut line is touching the credit — which is what
+     happens the moment the credentials plate is a unit or two taller. */
+  row-gap: calc(2.2 * var(--u));
+  padding: calc(3 * var(--u)) calc(5 * var(--u)) calc(2.6 * var(--u));
+  color: var(--beige);
+  /* The deck's theatre, with a pool of navy light behind the type and the
+     laid-paper fibres the rest of the deck prints its documents on. */
+  background-color: #05080d;
+  background-image:
+    radial-gradient(78% 108% at 30% 42%, rgba(27, 47, 107, .5), transparent 62%),
+    radial-gradient(52% 74% at 78% 56%, rgba(200, 155, 75, .1), transparent 70%),
+    var(--engraved-wave),
+    var(--laid-paper);
+  background-size: auto, auto, 24px 8px, 64px 64px;
+}
+
+/* The film layers. `theme.css` puts the deck's own grain and scanlines at
+   899/900, which is below this card, so the card carries its own copies at
+   the same numbers — otherwise the first thing anyone sees would be the
+   only thing in the deck not shot on the same stock. */
+.start-grain,
+.start-scanlines,
+.start-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.start-grain {
+  opacity: .3;
+  background-image: radial-gradient(rgba(28, 36, 42, .08) .65px, transparent .65px);
+  background-size: 5px 5px;
+  animation: start-grain-drift 5.5s steps(5) infinite;
+}
+
+.start-scanlines {
+  opacity: .12;
+  background-image: repeating-linear-gradient(0deg, transparent 0 3px, rgba(8, 12, 17, .18) 4px);
+}
+
+.start-vignette {
+  background:
+    radial-gradient(120% 90% at 50% 45%, transparent 44%, rgba(3, 5, 9, .62) 100%),
+    linear-gradient(rgba(3, 5, 9, .34), transparent 20%, transparent 76%, rgba(3, 5, 9, .44));
+}
+
+@keyframes start-grain-drift {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-2px, 1px); }
+  50% { transform: translate(1px, -2px); }
+  75% { transform: translate(2px, 2px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* --- the two rails -------------------------------------------------- */
+
+.start-rail {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(2 * var(--u));
+  font-family: var(--font-ui);
+  font-size: calc(1.02 * var(--u));
+  font-weight: 700;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: rgba(216, 203, 180, .58);
+}
+
+.start-rail span { display: flex; align-items: center; gap: calc(1 * var(--u)); }
+
+.start-mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: calc(2.9 * var(--u));
+  height: calc(2.9 * var(--u));
+  /* The bevel's own drop is 4px at any size; scaled here so a chip this
+     small does not read as a floating tile. */
+  box-shadow: inset -3px -3px #c48a36, inset 2px 2px #fff0a5, 3px 3px 0 #080c13;
+}
+
+.start-mark svg { width: 62%; height: 62%; }
+
+.start-wordmark { color: var(--pixel-gold); letter-spacing: .3em; }
+
+/* --- the middle band ------------------------------------------------ */
+
+.start-stage {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: calc(6.4 * var(--u));
+}
+
+.start-title { min-width: 0; }
+
+.start-eyebrow {
+  margin: 0 0 calc(1.4 * var(--u));
+  font-family: var(--font-ui);
+  font-size: calc(1.14 * var(--u));
+  font-weight: 800;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--pixel-gold);
+}
+
+/* Set on two lines with an explicit break rather than left to wrap.
+   `Lawyer Tycoon` at this size measures a shade over the 47.6u the title
+   column is always given — the column is a fraction of a unit that is
+   itself derived from the 16:9 stage, so that is true at every viewport,
+   not just narrow ones — and a headline that overflows by two percent is
+   a headline that is clipped on some projector. Stacked, it fits at any
+   shape and reads more like a title card besides. */
+.start-h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  /* Fraunces' optical-size axis, opened right up: at this size the display
+     cut is the point of using a variable face at all. */
+  font-variation-settings: 'opsz' 144, 'wght' 900;
+  font-size: calc(7.2 * var(--u));
+  line-height: .9;
+  letter-spacing: -.018em;
+}
+
+.start-standfirst {
+  margin: calc(1.6 * var(--u)) 0 0;
+  max-width: 30ch;
+  font-family: var(--font-ui);
+  font-size: calc(1.94 * var(--u));
+  font-weight: 500;
+  line-height: 1.34;
+  color: var(--beige-dim);
+}
+
+/* The section mark in a hairline, the way the product rules its own
+   documents — see the firm ledger's dashed rule. */
+.start-divider {
+  display: flex;
+  align-items: center;
+  gap: calc(1.2 * var(--u));
+  margin: calc(2 * var(--u)) 0 calc(1.5 * var(--u));
+  max-width: calc(46 * var(--u));
+  color: rgba(200, 155, 75, .5);
+}
+
+.start-divider i {
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(90deg, currentColor, rgba(200, 155, 75, .12));
+}
+
+.start-divider b {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 24, 'wght' 700;
+  font-size: calc(1.7 * var(--u));
+  color: var(--gold);
+}
+
+.start-method {
+  display: flex;
+  align-items: baseline;
+  gap: calc(1.2 * var(--u));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-ui);
+  font-size: calc(1.2 * var(--u));
+  font-weight: 800;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--gold-soft);
+}
+
+.start-method i { color: rgba(200, 155, 75, .6); font-style: normal; }
+
+.start-pull {
+  margin: calc(1.7 * var(--u)) 0 0;
+  max-width: 34ch;
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 48, 'wght' 500;
+  font-size: calc(1.78 * var(--u));
+  font-style: italic;
+  line-height: 1.4;
+  color: rgba(245, 232, 200, .84);
+}
+
+/* --- the button ----------------------------------------------------- */
+
+.start-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(1.4 * var(--u));
+  margin-top: calc(2.4 * var(--u));
+}
+
+/* Carries the global `bevel`: the gold chip with a hard offset drop that
+   is the most recognisable object in the product's chrome. Everything
+   here is the geometry and the press. */
+.start-go {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  /* One line, always. A two-line "START / SLIDESHOW" is the difference
+     between a button and a sign. */
+  white-space: nowrap;
+  gap: calc(1.3 * var(--u));
+  padding: calc(1.5 * var(--u)) calc(3.4 * var(--u));
+  font-family: var(--font-ui);
+  font-size: calc(1.78 * var(--u));
+  font-weight: 800;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  transition: transform var(--mo-1) var(--ease-out), box-shadow var(--mo-1) var(--ease-out);
+}
+
+/* A pixel button is pressed, not faded: the chip moves onto its own drop
+   shadow and the shadow disappears, which is the same two-state trick the
+   app's own bevelled controls use. */
+.start-go:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: inset -4px -4px #c48a36, inset 3px 3px #fff0a5, 6px 6px 0 #080c13;
+}
+
+.start-go:active {
+  transform: translate(3px, 3px);
+  box-shadow: inset -4px -4px #c48a36, inset 3px 3px #fff0a5, 1px 1px 0 #080c13;
+}
+
+.start-go svg {
+  width: calc(1.7 * var(--u));
+  height: calc(1.7 * var(--u));
+  fill: currentColor;
+}
+
+/* A foil sheen crossing the chip every few seconds. This is the only
+   moving thing on the card, which is what makes it read as the thing to
+   press without an arrow or a wobble. */
+.start-go::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(104deg, transparent 38%, rgba(255, 253, 235, .58) 50%, transparent 62%);
+  transform: translateX(-130%);
+  animation: start-sheen 4.4s var(--ease-in-out) 1.2s infinite;
+}
+
+@keyframes start-sheen {
+  0% { transform: translateX(-130%); }
+  22%, 100% { transform: translateX(130%); }
+}
+
+/* One nowrap line of presenter shortcuts. This is the only screen in the
+   deck where there is time to read them, so it is the only screen that
+   says them. */
+.start-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: calc(.5 * var(--u));
+  gap: calc(.7 * var(--u));
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: calc(1.04 * var(--u));
+  font-weight: 700;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(216, 203, 180, .56);
+}
+
+.start-hint i { font-style: normal; color: rgba(200, 155, 75, .5); }
+
+.start-hint kbd {
+  font-family: var(--font-pixel);
+  font-size: calc(1 * var(--u));
+  letter-spacing: .06em;
+  padding: .18em .5em;
+  border: 1px solid rgba(200, 155, 75, .45);
+  border-radius: 2px;
+  color: var(--gold-soft);
+}
+
+/* --- the credentials plate ------------------------------------------
+   Seal, faces and provenance in one engraved plate. They arrive as three
+   separate pieces of evidence and they are the same claim, so they are
+   framed once rather than three times — which is also what stops the
+   seal's Longhorn heritage and the polo in Alan's photograph reading as
+   two competing marks. */
+
+.start-card {
+  flex: 0 0 auto;
+  width: calc(35 * var(--u));
+  padding: calc(2.2 * var(--u)) calc(2.6 * var(--u)) calc(2 * var(--u));
+  text-align: center;
+  border: 3px solid #090c13;
+  border-radius: 2px;
+  box-shadow:
+    inset 0 0 0 2px rgba(86, 112, 124, .62),
+    calc(.7 * var(--u)) calc(.7 * var(--u)) 0 #06080c,
+    0 calc(2 * var(--u)) calc(6 * var(--u)) rgba(3, 5, 9, .6);
+}
+
+.start-seal {
+  width: calc(11.4 * var(--u));
+  height: auto;
+  /* Struck foil rather than a glow: a hard 1px relief in the app's own
+     shadow brown, then one soft warm bloom well under it. */
+  filter:
+    drop-shadow(0 1px 0 rgba(104, 68, 16, .55))
+    drop-shadow(0 calc(.35 * var(--u)) calc(1.5 * var(--u)) rgba(242, 199, 91, .16));
+}
+
+.start-provenance {
+  margin: calc(1.2 * var(--u)) 0 0;
+  font-family: var(--font-ui);
+  font-size: calc(1.1 * var(--u));
+  font-weight: 800;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--gold-soft);
+}
+
+.start-provenance small {
+  display: block;
+  margin-top: calc(.5 * var(--u));
+  font-size: calc(.94 * var(--u));
+  font-weight: 600;
+  letter-spacing: .18em;
+  color: rgba(216, 203, 180, .58);
+}
+
+.start-card-rule {
+  height: 1px;
+  border: 0;
+  margin: calc(1.6 * var(--u)) 0 calc(1.2 * var(--u));
+  background: linear-gradient(90deg, transparent, rgba(200, 155, 75, .72) 12%, rgba(200, 155, 75, .72) 88%, transparent);
+}
+
+.start-card-label {
+  margin: 0 0 calc(1.2 * var(--u));
+  font-family: var(--font-ui);
+  font-size: calc(.96 * var(--u));
+  font-weight: 800;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: rgba(200, 155, 75, .82);
+}
+
+.start-founders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(2 * var(--u));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.start-founder {
+  display: grid;
+  justify-items: center;
+  gap: calc(.9 * var(--u));
+}
+
+/* A struck coin: hairline inner ring, gold outer ring, hard drop. The two
+   plates are identical in every dimension because that is what makes them
+   a pair — see `scripts/brand-assets.py` for why the photographs
+   themselves are engraved rather than shown. */
+.start-founder img {
+  width: calc(10.2 * var(--u));
+  height: calc(10.2 * var(--u));
+  display: block;
+  border-radius: 50%;
+  background: #070f1a;
+  box-shadow:
+    0 0 0 2px rgba(200, 155, 75, .55),
+    0 0 0 3px #070b12,
+    0 calc(.5 * var(--u)) calc(1.6 * var(--u)) rgba(3, 5, 9, .6);
+}
+
+.start-founder b {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 32, 'wght' 620;
+  font-size: calc(1.54 * var(--u));
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--gold-soft);
+}
+
+.start-founder span {
+  font-family: var(--font-ui);
+  font-size: calc(.88 * var(--u));
+  font-weight: 800;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: rgba(200, 155, 75, .74);
+}
+
+/* --- the curtain ----------------------------------------------------
+   The deck's own `letterbox` transition, reused so that entering the
+   presentation is the same cinematic object as an act break: `#05080d`
+   bars closing in six discrete `steps()` jumps rather than sliding, a
+   held black, then seven jumps open onto the title slide's 3D hero.
+
+   The heights are driven by `element.animate`, not by a class, for the
+   reason `engine/transitions.ts` gives: a WAAPI animation can be awaited
+   and finished deterministically and a CSS transition cannot. */
+
+/* Interactive even though it is only ever black bars: it is the only thing
+   over the deck once the plate has been dropped inside the black, and a
+   stray click during the three quarters of a second the shutter is open
+   must not land on a click zone and advance a slide nobody has seen. */
+.start-shutter {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+}
+
+.start-shutter i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  background: #05080d;
+}
+
+.start-shutter i:first-of-type { top: 0; }
+.start-shutter i:last-of-type { bottom: 0; }
+
+/* The wordmark lives in the black, which is the only moment there is room
+   for it at the size a title card wants. */
+.start-shutter b {
+  position: relative;
+  opacity: 0;
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 144, 'wght' 700;
+  font-size: calc(3.4 * var(--u));
+  letter-spacing: .28em;
+  text-transform: uppercase;
+}
+
+/* --- reduced motion -------------------------------------------------
+   The sweep is skipped entirely in the component — a 100ms shutter is
+   still a shutter — so all that is left here is to stop the two idle
+   loops. The card is otherwise static by design. */
+@media (prefers-reduced-motion: reduce) {
+  .start-grain { animation: none; }
+  .start-go::after { animation: none; opacity: 0; }
+}

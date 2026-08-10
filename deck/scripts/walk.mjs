@@ -84,7 +84,11 @@ page.on('console', (message) => {
 // only channel this script uses to read `renderer.info.memory`: the
 // alternative is a `window` handle on the stage, and a test hook that only
 // exists for a test is a hook that stops matching what is presented.
-await page.goto(WANT_HUD ? `${BASE}?hud` : BASE, { waitUntil: 'load' })
+// `?start=0` skips the start card. This script drives the deck with the
+// keyboard from its bare URL, which is the one address that would otherwise open
+// on the card — and the card deliberately swallows every key while it is up. The
+// card has its own harness in `shoot-start.mjs`.
+await page.goto(`${BASE}?start=0${WANT_HUD ? '&hud' : ''}`, { waitUntil: 'load' })
 await page.waitForSelector('.deck-layer.is-live', { timeout: 30000 })
 await page.waitForTimeout(1500)
 if (SHOTS) mkdirSync(SHOTS, { recursive: true })

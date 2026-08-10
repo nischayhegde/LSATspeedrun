@@ -1,0 +1,92 @@
+/* ================================================================
+   THE HOISTED DEMO FRAME
+   ================================================================
+   Scoped to `.demo-stage`, and a new file rather than an addition to
+   `src/styles/deck.css`, which is owned elsewhere. Everything that styles
+   the frame's *chrome* — the engine-turned title bar, the lamp, the
+   bevelled chip — is still in that stylesheet and still applies, because
+   the chrome has not moved: it is only the iframe itself, and the
+   callouts that point at it, that now live above the slide layers.
+
+   ## Why z-index 4
+
+   The stack in `deck.css` is: stage 0, ported app scenes 1, slide layers
+   3, transition furniture 500, click zones 800, the film layers at
+   899/900, presenter furniture above that. Four puts the live embed over
+   the slide layer that owns its slot — which it has to be, because that
+   layer paints a scrim — and under everything else. In particular it
+   stays under the letterbox bars, so an act break still closes over the
+   demo, and under the grain and scanlines, which is what makes a live app
+   embed and a procedural 3D scene look like they were shot on the same
+   stock. ================================================================ */
+
+.demo-stage {
+  position: fixed;
+  z-index: 4;
+  overflow: hidden;
+  /* Interactive, because the whole argument for an iframe over a video is
+     that the presenter can click it. */
+  pointer-events: auto;
+  /* The app's own paper, so the split-second before the first paint of a
+     route is a warm plate rather than white or black. */
+  background: var(--surface);
+  /* Only ever animated, never transitioned on layout: the position and
+     size are written straight to `left/top/width/height` from a measured
+     rect, and a transition on those would make the frame chase the slide
+     instead of arriving with it. */
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+/* Leaving a run of demo slides. The frame is held at the rect it was last
+   measured at and faded, because the slide layer that owned its slot is
+   about to be emptied by the runtime and there is nothing left to track. */
+.demo-stage[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Stills mode, or a dead app origin. The still itself is painted by the chrome
+   in the slide layer below, so the stage keeps only the callouts and stops
+   being a surface — otherwise the panic button would swap a live embed for a
+   navy rectangle. */
+.demo-stage[data-empty] {
+  background: transparent;
+  pointer-events: none;
+}
+
+.demo-stage-frame {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border: 0;
+  display: block;
+  background: var(--surface);
+  /* The app is a light-scheme document. Without this a browser in dark
+     mode restyles its form controls and scrollbars inside the frame. */
+  color-scheme: light;
+  transform-origin: 50% 50%;
+}
+
+/* A plate over the frame for the moment between `src` being set and the
+   app's first paint. Without it the audience sees the previous route's
+   pixels stretch, or a flash of white. */
+.demo-stage-cover {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  background: #070d15;
+  opacity: 0;
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.demo-stage[data-loading] .demo-stage-cover { opacity: 1; }
+
+.demo-stage-cover span {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: rgba(246, 223, 170, .7);
+}

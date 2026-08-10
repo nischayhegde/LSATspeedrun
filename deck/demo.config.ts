@@ -34,6 +34,14 @@ export type DemoConfig = {
    */
   liveSessionId: string
   /**
+   * Session id of the *pre-graded* case written by `stage_demo.py`, used by the
+   * verdict slide. Its attempt already carries stored coaching, so the review
+   * screen renders real model output from the database instead of waiting on a
+   * 20-40 second call in front of an audience. `stage_demo.py --apply` prints
+   * this as `verdict.session_id` and rewrites it here on every run.
+   */
+  verdictSessionId: string
+  /**
    * Force every demo slide to its still image regardless of what the health
    * check says. Flip this to `true` for a dry run on a machine with no stack
    * running, or on stage if the app is misbehaving and you want no surprises.
@@ -44,5 +52,6 @@ export type DemoConfig = {
 export const demoConfig: DemoConfig = {
   appOrigin: 'http://localhost:5173',
   liveSessionId: '2e5ef6d0-429c-40d1-a205-3e8392b1d864',
+  verdictSessionId: '8c6a1061-915c-4347-a7f1-2621c84c6590',
   useStills: false,
 }

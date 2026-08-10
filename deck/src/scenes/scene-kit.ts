@@ -249,6 +249,48 @@ export function labelPlane(
 }
 
 /**
+ * A soft ellipse of ground darkening, to sit a body on a floor.
+ *
+ * Cheaper and steadier than a shadow map: one unlit transparent plane, no extra
+ * render pass, and no shimmer along a contact edge when the body breathes. The
+ * deck's floors are near-white paper, where the *absence* of a contact shadow
+ * is what reads — a figure with none looks pasted onto the wall behind it.
+ */
+export function contactShadow(radius: number, opacity = .34) {
+  const size = 128
+  const surface = document.createElement('canvas')
+  surface.width = size
+  surface.height = size
+  const ctx = surface.getContext('2d')
+  if (ctx) {
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+    gradient.addColorStop(0, 'rgba(38, 32, 24, 1)')
+    gradient.addColorStop(.45, 'rgba(38, 32, 24, .5)')
+    gradient.addColorStop(1, 'rgba(38, 32, 24, 0)')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, size, size)
+  }
+  const texture = new THREE.CanvasTexture(surface)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(radius * 2, radius * 2),
+    new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  )
+  mesh.rotation.x = -Math.PI / 2
+  // Off the floor by a hair, so it wins the depth test against it everywhere
+  // rather than z-fighting into stripes at grazing angles.
+  mesh.position.y = .012
+  mesh.renderOrder = 1
+  return mesh
+}
+
+/**
  * A deterministic pseudo-random source.
  *
  * Every scene in the deck is seeded, because a presentation that composes

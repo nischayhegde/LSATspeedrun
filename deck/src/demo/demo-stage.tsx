@@ -1,0 +1,487 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+
+import { demoConfig } from '../../demo.config'
+import { TRANSITION_MS } from '../engine/transitions'
+import type { DemoSpec, SlideSpec } from '../slides/types'
+import { getSlot, getStatus, resolveRoute, runtimeVersion, setStatus, subscribeRuntime } from './demo-runtime'
+import { probeApp } from './health'
+import './demo-stage.css'
+
+/**
+ * One live embed of the product, for the whole deck.
+ *
+ * ## The defect this exists to fix
+ *
+ * Slides 12, 13 and 14 are authored as a single continuous shot: answer a case,
+ * submit the reasoning, read the verdict, then watch that same question turn up
+ * in the dashboard's review queue. That only works if it is the same session of
+ * the same running app throughout.
+ *
+ * It was not. Every slide rendered its own `<iframe>` inside its own slide layer,
+ * and `use-deck.ts` empties the outgoing layer when a transition completes — so
+ * advancing from 12 to 13 destroyed the frame the presenter had just answered a
+ * question in and loaded the app again from cold. The answered question, the
+ * verdict and the coaching panel all went with it, and there was no way back:
+ * the left arrow reloaded the case from the top.
+ *
+ * ## What replaces it
+ *
+ * The embed is hoisted out of the slide layers entirely and lives here, mounted
+ * once from `deck.tsx`, positioned over whichever slide's screen slot is live.
+ * A *run* of consecutive demo slides shares one iframe element that is never
+ * unmounted, so crossing 12 → 13 → 14 changes nothing about the frame at all:
+ * no load, no flash, no lost state. The frame is torn down when the run ends,
+ * which is the first non-demo slide in either direction.
+ *
+ * ## What advancing inside a run does to the frame, and why
+ *
+ * Nothing, unless the slide asks for something else. The policy, in order:
+ *
+ *   1. **A new run** — the previous live slide had no demo. Mount a fresh frame
+ *      at this slide's route. React remounts it because `runId` changed.
+ *   2. **`continuesFrom` names the slide we just left** — leave the frame
+ *      completely alone. This is slide 13, whose route is `/progress` while slide
+ *      12's is `/cases/{id}`: the narrative has the presenter click *Dashboard in
+ *      the app's own nav bar* while still on slide 12, so by the time the slide
+ *      advances the app has already navigated itself, client-side, with its state
+ *      intact. Loading `/progress` here would undo exactly that.
+ *   3. **Same URL as the frame was last given** — leave it alone. This is 13 → 14,
+ *      both `/progress`, and it is also what makes going *backwards* free.
+ *   4. **Anything else** — set `src`, which navigates the existing element. This
+ *      is 18 → 19, `/office` → `/office?officeTier=0`: a DEV query parameter is
+ *      not reachable by clicking, so it has to be a load. The element, and
+ *      therefore the app's cookies and its HTTP cache, survive.
+ *
+ * Rule 3 has one consequence worth knowing on stage: if the presenter navigated
+ * inside the frame and then goes back a slide, the frame stays where they left it
+ * rather than snapping to the route the slide names. That is the right default —
+ * it is never destructive — and `L` reloads the current slide's route when it is
+ * not.
+ *
+ * ## Where it sits
+ *
+ * `position: fixed` at the live slot's measured rect, at z-index 4: over the
+ * slide layer that owns the slot, under the transition's letterbox bars, and
+ * under the grain and scanlines. See `demo-stage.css`.
+ *
+ * The callouts moved up here with it, because they have to be over the frame and
+ * the frame is now over the slide. They are still positioned in percentages of
+ * the slot, so nothing about how they are authored changed.
+ */
+
+type Props = {
+  slides: readonly SlideSpec[]
+  index: number
+  /** The deck-wide stills override: `?stills=1` or the `S` key. */
+  stills: boolean
+  annotations: number
+  /** True while a transition is in flight. */
+  moving: boolean
+}
+
+/**
+ * The logical viewport width the app is laid out at before being scaled to fit.
+ *
+ * This one number decides how large the app's own text appears on the projector,
+ * and it does so independently of the projector — which is worth spelling out,
+ * because it is not obvious. The slot is sized in the deck's stage unit, so it is
+ * always the same *fraction* of the projected image (0.57 of the width, here).
+ * The composed scale is therefore `slotFraction × imageWidth / DEFAULT_WIDTH`, and
+ * the app's 16px body text lands at
+ *
+ *     16 × 0.57 × (16/9) / DEFAULT_WIDTH
+ *
+ * of the projected image height at 1280x720, at 1920x1080 and at 3840x2160 alike.
+ * Nothing about a room changes it. Only this constant does.
+ *
+ * It was 1440, which put the app's body text at 1.19% of the image height — under
+ * half the 2.67% the deck's own body copy occupies, and a *reduction* rather than a
+ * magnification: the app was being rendered at 1358 logical pixels into a 1094px
+ * hole, so every glyph came out smaller than it would on a laptop. Measured on a
+ * 720p projector that is 8.6px of x-height-and-all, which is not readable from the
+ * fourth row, and "the iframes should be properly sized" is mostly this.
+ *
+ * 1150 puts it at 1.49%, which is a magnification of about 1.06 for the common
+ * `zoom: 1.06` slides rather than a reduction of 0.81 — a 25% increase in apparent
+ * size. The limit on going further is that a narrower logical viewport reflows the
+ * app, and eventually overflows it. Measured on 2026-08-10 across `/progress`,
+ * `/office`, `/office?officeTier=0` and `/map`: no horizontal overflow at any
+ * width down to 820px. At 1150 the most aggressive slide in the deck
+ * (`zoom: 1.35`) lands at 852 logical pixels, which is inside that with margin.
+ *
+ * If the app grows a layout that needs more room, `scripts/verify-demo-sizing.mjs`
+ * fails on the overflow invariant rather than on a screenshot, and
+ * `--required` re-derives the floor.
+ *
+ * ## Why this is a cap and not just a default
+ *
+ * All seven demo slides in `slides/index.ts` pin `width: 1440` — the same value,
+ * seven times, which is a field that was set once and copied rather than composed
+ * per slide. Their `zoom` values are genuinely authored and do vary (1.06, 1.12,
+ * 1.35). So the slide's `width` is honoured as an *upper bound* rather than as an
+ * instruction: `zoom` keeps meaning exactly what it meant, and the base it
+ * multiplies is capped at what is legible. A slide that deliberately asks for a
+ * narrower viewport than this still gets it, because the cap is a `min`.
+ */
+const LEGIBILITY_WIDTH = 1150
+/** Used only when a slide names no width at all. */
+const DEFAULT_WIDTH = 1150
+/** 16:10 rather than 16:9 — the app's dashboard is tall, and a 16:9 slot crops it. */
+const ASPECT = 16 / 10
+
+/** How long after the last load to keep the cover up if `load` never fires. */
+const COVER_TIMEOUT_MS = 6000
+
+type Run = {
+  /** Changes only when a genuinely new frame is wanted. It is the React key. */
+  id: number
+  /**
+   * The frame's *initial* URL, and nothing else. Every later navigation is done
+   * imperatively rather than by changing this, so that React never diffs `src`
+   * and can never decide to reload the frame on its own.
+   */
+  src: string
+}
+
+function routeFor(demo: DemoSpec, sessionId: string): string {
+  return resolveRoute(demo.route, sessionId)
+}
+
+export function DemoStage({ slides, index, stills, annotations, moving }: Props) {
+  const version = useSyncExternalStore(subscribeRuntime, runtimeVersion)
+  const status = getStatus()
+
+  const slide = slides[index]
+  const demo = slide?.demo
+  const sessionId = status.sessionId || demoConfig.liveSessionId
+  const needsSession = Boolean(demo?.route.includes('{session}'))
+  const sessionMissing = needsSession && !sessionId
+  /**
+   * Four independent reasons a demo slide shows its captured frame instead of
+   * the app: the presenter's panic switch, the config-level dry-run flag, a
+   * slide authored as a still (`stillOnly`), a missing seeded session, and an
+   * app that is not answering.
+   *
+   * `stillOnly` has to be here and not only in `demo-frame.tsx`. The frame
+   * withholds its slot for such a slide, which stops this stage from
+   * *positioning* an embed — but without this clause the stage still considered
+   * the slide live, navigated the surviving iframe to the slide's route, and,
+   * because the positioning effect returns early when there is no slot, left
+   * that iframe painted at the previous slide's rect. Measured before the fix:
+   * the live `/progress` app sat pixel-for-pixel on top of the focus-mode
+   * still, so `demo-focus-mode` showed the audience a dashboard. Correctness
+   * that depends on an unrelated early return is correctness waiting to break.
+   */
+  const showStill = stills
+    || demoConfig.useStills
+    || Boolean(demo?.stillOnly)
+    || sessionMissing
+    || status.health === 'unreachable'
+
+  const [run, setRun] = useState<Run | null>(null)
+  const [leaving, setLeaving] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const frame = useRef<HTMLIFrameElement | null>(null)
+  const host = useRef<HTMLDivElement | null>(null)
+  const runCounter = useRef(0)
+  /** Index of the previous *live* slide, demo or not. Drives the run policy. */
+  const previousIndex = useRef<number | null>(null)
+  /**
+   * Whose slot to track. Held through the fade-out, since by then the slide layer
+   * that owned it has been emptied by the runtime and the rect is frozen anyway.
+   * Also the identity the callouts are read off.
+   */
+  const tracked = useRef<DemoSpec | null>(null)
+  /**
+   * Where we believe the frame currently is, which is not the same as what React
+   * put in `src`: the presenter navigates inside it, and `continuesFrom` is the
+   * slide saying so.
+   */
+  const believed = useRef('')
+
+  // --- the single health probe, and the lamp -------------------------------
+  // One probe for the whole deck rather than one per mounted slide: there is one
+  // embed now, and two slides mid-transition must not disagree about whether the
+  // app is up.
+  useEffect(() => {
+    if (demoConfig.useStills || stills) {
+      setStatus({ showStill: true, label: 'stills' })
+      return
+    }
+    let live = true
+    void probeApp(demoConfig.appOrigin).then((health) => {
+      if (!live) return
+      setStatus({
+        health,
+        showStill: health === 'unreachable' || sessionMissing,
+        label: sessionMissing
+          ? 'no seeded session'
+          : health === 'live' ? 'live' : health === 'checking' ? 'connecting' : 'app not running',
+      })
+    })
+    return () => { live = false }
+  }, [stills, sessionMissing, index])
+
+  // --- the run policy ------------------------------------------------------
+  useEffect(() => {
+    const previous = previousIndex.current
+    previousIndex.current = index
+    const previousSlide = previous == null ? null : slides[previous]
+    const previousDemo = previousSlide?.demo
+
+    if (!demo) {
+      if (!tracked.current) return
+      // Fade out over the incoming transition rather than vanishing on the
+      // keystroke: the outgoing demo slide is still on screen for the length of
+      // the transition, and an embed that pops out at the start of it is more
+      // noticeable than the transition itself. The slot is about to be
+      // unregistered by the runtime emptying that layer, so the rect is frozen
+      // where it is.
+      setLeaving(true)
+      const timer = window.setTimeout(() => {
+        setRun(null)
+        setLeaving(false)
+        tracked.current = null
+      }, TRANSITION_MS[slide?.transition ?? 'cut'] + 140)
+      return () => window.clearTimeout(timer)
+    }
+
+    setLeaving(false)
+    tracked.current = demo
+
+    // A still is showing, so there is no live frame to manage — but the stage
+    // stays mounted, because it owns the callouts and they have to be over
+    // whichever of the two the slide ended up with.
+    if (showStill) {
+      setRun(null)
+      return
+    }
+
+    const url = `${demoConfig.appOrigin}${routeFor(demo, sessionId)}`
+
+    // 1 — a new run.
+    if (!run || !previousDemo) {
+      runCounter.current += 1
+      believed.current = url
+      setRun({ id: runCounter.current, src: url })
+      setLoading(true)
+      return
+    }
+    // 2 — the slide says it continues the one we just left. The frame is left
+    // completely alone, but the belief is updated: `continuesFrom` is precisely
+    // the assertion that the presenter has already navigated the app here
+    // themselves, so from now on this *is* where the frame is. Without this the
+    // next slide would see a mismatch and reload — which is how 13 → 14, two
+    // slides that both name `/progress`, managed to reload a frame that slide 13
+    // had just been careful not to touch.
+    if (demo.continuesFrom && previousSlide && demo.continuesFrom === previousSlide.id) {
+      believed.current = url
+      return
+    }
+    // 3 — the frame is already where this slide wants it.
+    if (believed.current === url) return
+    // 4 — a deliberate navigation of the surviving element. Imperative, so that
+    // React's own view of `src` never enters into it.
+    believed.current = url
+    setLoading(true)
+    if (frame.current) frame.current.src = url
+    // `run` is read, not depended on: including it would re-run the policy on
+    // every change and re-decide a decision already taken.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, showStill, sessionId])
+
+  // --- `L` reloads the current slide's route ------------------------------
+  // The escape hatch for rule 3 above. Imperative rather than through state,
+  // because the point is to reload a URL React already believes is set.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key.toLowerCase() !== 'l') return
+      const target = event.target as HTMLElement | null
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      if (!demo || !frame.current) return
+      event.preventDefault()
+      setLoading(true)
+      frame.current.src = `${demoConfig.appOrigin}${routeFor(demo, sessionId)}`
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [demo, sessionId])
+
+  // --- giving the keyboard back -------------------------------------------
+  /**
+   * The embed steals the keyboard, and the deck cannot get it back on its own.
+   *
+   * This is the failure that framing a real app buys you and it is not obvious
+   * until it happens on stage. The moment focus is inside the iframe — because
+   * the presenter clicked an answer, or simply because the app autofocused an
+   * input on load — every keystroke goes to the app's document and none of them
+   * reach the deck's `window` listener. The presenter presses the right arrow to
+   * advance off the demo and nothing happens. There is no way to intercept it
+   * from out here: the frame is cross-origin, so its `keydown` is unreachable.
+   *
+   * What *is* reachable is the pointer. Any pointer event over the deck but
+   * outside the embed is proof that the presenter is no longer working inside the
+   * app, and blurring the iframe at that moment returns focus to the deck's
+   * document without interrupting anything. So the rule is: while you are on the
+   * demo the keyboard is the app's, and the instant you move off it the keyboard
+   * is the deck's again.
+   *
+   * The two paths that never depended on focus still work regardless, and the
+   * runbook says so: the click zones at the very edges of the stage, and a
+   * presenter remote that drives a real mouse cursor.
+   */
+  useEffect(() => {
+    const surrender = (event: PointerEvent) => {
+      const active = document.activeElement
+      if (!active || active !== frame.current) return
+      const stage = host.current
+      if (stage && event.target instanceof Node && stage.contains(event.target)) return
+      frame.current?.blur()
+    }
+    window.addEventListener('pointermove', surrender, { passive: true })
+    window.addEventListener('pointerdown', surrender, { passive: true })
+    return () => {
+      window.removeEventListener('pointermove', surrender)
+      window.removeEventListener('pointerdown', surrender)
+    }
+  }, [])
+
+  // --- position over the live slot ----------------------------------------
+  const [rect, setRect] = useState({ left: 0, top: 0, width: 0, height: 0 })
+
+  const measure = useCallback(() => {
+    const slot = getSlot(tracked.current)
+    if (!slot) return
+    const box = slot.getBoundingClientRect()
+    setRect((current) => (
+      Math.abs(current.left - box.left) < .5
+        && Math.abs(current.top - box.top) < .5
+        && Math.abs(current.width - box.width) < .5
+        && Math.abs(current.height - box.height) < .5
+        ? current
+        : { left: box.left, top: box.top, width: box.width, height: box.height }
+    ))
+  }, [])
+
+  /**
+   * Measure, then keep measuring for a beat.
+   *
+   * One measurement is not enough on a cold load. The slide's own entrance
+   * animation is still running, the two display faces may not have arrived yet,
+   * and both move the slot by a few pixels after it first has a rect — which
+   * leaves the embed sitting a few pixels off its hole, showing a sliver of the
+   * plate underneath along one edge. A `ResizeObserver` does not catch it because
+   * the slot's *size* never changes, only its position. So the settle is a short
+   * bounded frame loop rather than a single read.
+   */
+  useLayoutEffect(() => {
+    if (leaving) return
+    measure()
+    let raf = 0
+    const until = performance.now() + 1000
+    const tick = () => {
+      measure()
+      if (performance.now() < until) raf = window.requestAnimationFrame(tick)
+    }
+    raf = window.requestAnimationFrame(tick)
+    const onFonts = () => measure()
+    void document.fonts?.ready.then(onFonts).catch(() => undefined)
+    return () => window.cancelAnimationFrame(raf)
+  }, [leaving, measure, index, version, run?.id])
+
+  // A resize observer for layout changes, and a frame loop only while a
+  // transition is in flight — the `cut` transition scales the incoming layer by
+  // 1.4%, so at rest a rect is stable and during a move it is not. Not a
+  // permanent loop: a `getBoundingClientRect` every frame for the length of a
+  // twenty-minute talk is a layout thrash nobody needs.
+  useEffect(() => {
+    if (leaving) return
+    const slot = getSlot(tracked.current)
+    if (!slot) return
+    const observer = new ResizeObserver(measure)
+    observer.observe(slot)
+    window.addEventListener('resize', measure)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [leaving, measure, index, version])
+
+  useEffect(() => {
+    if (!moving || leaving) return
+    let raf = 0
+    const tick = () => { measure(); raf = window.requestAnimationFrame(tick) }
+    raf = window.requestAnimationFrame(tick)
+    return () => window.cancelAnimationFrame(raf)
+  }, [leaving, measure, moving])
+
+  // --- the load cover -----------------------------------------------------
+  useEffect(() => {
+    if (!loading) return
+    const timer = window.setTimeout(() => setLoading(false), COVER_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [loading, run?.src])
+
+  if ((!demo && !leaving) || !rect.width || !rect.height) return null
+
+  const spec = demo ?? tracked.current
+  const logicalWidth = Math.round(
+    Math.min(spec?.width ?? DEFAULT_WIDTH, LEGIBILITY_WIDTH) / (spec?.zoom ?? 1),
+  )
+  const logicalHeight = Math.round(logicalWidth / ASPECT)
+  // Contain, not cover: the app must never be cropped, and the slot's own
+  // proportions come from the slide layout rather than from the app.
+  const scale = Math.min(rect.width / logicalWidth, rect.height / logicalHeight)
+
+  return (
+    <div
+      className="demo-stage"
+      ref={host}
+      data-leaving={leaving ? '' : undefined}
+      data-loading={loading && run ? '' : undefined}
+      // No live frame: the slide is showing its still, which is painted by the
+      // chrome in the layer below. The stage has to become a sheet of glass
+      // rather than a surface, or it would cover it.
+      data-empty={run ? undefined : ''}
+      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+    >
+      {run ? (
+        <iframe
+          // The key is the run, so React preserves this element for as long as
+          // the run lasts and only ever touches `src` when the policy above
+          // changed it. That is the whole continuity mechanism.
+          key={run.id}
+          ref={frame}
+          className="demo-stage-frame"
+          title={spec?.caption ?? run.src}
+          src={run.src}
+          onLoad={() => setLoading(false)}
+          style={{
+            width: `${logicalWidth}px`,
+            height: `${logicalHeight}px`,
+            transform: `scale(${scale || 0.001})`,
+          }}
+          // Our own dev server, on our own machine. `allow-same-origin` is
+          // required for the app to read its own cookies and localStorage, which
+          // is the entire point of framing it rather than filming it.
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+        />
+      ) : null}
+
+      <div className="demo-stage-cover" aria-hidden="true"><span>Loading the app</span></div>
+
+      {spec?.annotations?.map((annotation, position) => (
+        <span
+          key={annotation.label}
+          className={`demo-callout from-${annotation.from ?? 'left'}${position < annotations ? ' is-shown' : ''}`}
+          style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+          aria-hidden={position >= annotations}
+        >
+          <i className="demo-callout-pin" />
+          <b>{annotation.label}</b>
+        </span>
+      ))}
+    </div>
+  )
+}

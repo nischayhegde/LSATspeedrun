@@ -94,6 +94,69 @@ export type ConfidenceTilesFigure = {
   }>
 }
 
+/**
+ * Slide 8 — the cohort that had the method, and the half that never used it.
+ *
+ * One bar drawn at full width and then pulled back to `keptShare`, leaving its
+ * own hatched footprint where the rest of the cohort was, and under it the two
+ * usage variables the same study looked at against a real LSAT score.
+ *
+ * Neither ledger row is a bar growing out of zero, and that is the whole point
+ * of the two shapes below. LSAC's own report says, in the paragraph that
+ * carries the 4.3, that its figures are "not gains... but rather increments for
+ * independent groups of students" — so a bar running from an origin, or an
+ * arrow between two doses, would draw one student climbing a dose-response
+ * curve, which is precisely the reading the source disclaims. A `contrast` row
+ * draws the two groups as two marks with an unarrowed span between them, which
+ * is the ordinary idiom for a difference between group means. A `null` row
+ * draws a bare origin tick, because LSAC's finding on video is that it was not
+ * correlated at all, and a short bar would report a small effect instead.
+ */
+export type CohortSplitFigure = {
+  kind: 'cohort-split'
+  /** Small line above the bar, naming who is in it and on what n. */
+  cohortLabel: string
+  /** The share that completed at least one exam, 0..1. Drawn solid. */
+  keptShare: number
+  keptLabel: string
+  /** Printed against the hatch, and the number the slide is about. */
+  lostLabel: string
+  inputs: Array<CohortSplitInput>
+}
+
+/** One end of a `contrast` row: where the group sits, and what dose it is. */
+export type CohortSplitGroup = {
+  /** Position on the track, 0..1. Ordinal, not to scale — see `contrast`. */
+  at: number
+  /** The dose this group had, printed under its mark. */
+  label: string
+}
+
+export type CohortSplitInput = {
+  label: string
+  verdict: string
+  /** The qualifying line, set small under the verdict. */
+  note?: string
+  /** The input that moved the score keeps full weight; the other steps back. */
+  emphasis?: boolean
+} & (
+  | {
+      /**
+       * Two independent groups, drawn as two marks joined by a span with no
+       * arrowhead. The track is ordinal and deliberately not to scale: the two
+       * doses LSAC reports are 26 minutes and 47 hours, a ratio of about 108,
+       * and plotting that linearly would put both groups on the same pixel.
+       */
+      shape: 'contrast'
+      low: CohortSplitGroup
+      high: CohortSplitGroup
+    }
+  | {
+      /** The study found no correlation. One origin tick, and nothing else. */
+      shape: 'null'
+    }
+)
+
 /** Slide 9 — the AI misdirection chart. */
 export type TracesFigure = {
   kind: 'traces'
@@ -150,11 +213,39 @@ export type RadialFigure = {
   }>
 }
 
-/** Slide 16 — points light all four engagement spokes; badges light one. */
+/**
+ * Slide 16 — points light all four engagement spokes; badges light one.
+ *
+ * Not currently bound to a slide: `pov-virtual-currency` now argues the
+ * mechanism rather than the mechanic and uses `currency-lift` instead. Kept
+ * because the points-against-badges comparison is still true, still sourced in
+ * `CITATIONS.md` §6.2, and is the drop-in if the founders want that slide back.
+ */
 export type SpokesFigure = {
   kind: 'spokes'
   spokes: string[]
   series: Array<{ label: string; lit: boolean[]; emphasis?: boolean }>
+}
+
+/**
+ * Slide 16 — what a virtual currency moved, and what it left alone.
+ *
+ * One control line with a bar per course running past it, then the outcomes the
+ * same intervention did not shift. `multiple` is the experimental group as a
+ * factor of its own comparison group, so the rows are comparable to each other
+ * even though the courses' absolute volumes are not.
+ */
+export type CurrencyLiftFigure = {
+  kind: 'currency-lift'
+  /** What is being counted, set small above the plot. */
+  measureLabel: string
+  /** Sits on the shared dashed gate, printed once on the first row. */
+  controlLabel: string
+  rows: Array<{ course: string; venue: string; multiple: number }>
+  /** The eyebrow on the null register, e.g. `did not move`. */
+  unmovedLabel: string
+  /** Outcomes the study measured and found unchanged. Drawn flat, never as bars. */
+  unmoved: string[]
 }
 
 /** Slide 17 — the four Clark splits, ours against the alternative. */
@@ -204,11 +295,13 @@ export type FigureSpec =
   | RouteFigure
   | ReasoningCardFigure
   | ConfidenceTilesFigure
+  | CohortSplitFigure
   | TracesFigure
   | MethodFanFigure
   | ClockRingsFigure
   | RadialFigure
   | SpokesFigure
+  | CurrencyLiftFigure
   | PairedBarsFigure
   | GateFigure
 

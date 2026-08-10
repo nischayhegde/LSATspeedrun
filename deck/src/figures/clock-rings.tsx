@@ -23,15 +23,35 @@ const MARKS = [40, 400, 2300, 3000, 5100] as const
 /** Inner geometry in the square viewBox: the used arc, the ghost pace ring, and the tick that marks target. */
 const INNER = { used: 38, ghost: 45, tick: [42, 48] } as const
 
+/**
+ * Twelve marks around the dial, four of them long.
+ *
+ * The rings alone were a progress donut. A donut and a clock are drawn almost
+ * identically and are read completely differently, and this slide's whole
+ * headline is *timed* — so the dial gets the one piece of furniture that
+ * settles it. Twelve, at the hours, quarters long, is the shortest description
+ * of a clock face there is; anything more elaborate starts competing with the
+ * two arcs that carry the actual argument.
+ */
+const FACE = { count: 12, radius: 33, minor: 2.4, major: 4.6 } as const
+
 /** The outer ring's radius in a viewBox that gets stretched to the frame. */
 const OUTER_RADIUS = 46
 
 export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigure>) {
   const phase = usePhase(active, reduced, MARKS)
 
-  // Every ring here is drawn in a `meet` viewBox with a plain stroke, so a dash
-  // array written in viewBox units means what it says and a fraction of the
-  // circumference is exactly that fraction of the ring.
+  // Every ring here is drawn in a `meet` viewBox with a plain stroke, and every
+  // one of them is revealed with `pathLength="1"` and a two-value dash pattern.
+  //
+  // The two-value pattern is the part that matters. A single-value dash array is
+  // repeated to make it even, so `dasharray: C` becomes a dash of C and a gap of
+  // C — and the pattern is periodic, which means the dash *before* the one being
+  // shown can reach back onto the end of the path. That is what put a stray grey
+  // arc across the lower left of this dial, outside the used ring and belonging
+  // to nothing: it was the tail of the pace ring's previous period. With
+  // `pathLength="1"` and `1 1`, the offset is a fraction and the arithmetic
+  // stops depending on the circumference at all.
   //
   // The outer ring used to be stretched to the frame with
   // `preserveAspectRatio="none"` and a non-scaling stroke. That cannot be made
@@ -43,10 +63,6 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
   // It is a true circle now, oversized past the edges of the frame by CSS. The
   // narrative's requirement was that it "goes off past the edge of your
   // attention", which overflow delivers and stretching only approximated.
-  const usedCircumference = 2 * Math.PI * INNER.used
-  const ghostCircumference = 2 * Math.PI * INNER.ghost
-  const outerCircumference = 2 * Math.PI * OUTER_RADIUS
-
   const clamp = (value: number) => Math.min(Math.max(value, 0), 1)
   const used = clamp(spec.used)
   const target = clamp(spec.target)
@@ -68,8 +84,9 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
           <path
             className="fig-cr-outer-arc"
             d={fullRing(OUTER_RADIUS)}
-            strokeDasharray={outerCircumference}
-            style={{ strokeDashoffset: outerCircumference * (1 - (phase >= 4 ? outer : 0)) }}
+            pathLength={1}
+            strokeDasharray="1 1"
+            style={{ strokeDashoffset: 1 - (phase >= 4 ? outer : 0) }}
           />
         </svg>
 
@@ -85,14 +102,37 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
       <div className="fig-cr-core">
         <svg className="fig-cr-inner" viewBox="0 0 100 100" aria-hidden="true">
           <circle className="fig-cr-track" cx={50} cy={50} r={INNER.used} />
+          {Array.from({ length: FACE.count }, (_, hour) => {
+            const angle = (hour / FACE.count) * 360
+            const long = hour % 3 === 0
+            const outerEnd = ringPoint(angle, FACE.radius, FACE.radius)
+            const innerEnd = ringPoint(
+              angle,
+              FACE.radius - (long ? FACE.major : FACE.minor),
+              FACE.radius - (long ? FACE.major : FACE.minor),
+            )
+            return (
+              <line
+                className="fig-cr-hour"
+                key={hour}
+                data-long={long ? 'true' : 'false'}
+                x1={innerEnd.x}
+                y1={innerEnd.y}
+                x2={outerEnd.x}
+                y2={outerEnd.y}
+                style={{ opacity: phase >= 1 ? 1 : 0 }}
+              />
+            )
+          })}
           <circle
             className="fig-cr-ghost"
             cx={50}
             cy={50}
             r={INNER.ghost}
             transform="rotate(-90 50 50)"
-            strokeDasharray={ghostCircumference}
-            style={{ strokeDashoffset: ghostCircumference * (1 - (phase >= 1 ? target : 0)) }}
+            pathLength={1}
+            strokeDasharray="1 1"
+            style={{ strokeDashoffset: 1 - (phase >= 1 ? target : 0) }}
           />
           <line
             className="fig-cr-tick"
@@ -108,8 +148,9 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
             cy={50}
             r={INNER.used}
             transform="rotate(-90 50 50)"
-            strokeDasharray={usedCircumference}
-            style={{ strokeDashoffset: usedCircumference * (1 - (phase >= 2 ? used : 0)) }}
+            pathLength={1}
+            strokeDasharray="1 1"
+            style={{ strokeDashoffset: 1 - (phase >= 2 ? used : 0) }}
           />
         </svg>
 

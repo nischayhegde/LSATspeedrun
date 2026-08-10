@@ -45,8 +45,38 @@ const ARC = { radiusX: 41, radiusY: 15, apexY: 21 } as const
 const TIERS = 3
 const TIER_STEP = 9
 
-/** Where the survivor ends up: the left edge of the question-card outline, at its mid-height. */
-const DOCK = { x: 24, y: 36 } as const
+/**
+ * Where the survivor ends up: a tab against the left edge of the question card.
+ *
+ * It used to straddle the edge, half in and half out, which is what the word
+ * "docks" suggested and not what it looked like — a card lying across a border
+ * reads as a card that missed. Outside the edge, clear of it by a hair, it
+ * reads as attached.
+ */
+const DOCK = { x: 8.5, y: 30 } as const
+
+/**
+ * The card's suggested contents: a stem, a gap, and a list of choices.
+ *
+ * This box is on screen for twenty of the slide's twenty-two seconds and it is
+ * the thing the docked method is docked *to*, so it has to read as a question.
+ * Three evenly spaced rules in a tall frame read as a placeholder.
+ *
+ * One rule takes the marker. The narrative asks for a live highlight drag on
+ * the stimulus "as if the presenter did it", which is the beat that turns the
+ * card from a diagram of a question into a question somebody is working on —
+ * and it is the only place on the slide where the method being handed over is
+ * shown actually being *used*.
+ */
+const CARD_RULES: ReadonlyArray<{ width: number; mark?: number }> = [
+  { width: 92 },
+  { width: 84, mark: 58 },
+  { width: 56 },
+  { width: 0 },
+  { width: 62 },
+  { width: 48 },
+  { width: 68 },
+]
 
 export function MethodFan({ spec, active, reduced }: FigureBody<MethodFanFigure>) {
   const phase = usePhase(active, reduced, MARKS)
@@ -63,9 +93,23 @@ export function MethodFan({ spec, active, reduced }: FigureBody<MethodFanFigure>
       {/* The question card the survivor docks against. Outline only — the card
           itself is slide 6's job, and this slide is about what arrives beside it. */}
       <div className="fig-mf-question" style={{ opacity: phase >= 4 ? 1 : 0 }}>
-        <span className="fig-mf-question-rule" />
-        <span className="fig-mf-question-rule" />
-        <span className="fig-mf-question-rule" />
+        {CARD_RULES.map((rule, index) => (
+          rule.width === 0
+            ? <span className="fig-mf-question-gap" key={index} />
+            : (
+              <span className="fig-mf-question-rule" key={index} style={{ width: `${rule.width}%` }}>
+                {rule.mark === undefined ? null : (
+                  // The drag itself. It runs left to right over the stem after
+                  // the method has docked, at a hand's speed rather than an
+                  // interface's, because the point is that a person did it.
+                  <span
+                    className="fig-mf-mark"
+                    style={{ width: phase >= 5 ? `${rule.mark}%` : '0%' }}
+                  />
+                )}
+              </span>
+            )
+        ))}
       </div>
 
       {methods.map((method, index) => {
@@ -105,19 +149,27 @@ export function MethodFan({ spec, active, reduced }: FigureBody<MethodFanFigure>
         style={{ left: phase >= 2 ? '108%' : '-8%', opacity: phase >= 2 && phase < 3 ? 0.38 : 0 }}
       />
 
+      {/* The measurement, beside the question rather than under it. This is the
+          half of the slide the fourth fragment claims nobody else does, and
+          under the card it was a pair of hairlines in the gutter. The two rows
+          are named, because "71% against 58%" is only an argument once the
+          room knows which one had the method. */}
       <div className="fig-mf-lift" style={{ opacity: phase >= 5 ? 1 : 0 }}>
         {[
-          { key: 'prompted', value: spec.lift.prompted },
-          { key: 'baseline', value: spec.lift.baseline },
+          { key: 'prompted', name: 'with the method', value: spec.lift.prompted },
+          { key: 'baseline', name: 'their own attempts without it', value: spec.lift.baseline },
         ].map((row, index) => (
           <div className="fig-mf-lift-row" key={row.key} data-role={row.key} style={vars({ '--fig-delay': `${index * 180}ms` })}>
+            <p className="fig-mf-lift-head">
+              <b className="fig-mf-lift-value">{formatLift(row.value)}</b>
+              <span className="fig-mf-lift-name">{row.name}</span>
+            </p>
             <span className="fig-mf-lift-track">
               <span
                 className="fig-mf-lift-run"
                 style={{ width: phase >= 5 ? pct(Math.max(row.value, 0) / liftScale) : '0%' }}
               />
             </span>
-            <span className="fig-mf-lift-value">{formatLift(row.value)}</span>
           </div>
         ))}
         <p className="fig-mf-lift-note">{spec.lift.note}</p>

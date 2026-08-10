@@ -1,0 +1,179 @@
+/* ================================================================
+   currency-lift — slide 16, what a virtual currency moves
+   ================================================================
+   Scoped to this figure and imported by `currency-lift.tsx` rather than
+   added to `styles/figures.css`, so the shared sheet stays owned by the
+   set it already describes.
+
+   It obeys the same three house rules as every figure in that sheet:
+   no colour is named — everything is `currentColor`, `--on-field` or
+   `--on-field-dim`, so the figure inverts with the deck's field; the
+   field itself is never painted, and the one tinted plate here is
+   `currentColor` at low opacity; and nothing is sized in pixels, so the
+   whole thing tracks the deck's root size onto whatever the room's
+   projector turns out to be.
+
+   Reduced motion needs nothing here. `.fig[data-reduced='true'] *` in
+   `figures.css` already kills every transition inside any figure, and
+   the component seeds itself at its last phase, so the finished frame
+   is reachable with animation disabled.
+   ================================================================ */
+
+/* Two classes deep on purpose. `.fig` sets `align-items: center` and is
+   defined in a sheet that loads after this one, so a single-class rule
+   here would lose the tie on source order. */
+.fig.fig-currency-lift {
+  align-items: stretch;
+}
+
+.fig-cl {
+  /* The label gutter is sized from the longest venue line rather than
+     guessed, and the multiple gutter from `3.7×` in the display face. */
+  --fig-cl-label: clamp(9rem, 15vw, 15rem);
+  --fig-cl-mult: clamp(3rem, 4.6vw, 4.6rem);
+  --fig-cl-row-gap: clamp(.55rem, 1.5vh, 1.15rem);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(.7rem, 1.9vh, 1.5rem);
+}
+
+.fig-cl-lede {
+  margin: 0;
+  font-size: clamp(.92rem, 1.12vw, 1.14rem);
+  line-height: 1.25;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-cl-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fig-cl-row-gap);
+}
+
+.fig-cl-row {
+  display: grid;
+  grid-template-columns: var(--fig-cl-label) 1fr var(--fig-cl-mult);
+  align-items: center;
+  column-gap: clamp(.7rem, 1.4vw, 1.4rem);
+}
+
+.fig-cl-where {
+  display: flex;
+  flex-direction: column;
+  gap: .1em;
+  line-height: 1.15;
+  transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+
+.fig-cl-where b {
+  font-weight: 600;
+  font-size: clamp(.92rem, 1.1vw, 1.12rem);
+}
+
+/* The three universities are the reason this is a multi-case result rather
+   than one classroom, so they are on the slide — but one step down, because
+   the argument is the overshoot and not the address. */
+.fig-cl-where span {
+  font-size: clamp(.74rem, .88vw, .9rem);
+  color: var(--on-field-dim);
+}
+
+.fig-cl-track {
+  position: relative;
+  height: clamp(.85rem, 2vh, 1.5rem);
+}
+
+.fig-cl-run {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: currentColor;
+  /* Slower than the fade it arrives with: the bar has to be watched crossing
+     the gate, which is the only moment in the figure that carries the claim. */
+  transition: width 1150ms var(--ease-out);
+}
+
+/* The shared control. One dashed rule at the same x on every row, bled past
+   the track on both sides by half the row gap so the three read as a single
+   continuous line rather than as three ticks. */
+.fig-cl-gate {
+  position: absolute;
+  top: calc(var(--fig-cl-row-gap) / -2);
+  bottom: calc(var(--fig-cl-row-gap) / -2);
+  width: 0;
+  border-left: 1px dashed currentColor;
+  opacity: .62;
+}
+
+.fig-cl-gate span {
+  position: absolute;
+  bottom: calc(100% + .25em);
+  left: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-pixel);
+  font-size: clamp(.72rem, .86vw, .88rem);
+  letter-spacing: .03em;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+}
+
+.fig-cl-mult {
+  justify-self: end;
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 36;
+  font-weight: 600;
+  font-size: clamp(1.2rem, 1.9vw, 1.9rem);
+  line-height: 1;
+  white-space: nowrap;
+  transition: opacity var(--mo-3) var(--ease-out) 420ms;
+}
+
+/* ---- the two nulls ---------------------------------------------------- */
+
+.fig-cl-null {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: clamp(.7rem, 1.8vw, 1.8rem);
+  padding-top: clamp(.5rem, 1.4vh, 1rem);
+  border-top: 1px solid currentColor;
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+.fig-cl-null-label {
+  font-family: var(--font-pixel);
+  font-size: clamp(.76rem, .9vw, .92rem);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+}
+
+.fig-cl-null ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(.9rem, 2.2vw, 2.2rem);
+}
+
+.fig-cl-null li {
+  display: flex;
+  align-items: center;
+  gap: .55em;
+  font-size: clamp(.88rem, 1.05vw, 1.06rem);
+}
+
+/* A flat stub where the other half of the figure has a bar. The null is drawn
+   at the control length and stops there, which is what the study found. */
+.fig-cl-null li i {
+  width: clamp(1.4rem, 2.6vw, 2.6rem);
+  height: 0;
+  border-top: 2px solid currentColor;
+  opacity: .55;
+}

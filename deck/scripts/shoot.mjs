@@ -558,10 +558,13 @@ async function captureSlide(context, { id, index }, options) {
 /** The grid overview, which has no URL of its own — only the `G` key opens it. */
 async function captureGrid(context, options) {
   const page = await context.newPage()
-  const result = { id: '__grid', index: -1, file: null, url: `${options.base}/`, mounted: null, consoleErrors: [], pageErrors: [], failedRequests: [], memory: null, blank: null, stats: null, ms: 0, notes: ['grid overview, opened with the G key'] }
+  // `?start=0` because this is the one capture that opens the deck without a
+  // `#/<slide>` fragment, and a bare URL is what raises the start card.
+  const url = `${options.base}/?start=0`
+  const result = { id: '__grid', index: -1, file: null, url, mounted: null, consoleErrors: [], pageErrors: [], failedRequests: [], memory: null, blank: null, stats: null, ms: 0, notes: ['grid overview, opened with the G key'] }
   const started = Date.now()
   try {
-    await page.goto(`${options.base}/`, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
     result.mounted = await page.waitForSelector('.deck-layer.is-live', { timeout: 15000 }).then(() => true).catch(() => false)
     await page.keyboard.press('g')
     await page.waitForSelector('.grid-overview', { timeout: 5000 })
@@ -638,7 +641,7 @@ try {
   })
 
   const probe = await context.newPage()
-  await probe.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await probe.goto(`${BASE}/?start=0`, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await probe.waitForSelector('.deck-layer.is-live', { timeout: 15000 }).catch(() => {})
   discovery = await discoverSlides(probe)
   await probe.close()

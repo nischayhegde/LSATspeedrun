@@ -9,10 +9,20 @@ import { DRAW_PX, pct, ringPoint, usePhase, vars, type FigureBody } from './kit'
  * labels plus a centre have to be readable from the back of a room without a
  * single collision, on frames from 4:3 to 21:9. Three decisions carry it.
  *
- *   1. The rings are ellipses in percentages of the frame, not circles. A circle
- *      on a 21:9 slide leaves two enormous empty side margins and crushes the
- *      labels at top and bottom into each other; an ellipse spends the width it
- *      is given, which is exactly where label text wants to go.
+ *   1. The rings are drawn inside a square, and are therefore actually round.
+ *      They used to be ellipses in percentages of the frame, on the reasoning
+ *      that an ellipse spends the width it is given — but the figure's row is
+ *      1674 by 507, so 36% of each axis is a radius of 602 across and 182 down,
+ *      and what that drew was not a ring. It was a flying saucer, with every
+ *      label on the left and right sitting *on* the curve because the curve was
+ *      travelling almost horizontally where they were.
+ *
+ *      The square is `.fig-rd` itself — as tall as the row, centred by the flex
+ *      parent every figure already has — which leaves about 580 pixels of clear
+ *      margin on each side. That margin is not waste; it is where eleven labels
+ *      go. Radiating outward from a compact ring into open field is a better use
+ *      of the same width than stretching the ring across it and having the
+ *      labels fight the line.
  *   2. Labels are placed by the *direction* of their node, not by a fixed offset:
  *      a node on the right anchors its text to the left and runs outward, one at
  *      the top centres its text above itself. That is what stops a long label
@@ -20,10 +30,9 @@ import { DRAW_PX, pct, ringPoint, usePhase, vars, type FigureBody } from './kit'
  *   3. The two rings are pushed far apart and angularly offset from each other, so
  *      an inner label runs into open space rather than into an outer node.
  *
- * The nodes are DOM elements rather than SVG circles, because a circle in a
- * stretched viewBox is an egg. Only the hairlines are SVG, and they carry
- * `vector-effect="non-scaling-stroke"` so `weight` reads as a true thickness
- * instead of an artefact of the frame's aspect.
+ * The nodes are DOM elements rather than SVG circles, so their labels are real
+ * text in the document rather than `<text>` that has to be positioned by hand.
+ * Only the hairlines are SVG.
  */
 
 /** Cumulative milliseconds: centre, assembly, weakest link, evidence tags. */
@@ -32,11 +41,14 @@ const MARKS = [40, 560, 1800, 2400] as const
 /** The narrative's rhythm for the assembly: about 80ms a node, so eleven land in roughly a second. */
 const NODE_STAGGER_MS = 80
 
-/** Ring radii in percent of the frame. The outer ring gets the room; the gap between them is label space. */
+/** Ring radii in percent of the square plot. The gap between them is label space. */
 const RINGS = {
-  1: { radiusX: 15, radiusY: 17, offsetDeg: 45 },
-  2: { radiusX: 36, radiusY: 36, offsetDeg: 0 },
+  1: { radiusX: 19, radiusY: 19, offsetDeg: 45 },
+  2: { radiusX: 41, radiusY: 41, offsetDeg: 0 },
 } as const
+
+/** The clear space the Speedrun Index occupies. Wires start on its edge. */
+const HUB = { radiusX: 9, radiusY: 9 } as const
 
 export function Radial({ spec, active, reduced }: FigureBody<RadialFigure>) {
   const phase = usePhase(active, reduced, MARKS)
@@ -55,8 +67,12 @@ export function Radial({ spec, active, reduced }: FigureBody<RadialFigure>) {
       const index = perRing[node.ring]++
       const angle = ring.offsetDeg + (index * 360) / total
       const at = ringPoint(angle, ring.radiusX, ring.radiusY)
+      // Wires leave the hub's edge rather than the exact centre, so eleven of
+      // them do not converge on top of the index they feed. The hub is an
+      // ellipse for the same reason the rings are.
+      const hub = ringPoint(angle, HUB.radiusX, HUB.radiusY)
       const radians = ((angle - 90) * Math.PI) / 180
-      return { node, angle, at, ux: Math.cos(radians), uy: Math.sin(radians) }
+      return { node, angle, at, hub, ux: Math.cos(radians), uy: Math.sin(radians) }
     })
     .sort((a, b) => (a.node.ring - b.node.ring) || (a.angle - b.angle))
 
@@ -64,7 +80,7 @@ export function Radial({ spec, active, reduced }: FigureBody<RadialFigure>) {
 
   return (
     <div className="fig-rd" data-forming={forming ? 'true' : 'false'}>
-      <svg className="fig-rd-wires" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <svg className="fig-rd-wires" viewBox="0 0 100 100" aria-hidden="true">
         {([1, 2] as const).map((ring) => (
           <ellipse
             className="fig-rd-guide"
@@ -89,7 +105,14 @@ export function Radial({ spec, active, reduced }: FigureBody<RadialFigure>) {
             key={entry.node.label}
             data-ring={entry.node.ring}
             data-highlight={entry.node.highlight ? 'true' : 'false'}
-            d={`M 50 50 L ${entry.at.x.toFixed(2)} ${entry.at.y.toFixed(2)}`}
+            d={`M ${entry.hub.x.toFixed(2)} ${entry.hub.y.toFixed(2)} L ${entry.at.x.toFixed(2)} ${entry.at.y.toFixed(2)}`}
+            // The comment below promised screen-space widths and the attribute
+            // that delivers them was never on the element. In a viewBox
+            // stretched nine to one horizontally and under three vertically, a
+            // 3.3-unit stroke drew at nine pixels across and twenty-nine down —
+            // the diagram read as a ceiling fan, and the weights it encodes
+            // were unreadable because the aspect dominated them.
+            vectorEffect="non-scaling-stroke"
             // Screen pixels, because the stroke is non-scaling. The previous
             // values were user units carried over from before the vector effect
             // went on, which made every wire a third of a pixel wide — the
