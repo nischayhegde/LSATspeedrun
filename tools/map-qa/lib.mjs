@@ -45,21 +45,36 @@ export function save(file, data) {
  * The synthetic frame clock.
  *
  * The scene's animate loop derives its delta from the timestamp rAF hands it,
- * and that is its only source of nondeterminism: everything else — traffic,
- * crowd, transports — is a pure function of that delta. Replacing rAF with a
- * queue that only advances when asked therefore makes a whole run reproducible.
+ * and that is its only source of nondeterminism: there is no `Math.random` in
+ * any of the map modules, so given the same sequence of deltas a district is a
+ * pure function of the code. Replacing rAF with a queue that only advances when
+ * asked therefore makes a whole run reproducible.
  *
- * Installed *after* the scene is up rather than at document start, deliberately.
- * Overriding rAF before the app boots risks starving anything in React or the
- * app shell that waits on a frame to make progress. Installing late means the
- * loop has one real frame in flight; that frame re-registers through the
- * override and the loop is synthetic from then on, which `handover` waits for.
+ * It has to be in place *before the loop's first frame*. Evaluating it once the
+ * scene is up is too late: that leaves an unknown number of real frames between
+ * the scene becoming ready and the harness taking over, each advancing the
+ * world by up to the delta clamp, and a district of seven walkers is chaotic
+ * enough that this is not a small error. On identical code it moved The
+ * Circuit's walkers-in-any-solid between .274 and .430 and the Old Quarter's
+ * between .022 and .068 — larger than any effect this harness is used to judge.
+ *
+ * Capturing from document start instead is too early: the app never finishes
+ * building the district, because something on the way to it wants a real frame.
+ *
+ * So capture is armed by the scene itself. `__mapScene` is an accessor here,
+ * and the scene publishing itself is the trigger — which happens three lines
+ * above the `requestAnimationFrame(animate)` that starts the loop, so the loop
+ * is captured from its own first frame with nothing real in front of it, while
+ * everything before that point still gets ordinary frames.
  */
-const INSTALL_CLOCK = () => {
-  if (window.__clock) return
+const CLOCK_SCRIPT = () => {
   const realRequest = window.requestAnimationFrame.bind(window)
   const realCancel = window.cancelAnimationFrame.bind(window)
-  let nextId = 1
+  // Captured handles live in their own numeric range so that cancelling one is
+  // never confused with cancelling a real frame the page still owns.
+  const CAPTURED = 1e9
+  let nextId = CAPTURED
+  let capturing = false
   let queue = new Map()
   const clock = {
     now: performance.now(),
@@ -84,34 +99,72 @@ const INSTALL_CLOCK = () => {
       }
     },
     pending: () => queue.size,
-    /** Hands the queued frames back to the browser and steps out of the way. */
-    detach() {
-      window.requestAnimationFrame = realRequest
-      window.cancelAnimationFrame = realCancel
+    capturing: () => capturing,
+    /**
+     * Gives the page real frames back, for as long as it needs to build a
+     * district. Re-arms on its own when the new scene publishes itself.
+     */
+    release() {
+      capturing = false
       for (const callback of queue.values()) realRequest(callback)
       queue = new Map()
-      window.__clock = undefined
+    },
+    detach() {
+      clock.release()
+      window.requestAnimationFrame = realRequest
+      window.cancelAnimationFrame = realCancel
     },
   }
   window.requestAnimationFrame = (callback) => {
+    if (!capturing) return realRequest(callback)
     const id = nextId += 1
     queue.set(id, callback)
     return id
   }
-  window.cancelAnimationFrame = (id) => { queue.delete(id) }
+  window.cancelAnimationFrame = (id) => {
+    if (id >= CAPTURED) queue.delete(id)
+    else realCancel(id)
+  }
+
+  let published
+  Object.defineProperty(window, '__mapScene', {
+    configurable: true,
+    get: () => published,
+    set: (value) => {
+      published = value
+      if (!value || capturing) return
+      capturing = true
+      // Behind the scene's own `previousFrame`, so the loop's first delta
+      // clamps to zero and every delta after it is exactly one step. Rebasing
+      // to the current instant instead would leave the first frame carrying
+      // whatever sub-millisecond gap the assignment happened to take.
+      clock.now = performance.now() - 10000
+    },
+  })
   window.__clock = clock
 }
 
-async function installClock(page) {
-  await page.evaluate(INSTALL_CLOCK)
-  // Wait for the in-flight real frame to re-register through the override. A
-  // measurement against a loop that never handed over would tick 900 times and
-  // report a frozen scene as a clean one, so this is a hard failure.
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    if (await page.evaluate(() => (window.__clock?.pending() ?? 0) > 0)) return
-    await page.waitForTimeout(50)
+/**
+ * Confirms the loop is actually parked in the queue.
+ *
+ * A run against a scene whose loop never reached the clock would tick its way
+ * through 900 frames of a frozen world and report it as clean, which is the one
+ * failure this harness must never fail quietly at. The retry is for the case
+ * where the surface observer, not the build, is what starts the loop; no real
+ * frame can slip through while waiting, because capture is already armed.
+ */
+async function requireClock(page) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const state = await page.evaluate(() => ({
+      present: Boolean(window.__clock),
+      capturing: window.__clock?.capturing() ?? false,
+      pending: window.__clock?.pending() ?? 0,
+    }))
+    if (!state.present) throw new Error('synthetic clock missing: the init script did not run on this document')
+    if (state.capturing && state.pending > 0) return state
+    await page.waitForTimeout(100)
   }
-  throw new Error('animate loop never handed over to the synthetic clock')
+  throw new Error('no frame queued: the animate loop never reached the synthetic clock')
 }
 
 async function detachClock(page) {
@@ -134,6 +187,7 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
     args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
   })
   const page = await browser.newPage({ viewport })
+  await page.addInitScript(CLOCK_SCRIPT)
   const errors = []
   page.on('pageerror', (error) => errors.push(String(error.message).slice(0, 200)))
   page.on('console', (message) => {
@@ -145,8 +199,10 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
   await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 })
   await page.evaluate(() => localStorage.setItem('lsat-tour-v6', 'done')).catch(() => {})
 
+  // Interval polling, not the default. The default polls on rAF, which this
+  // document no longer services, so the wait would never resolve.
   await page.goto(`${BASE}/map`, { waitUntil: 'domcontentloaded' })
-  await page.waitForFunction(() => Boolean(window.__mapScene), { timeout: 120000 })
+  await page.waitForFunction(() => Boolean(window.__mapScene), { timeout: 120000, polling: 100 })
   await dismissOverlays(page)
   return { browser, page, errors }
 }
@@ -154,34 +210,45 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
 /**
  * Puts the scene on one district and returns it under the synthetic clock.
  *
- * `settle` is real time, before the handover: the crowd and traffic want a
- * moment to reach a steady state, and doing that on the wall clock rather than
- * on ticks keeps the tick budget for the measurement itself. It is a fixed
- * duration so that two arms see the same amount of it.
+ * The clock goes on the moment the scene exists, and the district is then
+ * settled in ticks rather than in wall time. Settling on the wall clock first
+ * is the obvious way to write this and it is not reproducible: how many real
+ * frames fit in a fixed sleep depends on machine load, each of those frames
+ * advances the traffic and the crowd, and the measurement then starts from a
+ * different world every run. Measured on the Old Quarter, that alone moved
+ * walkers-in-a-solid between .0347 and .0220 on identical code — larger than
+ * most of the effects this harness is used to judge.
+ *
+ * `waitForFunction` is given an interval rather than its default, which polls
+ * on rAF: the override would starve that poll and the wait would hang.
  */
-export async function region(page, label, { key, settle = 1600, warmup = 90 } = {}) {
-  if (await page.evaluate(() => Boolean(window.__clock))) await detachClock(page)
-
+export async function region(page, label, { key, warmup = 600 } = {}) {
   const current = await page.evaluate(() => window.__mapScene?.region)
   if (current !== key) {
+    // Real frames while the next district is built; the accessor re-arms the
+    // capture the moment that district publishes itself.
+    await page.evaluate(() => window.__clock?.release())
     const toggle = page.locator('.uw-atlas-toggle')
     if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') {
       await toggle.click()
       await page.waitForTimeout(250)
     }
     await page.locator('.uw-arc-navigation button', { hasText: label }).first().click()
-    await page.waitForFunction((want) => window.__mapScene?.region === want, key, { timeout: 120000 })
+    await page.waitForFunction((want) => window.__mapScene?.region === want, key, {
+      timeout: 120000,
+      polling: 50,
+    })
     if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') {
       await toggle.click()
     }
   }
   await dismissOverlays(page)
-  await page.waitForTimeout(settle)
-  await installClock(page)
-  // A fixed number of ticks before anything is counted, so a district is
-  // measured in motion rather than in the pose it was built in.
+  await requireClock(page)
+  // Ticked, not slept. Ten virtual seconds is enough for the traffic to leave
+  // its start positions and the crowd to reach its steady population, and it is
+  // the same ten seconds in every arm.
   if (warmup) await page.evaluate((count) => window.__clock.tick(count), warmup)
   return page
 }
 
-export { installClock, detachClock }
+export { requireClock, detachClock }

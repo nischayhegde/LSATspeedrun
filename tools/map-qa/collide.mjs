@@ -431,6 +431,9 @@ async function measure(settings) {
     moverDepthMax: 0,
     pedestrianHits: 0,
     pedestrianDepthMax: 0,
+    bodyInVehicleHits: 0,
+    bodyInVehicleFrames: 0,
+    bodyInVehicleDepthMax: 0,
     walkerStaticHits: 0,
     walkerStaticFrames: 0,
     walkerStaticDepthMax: 0,
@@ -453,6 +456,7 @@ async function measure(settings) {
     walkers: {},
     facades: {},
     offside: {},
+    inVehicle: {},
   }
   const note = (bucket, label, depth, x, z, span) => {
     const key = `${label}@${Math.round(x)},${Math.round(z)}`
@@ -603,6 +607,7 @@ async function measure(settings) {
     let walkerThisFrame = 0
     let facadeThisFrame = 0
     let wrongSideThisFrame = 0
+    let bodyInVehicleThisFrame = 0
     for (let w = 0; w < walkerPoints.length; w += 2) {
       state.walkerSamples += 1
       const x = walkerPoints[w]
@@ -661,6 +666,29 @@ async function measure(settings) {
       const object = mover.object
       const scale = object.scale.x
       const radius = Math.max(mover.hx, mover.hz) * scale
+      /*
+       * Two different questions, and only the second one is a safety gate.
+       *
+       * `pedestrianHits` is a *contact*: a circumscribed radius plus a
+       * shoulder, so a walker passing close along the flank of a stationary
+       * tram counts. It is useful for attribution and useless as a gate,
+       * because it moves whenever the crowd's density does.
+       *
+       * `bodyInVehicle` is containment: the walker's shoulder disc against the
+       * hull's own oriented rectangle, no margin. That is the metric the
+       * untimed-crossing fix drove to zero everywhere, and the one this session
+       * must not regress. It is a strict subset of the contact count, so the
+       * two can be read side by side.
+       */
+      const angle = object.rotation.y
+      const cos = Math.cos(angle)
+      const sin = Math.sin(angle)
+      const ox = mover.cx * scale
+      const oz = mover.cz * scale
+      const hullX = object.position.x + ox * cos + oz * sin
+      const hullZ = object.position.z - ox * sin + oz * cos
+      const hullHalfX = Math.max(0, mover.hx * scale - skin)
+      const hullHalfZ = Math.max(0, mover.hz * scale - skin)
       for (let w = 0; w < walkerPoints.length; w += 2) {
         const dx = walkerPoints[w] - object.position.x
         const dz = walkerPoints[w + 1] - object.position.z
@@ -670,6 +698,19 @@ async function measure(settings) {
           state.pedestrianHits += 1
           if (overlap > state.pedestrianDepthMax) state.pedestrianDepthMax = overlap
           note('sites', 'pedestrian', overlap, object.position.x, object.position.z)
+        }
+        const hullDx = walkerPoints[w] - hullX
+        const hullDz = walkerPoints[w + 1] - hullZ
+        const localX = hullDx * cos - hullDz * sin
+        const localZ = hullDx * sin + hullDz * cos
+        const clampedX = Math.min(Math.max(localX, -hullHalfX), hullHalfX)
+        const clampedZ = Math.min(Math.max(localZ, -hullHalfZ), hullHalfZ)
+        const inside = walkerRadius - Math.hypot(localX - clampedX, localZ - clampedZ)
+        if (inside > 0) {
+          state.bodyInVehicleHits += 1
+          bodyInVehicleThisFrame += 1
+          if (inside > state.bodyInVehicleDepthMax) state.bodyInVehicleDepthMax = inside
+          note('inVehicle', mover.kind, inside, object.position.x, object.position.z)
         }
       }
       for (let j = i + 1; j < movers.length; j += 1) {
@@ -687,6 +728,7 @@ async function measure(settings) {
     if (rideOverThisFrame) state.rideOverFrames += 1
     if (moverThisFrame) state.moverFrames += 1
     if (wrongSideThisFrame) state.wrongSideFrames += 1
+    if (bodyInVehicleThisFrame) state.bodyInVehicleFrames += 1
   }
 
   // Watch for a body that materialises inside the view: the brief's other
@@ -746,9 +788,19 @@ async function measure(settings) {
     moverWorstDepth: +state.moverDepthMax.toFixed(3),
     pedestrianHits: state.pedestrianHits,
     pedestrianWorstDepth: +state.pedestrianDepthMax.toFixed(3),
+    // Containment rather than contact: the safety gate. Zero everywhere is the
+    // state the untimed-crossing fix reached and the state to hold.
+    bodyInVehicleFrames: state.bodyInVehicleFrames,
+    bodyInVehicleHits: state.bodyInVehicleHits,
+    bodyInVehicleWorstDepth: +state.bodyInVehicleDepthMax.toFixed(3),
+    worstInVehicle: top(state.inVehicle, 8),
     // People inside buildings. `walkerSamples` is the denominator: without it a
     // count of zero cannot be told apart from a district with nobody in it.
     walkerSamples: state.walkerSamples,
+    // The body the two walker tests use, reported rather than assumed: it is
+    // read off a live rig, and a rig that has not finished loading gives a
+    // different one, which would silently rescale every share below.
+    walkerBody: { radius: +walkerRadius.toFixed(4), low: +walkerLow.toFixed(4), high: +walkerHigh.toFixed(4) },
     walkerStaticFrames: state.walkerStaticFrames,
     walkerStaticPerFrame: +(state.walkerStaticHits / state.frames).toFixed(3),
     walkerStaticShare: +(state.walkerStaticHits / Math.max(1, state.walkerSamples)).toFixed(4),
@@ -843,6 +895,13 @@ for (const key of keys) {
     frames: report[key].wrongSideFrames,
     perFrame: report[key].wrongSidePerFrame,
     worst: report[key].wrongSideWorst,
+  }))
+  console.log('   inVehicle:', JSON.stringify({
+    contacts: report[key].pedestrianHits,
+    bodyInsideFrames: report[key].bodyInVehicleFrames,
+    bodyInsideHits: report[key].bodyInVehicleHits,
+    worstDepth: report[key].bodyInVehicleWorstDepth,
+    where: report[key].worstInVehicle.slice(0, 4),
   }))
   console.log('   solid:', JSON.stringify(report[key].worstStaticSites.slice(0, 10)))
   console.log('   walkerSites:', JSON.stringify(report[key].worstWalkerSites.slice(0, 10)))
