@@ -5,9 +5,19 @@ import math
 import re
 from collections import defaultdict
 
+from flask import current_app
 from sqlalchemy.orm import joinedload
 
-from .models import Attempt, Question, SessionItem
+from .enforcement import (
+    DECLINED_STATUSES,
+    GATED_STATUSES,
+    MASTERY_MIN_ACCURACY,
+    MASTERY_MIN_SATISFIED,
+    STATUS_SATISFIED,
+    STATUS_SKIPPED,
+    STATUS_STOOD_DOWN,
+)
+from .models import Attempt, Question, SessionItem, StudySession, utcnow
 from .scoring import PRIOR_STRENGTH, shrink_toward_prior
 
 
@@ -375,6 +385,18 @@ CONTROL_PROBABILITY = 0.25
 
 # The prompt arm: a named technique, and the only arm enforcement ever gates.
 VARIANT_PROMPT = "prompt"
+# The same offer, made mandatory. A named technique is suggested exactly as it
+# is on the prompt arm, and the gate refuses the answer until the operations
+# are on the record — there is no "Skip this one" on this arm.
+#
+# Deliberately a sub-arm of the prompt side rather than a fourth thing beside
+# control. `assign_strategy_trial` still draws prompt-versus-control at one
+# fixed threshold, so the propensity of *being offered a technique at all* is
+# still `1 - CONTROL_PROBABILITY` on every question in every stratum, and the
+# contrast the dashboard ranks on is identified by exactly the argument it was
+# identified by before. Which of the two prompt sub-arms a question lands on is
+# a second, separate draw made in `plan_forced_arms`.
+VARIANT_PROMPT_REQUIRED = "prompt_required"
 # The control arm as it is drawn today — a card appears on the question and
 # deliberately names no technique.
 VARIANT_CONTROL_VISIBLE = "control_visible"
@@ -392,6 +414,15 @@ VARIANT_CONTROL_HIDDEN = "control"
 # the prompt arm apart. Pooling them is a choice made here, in the open, rather
 # than an accident of both having been called "control".
 CONTROL_VARIANTS = frozenset({VARIANT_CONTROL_HIDDEN, VARIANT_CONTROL_VISIBLE})
+
+# Both prompt labels are the same *offer* — a named technique appeared — and
+# both therefore belong on the treated side of the contrast that ranks
+# approaches. They differ in whether the offer could be declined, which is a
+# difference in the strength of the treatment rather than in who received it,
+# and the labels are kept apart on the row so that difference stays
+# recoverable. Everything that asks "was a technique offered here" reads this
+# set; only `plan_forced_arms` and the gate read the two labels apart.
+PROMPT_VARIANTS = frozenset({VARIANT_PROMPT, VARIANT_PROMPT_REQUIRED})
 
 
 def assign_strategy_trial(
@@ -472,7 +503,7 @@ def assign_strategy_trial(
         Attempt.query.filter(
             Attempt.user_id == user_id,
             Attempt.strategy_key.in_(candidates),
-            Attempt.strategy_variant == VARIANT_PROMPT,
+            Attempt.strategy_variant.in_(PROMPT_VARIANTS),
         ).all()
     )
     grouped: dict[str, list[Attempt]] = defaultdict(list)
@@ -522,6 +553,257 @@ def assign_strategy_trial(
     # to reconstruct it from the hashing scheme after the fact.
     propensity = CONTROL_PROBABILITY if variant in CONTROL_VARIANTS else 1 - CONTROL_PROBABILITY
     return {"key": key, "variant": variant, "propensity": propensity, "candidates_n": len(candidates)}
+
+
+# ---------------------------------------------------------------------------
+# Mandatory approaches
+#
+# Two decisions, and the whole design is in keeping them apart.
+#
+# WHICH STRATA to spend a mandatory question on is chosen to buy the most
+# information: the approach-by-question-type cells where the current estimate
+# is weakest. That is a legitimate adaptive-design choice and it is where
+# "enrich the strategy data" is actually satisfied.
+#
+# WHICH QUESTION inside those strata is made mandatory is a uniform draw. This
+# is the part that cannot be optimised without destroying the thing being
+# measured: if the mandatory questions were picked *because* of what they are,
+# assignment would correlate with question difficulty and the comparison would
+# stop supporting a causal reading — more data, worse recommendations, and a
+# dashboard that looked better while getting worse.
+#
+# Three properties hold the identification together.
+#
+# 1. Forcing never touches the prompt-versus-control draw. That draw is still
+#    the single fixed threshold in `assign_strategy_trial`, so the propensity
+#    of being offered a technique is `1 - CONTROL_PROBABILITY` on every
+#    question in every stratum, and the ranking in `_section_reading` rests on
+#    exactly the argument it rested on yesterday. What changes is the content
+#    of the offer on some of the treated questions, not who is treated.
+# 2. Inside the pool the draw is uniform without replacement, so every pool
+#    member shares one known inclusion probability, `quota / len(pool)`. Both
+#    winners and losers carry it, which is what makes the losers the honest
+#    comparison group for the winners.
+# 3. Pool membership is decided from the student's history and the question's
+#    stratum — both fixed before this question is served — and never from
+#    anything about this question's outcome. The need score below reads
+#    denominators and compliance. It never reads accuracy.
+# ---------------------------------------------------------------------------
+
+# Mandatory questions per run, and per day across runs. A run is eight to ten
+# questions, so two is roughly one in five: enough that a student meets the
+# mechanism most sessions, few enough that it reads as structure rather than as
+# the app having switched into a mode. The daily cap exists because three runs
+# in an evening is a normal evening.
+SESSION_FORCED_CAP = 2
+DAILY_FORCED_CAP = 6
+
+# How many weak cells one run invests in. Concentrating on the weakest few is
+# the point — spreading two mandatory questions across every stratum a run
+# touches would buy a little dose everywhere and never lift one cell over the
+# line — and three is small enough to concentrate while leaving the pool wide
+# enough that the draw inside it is not a formality.
+TARGET_STRATA = 3
+
+
+def stratum_key(strategy_key: str, question: Question) -> str:
+    """The cell an assignment is charged to.
+
+    Approach by question type, which is finer than the (section, approach) cell
+    `_section_reading` ranks on. Deliberately: the same approach behaves
+    differently on a necessary-assumption question and on a parallel-flaw one,
+    so that is the grain at which a gap in the record is worth spending a
+    mandatory question on. Being finer than the estimator's cell is safe in the
+    direction that matters — every stratum sits entirely inside exactly one
+    estimator cell, so investing in a stratum never mixes two cells together.
+    """
+    return f"{strategy_key}|{question.section}|{question.question_type or 'unspecified'}"
+
+
+def _census(user_id: str) -> tuple[dict[str, dict], set[str]]:
+    """Per-stratum counts, and the approaches this student has already proven.
+
+    One statement. Walking mapped `Attempt` rows to reach `.session_item.question`
+    would cost two lazy reads per answer on a path that runs every time a run is
+    created, which is the bill `focus.py` already documents paying once.
+    """
+    rows = (
+        Attempt.query.with_entities(
+            Attempt.strategy_key,
+            Attempt.strategy_variant,
+            Attempt.strategy_gate_status,
+            Attempt.is_correct,
+            Question.section,
+            Question.question_type,
+        )
+        .join(SessionItem, Attempt.session_item_id == SessionItem.id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .filter(Attempt.user_id == user_id, Attempt.strategy_key.isnot(None))
+        .all()
+    )
+    strata: dict[str, dict] = defaultdict(
+        lambda: {"prompt": 0, "control": 0, "gated": 0, "declined": 0}
+    )
+    proven: dict[str, list[bool]] = defaultdict(list)
+    for row in rows:
+        stratum = f"{row.strategy_key}|{row.section}|{row.question_type or 'unspecified'}"
+        cell = strata[stratum]
+        if row.strategy_variant in PROMPT_VARIANTS:
+            cell["prompt"] += 1
+            if row.strategy_gate_status in GATED_STATUSES:
+                cell["gated"] += 1
+                if row.strategy_gate_status in DECLINED_STATUSES:
+                    cell["declined"] += 1
+        elif row.strategy_variant in CONTROL_VARIANTS:
+            cell["control"] += 1
+        if row.strategy_gate_status == STATUS_SATISFIED:
+            proven[row.strategy_key].append(bool(row.is_correct))
+    mastered = {
+        key
+        for key, outcomes in proven.items()
+        if len(outcomes) >= MASTERY_MIN_SATISFIED
+        and sum(outcomes) / len(outcomes) >= MASTERY_MIN_ACCURACY
+    }
+    return strata, mastered
+
+
+def information_need(cell: dict) -> float:
+    """How much a mandatory question in this stratum is worth.
+
+    The product of two factors, and neither of them is an accuracy.
+
+    The first is the posterior variance of the cell's difference, up to the
+    constant p(1−p) that is near enough common across cells to drop:
+    Var(p̂₁ − p̂₀) ∝ 1 / `_contrast_sample`, and the prior strength in the
+    denominator is the same shrinkage `_shrink_toward` applies, so an empty
+    cell scores a finite maximum instead of dividing by zero. This is the
+    "fewest observations / weakest estimate" half of the rule.
+
+    The second is dilution. Forcing does not add rows — the run is the length
+    it is and the arms are drawn at the same rates either way — so what it buys
+    is *dose*. An intention-to-treat difference measured where half the offers
+    are declined is roughly half the effect of the technique, and needs four
+    times the sample to resolve. Where an offer is already taken up every time,
+    a mandatory question buys nothing at all and only costs the student a
+    minute, so the factor takes it to near zero. Smoothed as (declined + 1) /
+    (gated + 2), which puts a stratum nobody has been gated in yet at one half:
+    unknown compliance is worth investing in, but not as much as compliance
+    known to be poor.
+    """
+    effective = _contrast_sample(cell["prompt"], cell["control"])
+    dilution = (cell["declined"] + 1) / (cell["gated"] + 2)
+    return dilution / (PRIOR_STRENGTH + effective)
+
+
+def forced_today(user_id: str) -> int:
+    """Mandatory questions already dealt to this student since midnight UTC.
+
+    Counted on assignment rather than on completion. A student who starts three
+    runs and finishes none has still been asked three times, and the cap is
+    about how often the app insists, not about how much work got done.
+    """
+    since = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return (
+        SessionItem.query.join(StudySession, SessionItem.session_id == StudySession.id)
+        .filter(
+            StudySession.user_id == user_id,
+            StudySession.started_at >= since,
+            SessionItem.strategy_variant == VARIANT_PROMPT_REQUIRED,
+        )
+        .count()
+    )
+
+
+def plan_forced_arms(
+    user_id: str,
+    seed: str,
+    assignments: list[tuple[int, Question, dict | None]],
+    *,
+    already_forced_today: int | None = None,
+) -> dict[int, dict]:
+    """Choose which of a run's questions make their approach mandatory.
+
+    Returns one entry per position that carries a trial:
+
+    * `stratum` — the cell the assignment is charged to, recorded on every
+      trialled question including the control arm, so a later analysis can
+      condition on it without reconstructing it from the catalogue.
+    * `forcing_propensity` — the probability this position had of being drawn,
+      recorded on winners and losers alike. `None` means the position was never
+      in a pool and has no counterfactual: it is not part of the mandatory
+      comparison, only of the offer-versus-nothing one.
+    * `required` — whether it was drawn.
+
+    The whole run is planned at once rather than question by question because
+    the cap is a property of the run. Deciding position by position would make
+    each draw conditional on the ones before it, which is still a valid
+    sequential randomization but leaves every position carrying a different
+    propensity for reasons that have nothing to do with the stratum. Drawing a
+    fixed quota from a fixed pool gives every pool member the same probability,
+    exactly, and it is a probability that can be written down rather than
+    reconstructed.
+    """
+    plan: dict[int, dict] = {}
+    trialled = [
+        (position, question, trial)
+        for position, question, trial in assignments
+        if trial and trial.get("key")
+    ]
+    if not trialled:
+        return plan
+    # An arm label has to describe the treatment that was actually delivered.
+    # With gates switched off there is nothing to be mandatory about, so the
+    # run gets strata on its rows and no draw — rather than a required arm that
+    # required nothing.
+    forcing_on = current_app.config.get("STRATEGY_ENFORCEMENT_ENABLED", True)
+
+    strata, mastered = _census(user_id)
+    for position, question, trial in trialled:
+        plan[position] = {
+            "stratum": stratum_key(trial["key"], question),
+            "forcing_propensity": None,
+            "required": False,
+        }
+
+    eligible = [
+        position
+        for position, _question, trial in (trialled if forcing_on else ())
+        # Only the treated side can be made mandatory: gating the control arm
+        # would put a technique on it and there would be no control arm.
+        if trial["variant"] in PROMPT_VARIANTS
+        # Scaffolding a student has already cleared eight times at three
+        # quarters accuracy is a tax, and a stratum whose offers are already
+        # taken up has nothing left for a mandatory question to buy.
+        and trial["key"] not in mastered
+    ]
+    if not eligible:
+        return plan
+
+    ranked = sorted(
+        {plan[position]["stratum"] for position in eligible},
+        key=lambda stratum: (-information_need(strata[stratum]), stratum),
+    )
+    targeted = set(ranked[:TARGET_STRATA])
+    pool = [position for position in eligible if plan[position]["stratum"] in targeted]
+    remaining_today = DAILY_FORCED_CAP - (
+        forced_today(user_id) if already_forced_today is None else already_forced_today
+    )
+    quota = max(0, min(SESSION_FORCED_CAP, remaining_today, len(pool)))
+    if not quota:
+        return plan
+
+    propensity = quota / len(pool)
+    # Uniform without replacement, by ranking the pool on a hash of the run and
+    # the position. Every member's chance of finishing in the first `quota` is
+    # the same by symmetry, so the propensity above is exact rather than
+    # nominal, and a reload cannot redraw it.
+    drawn = set(
+        sorted(pool, key=lambda position: _stable_fraction(f"force:{seed}:{position}"))[:quota]
+    )
+    for position in pool:
+        plan[position]["forcing_propensity"] = propensity
+        plan[position]["required"] = position in drawn
+    return plan
 
 
 # Below this many observations *in a single arm*, a swing in the raw accuracy
@@ -657,28 +939,36 @@ CONTRAST_EVIDENCE_GRADES: tuple[tuple[int, str], ...] = ((10, "baseline"), (25, 
 MIN_CONTRAST_SAMPLE = CONTRAST_EVIDENCE_GRADES[0][0]
 
 
-def _arm_rate(sample: list[Attempt]) -> float:
+def _arm_rate(sample: list[Attempt], propensity=lambda value: value.strategy_propensity) -> float:
     """Accuracy of one arm, inverse-propensity weighted.
 
-    The Hájek estimator: Σ(y/π) / Σ(1/π) over the arm, with `strategy_propensity`
+    The Hájek estimator: Σ(y/π) / Σ(1/π) over the arm, with a logged propensity
     as π. That column is logged per observation at assignment time precisely so
     a weighted fit does not have to reconstruct the hashing scheme after the
     fact (P0-8), and this is that fit.
 
-    Today `assign_strategy_trial` draws against a single constant threshold, so
-    π is the same for every observation inside an arm and the weights cancel
-    exactly — this returns the plain mean, which is the correct answer for a
-    constant propensity rather than a coincidence. It stops being a no-op the
-    moment the allocation is ever made to vary, which is the situation the
-    column exists for. Observations predating the column, or carrying a
-    nonsensical one, fall back to unit weight rather than being dropped:
-    dropping them would break intention-to-treat.
+    For the offer-versus-nothing contrast, π is `strategy_propensity`:
+    `assign_strategy_trial` still draws that against a single constant
+    threshold in every stratum, so the weights cancel exactly and this returns
+    the plain mean — the correct answer for a constant propensity rather than a
+    coincidence.
+
+    For the mandatory-versus-optional contrast it is
+    `strategy_forcing_propensity`, and there the weights do not cancel: that
+    draw allocates a fixed quota over a pool whose size varies from run to run,
+    on purpose, because the pool is chosen to be the strata worth investing in.
+    Weighting is what makes those observations comparable, and this is the case
+    the column was added for.
+
+    Observations predating a column, or carrying a nonsensical one, fall back
+    to unit weight rather than being dropped: dropping them would break
+    intention-to-treat.
     """
     if not sample:
         return 0.0
     weights = [
-        1.0 / value.strategy_propensity
-        if value.strategy_propensity and 0 < value.strategy_propensity <= 1
+        1.0 / propensity(value)
+        if propensity(value) and 0 < propensity(value) <= 1
         else 1.0
         for value in sample
     ]
@@ -748,6 +1038,79 @@ def _contrast(prompted: list[Attempt], controls: list[Attempt], baseline: float)
         "contrast_evidence": _contrast_grade(effective),
         "eligible": effective >= MIN_CONTRAST_SAMPLE,
     }
+
+
+def _in_forcing_pool(value: Attempt) -> bool:
+    """Whether this observation took part in a mandatory draw at all.
+
+    A propensity strictly between zero and one means the question was in a pool
+    and could have gone either way, which is the only situation in which the
+    two mandatory arms are comparable. Three kinds of row are excluded and each
+    for the same reason — no counterfactual:
+
+    * `None` — never in a pool. Most questions, and every row written before
+      mandatory approaches existed.
+    * `1.0` — a pool no larger than the quota, so every member was drawn. Rare,
+      and it happens when a run only touches one weak stratum at one position.
+    * `0.0` — never written, but excluded by the same rule rather than by
+      trusting that it never will be.
+    """
+    propensity = value.strategy_forcing_propensity
+    return propensity is not None and 0.0 < propensity < 1.0
+
+
+def _forcing_contrast(prompted: list[Attempt], baseline: float) -> dict:
+    """Mandatory approaches against optional ones, inside the pool.
+
+    A second, narrower estimand than the one the dashboard ranks on, and a
+    different question: not "does an offer help" but "does insisting on it
+    help". It exists because insisting is now a thing the app does, and a
+    mechanism that changes what students do should be measurable rather than
+    merely believed in.
+
+    Two restrictions do all the identification work.
+
+    Restricted to the pool. A mandatory question was drawn from a set chosen
+    for being weakly measured, so comparing it against every optional question
+    on the record would compare weak strata against strong ones and call the
+    difference enforcement. Only questions that were in a pool — which is to
+    say, that could have been drawn and were not — are the comparison group.
+
+    Weighted by the draw's own probability. Inside a pool every member shares
+    one inclusion probability, but pools differ in size and quota across runs,
+    so the arms are balanced by Hájek weights rather than by assumption.
+
+    Both arms are shrunk toward the section baseline exactly as the main
+    contrast is, so a thin comparison reports something near zero rather than
+    something dramatic.
+    """
+    pooled = [value for value in prompted if _in_forcing_pool(value)]
+    required = [value for value in pooled if value.strategy_variant == VARIANT_PROMPT_REQUIRED]
+    optional = [value for value in pooled if value.strategy_variant == VARIANT_PROMPT]
+    effective = _contrast_sample(len(required), len(optional))
+    result = {
+        "required_sample": len(required),
+        "optional_sample": len(optional),
+        "required_complied": sum(value.strategy_gate_status == STATUS_SATISFIED for value in required),
+        "optional_complied": sum(value.strategy_gate_status == STATUS_SATISFIED for value in optional),
+        "stood_down": sum(value.strategy_gate_status == STATUS_STOOD_DOWN for value in required),
+        "contrast_sample": round(effective, 1),
+        "adjusted_lift": None,
+    }
+    if not effective:
+        return result
+    adjusted_required = _shrink_toward(
+        _arm_rate(required, lambda value: value.strategy_forcing_propensity),
+        len(required),
+        baseline,
+    )
+    adjusted_optional = _shrink_toward(
+        _arm_rate(optional, lambda value: 1.0 - value.strategy_forcing_propensity),
+        len(optional),
+        baseline,
+    )
+    result["adjusted_lift"] = round((adjusted_required - adjusted_optional) * 100, 1)
+    return result
 
 
 def _other_arm(sample: int) -> int:
@@ -828,7 +1191,8 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
         by_key[attempt.strategy_key].append(attempt)
 
     trials = len(attempts)
-    prompt_trials = sum(attempt.strategy_variant == VARIANT_PROMPT for attempt in attempts)
+    prompt_trials = sum(attempt.strategy_variant in PROMPT_VARIANTS for attempt in attempts)
+    required_trials = sum(attempt.strategy_variant == VARIANT_PROMPT_REQUIRED for attempt in attempts)
     observed = sum(attempt.is_correct for attempt in attempts) / trials if trials else 0.0
     # Where both arms sit under the null. Shrunk toward the population itself so
     # that a section holding six answers does not hand the arms a centre that is
@@ -844,13 +1208,15 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
         if not strategy:
             continue
         result = _strategy_result(key, strategy, values)
+        prompted = [value for value in values if value.strategy_variant in PROMPT_VARIANTS]
         result.update(
             _contrast(
-                [value for value in values if value.strategy_variant == VARIANT_PROMPT],
+                prompted,
                 [value for value in values if value.strategy_variant in CONTROL_VARIANTS],
                 baseline,
             )
         )
+        result["forcing"] = _forcing_contrast(prompted, baseline)
         results.append(result)
     results.sort(
         key=lambda result: (
@@ -866,6 +1232,7 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
         "short_label": short_label,
         "trials": trials,
         "prompt_trials": prompt_trials,
+        "required_trials": required_trials,
         "control_trials": trials - prompt_trials,
         "strategies_tested": len(results),
         "minimum_contrast_sample": MIN_CONTRAST_SAMPLE,
@@ -890,6 +1257,22 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
             "note": (
                 "Counted by which questions offered the approach, not by whether you said you used "
                 "it — sorting on that would quietly compare the questions you recognised."
+            ),
+            # What the ranking above now assumes, written down where an analyst
+            # reading the payload will find it. Both prompt sub-arms are pooled
+            # on the treated side, because both are the same offer and the
+            # draw that separates them happens after the one being estimated
+            # here. The estimand is therefore the effect of the offer *regime*
+            # as it is currently deployed — a mixture of suggestions and
+            # requirements whose proportions move as strata fill up — rather
+            # than the effect of a fixed treatment. `strategy_variant` and
+            # `strategy_stratum` are on every row so a later analysis can
+            # split the mixture instead of inheriting this choice.
+            "treated_arms": sorted(PROMPT_VARIANTS),
+            "regime_note": (
+                "Suggested and required questions are pooled as one offer. Which of the two a "
+                "question became was drawn separately, after this comparison's own draw, and "
+                "never changed the odds of being offered anything at all."
             ),
         },
     }
@@ -993,18 +1376,17 @@ def _strategy_result(key: str, strategy: dict, values: list[Attempt]) -> dict:
     `_section_reading` instead of the latter being a display-time slice of the
     former.
     """
-    prompted = [value for value in values if value.strategy_variant == VARIANT_PROMPT]
+    prompted = [value for value in values if value.strategy_variant in PROMPT_VARIANTS]
     controls = [value for value in values if value.strategy_variant in CONTROL_VARIANTS]
     applied = sum(value.strategy_applied is True for value in prompted)
     skipped = sum(value.strategy_applied is False for value in prompted)
     # Verified compliance, kept strictly apart from the self-reported kind
     # above. `enforced` is how many prompt-arm questions actually carried a
     # gate, so a rate built from these two is a rate of observed behaviour.
-    enforced = sum(
-        value.strategy_gate_status in {"satisfied", "skipped", "attested"} for value in prompted
-    )
-    gate_satisfied = sum(value.strategy_gate_status == "satisfied" for value in prompted)
-    gate_skipped = sum(value.strategy_gate_status == "skipped" for value in prompted)
+    enforced = sum(value.strategy_gate_status in GATED_STATUSES for value in prompted)
+    gate_satisfied = sum(value.strategy_gate_status == STATUS_SATISFIED for value in prompted)
+    gate_skipped = sum(value.strategy_gate_status == STATUS_SKIPPED for value in prompted)
+    gate_stood_down = sum(value.strategy_gate_status == STATUS_STOOD_DOWN for value in prompted)
 
     def metrics(sample: list[Attempt]) -> tuple[int, int, int, int | None, int | None, int]:
         if not sample:
@@ -1062,6 +1444,10 @@ def _strategy_result(key: str, strategy: dict, values: list[Attempt]) -> dict:
         "enforced": enforced,
         "gate_satisfied": gate_satisfied,
         "gate_skipped": gate_skipped,
+        "gate_stood_down": gate_stood_down,
+        "required_sample": sum(
+            value.strategy_variant == VARIANT_PROMPT_REQUIRED for value in prompted
+        ),
         "ranking_score": round(ranking_score, 2),
         **_result_copy(
             strategy, correct, sample, control_correct, control_sample, applied, sample, gate_satisfied, enforced
