@@ -1,0 +1,28 @@
+/* The handful of rules the ported office scene needs to fill its box.
+   Lifted from the app's `art.css` (`.office-three-canvas`), not the page
+   chrome around it: the deck supplies its own frame. The scene builds its
+   canvas hidden and adds `is-ready` when the first frame has drawn, so the
+   opacity pair is load-bearing rather than decoration. */
+
+.deck-office-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: #07111a;
+}
+
+.office-three-canvas {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  background: #111b23;
+  transition: opacity 0.18s ease-out;
+  touch-action: none;
+}
+
+.office-three-canvas.is-ready { opacity: 1; }

@@ -1,0 +1,221 @@
+/**
+ * FIGURES — the bespoke slide graphics the narrative calls for.
+ *
+ * `NARRATIVE.md` specifies a visual per slide, and most of them are a small piece
+ * of information design rather than a 3D scene: two bars whose ratio is the
+ * argument, four tiles that re-sort, three effect sizes where the last two land at
+ * nearly the same length. Those are SVG, not WebGL — they are typographic objects,
+ * they have to be pixel-crisp on a projector, and they must not compete for frame
+ * time with the scene behind them or with a live app iframe beside them.
+ *
+ * Each variant below is one slide's figure. The data is in the slide registry, so
+ * a founder correcting a number edits `slides/index.ts` and nothing else — which
+ * matters here more than usual, because several of these numbers are the ones
+ * `CITATIONS.md` had to correct.
+ *
+ * Every figure animates itself in when `active` becomes true and holds. None of
+ * them loops: a figure that keeps moving under a speaker is a figure that keeps
+ * pulling the eye back to itself.
+ */
+
+/** Slide 2 — coaching 0.22 against real LSATs 2.77, with the behaviour inverted. */
+export type BarPairFigure = {
+  kind: 'bar-pair'
+  bars: Array<{
+    /** The effect size, in LSAT points. Sets the bar length. */
+    value: number
+    label: string
+    /** The share of the field that did this, shown as a small tag on the bar. */
+    share: string
+    shareLabel: string
+    /** `true` draws fast and stops short; `false` draws slowly and passes it. */
+    stub?: boolean
+  }>
+  /** Printed in the gap between the bars. */
+  gapNote?: string
+}
+
+/** Slide 3 — the hours bar, its four attributions, and the price ribbon. */
+export type HoursBarFigure = {
+  kind: 'hours-bar'
+  /** e.g. '150–300 hours, by their own recommendation' */
+  barLabel: string
+  ticks: Array<{
+    /** Position along the bar, 0..1. */
+    at: number
+    source: string
+    /** Their published range. Omit for LSAC, whose tick is deliberately blank. */
+    range?: string
+  }>
+  /** The sliver at the far right, drawn last and at true relative proportion. */
+  outcome: string
+  /** The two curriculum quotes that appear as the bar fills with video texture. */
+  curriculum: string[]
+  /** The price ribbon, and the LSAC line item that arrives late and alone. */
+  price: string
+  lateLineItem: string
+}
+
+/** Slide 5 — the speedrun route: three nodes skipped, one taken. */
+export type RouteFigure = {
+  kind: 'route'
+  nodes: Array<{ label: string; skipped: boolean }>
+  /** Shown in the timer HUD pinned top-left. Counts up in real time. */
+  timerLabel: string
+}
+
+/** Slide 6 — a question card whose emphasis moves onto the reasoning box. */
+export type ReasoningCardFigure = {
+  kind: 'reasoning-card'
+  /** Shown small at the top of the mock card. */
+  stem: string
+  /** Five answer choices, which shrink and desaturate. */
+  choices: string[]
+  /** The text that appears in the growing reasoning box. */
+  reasoning: string
+  /** The clause the coaching panel underlines in verdict red. Must appear in `reasoning`. */
+  underline: string
+  /** The three effect sizes. The last two must land at nearly equal length. */
+  effects: Array<{ value: number; label: string; emphasis?: boolean }>
+}
+
+/** Slide 7 — four identical-looking results that re-sort into four problems. */
+export type ConfidenceTilesFigure = {
+  kind: 'confidence-tiles'
+  tiles: Array<{
+    /** What the score report sees. */
+    mark: 'correct' | 'wrong'
+    /** 1..5, dropped onto the tile in the second beat. */
+    confidence: number
+    /** What it actually is, once confidence is known. */
+    category: string
+    /** The one that takes the warning outline and pushes to the front. */
+    flagged?: boolean
+  }>
+}
+
+/** Slide 9 — the AI misdirection chart. */
+export type TracesFigure = {
+  kind: 'traces'
+  /** Drawn in order. The first should look fantastic; the second is the reveal. */
+  traces: Array<{
+    label: string
+    /** 0..1 values across the x axis. */
+    points: number[]
+    style: 'good' | 'bad' | 'guarded'
+  }>
+  /** The dashed reference line, 0..1. */
+  baseline: number
+  baselineLabel: string
+}
+
+/** Slide 10 — fourteen methods, thirteen dismissed, one docked. */
+export type MethodFanFigure = {
+  kind: 'method-fan'
+  methods: string[]
+  /** Which one survives the filter. Index into `methods`. */
+  keep: number
+  /** The inline lift bar beside the docked card: this student, prompted vs not. */
+  lift: { prompted: number; baseline: number; note: string }
+}
+
+/** Slide 11 — the per-question ring that completes, and the full-form ring that does not. */
+export type ClockRingsFigure = {
+  kind: 'clock-rings'
+  /** 0..1 of the inner ring the student has used. */
+  used: number
+  /** 0..1 target pace, drawn as a ghost ring behind. */
+  target: number
+  innerLabel: string
+  /** The outer ring, deliberately left unfinished at this fraction. */
+  outer: number
+  outerLabel: string
+}
+
+/** Slide 15 — the dashboard as a radial diagram. */
+export type RadialFigure = {
+  kind: 'radial'
+  /** The large beige numeral at the centre. */
+  centre: { label: string; value: string }
+  nodes: Array<{
+    label: string
+    /** Hairline thickness: how much this signal feeds the centre, 0..1. */
+    weight: number
+    /** Inner or outer ring. */
+    ring: 1 | 2
+    /** The current weakest link burns brighter. */
+    highlight?: boolean
+    /** Gets an `evidence forming` tag when the outer ring dims. */
+    forming?: boolean
+  }>
+}
+
+/** Slide 16 — points light all four engagement spokes; badges light one. */
+export type SpokesFigure = {
+  kind: 'spokes'
+  spokes: string[]
+  series: Array<{ label: string; lit: boolean[]; emphasis?: boolean }>
+}
+
+/** Slide 17 — the four Clark splits, ours against the alternative. */
+export type PairedBarsFigure = {
+  kind: 'paired-bars'
+  pairs: Array<{
+    label: string
+    ours: { label: string; value: number }
+    theirs: { label: string; value: number }
+  }>
+  /** The caveat, set small in a footer. */
+  footnote: string
+}
+
+/** Slide 22 — practice gates the game, and not the other way round. */
+export type GateFigure = {
+  kind: 'gate'
+  left: string
+  right: string
+  /** The three real couplings, labelled under the main arrow. */
+  couplings: string[]
+  /** The struck-through reverse direction. */
+  denied: string
+}
+
+/**
+ * Slide 4 — the hero numeral, and the turn.
+ *
+ * The narrative is specific that this must read as the same extruded object the
+ * room saw on slide 2, dollied in. It also offers a drop-in alternative: the word
+ * `SKILLS` at the same extruded scale carries identical weight and takes the same
+ * transition out. Switching is a one-word edit to `value` — nothing here or in
+ * the stylesheet assumes the content is a number.
+ */
+export type NumeralFigure = {
+  kind: 'numeral'
+  /** `0.22` as built. `SKILLS` is the sanctioned alternative. */
+  value: string
+  /** Degrees off-axis. The narrative asks for "maybe eight". */
+  spin?: number
+}
+
+export type FigureSpec =
+  | NumeralFigure
+  | BarPairFigure
+  | HoursBarFigure
+  | RouteFigure
+  | ReasoningCardFigure
+  | ConfidenceTilesFigure
+  | TracesFigure
+  | MethodFanFigure
+  | ClockRingsFigure
+  | RadialFigure
+  | SpokesFigure
+  | PairedBarsFigure
+  | GateFigure
+
+export type FigureProps = {
+  spec: FigureSpec
+  /** True when the slide is the live one. Drives the entrance; never loops. */
+  active: boolean
+  /** `prefers-reduced-motion`: draw the final state with no entrance at all. */
+  reduced: boolean
+}

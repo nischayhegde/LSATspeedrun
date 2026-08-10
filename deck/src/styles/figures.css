@@ -1,0 +1,2128 @@
+/* ================================================================
+   FIGURES — the bespoke slide graphics
+   ================================================================
+   Twelve figures, all inline SVG and CSS, all transparent. `theme.css`
+   owns the palette and the motion; this file owns nothing but layout,
+   type scale and choreography.
+
+   THREE RULES, AND THEY ARE THE WHOLE FILE
+
+   1. No colour literal appears below this comment. Every mark is
+      `currentColor` (which `.fig` sets to `--on-field`), `--on-field-dim`,
+      or one of the two named exceptions — `--blue-lit` for the reasoning
+      box's focus ring and `--stamp` for the two places the narrative
+      spends verdict red. That is what lets `bar-pair` be beige on royal
+      blue on slide 2 and `reasoning-card` be royal blue on beige on
+      slide 6 with no per-slide overrides: the deck inverts `--on-field`
+      once, per `[data-field]`, and every figure inverts with it.
+
+   2. The field is never painted. The slide behind has already drawn it,
+      including its grain and its vignette, and a figure that filled its
+      own background would lay a second, slightly wrong rectangle over
+      the first. Where a mark needs to sit on a tinted plate, the plate
+      is `currentColor` at low opacity, which tints whatever is behind it
+      instead of replacing it.
+
+   3. Nothing is sized in pixels. Type is `clamp()` between two `rem`
+      bounds so it tracks the deck's root font size, geometry is in
+      percentages or `em`, and every SVG has a `viewBox`. The container
+      these sit in is about 60% of the frame, but the frame is whatever
+      the room's projector is, and the set has to survive 4:3 through
+      21:9 without a media query.
+
+   ENTRANCE. Each figure's component sets inline styles from a phase
+   number and this file supplies the transition that carries them there,
+   so the animation is described once, in the file where the narrative's
+   ordering lives, and its duration is described once, here. `--fig-delay`
+   is the per-element stagger, declared on `.fig` so that `var()` always
+   resolves.
+
+   REDUCED MOTION is a state, not a second rendering path: the component
+   jumps to its last phase and the block at the bottom of this file makes
+   sure nothing tries to animate its way there. Every figure's finished
+   look is therefore reachable with transitions and animations disabled,
+   which is also why nothing decorative depends on a `@keyframes` to end
+   up in the right place.
+   ================================================================ */
+
+.fig {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-field);
+  font-family: var(--font-ui);
+  /* Declared once so no element has to guard its own `var()` fallback. */
+  --fig-delay: 0ms;
+}
+
+.fig * {
+  min-width: 0;
+}
+
+/* Most of the set positions everything inside its own full-size box, so the
+   root only has to get out of the way. The two that do not — `bar-pair`, whose
+   plot is the frame minus a numeral gutter, and `hours-bar` and
+   `confidence-tiles`, which are centred bands — say so in their own sections. */
+.fig-route,
+.fig-traces,
+.fig-method-fan,
+.fig-clock-rings,
+.fig-radial,
+.fig-reasoning-card,
+.fig-spokes {
+  align-items: stretch;
+}
+
+/* Nothing in a figure is interactive, and a projector-side stray drag
+   selecting a label is a distraction the presenter cannot undo. */
+.fig,
+.fig * {
+  user-select: none;
+}
+
+/* ================================================================
+   2 · bar-pair — 0.22 against 2.77
+   ================================================================ */
+
+.fig-bar-pair {
+  /* Left-aligned rather than centred: the numeral gutter belongs entirely
+     to the right-hand side, and a centred plot would split it in two. */
+  justify-content: flex-start;
+}
+
+.fig-bp-scale {
+  /* The gutter is derived from the numeral, not guessed. `+2.77` is five
+     glyphs of a display face, which is a little over three ems of its own
+     size — set it in absolute terms and the numerals overflow the moment
+     the deck's root size changes. */
+  --fig-bp-numeral: clamp(2rem, 3.4vw, 3.5rem);
+  --fig-bp-height: clamp(1.1rem, 2.4vh, 2rem);
+  width: calc(100% - var(--fig-bp-numeral) * 3.2);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(.5rem, 1.4vh, 1.2rem);
+}
+
+.fig-bp-name {
+  margin: 0 0 .4em;
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  line-height: 1.2;
+  color: var(--on-field-dim);
+}
+
+.fig-bp-row {
+  position: relative;
+  /* Reserved for the share tag, which hangs below the track. Paying for it in
+     layout rather than letting it overflow keeps the figure inside the box the
+     slide gave it, whatever the slide put underneath. */
+  padding-bottom: 3.6em;
+}
+
+.fig-bp-track {
+  position: relative;
+  height: var(--fig-bp-height);
+}
+
+.fig-bp-run {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: currentColor;
+  /* The slow draw. The stub overrides it below and stops almost at once,
+     which is the pair of durations the narrative asks for. */
+  transition: width 1500ms var(--ease-out) 200ms;
+}
+
+.fig-bp-row[data-stub='true'] .fig-bp-run {
+  transition: width 260ms var(--ease-out);
+}
+
+.fig-bp-value {
+  position: absolute;
+  top: 50%;
+  margin-left: .45em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fig-bp-numeral);
+  line-height: 1;
+  letter-spacing: -.015em;
+  white-space: nowrap;
+  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
+}
+
+.fig-bp-share {
+  position: absolute;
+  left: 0;
+  top: calc(100% + .5em);
+  display: flex;
+  align-items: baseline;
+  gap: .5em;
+  white-space: nowrap;
+  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
+}
+
+.fig-bp-share b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.35rem, 2.1vw, 2.1rem);
+  line-height: 1;
+}
+
+.fig-bp-share span {
+  font-size: clamp(.92rem, 1.08vw, 1.08rem);
+  color: var(--on-field-dim);
+}
+
+.fig-bp-gapstrip {
+  position: relative;
+  height: clamp(2.2rem, 4.6vh, 3.2rem);
+}
+
+.fig-bp-gap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+/* Two segments with the note between them, rather than one rule with the
+   note knocked out of it: knocking a hole in the rule would mean painting
+   the field behind the type, and the field is not this file's to paint. */
+.fig-bp-gap-rule {
+  flex: 1;
+  height: 0;
+  border-top: 1px dashed currentColor;
+  opacity: .55;
+}
+
+.fig-bp-gap-note {
+  font-family: var(--font-pixel);
+  font-size: clamp(.88rem, 1.02vw, 1.02rem);
+  letter-spacing: .03em;
+  color: var(--on-field-dim);
+  white-space: nowrap;
+}
+
+/* ================================================================
+   3 · hours-bar — the hours, the attributions, the bill
+   ================================================================ */
+
+.fig-hours-bar {
+  align-items: center;
+}
+
+.fig-hb {
+  --fig-hb-height: clamp(1.6rem, 3.6vh, 2.8rem);
+  --fig-hb-pad: 2.9em;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(.7rem, 1.8vh, 1.5rem);
+}
+
+.fig-hb-label {
+  margin: 0;
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  color: var(--on-field-dim);
+}
+
+.fig-hb-plot {
+  position: relative;
+  padding-top: var(--fig-hb-pad);
+  padding-bottom: 4.6em;
+}
+
+.fig-hb-bar {
+  position: relative;
+  height: var(--fig-hb-height);
+  border: 1px solid var(--on-field-dim);
+}
+
+.fig-hb-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  transition: width 1200ms var(--ease-out);
+}
+
+.fig-hb-wash,
+.fig-hb-grain {
+  position: absolute;
+  inset: 0;
+}
+
+.fig-hb-wash {
+  background: currentColor;
+  opacity: .16;
+}
+
+/* Film grain and scanlines, procedurally. The hours visibly become video
+   at the moment the curriculum quotes land. */
+.fig-hb-grain {
+  background-image:
+    repeating-linear-gradient(0deg, currentColor 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 9px);
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+.fig-hb-sliver {
+  position: absolute;
+  top: -.3em;
+  bottom: -.3em;
+  right: 0;
+  background: currentColor;
+  transition: width 900ms var(--ease-in-out);
+}
+
+.fig-hb-outcome {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .2em;
+  transition: opacity var(--mo-4) var(--ease-out) 320ms;
+}
+
+.fig-hb-outcome-name {
+  font-size: clamp(.92rem, 1.1vw, 1.12rem);
+}
+
+.fig-hb-outcome-lead {
+  width: 0;
+  height: 1.1em;
+  border-left: 1px solid currentColor;
+}
+
+.fig-hb-tick {
+  position: absolute;
+  top: var(--fig-hb-pad);
+  transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+
+.fig-hb-tick-rule {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: var(--fig-hb-height);
+  width: 0;
+  border-left: 1px solid var(--on-field-dim);
+}
+
+/* LSAC's tick. The absence has to be drawn at full strength or it reads as
+   a rendering fault rather than as a refusal. */
+.fig-hb-tick[data-blank='true'] .fig-hb-tick-rule {
+  border-left: 2px solid currentColor;
+  height: calc(var(--fig-hb-height) + .6em);
+  top: -.3em;
+}
+
+.fig-hb-tick-body {
+  position: absolute;
+  top: calc(var(--fig-hb-height) + .6em);
+  left: 0;
+  width: 10em;
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+}
+
+.fig-hb-tick[data-anchor='middle'] .fig-hb-tick-body {
+  transform: translateX(-50%);
+  align-items: center;
+  text-align: center;
+}
+
+.fig-hb-tick[data-anchor='start'] .fig-hb-tick-body {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.fig-hb-tick[data-anchor='end'] .fig-hb-tick-body {
+  transform: translateX(-100%);
+  align-items: flex-end;
+  text-align: right;
+}
+
+.fig-hb-source {
+  font-size: clamp(.9rem, 1.05vw, 1.06rem);
+  line-height: 1.15;
+  color: var(--on-field-dim);
+}
+
+.fig-hb-range {
+  font-family: var(--font-pixel);
+  font-size: clamp(.95rem, 1.15vw, 1.15rem);
+  letter-spacing: .02em;
+}
+
+.fig-hb-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.2em;
+  height: 1.5em;
+  border: 1px dashed currentColor;
+}
+
+.fig-hb-blank-dash {
+  width: 1.5em;
+  height: 0;
+  border-top: 2px solid currentColor;
+}
+
+.fig-hb-tick[data-blank='true'] .fig-hb-source {
+  color: var(--on-field);
+}
+
+.fig-hb-curriculum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(1rem, 2.4vw, 2.6rem);
+}
+
+.fig-hb-quote {
+  margin: 0;
+  padding-left: .7em;
+  border-left: 2px solid currentColor;
+  font-size: clamp(.92rem, 1.12vw, 1.14rem);
+  line-height: 1.3;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
+}
+
+.fig-hb-bill {
+  display: flex;
+  flex-direction: column;
+  gap: .55em;
+  overflow: hidden;
+}
+
+/* The one knockout plate in the set. Both of its colours are field tokens,
+   so it inverts with everything else: beige plate and royal-blue type on
+   slide 3, and the reverse if the slide it lands on ever flips. */
+.fig-hb-ribbon {
+  padding: .45em .9em;
+  background: var(--on-field);
+  color: var(--field);
+  font-weight: 600;
+  font-size: clamp(1rem, 1.32vw, 1.32rem);
+  line-height: 1.25;
+  transition: transform var(--mo-4) var(--ease-out);
+}
+
+.fig-hb-late {
+  margin: 0;
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  font-family: var(--font-pixel);
+  font-size: clamp(.88rem, 1.02vw, 1.04rem);
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
+}
+
+.fig-hb-late::before {
+  content: '';
+  width: 2.2em;
+  height: 0;
+  border-top: 1px solid currentColor;
+}
+
+/* ================================================================
+   5 · route — the speedrun route
+   ================================================================ */
+
+.fig-rt {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.fig-rt-hud {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: stretch;
+  gap: .8em;
+  padding: .35em .8em .35em 0;
+  border: 1px solid var(--on-field-dim);
+  font-family: var(--font-pixel);
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+/* THE TRACK.
+   The narrative's transition into this slide rotates slide 4's extruded
+   `0.22` edge-on until it is a single vertical line, and says that line
+   *becomes* the progress track of this timer. So the timer has a track, on
+   the leading edge of the HUD, at the width the numeral's extrusion collapses
+   to — and `numeral-morph` in `transitions.ts` lands the numeral exactly on
+   this element's box. It fills as the run proceeds.
+
+   It is deliberately the only vertical rule in the figure: a track the eye
+   cannot find is a target the transition cannot hit. */
+.fig-rt-hud-track {
+  position: relative;
+  flex: none;
+  width: .42em;
+  margin-right: .2em;
+  align-self: stretch;
+  background: color-mix(in srgb, var(--on-field) 18%, transparent);
+  overflow: hidden;
+}
+
+.fig-rt-hud-track::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: var(--rt-progress, 0%);
+  background: currentColor;
+  transition: height 900ms var(--ease-out);
+}
+
+.fig-rt-hud-label {
+  font-size: clamp(.86rem, 1vw, 1rem);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+}
+
+.fig-rt-hud-clock {
+  font-size: clamp(1.25rem, 2vw, 1.9rem);
+  font-variant-numeric: tabular-nums;
+  /* The readout changes 25 times a second; a proportional monospace would
+     still reflow on the `1` glyph without this. */
+  font-feature-settings: 'tnum' 1;
+}
+
+.fig-rt-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Widths are screen pixels, because the stroke is non-scaling — see `DRAW_PX`
+   in `kit.tsx`. At the old user-unit widths the vertical scale of the
+   stretched viewBox turned 4.5 into a 24-pixel bar on the horizontals and
+   something half again as thick down the diagonal, which is the tapering
+   wedge this figure used to draw instead of a route. */
+.fig-rt-lead,
+.fig-rt-cut {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-dasharray: 4000;
+  transition: stroke-dashoffset 300ms linear;
+}
+
+.fig-rt-cut {
+  stroke-width: 4;
+  stroke-linejoin: miter;
+  transition: stroke-dashoffset 420ms var(--ease-out);
+}
+
+.fig-rt-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .55em;
+  transform: translate(-50%, -50%) scale(var(--fig-scale, 1));
+  transition:
+    opacity var(--mo-3) var(--ease-out) var(--fig-delay),
+    transform var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+
+.fig-rt-node[data-struck='true'] {
+  --fig-scale: .66;
+}
+
+.fig-rt-dot {
+  position: relative;
+  width: 1em;
+  height: 1em;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.fig-rt-node[data-taken='true'] .fig-rt-dot {
+  width: 1.5em;
+  height: 1.5em;
+}
+
+.fig-rt-node[data-arrived='true'] .fig-rt-dot {
+  animation: fig-rt-pop 460ms var(--ease-spring) both;
+}
+
+@keyframes fig-rt-pop {
+  from { transform: scale(.3); }
+  to { transform: scale(1); }
+}
+
+/* The destination's ring, which slide 5's transition out grows into the
+   question card of slide 6. */
+.fig-rt-ring {
+  position: absolute;
+  inset: -.75em;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-rt-node-label {
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  text-align: center;
+  white-space: nowrap;
+  transition: color var(--mo-3) var(--ease-out);
+}
+
+.fig-rt-node[data-skipped='true'] .fig-rt-node-label {
+  color: var(--on-field-dim);
+}
+
+.fig-rt-node[data-struck='true'] .fig-rt-node-label {
+  text-decoration-line: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.fig-rt-node[data-taken='true'] .fig-rt-node-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.2rem, 1.85vw, 1.85rem);
+}
+
+.fig-rt-tick {
+  position: absolute;
+  top: -1.7em;
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.fig-rt-tick path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 400;
+  transition: stroke-dashoffset 200ms linear var(--fig-delay);
+}
+
+/* ================================================================
+   6 · reasoning-card — the emphasis moves onto the reasoning
+   ================================================================ */
+
+.fig-rc {
+  display: flex;
+  align-items: stretch;
+  gap: clamp(1rem, 2.4vw, 2.6rem);
+  width: 100%;
+  height: 100%;
+}
+
+.fig-rc-card {
+  position: relative;
+  flex: 1.75;
+  display: flex;
+  flex-direction: column;
+  gap: .7em;
+  padding: clamp(.7rem, 1.5vh, 1.2rem);
+  border: 1px solid var(--on-field-dim);
+  /* Clips the coaching panel while it is still below the card, which is what
+     makes it rise rather than fade. */
+  overflow: hidden;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-rc-stem {
+  margin: 0;
+  font-size: clamp(.9rem, 1.05vw, 1.06rem);
+  line-height: 1.35;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-4) var(--ease-in-out);
+}
+
+/* The stem recedes with the choices. Everything on the card that is not the
+   student's own writing gives way to it. */
+.fig-rc-card[data-focused='true'] .fig-rc-stem {
+  opacity: .6;
+}
+
+.fig-rc-choices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: .42em;
+  font-size: clamp(.95rem, 1.15vw, 1.15rem);
+  /* Receding by type size rather than by `transform: scale()`. A scale would
+     leave the choices' layout box at full height, so the reasoning box would
+     have nothing to grow into — the emphasis would move visually and not
+     actually. Held at .88rem, because a de-emphasised answer choice is still
+     a thing the back of the room can see. */
+  transition:
+    font-size var(--mo-4) var(--ease-in-out),
+    gap var(--mo-4) var(--ease-in-out),
+    opacity var(--mo-4) var(--ease-in-out),
+    transform var(--mo-4) var(--ease-in-out);
+}
+
+.fig-rc-choices[data-receded='true'] {
+  font-size: .88rem;
+  gap: .22em;
+  opacity: .44;
+  transform: translateX(.7em);
+}
+
+.fig-rc-choices li {
+  display: flex;
+  align-items: baseline;
+  gap: .55em;
+  line-height: 1.3;
+}
+
+.fig-rc-choices li i {
+  font-family: var(--font-pixel);
+  font-style: normal;
+  color: var(--on-field-dim);
+}
+
+.fig-rc-box {
+  position: relative;
+  /* Shrinkable, so a long stem or a fifth long choice costs the box a little
+     height instead of pushing the coaching panel out through the card's
+     clipped bottom edge. */
+  flex: 0 1 5.2em;
+  min-height: 0;
+  padding: .65em .8em;
+  border: 1px solid var(--on-field-dim);
+  overflow: hidden;
+  transition:
+    flex-basis var(--mo-4) var(--ease-in-out),
+    border-color var(--mo-3) var(--ease-out),
+    box-shadow var(--mo-3) var(--ease-out);
+}
+
+.fig-rc-box[data-focused='true'] {
+  flex-basis: 44%;
+  border-color: var(--blue-lit);
+  box-shadow: 0 0 0 3px var(--blue-lit);
+}
+
+.fig-rc-written {
+  margin: 0;
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  line-height: 1.5;
+}
+
+.fig-rc-word {
+  transition: opacity var(--mo-2) linear var(--fig-delay);
+}
+
+/* The one clause the coach picks on. `text-decoration` rather than a
+   positioned rule, because the clause wraps and a positioned rule cannot
+   follow it across a line break. Animating the thickness degrades to
+   "appears at full thickness" where it is unsupported, which is the right
+   way round for a slide that has to be correct in a screenshot. */
+.fig-rc-mark {
+  text-decoration-line: underline;
+  text-decoration-color: var(--stamp);
+  text-decoration-thickness: 0;
+  text-underline-offset: .2em;
+  transition: text-decoration-thickness var(--mo-3) var(--ease-out) 280ms;
+}
+
+.fig-rc-mark[data-marked='true'] {
+  text-decoration-thickness: .14em;
+}
+
+.fig-rc-caret {
+  display: inline-block;
+  width: .1em;
+  height: 1.05em;
+  margin-left: .12em;
+  background: currentColor;
+  vertical-align: text-bottom;
+  opacity: 0;
+}
+
+/* Eight blinks and then it holds lit. A caret that blinks for the whole
+   slide is the one moving thing left under a speaker who has moved on. */
+.fig-rc-caret[data-live='true'] {
+  animation: fig-rc-blink 1s steps(1, end) 8 forwards;
+}
+
+@keyframes fig-rc-blink {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.fig-rc-coach {
+  flex: 0 0 auto;
+  margin-top: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: .65em;
+  padding: .7em .1em 0;
+  border-top: 1px solid var(--on-field-dim);
+  transition: transform var(--mo-4) var(--ease-out);
+}
+
+.fig-rc-coach-tag {
+  flex: 0 0 auto;
+  width: .6em;
+  height: .6em;
+  margin-top: .42em;
+  background: var(--stamp);
+}
+
+.fig-rc-coach-clause {
+  margin: 0;
+  font-size: clamp(.92rem, 1.12vw, 1.14rem);
+  line-height: 1.35;
+}
+
+.fig-rc-effects {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(1rem, 2.6vh, 2.2rem);
+}
+
+.fig-rc-effect-head {
+  margin: 0 0 .4em;
+  display: flex;
+  align-items: baseline;
+  gap: .5em;
+}
+
+.fig-rc-effect-head b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.55rem, 2.5vw, 2.5rem);
+  line-height: 1;
+}
+
+.fig-rc-effect-head span {
+  font-size: clamp(.9rem, 1.05vw, 1.06rem);
+  line-height: 1.2;
+  color: var(--on-field-dim);
+}
+
+.fig-rc-effect-track {
+  display: block;
+  height: clamp(.55rem, 1.3vh, .95rem);
+  box-shadow: inset 0 0 0 1px var(--on-field-dim);
+}
+
+.fig-rc-effect-run {
+  display: block;
+  height: 100%;
+  background: var(--on-field-dim);
+  transition: width 620ms var(--ease-out) var(--fig-delay);
+}
+
+.fig-rc-effects li[data-emphasis='true'] .fig-rc-effect-run {
+  background: currentColor;
+}
+
+/* ================================================================
+   7 · confidence-tiles — four results, four problems
+   ================================================================ */
+
+.fig-confidence-tiles {
+  align-items: center;
+}
+
+.fig-ct {
+  width: 100%;
+}
+
+.fig-ct-row {
+  position: relative;
+  height: clamp(9rem, 32vh, 16rem);
+}
+
+/* ================================================================
+   THE EXTRUDED NUMERAL — one object, slides 2 and 4
+
+   A real extrusion in CSS 3D: one rotation on the rig, fourteen glyph
+   faces stacked along Z. The faces are darkened toward the back so the
+   sides read as one solid mass rather than as a stack of outlines, and
+   only the frontmost face carries the field's full ink.
+
+   Every rule here is written against `--num-*` and inherited font size
+   and *nothing* else, because the same object is set at 3rem beside a bar
+   on slide 2 and at 22rem as the hero of slide 4, on opposite fields. Any
+   value that had to be different between the two would be a value that
+   could drift, and the narrative's requirement for slide 4 is precisely
+   that the room recognises the object it saw ninety seconds earlier.
+
+   See `extruded-numeral.tsx` for why the faces are glyphs and not a mesh.
+   ================================================================ */
+
+.num3d {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  /* The dolly's depth of field. Set in `em` so the perspective is
+     proportional to the numeral: the hero and the inline copy make the same
+     optical move, one just makes it much larger. */
+  perspective: 12em;
+  perspective-origin: 50% 50%;
+}
+
+.num3d-rig {
+  position: relative;
+  transform-style: preserve-3d;
+  transform:
+    rotateY(var(--num-spin, 8deg))
+    rotateX(calc(var(--num-spin, 8deg) * -.45))
+    translateZ(var(--num-dolly, 0em));
+}
+
+/* The first face stays in normal flow and is what gives the rig its box —
+   without it the rig is a zero-size grid item and fourteen `inset: 0` faces
+   with a 22rem font render as a smear off the corner of the slide. Every
+   later face is absolutely positioned over that box. */
+.num3d-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.03em;
+  white-space: nowrap;
+  /* Each face one step forward. The back faces are the extrusion; the
+     front one is the surface. */
+  transform: translateZ(calc(var(--face) * var(--num-step, .008em)));
+  /* The material. A ramp from the field toward the ink, so the sides of the
+     solid fall away from the lit face — and because it is stated as a mix of
+     `--on-field` into `--field`, it is correct on royal blue and on beige
+     without a second rule. That is the whole trick behind "same material". */
+  color: color-mix(
+    in srgb,
+    var(--on-field) calc(38% + (var(--face) / var(--num-depth, 14)) * 30%),
+    var(--field)
+  );
+}
+
+.num3d-face:first-child {
+  position: relative;
+  inset: auto;
+}
+
+.num3d-face[data-face='lit'] {
+  color: var(--on-field);
+  /* The one place the deck uses a cast shadow. An extruded solid with no
+     shadow reads as outlined type, which is exactly what this must not
+     look like ninety seconds after the audience saw the same number set
+     flat on a bar. */
+  text-shadow: 0 .06em .12em color-mix(in srgb, var(--on-field) 22%, transparent);
+}
+
+/* The rig is fourteen copies of the same glyphs; name it once. */
+.num3d-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------
+   Slide 4 — the same object, as the hero.
+   ---------------------------------------------------------------- */
+
+.fig-num {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.fig-num .num3d {
+  /* Deliberately enormous. This is the only object on the slide and the
+     narrative wants it to be the only thing in frame with weight. */
+  font-size: clamp(6rem, 26vw, 22rem);
+  will-change: transform, opacity;
+}
+
+.fig-num .num3d-face {
+  font-size: 1em;
+}
+
+/* The entrance is a dolly, not a zoom.
+   `--num-dolly` pushes the rig back along its own Z inside the perspective it
+   already has, so the numeral arrives from *behind* the beige — smaller, with
+   its extrusion foreshortened and its faces converging — and comes forward
+   onto the picture plane. A `scale()` would have changed its size without
+   changing any of that, which is the difference between an object approaching
+   and a picture of an object being enlarged. The narrative asks for the second
+   slide's numeral "dollied in", so it is dollied. */
+.fig-num .num3d {
+  --num-dolly: -7.4em;
+  opacity: 0;
+  transition:
+    opacity 620ms var(--ease-out),
+    --num-dolly 1180ms var(--ease-out);
+}
+
+.fig-num[data-in='true'] .num3d {
+  --num-dolly: 0em;
+  opacity: 1;
+}
+
+.fig-num[data-reduced='true'] .num3d {
+  transition: none;
+  --num-dolly: 0em;
+  opacity: 1;
+}
+
+/* `--num-dolly` is only interpolable because it is registered; without this
+   it would step from its start value to its end value in one frame and the
+   dolly would be a pop. Registered here rather than in `theme.css` because
+   the property belongs to this object and nothing else reads it. */
+@property --num-dolly {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0em;
+}
+
+.fig-ct-tile {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .45em;
+  padding: .8em .6em;
+  box-shadow: inset 0 0 0 1px var(--on-field-dim);
+  overflow: hidden;
+  transition:
+    transform 460ms var(--ease-in-out) var(--fig-delay),
+    opacity var(--mo-3) var(--ease-out),
+    box-shadow var(--mo-3) var(--ease-out);
+}
+
+/* Four weights of one colour, which is how the narrative asks for it —
+   "four visibly different shades of royal blue" on a beige field. A tint of
+   `currentColor` rather than a fill, so the field shows through. */
+.fig-ct-fill {
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  /* Floor plus a wide span rather than a straight multiple. The four shades
+     have to be told apart from the back of a room in about a second — that
+     is the whole point of the sort — and a 0 to .32 ramp put the lightest
+     two within a few percent of each other and of the field. The ceiling
+     stops at .44 because the category label is set in the field's own ink
+     and has to stay legible on the darkest tile. */
+  opacity: calc(.07 + var(--fig-shade, 1) * .37);
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+.fig-ct-tile[data-flagged='true'] {
+  box-shadow: inset 0 0 0 2px var(--stamp);
+}
+
+.fig-ct-mark,
+.fig-ct-confidence,
+.fig-ct-category {
+  position: relative;
+}
+
+.fig-ct-mark {
+  width: 1.8em;
+  height: 1.8em;
+}
+
+.fig-ct-mark path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: square;
+}
+
+.fig-ct-confidence {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2.1rem, 3.6vw, 3.4rem);
+  line-height: 1;
+  transition:
+    opacity var(--mo-3) var(--ease-spring),
+    transform var(--mo-3) var(--ease-spring);
+}
+
+.fig-ct-category {
+  font-size: clamp(.92rem, 1.1vw, 1.12rem);
+  line-height: 1.2;
+  text-align: center;
+  transition: opacity var(--mo-3) var(--ease-out) 220ms;
+}
+
+/* ================================================================
+   9 · traces — the AI misdirection chart
+   ================================================================ */
+
+.fig-tr {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.fig-tr-plot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.fig-tr-baseline {
+  fill: none;
+  stroke: var(--on-field-dim);
+  stroke-width: 2;
+  stroke-dasharray: 7 6;
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+/* Screen pixels, on a non-scaling stroke — see `DRAW_PX` in `kit.tsx`. In
+   user units the vertical scale of the stretched plot multiplied these by
+   more than five, and `stroke-linecap: round` then put a cap the size of the
+   plot on each end: the guardrailed trace rendered as a beige lozenge lying
+   across the middle of the slide rather than as a line landing on the
+   baseline, which is the one thing this figure has to show. */
+.fig-tr-trace {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 4000;
+  transition:
+    stroke-dashoffset 900ms var(--ease-in-out),
+    opacity var(--mo-4) var(--ease-out),
+    stroke-width var(--mo-4) var(--ease-out);
+}
+
+/* The one that lands on the baseline is the argument, so it is the heaviest
+   line on the plot — but by a stop, not by an order of magnitude. */
+.fig-tr-trace[data-style='guarded'] {
+  stroke-width: 4.5;
+}
+
+/* The good news steps back the moment the reveal lands. */
+.fig-tr-trace[data-receded='true'] {
+  opacity: .45;
+  stroke-width: 2;
+}
+
+.fig-tr-mark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.fig-tr-end {
+  position: absolute;
+  width: .7em;
+  height: .7em;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+  transition: opacity var(--mo-3) var(--ease-out) 720ms;
+}
+
+.fig-tr-tag {
+  position: absolute;
+  max-width: 25%;
+  transform: translateY(-50%);
+  font-size: clamp(.95rem, 1.18vw, 1.2rem);
+  line-height: 1.2;
+  transition: opacity var(--mo-3) var(--ease-out) 720ms;
+}
+
+.fig-tr-baseline-label {
+  position: absolute;
+  left: 3.5%;
+  transform: translateY(-150%);
+  font-family: var(--font-pixel);
+  font-size: clamp(.88rem, 1.02vw, 1.04rem);
+  letter-spacing: .02em;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+/* ================================================================
+   10 · method-fan — fourteen methods, one docked
+   ================================================================ */
+
+.fig-mf {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* The box sits in the top two-thirds of the stage and stops short of it. The
+   lift readout goes underneath, and the two used to overlap: the box ran to
+   79% and the bars started at 60%, so the baseline bar was drawn straight
+   across the bottom rule of the question. */
+.fig-mf-question {
+  position: absolute;
+  left: 24%;
+  top: 10%;
+  width: 58%;
+  height: 52%;
+  display: flex;
+  flex-direction: column;
+  gap: .9em;
+  padding: 1.5em 1.7em 1.5em 2.6em;
+  box-shadow: inset 0 0 0 1px var(--on-field-dim);
+  transition: opacity 240ms var(--ease-out);
+}
+
+.fig-mf-question-rule {
+  display: block;
+  height: .5em;
+  background: currentColor;
+  opacity: .18;
+}
+
+.fig-mf-question-rule:nth-child(1) { width: 92%; }
+.fig-mf-question-rule:nth-child(2) { width: 84%; }
+.fig-mf-question-rule:nth-child(3) { width: 56%; }
+
+.fig-mf-card {
+  position: absolute;
+  max-width: 10em;
+  padding: .42em .75em;
+  box-shadow: inset 0 0 0 1px var(--on-field-dim);
+  font-size: clamp(.88rem, 1.02vw, 1.04rem);
+  line-height: 1.2;
+  text-align: center;
+  color: var(--on-field-dim);
+  /* Deliberately off the motion scale. `--mo-4` is 900ms, and with a fourteen
+     card stagger on top of it the fan took over three seconds to resolve —
+     see the note on `MARKS` in `method-fan.tsx`. These are the durations that
+     let the whole figure settle inside 600ms. */
+  transition:
+    left 300ms var(--ease-out),
+    top 300ms var(--ease-out),
+    transform 300ms var(--ease-out) var(--fig-delay),
+    opacity 220ms var(--ease-out) var(--fig-delay),
+    color 220ms var(--ease-out),
+    box-shadow 220ms var(--ease-out);
+}
+
+.fig-mf-card[data-survivor='true'] {
+  color: var(--on-field);
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+
+.fig-mf-card[data-docked='true'] {
+  max-width: 11em;
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+}
+
+.fig-mf-sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14%;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  transition: left 180ms linear, opacity 120ms linear;
+}
+
+/* Below the question box, ranged to its left edge so the two read as one
+   stacked composition rather than as two objects that happen to be near each
+   other. */
+.fig-mf-lift {
+  position: absolute;
+  left: 24%;
+  top: 70%;
+  width: 34%;
+  display: flex;
+  flex-direction: column;
+  gap: .35em;
+  transition: opacity 220ms var(--ease-out);
+}
+
+.fig-mf-lift-row {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+}
+
+.fig-mf-lift-track {
+  flex: 1;
+  height: .5em;
+  box-shadow: inset 0 0 0 1px var(--on-field-dim);
+}
+
+.fig-mf-lift-run {
+  display: block;
+  height: 100%;
+  background: currentColor;
+  transition: width 260ms var(--ease-out) var(--fig-delay);
+}
+
+.fig-mf-lift-row[data-role='baseline'] .fig-mf-lift-run {
+  background: var(--on-field-dim);
+}
+
+.fig-mf-lift-value {
+  min-width: 2.8em;
+  text-align: right;
+  font-family: var(--font-pixel);
+  font-size: clamp(.88rem, 1.02vw, 1.04rem);
+}
+
+.fig-mf-lift-note {
+  margin: .25em 0 0;
+  font-family: var(--font-pixel);
+  font-size: clamp(.85rem, .98vw, .98rem);
+  line-height: 1.25;
+  color: var(--on-field-dim);
+}
+
+/* ================================================================
+   11 · clock-rings — one completes, one is left open
+   ================================================================ */
+
+.fig-cr {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* `align-items` and `justify-content` were being declared on a block box and
+     doing nothing, which let the core size itself and run off the bottom of the
+     slide over the fragment line. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Square and concentric with the inner ring. Centred on it so the two read as
+   one dial rather than as two unrelated arcs.
+
+   This used to be 118% of the stage, so that the full-form ring "went off past
+   the edge of your attention". The stage clips, and what the room actually saw
+   was a lopsided arc entering and leaving the bottom corners — not a clock that
+   was too big to take in, just a broken curve. The ring is inside the frame
+   now and carries its meaning the way the narrative's other half does: it is
+   drawn to 38% and never closed. An open ring reads as unfinished at any size;
+   a clipped one only reads as clipped. */
+.fig-cr-outer-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  aspect-ratio: 1;
+  /* The stroke is at radius 46 of 100, so the ring's own diameter is 92% of
+     this — which lands it just inside the stage row. */
+  height: 100%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.fig-cr-outer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.fig-cr-outer-arc {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: butt;
+  opacity: .78;
+  transition: stroke-dashoffset 2400ms var(--ease-in-out);
+}
+
+.fig-cr-outer-label {
+  position: absolute;
+  max-width: 11em;
+  font-size: clamp(.92rem, 1.12vw, 1.14rem);
+  line-height: 1.25;
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+.fig-cr-outer-label[data-side='right'] {
+  transform: translate(.8em, -50%);
+}
+
+.fig-cr-outer-label[data-side='left'] {
+  transform: translate(calc(-100% - .8em), -50%);
+  text-align: right;
+}
+
+/* Sized off the height so the two rings stay concentric and inside the stage
+   row whatever the projector's aspect ratio is. At 62% the gap between the
+   per-question ring and the full-form ring around it is about a ring width,
+   which is what makes the pair read as one dial with two hands' worth of
+   information rather than as a small circle inside a large one. */
+.fig-cr-core {
+  position: relative;
+  flex: none;
+  aspect-ratio: 1;
+  height: 62%;
+  max-width: 46%;
+}
+
+.fig-cr-inner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Widths here are user units in a `meet` viewBox, so they scale with the ring
+   rather than staying at a fixed pixel weight: a per-question clock that thins
+   out on a bigger screen would stop reading as a clock. */
+.fig-cr-track {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4.5;
+  opacity: .15;
+}
+
+.fig-cr-ghost {
+  fill: none;
+  stroke: var(--on-field-dim);
+  stroke-width: 1.6;
+  transition: stroke-dashoffset 700ms var(--ease-out);
+}
+
+.fig-cr-used {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4.5;
+  stroke-linecap: butt;
+  transition: stroke-dashoffset 1700ms var(--ease-in-out);
+}
+
+.fig-cr-tick {
+  stroke: var(--on-field-dim);
+  stroke-width: 1.4;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-cr-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54%;
+  height: 38%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: .45em;
+  padding: .8em;
+  box-shadow: inset 0 0 0 1px var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out), box-shadow var(--mo-3) var(--ease-out);
+}
+
+.fig-cr-card[data-settled='true'] {
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+
+.fig-cr-card-rule {
+  height: .38em;
+  background: currentColor;
+  opacity: .18;
+}
+
+.fig-cr-card-rule:nth-of-type(1) { width: 84%; }
+.fig-cr-card-rule:nth-of-type(2) { width: 56%; }
+
+.fig-cr-inner-label {
+  margin: .45em 0 0;
+  font-size: clamp(.9rem, 1.08vw, 1.1rem);
+  line-height: 1.25;
+}
+
+/* ================================================================
+   15 · radial — the measurement surface
+   ================================================================ */
+
+.fig-rd {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.fig-rd-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.fig-rd-guide {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: .13;
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+.fig-rd-wire {
+  fill: none;
+  stroke: currentColor;
+  /* Screen pixels — see `DRAW_PX` in `kit.tsx`. The outer ring's wires are
+     over six hundred pixels long on a 1920 frame, so at 400 the dash did not
+     cover them and the diagram drew itself in dashes. */
+  stroke-dasharray: 4000;
+  opacity: .5;
+  transition:
+    stroke-dashoffset var(--mo-3) var(--ease-out) var(--fig-delay),
+    opacity var(--mo-4) var(--ease-out);
+}
+
+.fig-rd-wire[data-highlight='true'] {
+  opacity: .95;
+}
+
+.fig-rd[data-forming='true'] .fig-rd-wire[data-ring='2'] {
+  opacity: .28;
+}
+
+.fig-rd[data-forming='true'] .fig-rd-guide[data-ring='2'] {
+  opacity: .07;
+}
+
+.fig-rd-node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: .45em;
+  transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+
+/* Anchored by the direction of the node, so a label always runs away from
+   the diagram and never back across it. The `.4em` is half a dot: it puts
+   the dot's centre exactly on the ring. */
+.fig-rd-node[data-anchor='right'] {
+  transform: translate(-.4em, -50%);
+}
+
+.fig-rd-node[data-anchor='left'] {
+  flex-direction: row-reverse;
+  transform: translate(calc(-100% + .4em), -50%);
+  text-align: right;
+}
+
+.fig-rd-node[data-anchor='above'] {
+  flex-direction: column-reverse;
+  transform: translate(-50%, calc(-100% + .4em));
+  text-align: center;
+}
+
+.fig-rd-node[data-anchor='below'] {
+  flex-direction: column;
+  transform: translate(-50%, -.4em);
+  text-align: center;
+}
+
+.fig-rd-dot {
+  flex: 0 0 auto;
+  width: .8em;
+  height: .8em;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .8;
+  transition: transform var(--mo-3) var(--ease-spring), opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-rd-node[data-highlight='true'] .fig-rd-dot {
+  transform: scale(1.85);
+  opacity: 1;
+}
+
+.fig-rd-label {
+  display: block;
+  max-width: 9.5em;
+  font-size: clamp(.9rem, 1.08vw, 1.1rem);
+  line-height: 1.18;
+  color: var(--on-field-dim);
+}
+
+/* The inner ring's labels run into the gap between the rings, which is the
+   tightest space in the figure. */
+.fig-rd-node[data-ring='1'] .fig-rd-label {
+  max-width: 7.5em;
+}
+
+.fig-rd-node[data-highlight='true'] .fig-rd-label {
+  color: var(--on-field);
+  font-weight: 600;
+}
+
+.fig-rd-tag {
+  display: block;
+  margin-top: .18em;
+  font-family: var(--font-pixel);
+  font-size: clamp(.85rem, .98vw, .98rem);
+  letter-spacing: .04em;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-rd-centre {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .1em;
+  text-align: center;
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+.fig-rd-centre b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2.4rem, 4.6vw, 4.6rem);
+  line-height: .95;
+  letter-spacing: -.02em;
+}
+
+.fig-rd-centre span {
+  max-width: 8.5em;
+  font-size: clamp(.9rem, 1.08vw, 1.1rem);
+  line-height: 1.2;
+  color: var(--on-field-dim);
+}
+
+/* ================================================================
+   16 · spokes — points against badges
+   ================================================================ */
+
+.fig-sp {
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 2.6vw, 2.8rem);
+  width: 100%;
+  height: 100%;
+}
+
+.fig-sp-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+/* Sized off the stage's height and deliberately smaller than it could be. The
+   four dimension labels sit outside the square, so the slack around the plot is
+   label space, and the tightest case is a 4:3 frame where there is least of it. */
+.fig-sp-plot {
+  position: relative;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  height: min(58%, 44vw);
+}
+
+.fig-sp-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.fig-sp-axis {
+  stroke: var(--on-field-dim);
+  stroke-width: 1.5;
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-sp-shape {
+  fill: currentColor;
+  fill-opacity: .1;
+  stroke: var(--on-field-dim);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-spring);
+}
+
+.fig-sp-shape[data-emphasis='true'] {
+  stroke: currentColor;
+  stroke-width: 4;
+  fill-opacity: .16;
+}
+
+.fig-sp-lit {
+  fill: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-sp-lit[data-emphasis='true'] {
+  fill: currentColor;
+}
+
+.fig-sp-label {
+  position: absolute;
+  font-size: clamp(.9rem, 1.1vw, 1.12rem);
+  white-space: nowrap;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-sp-label[data-anchor='right'] { transform: translate(.35em, -50%); }
+.fig-sp-label[data-anchor='left'] { transform: translate(calc(-100% - .35em), -50%); }
+.fig-sp-label[data-anchor='centre'] { transform: translate(-50%, -50%); }
+
+.fig-sp-key {
+  flex: 0 0 auto;
+  max-width: 32%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: .9em;
+}
+
+.fig-sp-key li {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-sp-key li[data-emphasis='true'] {
+  color: var(--on-field);
+}
+
+.fig-sp-swatch {
+  flex: 0 0 auto;
+  width: 1.7em;
+  height: .24em;
+  background: var(--on-field-dim);
+}
+
+.fig-sp-key li[data-emphasis='true'] .fig-sp-swatch {
+  height: .42em;
+  background: currentColor;
+}
+
+.fig-sp-key-name {
+  flex: 1;
+  line-height: 1.2;
+}
+
+.fig-sp-key li b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.3em;
+  line-height: 1;
+}
+
+/* ================================================================
+   17 · paired-bars — Clark's four splits
+   ================================================================ */
+
+.fig-paired-bars {
+  align-items: stretch;
+}
+
+.fig-pb {
+  --fig-pb-gap: clamp(.9rem, 2.6vw, 2.8rem);
+  display: flex;
+  flex-direction: column;
+  gap: .7em;
+  width: 100%;
+  height: 100%;
+}
+
+.fig-pb-plot {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--fig-pb-gap);
+}
+
+/* Drawn, not implied. The alternatives are at or below it and that is the
+   entire argument. */
+.fig-pb-zero {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-pb-pair,
+.fig-pb-pair-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.fig-pb-pair {
+  gap: .5em;
+}
+
+.fig-pb-col {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.fig-pb-bar {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  background: currentColor;
+  transform-origin: center;
+  transition: height 620ms var(--ease-out) var(--fig-delay);
+}
+
+/* Recessed rather than merely paler: hatched and outlined, so it reads as an
+   alternative that was considered and not as a second measurement. */
+.fig-pb-bar[data-side='theirs'] {
+  background: none;
+  background-image: repeating-linear-gradient(45deg, var(--on-field-dim) 0 2px, transparent 2px 6px);
+  box-shadow: inset 0 0 0 1px var(--on-field-dim);
+}
+
+.fig-pb-bar[data-pulse='true'] {
+  animation: fig-pb-pulse 700ms var(--ease-out) 1 both;
+}
+
+@keyframes fig-pb-pulse {
+  0% { transform: scaleX(1); }
+  42% { transform: scaleX(1.24); }
+  100% { transform: scaleX(1); }
+}
+
+.fig-pb-value {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + .22em);
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.1rem, 1.85vw, 1.85rem);
+  line-height: 1;
+  white-space: nowrap;
+  transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+
+.fig-pb-bar[data-negative='true'] .fig-pb-value {
+  bottom: auto;
+  top: calc(100% + .22em);
+}
+
+.fig-pb-bar[data-side='theirs'] .fig-pb-value {
+  color: var(--on-field-dim);
+}
+
+.fig-pb-axis {
+  display: flex;
+  gap: var(--fig-pb-gap);
+}
+
+.fig-pb-pair-name {
+  flex-direction: column;
+  gap: .1em;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+/* Fixed height. A label wrapping to two lines in one pair must not push its
+   pair's plot up and tilt the shared zero line. */
+.fig-pb-legs {
+  display: flex;
+  gap: .5em;
+}
+
+.fig-pb-legs span {
+  flex: 1;
+  min-width: 0;
+  height: 2.5em;
+  overflow: hidden;
+  text-align: center;
+  font-family: var(--font-pixel);
+  font-size: clamp(.85rem, .98vw, .98rem);
+  line-height: 1.2;
+  color: var(--on-field-dim);
+}
+
+.fig-pb-legs span[data-side='ours'] {
+  color: var(--on-field);
+}
+
+.fig-pb-name {
+  margin: 0;
+  text-align: center;
+  font-weight: 600;
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  line-height: 1.2;
+}
+
+.fig-pb-foot {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-pixel);
+  font-size: clamp(.85rem, .98vw, .98rem);
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+/* ================================================================
+   22 · gate — one direction only
+   ================================================================ */
+
+.fig-gate {
+  align-items: stretch;
+}
+
+.fig-gt {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(.8rem, 2vh, 1.8rem);
+  width: 100%;
+  height: 100%;
+}
+
+.fig-gt-frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.fig-gt-col {
+  position: absolute;
+  top: 50%;
+  max-width: 25%;
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.6rem, 3.2vw, 3.2rem);
+  line-height: 1.05;
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
+.fig-gt-col[data-side='left'] {
+  left: 0;
+  transform: translateY(-50%);
+}
+
+.fig-gt-col[data-side='right'] {
+  right: 0;
+  transform: translateY(-50%);
+  text-align: right;
+}
+
+.fig-gt-arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Screen pixels on a non-scaling stroke — see `DRAW_PX` in `kit.tsx`. The
+   forward arrow is meant to be thick; at 10 user units through the stretched
+   viewBox it was a 54-pixel bar, which is not thick, it is a rectangle. */
+.fig-gt-shaft {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-dasharray: 4000;
+}
+
+.fig-gt-shaft[data-dir='forward'] {
+  stroke: currentColor;
+  stroke-width: 16;
+  transition: stroke-dashoffset 620ms var(--ease-out);
+}
+
+.fig-gt-shaft[data-dir='reverse'] {
+  stroke: var(--on-field-dim);
+  stroke-width: 5;
+  transition: stroke-dashoffset 520ms var(--ease-in-out), opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-gt-shaft[data-denied='true'] {
+  opacity: .38;
+}
+
+/* Two beats, then it holds. A coupling that keeps throbbing behind a speaker
+   is a coupling nobody stops looking at.
+   The pulse is a weight change rather than a scale, because the arrow's ends
+   are anchored to two columns of type and must not move off them — and because
+   a scale about a stretched viewBox's centre displaces a horizontal line
+   vertically. */
+.fig-gt-shaft[data-pulse='true'] {
+  animation: fig-gt-pulse 640ms var(--ease-in-out) 2 both;
+}
+
+@keyframes fig-gt-pulse {
+  0%, 100% { stroke-width: 10; }
+  50% { stroke-width: 15; }
+}
+
+.fig-gt-chevron[data-pulse='true'] {
+  animation: fig-gt-chevron-pulse 640ms var(--ease-in-out) 2 both;
+}
+
+@keyframes fig-gt-chevron-pulse {
+  0%, 100% { border-top-width: .62em; border-right-width: .62em; }
+  50% { border-top-width: .92em; border-right-width: .92em; }
+}
+
+.fig-gt-chevron {
+  position: absolute;
+  width: 1.5em;
+  height: 1.5em;
+  transition: opacity var(--mo-2) var(--ease-out) 560ms;
+}
+
+/* The offsets put the chevron's *corner* on the end of the shaft rather than the
+   centre of its bounding square. Rotating a square by 45° moves that corner
+   0.707 of the box width from the centre, so the translate is half the box plus
+   that, in whichever direction the arrow points. */
+.fig-gt-chevron[data-dir='forward'] {
+  border-top: .62em solid currentColor;
+  border-right: .62em solid currentColor;
+  transform: translate(-120.7%, -50%) rotate(45deg);
+}
+
+.fig-gt-chevron[data-dir='reverse'] {
+  width: 1.05em;
+  height: 1.05em;
+  border-top: .24em solid var(--on-field-dim);
+  border-right: .24em solid var(--on-field-dim);
+  transform: translate(20.7%, -50%) rotate(225deg);
+}
+
+/* 140ms and linear. A strike-through that eases looks like a flourish; this
+   one is a refusal. Drawn in `--on-field`, because verdict red is spent on
+   slides 6 and 7 and this is not one of them. */
+.fig-gt-strike {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 7;
+  stroke-linecap: butt;
+  stroke-dasharray: 4000;
+  transition: stroke-dashoffset 140ms linear;
+}
+
+.fig-gt-denied {
+  position: absolute;
+  left: 50%;
+  top: 79%;
+  transform: translateX(-50%);
+  margin: 0;
+  max-width: 46%;
+  text-align: center;
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  line-height: 1.25;
+  color: var(--on-field-dim);
+  text-decoration-line: line-through;
+  text-decoration-thickness: 1px;
+  transition: opacity var(--mo-3) var(--ease-out) 220ms;
+}
+
+.fig-gt-couplings {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .5em;
+}
+
+.fig-gt-couplings li {
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  line-height: 1.2;
+  transition:
+    opacity var(--mo-3) var(--ease-out) var(--fig-delay),
+    transform var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+
+/* Cause in the field's full weight, effect recessed: the couplings read left to
+   right, in the same direction as the arrow above them. */
+.fig-gt-cause {
+  font-weight: 600;
+}
+
+.fig-gt-effect {
+  color: var(--on-field-dim);
+}
+
+.fig-gt-thin {
+  flex: 0 0 auto;
+  width: 2.8em;
+  height: .85em;
+}
+
+.fig-gt-thin path {
+  fill: none;
+  stroke: var(--on-field-dim);
+  stroke-width: 1.4;
+  stroke-linecap: butt;
+}
+
+/* ================================================================
+   REDUCED MOTION
+   ================================================================
+   The component has already jumped to its last phase, so all this has to do
+   is make sure nothing tries to animate its way there — including the two
+   decorative `@keyframes` above, whose absence changes nothing about the
+   finished frame. Scoped to `.fig` rather than left to the global rule in
+   `theme.css`, because `reduced` is also passed explicitly by the deck's own
+   presenter mode, which is not the same thing as the media query.
+   ================================================================ */
+
+.fig[data-reduced='true'] *,
+.fig[data-reduced='true'] *::before,
+.fig[data-reduced='true'] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* The one place where killing an animation would remove something from the
+   finished frame rather than just its way in: the caret rests at zero opacity
+   and is lit by the blink, so with no blink it has to be lit here. */
+.fig[data-reduced='true'] .fig-rc-caret[data-live='true'] {
+  opacity: 1;
+}

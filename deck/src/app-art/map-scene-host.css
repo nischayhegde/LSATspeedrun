@@ -1,0 +1,53 @@
+/* The handful of rules the ported map scene needs to fill its box.
+   Lifted from the app's `unified-empire-map.css`, minus the map UI wrapper
+   (which is not part of the port). `.uw-three-scene` is the host div the scene
+   renders itself; `.uw-three-canvas` is the class it puts on the renderer's
+   canvas after appending it. The loading panel sits underneath and is covered
+   by the canvas once it lands. */
+
+.deck-map-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: #aebfba;
+}
+
+.uw-three-scene {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  background: #aebfba;
+}
+
+.uw-three-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.uw-three-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 9px;
+  color: #294a48;
+  background: linear-gradient(#b7c9c1, #d8d2bd);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.uw-three-loading i {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(41, 74, 72, 0.2);
+  border-top-color: #836d3d;
+  border-radius: 50%;
+  animation: deck-map-spin 0.9s linear infinite;
+}
+
+@keyframes deck-map-spin { to { transform: rotate(360deg); } }

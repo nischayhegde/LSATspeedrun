@@ -1,0 +1,2209 @@
+/* ================================================================
+   LAWYER TYCOON — DECK LAYOUT
+   ================================================================
+   `theme.css` holds the tokens and the texture utilities. This file is
+   the deck itself: the layer stack, the type scale, the seven slide
+   bodies, the demo frame chrome, the transition furniture, and the
+   presenter's own surfaces.
+
+   Every selector here is emitted by a component. Nothing is
+   speculative — the class list was taken off `deck.tsx`,
+   `slides/layouts.tsx`, `demo/demo-frame.tsx`, `engine/transitions.ts`,
+   `engine/presenter.tsx`, `engine/grid.tsx` and
+   `scenes/app-scene-layer.tsx`.
+
+   ## The one measurement everything else is derived from
+
+   This is projected, not read at a desk, so the type is sized against
+   the *stage* rather than against the browser. `--u` is one percent of
+   the largest 16:9 box that fits the viewport, which means a headline
+   occupies the same fraction of the projected image at 1280x720, at
+   1920x1080 and at 3840x2160, and degrades by shrinking rather than by
+   clipping when the room's projector turns out to be 16:10 or 4:3.
+   ================================================================ */
+
+.deck {
+  /* 100u spans the width of the 16:9 stage. On a taller viewport the
+     height binds first and the whole deck scales down together. */
+  --u: min(1vw, 1.7778vh);
+
+  /* --- the type scale, in stage units --------------------------- */
+  --t-xxl: calc(8.4 * var(--u));   /* the hero title, and only that */
+  --t-xl: calc(5.9 * var(--u));    /* a POV claim */
+  --t-lg: calc(4.5 * var(--u));    /* a statement headline */
+  --t-md: calc(3.3 * var(--u));    /* a headline sharing the slide */
+  --t-sm: calc(2.15 * var(--u));   /* a caption plate over a scene */
+  --t-deck: calc(1.86 * var(--u)); /* the standfirst under a headline */
+  --t-body: calc(1.5 * var(--u));  /* a ledger row */
+  --t-dense: calc(1.26 * var(--u));/* a ledger row beside something else */
+  --t-eyebrow: calc(1.06 * var(--u));
+  --t-credit: calc(.95 * var(--u));
+
+  --gutter: calc(6.4 * var(--u));
+  --gap: calc(2.2 * var(--u));
+
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--stage);
+  /* Cursor hidden while presenting; the click zones bring it back. */
+  cursor: default;
+}
+
+/* Each act owns one accent. It is spent on the eyebrow, the rules, the
+   progress tick and the grid tile, and nowhere else — an act that
+   recolours its body text stops looking like the same deck. */
+[data-section='title'] { --accent: var(--pixel-gold); }
+[data-section='problem'] { --accent: #d8674e; }
+[data-section='thesis'] { --accent: var(--pixel-cyan); }
+[data-section='product'] { --accent: var(--gold); }
+[data-section='game'] { --accent: var(--pixel-gold); }
+[data-section='close'] { --accent: var(--gold-soft); }
+
+/* ================================================================
+   THE LAYER STACK
+   ================================================================
+   Bottom to top: shared WebGL stage, ported app scenes, the two slide
+   layers, transition furniture, edge chrome, then the film layers from
+   `theme.css` at 899/900, then presenter furniture above everything. */
+
+.deck-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.deck-stage-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.deck-appscene {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  /* The `camera` transition scales these, and a scaled canvas that
+     paints outside its box would cover the slide copy. */
+  contain: paint;
+}
+
+.deck-layers {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+/* A slide layer is the full stage. Only the live one is opaque; the
+   other is either mid-transition, in which case the Web Animations
+   fill is holding its opacity, or empty. */
+.deck-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform-origin: 50% 50%;
+}
+
+.deck-layer.is-live { opacity: 1; }
+
+/* Copy has to survive being laid over a bright 3D scene. Rather than
+   shadow the type — which always looks cheap at this size — each layer
+   carries a scrim shaped like the composition it holds, so the field
+   is darkest exactly where the words are and clear where the scene is
+   the subject. */
+.deck-layer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--scrim, none);
+}
+
+.deck-layer[data-kind='title'] {
+  --scrim: radial-gradient(58% 52% at 50% 54%, rgba(5, 8, 13, .78), rgba(5, 8, 13, .22) 68%, transparent);
+}
+
+.deck-layer[data-kind='statement'],
+.deck-layer[data-kind='pov'],
+.deck-layer[data-kind='split'] {
+  --scrim: linear-gradient(100deg, rgba(4, 7, 12, .9) 0%, rgba(4, 7, 12, .74) 46%, rgba(4, 7, 12, .3) 78%, rgba(4, 7, 12, .12) 100%);
+}
+
+.deck-layer[data-kind='demo'],
+.deck-layer[data-kind='metrics'] {
+  --scrim: linear-gradient(180deg, rgba(4, 7, 12, .82), rgba(4, 7, 12, .66) 55%, rgba(4, 7, 12, .84));
+}
+
+/* Scene slides get almost nothing: the scene is the argument, and the
+   caption plate is opaque enough to carry itself. */
+.deck-layer[data-kind='scene'] {
+  --scrim: linear-gradient(12deg, rgba(4, 7, 12, .72) 0%, rgba(4, 7, 12, .2) 34%, transparent 58%);
+}
+
+/* ----------------------------------------------------------------
+   THE FIELD, AND THE INVERSION
+
+   `NARRATIVE.md` treats the two colours as an argument rather than a
+   palette: the deck runs on royal blue through the indictment, flips
+   whole to beige for the turn at slide 4, and flips back for Alan's
+   act. The flip is the loudest transition in the first half and it is
+   supposed to feel like a light coming on.
+
+   A painted field is opaque, so it also cancels the scrim above —
+   that gradient exists to keep type legible over a 3D render, and
+   over a flat fill it would just be a smear. Slides whose subject is
+   the scene keep `data-field="scene"` and change nothing.
+   ---------------------------------------------------------------- */
+
+.deck-layer[data-field='blue'],
+.deck-layer[data-field='beige'] {
+  --scrim: none;
+}
+
+.deck-layer[data-field='blue'] {
+  --field: var(--blue);
+  --on-field: var(--beige);
+  --on-field-dim: var(--beige-dim);
+  /* Lit from above and vignetted into the corners, so a flat fill still
+     has somewhere for the eye to rest. The engraved wave is the app's
+     own texture and keeps the projector from banding across the blue. */
+  background:
+    radial-gradient(128% 96% at 50% -14%, rgba(42, 75, 184, .42), transparent 64%),
+    radial-gradient(96% 130% at 50% 118%, rgba(9, 16, 42, .74), transparent 58%),
+    var(--engraved-wave),
+    var(--blue);
+}
+
+.deck-layer[data-field='beige'] {
+  --field: var(--beige);
+  --on-field: var(--blue);
+  /* Not a tint of the blue: a warm grey that reads as ink diluted, which
+     is what a hairline credit on paper actually looks like. */
+  --on-field-dim: #6a6a7d;
+  background:
+    radial-gradient(120% 92% at 50% -10%, rgba(255, 253, 247, .9), transparent 60%),
+    radial-gradient(100% 120% at 50% 116%, rgba(176, 164, 142, .5), transparent 62%),
+    var(--laid-paper),
+    var(--beige);
+}
+
+/* The film layers are tuned for a dark stage and turn a beige field
+   grey, so a lit slide takes them back most of the way. */
+.deck:has(.deck-layer.is-live[data-field='beige']) .deck-vignette { opacity: .28; }
+.deck:has(.deck-layer.is-live[data-field='beige']) .deck-scanlines { opacity: .22; }
+
+.deck-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+}
+
+/* ================================================================
+   SLIDE BODIES — the shared frame
+   ================================================================ */
+
+.body {
+  position: absolute;
+  inset: 0;
+  padding: var(--gutter);
+  display: grid;
+  color: var(--on-field);
+}
+
+/* ================================================================
+   TYPOGRAPHY
+   ================================================================ */
+
+.eyebrow {
+  margin: 0 0 calc(1.5 * var(--u));
+  font-family: var(--font-ui);
+  font-size: var(--t-eyebrow);
+  font-weight: 700;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--accent, var(--gold));
+  /* A rule the length of the word, struck under it. The act label reads
+     as a filing header rather than as a subtitle. */
+  display: flex;
+  align-items: center;
+  gap: calc(1.1 * var(--u));
+}
+
+.eyebrow::after {
+  content: '';
+  flex: 0 0 calc(5.5 * var(--u));
+  height: 2px;
+  background: linear-gradient(90deg, currentColor, transparent);
+  opacity: .55;
+}
+
+.display {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: .96;
+  letter-spacing: -.018em;
+  text-wrap: balance;
+  /* The `type` transition rotates glyphs on X; without a perspective on
+     the container that reads as a vertical squash rather than a turn. */
+  perspective: 900px;
+  font-variation-settings: 'wght' 760, 'opsz' 144;
+}
+
+.display.xxl { font-size: var(--t-xxl); line-height: .9; letter-spacing: -.028em; }
+.display.xl { font-size: var(--t-xl); line-height: .94; letter-spacing: -.022em; }
+.display.lg { font-size: var(--t-lg); }
+.display.md { font-size: var(--t-md); line-height: 1; }
+.display.sm { font-size: var(--t-sm); line-height: 1.04; letter-spacing: -.01em; }
+
+/* Words stay whole so the line breaks between them; glyphs are
+   individually addressable so the `type` transition can stagger them. */
+.hl-word {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.hl-glyph {
+  display: inline-block;
+  transform-origin: 50% 90%;
+  will-change: transform, opacity;
+}
+
+.slide-deck {
+  margin: calc(1.8 * var(--u)) 0 0;
+  max-width: 34ch;
+  font-family: var(--font-ui);
+  font-size: var(--t-deck);
+  font-weight: 500;
+  line-height: 1.34;
+  letter-spacing: -.004em;
+  color: var(--on-field-dim);
+  text-wrap: pretty;
+}
+
+/* The numbered ledger. A docket, a billing statement, an evidence list —
+   the product's own surfaces are all numbered rows with a gold rule, and
+   a round bullet would be the one element on the slide that came from a
+   template. */
+.ledger {
+  margin: calc(2 * var(--u)) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: calc(.9 * var(--u));
+}
+
+.ledger li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: calc(1.4 * var(--u));
+  padding-bottom: calc(.9 * var(--u));
+  border-bottom: 1px solid rgba(216, 208, 194, .16);
+  font-size: var(--t-body);
+  line-height: 1.32;
+  color: var(--on-field);
+}
+
+.ledger li:last-child { border-bottom: 0; }
+
+.ledger i {
+  font-family: var(--font-pixel);
+  font-style: normal;
+  font-size: .74em;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--accent, var(--gold));
+  /* Sits on the cap height of the row it numbers rather than on the
+     baseline, which is where a ledger's own numbering sits. */
+  transform: translateY(-.08em);
+}
+
+.ledger.is-dense {
+  gap: calc(.62 * var(--u));
+  margin-top: calc(1.5 * var(--u));
+}
+
+.ledger.is-dense li {
+  font-size: var(--t-dense);
+  gap: calc(1.05 * var(--u));
+  padding-bottom: calc(.62 * var(--u));
+}
+
+/* The quotable line, and its citation. */
+.pull {
+  margin: calc(2.2 * var(--u)) 0 0;
+  padding: 0 0 0 calc(1.8 * var(--u));
+  border-left: 3px solid var(--accent, var(--gold));
+}
+
+.pull p {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(2.1 * var(--u));
+  font-weight: 500;
+  font-style: italic;
+  line-height: 1.24;
+  color: var(--gold-soft);
+  font-variation-settings: 'wght' 540, 'opsz' 72;
+  text-wrap: pretty;
+}
+
+.pull cite {
+  display: block;
+  margin-top: calc(1 * var(--u));
+  font-family: var(--font-ui);
+  font-size: var(--t-credit);
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+  opacity: .78;
+}
+
+/* The hero's quiet line: present, but never competing with the title. */
+.pull-quiet {
+  margin: calc(2.6 * var(--u)) 0 0;
+  font-family: var(--font-ui);
+  font-size: calc(1.24 * var(--u));
+  font-weight: 600;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+  opacity: .82;
+}
+
+/* A hairline source citation. Subordinate to everything above it and
+   still legible from the back — the numbers in this deck are cited, and
+   a citation nobody can read is not a citation.
+
+   Emitted as a `<small>`, so it has to be told it is a block. It is the
+   last child of every body, which in a grid body makes it a grid item;
+   each layout below places it across the full measure rather than
+   letting it fall into a column. */
+.slide-credit {
+  display: block;
+  margin: calc(1.6 * var(--u)) 0 0;
+  padding-top: calc(1 * var(--u));
+  /* Derived from the field's own ink, so one rule is correct on a beige
+     slide and a blue one. A fixed beige hairline disappeared on exactly
+     the inverted slides that carry the citations. */
+  border-top: 1px solid color-mix(in srgb, var(--on-field) 24%, transparent);
+  font-family: var(--font-pixel);
+  font-size: var(--t-credit);
+  line-height: 1.45;
+  letter-spacing: .01em;
+  color: var(--on-field-dim);
+  /* Subordinate, not faint. At .74 on a dark field this fell below the
+     contrast a projector in a lit room can hold, and a citation nobody
+     can read is not a citation — which is the entire reason it is on the
+     audience screen rather than only in the notes. */
+  opacity: .92;
+  text-wrap: pretty;
+}
+
+/* ================================================================
+   BODY — TITLE
+   ================================================================
+   Full-bleed scene, one oversized centred title. The only slide in the
+   deck with nothing else on it. */
+
+.body-title {
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  padding-inline: calc(9 * var(--u));
+}
+
+.body-title .eyebrow { justify-content: center; }
+.body-title .eyebrow::before,
+.body-title .eyebrow::after {
+  content: '';
+  flex: 0 0 calc(5.5 * var(--u));
+  height: 2px;
+  opacity: .55;
+}
+.body-title .eyebrow::before { background: linear-gradient(90deg, transparent, currentColor); }
+
+.body-title .display {
+  max-width: 17ch;
+  color: var(--gold-soft);
+  /* Struck foil rather than a glow: two tight shadows in the app's own
+     `rgba(104,68,16,…)` plus one wide, faint bloom. */
+  text-shadow:
+    0 .022em 0 rgba(104, 68, 16, .5),
+    0 .045em 0 rgba(104, 68, 16, .3),
+    0 .07em .5em rgba(242, 199, 91, .16);
+}
+
+.body-title .slide-deck {
+  max-width: 40ch;
+  text-align: center;
+  color: var(--beige);
+  opacity: .92;
+}
+
+.body-title .slide-credit {
+  max-width: 62ch;
+  text-align: center;
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* ================================================================
+   BODY — STATEMENT
+   ================================================================
+   The document plate. Warm paper on a dark stage is the deck's single
+   strongest contrast, and it is the same move the product makes: the
+   game is dark, the filing is paper. */
+
+.body-statement {
+  align-content: center;
+  justify-content: start;
+  grid-template-columns: minmax(0, 56%);
+}
+
+.plate {
+  position: relative;
+  padding: calc(3.4 * var(--u)) calc(3.6 * var(--u)) calc(3.6 * var(--u));
+  color: #21262b;
+  background-color: var(--paper);
+  background-image: var(--laid-paper), linear-gradient(rgba(255, 250, 235, .55), rgba(255, 250, 235, 0));
+  background-size: 64px 64px, 100% 320px;
+  background-repeat: repeat, no-repeat;
+  border: 3px solid #0b1119;
+  border-radius: 2px;
+  /* The pixel drop: a hard offset shadow, no blur, exactly as the app's
+     bevel draws it. */
+  box-shadow:
+    inset 0 0 0 1px rgba(154, 108, 40, .38),
+    calc(.7 * var(--u)) calc(.7 * var(--u)) 0 var(--pixel-shadow),
+    0 calc(2.4 * var(--u)) calc(6 * var(--u)) rgba(3, 5, 9, .5);
+}
+
+/* A gold hairline inset from the edge, the way a certificate is ruled. */
+.plate::after {
+  content: '';
+  position: absolute;
+  inset: calc(.9 * var(--u));
+  border: 1px solid rgba(154, 108, 40, .3);
+  pointer-events: none;
+}
+
+.plate .eyebrow { color: var(--gold-dark); }
+.plate .display { color: var(--navy); }
+.plate .slide-deck { color: #4a5560; max-width: none; }
+.plate .rule { margin: calc(2 * var(--u)) 0 0; }
+.plate .ledger li { color: #2b333c; border-bottom-color: rgba(24, 39, 53, .16); }
+.plate .ledger i { color: var(--gold-dark); }
+.plate .slide-credit { color: #5c6570; border-top-color: rgba(24, 39, 53, .2); opacity: 1; }
+.plate .pull p { color: var(--navy-2); }
+.plate .pull cite { color: #5c6570; opacity: 1; }
+
+/* ================================================================
+   BODY — POV
+   ================================================================
+   A claim in large type, its evidence beneath. The claim is allowed to
+   be the only thing readable from the very back; the evidence is for
+   the rows that can read it. */
+
+/* Both rows are `auto` so the pair centres as a block. With a `1fr`
+   second row the grid fills the stage and the copy hangs off the top
+   with a third of the slide empty beneath it. */
+.body-pov {
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: calc(2.8 * var(--u));
+}
+
+.pov-claim .display {
+  max-width: 19ch;
+  color: var(--beige);
+}
+
+/* `deck`, `points`, `pull` and `credit` are flat siblings here, so each
+   one is placed by hand — left to auto-flow, the quote lands in whatever
+   cell is next rather than in the column it belongs to. */
+.pov-evidence {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+  column-gap: calc(5 * var(--u));
+  row-gap: calc(1.2 * var(--u));
+  align-content: start;
+  padding-top: calc(1.8 * var(--u));
+  /* Derived from the field's own ink, so one rule is correct on a beige
+     slide and a blue one. A fixed beige hairline disappeared on exactly
+     the inverted slides that carry the citations. */
+  border-top: 1px solid color-mix(in srgb, var(--on-field) 24%, transparent);
+}
+
+.pov-evidence .slide-deck { grid-column: 1; margin-top: 0; max-width: 40ch; }
+.pov-evidence .ledger { grid-column: 1; }
+.pov-evidence .pull { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; align-self: start; }
+.pov-evidence .slide-credit { grid-column: 1 / -1; }
+
+/* Without a quote there is no second column to fill, so the evidence
+   runs as one measure and the ledger takes the width in two files. */
+.pov-evidence:not(:has(.pull)) { grid-template-columns: minmax(0, 1fr); }
+.pov-evidence:not(:has(.pull)) .slide-deck { max-width: 62ch; }
+/* `auto-fit` rather than a fixed two, because these lists are short: at
+   two columns a three-point ledger orphans its last row against half a
+   slide of nothing. Sized off the measure instead, three points take
+   three columns and four take two rows of two. */
+.pov-evidence:not(:has(.pull)) .ledger.is-dense {
+  grid-template-columns: repeat(auto-fit, minmax(20ch, 1fr));
+  column-gap: calc(4 * var(--u));
+}
+
+/* ================================================================
+   BODY — DEMO
+   ================================================================
+   Copy in a narrow left column, the running product in the rest, and the
+   budget clock across the top.
+
+   Every child is placed explicitly. The body has three children and the
+   budget bar is the first of them, so on auto-flow the copy and the frame
+   are each pushed one cell along — which puts the running product in a
+   quarter-width box in the corner. */
+
+.body-demo {
+  grid-template-columns: minmax(0, 30%) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: calc(3.4 * var(--u));
+  row-gap: calc(1.6 * var(--u));
+}
+
+.demo-budget { grid-column: 1 / -1; grid-row: 1; }
+
+.demo-copy {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: center;
+  min-width: 0;
+}
+
+.body-demo .demo {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.demo-copy .slide-deck { font-size: calc(1.42 * var(--u)); max-width: none; }
+
+/* --- the demo budget clock ------------------------------------------
+   The founders named the demo running long as their biggest risk, so the
+   budget is on the audience screen rather than only in the presenter's
+   notes. It depletes over exactly `--budget` seconds — the same number
+   the label prints, taken from the same attribute, so the bar and the
+   text can never disagree. */
+
+.demo-budget {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(1.1 * var(--u));
+}
+
+.demo-budget-value {
+  font-family: var(--font-pixel);
+  font-size: calc(1.05 * var(--u));
+  font-weight: 700;
+  letter-spacing: .16em;
+  color: var(--accent, var(--gold));
+}
+
+.demo-budget-bar {
+  position: relative;
+  width: calc(24 * var(--u));
+  height: calc(.5 * var(--u));
+  overflow: hidden;
+  background: rgba(216, 208, 194, .16);
+}
+
+.demo-budget-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--gold-dark), var(--pixel-gold));
+}
+
+/* Only the live slide's clock runs, and it runs once. A bar that
+   depletes on a warm neighbour would be empty by the time the slide
+   arrived. */
+.is-live .demo-budget-bar::after {
+  animation: budget-deplete linear forwards;
+  animation-duration: calc(var(--budget, 60) * 1s);
+}
+
+@keyframes budget-deplete {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* ================================================================
+   BODY — SCENE
+   ================================================================
+   The scene is the subject. The plate is small, opaque, and in a corner. */
+
+.body-scene {
+  align-content: end;
+  justify-content: start;
+}
+
+.caption-plate {
+  max-width: calc(40 * var(--u));
+  padding: calc(2 * var(--u)) calc(2.3 * var(--u));
+  border: 1px solid rgba(200, 155, 75, .34);
+  border-radius: 2px;
+  background-color: rgba(9, 15, 26, .9);
+  background-image: var(--engraved-wave);
+  backdrop-filter: blur(6px);
+  box-shadow:
+    inset 0 1px 0 rgba(245, 232, 200, .1),
+    calc(.55 * var(--u)) calc(.55 * var(--u)) 0 rgba(4, 6, 11, .8);
+}
+
+.caption-plate .slide-deck {
+  font-size: calc(1.28 * var(--u));
+  margin-top: calc(1.1 * var(--u));
+  max-width: none;
+}
+
+.caption-plate .ledger.is-dense li { font-size: calc(1.14 * var(--u)); }
+.caption-plate .display { color: var(--gold-soft); }
+
+/* ================================================================
+   BODY — SPLIT
+   ================================================================ */
+
+/* Head, columns, credit — and a demo frame after them on the two slides
+   that carry one. Without a demo the stack centres; with one, the frame
+   takes the remaining height. */
+.body-split {
+  grid-template-rows: repeat(3, auto);
+  align-content: center;
+  gap: calc(2.2 * var(--u));
+}
+
+.body-split:has(.demo) {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  align-content: stretch;
+}
+
+.split-head .display { max-width: 22ch; }
+.split-head .slide-deck { max-width: 56ch; }
+
+.split-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(4.5 * var(--u));
+  position: relative;
+}
+
+/* One hairline between the columns, so the two-up reads as a comparison
+   rather than as two lists that happen to be adjacent. */
+.split-columns::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(200, 155, 75, .32) 18%, rgba(200, 155, 75, .32) 82%, transparent);
+}
+
+.split-column { min-width: 0; }
+.split-column .ledger { margin-top: 0; }
+
+/* A split that also carries a demo gives the demo the remaining row. */
+.body-split .demo { min-height: 0; }
+
+/* ================================================================
+   BODY — METRICS
+   ================================================================
+   The instrument rack is the 3D scene behind. The DOM lists the measures
+   as a dense two-column index, which is the one arrangement where twenty
+   derived figures read as an inventory rather than as a wall of text. */
+
+.body-metrics {
+  grid-template-rows: repeat(4, auto);
+  align-content: center;
+  gap: calc(1.8 * var(--u));
+}
+
+.metrics-head { display: grid; }
+.metrics-head .slide-deck { max-width: 62ch; }
+
+/* The index sits on its own panel. The scene behind this slide is a lit
+   instrument rack, and twenty hairline rows laid straight over it read as
+   a collision however the type is set — the panel is what separates the
+   list from the thing the list is about. */
+.metric-index {
+  margin: 0;
+  padding: calc(1.4 * var(--u)) calc(2 * var(--u));
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+  column-gap: calc(3.4 * var(--u));
+  row-gap: 0;
+  align-content: start;
+  border: 1px solid rgba(200, 155, 75, .26);
+  border-radius: 2px;
+  background-color: rgba(7, 12, 21, .78);
+  background-image: var(--engraved-wave);
+  backdrop-filter: blur(4px);
+  box-shadow:
+    inset 0 1px 0 rgba(245, 232, 200, .08),
+    calc(.5 * var(--u)) calc(.5 * var(--u)) 0 rgba(4, 6, 11, .7);
+}
+
+.metric-index li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: calc(1.1 * var(--u));
+  align-items: baseline;
+  padding: calc(.55 * var(--u)) 0;
+  border-bottom: 1px solid rgba(216, 208, 194, .12);
+  font-size: calc(1.18 * var(--u));
+  line-height: 1.28;
+}
+
+.metric-index b {
+  font-family: var(--font-pixel);
+  font-size: .78em;
+  font-weight: 700;
+  color: var(--accent, var(--gold));
+  opacity: .9;
+}
+
+/* A derived figure is a number and a name. The number is set in the
+   monospace face wherever it appears in the string, which is what makes
+   the column scan as an instrument panel. */
+.metric-index span { color: var(--on-field); }
+
+.metrics-note {
+  margin: 0;
+  padding-top: calc(1.2 * var(--u));
+  border-top: 1px solid rgba(200, 155, 75, .28);
+  font-family: var(--font-display);
+  font-size: calc(1.5 * var(--u));
+  font-style: italic;
+  color: var(--gold-soft);
+  font-variation-settings: 'wght' 520, 'opsz' 60;
+}
+
+/* ================================================================
+   THE DEMO FRAME
+   ================================================================
+   A live embed of the product, in a frame that belongs to the deck: an
+   engine-turned navy title bar, a gold bevelled chip for the mark, and
+   the route in monospace. */
+
+.demo {
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: calc(1 * var(--u));
+  align-self: stretch;
+  justify-self: stretch;
+}
+
+.demo-chrome {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border: 3px solid #060a11;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #0b1420;
+  box-shadow:
+    inset 0 0 0 1px rgba(86, 112, 124, .5),
+    calc(.7 * var(--u)) calc(.7 * var(--u)) 0 var(--pixel-shadow),
+    0 calc(2 * var(--u)) calc(6 * var(--u)) rgba(3, 5, 9, .55);
+}
+
+.demo-bar {
+  display: flex;
+  align-items: center;
+  gap: calc(1 * var(--u));
+  padding: calc(.6 * var(--u)) calc(1 * var(--u));
+  border-bottom: 2px solid #060a11;
+}
+
+.demo-chip {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: calc(2.4 * var(--u));
+  height: calc(2.4 * var(--u));
+  /* The bevel's own drop is 4px at every size; scaled down here so a chip
+     this small does not read as a floating tile. */
+  box-shadow: inset -2px -2px #c48a36, inset 2px 2px #fff0a5, 2px 2px 0 #080c13;
+}
+
+.demo-chip svg {
+  width: 62%;
+  height: 62%;
+}
+
+.demo-bar code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-pixel);
+  font-size: calc(1.05 * var(--u));
+  letter-spacing: .04em;
+  color: #cdd9e0;
+}
+
+/* The lamp says which of the two things the audience is looking at,
+   without the presenter having to say it. */
+.demo-lamp {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: .6em;
+  padding: .3em .8em;
+  border-radius: 2px;
+  font-family: var(--font-pixel);
+  font-size: calc(.86 * var(--u));
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  color: #8fa3ae;
+}
+
+.demo-lamp::before {
+  content: '';
+  width: .62em;
+  height: .62em;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 .7em currentColor;
+}
+
+.demo-lamp.is-live { color: #6fd3a4; }
+.demo-lamp.is-connecting { color: var(--pixel-gold); animation: lamp-blink 1.1s steps(2) infinite; }
+.demo-lamp.is-stills { color: #8fb6d6; }
+.demo-lamp.is-app-not-running,
+.demo-lamp.is-no-seeded-session { color: #e0705f; }
+
+@keyframes lamp-blink { 50% { opacity: .42; } }
+
+.demo-screen {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: #070d15;
+}
+
+/* The iframe is given a logical width inline and scaled to fit. Both the
+   size and the transform come from the component, so all this rule does
+   is centre the box the transform is applied about. */
+.demo-iframe {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border: 0;
+  background: var(--surface);
+  color-scheme: light;
+}
+
+.demo-still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+.demo figcaption {
+  font-family: var(--font-ui);
+  font-size: calc(1.05 * var(--u));
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+  opacity: .74;
+}
+
+/* --- callouts -------------------------------------------------------
+   Positioned in percentages of the screen slot, so a change of zoom or
+   of projector aspect does not walk a label off its target. Revealed one
+   keystroke at a time and never all at once. */
+
+.demo-callout {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: calc(.8 * var(--u));
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -50%) scale(.94);
+  transition:
+    opacity var(--mo-2) var(--ease-out),
+    transform var(--mo-2) var(--ease-spring),
+    visibility 0s linear var(--mo-2);
+}
+
+.demo-callout.is-shown {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+  transition-delay: 0s, 0s, 0s;
+}
+
+.demo-callout.from-right { flex-direction: row-reverse; }
+
+.demo-callout-pin {
+  flex: 0 0 auto;
+  width: calc(1.1 * var(--u));
+  height: calc(1.1 * var(--u));
+  border-radius: 50%;
+  background: var(--pixel-gold);
+  box-shadow: 0 0 0 3px rgba(242, 199, 91, .28), 0 0 0 6px rgba(242, 199, 91, .12);
+}
+
+.is-shown .demo-callout-pin { animation: pin-ping 2.4s var(--ease-out) infinite; }
+
+@keyframes pin-ping {
+  0%, 72%, 100% { box-shadow: 0 0 0 3px rgba(242, 199, 91, .28), 0 0 0 6px rgba(242, 199, 91, .12); }
+  30% { box-shadow: 0 0 0 5px rgba(242, 199, 91, .34), 0 0 0 13px rgba(242, 199, 91, 0); }
+}
+
+.demo-callout b {
+  padding: .34em .8em;
+  border: 2px solid #060a11;
+  border-radius: 2px;
+  background: var(--pixel-gold);
+  color: #132033;
+  font-family: var(--font-ui);
+  font-size: calc(1.02 * var(--u));
+  font-weight: 700;
+  letter-spacing: .03em;
+  white-space: nowrap;
+  box-shadow: inset -3px -3px #c48a36, inset 2px 2px #fff0a5, 3px 3px 0 #080c13;
+}
+
+/* ================================================================
+   PORTED APP SCENES
+   ================================================================ */
+
+.scene-booting {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: calc(1.4 * var(--u));
+  background: #0a1120;
+  color: #f6dfaa;
+  font-family: var(--font-pixel);
+  font-size: calc(1 * var(--u));
+  letter-spacing: .26em;
+  text-transform: uppercase;
+}
+
+.scene-booting i {
+  display: grid;
+  place-items: center;
+  width: calc(5 * var(--u));
+  height: calc(5 * var(--u));
+  animation: boot-chip 1.3s ease-in-out infinite;
+}
+
+.scene-booting svg {
+  width: 52%;
+  height: 52%;
+  fill: currentColor;
+  color: #172131;
+}
+
+@keyframes boot-chip {
+  50% { transform: scale(1.06); }
+}
+
+/* --- tier 0 beside tier 14, one draggable divider ------------------- */
+
+.office-transform {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.office-half {
+  position: absolute;
+  inset: 0;
+}
+
+.office-half.is-full { z-index: 1; }
+.office-half.is-shack { z-index: 2; }
+
+.office-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 0;
+  pointer-events: none;
+}
+
+/* The line itself, plus a handle at eye height so the divider reads as
+   draggable before anybody drags it. */
+.office-divider i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 4px;
+  background: linear-gradient(180deg, rgba(242, 199, 91, .2), var(--pixel-gold) 12%, var(--pixel-gold) 88%, rgba(242, 199, 91, .2));
+  box-shadow: 0 0 calc(1.6 * var(--u)) rgba(242, 199, 91, .5), 2px 0 0 rgba(9, 13, 21, .7);
+}
+
+.office-divider i::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(2.6 * var(--u));
+  height: calc(2.6 * var(--u));
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 3px solid #090c13;
+  background: var(--pixel-gold);
+  box-shadow: inset -3px -3px #c48a36, inset 2px 2px #fff0a5;
+}
+
+.office-divider b {
+  position: absolute;
+  top: calc(4 * var(--u));
+  padding: .4em .9em;
+  border: 2px solid #060a11;
+  border-radius: 2px;
+  background: rgba(9, 15, 26, .92);
+  color: var(--gold-soft);
+  font-family: var(--font-pixel);
+  font-size: calc(1 * var(--u));
+  letter-spacing: .18em;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 rgba(4, 6, 11, .8);
+}
+
+.office-divider b:first-of-type { right: calc(1.4 * var(--u)); }
+.office-divider b:last-of-type { left: calc(1.4 * var(--u)); }
+
+/* ================================================================
+   TRANSITION FURNITURE
+   ================================================================
+   Created imperatively by the transition in flight and removed in its
+   own cleanup, so nothing here accumulates. The animations live in
+   `engine/transitions.ts`; these rules only describe the objects. */
+
+/* The ink wash: a wide skewed band swept across the screen. Wider than
+   the viewport so the skew never exposes a corner. */
+.tx-wash {
+  position: absolute;
+  top: -10%;
+  left: -50%;
+  width: 200%;
+  height: 120%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(13, 23, 52, .5) 22%,
+    rgba(5, 8, 13, .96) 44%,
+    rgba(27, 47, 107, .62) 62%,
+    transparent 100%
+  );
+}
+
+/* The act break. `#05080d` bars closing on `steps()` — the app's own
+   `.cutscene-overlay`, closed all the way. */
+.tx-letterbox {
+  position: absolute;
+  inset: 0;
+}
+
+.tx-letterbox i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  background: #05080d;
+}
+
+.tx-letterbox i:first-of-type { top: 0; box-shadow: 0 2px 0 rgba(200, 155, 75, .18); }
+.tx-letterbox i:nth-of-type(2) { bottom: 0; box-shadow: 0 -2px 0 rgba(200, 155, 75, .18); }
+
+/* The act slug, in the black. The only moment in the deck with room for
+   a line of type at the size an act title actually wants. */
+.tx-letterbox b {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-ui);
+  font-size: calc(1.7 * var(--u));
+  font-weight: 700;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--gold-soft);
+  text-shadow: 0 0 calc(3 * var(--u)) rgba(242, 199, 91, .3);
+  opacity: 0;
+}
+
+/* The foil seal: the product's own mark, struck and grown until a solid
+   plate can take over behind it. */
+.tx-seal {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.tx-seal-plate {
+  position: absolute;
+  inset: 0;
+  background-color: #0b1220;
+  background-image:
+    var(--engraved-wave),
+    radial-gradient(60% 60% at 50% 50%, rgba(200, 155, 75, .16), transparent 70%);
+  opacity: 0;
+}
+
+.tx-seal-mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 64px;
+  height: 64px;
+  transform: translate(-50%, -50%) scale(0);
+  filter: drop-shadow(0 0 10px rgba(242, 199, 91, .35));
+}
+
+/* ================================================================
+   EDGE CHROME
+   ================================================================ */
+
+/* Narrow, and at the very edges only. Anything wider steals clicks from
+   the live demo iframes the presenter needs to be able to drive. */
+.zone {
+  position: absolute;
+  top: 0;
+  bottom: calc(2.6 * var(--u));
+  z-index: 800;
+  width: calc(3.4 * var(--u));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.zone-prev { left: 0; }
+.zone-next { right: 0; }
+
+.zone::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(242, 199, 91, .14), transparent);
+}
+
+.zone-next::after { background: linear-gradient(270deg, rgba(242, 199, 91, .14), transparent); }
+.zone:hover { opacity: 1; }
+
+/* The progress hairline: one tick per slide, heavier at each act
+   boundary. The only permanent chrome on the audience's screen. */
+.deck-progress {
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: calc(1.9 * var(--u));
+  z-index: 890;
+  display: flex;
+  align-items: flex-end;
+  gap: calc(.32 * var(--u));
+  pointer-events: none;
+}
+
+.deck-progress i {
+  flex: 1 1 0;
+  height: 2px;
+  background: rgba(216, 208, 194, .18);
+  transition: background var(--mo-3) var(--ease-out), height var(--mo-2) var(--ease-out);
+}
+
+.deck-progress i.is-past { background: rgba(216, 208, 194, .4); }
+
+.deck-progress i.is-current {
+  height: calc(.55 * var(--u));
+  background: var(--accent, var(--gold));
+  box-shadow: 0 0 calc(1.2 * var(--u)) rgba(242, 199, 91, .5);
+}
+
+/* An act boundary gets a riser rather than a gap, so the shape of the
+   talk is visible without any labels. */
+.deck-progress i.is-act::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  height: calc(1.5 * var(--u));
+  background: rgba(200, 155, 75, .5);
+  transform: translateX(calc(-.6 * var(--u)));
+}
+
+.deck-progress i.is-act { position: relative; }
+
+/* The developer HUD. Never on screen during a talk unless asked for. */
+.deck-hud {
+  position: absolute;
+  right: calc(1.6 * var(--u));
+  bottom: calc(3.4 * var(--u));
+  z-index: 950;
+  display: flex;
+  gap: calc(.9 * var(--u));
+  padding: calc(.5 * var(--u)) calc(.9 * var(--u));
+  border: 1px solid rgba(200, 155, 75, .28);
+  border-radius: 2px;
+  background: rgba(6, 10, 17, .8);
+  font-family: var(--font-pixel);
+  font-size: calc(.86 * var(--u));
+  letter-spacing: .08em;
+  color: #93a6b2;
+  pointer-events: none;
+}
+
+.deck-hud .is-warn { color: var(--pixel-gold); }
+
+/* ================================================================
+   PRESENTER OVERLAY  ·  P
+   ================================================================
+   On the same screen rather than in a second window: the one thing
+   guaranteed about a venue is that the display arrangement will be
+   wrong. */
+
+.presenter {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  width: min(35vw, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background-color: rgba(7, 11, 19, .97);
+  background-image: var(--engraved-wave);
+  border-left: 3px solid var(--gold-dark);
+  box-shadow: -30px 0 80px rgba(2, 4, 8, .7);
+  color: var(--beige);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.presenter header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(200, 155, 75, .3);
+}
+
+.presenter-act {
+  flex: 1 1 auto;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: var(--pixel-gold);
+}
+
+.presenter-count {
+  font-family: var(--font-pixel);
+  font-size: 13px;
+  color: #8fa3ae;
+}
+
+.presenter header button {
+  padding: 4px 10px;
+  border: 1px solid rgba(200, 155, 75, .4);
+  border-radius: 2px;
+  background: transparent;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--gold-soft);
+}
+
+.presenter header button:hover { background: rgba(200, 155, 75, .16); }
+
+.presenter-clock b {
+  display: block;
+  font-family: var(--font-pixel);
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .04em;
+  color: var(--gold-soft);
+}
+
+.presenter-clock small {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #93a6b2;
+}
+
+.pace { font-style: normal; font-weight: 700; }
+.pace.is-ahead { color: #6fd3a4; }
+.pace.is-on-pace { color: var(--pixel-gold); }
+.pace.is-behind { color: #e0705f; }
+
+/* One bar, two marks: where the talk is, and where it was meant to be. */
+.presenter-bar {
+  position: relative;
+  height: 8px;
+  margin-top: 10px;
+  border: 1px solid rgba(200, 155, 75, .3);
+  background: rgba(3, 6, 11, .7);
+}
+
+.presenter-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--gold-dark), var(--pixel-gold));
+}
+
+.presenter-bar u {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--beige);
+}
+
+.presenter-notes {
+  padding: 14px;
+  border: 1px solid rgba(200, 155, 75, .22);
+  border-radius: 2px;
+  background: rgba(13, 22, 38, .8);
+}
+
+.presenter-notes h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--gold-soft);
+}
+
+.presenter-notes p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--beige);
+}
+
+.presenter-notes dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(216, 208, 194, .16);
+  font-family: var(--font-pixel);
+  font-size: 12px;
+}
+
+.presenter-notes dt {
+  color: #7f929e;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.presenter-notes dd { margin: 0; color: var(--beige); }
+
+.presenter-next {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--gold-dark);
+  background: rgba(13, 22, 38, .55);
+}
+
+.presenter-next span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: #7f929e;
+}
+
+.presenter-next b {
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1.2;
+  color: var(--beige);
+}
+
+.presenter-next small { font-family: var(--font-pixel); font-size: 11px; color: #7f929e; }
+
+.presenter footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.presenter footer code {
+  padding: 3px 8px;
+  border: 1px solid rgba(216, 208, 194, .16);
+  border-radius: 2px;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: #8fa3ae;
+}
+
+.presenter footer code.is-on {
+  border-color: var(--pixel-gold);
+  color: var(--pixel-gold);
+}
+
+.presenter-keys {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 12px;
+  margin: auto 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(216, 208, 194, .16);
+  list-style: none;
+  font-size: 12px;
+  color: #93a6b2;
+}
+
+.presenter-keys li { display: flex; align-items: center; gap: 5px; }
+
+kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 2px 5px;
+  border: 1px solid #060a11;
+  border-radius: 2px;
+  background: #263c4c;
+  box-shadow: inset 0 0 0 1px #56707c, 2px 2px 0 #06080c;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  text-align: center;
+  color: #f7e7b7;
+}
+
+/* ================================================================
+   GRID OVERVIEW  ·  G
+   ================================================================
+   Each tile is a small designed representation of its slide rather than
+   a thumbnail — twenty-three live clones would be twenty-three WebGL
+   contexts, and a 160px capture of a dark 3D scene tells a presenter
+   mid-talk nothing that the headline does not. */
+
+.grid-overview {
+  position: absolute;
+  inset: 0;
+  z-index: 1010;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background-color: rgba(5, 8, 13, .97);
+  background-image: var(--engraved-wave);
+  color: var(--beige);
+  font-family: var(--font-ui);
+}
+
+.grid-overview header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 20px 32px;
+  border-bottom: 1px solid rgba(200, 155, 75, .3);
+}
+
+.grid-overview header b {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--gold-soft);
+}
+
+.grid-overview header span {
+  flex: 1 1 auto;
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: #7f929e;
+}
+
+.grid-overview header button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid rgba(200, 155, 75, .4);
+  border-radius: 2px;
+  background: transparent;
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--gold-soft);
+}
+
+.grid-scroll {
+  padding: 24px 32px 40px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.grid-scroll section { margin-bottom: 26px; }
+
+.grid-scroll h2 {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--accent, var(--gold));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.grid-scroll h2::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(90deg, currentColor, transparent);
+  opacity: .4;
+}
+
+.grid-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.grid-tile {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-height: 118px;
+  padding: 12px 14px;
+  border: 2px solid rgba(216, 208, 194, .16);
+  border-radius: 2px;
+  background: linear-gradient(160deg, rgba(23, 43, 64, .8), rgba(9, 15, 26, .8));
+  text-align: left;
+  transition: transform var(--mo-2) var(--ease-out), border-color var(--mo-2) var(--ease-out);
+}
+
+.grid-tile:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent, var(--gold));
+}
+
+.grid-tile.is-current {
+  border-color: var(--pixel-gold);
+  box-shadow: inset 0 0 0 1px rgba(242, 199, 91, .4), 0 0 24px rgba(242, 199, 91, .18);
+}
+
+.grid-tile i {
+  font-family: var(--font-pixel);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--accent, var(--gold));
+}
+
+.grid-tile strong {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 620;
+  line-height: 1.22;
+  color: var(--beige);
+}
+
+.grid-tile em {
+  font-family: var(--font-pixel);
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #7f929e;
+}
+
+.grid-tile-hash {
+  margin-top: auto;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  color: rgba(216, 208, 194, .34);
+}
+
+/* ================================================================
+   ENTRANCES
+   ================================================================
+   The transition moves the layer as a whole; these move the parts
+   inside it, once, and then stop. Only the live layer runs them, so the
+   outgoing slide never re-animates while it is leaving.
+
+   Every one is transform and opacity only, and none loops: a slide that
+   keeps moving under a speaker keeps pulling the eye off the speaker. */
+
+.is-live .eyebrow { animation: rise var(--mo-3) var(--ease-out) both; }
+.is-live .slide-deck { animation: rise var(--mo-3) var(--ease-out) 120ms both; }
+.is-live .pull,
+.is-live .pull-quiet,
+.is-live .metrics-note,
+.is-live .slide-credit { animation: rise var(--mo-3) var(--ease-out) 260ms both; }
+
+.is-live .ledger li,
+.is-live .metric-index li {
+  animation: rise var(--mo-3) var(--ease-out) both;
+  animation-delay: calc(180ms + var(--row, 0) * 55ms);
+}
+
+.is-live .plate,
+.is-live .caption-plate,
+.is-live .demo {
+  animation: plate-in var(--mo-4) var(--ease-out) both;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translate3d(0, .5em, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes plate-in {
+  from { opacity: 0; transform: translate3d(0, calc(1 * var(--u)), 0) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ================================================================
+   ASPECT RATIOS OTHER THAN 16:9
+   ================================================================
+   `--u` already scales the whole deck down on a viewport taller than
+   16:9, so nothing clips. What it cannot do is fix a *composition* that
+   assumes a wide stage, so the two side-by-side bodies stack instead. */
+
+@media (max-aspect-ratio: 5 / 4) {
+  .body-demo,
+  .pov-evidence {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .body-demo { grid-template-rows: auto 1fr; align-content: center; }
+  .body-statement { grid-template-columns: minmax(0, 82%); }
+  .metric-index { grid-template-columns: minmax(0, 1fr); }
+  .caption-plate { max-width: none; }
+}
+
+/* A very wide stage — an ultrawide panel or two projectors — would
+   otherwise stretch a measure past the point where the eye can find the
+   start of the next line. */
+@media (min-aspect-ratio: 21 / 9) {
+  .body { padding-inline: calc(12 * var(--u)); }
+}
+
+/* ================================================================
+   FIGURE-LED SLIDES
+
+   Twelve of the twenty-three slides are one piece of information
+   design with a caption. The proportions carry that: the copy block
+   is capped, the figure gets whatever is left, and the fragment line
+   and the source credit sit under it as a single quiet foot.
+
+   Centred rather than ranged left, which is the one place this deck
+   departs from the app's own layout language. These slides have a
+   single object in the middle of the frame — two bars, a ring, a
+   radial — and a left-ranged headline over a centred object reads as
+   a mistake from the back of a room.
+   ================================================================ */
+
+.body-figure {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: calc(1.5 * var(--u));
+  padding-top: calc(var(--gutter) * .62);
+  text-align: center;
+  /* Room for the progress hairline, which is the one piece of permanent
+     chrome and must never have a credit sitting on top of it. */
+  padding-bottom: calc(var(--gutter) * .8);
+}
+
+/* Every row spans the full frame. Centring is done by `text-align` and by
+   the figures' own geometry — `justify-items: center` would size each row
+   to its content, which silently collapses the `1fr` figure row to
+   whatever its SVG declared and pushes the credit off the slide. */
+.body-figure > * {
+  width: 100%;
+  min-width: 0;
+}
+
+.body-figure .figure-copy {
+  display: grid;
+  gap: calc(.8 * var(--u));
+  justify-items: center;
+}
+
+/* One step down from the text layouts' headline. On these slides the figure
+   is the claim and the headline is its caption, and at `--t-lg` the copy
+   block was taking nearly half the frame — which left the traces on slide 9
+   and the rings on slide 11 squeezed into a band too short to read a shape
+   in. The headline gets the full measure; only the standfirst is capped,
+   since that is the line that actually becomes unreadable when it runs long. */
+.body-figure .display {
+  font-size: var(--t-md);
+  line-height: 1.02;
+  letter-spacing: -.018em;
+  max-width: min(100%, 30ch);
+  margin-inline: auto;
+  text-wrap: balance;
+}
+
+.body-figure .slide-deck {
+  max-width: min(100%, 52ch);
+  margin-inline: auto;
+}
+
+/* `min-height: 0` is load-bearing: without it the figure's own content
+   sets the row height and an SVG that wants to be square pushes the
+   credit off the bottom of a 16:9 frame. */
+.body-figure .figure-stage {
+  position: relative;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  /* Containment, and it is load-bearing rather than tidiness. Several
+     figures are deliberately sized to their frame — `clock-rings` draws
+     its outer ring with `preserveAspectRatio="none"` precisely so it
+     fills the stage — and `min-height: 0` above lets this row be shorter
+     than they assume. Without a clip the difference is painted over the
+     credit and the progress rail beneath, which is what slide 11 did. */
+  overflow: hidden;
+}
+
+.body-figure .figure-foot {
+  display: grid;
+  justify-items: center;
+  gap: calc(.5 * var(--u));
+}
+
+/* On a field slide the eyebrow drops the gold. The narrative's palette is
+   two colours plus a verdict red spent exactly twice, and gold over royal
+   blue reads as a third accent — and, at eyebrow size, very nearly as the
+   red it is supposed to be reserving. */
+.deck-layer[data-field='blue'] .eyebrow,
+.deck-layer[data-field='beige'] .eyebrow {
+  color: var(--on-field-dim);
+}
+
+/* ----------------------------------------------------------------
+   ONE SLIDE, ONE READING
+
+   `problem-coaching-tax` sets its fragment line to "+0.22 took a
+   coaching course · +2.77 worked through real LSATs", which is the
+   chart directly above it read back out loud: both numerals and both
+   series labels are already plotted, at display scale, six lines up.
+   Printed twice the room reads it twice and believes the second one is
+   a different measurement.
+
+   The copy is approved and stays in the document — it is the accessible
+   text for a figure that is otherwise two `div`s and a percentage — so
+   it is taken out of the *visual* composition only, by the same
+   clipped-hairline idiom the rest of the deck uses for text that is
+   spoken but not shown.
+   ---------------------------------------------------------------- */
+.body-figure:has(.fig-bar-pair) .figure-foot .fragments {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The credit is centred on these slides and has no rule above it — the
+   figure already provides the horizontal it would otherwise supply. */
+.body-figure .slide-credit {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: calc(.4 * var(--u));
+  text-align: center;
+}
+
+/* ----------------------------------------------------------------
+   THE FRAGMENT LINE
+
+   The narrative's third line is fragments separated by middots, not a
+   list — *900+ video lessons (7Sage) · 90-minute classes, 5 days a
+   week (LSAT Lab) · $65–$425/mo*. Numbering it would imply a sequence
+   the argument does not have, and stacking it turns a line the room
+   glances at into one they read instead of listening.
+   ---------------------------------------------------------------- */
+
+.fragments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-dense);
+  line-height: 1.5;
+  letter-spacing: .012em;
+  color: var(--on-field);
+  text-wrap: balance;
+}
+
+.fragments li {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.fragments i {
+  font-style: normal;
+  padding-inline: calc(1.1 * var(--u));
+  color: var(--gold);
+  opacity: .8;
+}
+
+/* On a beige field the gold middot is the one element that would look
+   washed out, so it borrows the field's ink instead. */
+.deck-layer[data-field='beige'] .fragments i {
+  color: var(--on-field-dim);
+  opacity: .65;
+}
+
+/* ================================================================
+   THE Q&A PANEL — `Q`
+
+   Presenter furniture, and the only surface in the deck designed to
+   be read rather than seen. It is opened when a question has just
+   been asked, which means it is read fast, under pressure, off a
+   laptop rather than a projector — so it is dense, high-contrast,
+   scrolled in one column, and never animated.
+   ================================================================ */
+
+.deck-qa {
+  position: absolute;
+  inset: calc(2 * var(--u));
+  z-index: 700;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  /* Fully opaque. At .97 the live slide's headline ghosted through the open
+     action block, which is the one thing in here that has to be read without
+     hesitation. */
+  background: #060a12;
+  border: 1px solid rgba(200, 155, 75, .34);
+  border-radius: calc(.6 * var(--u));
+  box-shadow: 0 40px 120px rgba(0, 0, 0, .6);
+  color: var(--beige);
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+
+.deck-qa-head {
+  display: flex;
+  align-items: center;
+  gap: calc(1.4 * var(--u));
+  padding: calc(1.4 * var(--u)) calc(2 * var(--u));
+  border-bottom: 1px solid rgba(200, 155, 75, .22);
+  background: rgba(13, 22, 38, .8);
+}
+
+.deck-qa-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(1.9 * var(--u));
+  font-weight: 600;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+
+.deck-qa-search {
+  flex: 1;
+  min-width: 0;
+  padding: calc(.8 * var(--u)) calc(1.2 * var(--u));
+  background: rgba(5, 8, 13, .9);
+  border: 1px solid rgba(216, 208, 194, .26);
+  border-radius: calc(.3 * var(--u));
+  color: var(--beige);
+  font-family: var(--font-ui);
+  font-size: calc(1.4 * var(--u));
+}
+
+.deck-qa-search:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 calc(.2 * var(--u)) rgba(200, 155, 75, .22);
+}
+
+.deck-qa-count,
+.deck-qa-close {
+  font-family: var(--font-pixel);
+  font-size: calc(1.05 * var(--u));
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--beige-dim);
+  white-space: nowrap;
+}
+
+.deck-qa-close {
+  padding: calc(.6 * var(--u)) calc(1.1 * var(--u));
+  background: transparent;
+  border: 1px solid rgba(216, 208, 194, .3);
+  border-radius: calc(.3 * var(--u));
+  cursor: pointer;
+}
+
+.deck-qa-close:hover { border-color: var(--gold); color: var(--beige); }
+.deck-qa-close kbd { font-family: inherit; color: var(--gold); }
+
+/* The one open action, never behind a search. It is the only item in the
+   warning block that is still open, and the morning of the pitch is the
+   only time it can be closed. */
+.deck-qa-open {
+  padding: calc(1.2 * var(--u)) calc(2 * var(--u));
+  background: rgba(168, 50, 31, .16);
+  border-bottom: 1px solid rgba(168, 50, 31, .4);
+}
+
+.deck-qa-open-when {
+  display: block;
+  font-family: var(--font-pixel);
+  font-size: calc(1 * var(--u));
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #f0a08e;
+}
+
+.deck-qa-open-what {
+  margin: calc(.4 * var(--u)) 0 0;
+  font-size: calc(1.34 * var(--u));
+  line-height: 1.45;
+}
+
+.deck-qa-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(.6 * var(--u));
+  padding: calc(1 * var(--u)) calc(2 * var(--u));
+  border-bottom: 1px solid rgba(216, 208, 194, .14);
+}
+
+.deck-qa-topic {
+  padding: calc(.42 * var(--u)) calc(1 * var(--u));
+  background: transparent;
+  border: 1px solid rgba(216, 208, 194, .24);
+  border-radius: 999px;
+  color: var(--beige-dim);
+  font-family: var(--font-pixel);
+  font-size: calc(1 * var(--u));
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+
+.deck-qa-topic.is-active {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #1a1408;
+}
+
+.deck-qa-scroll {
+  overflow-y: auto;
+  padding: calc(1.6 * var(--u)) calc(2 * var(--u)) calc(3 * var(--u));
+  scrollbar-width: thin;
+  scrollbar-color: rgba(200, 155, 75, .5) transparent;
+}
+
+.deck-qa-section + .deck-qa-section { margin-top: calc(3 * var(--u)); }
+
+.deck-qa-section-title {
+  margin: 0 0 calc(1.2 * var(--u));
+  padding-bottom: calc(.6 * var(--u));
+  border-bottom: 1px solid rgba(200, 155, 75, .3);
+  font-family: var(--font-pixel);
+  font-size: calc(1.06 * var(--u));
+  font-weight: 400;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.deck-qa-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: calc(1.7 * var(--u));
+}
+
+/* Every result is expanded. A presenter mid-answer will not click to
+   reveal the sentence they are already saying. */
+.deck-qa-entry,
+.deck-qa-warning,
+.deck-qa-cut {
+  padding-left: calc(1.2 * var(--u));
+  border-left: 2px solid rgba(216, 208, 194, .2);
+}
+
+.deck-qa-question,
+.deck-qa-warning-title,
+.deck-qa-cut-title {
+  margin: 0 0 calc(.5 * var(--u));
+  display: flex;
+  align-items: baseline;
+  gap: calc(.7 * var(--u));
+  font-family: var(--font-display);
+  font-size: calc(1.5 * var(--u));
+  font-weight: 600;
+  line-height: 1.28;
+  color: var(--beige);
+}
+
+.deck-qa-answer,
+.deck-qa-warning-body,
+.deck-qa-cut-how {
+  margin: 0;
+  font-size: calc(1.32 * var(--u));
+  line-height: 1.55;
+  color: #ded4c2;
+  text-wrap: pretty;
+}
+
+.deck-qa-caveat {
+  margin: calc(.5 * var(--u)) 0 0;
+  padding-left: calc(1 * var(--u));
+  border-left: 2px solid rgba(200, 155, 75, .45);
+  font-size: calc(1.2 * var(--u));
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--beige-dim);
+}
+
+.deck-qa-tags,
+.deck-qa-sources,
+.deck-qa-slides,
+.deck-qa-nocut-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(.5 * var(--u));
+  margin: calc(.7 * var(--u)) 0 0;
+  padding: 0;
+  font-family: var(--font-pixel);
+  font-size: calc(1 * var(--u));
+}
+
+.deck-qa-tag {
+  padding: calc(.16 * var(--u)) calc(.66 * var(--u));
+  border: 1px solid rgba(216, 208, 194, .22);
+  border-radius: 999px;
+  color: var(--beige-dim);
+}
+
+.deck-qa-source { color: #8f9bb2; word-break: break-word; }
+.deck-qa-source + .deck-qa-source::before { content: '· '; }
+
+.deck-qa-warning-number,
+.deck-qa-cut-order {
+  flex: none;
+  font-family: var(--font-pixel);
+  font-style: normal;
+  font-size: calc(1.1 * var(--u));
+  color: var(--gold);
+}
+
+.deck-qa-warning-status {
+  font-family: var(--font-pixel);
+  font-style: normal;
+  font-size: calc(.94 * var(--u));
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--pixel-green);
+}
+
+.deck-qa-warning[data-status='open'] { border-left-color: var(--stamp); }
+.deck-qa-warning[data-status='open'] .deck-qa-warning-status { color: #f0a08e; }
+
+.deck-qa-warning-action {
+  margin: calc(.6 * var(--u)) 0 0;
+  font-size: calc(1.24 * var(--u));
+  line-height: 1.5;
+  color: #f0d7b0;
+}
+
+.deck-qa-warning-action b { color: var(--gold); }
+
+.deck-qa-cut-saving { color: var(--gold); font-family: var(--font-pixel); }
+.deck-qa-cut-trim {
+  font-family: var(--font-pixel);
+  font-style: normal;
+  font-size: calc(1 * var(--u));
+  color: var(--beige-dim);
+}
+
+.deck-qa-cut[data-action='trim'] { border-left-color: rgba(200, 155, 75, .45); }
+
+.deck-qa-nocut {
+  margin-top: calc(1.8 * var(--u));
+  padding: calc(1.2 * var(--u));
+  border: 1px solid rgba(168, 50, 31, .38);
+  border-radius: calc(.3 * var(--u));
+  background: rgba(168, 50, 31, .1);
+}
+
+.deck-qa-nocut-title {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: calc(1.04 * var(--u));
+  font-weight: 400;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #f0a08e;
+}
+
+.deck-qa-nocut-note {
+  margin: calc(.8 * var(--u)) 0 0;
+  font-size: calc(1.18 * var(--u));
+  line-height: 1.5;
+  color: var(--beige-dim);
+}
+
+.deck-qa a { color: var(--gold); text-decoration: none; border-bottom: 1px dotted rgba(200, 155, 75, .5); }
+.deck-qa a:hover { color: var(--beige); }
+
+.deck-qa-empty {
+  margin: calc(3 * var(--u)) 0;
+  text-align: center;
+  font-size: calc(1.4 * var(--u));
+  color: var(--beige-dim);
+}

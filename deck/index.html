@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#102735" />
+    <meta name="description" content="Lawyer Tycoon — investor deck." />
+    <!-- The app's own favicon: the scales of justice in navy, gold and cream.
+         The same mark is the deck's recurring motif, so it is the same SVG. -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23102735' stroke='%23c89b4b' stroke-width='3'/%3E%3Cpath d='M32 14v34M20 22h24M17 22 10 36h14L17 22Zm30 0-7 14h14l-7-14ZM23 49h18' fill='none' stroke='%23f5e8c8' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Presented from a laptop that may well be on conference wifi, so the two
+         display families are the only network request the deck makes outside the
+         demo iframes, and they are `display=swap` so nothing is ever hidden
+         waiting for them. Everything else — art, textures, geometry — is either
+         procedural or served from `public/`. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,620;9..144,700;9..144,900&display=swap"
+      rel="stylesheet"
+    />
+    <title>Lawyer Tycoon</title>
+    <!-- The opening plate, drawn by the document.
+         Transcribed from the app's own boot spinner in `frontend/index.html`
+         so the deck opens on the same gold pixel chip the product does. -->
+    <style>
+      html { background: #05080d; }
+      body { margin: 0; min-height: 100vh; background: #05080d; }
+      #boot {
+        position: fixed; inset: 0; z-index: 9;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+        background: #0a1120; color: #f6dfaa; font-size: 11px; letter-spacing: .26em; text-transform: uppercase;
+        font-family: "Courier New", "Lucida Console", ui-monospace, monospace;
+      }
+      #boot i {
+        width: 62px; height: 62px; box-sizing: border-box; display: grid; place-items: center;
+        border: 3px solid #090d15; border-radius: 2px; background: #f1c85f; color: #172131;
+        box-shadow: inset -4px -4px #c48a36, inset 3px 3px #fff0a5, 4px 4px 0 #080c13;
+        animation: boot-pulse 1.3s ease-in-out infinite;
+      }
+      #boot svg { width: 32px; height: 32px; }
+      #boot g:first-child { fill: rgba(104, 68, 16, .42); }
+      #boot g:last-child { fill: currentColor; }
+      #boot .beam { transform-origin: 12px 7px; animation: boot-settle 2.1s ease-in-out infinite; }
+      @keyframes boot-pulse { 50% { transform: scale(1.06); box-shadow: inset -4px -4px #c48a36, inset 3px 3px #fff0a5, 4px 4px 0 #080c13, 0 0 0 11px rgba(200, 155, 75, .12); } }
+      @keyframes boot-settle { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
+    </style>
+  </head>
+  <body>
+    <noscript><style>#boot { display: none; }</style></noscript>
+    <div id="boot" role="status">
+      <i aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><g transform="translate(.9 .9)"><path d="M7 20h10v2H7z M10 18h4v2h-4z M11 7h2v11h-2z M10 3h4v3h-4z"/><path d="M3 6h18v2H3z M4 8h1v3H4z M19 8h1v3h-1z M1 11h7l-1.75 3.25h-3.5z M16 11h7l-1.75 3.25h-3.5z"/></g><g><path d="M7 20h10v2H7z M10 18h4v2h-4z M11 7h2v11h-2z M10 3h4v3h-4z"/><path class="beam" d="M3 6h18v2H3z M4 8h1v3H4z M19 8h1v3h-1z M1 11h7l-1.75 3.25h-3.5z M16 11h7l-1.75 3.25h-3.5z"/></g></svg></i>
+      <span>Opening the firm</span>
+    </div>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var boot = document.getElementById('boot')
+        var root = document.getElementById('root')
+        if (!boot || !root) return
+        function leave() {
+          boot.style.transition = 'opacity .4s steps(5)'
+          boot.style.opacity = '0'
+          setTimeout(function () { if (boot.parentNode) boot.parentNode.removeChild(boot) }, 420)
+        }
+        if (root.firstChild) { leave(); return }
+        new MutationObserver(function (_records, observer) {
+          if (!root.firstChild) return
+          observer.disconnect()
+          leave()
+        }).observe(root, { childList: true })
+      })()
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

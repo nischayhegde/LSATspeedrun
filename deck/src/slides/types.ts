@@ -1,0 +1,226 @@
+/**
+ * The slide data contract.
+ *
+ * Copy is deliberately separated from layout: every string a presenter reads or
+ * an audience sees lives in `slides/index.ts` and nothing in `engine/`,
+ * `scenes/` or `layouts.tsx` may hard-code a headline. That is what lets the
+ * narrative be rewritten — see `deck/NARRATIVE.md` — without touching the
+ * engine, and it is why `SlideSpec` carries `notes` and `budgetSeconds` rather
+ * than the presenter overlay reaching into a second source of truth.
+ */
+
+import type { FigureSpec } from '../figures/types'
+
+export type { FigureSpec }
+
+/** Act boundaries. A change of act is what earns the letterbox transition. */
+export type DeckSection = 'title' | 'problem' | 'thesis' | 'product' | 'game' | 'close'
+
+/**
+ * Which body layout renders the slide. `kind` decides composition only — every
+ * kind reads the same fields off the spec, so a slide can be re-laid-out by
+ * changing one word.
+ */
+export type SlideKind =
+  /** Full-bleed scene with an oversized centred title. */
+  | 'title'
+  /** Headline plus a deck of numbered points, scene behind. */
+  | 'statement'
+  /** A spiky point-of-view: claim in large type, evidence beneath. */
+  | 'pov'
+  /** A framed live demo of the running app, with annotations. */
+  | 'demo'
+  /** Scene is the subject; copy is a small caption plate in a corner. */
+  | 'scene'
+  /** Two-up comparison — before/after, us/them. */
+  | 'split'
+  /** The metric wall. Points render as an instrument panel rather than a list. */
+  | 'metrics'
+  /**
+   * Figure-led: the graphic is the argument and the copy frames it.
+   *
+   * Most of `NARRATIVE.md`'s visual directions are a piece of information design
+   * rather than a scene — "two bars, nothing else", four tiles that re-sort,
+   * three effect sizes where the last two land at nearly the same length. Those
+   * slides set their headline and one sub-line, hand the rest of the frame to a
+   * `FigureSpec`, and render their fragment line as fragments rather than as a
+   * numbered ledger, because a ledger implies an order the argument does not have.
+   */
+  | 'figure'
+
+/** Named 3D scenes the deck can show. Bound to slides, not to layouts. */
+export type SceneId =
+  | 'hero'
+  | 'cast'
+  | 'office'
+  | 'office-transform'
+  | 'map'
+  | 'tiers'
+  | 'metrics'
+  | 'none'
+
+/**
+ * A camera framing within a scene.
+ *
+ * Two consecutive slides naming the same `SceneId` with different framings get
+ * a continuous camera move instead of a cut, which is how the office → map
+ * sequence flies out through the window. The names a scene understands are its
+ * own; an unknown framing is ignored and the camera holds.
+ */
+export type SceneFraming = string
+
+export type SceneBinding = {
+  id: SceneId
+  framing?: SceneFraming
+  /**
+   * Free parameters handed to the scene on show. The office scene reads
+   * `tier` and `full`; the map scene reads `region`.
+   */
+  params?: Record<string, string | number | boolean>
+}
+
+/** How this slide arrives from the one before it. */
+export type TransitionKind =
+  /** GLSL dissolve through a noise field: the paper/ink-bleed idiom. */
+  | 'ink-bleed'
+  /** The app's `.cutscene-overlay` letterbox, `steps()` easing, #05080d bars. */
+  | 'letterbox'
+  /** One shared scene, camera flies between framings. No blend at all. */
+  | 'camera'
+  /** Headline glyphs transformed individually; Fraunces weight interpolation. */
+  | 'type'
+  /** The scales-of-justice seal as an animated gold-foil mask. */
+  | 'foil-seal'
+  /** The floor: a short push-dissolve, for beats that should not announce themselves. */
+  | 'cut'
+
+export type DemoAnnotation = {
+  /** Percentage of the framed viewport, so a callout survives a zoom change. */
+  x: number
+  y: number
+  label: string
+  /** Which side the leader line leaves from. */
+  from?: 'left' | 'right'
+}
+
+/**
+ * One beat of a demo's click path, with the seconds it is allowed to take.
+ *
+ * The founders' own diagnosis of the previous deck is that the demo sprawled, so
+ * the narrative budgets every beat to the second. Holding those numbers as data
+ * rather than as prose is what lets the presenter overlay show the presenter that
+ * they are eleven seconds into a seven-second beat while it is still fixable.
+ */
+export type DemoStep = {
+  /** Seconds from the start of this slide. */
+  start: number
+  /** Seconds from the start of this slide. */
+  end: number
+  /** One action, imperative, verbatim from `NARRATIVE.md`. */
+  action: string
+}
+
+export type DemoSpec = {
+  /**
+   * Route on the app origin, e.g. `/progress`. `{session}` is substituted with
+   * `demoConfig.liveSessionId` at render time so the registry never holds an id
+   * that goes stale the moment the database is reseeded.
+   */
+  route: string
+  /** Still under `public/stills/` used when the app is unreachable or `?stills=1`. */
+  still: string
+  /**
+   * The app renders at `width / zoom` CSS pixels and is then scaled to fit, so
+   * a dashboard can be authored at desktop width and still be legible from the
+   * back of a room. 1 is native.
+   */
+  zoom?: number
+  /** Logical width the app is given before scaling. Defaults to 1440. */
+  width?: number
+  caption?: string
+  /** Revealed one at a time with `A`, so the presenter can point without narrating. */
+  annotations?: DemoAnnotation[]
+  /**
+   * The hard second budget for the whole demo. Required, and deliberately not
+   * optional: a demo slide without a stated ceiling is the failure mode this
+   * field exists to prevent. It is rendered on the audience screen as the budget
+   * bar and should be shown to the presenter as the loudest thing on the overlay.
+   */
+  budgetSeconds: number
+  /** Which pre-staged browser context this demo starts in, e.g. `Context A`. */
+  context?: string
+  /** The numbered click path, in order. */
+  clickPath?: DemoStep[]
+  /** What the presenter must not touch, however tempting. */
+  skip?: string[]
+  /**
+   * Slide id this demo continues from without a fresh load of the app. The deck
+   * gives every slide its own iframe, so a demo marked here cannot be reached by
+   * advancing the slide and expecting the app's state to survive — see `staging`.
+   */
+  continuesFrom?: string
+  /** Staging the click path alone does not convey. */
+  staging?: string
+}
+
+/** Who speaks a slide. The narrative assigns every slide to exactly one. */
+export type Speaker = 'Alan' | 'Nischay'
+
+/**
+ * Which way round the slide is painted.
+ *
+ * The deck's two colours are load-bearing rather than decorative: the act break
+ * at slide 4 is a full inversion from a royal blue field to a beige one, and the
+ * narrative asks for it to read as a light coming on. `scene` paints no field at
+ * all and lets the 3D stage through, which is what a slide whose subject is the
+ * scene needs — anything else would tile an opaque rectangle over the render.
+ */
+export type SlideField = 'blue' | 'beige' | 'scene'
+
+export type SlideSpec = {
+  /** Stable slug. Deep-linked as `#/<id>`, so changing one breaks a bookmark. */
+  id: string
+  section: DeckSection
+  kind: SlideKind
+  /** The eyebrow above the headline — act label, POV number, section name. */
+  eyebrow?: string
+  headline: string
+  /** One or two lines under the headline. Kept short by the layout, not by hope. */
+  deck?: string
+  /** Body points. `metrics` renders these as an instrument panel. */
+  points?: string[]
+  /** A single quotable line, set large. Used by `pov` and `close`. */
+  pull?: string
+  /** Attribution for `pull`, e.g. a cited study. */
+  attribution?: string
+  /**
+   * The hairline source credit, set small in a corner of the audience screen.
+   *
+   * Separate from `attribution`, which belongs to `pull` and is set with it. A
+   * credit belongs to the slide: it is the line that lets a researcher in the
+   * room find the report, and the deck's position is that volunteering the
+   * caveat in the design is worth more than hiding it.
+   */
+  credit?: string
+  /** Speaker notes. Shown by the `P` overlay; never on the audience screen. */
+  notes?: string
+  /** Who says the notes. Presenter data only; never on the audience screen. */
+  speaker?: Speaker
+  /** Presenter time budget in seconds. Drives the pacing bar in the overlay. */
+  budgetSeconds?: number
+  /** Blue field, beige field, or transparent over the 3D stage. Defaults to `scene`. */
+  field?: SlideField
+  /**
+   * The slide's graphic, where the narrative asks for one.
+   *
+   * The numbers live here rather than inside the figure component for the same
+   * reason the headlines do: several of them are figures `CITATIONS.md` had to
+   * correct, and a founder fixing 0.22 or $425 should be editing this registry
+   * and nothing else.
+   */
+  figure?: FigureSpec
+  scene?: SceneBinding
+  demo?: DemoSpec
+  /** How this slide arrives. Defaults to `cut`. */
+  transition?: TransitionKind
+}

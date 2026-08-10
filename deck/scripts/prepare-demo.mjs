@@ -1,0 +1,421 @@
+#!/usr/bin/env node
+/**
+ * Gets a machine ready to present the deck's live demos.
+ *
+ * Run it once, after the backend is up and before opening the deck:
+ *
+ *     cd backend && DEV_AUTH_ENABLED=true ../.venv/bin/python run.py   # port 5001
+ *     cd frontend && npm run dev                                       # port 5173
+ *     cd deck && npm run prepare-demo
+ *     cd deck && npm run dev                                           # port 5180
+ *
+ * What it does:
+ *   1. Runs `backend/scripts/seed_demo.py --apply`, which installs the lived-in
+ *      demo account and leaves one case open on a strategy prompt.
+ *   2. Works out that case's session id and writes it into `demo.config.ts`.
+ *   3. Proves, in a headless browser, that a localhost page can frame the
+ *      signed-in app — and then tells the presenter the two things they must
+ *      still do by hand in their *own* browser, because a Playwright profile
+ *      is not the profile that will be on the projector.
+ *
+ * Flags: --help, --skip-seed, --email <address>.
+ */
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const REPO_ROOT = resolve(DECK_DIR, '..')
+const CONFIG_PATH = resolve(DECK_DIR, 'demo.config.ts')
+const VENV_PYTHON = resolve(REPO_ROOT, '.venv/bin/python')
+
+const BACKEND_ORIGIN = 'http://127.0.0.1:5001'
+const APP_ORIGIN = 'http://localhost:5173'
+const HARNESS_PORT = 5179
+/** `TOUR_STORAGE_KEY` in frontend/src/guided-tour.tsx. Verified 2026-08-10. */
+const TOUR_KEY = 'lsat-tycoon:guided-tour:v6'
+/** Where `tools/map-qa/lib.mjs` finds Playwright and the arm64 Chromium. */
+const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
+const CHROME = process.env.DECK_CHROME
+  || `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+
+const HELP = `
+prepare-demo — seed the demo account and wire the deck to it.
+
+  node scripts/prepare-demo.mjs [--skip-seed] [--email <address>]
+
+  --skip-seed       Do not re-run the seeder. Resolves the already-open case
+                    from the running backend, rewrites demo.config.ts, and does
+                    the browser checks. Use this when the account is already
+                    seeded and you only want the config and the tour key.
+  --email <address> Account to seed. Must end in @localhost.test.
+                    Default: student@localhost.test
+  --help            This text.
+
+Requires the backend on ${BACKEND_ORIGIN} with DEV_AUTH_ENABLED=true.
+The frontend on ${APP_ORIGIN} is only needed for the browser
+checks; without it the script still seeds and still writes the config, and
+says so rather than pretending it checked.
+`.trim()
+
+// ---------------------------------------------------------------------------
+// output
+// ---------------------------------------------------------------------------
+
+const step = (text) => console.log(`\n\u2022 ${text}`)
+const ok = (text) => console.log(`  \u2713 ${text}`)
+const warn = (text) => console.log(`  ! ${text}`)
+
+function die(message, hint) {
+  console.error(`\nprepare-demo failed: ${message}`)
+  if (hint) console.error(`\n${hint}`)
+  process.exit(1)
+}
+
+// ---------------------------------------------------------------------------
+// arguments
+// ---------------------------------------------------------------------------
+
+const argv = process.argv.slice(2)
+if (argv.includes('--help') || argv.includes('-h')) {
+  console.log(HELP)
+  process.exit(0)
+}
+const skipSeed = argv.includes('--skip-seed')
+const emailIndex = argv.indexOf('--email')
+const email = emailIndex === -1 ? 'student@localhost.test' : argv[emailIndex + 1]
+if (emailIndex !== -1 && !email) die('--email needs a value.')
+const KNOWN_FLAGS = ['--help', '-h', '--skip-seed', '--email']
+const unknown = argv.filter(
+  (value, index) =>
+    value.startsWith('-')
+    && !KNOWN_FLAGS.includes(value)
+    // The value of --email is not a flag, even on the day someone names an
+    // account something perverse.
+    && !(emailIndex !== -1 && index === emailIndex + 1),
+)
+if (unknown.length) die(`unrecognised flag: ${unknown.join(' ')}`, HELP)
+
+// ---------------------------------------------------------------------------
+// small helpers
+// ---------------------------------------------------------------------------
+
+/** GET with a hard timeout, resolving `null` rather than throwing. */
+async function getJson(url, timeoutMs = 4000, init = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal })
+    if (!response.ok) return null
+    return await response.json()
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Did anything at all answer HTTP on this origin? */
+async function originAnswers(url, timeoutMs = 2500) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    await fetch(url, { method: 'HEAD', signal: controller.signal })
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * The seeder prints a JSON report on stdout and a progress log on stderr, so
+ * the report is whatever parses from the first line that opens an object.
+ * Written defensively because the report is not guaranteed: the seeder's final
+ * verification pass can raise after the account is already fully written.
+ */
+function parseReport(stdout) {
+  const start = stdout.indexOf('\n{')
+  const candidates = start === -1 ? [stdout] : [stdout.slice(start + 1), stdout]
+  for (const candidate of candidates) {
+    const opening = candidate.indexOf('{')
+    if (opening === -1) continue
+    try {
+      return JSON.parse(candidate.slice(opening))
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// 1. preflight
+// ---------------------------------------------------------------------------
+
+step('Checking the local stack')
+
+if (!existsSync(VENV_PYTHON)) {
+  die(
+    `no interpreter at ${VENV_PYTHON}`,
+    'Create the backend virtualenv first:\n  python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt',
+  )
+}
+ok(`venv python at ${VENV_PYTHON}`)
+
+const health = await getJson(`${BACKEND_ORIGIN}/v1/health`)
+if (!health) {
+  die(
+    `the backend did not answer on ${BACKEND_ORIGIN}`,
+    'Start it on 5001 — the frontend dev proxy targets that port and nothing else:\n'
+      + '  cd backend && PORT=5001 DEV_AUTH_ENABLED=true ../.venv/bin/python run.py',
+  )
+}
+ok(`backend up (${health.questions?.total ?? '?'} questions loaded)`)
+
+const authConfig = await getJson(`${BACKEND_ORIGIN}/v1/auth/config`)
+if (!authConfig?.dev_auth_enabled) {
+  die(
+    'the backend is running without DEV_AUTH_ENABLED',
+    'The demo account is a dev-login account, and the seeder refuses to run without it. Restart the backend:\n'
+      + '  cd backend && PORT=5001 DEV_AUTH_ENABLED=true ../.venv/bin/python run.py',
+  )
+}
+ok('dev login enabled')
+
+const appAnswered = await originAnswers(`${APP_ORIGIN}/`)
+if (appAnswered) ok(`app dev server answering on ${APP_ORIGIN}`)
+else warn(`nothing on ${APP_ORIGIN} — seeding anyway, but the browser checks below will be skipped`)
+
+// ---------------------------------------------------------------------------
+// 2. seed
+// ---------------------------------------------------------------------------
+
+let report = null
+let seedExit = null
+
+if (skipSeed) {
+  step('Skipping the seeder (--skip-seed)')
+} else {
+  step('Seeding the demo account (this takes about a minute)')
+  const seeded = await new Promise((resolveRun) => {
+    const child = spawn(VENV_PYTHON, ['scripts/seed_demo.py', '--apply', '--email', email], {
+      cwd: resolve(REPO_ROOT, 'backend'),
+      env: { ...process.env, DEV_AUTH_ENABLED: 'true' },
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+      process.stderr.write(chunk)
+    })
+    child.on('error', (error) => resolveRun({ code: -1, stdout, stderr: `${stderr}\n${error.message}` }))
+    child.on('close', (code) => resolveRun({ code, stdout, stderr }))
+  })
+  seedExit = seeded.code
+  report = parseReport(seeded.stdout)
+
+  if (seedExit === 0 && report) {
+    ok(`seeded ${email}: ${report.attempts} attempts, office tier ${report.firm?.tier}`)
+    if (report.problems?.length) warn(`seeder flagged: ${report.problems.join('; ')}`)
+  } else if (report) {
+    warn(`seeder exited ${seedExit} with problems: ${(report.problems || []).join('; ') || 'unknown'}`)
+  } else {
+    // The account is written incrementally and committed as it goes, so a
+    // crash in the seeder's closing verification leaves a usable demo and no
+    // report. Say so plainly instead of pretending either way.
+    warn(`seeder exited ${seedExit} without printing a report — see the traceback above.`)
+    warn('The account may still be fully seeded: the seeder commits as it goes and')
+    warn('only builds its report at the very end. Resolving the open case from the')
+    warn('backend instead, and checking it in a browser below.')
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3. resolve the live session id
+// ---------------------------------------------------------------------------
+
+step('Finding the case left open for the live demo')
+
+let sessionId = ''
+let sessionSource = ''
+
+const reportedUrl = report?.live_demo?.url
+if (typeof reportedUrl === 'string') {
+  sessionId = reportedUrl.split('/').filter(Boolean).pop() || ''
+  if (sessionId) sessionSource = "the seeder's report"
+}
+
+if (!sessionId) {
+  // `/v1/auth/dev` is CSRF-exempt (see AUTH_EXEMPT_PATHS in backend/app/auth.py),
+  // so a bare fetch can sign in and ask which run is resumable. This is the
+  // same answer the app's "Resume current run" button uses.
+  const login = await fetch(`${BACKEND_ORIGIN}/v1/auth/dev`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email }),
+  }).catch(() => null)
+  const cookie = (login?.headers.getSetCookie?.() || [])
+    .map((value) => value.split(';')[0])
+    .join('; ')
+  if (login?.ok && cookie) {
+    const current = await getJson(`${BACKEND_ORIGIN}/v1/study-sessions/current`, 4000, { headers: { cookie } })
+    sessionId = current?.session?.id || ''
+    if (sessionId) sessionSource = `${BACKEND_ORIGIN}/v1/study-sessions/current`
+  }
+}
+
+if (!sessionId) {
+  die(
+    'no open case session could be found for ' + email,
+    skipSeed
+      ? 'Run without --skip-seed so the seeder can stage one.'
+      : 'The seeder did not leave a resumable run. Read its output above; the demo\n'
+        + 'slide will fall back to deck/public/stills/demo-case.png until this is fixed.',
+  )
+}
+ok(`session ${sessionId} (from ${sessionSource})`)
+
+// ---------------------------------------------------------------------------
+// 4. rewrite demo.config.ts in place
+// ---------------------------------------------------------------------------
+
+step('Writing demo.config.ts')
+
+const configBefore = await readFile(CONFIG_PATH, 'utf8').catch(() => null)
+if (configBefore === null) die(`cannot read ${CONFIG_PATH}`)
+
+// Only the object literal is quoted; the type declaration reads
+// `liveSessionId: string`, so requiring a quoted value cannot hit it.
+const ASSIGNMENT = /(liveSessionId:\s*)(['"`])([^'"`]*)\2/g
+const matches = [...configBefore.matchAll(ASSIGNMENT)]
+if (matches.length !== 1) {
+  die(
+    `expected exactly one \`liveSessionId: '...'\` in demo.config.ts, found ${matches.length}`,
+    `Set it by hand instead:\n  liveSessionId: '${sessionId}',`,
+  )
+}
+const previous = matches[0][3]
+const configAfter = configBefore.replace(ASSIGNMENT, `$1'${sessionId}'`)
+await writeFile(CONFIG_PATH, configAfter)
+ok(previous === sessionId ? 'liveSessionId unchanged' : `liveSessionId ${previous ? `${previous} \u2192 ` : ''}${sessionId}`)
+
+// ---------------------------------------------------------------------------
+// 5. headless proof that a localhost page can frame the signed-in app
+// ---------------------------------------------------------------------------
+
+step('Checking that the signed-in app survives being framed')
+
+const framed = { attempted: false, authenticated: null, note: '' }
+
+if (!appAnswered) {
+  framed.note = `skipped: ${APP_ORIGIN} is not up`
+  warn(framed.note)
+} else {
+  let chromium = null
+  try {
+    ;({ chromium } = await import(PLAYWRIGHT))
+  } catch {
+    framed.note = `skipped: no Playwright at ${PLAYWRIGHT} (set DECK_PLAYWRIGHT to override)`
+    warn(framed.note)
+  }
+  if (chromium) {
+    framed.attempted = true
+    // Served without a host argument so the socket is dual-stack: whichever of
+    // ::1 / 127.0.0.1 the browser picks for `localhost`, it lands here. The
+    // spelling matters — see the note printed at the end.
+    const server = createServer((request, response) => {
+      const target = new URL(request.url, 'http://localhost').searchParams.get('u') || 'about:blank'
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(`<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%}iframe{width:100vw;height:100vh;border:0}</style><iframe id="app" src="${target}"></iframe>`)
+    })
+    await new Promise((resolveListen) => server.listen(HARNESS_PORT, resolveListen))
+    let browser = null
+    try {
+      browser = await chromium.launch({
+        executablePath: CHROME,
+        args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+      })
+      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+      await page.goto(`${APP_ORIGIN}/login`, { waitUntil: 'domcontentloaded' })
+      await page.locator('button', { hasText: 'Enter local development firm' }).click()
+      await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 60000 })
+      await page.evaluate((key) => window.localStorage.setItem(key, 'complete'), TOUR_KEY)
+
+      const target = `${APP_ORIGIN}/cases/${sessionId}`
+      await page.goto(`http://localhost:${HARNESS_PORT}/?u=${encodeURIComponent(target)}`, { waitUntil: 'domcontentloaded' })
+      const handle = await page.waitForSelector('#app')
+      let frame = null
+      for (let attempt = 0; attempt < 200 && !frame; attempt += 1) {
+        frame = await handle.contentFrame()
+        if (frame && frame.url() === 'about:blank') frame = null
+        if (!frame) await page.waitForTimeout(50)
+      }
+      await frame?.waitForLoadState('domcontentloaded').catch(() => {})
+      await page.waitForTimeout(1500)
+      framed.authenticated = frame
+        ? !(await frame.locator('button', { hasText: 'Enter local development firm' }).count())
+        : false
+      framed.frameUrl = frame?.url() ?? null
+      if (framed.authenticated) ok(`framed ${target} while signed in`)
+      else warn(`the frame fell back to ${framed.frameUrl} — it was not authenticated`)
+    } catch (error) {
+      framed.note = `check failed: ${String(error).slice(0, 200)}`
+      warn(framed.note)
+    } finally {
+      await browser?.close().catch(() => {})
+      server.close()
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 6. what the presenter still has to do by hand
+// ---------------------------------------------------------------------------
+
+console.log(`
+${'-'.repeat(72)}
+DO THIS IN THE BROWSER YOU WILL PRESENT FROM
+
+The check above ran in a throwaway Playwright profile. It proves the path
+works; it cannot sign in your Chrome. Two manual steps, once per machine:
+
+  1. Open  ${APP_ORIGIN}/login  and click "Enter local development firm".
+     That sets the lsat_session / lsat_csrf cookies the framed pages need.
+
+  2. Still on that tab, open devtools (Cmd-Opt-J) and paste:
+
+       localStorage.setItem('${TOUR_KEY}', 'complete')
+
+     That stops the 21-step guided tour from opening inside a slide's iframe.
+     localStorage is per-origin, so it has to be run on ${APP_ORIGIN},
+     not on the deck's own origin.
+
+  3. Open the deck at  http://localhost:5180  — spelled "localhost".
+     http://127.0.0.1:5180 renders identically and will silently sign the
+     iframes out: the browser treats 127.0.0.1 and localhost as different
+     sites, and the app's cookies are SameSite=Lax.
+${'-'.repeat(72)}`)
+
+// ---------------------------------------------------------------------------
+// 7. summary
+// ---------------------------------------------------------------------------
+
+console.log(`
+Summary
+  live session id  ${sessionId}
+  written to       ${CONFIG_PATH}
+  app origin       ${APP_ORIGIN}   (answering: ${appAnswered ? 'yes' : 'NO'})
+  seeder           ${skipSeed ? 'skipped (--skip-seed)' : `exit ${seedExit}${report ? '' : ', no report parsed'}`}
+  framed check     ${framed.attempted ? (framed.authenticated ? 'authenticated' : 'NOT authenticated') : framed.note || 'not run'}
+
+Next:  cd deck && npm run dev      then open http://localhost:5180
+`)
+
+// A demo that would show the login page on stage is not a success.
+if (framed.attempted && framed.authenticated === false) process.exit(1)

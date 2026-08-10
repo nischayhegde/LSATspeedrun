@@ -1,0 +1,363 @@
+# Lawyer Tycoon — Citations & Evidence Check
+
+**Prepared 2026-08-10.** Read this before rehearsing. It covers four things: the 610 SAT claim on `turn-610-reader`, ranked replacements for it, the competitor/study-hour claims on `problem-200-hours`, and — added in this revision — **a full competitor reference for the seven products a questioner may name (§4), including LSAT Demon, Kaplan, PowerScore and Khan Academy, none of which the deck previously accounted for.**
+
+Every entry below gives the claim, the source, the exact numbers, a URL, and the objection a hostile audience member can raise. §4.9 lists everything that could not be verified; nothing in §4 is asserted past what a primary page actually said.
+
+---
+
+## 0. Executive verdict
+
+| Claim | Slide | Verdict |
+| --- | --- | --- |
+| "The average LSAT taker scored a 610 on SAT reading." | `turn-610-reader` | **Unsourceable. Do not present as written.** Replace. |
+| "Coaching +0.22 / real LSATs +2.77, n=46,301" | `problem-coaching-tax` | **Solid.** Real LSAC report, cite it correctly. |
+| "200+ hours for a 5–10 point gain" | `problem-200-hours` | **Half-sourced.** Hours are fine; the gain figure needs rewording. |
+| "80+ of those hours are instruction" | `problem-200-hours` | **Not substantiated by competitor materials.** Soften. |
+| "Competitors charge hundreds of dollars monthly" | `problem-200-hours` | **False for the entry tiers. This is the most dangerous line in the deck.** 7Sage starts at $69/mo, LSAT Lab at $65/mo. Fix before you present. |
+| No competitive positioning anywhere in the deck | *(deck-wide)* | **Closed in this revision.** LSAT Demon, Kaplan, PowerScore and Khan Academy were absent entirely; Demon's public thesis is the closest to ours. Full reference in §4, spoken answers in §G of `NARRATIVE.md`, one on-stage line on `pov-reasoning-is-the-work`. |
+
+---
+
+# 1. The 610 SAT reading claim
+
+## 1.1 Verdict
+
+**There is no citable source for "the average LSAT test taker scored a 610 on SAT reading," and no closely equivalent published figure exists. Do not say this number on stage.**
+
+This is not a "we couldn't find it in ten minutes" answer. The figure would require a dataset that links individual SAT records to individual LSAT records, and no organization publishes one:
+
+- **LSAC does not collect SAT scores.** LSAC's registration and Post-LSAT Questionnaire capture undergraduate institution, UGPA, major, demographics, and motivation — not prior standardized test scores. Nothing in LSAC's published research library, its Technical Report series, or its Knowledge Reports reports a mean SAT score for LSAT takers. (Research library: https://www.lsac.org/data-research/research · Technical report archive: https://www.lsac.org/data-research/research/research-archive)
+- **The LSAT Correlation Studies are about something else.** They correlate LSAT score and UGPA with first-year law school average. They contain no SAT data. (https://www.lsac.org/data-research/research/lsat-correlation-study-results)
+- **The National Longitudinal Bar Passage Study** tracked LSAT, UGPA, law school performance, and bar outcomes. It did not collect SAT scores.
+- **College Board does not report by graduate/professional intent.** Its Total Group reports break out intended *undergraduate* major for high school seniors. There is no "future LSAT taker" category and no way to construct one.
+- **The academic literature that links SAT and LSAT is aggregate-level, not individual-level.** The most-cited example correlates *2003 SAT means by intended undergraduate major* against *2007 LSAT means by major* — 16 data points, r = 0.89, no individual linkage, and the author himself flags the selection problems. (https://www.ljzigerell.com/?p=1095, using LSAT data from Nieswiadomy 2009 and College Board 2003.) This cannot produce a mean SAT reading score for LSAT takers.
+- The "SAT-to-LSAT conversion" tables circulating on prep-company blogs and forums are percentile-matching exercises with no underlying paired dataset. Several of the widely shared regression formulas have no traceable origin at all. **Do not cite any of them.**
+
+**Conclusion: the founders believe a number that nobody published.** The most likely origin is a forum post, a prep-company blog, or a conflation of some other statistic.
+
+## 1.2 Why the phrasing is independently dangerous, even if a number existed
+
+"610 on SAT reading" does not name a real score scale. There are three different things it could mean, and they are not interchangeable:
+
+| Scale | Section | Range | In use |
+| --- | --- | --- | --- |
+| Pre-2016 SAT | **Critical Reading** (a standalone section) | 200–800 | Through Jan 2016 |
+| Post-2016 SAT | **Evidence-Based Reading and Writing (EBRW)** — reading *and* writing combined | 200–800 | 2016 – early 2024 |
+| Digital SAT (2024–) | **Reading and Writing** | 200–800 | March 2024 onward |
+| Any era | *Reading Test subscore* | 10–40 | — |
+
+A 610 is impossible on the 10–40 subscore scale, so the number can only refer to a 200–800 section score. But "SAT reading" as a standalone 200–800 section has not existed since January 2016 — today's equivalent section explicitly includes writing. Anyone in the audience who prepped for the SAT after 2016 knows this. **Saying "610 on SAT reading" to a room of recent graduates telegraphs that the number was not checked.**
+
+## 1.3 Sanity check, for your own understanding only
+
+Do not put this on a slide — it is arithmetic, not a citation. But it is worth knowing where 610 would sit if it were real:
+
+- National SAT mean, class of 2024: **ERW 519, Math 505, Total 1024** (College Board 2024 Total Group Report — https://reports.collegeboard.org/media/pdf/2024-total-group-sat-suite-of-assessments-annual-report-ADA.pdf).
+- A 610 ERW is roughly 90 points — a bit under one standard deviation — above that mean, landing somewhere in the high-70s to low-80s percentile among SAT takers. **Do not state a precise percentile on stage without pulling College Board's official percentile table**, and note that College Board publishes two different percentile scales (Nationally Representative and SAT User Group) that give different answers for the same score.
+- **The direction is plausible.** LSAT takers are a self-selected, college-completing subpopulation, so their mean SAT would sit well above the national mean. For reference, high school seniors who reported an intended major of "Legal Studies, General" scored ERW 582 (n = 51,069, class of 2025) and ERW 572 (n = 24,763, class of 2022). Students who reported a doctoral-or-equivalent degree goal scored ERW 572 (class of 2025).
+- **But plausible is not sourced, and the intended-major numbers are not a substitute.** They describe 17-year-olds checking a box about a possible undergraduate major, not people who actually sat the LSAT years later. If you cite them as the LSAT-taker average, you are making a substitution error a hostile questioner will catch, and it will cost you more than saying nothing.
+
+## 1.4 Recommended slide wording — `turn-610-reader`
+
+The argument survives fully intact without an SAT number, because LSAC itself supplies the load-bearing claim. Replace the number with LSAC's own words.
+
+**Recommended on-screen copy:**
+
+> # You already know how to read.
+> LSAC: the LSAT is "a test of skills — specifically critical thinking skills as applied in the areas of reading and reasoning."
+>
+> **No syllabus. No prerequisites.**
+
+**Recommended speaker notes (replacing the "610" sentence):**
+
+> So here's the belief this company runs on. The LSAT does not test a body of knowledge. That's not our opinion — LSAC says it in those words: it's a test of skills, in reading and reasoning. There is no syllabus. And everybody sitting for it has already finished, or nearly finished, a four-year degree, because the ABA requires one. They have every piece of general knowledge the test asks for. They are not missing concepts. They are missing reps, and they are missing feedback on how they think. Which is exactly why eighty hours of instruction buys you 0.22 points.
+
+**On the visual.** The extruded `610` is the hero object of the slide and the transition into slide 5 depends on it. If the design team wants to keep a single large numeral, `0.22` works — it is sourced, it is already the deck's opening number, and rotating it edge-on into the slide-5 progress track requires no rework. If you prefer to keep the "you already know how to read" framing without a numeral, the word **SKILLS** set at the same extruded scale carries the same weight.
+
+**If the founders insist on keeping a number about the student's existing ability**, the only honest version is a statement about degree completion, not test scores. See Alternative B below.
+
+---
+
+# 2. Ranked replacements
+
+Three sourced arguments, all of which make the same point — *the student is under-practiced, not under-taught* — ranked by how well they carry the turn.
+
+## Alternative A (strongest) — LSAC's own coaching data already proves the point
+
+**Why it ranks first.** You already have this number on slide 2. Using it again on slide 4 is not repetition, it is the payoff: slide 2 shows *coaching doesn't work*, slide 4 explains *why*. It is the test maker's own data, it is about the LSAT specifically rather than a proxy test, and it needs no SAT statistic at all. It also makes the turn stronger than 610 ever did, because it closes the loop instead of introducing a new fact the audience has to accept on faith.
+
+- **Claim:** LSAC surveyed its own test takers about preparation methods. People who took a coaching course scored 0.22 points above those who took nothing. People who worked through actual published LSATs scored 2.77 points above. About 45% took a coaching course; only about a third had ever worked through a real test.
+- **Source:** Wightman, L. F. (1990). *Self-Reported Methods of Test Preparation Used by LSAT Takers: A Summary of Responses from June and September 1989 Test Takers.* LSAC Research Report Series **RR 90-01**. Law School Admission Council.
+- **URLs:** https://eric.ed.gov/?id=ED468954 (ERIC record, ED468954) · https://www.lsac.org/data-research/research/research-archive (LSAC archive listing)
+- **Population and n:** June and September 1989 LSAT administrations; ~75% of test takers responded to the preparation questions; **n = 46,301**.
+- **Citation note:** the report is dated **April 1990** and numbered **RR 90-01**, covering **1989** test takers. The deck currently calls it "Wightman 1989." That is defensible as shorthand for the test-taker cohort, but if you put a citation line on the slide, write **"LSAC, Wightman, RR 90-01 (1989 test takers), self-reported"** so a researcher in the audience can find it.
+- **Hostile objections you must pre-empt:**
+  - *Self-reported and non-randomized.* It is an association, not a causal effect. The deck already says this on screen — keep that.
+  - *Respondents were not representative.* LSAC's own summary says respondents "tended to be younger and more able than their nonresponding counterparts." Volunteer that before someone else does.
+  - *Most people used several methods at once*, so the categories overlap.
+  - *It's from 1989.* Your §G answer is good. The strongest version: the sections it covered are the sections that still exist, it is the largest study of its kind ever published, and it comes from the organization that writes the test.
+- **Slide-ready phrasing:** "The organization that writes the LSAT asked 46,301 of its own test takers what they did to prepare. Instruction was worth a fifth of a point. Doing real questions was worth more than ten times that."
+
+## Alternative B — Every LSAT taker has already done four years of college-level reading
+
+**Why it ranks second.** It makes the "the skill is already there" argument that 610 was reaching for, using a fact that is structurally guaranteed rather than statistically estimated. It is weaker than A only because it is a qualitative claim rather than a striking number.
+
+- **Claim:** Law school applicants are required to hold a bachelor's degree, so effectively everyone sitting for the LSAT has completed, or is three-quarters through, four years of college-level reading and argument.
+- **Source:** American Bar Association, *ABA Standards and Rules of Procedure for Approval of Law Schools*, **Standard 502(a)**: "A law school shall require for admission to its J.D. degree program a bachelor's degree that has been awarded by an institution that is accredited by an accrediting agency recognized by the United States Department of Education." Standard 502(b)(1) permits admission at three-fourths of a bachelor's degree in a joint BA/JD program; 502(c) permits an "extraordinary case" exception that is used very rarely.
+- **URL:** https://www.americanbar.org/content/dam/aba/administrative/legal_education_and_admissions_to_the_bar/standards/2023-2024/23-24-standards-ch5.pdf (Chapter 5, Standard 502)
+- **Supporting datapoint:** LSAC's 2024 1L Profile shows 23% of the entering class were first-generation college graduates and 47% had a parent or guardian with a post-graduate degree — i.e. this is a thoroughly college-educated population. (https://www.lsac.org/sites/default/files/research/20241LProfileReportFinal.pdf)
+- **Hostile objections:**
+  - "Having a degree doesn't mean you read well." Correct, and do not overclaim. The argument is that they are not *missing a prerequisite body of knowledge*, not that they are already good at the LSAT. Keep the claim narrow.
+  - Cite the current edition of the Standards; the ABA revises them annually and has been actively loosening the *testing* requirement under Standard 503 (14 schools held test-optional variances in 2025). Standard 502 is unaffected, but check the year before you print it.
+- **Slide-ready phrasing:** "Everyone taking the LSAT has a bachelor's degree — the ABA requires one. Four years of college-level reading already happened. That's not what's missing."
+
+## Alternative C — LSAC's own description: the LSAT tests skills, not a syllabus
+
+**Why it ranks third.** It is a primary source from the test maker and it is unassailable, but it is a definition rather than a finding, so it lands softer than A. Best used *with* A rather than instead of it — which is exactly how the recommended wording in §1.4 uses it.
+
+- **Claim:** The LSAT measures reading and reasoning skills. It does not test any prerequisite body of subject-matter knowledge.
+- **Sources and exact quotes:**
+  - LSAC, *LSAT Prep*: "The LSAT® is designed to measure the skills necessary for law school success. These skills include reading comprehension, reasoning, and writing." And: "The LSAT is a test of skills — specifically critical thinking skills as applied in the areas of reading and reasoning." — https://www.lsac.org/lsat/prep
+  - LSAC, *The Law School Admission Test: Reliability and Validity in Brief*: the LSAT "measures the comprehension of complex texts with accuracy and insight, the organization and management of information and the ability to draw reasonable inferences from it, the ability to think critically, the analysis and evaluation of the reasoning and arguments of others, and the ability to compose a persuasive argument." — https://www.lsac.org/data-research/research/lsat-reliability-validity
+- **Hostile objection — read this one carefully.** The same LSAC page says the LSAT is **"not a mere general skills test"** and "does not measure skills unrelated to law school success." LSAC is drawing a distinction between a *generic* aptitude test and one tailored to law school. If you paraphrase LSAC as saying "it's just a general skills test," you will be quoting them against their own sentence. Stay on the precise claim: **it measures skills, not a body of knowledge.** That is true, it is LSAC's own framing, and it fully supports your argument.
+- **Slide-ready phrasing:** "LSAC's own words: the LSAT is a test of skills in reading and reasoning. There is no syllabus, so there is nothing to teach you first."
+
+## Alternative D (backup, weaker) — score improvement ceilings
+
+Usable in Q&A, not strong enough for the turn.
+
+- **Claim:** Retaking the LSAT produces an average gain of 2.8 points on the second attempt and 2.2 more on the third.
+- **Source:** LSAC, *The Performance of Repeat Test Takers on the Law School Admission Test: 2006–2007 Through 2012–2013 Testing Years* (**TR 14-01**). https://www.lsac.org/data-research/research/performance-repeat-test-takers-law-school-admission-test-2006-2007-through
+- **Exact numbers:** +2.8 points on the second sitting, +2.2 on the third. Mean scores by attempt: second-time 151.7, first-time 151.0, third-time 149.4.
+- **Corroboration from LSAC's public guidance:** "on average, test takers taking their second test in the same testing year increase their scores 2 to 3 points." https://www.lsac.org/lsat/retaking-the-lsat
+- **Most recent data:** LSAC TR 26-01 reports that in 2024–2025, 49.1% of all test takers tested more than once, and first-time takers averaged about 1.5 points below repeat takers. https://www.lsac.org/sites/default/files/research/TR-26-01.pdf
+- **Hostile objection:** this measures gain between *administrations*, not gain from a diagnostic, and it does not isolate any instructional method. It is descriptive, not causal. Use it to show that real-world gains are small, not to attribute the smallness to instruction.
+
+---
+
+# 3. Bonus findings — `problem-200-hours`
+
+## 3.1 "200+ hours of study" — defensible, but only as an industry recommendation
+
+**There is no independent research measuring how long students actually study for the LSAT.** Every figure in circulation comes from prep companies' own recommendations. That is still usable, and it has a nice rhetorical property: these are your competitors' numbers, so they cannot dispute them.
+
+| Source | Figure | URL |
+| --- | --- | --- |
+| Princeton Review | "Aim for 250 to 300 hours of LSAT preparation"; ~20 hrs/week over ~3 months | https://www.princetonreview.com/law-school-advice/how-long-should-you-study-for-the-lsat |
+| Blueprint Prep | "successful students invest a total of 200 to 300 hours of study time" | https://blog.blueprintprep.com/lsat/how-long-should-you-study-for-the-lsat-3/ |
+| Kaplan | 120 hours "bare minimum"; recommends **150–300 hours** | https://www.kaptest.com/study/lsat/how-many-hours-of-lsat-prep/ |
+| LSAC (the test maker) | Declines to give an hours figure; "we often recommend [a few] months as a sort of baseline" | https://www.lsac.org/lsat/prep |
+
+**Verdict: "200-plus hours" is safe** as long as you attribute it. Say *"the prep companies themselves recommend two to three hundred hours"* rather than *"students spend 200 hours,"* which asserts measured behavior nobody has measured.
+
+**Caveat a hostile audience member will raise:** these are marketing recommendations from companies that sell by the month, so they have an incentive to quote a large number. That objection actually helps you — it means the industry is advertising a 250-hour commitment — but be ready to say it first.
+
+## 3.2 "5–10 point increase from their initial diagnostic" — reword this
+
+**No published source measures diagnostic-to-final score gains.** Prep companies claim much larger numbers (10–20 points), which is what they sell; LSAC's only hard data is the retake figure of +2.8 points between sittings (§Alternative D). So the deck's 5–10 sits in the middle of a range where the optimistic end is unsourced marketing and the pessimistic end is a different measurement entirely.
+
+**The one quasi-quantitative source found** is a prep-industry study-schedule guide claiming 100–150 hours for a 5-point gain and 200–300 hours for a 10-point gain (https://athenify.io/blog/lsat-preparation-study-schedule). It is a blog with no methodology and should **not** be cited on a slide.
+
+**Recommended rewording for `problem-200-hours`:**
+
+> **On-screen:** "250 hours. A few points. Every month, on a credit card."
+>
+> **Speaker notes:** "And here's what that costs. The prep companies themselves tell you to plan for two hundred fifty to three hundred hours. LSAC's own data on people who retake says the second attempt moves you about two and a half to three points."
+
+This is a stronger slide than the original, because every number in it is now attributable and the gap between effort and result looks *worse*, not better.
+
+**If the founders insist on keeping "5 to 10 points,"** phrase it as an expectation rather than a finding: *"most students are hoping for five to ten points"* — a statement about student goals, which nobody can falsify, instead of a statistic that has no source.
+
+## 3.3 "80+ of those hours getting instruction" at 7Sage and LSAT Lab — not substantiated
+
+Neither company publishes a total instruction-hours figure, so the deck's "80+ hours" cannot be sourced to them. What they do publish:
+
+**7Sage** (https://7sage.com/self-study/pricing)
+- Own site: **"900+ bite-sized video lessons"** covering "LSAT logic and strategy from the ground up." No total runtime published.
+- Own site, Live tier: **"12+ sessions per weekday and 60+ per week"** of live Zoom instruction, plus **"3,000+ recorded classes."**
+- Third-party estimate: ~50 on-demand video hours on Core, 100+ on Live (https://testpreppal.com/lsat/prep-course/7sage). **This is a reviewer's estimate, not 7Sage's own figure.**
+
+**LSAT Lab** (https://www.lsatlab.com/features)
+- Own site: **90-minute workshop-style live classes, five days a week**, in "comprehensive 3-month courses."
+- Third-party: "almost 50 on-demand videos," typically ~25 minutes each — roughly 20 hours of core video (https://testpreppal.com/lsat/prep-course/lsat-lab). A third-party review describes a structured 3-month path of 38 live classes ≈ 57 hours of instructor-led time.
+
+**Verdict.** "80+ hours" is **not directly supported**, and on 7Sage's cheapest tier the honest number is probably closer to 50. But if you count the live tiers, the true figure is *much larger* than 80 — 90-minute classes five days a week over three months is roughly 100 hours of live instruction on its own, before any video. So the claim is directionally right and specifically wrong.
+
+**Recommended rewording:** drop the precise hour count and use the competitors' own published structure, which is more damning anyway.
+
+> **Speaker notes:** "On the popular apps, the product *is* instruction. 7Sage ships a nine-hundred-lesson video course. LSAT Lab runs ninety-minute classes five days a week for three months. That's where your money and your calendar go."
+
+Every number in that sentence is a direct quote from the competitor's own website.
+
+## 3.4 Competitor pricing — **the deck is currently wrong, fix this before you present**
+
+The deck says competitors "charge hundreds of dollars a month." **That is false for the tiers most students actually buy**, and it is the single easiest way to lose the room: anyone with a phone can pull up 7Sage's pricing page in four seconds.
+
+**7Sage** — https://7sage.com/self-study/pricing *(verified 2026-08-10)*
+
+| Tier | Price | Contents |
+| --- | --- | --- |
+| Core | **$69/month** | 900+ video lessons, all official PrepTests, drills, analytics, Sage AI |
+| Live | **$129/month** (first month $79 promo) | Core + daily live Zoom sessions, weekly proctored tests, office hours, 3,000+ class recordings |
+| Coach | **$299/month** | Live + dedicated coach, two 30-min sessions/month |
+| Fee-waiver program | **$1/month** | Core, for students with an LSAC fee waiver |
+
+**LSAT Lab** — https://www.lsatlab.com/pricing *(verified 2026-08-10)*
+
+| Tier | Price | Contents |
+| --- | --- | --- |
+| Free | **$0** | 2 official LSATs, video lessons, analytics, AI tools, 1 trial class |
+| Premium | **$65/month** | 81 official LSATs, adaptive study plan, adaptive drilling, score guarantee |
+| Classroom | **$125/month** | Premium + unlimited live classes |
+| Tutor | **$425/month** | Classroom + 2 hours tutoring |
+
+Both also list **annual billing at roughly a 30% discount**, and LSAT Lab offers **50% off Premium and Classroom** with an LSAC fee waiver (https://www.lsatlab.com/lsac-fee-waiver-program).
+
+**The hidden cost, which is the better attack.** Both companies require an LSAC **LawHub Advantage** subscription to access official questions. 7Sage's own site states this costs **$124/year and goes to LSAC, not 7Sage.** (Some third-party reviews still list $120/year; use 7Sage's own $124 figure, since it is the one you can point at on their page.) This is a genuine, verifiable, unavoidable cost that every competitor passes through — and it is a far more interesting fact than a price you got wrong.
+
+**Recommended rewording for `problem-200-hours`:**
+
+> **On-screen copy:** replace the price ribbon "hundreds of dollars a month" with **"$65–$425 a month, plus $124 a year to LSAC."**
+>
+> **Speaker notes:** "And it's a subscription. LSAT Lab starts at sixty-five a month, 7Sage at sixty-nine, and once you want live classes or a coach you're at a hundred and twenty-five, two ninety-nine, four twenty-five. Every one of them also makes you buy LawHub from LSAC on top, a hundred and twenty-four a year, because that's the only way to get the real questions. Somebody has to pay for the video studio and the live instructors, and it's you, monthly, for as long as you're studying."
+
+**Why this is better than the original line.** "Hundreds a month" is a single number that is easy to falsify. The range plus the duration is harder to dismiss and lands the same blow: at $129/month for the five months the same companies tell you to study, you are out roughly $645 plus LawHub, and the live tiers are exactly the ones carrying the instruction hours you are arguing against.
+
+**One more caveat.** Prices move. **Re-check both pricing pages the morning of the pitch.** 7Sage was running a "$79 first month" promotion on the Live tier as of 2026-08-10; promotional pricing changes without notice.
+
+## 3.5 Logic games — already correct, keep it
+
+The deck's claim that LSAC removed Analytical Reasoning is accurate and worth keeping. LSAC's own TR 26-01 confirms the timing: "All test takers in this study took the LSAT before August 2024, when the test included an Analytical Reasoning section." (https://www.lsac.org/sites/default/files/research/TR-26-01.pdf, and the same note appears in the 2021–2025 Correlation Study summary.)
+
+**Caveat:** verify before claiming competitors *still* teach it. Both 7Sage and LSAT Lab have publicly updated their curricula for the post-August-2024 format. If you make the jab, aim it at the general back catalog, not at these two by name.
+
+---
+
+# 4. Competitor reference — the full field, verified 2026-08-10
+
+**Everything in this section was checked on 2026-08-10.** Where a page could not be loaded directly, that is said so in the cell rather than papered over, and every unverifiable item is listed in §4.9.
+
+The deck names only 7Sage and LSAT Lab. This section exists because the three companies most likely to come up in Q&A — **LSAT Demon**, **Kaplan** and **PowerScore** — appear nowhere in it, and because Demon's public thesis is close enough to ours that being caught unprepared on it would be the single most damaging thing that could happen in the question period. See §G of `NARRATIVE.md` for the spoken answers.
+
+## 4.1 At a glance
+
+| Product | Entry price | Ceiling | Adaptive selection | Grades student-written reasoning | Confidence capture | Game / motivation layer |
+| --- | --- | --- | --- | --- | --- | --- |
+| **LSAT Demon** | $99/mo (Essential) | $499/mo (Pro) | **Yes** — "Smart Drilling" | **No** — pre-written expert explanations + human Ask reply | No | **No** (Discord community, daily podcasts) |
+| **7Sage** | $69/mo (Core) | $299/mo (Coach) | **Yes** — "smart drills" + adaptive scheduler | **No** — Sage AI answers *your* questions | No | No |
+| **LSAT Lab** | $0 free / $65/mo Premium | $425/mo (Tutor) | **Yes** — "Adaptive Drill Engine" | **No** — "AI Skills Training Center," contents not published | No | No |
+| **Blueprint** | $99/mo (Starter) | $4,799 (170+ tutoring) | Yes (Pro plan study plan / QBank) | **No** | No | No |
+| **Kaplan** | from $899 (On Demand) | $3,999 (Bootcamp) | Personalized Study Calendar; "interactive hints" | **No** | No | No |
+| **PowerScore** | $99/mo (On-Demand) | $995 (Live Online) | Performance analytics only | **No** | No | No |
+| **Khan Academy** | Free | Free | — | **No** | No | No |
+
+**Every row above also pays LSAC $124/year for LawHub Advantage.** LSAC's own page is the governing price: "A LawHub account is free, but with LawHub Advantage ($124/year)…" — https://www.lsac.org/lawhub *(accessed 2026-08-10)*. Providers quote it inconsistently at $115, $120 and $124 in their own checkout flows; **use LSAC's $124 and say where it comes from.**
+
+**No product in this field grades a student's written reasoning, captures a confidence rating, or runs a game layer.** That is the finding this section exists to establish, and §4.9 says exactly how confident you may be in it.
+
+## 4.2 LSAT Demon — read this one twice
+
+The closest competitor by positioning and the one that must not surprise you.
+
+- **Pricing** *(https://lsatdemon.com/plans/lsat, accessed 2026-08-10)* — Essential **$99/mo**, Live **$179/mo**, Pro **$499/mo**. Monthly only; no annual tier is offered on the plans page. All three are marked "LawHub Advantage Required."
+- **Fee waiver and military** *(https://lsatdemon.com/plans, accessed 2026-08-10)* — "Get 80% off our Essential plan or 20% off Live or Pro," honored for the life of the waiver plus one year. **Note a conflict:** Demon's plans-explained FAQ says "50% off Essential or 20% off Live or Pro for 3 years" (https://lsatdemon.com/resources/frequently-asked-questions/lsat-demon-plans-explained, accessed 2026-08-10). Two of Demon's own pages disagree. Do not quote a fee-waiver number for Demon on stage. 20% off any tier for current or past U.S./Canadian military.
+- **Tutoring above Pro** *(https://lsatdemon.com/resources/frequently-asked-questions/tutoring-with-lsat-demon, accessed 2026-08-10)* — Demon tutors from $200/hr; Master tier from $300/hr with a $659 Pro-Master plan; Grandmaster from $600/hr with a $1,199 Pro-Grandmaster plan; the cofounders themselves from **$1,200/hr**.
+- **Core pedagogical claim, in their own words** — "The LSAT is easy. You can master it." (https://lsatdemon.com/tutoring) · "There's no complex diagramming or hours of lessons. Smart Drilling meets you at your current skill level, which is exactly why we say The LSAT Is Easy." · "We don't teach shortcuts. We teach the reasoning skills the LSAT rewards." (https://lsatdemon.com/resources/frequently-asked-questions/why-lsat-demon) · "200+ lessons teach you how to think like top scorers. **No diagrams. No jargon. No memorizing.** Just common sense, sharpened." (https://lsatdemon.com/plans/lsat) — all accessed 2026-08-10.
+- **How adaptive selection works** — "The Demon knows your weak spots and serves up the exact questions you need. Just hit Drill." (plans page). Their own explanation of the mechanism: "The Demon algorithm adjusts difficulty based on your performance. If you're struggling, you'll see easier questions so you can build fundamentals. If you're excelling, it will push you harder." (https://lsatdemon.com/resources/demon-daily/the-purpose-of-drilling, accessed 2026-08-10). It is **difficulty-and-weakness targeting on accuracy history** — the same class of mechanism as 7Sage's smart drills and LSAT Lab's adaptive engine, and the same class as ours.
+- **Written reasoning: not required, not graded.** Nothing on Demon's site describes a field in which a student types their reasoning, and nothing describes anything scoring such a field. What Demon ships instead is (a) **10,000+ pre-written and video explanations** authored by cofounders Ben Olson and Nathan Fox — "Ben and Nathan unpack every question. Why is the right answer right? Why are the wrong ones wrong?" — delivered through **Merged Explanations**, which places each explanation directly beneath its answer choice (https://lsatdemon.com/resources/Features/merged-explanations); and (b) the **Ask Button**, where a human teacher writes you a personal explanation within 24 hours. This is expert explanation of *the question*, not assessment of *your* argument. It is high quality and it is human. It is not the same object as step-level feedback on a student's own written reasoning.
+- **Named strategies during a question: deliberately refused.** This is a real philosophical difference and it cuts both ways. Demon is actively removing technique vocabulary from its own product: their published to-do list includes "Archive old lessons that dwell unnecessarily on jargon like 'contrapositives' and 'inferences,'" "Edit written explanations to eradicate these terms," and "Replace old logical reasoning videos that rely on diagramming" (https://lsatdemon.com/resources/lsat-tips-and-strategies/lsat-the-easy-way, accessed 2026-08-10). **The one technique they do build into the tool is prediction:** "Prediction Mode is a Demon drilling tool that hides the question and answer choices to focus your attention on the passage" (https://lsatdemon.com/resources?category=Features, accessed 2026-08-10). That is functionally close to our `prephrase` method, so do not claim nobody prompts a technique inside a question. Claim what is true: nobody measures whether it worked for that student.
+- **Timing: they argue the opposite of our POV 5.** "We prioritize accuracy over speed." · "On section days, simulate the real test. **Hide the clock.** Focus on solving questions correctly, even if that means you don't finish." · "You can only serve one master. If you're thinking about timing, you're not thinking about the question." (https://lsatdemon.com/resources/demon-daily/the-purpose-of-drilling, accessed 2026-08-10.) **This is the sharpest live disagreement between the two products and it is the question to be ready for**, because Demon's version is well argued and widely believed. The answer is in §G.
+- **How central are the founders' videos and classes?** Very. Live classes run **seven days a week** on Zoom, taught by the cofounders and by teachers who are all former Demon students scoring 99th percentile; the homepage's own class schedule for 2026-08-10 lists six sessions in one day, including "Ben's Class — Cofounder Ben Olson guides you through LR and RC" (https://lsatdemon.com/, accessed 2026-08-10). On top of that: "We'll provide **seven podcast episodes a week** at Thinking LSAT and Demon Daily" (lsat-the-easy-way, accessed 2026-08-10), plus the Thinking LSAT Podcast at 23.3K YouTube subscribers and 5.5M views. **A large part of what a Demon subscriber is buying is Ben and Nathan's voice, daily.** Treat that as a genuine retention moat, not as filler.
+- **Motivation layer:** none advertised. Retention appears to run on the live classes, the podcasts and the **Demon Discord** — "one of the most active LSAT communities out there, and it's free" (features index, accessed 2026-08-10). No points, no currency, no levels, no streak mechanic found anywhere on the site. See §4.9 on the limits of proving a negative.
+- **Other shipped features worth knowing**, from the features index (accessed 2026-08-10): **Ugly Mode 2.0** (renders the Demon as the exact official LSAT interface), **Test Import** (pulls section and test data from LawHub), **Roll Call** (LSAT/GPA against last year's admits), Dark Mode, and **Downvote Feedback** on explanations, which routes student dissatisfaction with an explanation back to the team.
+
+## 4.3 7Sage
+
+- **Pricing** *(https://7sage.com/self-study/pricing, accessed 2026-08-10)* — Core **$69/mo**; Live **$129/mo**, currently promoted as **"1st month $129 $79 · Limited-time offer · Renews at $129/month"**; Coach **$299/mo**. Each tier's card carries "Requires LSAC LSAT LawHub Advantage subscription."
+- **Correction to §3.4 of this document.** §3.4 says "Both also list annual billing at roughly a 30% discount." **That is verified for LSAT Lab and not verified for 7Sage.** 7Sage's self-paced pricing page as loaded on 2026-08-10 offers monthly billing only, with no annual toggle and no annual price. Third-party reviews list a 7Sage annual plan at $599/yr and at $559/yr, which disagree with each other and could not be confirmed on 7Sage's own site. **Say "LSAT Lab discounts about 30% for annual billing" and do not extend it to 7Sage.**
+- **Fee waiver** — "subscribe for as little as **$1/month**… You also qualify for 50% off our courses, 30% off our tutoring services" (same page).
+- **Core claim and instruction format** — "**900+ bite-sized video lessons** cover LSAT logic and strategy from the ground up." Live adds "**12+ sessions per weekday and 60+ per week**" on Zoom, weekly proctored tests, office hours and "**3,000+ recorded classes**." Coach adds a dedicated 99th-percentile coach and two 30-minute sessions a month.
+- **Adaptivity** — "Our adaptive algorithm builds a study plan that fits your schedule… then adjusts as you make progress" and "**Smart drills** — one-click drills zero in on your weaknesses, constantly adapting to your abilities."
+- **AI, and why it matters to POV 3** — "**Sage AI** — Analyze your practice performance, get personalized recommendations on what to study next, and **ask Sage AI about tricky LSAT questions**. It's like having a tutor on call 24/7." Core includes it; Live is "2x more usage"; Coach is "10x." This is an assistant a student can query about a question, which is the interaction pattern `pov-ai-never-answers` argues against. It is a fair, sourced contrast and it should be stated as a design disagreement rather than an accusation — 7Sage publishes no evidence either way about guardrails.
+- **LawHub, in their own words** — "Yes. You'll need LawHub Advantage to access most real LSAT questions on any site, even LawHub. It costs $124 per year, and the fee goes to LSAC (the test makers), not 7Sage." (7Sage's own FAQ; note their checkout page bundles it at $120, so their two pages disagree — LSAC's $124 governs.)
+- **Reasoning grading / confidence / gamification** — none found. 7Sage is strongly associated with the **Blind Review** method, which is the closest thing in the field to a confidence signal: the student re-does uncertain questions before seeing the key. It is a study ritual and a review workflow, not a per-question numeric rating feeding a scheduler. **Expect a knowledgeable questioner to raise it against POV 2.**
+
+## 4.4 LSAT Lab
+
+- **Pricing** *(https://www.lsatlab.com/pricing, accessed 2026-08-10)* — Free **$0** (2 official LSATs, video lessons, score analytics, AI Skills Training Center, AI Analytics Assistant, 1 free trial class); Premium **$65/mo** (81 official LSATs, higher score guarantee, adaptive study plan, adaptive drilling, build-your-own practice sets); Classroom **$125/mo** (adds live classes); Tutor **$425/mo** (adds 2 hours tutoring). The page carries a **Monthly / Yearly toggle reading "Save 30% when you pay for 1 year!"** — this is the verified annual discount. All paid tiers marked "LawHub Advantage Required."
+- **Fee waiver** *(https://www.lsatlab.com/lsac-fee-waiver-program, accessed 2026-08-10)* — "Save 50% on our Premium (reg. $65 per month) and our Classroom plan (reg. $125 per month)."
+- **Instruction format** *(https://www.lsatlab.com/features, accessed 2026-08-10)* — "Our **90-minute workshop-style classes are offered 5 days a week** and go deep on every topic. Comprehensive 3-month courses start every month." Plus an "Encyclopedic Video Library" with class recordings updated five days a week.
+- **Adaptivity** — "**Adaptive Drill Engine** — Our analytics take the guess work out of drilling, automatically selecting the right questions at the right level." Note the override: "**Or, use the Filtered setting to create custom drills with your exact specifications.**" That matters to the deck's "you don't pick the questions" fragment — LSAT Lab is adaptive *and* lets the student cherry-pick.
+- **Analytics claim** — "We've analyzed every official LSAT question across more than 200 parameters."
+- **Score guarantee** — study 2+ months from a diagnostic taken within 14 days; fewer than 5 points of improvement on the official LSAT means a 100% refund.
+- **Reasoning grading** — the "AI Skills Training Center" and "AI Analytics Assistant" are named on the pricing page and **their contents are not described anywhere on the site**. This is the single largest hole in the "nobody grades written reasoning" claim. See §4.9.
+
+## 4.5 Blueprint
+
+In the deck already, but only as a source for study hours. Worth carrying because it is the field's other subscription-priced course and because the deck borrows its blind-review framing on `demo-mega-litigation`.
+
+- **Pricing** — Self-Paced Starter **$99/mo**, Self-Paced Pro **$149/mo**, Live Course **$1,299**, 170+ Course **$1,999**, tutoring packages from $2,699 to $4,799. Blueprint's own monthly checkout page confirms **"LSAT Self-Paced Pro Plan $149/month"** (https://blueprintprep.com/self-paced-pro-course-monthly, accessed 2026-08-10); the full ladder is from third-party compilations citing https://blueprintprep.com/lsat/online-anytime, which **could not be loaded directly on 2026-08-10** — see §4.9.
+- **LawHub, in their own words** — "As of August 4, 2020, all LSAT students need an active LawHub Advantage… The cost for this service is **$124/yr** and is required for any student who wants to prep for the LSAT with official LSAT content, **no matter which third-party LSAT prep service you choose**." (https://blog.blueprintprep.com/lsat/what-is-lsat-prep-plus/, page updated 2026-03-20, accessed 2026-08-10.) **This is the best single citation in the whole file for the LawHub claim, because it is a competitor stating the universality of the fee.** Note that Blueprint's own checkout page simultaneously shows $115 and $120 for the same line item, which is a good illustration of why LSAC's number governs.
+- **Reasoning grading / confidence / gamification** — none found.
+
+## 4.6 Kaplan
+
+The brand a non-expert room recognizes, and therefore the mental anchor, even though it is the least similar product.
+
+- **Pricing** — On Demand **from $899** (promoted at $799 with code 100FALL, and listed at $699 in some promotional compilations), Live Online **from $1,299**, In Person **from $1,699**, Tutoring packages **from $1,999** (10/20/30/40 hours), 170+ Course **$2,799**, Bootcamp **$3,999**. Source: Kaplan's own pages, https://www.kaptest.com/lsat and https://www.kaptest.com/lsat/courses/lsat-prep-diy-online. **Caveat on method:** kaptest.com served a bot-verification interstitial to direct retrieval on 2026-08-10, so these figures come from search-index copies of Kaplan's own pages rather than a page loaded in front of me. They are consistent across the two pages and across three third-party reviews, but **treat the exact number as "about $900 to about $4,000" on stage** and see §4.9.
+- **Instruction format** *(https://www.kaptest.com/lsat/courses/lsat-prep-online)* — Live Online: "**24 hours of live-streamed, interactive lessons**," plus "**60 hours** of exclusive live and on demand lessons on the **LSAT Channel**," 180+ curated quizzes, "every officially released LSAT question (nearly 6,000)," 4/6/12-month access. The On Demand page describes "12 hours of optimized asynchronous lessons"; a third-party review and an older Kaplan snapshot say 24. **Kaplan's own pages disagree on their hour counts in two places — the On Demand figure (12 vs 24) and the live figure, since the course page says 24 live hours and the FAQ on kaptest.com/lsat says "32 hours of core classroom instruction plus over 150 hours" on the LSAT Channel. Do not quote a Kaplan hour count on stage.** Say "a couple of dozen hours of live class plus a channel of on-demand lessons," which every version of their own copy supports.
+- **Core pedagogical claim** — a named, taught procedure. Kaplan's LSAT Channel session descriptions read "explain the purpose of each step in the **Logical Reasoning Method** and be able to apply the LR Method to Argument-Based questions," and the RC equivalent is the "RC Method." This is the "strategies get taught and then you're left alone with them" model that `pov-strategy-inside-the-question` is aimed at, and Kaplan is the fairest target for it because they name the method and sell the course around it.
+- **LawHub** — "LSAT Link Integration with access to 59 official practice tests via LSAC's LawHub Advantage (**$124 subscription required**)." Kaplan's own page, and it names the same $124.
+- **Adaptivity** — "Personalized Study Calendar built backward from your specific test date" and "performance assessments with personalized study recommendations using advanced analytics." There is also "**interactive hints with instant feedback** to help you master every question type" — hints during practice, which is closer to our guardrail than 7Sage's ask-anything assistant. Be fair about that if it comes up.
+- **Reasoning grading / confidence / gamification** — none found.
+
+## 4.7 PowerScore
+
+- **Pricing** *(https://powerscore.com/lsat/courses, accessed 2026-08-10)* — On-Demand **$99/month**, auto-renewing every 30 days; Live Online **$995** per course cohort; free 7-day Starter Access trial. The BARBRI-hosted page for the same products confirms both figures (https://pages.barbri.com/PowerScore-LSAT-Prep-Learn-More.html, accessed 2026-08-10). Both state "require an LSAC LawHub Advantage subscription for access." A pre-law student discount page advertises the On-Demand course at **$50/month**, describing it as 50% off a $100 list price, which does not match the $99 on the main course page — a live inconsistency in PowerScore's own funnel.
+- **Instruction format** — Live Online: "**10 live, interactive core lessons (30+ hours total) plus 4 test-specific lessons (8 additional hours)**," a 2–3 month syllabus per test administration, all instructors required to have scored 170+. On-Demand: "**50+ hours of video lessons**" on the course page and "**100+ hours of on-demand lectures**" on the BARBRI page — **PowerScore's own two pages disagree; do not quote an hour count.**
+- **Core pedagogical claim** — the Bibles. "Course curriculum created and taught by **LSAT Bible authors** Dave Killoran and Jon Denning," "Complete set of strategies designed by the LSAT Bible authors." Plus a prediction claim: "PowerScore's relentless focus on test trends has enabled us to accurately predict the content that appeared on **95% of LSATs since 2018**."
+- **Their score claim, and how to handle it** — "PowerScore course students see an average score increase of **15.8 points**." Their own asterisk says it: "Score increase data gathered from a survey sent to all PowerScore LSAT Course students who were planning to take the November 2025 LSAT. Score increase averages were calculated from **self-reported diagnostic practice test score to highest practice test score**." That is self-reported, self-selected, and measures practice-test-to-practice-test rather than anything on a real LSAT. **If someone in the room cites 15.8 points at you, quote PowerScore's own footnote back — do not attack the company.** This is also the best available illustration of §3.2's point that nobody publishes a real diagnostic-to-final-score gain.
+- **Adaptivity** — analytics and "recommended practice content," no adaptive question selection advertised.
+- **Reasoning grading / confidence / gamification** — none found.
+
+## 4.8 Khan Academy — it no longer exists, and knowing that is worth a point
+
+**Khan Academy's Official LSAT Prep is retired.** The LSAC partnership ran from June 2018 and ended **June 30, 2024**. LSAC's own announcement: "Khan Academy will continue to offer Official LSAT Prep through June 2024… After June 2024, Khan Academy will only host videos and articles related to LSAT prep." (https://www.lsac.org/blog/khan-academy-lsat-test-prep-resources-coming-lsacs-lawhub-june-2024, accessed 2026-08-10.)
+
+- **Where it went** — the lessons, videos, explanatory articles and practice exercises migrated to LawHub, where they remain free: "LawHub now is the exclusive home of prep tools that previously were available as free LSAT prep resources offered by Khan Academy" (https://app.lawhub.org/article/redesigned-official-lsat-preptests-available-now, accessed 2026-08-10). LSAC's announcement quantifies it as "more than 100 lessons, videos, and nearly 100 explanatory articles."
+- **Student data was destroyed**, not migrated: Khan Academy's own notice told students to download or screenshot anything they wanted to keep, because "this data will no longer be accessible after June 30, 2024."
+- **Why the timing matters** — LSAC's stated reason was consolidation onto LawHub, and it coincided with the August 2024 removal of Analytical Reasoning, which made the entire Khan library partially obsolete on the same date.
+- **What this means for the pitch.** The free option in this market is now LSAC's own free LawHub tier plus the migrated Khan lessons. It is instruction — videos, articles, worked examples — with no adaptive selection, no reasoning grading and no motivation layer. If someone asks "why wouldn't a student just use the free LSAC material," the honest answer is that many should start there, and that it is the purest example of the thing slide 2 measures: free instruction, no feedback on how the student thinks. **Do not say "Khan Academy offers free LSAT prep" in the present tense.** Anyone who has looked in the last two years knows it does not, and it is an easy, avoidable credibility hit.
+- **Direct verification note** — khanacademy.org's LSAT path and the Khan support article both failed to load on 2026-08-10 (a client-side error and a 404 respectively), which is itself weak corroboration that the program is gone. The load-bearing citations above are LSAC's and LawHub's, which did load.
+
+## 4.9 What could NOT be verified — read before asserting any of it
+
+1. **That no competitor grades student-written reasoning.** This is an unverifiable negative. What is established is that none of the seven *advertises* such a feature anywhere on its public pages, and that several advertise the alternative explicitly (pre-written explanations, human Ask replies, ask-the-AI assistants). **LSAT Lab's "AI Skills Training Center" is the specific hole**: it is named on the pricing page and described nowhere. Phrase the claim as "nobody else makes you write your reasoning and grades it," which is a claim about the required step in the workflow, and be ready to say "if LSAT Lab's AI center does something like this, they haven't published it."
+2. **That no competitor has a game or motivation layer.** Same problem, lower risk. None advertises points, currency, levels or streaks. Demon's retention mechanics are community and habit — Discord, daily classes, seven podcast episodes a week — which are not gamification but are a real motivational moat and should not be dismissed.
+3. **Kaplan's exact prices.** kaptest.com served a bot-verification challenge to direct retrieval on 2026-08-10. Figures are from search-index copies of Kaplan's own pages and are mutually consistent, but nobody loaded that page today. **Re-check manually before the pitch if you intend to say a Kaplan number out loud.**
+4. **Blueprint's full price ladder.** Only the $149/mo Self-Paced Pro checkout page loaded directly. The rest is third-party citation of Blueprint's own pricing page.
+5. **7Sage annual pricing.** Not offered on their self-paced pricing page today. Two third-party sources give two different annual figures. **§3.4's "both discount roughly 30% for annual" is wrong as written and is corrected in §4.3.**
+6. **Demon's fee-waiver discount.** Two Demon pages give two different numbers (80% vs 50% off Essential). Do not quote one.
+7. **Demon's advertised score guarantee.** A third-party review describes a 165-point guarantee on the Live tier. Nothing on Demon's own site confirms it. **Do not repeat it.**
+8. **PowerScore and Kaplan instruction-hour counts.** Each company's own pages contradict themselves (PowerScore 50+ vs 100+; Kaplan 12 vs 24 asynchronous hours). Quote the live-class structure instead, which is consistent.
+9. **Whether third-party review sites can be cited at all.** Several of the highest-ranking LSAT review sites returned prices that do not appear on any vendor page, including a "$89/month Daily tier" and a "$109/month" figure for LSAT Demon, neither of which exists. **Nothing in this section rests on a review site except where explicitly labelled**, and the labelled ones are flagged above.
+10. **Our own question bank's provenance — settled, and the word "official" is now off the slides.** Internal rather than external, but it belongs on this list because it was the claim most likely to be challenged. The verified facts, from `README.md` and `backend/data/question_bank/manifest.json`: a pinned, checksum-manifested snapshot of **6,886 questions — 4,520 Logical Reasoning from `tasksource/lsat-lr` and 2,366 Reading Comprehension from `tasksource/lsat-rc`**, both Hugging Face datasets of publicly released LSAT material. **Neither upstream dataset card declares a license, and the repo's own README says to confirm dataset terms and LSAT content rights before publication or commercial use.** In this market "official" means LSAC-licensed content delivered through LawHub Advantage at $124/year, so claiming it asserted a license we do not hold *and* invited "then what are you paying LSAC?" on the very slides where §4.1's fee is the attack. `demo-case-answer` now says "real LSAT questions from publicly released exams" and `concept-lawyer-tycoon` says "6,886 LSAT questions"; the §4.1 LawHub line is unchanged, because it remains true that every competitor passes that fee through. The Q&A panel carries the provenance answer under `question-provenance`. **If the founders do hold a content license, or conclude the dataset terms permit commercial use, the stronger wording can come back — verify first.**
+
+---
+
+# 5. Summary of slide changes recommended
+
+The first six rows were recommendations and are now applied in `NARRATIVE.md` Revision 3. The last row is this revision's change.
+
+| Slide | Change | Severity |
+| --- | --- | --- |
+| `pov-reasoning-is-the-work` | **Add the competitive line on stage:** a fourth fragment reading *"They explain the question. We grade your explanation."* and one closing sentence in the speaker notes, paid for by compressing the Zhang & Fiorella sentence. No new slide, no comparison table, runtime unchanged at 9:40. Everything else about the competitive field lives in §G and in §4 above. | Applied |
+| `turn-610-reader` | **Remove the 610 figure entirely.** Replace with the LSAC "test of skills" quote plus the ABA bachelor's-degree fact. Full replacement copy and speaker notes in §1.4. The extruded `610` visual should become `0.22` or the word SKILLS. | **Blocking** |
+| `problem-200-hours` | **Replace "hundreds of dollars a month"** with the real range, "$65–$425 a month, plus $124 a year to LSAC." Full replacement notes in §3.4. | **Blocking** |
+| `problem-200-hours` | Change "students put 200+ hours in" to "the prep companies themselves recommend 250 to 300 hours." §3.1 | High |
+| `problem-200-hours` | Change "5 to 10 point gain" to LSAC's retake figure, or reframe as a student expectation. §3.2 | High |
+| `problem-200-hours` | Replace "more than eighty of those hours go to receiving instruction" with the competitors' own published curriculum structure. §3.3 | Medium |
+| `problem-coaching-tax` | No change to the numbers. Update the on-screen citation hairline to **"LSAC, Wightman, RR 90-01 (1989 test takers), self-reported."** §Alternative A | Low |
+
+**The two blocking items are the only ones that can cost you the room.** Everything else is a credibility upgrade rather than a repair.

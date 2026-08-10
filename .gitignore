@@ -94,8 +94,25 @@ frontend/dist-qa*/
 .qa-dist/
 .qa-dist*/
 
-# Presentation deck sources and exports.
-deck/
+# Presentation deck. The sources are tracked; the generated and copied
+# artefacts below are not. The split is deliberate rather than tidy-minded:
+# `deploy-sandbox.ps1` runs `git add --all`, so anything here that is untracked
+# but not ignored is pushed to main and re-fetched onto the 1 GiB build box.
+deck/node_modules/
+deck/dist/
+deck/.deck-shots/
+deck/tsconfig.tsbuildinfo
+
+# `deck/public/art/` is a byte-identical copy of `frontend/public/art/` (218
+# .webp, 18 MB), which is already tracked — see `deck/src/app-art/PORT.md`. One
+# `cp -R` rebuilds it exactly, and deck/README.md records the command.
+#
+# `deck/public/stills/` is NOT ignored, despite being 26 MB of PNG. Nothing in
+# the repo regenerates it: the route stills were captured by hand against a
+# seeded account that no longer exists in that state, and the two office-tier
+# stills came from `.shots-keep/`, which is ignored two blocks up. They are the
+# deck's on-stage fallback, so losing them costs more than carrying them.
+deck/public/art/
 
 # Root-level harness dependencies (playwright, pngjs, gifenc) used by the
 # scratch probes above. The application's own manifests live in frontend/.

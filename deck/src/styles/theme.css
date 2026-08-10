@@ -1,0 +1,276 @@
+/* ================================================================
+   LAWYER TYCOON — DECK THEME
+   ================================================================
+   The tokens are lifted verbatim from the product so the deck and the
+   app on the slide behind it are visibly the same object. Two stacked
+   layers, exactly as `frontend/src/styles.css` has them: the royal-blue
+   / beige / gold editorial palette, and the PIXEL EMPIRE game palette
+   the app chrome wears.
+
+   Everything decorative here is procedural or an inline data URI. The
+   deck makes exactly one network request of its own (the two Google
+   font families) and nothing else, because it is presented from a
+   laptop on conference wifi.
+   ================================================================ */
+
+:root {
+  /* --- editorial layer, from `:root` lines 1-31 of the app ------- */
+  --ink: #182027;
+  --navy: #102735;
+  --navy-2: #18394a;
+  --muted: #6f756f;
+  --line: #d8d0c2;
+  --surface: #fffdf7;
+  --paper: #f8f3e8;
+  --gold: #c89b4b;
+  --gold-dark: #9a6c28;
+  --gold-soft: #f5e8c8;
+  --green: #267557;
+  --green-soft: #e4f1e9;
+  --red: #a84645;
+  --red-soft: #f8e7e3;
+  --shadow: 0 20px 55px rgba(24, 32, 39, .12);
+
+  /* --- PIXEL EMPIRE layer, from line 465 of the app ------------- */
+  --pixel-ink: #171923;
+  --pixel-night: #101725;
+  --pixel-blue: #172b40;
+  --pixel-blue-2: #264962;
+  --pixel-paper: #f6e7bf;
+  --pixel-paper-dark: #c8a86a;
+  --pixel-gold: #f2c75b;
+  --pixel-gold-dark: #9d692c;
+  --pixel-cyan: #65c9c2;
+  --pixel-green: #4fa878;
+  --pixel-red: #c95757;
+  --pixel-shadow: #090d15;
+  --pixel-border: 3px solid var(--pixel-ink);
+
+  /* --- families ------------------------------------------------- */
+  --font-display: Fraunces, "Iowan Old Style", Georgia, serif;
+  --font-ui: Archivo, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-pixel: "Courier New", "Lucida Console", ui-monospace, monospace;
+
+  /* --- the deck's own stage --------------------------------------
+     A presentation is watched in a dark room, so the deck inverts the
+     app's warm paper field into the cutscene's `#05080d` theatre and
+     brings the paper back only where copy sits. That is the same
+     decision `.cutscene-overlay` makes for the app's own cinematics. */
+  --stage: #05080d;
+  --stage-2: #0a1120;
+  --plate: #0d1626;
+
+  /* --- the deck's display palette --------------------------------
+     `NARRATIVE.md` fixes these six values, and the copy leans on them:
+     verdict red is spent exactly twice in twenty-three slides, and slides
+     invert between a blue field and a beige one as a rhetorical device, so
+     both directions have to be first-class rather than one being a tint of
+     the other. Kept separate from the app tokens above because the ported
+     `app-art` CSS reads those, and the 3D scenes have to keep matching the
+     real game rather than the deck. */
+  --blue: #1b2f6b;
+  --blue-lit: #2a4bb8;
+  --blue-deep: #0d1734;
+  --beige: #efe6d6;
+  --beige-dim: #d8cbb4;
+  --deck-ink: #0e1524;
+  --stamp: #a8321f;
+
+  /* Whatever the current field is, and the two colours that read on it.
+     Slide bodies flip these once via `[data-field]`, and everything
+     downstream — figures included — is written against the pair, so a
+     figure needs no knowledge of which act it is in. */
+  --field: var(--blue);
+  --on-field: var(--beige);
+  --on-field-dim: var(--beige-dim);
+
+  /* Motion, decided once. Four durations, four easings — the same
+     discipline the app's MOTION SYSTEM block applies. */
+  --mo-1: 120ms;
+  --mo-2: 240ms;
+  --mo-3: 460ms;
+  --mo-4: 900ms;
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  /* `steps()` is the cutscene's own easing. Anything cinematic uses it. */
+  --ease-cinema: steps(6, end);
+
+  /* Inline textures, all data URIs so nothing is fetched. */
+  --laid-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23473c2a' stroke-opacity='.055' stroke-linecap='round'%3E%3Cpath d='M3 9h9M21 4h14M44 12h11M8 25h17M33 29h8M52 33h9M6 44h12M26 47h15M47 52h13M15 58h10M38 61h12M57 20h5'/%3E%3C/g%3E%3C/svg%3E");
+  --engraved-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4Q3 0 6 4T12 4T18 4T24 4' fill='none' stroke='%23ffffff' stroke-opacity='.037' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--stage);
+  color: var(--pixel-paper);
+  font-family: var(--font-ui);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { height: 100%; }
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+::selection {
+  color: #fff4ce;
+  background: #8d4c43;
+}
+
+:focus-visible {
+  outline: 3px solid #fff3ac;
+  outline-offset: 3px;
+}
+
+/* ================================================================
+   THE TWO PERSISTENT FILM LAYERS
+   ================================================================
+   Grain and scanlines sit over everything, including the WebGL canvas
+   and the demo iframes, which is what makes a live app embed and a
+   procedural 3D scene look like they were shot on the same stock.
+
+   Neither carries a blend mode. The app learned this the expensive
+   way — a `mix-blend-mode` on a fixed full-viewport layer makes the
+   compositor re-blend the whole screen every frame the content moves,
+   and it halved frame time on three routes to take it off. At this
+   grain, multiply and normal composite to within 1/255 of each other.
+   Keep them unblended. */
+.deck-grain,
+.deck-scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.deck-grain {
+  /* The app's fixed grain layer, at the app's own numbers. */
+  opacity: .3;
+  background-image: radial-gradient(rgba(28, 36, 42, .08) .65px, transparent .65px);
+  background-size: 5px 5px;
+  /* Projected large, a static dot field reads as a dirty screen rather
+     than as film. A slow drift of a couple of pixels is enough to make
+     it read as grain, and it is a transform so it stays on the
+     compositor. */
+  animation: grain-drift 5.5s steps(5) infinite;
+}
+
+.deck-scanlines {
+  opacity: .12;
+  background-image: repeating-linear-gradient(0deg, transparent 0 3px, rgba(8, 12, 17, .18) 4px);
+}
+
+/* One more layer than the app has: a vignette. A projector or a large
+   panel in a dark room lifts the corners of a dark field, and a slide
+   with a bright 3D scene in the middle needs its edges pulled down or
+   the composition leaks off the panel. */
+.deck-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 899;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 45%, transparent 42%, rgba(3, 5, 9, .5) 100%),
+    linear-gradient(rgba(3, 5, 9, .28), transparent 22%, transparent 78%, rgba(3, 5, 9, .34));
+}
+
+@keyframes grain-drift {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-2px, 1px); }
+  50% { transform: translate(1px, -2px); }
+  75% { transform: translate(2px, 2px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* ================================================================
+   SIGNATURE TREATMENTS
+   ================================================================ */
+
+/* The pixel bevel, verbatim: a gold chip with a dark inner shadow on
+   the bottom-right, a highlight on the top-left, and a hard offset
+   drop. It is the single most recognisable thing in the app's chrome. */
+.bevel {
+  border: var(--pixel-border);
+  border-radius: 2px;
+  background: var(--pixel-gold);
+  color: #132033;
+  box-shadow: inset -4px -4px #c48a36, inset 3px 3px #fff0a5, 4px 4px 0 #080c13;
+}
+
+.bevel-dark {
+  border: 3px solid #090c13;
+  border-radius: 2px;
+  color: #f7e7b7;
+  background: #263c4c;
+  box-shadow: inset 0 0 0 2px #56707c, 4px 4px #06080c;
+}
+
+/* Gold foil relief. The app draws its favicon's shadow pass in
+   `rgba(104,68,16,.42)` and its face in the gold; the same two-layer
+   trick gives type a struck-foil edge rather than a glow. */
+.foil {
+  color: var(--pixel-gold);
+  text-shadow:
+    0 1px 0 rgba(104, 68, 16, .42),
+    0 2px 0 rgba(104, 68, 16, .28),
+    0 3px 14px rgba(242, 199, 91, .18);
+}
+
+/* A warm-white plate for anything that has to be read as a document.
+   Laid-paper fibres plus one light falloff, exactly as `.app-shell`. */
+.paper-plate {
+  color: #21262b;
+  background-color: var(--paper);
+  background-image: var(--laid-paper), linear-gradient(rgba(255, 250, 235, .5), rgba(255, 250, 235, 0));
+  background-size: 64px 64px, 100% 320px;
+  background-repeat: repeat, no-repeat;
+}
+
+/* Engine-turned metal, the way a share certificate is engraved. */
+.engraved {
+  background-color: #111a29;
+  background-image: var(--engraved-wave);
+  background-repeat: repeat;
+}
+
+/* A hairline in beige, the app's `--line`, used to separate without
+   drawing a box. */
+.rule {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, rgba(216, 208, 194, .38) 12%, rgba(216, 208, 194, .38) 88%, transparent);
+}
+
+/* ================================================================
+   REDUCED MOTION
+   ================================================================
+   The deck cannot simply stop animating — a slide engine whose
+   transitions are removed has no way to change slide. So the
+   preference is handled where it matters instead: the persistent
+   drift layers stop, the 3D scenes are constructed with `reduced:
+   true` so their actors hold a posed frame rather than a bind pose
+   (see `rig/ADOPTION.md`, trap three), and `engine/transitions.ts`
+   collapses every transition to a 1-frame swap. */
+@media (prefers-reduced-motion: reduce) {
+  .deck-grain { animation: none; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
