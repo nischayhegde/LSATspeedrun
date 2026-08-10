@@ -1156,7 +1156,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // of the room, with the city behind the chair. That also clears the middle
     // of chambers, which the executive crescent needs — the desk's chair used
     // to stand in two partners.
-    desk.position.set(rustic ? .92 : practiceFloor ? 1.08 : 4.6, 0, rustic ? -.98 : practiceFloor ? -1.34 : -2.85)
+    //
+    // The downstairs offset is a hair left of centre for the reception pod's
+    // benefit: the pod is held off the middle of the room by `minAbs` so it
+    // clears the desk lamp, and at the bottom of the tier ladder the corner of
+    // the desk was still in the inner receptionist's shoulder.
+    desk.position.set(rustic ? .92 : practiceFloor ? .88 : 4.6, 0, rustic ? -.98 : practiceFloor ? -1.34 : -2.85)
     desk.scale.setScalar(rustic ? .86 : .76)
     root.add(desk)
     if (rustic) {

@@ -318,13 +318,13 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .office-inventory-empty { margin: 9px; color: #a9b4b1; font-size: 11px; text-align: center; }.office-world-shell:has(.office-inventory.is-open) .world-mission-board { opacity: 0; transform: translateY(-8px) rotate(1deg); pointer-events: none; }.office-hotspot.is-active i { background: #fff2b6; box-shadow: 0 0 0 7px rgba(250,216,126,.11),0 0 20px rgba(250,216,126,.82); }@keyframes av-hotspot-breathe { 50% { transform: scale(1.16); opacity: .76; } }
 /* ---------------------------------------------------- building directory
 
-   The firm outgrew one room. Thirty people in a single scene measured 1,277
-   draw calls against 325 for the same room empty, and the visible floor could
-   not seat them in front of the furniture, so the staff are split over two
-   floors and only one is ever built. That makes this control the only route to
-   half the people the player has paid for, which is why it is drawn as a
-   fixture of the building — the brass plate beside a lift — rather than as a
-   view toggle.
+   The firm outgrew one room. A seated body costs about 94 draw calls, so the
+   whole firm in one scene comes to roughly 2,800 against 292 for the same room
+   empty, and the visible floor could not seat them in front of the furniture
+   anyway. The staff are split over two floors and only one is ever built. That
+   makes this control the only route to half the people the player has paid
+   for, which is why it is drawn as a fixture of the building — the brass plate
+   beside a lift — rather than as a view toggle.
 
    It sits top-left because the inventory owns the bottom-right, and it stays
    out of the middle third where the room is. On a phone it lies down into a

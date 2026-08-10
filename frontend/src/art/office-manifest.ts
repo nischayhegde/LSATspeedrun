@@ -214,7 +214,9 @@ export type OfficeDepartmentBay = {
    * `spread` closes the plan in as the tier falls, and one bay cannot be
    * allowed to follow it all the way: the reception pod sits beside the
    * partner desk, and at the bottom of the ladder that scaling walked it into
-   * the desk lamp.
+   * the desk lamp. It cannot simply be raised until the pod is clear of the
+   * desk as well: three seats wide, the far one leaves the frame. The desk
+   * moved instead.
    */
   minAbs?: number
   /**
@@ -291,19 +293,33 @@ export const OFFICE_PRACTICE_PLAN: readonly OfficeDepartmentBay[] = [
  */
 export const OFFICE_CHAMBERS_PLAN: readonly OfficeDepartmentBay[] = [
   { station: 'diplomatic', x: -3.6, z: -2.9, rotation: 0, seatPitch: 1.05, crescent: 13, capacity: 7, signature: -.55, retreat: .2 },
-  { station: 'leadership', x: -.1, z: .15, rotation: 0, seatPitch: .95, crescent: 12, capacity: 7, signature: -1.15, retreat: 1 },
+  { station: 'leadership', x: -.1, z: .15, rotation: 0, seatPitch: .95, crescent: 12, capacity: 7, signature: -1.15, retreat: 1.6 },
 ]
 
 /**
  * Two floors, and which half of the firm works on each.
  *
- * Thirty people in one room was measured before it was ruled out. At the top
- * tier a single room holding the whole firm submits 1,277 draw calls and
- * 244,000 triangles a frame and spends about four milliseconds of CPU on
- * skeletons alone, against 325 calls and 50,000 triangles for the same room
- * empty — and the visible floor could not seat thirty in front of the
- * furniture without evicting the furniture. Split, each floor is about 795
- * calls and 146,000 triangles, and each is composed rather than crammed.
+ * Thirty people in one room was ruled out on cost. Measured at tier fourteen
+ * on a 1400x940 canvas, a person is expensive and it is the draw calls rather
+ * than the triangles that hurt: the practice floor draws 292 calls and 53,000
+ * triangles empty and 1,798 calls and 330,000 triangles with its sixteen in
+ * it, which is about 94 calls and 17,000 triangles a head. Thirty in the same
+ * room is therefore around 2,800 calls and 550,000 triangles, against 1,798
+ * for the busier of the two floors — call it a third off the worst frame in
+ * the game. Chambers is cheaper again at 1,228 calls and 249,000 triangles
+ * for fourteen.
+ *
+ * Worth saying plainly: 1,798 calls is still a lot, and the split makes the
+ * worst floor affordable rather than cheap. The next win here is batching a
+ * seated body into fewer submissions, not moving people between floors.
+ * (Numbers from `scripts/office-floor-capture.mjs`. Frame times on the
+ * machine these were taken on are software-rastered and contended and are not
+ * quoted for that reason; geometry counts are exact.)
+ *
+ * The other half of the argument is not arithmetic. The visible floor could
+ * not seat thirty in front of the furniture without evicting the furniture,
+ * so a single room would have had to choose between the staff a player hired
+ * and the fittings a player bought.
  *
  * The seam is the firm's own: the people who do the work and meet the clients
  * are downstairs, and the people who sign and negotiate are upstairs. It is
