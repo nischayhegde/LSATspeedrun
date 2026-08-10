@@ -1151,12 +1151,32 @@ def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -
 # Verification
 # --------------------------------------------------------------------------
 
+# `strategy_performance` used to label each result `supported` / `directional` /
+# `forming`. It no longer does: the panel deliberately refuses to publish a
+# per-strategy verdict, so it now returns a `leader` and a `ranking_score` and
+# nothing else. These thresholds are the retired bar, kept here because this
+# report is the only thing that still needs it — STRATEGY_PLAN above is written
+# to clear exactly this line, and without it the plan's arms cannot be checked.
+SUPPORTED_PROMPTED = 8
+SUPPORTED_CONTROL = 4
+DIRECTIONAL_PROMPTED = 5
+
+
+def _lab_status(result: dict) -> str:
+    if result["sample"] >= SUPPORTED_PROMPTED and result["control_sample"] >= SUPPORTED_CONTROL:
+        return "supported"
+    if result["sample"] >= DIRECTIONAL_PROMPTED and result["control_sample"] >= 1:
+        return "directional"
+    return "forming"
+
 
 def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
     performance = performance_snapshot(user)
     game = serialize_game(user.game_profile, include_catalog=True)
     lab = performance["strategy_lab"]
-    supported = [result for result in lab["results"] if result["status"] == "supported"]
+    statuses = {result["key"]: _lab_status(result) for result in lab["results"]}
+    supported = [result for result in lab["results"] if statuses[result["key"]] == "supported"]
+    leader = lab.get("leader")
     problems: list[str] = []
 
     if performance["overall"]["attempts"] < 400:
@@ -1170,8 +1190,8 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
         problems.append("no neutral or negative strategy arm")
     if not any(lift >= 12 for lift in lifts):
         problems.append("no clearly winning strategy arm")
-    if not lab["strongest"]:
-        problems.append("no strongest strategy named")
+    if not leader:
+        problems.append("no leading strategy named")
     if sum(result["skipped"] for result in lab["results"]) == 0:
         problems.append("no skipped strategy prompts")
     if unplaced:
@@ -1236,9 +1256,9 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
                 }
                 for result in supported
             ],
-            "strongest": lab["strongest"]["title"] if lab["strongest"] else None,
+            "leader": leader["title"] if leader else None,
             "statuses": {
-                status: sum(result["status"] == status for result in lab["results"])
+                status: sum(value == status for value in statuses.values())
                 for status in ("supported", "directional", "forming")
             },
         },
