@@ -370,7 +370,6 @@ h1, h2, h3, p { text-wrap: pretty; }
 
 /* Firm management */
 .tier-buy .primary-button { color: var(--navy); background: #e6c77f; }
-@keyframes bought-flash { 0%,70% { opacity: 1; } 100% { opacity: 0; pointer-events: none; } }
 .requirements { margin-top: 13px; color: #82847f; font-size: 8.5px; text-transform: capitalize; }
 .requirements.missing { color: #a55449; }
 .requirements.met { color: var(--green); }

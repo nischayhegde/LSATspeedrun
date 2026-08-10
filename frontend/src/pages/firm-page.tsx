@@ -6,9 +6,9 @@ import {
   Building2,
   Check,
   CircleDollarSign,
-  Handshake,
   HeartHandshake,
   Lamp,
+  Landmark,
   Lock,
   Sparkles,
   Star,
@@ -23,9 +23,11 @@ import { api } from '../api'
 import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
 import { ClientPortrait, PixelAssetArtwork, StaffRoster } from '../game-art'
 import { PixelStudyScenery } from '../art/pixel-scenery'
+import { RetainerLedger } from '../retainer-ledger'
 import { RivalWarRoom } from '../rival-war-room'
 import { useSound } from '../sound'
-import { MOTION_TIMING } from '../motion'
+import { formatMoneyDelta } from '../format'
+import { MOTION_TIMING, useDelta, useRollupInt } from '../motion'
 import type { CharacterGender, GameAsset, GameClient, GameState } from '../types'
 import { effectiveClient, storeGame, useGame } from './shared'
 // The rules in `styles.css` that only this screen can render.
@@ -45,9 +47,21 @@ const firmTabs: Array<{ key: FirmTab; label: string; icon: typeof Wrench }> = [
   { key: 'decor', label: 'Decor', icon: Lamp },
   { key: 'staff', label: 'Staff', icon: UsersRound },
   { key: 'clients', label: 'Clients', icon: BriefcaseBusiness },
-  { key: 'connections', label: 'Connections', icon: Handshake },
+  /* The tab is named for what it is now for. A connection's whole effect is
+     the districts it opens, so the retainer ledger leads the panel and the
+     networks that gate it follow underneath. */
+  { key: 'connections', label: 'Districts', icon: Landmark },
   { key: 'rivals', label: 'Rivals', icon: Trophy },
 ]
+
+/** How long an acquisition's confirmation stays on the card it belongs to.
+ *
+ *  Longer than `toastMs`, which was cutting the flash off a third of the way
+ *  through its own animation, and held in React rather than left to the tail
+ *  of a CSS fade: the global reduced-motion rule collapses animation durations
+ *  to .01ms, so anything that ends on `opacity: 0` is invisible from the first
+ *  frame for the readers who asked for less motion. */
+const ACQUIRED_HOLD_MS = 2200
 
 
 function RequirementLine({ asset, game }: { asset: GameAsset; game: GameState }) {
@@ -115,7 +129,7 @@ export function FirmPage() {
       storeGame(queryClient, game)
       void play('purchase', { id: `purchase:${game.id}:${key}`, seed: key, intensity: .75 })
       setJustBought(key)
-      window.setTimeout(() => setJustBought(null), MOTION_TIMING.toastMs)
+      window.setTimeout(() => setJustBought((current) => (current === key ? null : current)), ACQUIRED_HOLD_MS)
     },
   })
   const advance = useMutation({
@@ -146,6 +160,16 @@ export function FirmPage() {
       void play('paper', { seed: game.character_gender, intensity: .32 })
     },
   })
+
+  /* Every purchase on this page is a debit, and until now the only thing that
+     said so was the card you clicked. The treasury travels to its new figure
+     and names the movement, so the answer to "did that go through, and what
+     did it cost me" is in the one place the money lives. Read before the
+     loading guard, because hooks cannot be conditional; both accommodate a
+     missing value and `useDelta` reports nothing for the first one it sees. */
+  const cash = gameQuery.data?.game?.cash
+  const cashShown = useRollupInt(cash)
+  const cashDelta = useDelta(cash, 2400)
 
   if (gameQuery.isLoading) return <LoadingScreen />
   const game = gameQuery.data!.game!
@@ -201,7 +225,9 @@ export function FirmPage() {
         <PixelStudyScenery variant="ledger" className="firm-ledger-scenery" />
         <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Build a legendary practice.</h1><p>Spend case fees on a living, growing office. Every improvement appears in your firm and makes the next case worth more.</p><div className="ledger-rule"><i /><span>§</span><i /></div></div>
         <div className="firm-wallet">
-          <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(game.cash)}</strong><span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
+          <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(cashShown ?? game.cash)}</strong>
+          {cashDelta !== null && <span className={`wallet-delta ${cashDelta < 0 ? 'is-debit' : 'is-credit'}`} role="status">{formatMoneyDelta(cashDelta)}</span>}
+          <span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
           <span className={`wallet-lease ${game.upkeep.rent_arrears ? 'has-arrears' : ''}`}><CircleDollarSign size={15} /> {game.upkeep.completed ? 'Lease retired' : `${formatMoney(game.upkeep.daily_rent)} daily rent${game.upkeep.rent_arrears ? ` · ${formatMoney(game.upkeep.rent_arrears)} due` : ''}`}</span>
           <button
             className="appearance-button"
@@ -235,6 +261,10 @@ export function FirmPage() {
             because weakening a firm and then buying it is one move: the grid
             below is only ever the raw price list. */}
         {tab === 'rivals' && <RivalWarRoom game={game} onShowOnMap={(asset) => navigate(`/map?rival=${asset.key}`)} />}
+        {/* Retainers are a firm interaction, so they are in the firm tab. The
+            ledger leads the panel and the connection catalog that gates it
+            follows, which is the order the decision is actually made in. */}
+        {tab === 'connections' && <RetainerLedger game={game} onShowOnMap={(district) => navigate(`/map?district=${district.key}`)} />}
         <div className="catalog-toolbar">
           <div><span>CATALOG VIEW</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
           <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">
@@ -319,6 +349,11 @@ export function FirmPage() {
                   you could buy a rug and never be sent to look at it. Same
                   hand-off the connections above make to the map. */}
               {item.type === 'cosmetic' && item.owned && <button type="button" className="asset-locate" onClick={() => navigate('/office')}>See it in the office</button>}
+              {/* A stamp on the deed rather than a curtain over it. The old
+                  confirmation covered the whole card for its whole life, so
+                  the one thing it was confirming -- this item, now owned --
+                  was the one thing you could not see. */}
+              {justBought === item.key && <span className="asset-acquired" aria-hidden="true"><Check size={14} /> ACQUIRED</span>}
             </article>
           ))}
         </div>

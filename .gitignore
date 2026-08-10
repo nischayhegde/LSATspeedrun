@@ -20,6 +20,7 @@ node_modules/
 .map-verify/
 .perf/
 .perf-office/
+.qa-firmux/
 .qa-shots/
 .recover/
 .rig-qa-shots/
