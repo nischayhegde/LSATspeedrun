@@ -520,13 +520,20 @@ show the dashboard before it was recaptured.
 ### Verifying it, and one loose end
 
 ```bash
-node scripts/verify-still-only.mjs --base=http://localhost:5185
+node scripts/verify-still-only.mjs
 ```
 
 That advances into the slide from the live demo run — not by deep link, which
 would miss the defect — and asserts the still is alone on screen, that a real
 live demo slide still embeds, that `?stills=1` still wins, and that the
-unreachable-origin fallback still engages.
+unreachable-origin fallback still engages. It also compares `public/stills/`
+against every slide's `still:` in both directions, before opening a browser.
+
+It defaults to `http://localhost:5180`, the dev server. It used to be written
+here with `--base=http://localhost:5185`, which is neither the dev server nor
+the preview server (5181) — and the script's own default was the same 5185, so
+following this line and ignoring it failed identically, on a connection refusal,
+before the first check.
 
 It exists because `stillOnly` needs **two** things to be true, and only one of
 them is obvious. `demo-frame.tsx` withholds the slot so the stage cannot position

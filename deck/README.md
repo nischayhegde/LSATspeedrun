@@ -83,6 +83,13 @@ demo will work. Press <kbd>Enter</kbd> to begin.
 That is the whole sequence. Nothing to sign into, nothing to paste into a devtools
 console, no browser profile that has to be the same one as last time.
 
+**`npm run dev`, not `npm run preview`.** Present from 5180. The `/demo-api`
+proxy the deck signs itself in through is a dev-server facility (see the long
+note in `vite.config.ts`), so on the preview build at 5181 the deck cannot
+establish its own session: on a browser profile that is not already signed in,
+every embed goes to the login screen and the start card's API and Signed-in dots
+go red. Preview is for checking that the deck *builds*, not for rehearsing.
+
 ### The one-minute pre-flight
 
 The start card's five dots cover the three processes and the session. This covers
