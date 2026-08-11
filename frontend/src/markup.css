@@ -73,6 +73,15 @@
   box-shadow: 0 12px 30px rgba(6, 11, 14, .38);
   backdrop-filter: blur(9px);
 }
+/* The blur comes off wherever a finger is the pointer, not below 640px. The
+   640px block further down does drop it, and a phone stops matching 640px the
+   moment it is turned sideways: measured at 844x390, this tray was still
+   compositing a 824px-wide blur over a scrolling passage. Same trap the
+   caseboard's tap targets were in. The background behind it is already .93
+   opaque, so what the blur contributes at this size is a repaint. */
+@media (pointer: coarse) {
+  .markup-toolbar { backdrop-filter: none; }
+}
 .markup-toolbar.is-armed {
   border-color: rgba(240, 205, 131, .62);
   box-shadow: 0 12px 30px rgba(6, 11, 14, .42), 0 0 0 1px rgba(240, 205, 131, .22);
