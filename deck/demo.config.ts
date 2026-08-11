@@ -164,7 +164,7 @@ export const demoConfig: DemoConfig = {
   appOrigin: APP_ORIGIN,
   displayOrigin: 'Lawyer Tycoon',
   liveSessionId: 'a91a19c4-d28f-4a01-80ab-641f27850002',
-  verdictSessionId: '2bb4c733-3ee6-4f3e-bf71-dfb5fc473d94',
+  verdictSessionId: 'b0324368-97d3-482c-84cb-59beb554dbb6',
   soloSessionId: '38e2cbf5-763e-428e-99bb-ee9de02fb784',
   soloAnswerKey: 'C',
   autoplaySessionId: '6dc21ec7-446e-429c-8a9a-4682e6bb7601',
