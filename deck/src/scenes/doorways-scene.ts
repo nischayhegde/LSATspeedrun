@@ -395,12 +395,75 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
   director.add(actor, 'portraitHero', seed)
   const actors = [actor]
 
-  // One authored beat on arrival. The narrative asks for "the rig's
-  // professional wave once and returning to idle"; that clip no longer exists —
-  // `ADOPTION.md` records that a single repeated wave was the exact failure the
-  // behaviour director replaced — so the acknowledgement is the beat that
-  // survived it, played once, on the same cue.
-  let greeted = false
+  // --- THE ARRIVAL BEAT: the character performs the slide's own argument -----
+  //
+  // The headline is "One place. Two doors." The counsel is standing between
+  // those two doors. So as the deck arrives on this slide she looks to one, then
+  // to the other, then back to the room — and the last thing the audience is
+  // told is said twice, once in type and once by the person standing at the
+  // choice. Then she holds, and the frame is still for the rest of the Q&A.
+  //
+  // ## Why this is a look and not a haul
+  //
+  // The ask was for a character to "pull in" the next slide. `HumanoidGesture`
+  // has no grab, carry or drag in it, so a haul means authoring clips into the
+  // character system the *app* shares — and a counsel who reaches out of the
+  // game world to move the deck's furniture stops being a person in a firm and
+  // becomes a stagehand. `setLookTarget` turns head and chest together, layered
+  // over whatever clip is running, so she keeps breathing while she holds the
+  // look. The character causes the beat without touching anything.
+  //
+  // ## Why it is safe to be interrupted
+  //
+  // A look is a weight, not a one-shot clip: it eases in over about a third of
+  // a second, eases back out when released, and releasing interrupts nothing.
+  // There is no frame of it that is a broken pose. A presenter mashing the arrow
+  // key through the close can leave this half-applied and the worst thing on
+  // screen is somebody half looking at a door, which is a thing people do. That
+  // is why the beat is a gaze rather than `turnAway`, which is a real one-shot
+  // clip and could strand mid-turn.
+  //
+  // ## Why the targets are in front of her
+  //
+  // The doorways are cut into the wall *behind* the body, at `DOOR.wallZ`.
+  // Aiming the gaze at them literally is a hundred-and-six-degree turn away
+  // from the audience, which the joint clamps would either refuse or make look
+  // broken. These two points are out to the sides and slightly downstage — a
+  // fifty-degree glance, which reads unmistakably as "that one, and that one"
+  // while leaving her addressed to the room throughout.
+  const GLANCE = {
+    left: new THREE.Vector3(-4.2, 3.3, 3.5),
+    right: new THREE.Vector3(4.2, 3.3, 3.5),
+  } as const
+
+  /**
+   * Seconds from the scene appearing. The first glance starts at .55 on
+   * purpose: `foil-seal` runs for 1.18s and its plate is opaque from .52 to
+   * .68, so the turn *begins behind the foil* and is already in motion when the
+   * plate lifts. The character is not seen deciding to move; she is discovered
+   * mid-gesture, which is the difference between a slide that animates on
+   * arrival and one that was already alive when you got there.
+   */
+  const BEATS = { left: .55, right: 1.75, room: 2.95 } as const
+
+  /**
+   * Which beat has been played, and THE BUG THIS REPLACES.
+   *
+   * This used to be a `greeted` boolean that latched true on the first play and
+   * was never reset — but scenes are *cached* by the stage, so the closure
+   * outlives the visit. The acknowledgement therefore fired exactly once per
+   * page load: step back off the close and return, which is what happens in
+   * every rehearsal and most Q&As, and the character never greeted again. The
+   * slide quietly lost its only authored beat and nothing reported it, because
+   * a body that breathes and blinks looks fine right up until you notice it
+   * never did the thing.
+   *
+   * Re-armed in `setFraming`, which the stage calls with `immediate: true` on
+   * every `show` — including a show served from cache. That is already the
+   * deck's "this scene has just been put on screen" signal, which is why this
+   * needs no new plumbing in the transition layer and no change to any slide.
+   */
+  let beat = 0
 
   // --- state ---------------------------------------------------------------
   const home = holder.position.clone()
@@ -410,8 +473,28 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
     camera: rig.camera,
 
     update(delta, elapsed) {
-      if (!greeted && elapsed > 1.15) {
-        greeted = true
+      // Reduced motion gets the acknowledgement and none of the gaze: the
+      // preference asks for motion not to happen, and a head turn is motion.
+      // The beat still *happens*, so the slide is not silently different.
+      if (context.reduced) {
+        if (beat === 0 && elapsed > BEATS.room) {
+          beat = 3
+          actor.playGesture('acknowledge', { amplitude: .85 })
+        }
+      } else if (beat === 0 && elapsed > BEATS.left) {
+        beat = 1
+        actor.setLookTarget(GLANCE.left)
+      } else if (beat === 1 && elapsed > BEATS.right) {
+        beat = 2
+        actor.setLookTarget(GLANCE.right)
+      } else if (beat === 2 && elapsed > BEATS.room) {
+        beat = 3
+        // Released rather than aimed back at the lens. Letting the weight fall
+        // to zero returns her to whatever the director has her doing, which is
+        // the composed front-facing idle the slide was specified as — aiming a
+        // look at the camera instead would hold her staring down the room for
+        // twenty minutes.
+        actor.setLookTarget(null)
         actor.playGesture('acknowledge', { amplitude: .85 })
       }
 
@@ -460,6 +543,14 @@ export function createDoorwaysScene(context: SceneContext): DeckScene {
 
     setFraming(name, immediate) {
       rig.go(name, immediate, 1.8)
+      // Re-arm the arrival beat. The stage passes `immediate: true` exactly
+      // when a scene has been put on screen — a first build or a cache hit —
+      // and `false` for the same-scene camera tween, which must not restart
+      // anything. See the note on `beat`.
+      if (immediate) {
+        beat = 0
+        actor.setLookTarget(null)
+      }
     },
 
     dispose() {
