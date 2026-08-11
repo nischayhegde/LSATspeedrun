@@ -154,28 +154,68 @@ def seconds_per_case(db_path: Path = DEFAULT_DB) -> tuple[float, str]:
     The provenance is returned alongside the figure and printed with the report
     because a conversion constant that is silently wrong invalidates every hour
     quoted downstream while leaving the report looking entirely healthy.
+
+    **This function does not raise, and that is a requirement rather than a
+    courtesy.** It is called at import (`SECONDS_PER_CASE` below) by a module
+    three test files import, so anything it throws is thrown during pytest
+    collection and takes down every test in those files -- including tests that
+    have nothing to do with the database. It used to: a present-but-unmigrated
+    `instance/lsat_sherlock.db` raised `no such table: session_items` and
+    interrupted collection of 3 modules, and a corrupt one raised `file is not a
+    database`. The `try` was around `connect` alone, which catches almost
+    nothing, because sqlite3 opens lazily and every real failure lands on the
+    first `execute`.
+
+    The semantics that follow from that, and the reason they are right rather
+    than merely convenient: reading the database is an *optional refinement*.
+    FALLBACK_SECONDS_PER_CASE is the documented, shipped figure and is what the
+    pace band was tuned against; the query exists only so the conversion cannot
+    drift away from `_target_time_seconds` unnoticed. "I could not measure it"
+    and "there is nothing to measure" are therefore the same answer -- use the
+    documented constant -- and there is no state in which crashing serves a
+    reader better, because the provenance string is printed at the top of every
+    report and says exactly which case was hit.
+
+    The four ways there is nothing to measure are distinguished in that string,
+    because they mean different things to whoever reads it: no file at all, a
+    file that has never been migrated, a migrated file nobody has practised
+    against, and a file that is unreadable -- which, unlike the other three, is
+    a real problem worth chasing.
     """
     if not db_path.exists():
         return FALLBACK_SECONDS_PER_CASE, f"documented fallback (no database at {db_path})"
     try:
         connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            # Grouped by section rather than averaged flat: migration 0012 gave
+            # pre-existing rows the Logical Reasoning default, so a section whose
+            # budget comes back at 150s is reading repaired history rather than
+            # the shipped model, and that has to be visible instead of blended
+            # away.
+            rows = connection.execute(
+                """
+                SELECT questions.section, COUNT(*), AVG(session_items.target_time_seconds)
+                FROM session_items
+                JOIN study_sessions ON study_sessions.id = session_items.session_id
+                JOIN questions ON questions.id = session_items.question_id
+                WHERE study_sessions.mode = 'practice'
+                GROUP BY questions.section
+                """
+            ).fetchall()
+        finally:
+            # `with connection` is a transaction block and leaves the handle
+            # open. This is called once at import, but the tests call it per
+            # case and would leak one handle each.
+            connection.close()
+    except sqlite3.OperationalError as error:
+        if "no such table" in str(error):
+            return (
+                FALLBACK_SECONDS_PER_CASE,
+                f"documented fallback (database at {db_path} has not been migrated)",
+            )
+        return FALLBACK_SECONDS_PER_CASE, f"documented fallback (database unreadable: {error})"
     except sqlite3.Error as error:
         return FALLBACK_SECONDS_PER_CASE, f"documented fallback (database unreadable: {error})"
-    with connection:
-        # Grouped by section rather than averaged flat: migration 0012 gave
-        # pre-existing rows the Logical Reasoning default, so a section whose
-        # budget comes back at 150s is reading repaired history rather than the
-        # shipped model, and that has to be visible instead of blended away.
-        rows = connection.execute(
-            """
-            SELECT questions.section, COUNT(*), AVG(session_items.target_time_seconds)
-            FROM session_items
-            JOIN study_sessions ON study_sessions.id = session_items.session_id
-            JOIN questions ON questions.id = session_items.question_id
-            WHERE study_sessions.mode = 'practice'
-            GROUP BY questions.section
-            """
-        ).fetchall()
     served = sum(count for _, count, _ in rows)
     if not served:
         return FALLBACK_SECONDS_PER_CASE, "documented fallback (no practice items served yet)"
