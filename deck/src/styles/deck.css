@@ -363,7 +363,14 @@
 .ledger i {
   font-family: var(--font-pixel);
   font-style: normal;
-  font-size: .74em;
+  /* Three quarters of its row, but never under the deck's own floor.
+     `figures.css` fixes that floor at `1.05 * --u` — 20px at 1920 — and says
+     nothing in a figure may go below it; the same reasoning applies to a
+     numeral on a plate. On the concept slide the row is already the dense
+     caption size, so .74em of it came out at 16px on a 1080 projection and
+     10.8px at 1280, which is the smallest type in the audience-facing deck
+     and sits on the one slide where the room is also reading a 3D scene. */
+  font-size: max(.74em, calc(1.05 * var(--u)));
   font-weight: 700;
   letter-spacing: .06em;
   color: var(--accent, var(--gold));
