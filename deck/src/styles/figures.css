@@ -2366,8 +2366,11 @@
   transition: stroke-dashoffset 520ms var(--ease-in-out), opacity var(--mo-3) var(--ease-out);
 }
 
+/* Faint, because it is the coupling that does not exist — but not so faint
+   that the cross above has nothing under it. At .38 the shaft was very nearly
+   the least visible thing on the slide and the strike had no visible object. */
 .fig-gt-shaft[data-denied='true'] {
-  opacity: .38;
+  opacity: .5;
 }
 
 /* Two beats, then it holds. A coupling that keeps throbbing behind a speaker
@@ -2419,26 +2422,30 @@
   transform: translate(20.7%, -50%) rotate(225deg);
 }
 
-/* 140ms and linear. A strike-through that eases looks like a flourish; this
-   one is a refusal. Drawn in `--on-field`, because verdict red is spent on
-   slides 6 and 7 and this is not one of them. */
-/* One short steep slash across the reverse arrow, drawn in 140ms with no
-   easing worth the name. `clip-path` rather than a scale, so the mark grows
-   from the end the pen would start at instead of unfolding from its middle. */
-/* Short. At 4.4u rotated 56 degrees the mark stood 58px tall across a shaft
-   5px thick — ten times the height of the thing it was striking — so it read
-   not as a line through an arrow but as a stray solidus floating above one.
-   A strike has to be legibly *attached* to what it cancels, which means it is
-   sized against the stroke it crosses rather than against the frame. */
+/* The refusal: two strokes crossed on the reverse arrow, each drawn in 140ms
+   with no easing worth the name. A strike-through that eases looks like a
+   flourish; this one is a refusal. Drawn in `--on-field`, because verdict red
+   is spent on slides 6 and 7 and this is not one of them, and `clip-path`
+   rather than a scale so each arm grows from the end a pen would start at
+   instead of unfolding from its middle.
+
+   Sized against the shaft it crosses rather than against the frame — at 4.4u
+   the mark stood ten times the height of a 5px stroke and floated clear above
+   it — but no longer *only* against it: one arm of this size over a thin arrow
+   already at 38% opacity was read, correctly, as a stray solidus rather than
+   as anything cancelling anything. Two arms are a cross, and a cross is
+   legible as a cancellation from the back of a room. */
 .fig-gt-strike {
   position: absolute;
-  width: calc(2.4 * var(--u));
+  width: calc(2.7 * var(--u));
   height: 4px;
-  transform: translate(-50%, -50%) rotate(-58deg);
   background: currentColor;
   clip-path: inset(0 100% 0 0);
-  transition: clip-path 140ms linear;
+  transition: clip-path 140ms linear var(--fig-delay, 0ms);
 }
+
+.fig-gt-strike[data-arm='down'] { transform: translate(-50%, -50%) rotate(-56deg); }
+.fig-gt-strike[data-arm='up'] { transform: translate(-50%, -50%) rotate(56deg); }
 
 .fig-gt-strike[data-struck='true'] { clip-path: inset(0 0 0 0); }
 
