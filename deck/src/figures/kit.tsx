@@ -207,3 +207,35 @@ export type FigureBody<Spec> = {
   active: boolean
   reduced: boolean
 }
+
+/**
+ * A hot update to this file reloads the page instead of patching the figures.
+ *
+ * This module exports hooks and helpers and no component, so it is not a Fast
+ * Refresh boundary. Vite therefore propagates a change here up to the sixteen
+ * figure modules that import it, each of which *is* a boundary, and React
+ * Refresh re-renders those figures in place.
+ *
+ * In place is the problem. React Refresh decides whether to remount by
+ * comparing a signature it records at each component's own definition site, and
+ * that signature names `usePhase` and `useStopwatch` without describing them. So
+ * if the hook order *inside* one of them changes, every figure's signature is
+ * still byte-identical, nothing is remounted, and the next render walks a hook
+ * queue built by the previous version of the hook. React reports it as
+ * "a change in the order of Hooks called by Route" followed by "Should have a
+ * queue", and the figure keeps whatever animation phase the old queue held.
+ *
+ * That is not a hypothetical: it is the reproduction for the violation that two
+ * full-deck screenshot sweeps recorded on 10 August, and it is invisible in a
+ * report because the component name arrives in a console format argument that
+ * nothing was reading. Editing a figure file directly is safe — the signature is
+ * recomputed there — and only this shared module can desynchronise.
+ *
+ * A reload costs a second and the deck is hash-routed, so it comes back on the
+ * same slide. Stale hook state costs a wrong figure on a slide nobody re-checked.
+ *
+ * `import.meta.hot` is undefined in a production build and this is dropped.
+ */
+if (import.meta.hot) {
+  import.meta.hot.accept(() => window.location.reload())
+}

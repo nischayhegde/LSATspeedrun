@@ -171,8 +171,15 @@ shoot — screenshot every slide of the deck and report what broke.
   --full[=WxH]      Second pass at another viewport. Bare flag means 1280x800.
   --help            This text.
 
-Writes NN-<slide-id>.png plus report.json into the out dir. Exits non-zero if
-any slide threw a page error or produced a flat, blank capture.
+Writes NN-<slide-id>.png plus report.json into the out dir.
+
+Exits non-zero if any slide did not mount, threw a page error, produced a flat
+blank capture, photographed the app's sign-in page, or logged a console error
+that means the React tree is invalid — a hooks-order change, a render loop, an
+unwound tree, or a dynamic import that failed. Connection errors from the app
+stack being down are reported but do not fail the run, which is what makes it
+safe to gate a --stills pass. Every reason is listed in report.problems and
+report.ok, so the file agrees with the exit code.
 `.trim()
 
 const argv = process.argv.slice(2)
@@ -473,6 +480,82 @@ function withTimeout(promise, ms, label) {
   ])
 }
 
+// ---------------------------------------------------------------------------
+// what counts as broken
+// ---------------------------------------------------------------------------
+
+/**
+ * Console lines that mean the deck is wrong, rather than that its surroundings
+ * are.
+ *
+ * This distinction is the whole reason the run can fail on a console error at
+ * all. Most of what lands in `consoleErrors` during a stills pass is the app
+ * stack being down — a refused connection on 5173, a 502 from `demo-api` — and
+ * gating on those would make the sweep unrunnable in exactly the mode it is
+ * meant to be run in. So the gate names the specific messages that say a React
+ * tree is in an invalid state, and lets everything else stay informational.
+ *
+ * The hooks entry is not hypothetical. Two full-deck sweeps on 10 August each
+ * carried "a change in the order of Hooks" and each reported every slide as
+ * passing, because a console error had no effect on the exit code and the one
+ * accompanying page error was the only thing that failed the run. A React tree
+ * that has lost its hook queue will happily paint a screenshot that looks
+ * correct while one figure holds another's animation phase, which is precisely
+ * the failure a screenshot inventory cannot see and a gate must.
+ */
+const FATAL_CONSOLE = [
+  ['hooks', /change in the order of Hooks|Rendered (?:more|fewer) hooks than|Should have a queue|Invalid hook call|Hooks can only be called/i],
+  ['render-loop', /Maximum update depth exceeded|Too many re-renders/i],
+  ['react-unwind', /The above error occurred in the <|Consider adding an error boundary/i],
+  ['module', /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i],
+]
+
+function fatalKind(text) {
+  for (const [kind, pattern] of FATAL_CONSOLE) if (pattern.test(text)) return kind
+  return null
+}
+
+/**
+ * A console message with its `%s` holes filled in from the format arguments.
+ *
+ * `message.text()` hands back the raw format string, so React's warnings arrive
+ * as "the order of Hooks called by %s" — the component's name is in `args[1]`
+ * and the previous/next hook table is in `args[2]`, and neither was ever read.
+ * Every report this harness has written about a hooks violation therefore
+ * omitted the only two facts that would have identified it, which is why the
+ * first thing the investigation had to do was reproduce it by hand.
+ *
+ * Resolving a `JSHandle` is asynchronous and a console listener cannot be, so
+ * the caller collects these promises and settles them before the page closes.
+ */
+function formatConsoleArgs(args) {
+  const [format, ...rest] = args
+  if (typeof format !== 'string' || !/%[sdifoOc]/.test(format)) {
+    return args.filter((arg) => arg !== undefined).map(String).join(' ')
+  }
+  let next = 0
+  const filled = format.replace(/%[sdifoOc]/g, (token) => {
+    if (token === '%c') { next += 1; return '' }
+    return next < rest.length ? String(rest[next++]) : token
+  })
+  // Anything React passed beyond the placeholders still belongs in the record.
+  return [filled, ...rest.slice(next).map(String)].join(' ').trim()
+}
+
+/** The gate: everything about a captured slide that should fail the run. */
+function problemsFor(result) {
+  const problems = []
+  if (result.mounted === false) problems.push('did not mount')
+  if (result.blank === true) problems.push('capture is a flat colour')
+  if (result.signedOutEmbed) problems.push('embed photographed the sign-in page')
+  for (const error of result.pageErrors) problems.push(`page error: ${error}`)
+  for (const text of result.consoleErrors) {
+    const kind = fatalKind(text)
+    if (kind) problems.push(`${kind}: ${text.replace(/\s+/g, ' ').slice(0, 200)}`)
+  }
+  return problems
+}
+
 /**
  * One slide, one page, one PNG.
  *
@@ -491,16 +574,27 @@ async function captureSlide(context, { id, index }, options) {
   /** Hoisted: the console handler reads it, and is installed before it is filled. */
   const expected = { aborted: 0, unauthorized: 0 }
 
+  /** Resolutions of console format arguments, settled before the page closes. */
+  const resolving = []
+
   const page = await context.newPage()
   page.on('pageerror', (error) => pageErrors.push(String(error?.message ?? error).slice(0, 300)))
   page.on('console', (message) => {
     if (message.type() !== 'error') return
-    const text = message.text().slice(0, 300)
+    const raw = message.text()
     // The browser's own line for the two expected preflight 401s below. It names
     // no URL, so it can only be recognised by shape, and only while one of those
     // probes has actually just 401'd.
-    if (expected.unauthorized && /Failed to load resource.*401/.test(text)) return
-    consoleErrors.push(text)
+    if (expected.unauthorized && /Failed to load resource.*401/.test(raw)) return
+    const slot = consoleErrors.push(raw.slice(0, 300)) - 1
+    // Only React's warnings carry unfilled placeholders, and they are the ones
+    // whose arguments hold the component name. Everything else is already whole.
+    if (!/%[sdifoOc]/.test(raw)) return
+    resolving.push(
+      Promise.all(message.args().map((arg) => arg.jsonValue().catch(() => undefined)))
+        .then((args) => { consoleErrors[slot] = formatConsoleArgs(args).slice(0, 900) })
+        .catch(() => { /* the page can close mid-resolution; keep the raw text */ }),
+    )
   })
   /**
    * Counted, then reported as a note rather than as a failure.
@@ -522,7 +616,11 @@ async function captureSlide(context, { id, index }, options) {
 
   page.on('requestfailed', (request) => {
     const reason = request.failure()?.errorText ?? 'unknown'
-    if (reason === 'net::ERR_ABORTED' && request.url().startsWith(APP)) { expected.aborted += 1; return }
+    // The deck's own `/demo-api` preflight is cancelled by the page closing just
+    // as the app's warm frames are, and it was being counted the other way: those
+    // aborts went to `failedRequests` while `expected.aborted` stayed 0, so a
+    // report could state `{aborted: 0}` directly above seven cancelled requests.
+    if (reason === 'net::ERR_ABORTED' && (request.url().startsWith(APP) || request.url().includes('/demo-api/'))) { expected.aborted += 1; return }
     failedRequests.push({ url: request.url().slice(0, 200), reason })
   })
   page.on('response', (response) => {
@@ -622,8 +720,13 @@ async function captureSlide(context, { id, index }, options) {
     result.notes.push(String(error?.message ?? error).slice(0, 300))
   } finally {
     result.ms = Date.now() - started
+    // Settled before the page goes, so the handles the console listener is
+    // holding are still live. A resolution that loses that race keeps its raw
+    // format string, which still matches the gate's patterns.
+    await Promise.all(resolving).catch(() => {})
     await page.close().catch(() => {})
   }
+  result.problems = problemsFor(result)
   return result
 }
 
@@ -818,27 +921,31 @@ try {
         result = { id: slide.id, index: slide.index, file: null, mounted: false, consoleErrors: [], pageErrors: [], failedRequests: [], memory: null, blank: null, stats: null, ms: TIMEOUT, notes: [String(error.message)] }
       }
       result.pass = pass.suffix || 'main'
+      result.problems ??= problemsFor(result)
       results.push(result)
-      const mark = result.signedOutEmbed ? 'NOAUTH' : result.pageErrors.length ? 'ERR' : result.blank ? 'BLANK' : !result.mounted ? 'DEAD' : result.notes.length ? 'warn' : 'ok'
+      const fatalConsole = result.problems.some((problem) => /^(hooks|render-loop|react-unwind|module):/.test(problem))
+      const mark = result.signedOutEmbed ? 'NOAUTH' : result.pageErrors.length ? 'ERR' : fatalConsole ? 'HOOKS' : result.blank ? 'BLANK' : !result.mounted ? 'DEAD' : result.notes.length ? 'warn' : 'ok'
       // The cold-profile bookkeeping, appended to the line rather than given one:
       // it is context for the numbers beside it, not an event.
       const cold = [
         result.expected?.unauthorized ? `${result.expected.unauthorized} pre-sign-in 401` : '',
         result.expected?.aborted ? `${result.expected.aborted} cancelled nav` : '',
       ].filter(Boolean).join(', ')
-      console.log(`  ${mark.padEnd(5)} ${pad(slide.index)}-${slide.id}${pass.suffix}  ${result.ms}ms`
+      console.log(`  ${mark.padEnd(6)} ${pad(slide.index)}-${slide.id}${pass.suffix}  ${result.ms}ms`
         + (result.stats ? `  sd ${result.stats.stdDev} colours ${result.stats.colours}` : '  (undecodable)')
         + (cold ? `  [${cold}]` : '')
-        + (result.notes.length ? `\n        ${result.notes.join('\n        ')}` : ''))
+        + (result.notes.length ? `\n        ${result.notes.join('\n        ')}` : '')
+        + (result.problems.length ? `\n        ${result.problems.join('\n        ')}` : ''))
     }
 
     if (passContext !== context) await passContext.close()
   }
 
   if (GRID) {
-    const result = await captureGrid(context, { base: BASE, out: OUT, settle: SETTLE, suffix: '' })
-    result.pass = 'grid'
-    results.push(result)
+  const result = await captureGrid(context, { base: BASE, out: OUT, settle: SETTLE, suffix: '' })
+  result.pass = 'grid'
+  result.problems ??= problemsFor(result)
+  results.push(result)
     console.log(`  ${result.notes.length > 1 ? 'warn ' : 'ok   '} grid  ${result.ms}ms`)
   }
 } finally {
@@ -849,6 +956,16 @@ try {
 // report
 // ---------------------------------------------------------------------------
 
+const failing = results.filter((result) => result.problems?.length)
+
+/**
+ * The report states its own verdict.
+ *
+ * It used to be a list of slides and their measurements, which reads as a pass
+ * whatever it contains — and did, twice, while carrying a hooks-order violation.
+ * `ok` and `problems` are written from the same values that decide the exit
+ * code, so a green report and a green run cannot disagree.
+ */
 const report = {
   base: BASE,
   ranAt: new Date().toISOString(),
@@ -856,6 +973,8 @@ const report = {
   settleMs: SETTLE,
   stills: STILLS,
   slideSource: discovery?.source ?? 'unknown',
+  ok: failing.length === 0,
+  problems: failing.map((result) => ({ id: result.id, pass: result.pass, problems: result.problems })),
   slides: results,
 }
 writeFileSync(`${OUT}/report.json`, `${JSON.stringify(report, null, 2)}\n`)
@@ -874,6 +993,8 @@ console.log(`did not mount    ${unmounted.length}${unmounted.length ? `  (${unmo
 console.log(`page errors      ${withPageErrors.length}${withPageErrors.length ? `  (${withPageErrors.map((r) => r.id).join(', ')})` : ''}`)
 console.log(`blank captures   ${blanks.length}${blanks.length ? `  (${blanks.map((r) => r.id).join(', ')})` : ''}`)
 console.log(`console errors   ${withConsole.length}${withConsole.length ? `  (${withConsole.map((r) => r.id).join(', ')})` : ''}`)
+const invalidTree = results.filter((result) => result.problems?.some((problem) => /^(hooks|render-loop|react-unwind|module):/.test(problem)))
+console.log(`invalid React tree ${invalidTree.length}${invalidTree.length ? `  (${invalidTree.map((r) => r.id).join(', ')})` : ''}`)
 console.log(`failed requests  ${withRequests.length}${withRequests.length ? `  (${withRequests.map((r) => r.id).join(', ')})` : ''}`)
 if (undecodable.length) console.log(`undecodable PNGs ${undecodable.length}  (blank check did not run on these)`)
 console.log(`signed-out embeds ${signedOut.length}${signedOut.length ? `  (${signedOut.map((r) => r.id).join(', ')})` : ''}`)
@@ -890,8 +1011,14 @@ if (signedOut.length) {
   console.log(`${'!'.repeat(64)}`)
 }
 
-if (withPageErrors.length || blanks.length || unmounted.length || signedOut.length) {
-  console.log('\nFAILED — a slide threw, did not mount, rendered nothing, or was signed out.')
+if (failing.length) {
+  console.log(`\n${'!'.repeat(64)}`)
+  console.log(`FAILED — ${failing.length} slide(s) with problems:`)
+  for (const result of failing) {
+    console.log(`  ${result.id}${result.pass && result.pass !== 'main' ? ` (${result.pass})` : ''}`)
+    for (const problem of result.problems) console.log(`      ${problem}`)
+  }
+  console.log(`${'!'.repeat(64)}`)
   process.exit(1)
 }
 console.log('\nOK')
