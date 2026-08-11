@@ -50,6 +50,20 @@ export function WebApp() {
   const [failed, setFailed] = useState(false)
   const [sceneLandscape, setSceneLandscape] = useState(false)
   const landscapeState = useRef(false)
+  /**
+   * The page is holding something a stray gesture would destroy: a case draft,
+   * a running mega-litigation section, or a modal that owns the screen. The web
+   * app reports it (`frontend/src/native-shell.ts`); the shell suspends the two
+   * gestures that can act on it and nothing else.
+   *
+   * Left permanently on, these two would each be a regression of their own:
+   * pull-to-refresh is the only way out of a wedged WebView, and the back-swipe
+   * is how iOS expects a screen to be left. They come back the moment the page
+   * says it is no longer holding anything.
+   */
+  const [guarded, setGuarded] = useState(false)
+  /** Which of the two it is: a case draft, or a modal that owns the screen. */
+  const guardReason = useRef('none')
 
   useEffect(() => {
     void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined)
@@ -59,12 +73,23 @@ export function WebApp() {
   useEffect(() => {
     if (Platform.OS !== 'android') return
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      // A modal owns the screen: Android's back button is that platform's
+      // "close this", and the web app already routes every blocking layer's
+      // dismissal through one Escape handler (`frontend/src/overlays.tsx`).
+      // Popping WebView history instead would leave the layer standing on
+      // whatever screen the player landed on.
+      if (guarded && guardReason.current !== 'case') {
+        webView.current?.injectJavaScript(
+          "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true;",
+        )
+        return true
+      }
       if (!canGoBack) return false
       webView.current?.goBack()
       return true
     })
     return () => subscription.remove()
-  }, [canGoBack])
+  }, [canGoBack, guarded])
 
   const syncSceneOrientation = useCallback((url: string) => {
     const nextLandscape = isLandscapeScene(url)
@@ -85,8 +110,12 @@ export function WebApp() {
 
   const handleMessage = useCallback((event: WebViewMessageEvent) => {
     try {
-      const message = JSON.parse(event.nativeEvent.data) as { type?: string; url?: string }
+      const message = JSON.parse(event.nativeEvent.data) as { type?: string; url?: string; guarded?: boolean; reason?: string }
       if (message.type === 'lsat-route-change' && message.url) syncSceneOrientation(message.url)
+      if (message.type === 'lsat-shell-state') {
+        guardReason.current = message.reason ?? 'none'
+        setGuarded(Boolean(message.guarded))
+      }
     } catch {
       // Ignore non-routing messages so future WebView features can share the channel.
     }
@@ -131,10 +160,10 @@ export function WebApp() {
         allowsInlineMediaPlayback
         allowsFullscreenVideo
         mediaPlaybackRequiresUserAction={false}
-        allowsBackForwardNavigationGestures
+        allowsBackForwardNavigationGestures={!guarded}
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
-        pullToRefreshEnabled
+        pullToRefreshEnabled={!guarded}
         setSupportMultipleWindows={false}
         applicationNameForUserAgent="LSATTycoonMobile/1.0"
         injectedJavaScriptBeforeContentLoaded={INJECT_NATIVE_CONTEXT}
