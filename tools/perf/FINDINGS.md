@@ -156,6 +156,47 @@ and are not in that closure. Verified in the emitted `index.html`, not assumed.
 
 ---
 
+## Scrolling the Staff panel — reproduced, fixed, re-measured
+
+`tools/perf/scroll.mjs` beside this file. It scrolls a panel a fixed distance
+per animation frame and records the intervals, and it always measures a
+*reference* panel on the same screen in the same browser lifetime, because a
+frame time on its own says more about the machine than about the app.
+
+900x900, 4x CPU throttle, 150 scrolled frames x 3 runs, signed in, brotli.
+
+| | median | p95 | worst | frames > 32 ms | long tasks | longest |
+|---|---:|---:|---:|---:|---:|---:|
+| Staff, before | 150 ms | 167 | 200 | 149 of 149 | 149 | 190 ms |
+| Staff, after | **17 ms** | 17 | 183 | 3 of 149 | 2 | 174 ms |
+| Counsel ledger (same screen, both runs) | 17 ms | 17 | ~670 | 2 | 1 | ~680 ms |
+
+The "after" run was taken at loadavg 2.76 against 0.89 for "before", so the
+comparison is if anything unfair to the fix. The reference panel reads 17 ms in
+both runs, which is what says the machine is not the difference.
+
+**What it was.** Nothing to do with the roster. `stylized-character.tsx` paints
+up to eight characters per animation frame, and eight WebGL renders plus eight
+canvas copies is more than a scrolling frame has at 4x throttle. Every one of
+149 frames carried a long task.
+
+**What changed.** Ambient repainting is held while the page is scrolling, for
+90 ms after the last scroll event. Only the render and the copy are held:
+`animateRig` and the director keep running at display rate, so the rigs are
+where they should be when the scroll stops and the catch-up is one ordinary
+frame rather than a jump. A `dirty` entry — resize, first paint, gaze — still
+paints, because dirty means the canvas is currently *wrong*, and a wrong canvas
+held for the length of a scroll is visible in a way that a held breath is not.
+
+**What was not done.** The two heavier options in the earlier write-up —
+rendering each figure to a texture once, and animating only the hovered one —
+are unnecessary now that the resting cost is 17 ms, and both change what the
+panel looks like. The 8-per-frame budget is also still a fixed count rather
+than a time budget; it stopped mattering here and is worth revisiting only if
+some other screen puts more than eight rigs in view at once.
+
+---
+
 ## `/v1/game` and its catalog — measured, then left alone
 
 Recorded because it looked like the next obvious win and is not, and the next
