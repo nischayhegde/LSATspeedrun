@@ -402,7 +402,13 @@ export const SLIDES: readonly SlideSpec[] = [
       'Why yours was wrong',
       'Why the right one works',
     ],
-    credit: 'VanLehn (2011), 87 comparisons · Zhang & Fiorella (2024)',
+    // "87 comparisons" was in this line for three revisions and is not a number
+    // VanLehn reports. His counts against no tutoring are 165 effects for
+    // answer-based, 28 for step-based, 26 for substep and 10 for human, and no
+    // combination of them is 87. The three effect sizes the figure plots â
+    // 0.31, 0.76, 0.79 â are his, exactly, so the finding is sound and only the
+    // provenance was invented. The journal is checkable and the count was not.
+    credit: 'VanLehn (2011), Educational Psychologist — against no tutoring · Zhang & Fiorella (2024)',
     // The emphasis moves: the five choices shrink and desaturate while the
     // reasoning box grows and takes the focus ring. The three effect bars draw
     // in sequence so the room sees the last two land at nearly the same length —
@@ -463,7 +469,7 @@ export const SLIDES: readonly SlideSpec[] = [
     headline: "Accuracy and time can't see understanding.",
     deck: 'A lucky guess and a confident miss look identical on a score report.',
     points: ['Rate 1–5, before the key.'],
-    credit: 'Metcalfe (2017), the hypercorrection effect',
+    credit: 'Metcalfe (2017), Annual Review of Psychology 68 — the hypercorrection effect',
     // All four tiles carry the same plain mark, so they look interchangeable.
     // Then confidence drops onto each and they re-sort into four different
     // problems. The sort is the argument; it is over in under 1.5 seconds.
@@ -710,7 +716,13 @@ export const SLIDES: readonly SlideSpec[] = [
       'Attempt first',
       'One step at a time',
     ],
-    credit: 'Bastani et al. (2024), ~1,000 students, field experiment',
+    // 2025, not 2024, and PNAS. The year was wrong on the slide and the paper is
+    // the single most-cited AI-in-education RCT there is, so it is the credit in
+    // the deck most likely to be looked up from the room. The population is
+    // named too: these were high-school mathematics students in Turkey, which
+    // is the caveat a hostile questioner reaches for first, and a credit that
+    // hides the caveat is worse than one that does not fit on the line.
+    credit: 'Bastani et al. (2025), PNAS 122 — ~1,000 high-school students, three-arm field experiment',
     // The only slide in the deck permitted a moment of misdirection: the good
     // trace draws first and holds long enough for the room to start nodding.
     figure: {
@@ -1313,7 +1325,7 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act V',
     headline: 'The meta-analysis designed our game.',
     deck: 'Clark and colleagues, 69 samples, 6,868 participants. Every split went the way we built it.',
-    credit: 'Clark et al. — average participant age ~12–13; RCT subset smaller',
+    credit: 'Clark et al. (2016), Review of Educational Research 86(1) — average participant age ~12–13; RCT subset smaller',
     // Four paired bars, ours in beige and the alternative in dim royal blue,
     // with three of the four alternatives at or below zero. The pairs animate in
     // as the presenter names them, roughly one every three seconds. The four
