@@ -108,22 +108,24 @@ const COUNSEL = { x: 4.35, z: -1.1 } as const
  * The shadow map, sized deliberately rather than left at the default.
  *
  * `extent` is the half-width of the light's orthographic frustum, and it is
- * the number that had to be measured rather than guessed. The light is low, so
- * the cast is long: her shadow runs about eighteen units from her soles to its
- * head, most of it across the open floor under the copy. At 13 the far end of
- * it was clipped by the frustum wall and terminated in a straight diagonal
- * edge in the bottom left of the frame, which reads as a second, wrong shadow.
- * 20 contains the whole cast with a margin for the ambient sway.
+ * sized to the cast rather than to the room. She stands 5.44 units and the key
+ * is 36° up, so the cast runs 5.44/tan(36°) — about seven and a half units
+ * from her soles to the crown of her shadow. The frustum is centred on the
+ * light's target, roughly at her feet, so 12 covers that with a wide margin
+ * for the ambient sway and for the arms swinging out on the anticipation.
  *
- * 2048² over a 40-unit frustum is 51 texels per world unit. At this framing
- * that is a little over one shadow texel per screen pixel along the near part
- * of the edge, which is the point where more map buys aliasing rather than
- * detail. The frustum is still cut to the body and its cast rather than to the
- * room — the box is 64 units across, and a shadow camera sized to it would
- * spend nine tenths of the map on floor that has nothing on it and the edge
- * would crawl as she breathes.
+ * This was 20 for a while, which was correct for an earlier version of the
+ * light: at 24° the same body threw a cast twelve units long, and a frustum
+ * that had been cut tighter clipped its far end into a straight diagonal edge
+ * that read as a second, wrong shadow. Raising the key shortened the cast by
+ * a third and nobody brought the frustum back down with it, so the map was
+ * spending most of its resolution on empty floor.
+ *
+ * 2048² over a 24-unit frustum is 85 texels per world unit, against 51 at the
+ * old size. Sizing to the room instead — the box is 64 units across — would
+ * put it at 16, where the edge visibly crawls as she breathes.
  */
-const SHADOW = { size: 2048, extent: 20, near: 2, far: 34, bias: -.0012 } as const
+const SHADOW = { size: 2048, extent: 12, near: 2, far: 34, bias: -.0012 } as const
 
 /**
  * When the fold starts, how long it takes, and how much of that is
@@ -379,14 +381,17 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   /*
     The key, and the only caster.
 
-    From her right and a little downstage of her, at about 25° above the floor.
+    Frame right and a little downstage of her, 36° above the floor. "Right"
+    here is the camera's, which is the sense the brief asked shading in and the
+    only sense an audience can see; it is anatomically her left, because she
+    faces the lens.
 
     Two things were tried before this and both failed for the same reason. A
-    light square to her right throws the shadow straight away from the lens,
-    where a camera nineteen degrees above eye line sees almost none of it. A
-    light set *behind* her right shoulder throws the shadow forward and to the
-    left, which is the long diagonal this frame wants — but it also rims her
-    and leaves the front of the body, which is the whole subject, unlit; at the
+    light square to frame right throws the shadow straight away from the lens,
+    where a camera pitched nineteen degrees down sees almost none of it. A
+    light set *behind* her shoulder throws the shadow forward and to the left,
+    which is the long diagonal this frame wants — but it also rims her and
+    leaves the front of the body, which is the whole subject, unlit; at the
     ambient levels this room runs at she came out a silhouette.
 
     Downstage-right does both jobs at once. It is still a right-hand key, so
@@ -394,13 +399,14 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
     right exactly as asked, and it throws the shadow across the open floor to
     screen left, straight through the part of the frame the copy sits over.
 
-    Its elevation is 33°, which is the one number here that was measured rather
-    than chosen. A shadow's length is the caster's height over the tangent of
-    that angle, so 24° — where this started — gave a cast twelve units long
-    whose head fell outside the frame, and what was left on screen was a dark
-    wash with no silhouette in it. At 33° the cast is about seven units and
-    lands entirely inside the frame, so what the audience sees is a shadow with
-    a head, shoulders and folded arms in it rather than a stain on the floor.
+    Its elevation is the one number here that was measured rather than chosen.
+    A shadow's length is the caster's height over the tangent of that angle,
+    and she stands 5.44 units tall, so 24° — where this started — gave a cast
+    twelve units long whose head fell outside the frame, and what was left on
+    screen was a dark wash with no silhouette in it. At 36° the cast is about
+    seven and a half units and lands entirely inside the frame, so what the
+    audience sees is a shadow with a head, shoulders and folded arms in it
+    rather than a stain on the floor.
   */
   const key = new THREE.DirectionalLight(0xfff2dc, 5)
   key.position.set(COUNSEL.x + 9.15, 9.5, COUNSEL.z + 4.3)
@@ -422,7 +428,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   scene.add(key)
   scene.add(key.target)
 
-  // The modelling light: warm, frontal, off her right, no shadow. This is what
+  // The modelling light: warm, frontal, off to frame right, no shadow. This is what
   // puts light on the face the room spends twenty minutes looking at, and it
   // is deliberately weaker than the key so the shading still reads as coming
   // from the right.
@@ -453,7 +459,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   // the pelvis by the rig's measured sole offset so the soles rest here.
   holder.position.set(COUNSEL.x, 0, COUNSEL.z)
   // Turned a little back into the room. Square to the lens is a passport
-  // photograph; fourteen degrees gives the shoulders some depth and puts her
+  // photograph; seventeen degrees gives the shoulders some depth and puts her
   // upstage shoulder into the key, which is where the rim wants it.
   holder.rotation.y = .30
   scene.add(holder)
