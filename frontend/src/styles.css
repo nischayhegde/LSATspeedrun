@@ -890,6 +890,39 @@ details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg
      the rest is only ever visual — the card can never swallow a press meant
      for a tab or a button beneath it. */
   pointer-events: none;
+  /* The yield below. Translate and opacity only, so the whole movement is one
+     composited layer and nothing underneath is laid out or repainted for it. */
+  transition: translate .26s var(--mo-out, cubic-bezier(.2,.7,.3,1)), opacity .2s linear;
+}
+/* Off the words it is sitting on.
+   Click-through was half the answer to a fixed panel on a scrolling page; the
+   other half is reading, and measuring what sits under this card found it over
+   real text at almost every route and width — 35% of its own area over the
+   heading "Accuracy by question type" at 1024, 69% over the mega-litigation
+   line at 1180. `economy-ledger.tsx` sets this while the page is scrolling and
+   while the card has come to rest on top of words, and clears it when a fine
+   pointer reaches for the corner or when one of the four figures moves. It
+   leaves along its own short edge rather than fading in place: a
+   half-transparent panel over text is harder to read past than an opaque one. */
+.economy-ledger[data-yield] { translate: calc(-100% - 18px) 0; opacity: 0; }
+/* Not on the office and not on the world map, at any width.
+   
+   Both run their scene edge to edge and put their own economy readout in this
+   corner — the office lease and operating account on one, the headquarters
+   panel on the other — so the card is a second copy of figures already on
+   screen. It used to stand down on a phone only. On a desktop the yield rule
+   kept it out of the way at rest, but a refetch fires the announcement and
+   pops it over "OFFICE LEASE / Operating account" for three and a half
+   seconds, which is how the sweep caught it at 960, 1280 and 1600.
+   
+   Standing it down here also takes the covering hit-test off the two heaviest
+   routes in the app. */
+.wide-scene-shell .economy-ledger { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  /* No travel, but the card still has to get out of the way — the request was
+     for less motion, not for the readout to keep covering the sentence. */
+  .economy-ledger { transition: opacity .12s linear; }
+  .economy-ledger[data-yield] { translate: none; }
 }
 .economy-reading { min-width: 0; position: relative; display: grid; gap: 1px; }
 .economy-reading small { overflow: hidden; color: #7cb6ac; font-family: var(--font-pixel); font-size: 6.5px; font-weight: 900; letter-spacing: .11em; text-overflow: ellipsis; white-space: nowrap; }
@@ -1102,6 +1135,38 @@ details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg
   .account-menu-audio small { display: block; margin-top: 3px; color: #91a4a2; font-size: 11px; font-weight: 600; }
   .account-menu-sound { width: 100%; }
   .account-menu-sound .sound-volume-control { flex: 1 1 auto; width: auto; }
+}
+
+/* ---------------------------------------------------------------------------
+   901px to 1035px: the band where every nav label was an ellipsis.
+
+   The reflow above stops at 1360 and the phone sheet does not start until 900,
+   so 460px of laptop and small-desktop widths had no step of their own. The
+   right-hand cluster is `flex: 0 0 auto` and never gives, which is correct, so
+   the nav was the only thing left to squeeze — and it squeezed all the way
+   down. Measured with each label's `scrollWidth` against its `clientWidth`
+   (tools/ui-qa/nav-fit.mjs): at 1020 all five were 2-4px short, at 1000 all
+   five were 5-9px short, and at 920 "Dashboard" was 31px short and rendered
+   "Dashbo…" beside "Practi…", "Offi…", "Fi…" and "Wo…". Two of those are not
+   words.
+
+   What gives instead is the two standing badges, in the order the 900px block
+   below already states: question count first, accuracy second. Both are spelled
+   out in full on the Dashboard, which is one tab away and is the screen this
+   band is most often used to reach; the streak stays, because it is the only
+   one of the three that can move on a day the student has not opened the app.
+
+   Chosen over the two alternatives on the same measurement. Icon-only tabs fit
+   at 901 but cost the labels at every width in the band, not just where the row
+   is genuinely full. A desktop hamburger fits too, and is pre-authorised, but
+   it buys room this band does not need once the badges are out of it and it
+   would put five destinations two clicks away to save a percentage sign.
+   --------------------------------------------------------------------------- */
+@media (max-width: 1120px) {
+  .header-economy > .standing-questions { display: none; }
+}
+@media (max-width: 1040px) {
+  .header-economy > .standing-accuracy { display: none; }
 }
 
 @media (max-width: 900px) {

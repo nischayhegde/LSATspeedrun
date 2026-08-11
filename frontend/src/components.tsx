@@ -23,7 +23,8 @@ import { AlertSealMark, FocusMark, ScalesMark } from './art-2d/marks'
 import { EconomyLedger } from './economy-ledger'
 import { SoundControls, useSound, useSoundProfile } from './sound'
 import { replayGuidedTour } from './guided-tour-replay'
-import { clearOverlayNote, readOverlayNote, useBlockingOverlay, writeOverlayNote } from './overlays'
+import { useNativeShellGuard } from './native-shell'
+import { clearOverlayNote, readOverlayNote, useBlockingOverlay, useTopOverlay, writeOverlayNote } from './overlays'
 import { preloadArtForIntent } from './art/scene-loaders'
 import { routeForPath } from './routes'
 import type { GameState, User } from './types'
@@ -337,6 +338,13 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
   const isActiveCase = isOnCaseRoute && !chromeRestored
   const isWideScene = /^\/(office|map)\/?$/.test(location.pathname)
   const isFocusMode = user.assistance_level === 'focus'
+  /* What the native shell needs to know, and the only thing it needs to know:
+     the page is holding a draft or owns the screen, so pull-to-refresh and the
+     iOS back-swipe should stand down until it does not. A case route covers
+     both the case runner and a mega-litigation section, since a sitting is a
+     study session like any other. See `native-shell.ts`. */
+  const blockingOverlay = useTopOverlay()
+  useNativeShellGuard(isOnCaseRoute || blockingOverlay !== null, isOnCaseRoute ? 'case' : (blockingOverlay ?? 'none'))
   const visibleNavItems = isFocusMode ? navItems.filter((item) => FOCUS_MODE_ROUTES.has(item.to)) : navItems
   const visibleMobileNavItems = isFocusMode ? mobileNavItems.filter((item) => FOCUS_MODE_ROUTES.has(item.to)) : mobileNavItems
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -585,7 +593,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           all, is never handed it again. */}
       {game && !isActiveCase && tourReady && (
         <Suspense fallback={null}>
-          <GuidedTour oriented={user.guided_tour_completed || game.total_cases > 0} />
+          <GuidedTour oriented={user.guided_tour_completed || game.total_cases > 0} focusMode={isFocusMode} />
         </Suspense>
       )}
       {/* Fixed, and deliberately outside <main>: these figures move while the

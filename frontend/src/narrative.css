@@ -306,6 +306,11 @@ html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > 
   transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
 }
 .chapter-play-button:hover { transform: translateY(-1px); background: linear-gradient(170deg, #2d4f61, #1d3849); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), var(--el-2); }
+/* Same reason as the war room's: mobile.css cannot raise a height this sheet
+   sets, because this sheet is injected after it at equal specificity. */
+@media (pointer: coarse) {
+  .chapter-play-button, .quest-grid article button { min-height: 44px; }
+}
 
 .quest-sequence {
   display: flex !important;

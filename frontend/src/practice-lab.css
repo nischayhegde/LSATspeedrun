@@ -87,6 +87,12 @@
 .practice-tabs button { min-height: 42px; padding: 9px 7px; border: 1px solid transparent; border-radius: 8px; color: #a7bcb8; background: none; font: 900 9.5px var(--font-pixel); letter-spacing: .09em; text-transform: uppercase; }
 .practice-tabs button:hover:not(.active) { color: #e2ece6; background: rgba(255,255,255,.06); }
 .practice-tabs button.active { border-color: rgba(113,208,192,.5); color: #eafaf4; background: rgba(66,156,143,.26); }
+/* mobile.css raises this rail to 44px for a finger and cannot, from there: it
+   is the entry sheet and this is a route sheet injected after it, at the same
+   specificity. The floor lives with the height it is a floor for. */
+@media (pointer: coarse) {
+  .practice-tabs button { min-height: 44px; }
+}
 .practice-panel { display: flex; flex-direction: column; gap: var(--lab-gap); }
 .practice-panel > section { margin: 0; }
 

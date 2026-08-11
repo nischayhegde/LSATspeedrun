@@ -57,6 +57,13 @@
 .strategy-tip-skip { padding: 6px 2px; border: 0; color: #9db7b2; background: none; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 .strategy-tip-skip:hover { color: #cfe0dc; }
 .strategy-tip-skip.active { color: #e7dcc3; text-decoration-thickness: 2px; }
+/* The gate a question can refuse to accept an answer without, so it is one of
+   the controls a finger has to be able to hit. "Use it" measured 40px and
+   "Skip this one" is text with no box of its own. */
+@media (pointer: coarse) {
+  .strategy-tip-use { min-height: 44px; }
+  .strategy-tip-skip { min-height: 44px; padding-inline: 6px; }
+}
 .strategy-tip.is-skipped { border-color: rgba(148,170,167,.32); }
 .strategy-tip-recorded { display: flex; align-items: center; gap: 8px; color: #8dd4c6; font-size: 11.5px; font-weight: 800; }
 /* A standing order. Shorter than a tip on purpose: no step grid and no action

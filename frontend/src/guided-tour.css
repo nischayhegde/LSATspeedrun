@@ -18,7 +18,12 @@
     radial-gradient(circle at 22% 28%, rgba(87, 144, 143, .2), transparent 36%),
     linear-gradient(115deg, #0d1922 0 55%, #152c38 100%);
 }
-.guided-tour-mode-practice::before { background: rgba(6, 14, 20, .82); backdrop-filter: blur(5px); }
+/* Opaque rather than blurred. This scrim covers the whole viewport, and on the
+   practice step it can be sitting over the case runner or an office scene; a
+   full-viewport `backdrop-filter` composites the entire page every frame and
+   is exactly the thing that was measured out of this app once already. Raised
+   from .82 to .93 so it hides the page as well as the blur did. */
+.guided-tour-mode-practice::before { background: rgba(6, 14, 20, .93); }
 .guided-tour-mode-finish::before {
   background:
     radial-gradient(circle at 50% 38%, rgba(226, 185, 91, .17), transparent 28%),
@@ -30,7 +35,21 @@
   position: absolute;
   z-index: 5;
   top: clamp(104px, 16vh, 170px);
-  padding: 28px 30px 24px;
+  /* A spotlight card is pinned under the header rather than centred, so its
+     ceiling is what is left below that anchor — `100vh - 40px` would have let
+     it hang off the bottom, which is how a 1180x820 window ended up with the
+     Next button below the fold and no way to scroll to it. */
+  max-height: calc(100dvh - clamp(104px, 16vh, 170px) - 20px);
+  overflow-y: auto;
+  /* Three elements bleed to the card's edge by negative margin — the progress
+     bar, the sticky footer, and the heading rule under them. They read the
+     padding from here rather than restating it, because when a breakpoint
+     changed the padding and not the margins the bar hung 3px past the rounded
+     corner on every phone, and nobody saw it for months. */
+  --tour-pad-x: 30px;
+  --tour-pad-top: 28px;
+  --tour-pad-bottom: 24px;
+  padding: var(--tour-pad-top) var(--tour-pad-x) var(--tour-pad-bottom);
   box-sizing: border-box;
   border: 1px solid rgba(73, 72, 57, .4);
   border-radius: 12px;
@@ -44,16 +63,22 @@
 .guided-tour-card.place-right { right: clamp(22px, 5vw, 76px); }
 /* The primer steps carry a diagram, so a premise card has to be able to run
    out of vertical room without spilling off the viewport. */
-.guided-tour-mode-premise .guided-tour-card { width: min(512px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow-y: auto; right: clamp(26px, 8vw, 120px); top: 50%; translate: 0 -50%; }
+/* Centred modes get the whole window less a margin, since they are not hung
+   off the header. */
+.guided-tour-mode-premise .guided-tour-card,
+.guided-tour-mode-finish .guided-tour-card,
+.guided-tour-mode-practice .guided-tour-card,
+.guided-tour-mode-feature .guided-tour-card { max-height: calc(100dvh - 40px); }
+.guided-tour-mode-premise .guided-tour-card { width: min(512px, calc(100vw - 40px)); right: clamp(26px, 8vw, 120px); top: 50%; translate: 0 -50%; }
 .guided-tour-mode-finish .guided-tour-card { left: 50%; top: 50%; translate: -50% -50%; text-align: center; }
 .guided-tour-mode-practice .guided-tour-card { width: min(760px, calc(100vw - 40px)); left: 50%; top: 50%; translate: -50% -50%; }
 /* A feature step points at nothing, so it reads centred like the premise. */
-.guided-tour-mode-feature .guided-tour-card { width: min(600px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow-y: auto; left: 50%; top: 50%; translate: -50% -50%; }
+.guided-tour-mode-feature .guided-tour-card { width: min(600px, calc(100vw - 40px)); left: 50%; top: 50%; translate: -50% -50%; }
 
 .tour-facts { margin: 17px 0 0; padding: 15px 17px; display: grid; gap: 9px; list-style: none; border: 1px solid rgba(52, 75, 73, .18); border-radius: 9px; background: rgba(255,255,255,.36); }
 .tour-facts li { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 9px; color: #435450; font-size: 13.5px; line-height: 1.5; }
 .tour-facts svg { margin-top: 3px; color: #2c7f76; }
-.tour-card-progress { height: 3px; margin: -28px -30px 25px; overflow: hidden; border-radius: 12px 12px 0 0; background: rgba(38, 63, 63, .12); }
+.tour-card-progress { height: 3px; margin: calc(var(--tour-pad-top) * -1) calc(var(--tour-pad-x) * -1) 25px; overflow: hidden; border-radius: 12px 12px 0 0; background: rgba(38, 63, 63, .12); }
 .tour-card-progress i { height: 100%; display: block; background: linear-gradient(90deg, #318b80, #e1ad49); transition: width .45s ease; }
 .tour-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .tour-card-heading > span { color: #26766f; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .15em; }
@@ -61,11 +86,32 @@
 .guided-tour-card h2 { max-width: 420px; margin: 12px 0 11px; color: #1b3640; font-family: var(--font-display); font-size: clamp(28px, 3vw, 39px); font-weight: 600; line-height: 1.04; letter-spacing: -.025em; }
 .guided-tour-mode-finish .guided-tour-card h2 { margin-inline: auto; }
 .guided-tour-card > p { margin: 0; color: #53635f; font-size: 15px; line-height: 1.62; }
-.tour-card-actions { margin-top: 24px; display: flex; justify-content: space-between; gap: 10px; }
+/* The card scrolls; its footer does not. Card padding is 24px at the bottom,
+   so the footer eats that padding and re-adds it, which puts the buttons flush
+   with the card's real bottom edge whatever the scroll position. The fade is
+   the card's own colour at the point it sits: the card's white overlay
+   gradient is painted against the padding box and does not scroll, so the
+   bottom of a card is always this shade. */
+.tour-card-footer {
+  position: sticky;
+  bottom: calc(var(--tour-pad-bottom) * -1);
+  margin: 0 calc(var(--tour-pad-x) * -1) calc(var(--tour-pad-bottom) * -1);
+  padding: 14px var(--tour-pad-x) var(--tour-pad-bottom);
+  background: linear-gradient(to top, #f1e8cf 76%, rgba(241, 232, 207, 0));
+}
+/* Wraps rather than overflows, and the threshold is the button's own content
+   rather than a breakpoint. Next carries the name of the step it goes to —
+   "Next · Connections" — so how much room the row needs changes from step to
+   step, and a width-based rule fixes the steps it was written against and
+   misses the rest: at 320px it was exactly two of twenty-eight, the two with
+   the longest cue, running 19px past the card's edge. Given a floor wide
+   enough for the longest cue, the row keeps all three on one line whenever
+   they fit and drops Next onto its own full-width line when they do not. */
+.tour-card-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
 .tour-card-actions button { min-height: 46px; border-radius: 7px; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .05em; cursor: pointer; }
 .tour-back { min-width: 80px; border: 1px solid rgba(52, 75, 73, .3); color: #4b625e; background: rgba(255,255,255,.25); }
 .tour-back:disabled { visibility: hidden; }
-.tour-next { flex: 1; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #244c4b; color: #fff9e9; background: linear-gradient(180deg, #337e76, #235e5a); box-shadow: 0 5px 0 #153d3b, 0 10px 22px rgba(31, 74, 70, .2); }
+.tour-next { flex: 1 1 190px; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #244c4b; color: #fff9e9; background: linear-gradient(180deg, #337e76, #235e5a); box-shadow: 0 5px 0 #153d3b, 0 10px 22px rgba(31, 74, 70, .2); }
 .tour-next:hover { filter: brightness(1.09); translate: 0 -1px; }
 .tour-next:active { translate: 0 3px; box-shadow: 0 2px 0 #153d3b; }
 .tour-next:disabled { cursor: not-allowed; opacity: .48; filter: grayscale(.3); translate: none; box-shadow: 0 3px 0 #435a56; }
@@ -80,7 +126,7 @@
   color: #5c716c; background: rgba(255,255,255,.55); cursor: pointer;
 }
 .tour-dismiss:hover { color: #23423e; border-color: rgba(52, 75, 73, .55); background: #fff; }
-.tour-required { margin-top: 17px; display: block; color: #857c68; font-size: 10px; line-height: 1.4; text-align: center; }
+.tour-required { margin-top: 13px; display: block; color: #857c68; font-size: 10px; line-height: 1.4; text-align: center; }
 
 .guided-tour-spotlight {
   position: fixed;
@@ -116,9 +162,10 @@
 .tour-desk em { width: 96px; height: 66px; position: absolute; right: 7%; top: -60px; border: 3px solid #181c1b; background: #ddcfaa; transform: rotate(2deg); }
 .tour-counsel-character { width: 190px; height: 410px; position: absolute; z-index: 1; left: 22vw; bottom: 8vh; filter: drop-shadow(0 22px 28px rgba(2, 8, 12, .46)); }
 .tour-guide-avatar { width: 88px; height: 110px; position: absolute; z-index: 2; top: 35px; right: 24px; overflow: hidden; border: 1px solid rgba(47, 89, 83, .2); border-radius: 44% 44% 12px 12px; background: radial-gradient(circle at 50% 16%, rgba(255,255,255,.68), rgba(53,111,103,.12) 70%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.5); }
+.guided-tour-card:has(.tour-guide-avatar) .tour-chapters,
 .guided-tour-card:has(.tour-guide-avatar) .tour-card-heading,
 .guided-tour-card:has(.tour-guide-avatar) > h2,
-.guided-tour-card:has(.tour-guide-avatar) > p { padding-right: 88px; }
+.guided-tour-card:has(.tour-guide-avatar) > p { padding-right: 100px; }
 .tour-case-stream { position: absolute; left: 8vw; top: 14vh; display: flex; gap: 16px; opacity: .7; }
 .tour-case-stream i { width: 48px; height: 63px; display: grid; place-items: center; border: 1px solid rgba(226,201,139,.55); color: #d8bc78; background: rgba(20,39,47,.75); font-family: var(--font-pixel); font-size: 9px; font-style: normal; animation: tour-files 4.5s ease-in-out infinite; }
 .tour-case-stream i:nth-child(2) { animation-delay: -.9s; }
@@ -160,6 +207,57 @@
 .tour-types li span, .tour-types section > p { color: #435450; font-size: 12.5px; line-height: 1.45; }
 .tour-types section > p { margin: 0; }
 
+/* The chapter rail. Wraps rather than scrolls: a rail you have to scroll
+   sideways to see the end of is a rail whose last chapter is invisible, and
+   there are only ever six of them. */
+.tour-chapters { margin: -8px -4px 14px; display: flex; flex-wrap: wrap; gap: 5px; }
+.tour-chapters button {
+  min-height: 26px; padding: 0 9px;
+  border: 1px solid rgba(52, 75, 73, .2); border-radius: 999px;
+  color: #6b7a75; background: rgba(255,255,255,.3);
+  font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .06em;
+  cursor: pointer; transition: color .16s ease, border-color .16s ease, background .16s ease;
+}
+.tour-chapters button:hover { color: #23423e; border-color: rgba(52, 75, 73, .45); background: rgba(255,255,255,.7); }
+.tour-chapters button.is-current { color: #fdf8ea; border-color: #244c4b; background: linear-gradient(180deg, #337e76, #235e5a); }
+.guided-tour-mode-finish .tour-chapters { justify-content: center; }
+
+/* Three steps and a lock: the point of the picture is that Submit is the
+   fourth thing, not the first. */
+.tour-gate { margin-top: 18px; }
+.tour-gate ol { margin: 0; padding: 0; display: grid; gap: 7px; list-style: none; counter-reset: none; }
+.tour-gate li { padding: 10px 12px; display: grid; grid-template-columns: 24px 1fr; align-items: start; gap: 11px; border: 1px solid rgba(52, 75, 73, .2); border-radius: 8px; background: rgba(255,255,255,.36); }
+.tour-gate li b { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid rgba(47, 110, 102, .4); border-radius: 50%; color: #2c7f76; background: rgba(255,255,255,.6); font-family: var(--font-pixel); font-size: 9px; }
+.tour-gate li span { display: grid; gap: 3px; color: #5a6a65; font-size: 12.5px; line-height: 1.45; }
+.tour-gate li strong { color: #244540; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .04em; }
+.tour-gate li.is-gate { border-color: rgba(154, 108, 40, .42); background: rgba(200, 155, 75, .11); }
+.tour-gate li.is-gate b { color: #9a6c28; border-color: rgba(154, 108, 40, .5); }
+.tour-gate li.is-gate strong { color: #7a5620; }
+
+/* The form's shape in one line, sized by minutes, with the break where LSAC
+   puts it — after the second section, not the middle of the picture. */
+.tour-sitting { margin-top: 18px; }
+.tour-sitting ol { margin: 0; padding: 0; display: grid; grid-template-columns: 35fr 35fr 10fr 35fr; gap: 5px; list-style: none; }
+.tour-sitting li { min-width: 0; padding: 11px 4px; display: grid; justify-items: center; gap: 4px; border: 1px solid rgba(52, 75, 73, .28); border-radius: 7px; background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.16)); }
+.tour-sitting li b { max-width: 100%; overflow: hidden; color: #1b3f47; font-family: var(--font-pixel); font-size: 11px; letter-spacing: .03em; text-overflow: ellipsis; }
+.tour-sitting li span { color: #6d7d78; font-family: var(--font-pixel); font-size: 7.5px; white-space: nowrap; }
+.tour-sitting li.is-break { border-style: dashed; border-color: rgba(154, 108, 40, .45); background: rgba(200, 155, 75, .1); }
+.tour-sitting li.is-break b { color: #9a6c28; font-size: 8px; }
+.tour-sitting > p { margin: 9px 0 0; color: #6f7c77; font-size: 11.5px; line-height: 1.45; }
+
+/* The three states a district card can be in, in the colours the Districts
+   board actually uses, so the legend is recognisable when you get there. */
+.tour-board { margin-top: 17px; display: grid; gap: 7px; }
+.tour-board ul { margin: 0; padding: 0; display: grid; gap: 7px; list-style: none; }
+.tour-board li { padding: 10px 12px; display: grid; grid-template-columns: 104px 1fr; align-items: baseline; gap: 12px; border: 1px solid rgba(52, 75, 73, .2); border-left-width: 3px; border-radius: 8px; background: rgba(255,255,255,.36); }
+.tour-board li b { color: #55635f; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .05em; }
+.tour-board li span { color: #5a6a65; font-size: 12.5px; line-height: 1.45; }
+.tour-board li.is-held { border-left-color: #2f7f62; }
+.tour-board li.is-held b { color: #24614c; }
+.tour-board li.is-open { border-left-color: #c89b4b; }
+.tour-board li.is-open b { color: #8a611f; }
+.tour-board li.is-locked { border-left-color: rgba(52, 75, 73, .35); }
+
 .tour-promise { margin-top: 20px; padding: 14px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(56,81,77,.2); border-radius: 8px; color: #4c625e; background: rgba(255,255,255,.25); text-align: left; }
 .tour-promise svg { flex: 0 0 auto; color: #a57931; }
 .tour-promise strong { display: block; color: #244540; }
@@ -169,8 +267,11 @@
 .tour-question-meta svg { width: 15px; height: 15px; }
 .tour-question-demo > p { margin: 12px 0 13px; color: #293d3e; font-family: var(--font-display); font-size: 17px; font-weight: 600; line-height: 1.45; }
 .tour-answer-list { display: grid; gap: 7px; }
-.tour-answer-list button { min-height: 38px; padding: 7px 10px; display: grid; grid-template-columns: 27px 1fr auto; align-items: center; gap: 9px; border: 1px solid rgba(59,75,70,.22); border-radius: 6px; color: #475b57; background: rgba(255,255,255,.43); font-size: 12.5px; line-height: 1.35; text-align: left; cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
-.tour-answer-list button:hover:not(:disabled) { border-color: #3c8076; background: rgba(222,239,226,.74); transform: translateX(2px); }
+.tour-answer-list button { min-height: 38px; padding: 7px 10px; display: grid; grid-template-columns: 27px 1fr auto; align-items: center; gap: 9px; border: 1px solid rgba(59,75,70,.22); border-radius: 6px; color: #475b57; background: rgba(255,255,255,.43); font-size: 12.5px; line-height: 1.35; text-align: left; cursor: pointer; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+/* Marks the row from the inside rather than nudging it right. The nudge slid
+   the button 2px past its own list, which is a horizontal overflow in a card
+   that is not allowed to scroll sideways. */
+.tour-answer-list button:hover:not(:disabled) { border-color: #3c8076; background: rgba(222,239,226,.74); box-shadow: inset 3px 0 rgba(57, 125, 115, .5); }
 .tour-answer-list button.selected { border-color: #397d73; color: #244540; background: #dceade; box-shadow: inset 3px 0 #397d73; }
 .tour-answer-list button.correct { border-color: #2f7f62; background: #d9ead9; }
 .tour-answer-list button.incorrect { border-color: #9b5b4f; background: #eedbd3; }
@@ -201,6 +302,13 @@
 @keyframes tour-seal-turn { to { rotate: 360deg; } }
 @keyframes tour-reasoning-enter { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
 
+/* Below this width the card stops being a card beside the page and becomes a
+   sheet at the bottom of it. Every mode is listed, including `feature`, which
+   is eleven of the tour's steps: it was missing from the phone override in
+   `mobile.css` and those eleven were laid out to a different geometry from the
+   other seventeen at the same width. The tour's own stylesheet is now the only
+   sheet that positions this card at any width, so there is nothing left for a
+   second sheet to half-win. */
 @media (max-width: 760px) {
   .guided-tour-card,
   .guided-tour-card.place-left,
@@ -208,24 +316,104 @@
   .guided-tour-mode-premise .guided-tour-card,
   .guided-tour-mode-practice .guided-tour-card,
   .guided-tour-mode-feature .guided-tour-card,
-  .guided-tour-mode-finish .guided-tour-card { width: calc(100% - 24px); max-height: min(560px, calc(100dvh - 110px)); left: 12px; right: auto; top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); translate: none; overflow: auto; }
-  .guided-tour-card { padding: 23px 20px 18px; }
-  .tour-card-progress { margin: -23px -20px 20px; }
+  .guided-tour-mode-finish .guided-tour-card {
+    width: auto;
+    max-height: min(620px, calc(100dvh - 96px));
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    top: auto;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    translate: none;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .guided-tour-card { --tour-pad-x: 20px; --tour-pad-top: 23px; --tour-pad-bottom: 18px; }
   .guided-tour-card h2 { font-size: 29px; }
   .tour-cinematic { opacity: .72; }
   .tour-office-window { width: 86vw; height: 55vh; }
   .tour-desk { width: 82vw; }
   .tour-counsel-character { width: 150px; height: 320px; left: 42vw; bottom: 22vh; }
   .tour-guide-avatar { width: 70px; height: 88px; top: 28px; right: 16px; }
+  .guided-tour-card:has(.tour-guide-avatar) .tour-chapters,
   .guided-tour-card:has(.tour-guide-avatar) .tour-card-heading,
   .guided-tour-card:has(.tour-guide-avatar) > h2,
-  .guided-tour-card:has(.tour-guide-avatar) > p { padding-right: 70px; }
+  /* The portrait is 70px wide and sits 16px off the edge. Reserving exactly
+     70 left a zero-pixel gutter, and the chapter rail's longest chip landed
+     against the portrait's cheek at 390px. */
+  .guided-tour-card:has(.tour-guide-avatar) > p { padding-right: 98px; }
   .tour-loop { grid-template-columns: 1fr 1fr; }
   .tour-loop > i { display: none; }
   .tour-types { padding: 13px 14px; }
   .tour-types li { grid-template-columns: 76px 1fr; gap: 8px; }
   .tour-share-legend em { font-size: 7.5px; }
+  .tour-board li { grid-template-columns: 1fr; gap: 3px; }
+  .tour-sitting ol { grid-template-columns: 1fr 1fr; }
+  .tour-gate li { padding: 9px 10px; gap: 9px; }
   .tour-finish-seal { top: 28px; width: 130px; height: 130px; }
+}
+
+/* Phone proper: the sheet takes the full width it is allowed, and the body
+   type steps down. Only the numbers change — the geometry above still holds. */
+@media (max-width: 640px) {
+  .guided-tour-card,
+  .guided-tour-card.place-left,
+  .guided-tour-card.place-right,
+  .guided-tour-mode-premise .guided-tour-card,
+  .guided-tour-mode-practice .guided-tour-card,
+  .guided-tour-mode-feature .guided-tour-card,
+  .guided-tour-mode-finish .guided-tour-card {
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    /* Clears the 68px dock plus its 8px inset with room to breathe; the tour
+       must never sit on top of the navigation it is describing. */
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 84px - 16px - env(safe-area-inset-bottom));
+  }
+  .guided-tour-card { --tour-pad-x: 16px; --tour-pad-top: 20px; --tour-pad-bottom: 16px; }
+  .guided-tour-card h2 { font-size: 27px; }
+  .guided-tour-card > p { font-size: 14px; line-height: 1.52; }
+  .tour-chapters button { min-height: 30px; }
+}
+
+/* A short viewport that is not a narrow one: a phone held sideways, and a
+   desktop window dragged down to a strip.
+   
+   Above 760px the card hangs from a ceiling of `clamp(104px, 16vh, 170px)` and
+   takes whatever is left below it. At 390px tall that leaves 266px, which is
+   correct — the card scrolls and the footer is sticky, so Next stays reachable
+   inside it. What went wrong at 844x390 is that a second sheet was still
+   sizing the card and won on specificity, giving it 366px of height under a
+   104px ceiling: 80px of card, including Next, below the bottom of the screen
+   with nothing to scroll. That copy is gone.
+   
+   The ceiling is still the wrong shape for a landscape phone, though. It puts
+   two thirds of the height above the card and none below, so the card is
+   anchored to the bottom here instead, clearing whatever dock the width
+   implies — the tokens fall back to zero above the dock's own cutover, so one
+   rule covers 844x390, where there is a dock, and 932x430, where there is not.
+   Horizontal placement is left alone: `place-left` and `place-right` are how
+   the card stays off the thing it is pointing at, and that still works. */
+@media (min-width: 761px) and (max-height: 560px) {
+  .guided-tour-card,
+  .guided-tour-card.place-left,
+  .guided-tour-card.place-right,
+  .guided-tour-mode-premise .guided-tour-card,
+  .guided-tour-mode-practice .guided-tour-card,
+  .guided-tour-mode-feature .guided-tour-card,
+  .guided-tour-mode-finish .guided-tour-card {
+    top: auto;
+    bottom: calc(12px + var(--mobile-dock-height, 0px) + var(--mobile-safe-bottom, 0px));
+    max-height: calc(100dvh - 24px - var(--mobile-dock-height, 0px) - var(--mobile-safe-bottom, 0px));
+  }
+  /* The three centred modes keep their horizontal centring and give up the
+     vertical half of the translate, which was pairing with a `top` that no
+     longer exists. */
+  .guided-tour-mode-practice .guided-tour-card,
+  .guided-tour-mode-feature .guided-tour-card,
+  .guided-tour-mode-finish .guided-tour-card { translate: -50% 0; }
+  .guided-tour-mode-premise .guided-tour-card { translate: none; }
+  .guided-tour-card { --tour-pad-top: 20px; --tour-pad-bottom: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

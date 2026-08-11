@@ -117,3 +117,30 @@
   .firm-tabs button.active { min-height: 52px; }
   .firm-tabs button.active::after,
   .firm-tabs button::before { display: none; } }
+
+/* ---------------------------------------------------------------------------
+   Thumb-sized targets on the Firm page, and why they are here rather than in
+   mobile.css.
+
+   mobile.css already raises `.catalog-view-buttons button` and the toolbar
+   select to 40px, and it never took effect: route stylesheets are split out and
+   injected *after* the entry sheet, so `firm-page.css`'s own
+   `min-height: 31px` — same specificity, later in the cascade — wins every
+   time. The rule has to live in the route's own mobile sheet to land. This is
+   the cascade trap the brief names, and the sweep found it: view filters at
+   31px, the address select at 33, the region rail at 36 and the map pin at 30,
+   on every touch width.
+
+   On the pointer rather than on the width, because a phone turned sideways is
+   844 CSS pixels wide and still has no cursor.
+   --------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  .catalog-view-buttons button,
+  .catalog-toolbar label select,
+  .retainer-regions button,
+  .retainer-plot-buy button,
+  .client-roster-go { min-height: 44px; }
+  .retainer-plot-gate { min-height: 44px; }
+  /* The pin still draws at 22; the button around it grows. */
+  .retainer-plot-map { width: 44px; height: 44px; }
+}

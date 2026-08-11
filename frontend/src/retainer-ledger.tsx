@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { MapPin, Stamp } from 'lucide-react'
+import { ChevronRight, MapPin, Stamp } from 'lucide-react'
 
 import { api } from './api'
 import { formatMoney } from './format'
 import { useRollup, useRollupInt } from './motion'
 import { useSound } from './sound'
-import type { GameState, TerritoryDistrict } from './types'
+import type { GameAsset, GameState, TerritoryDistrict } from './types'
 import { storeGame } from './pages/shared'
 
 /* Standing counsel, in the tab that houses firm interactions.
@@ -60,7 +60,7 @@ function reliefPercent(bps: number) {
   return (bps / 100).toFixed(bps >= 1000 ? 0 : 1)
 }
 
-function DistrictPlot({ district, signing, justSigned, asked, onSign, onShowOnMap }: {
+function DistrictPlot({ district, signing, justSigned, asked, gate, onSign, onShowOnMap, onShowGate }: {
   district: TerritoryDistrict
   signing: boolean
   justSigned: boolean
@@ -68,8 +68,12 @@ function DistrictPlot({ district, signing, justSigned, asked, onSign, onShowOnMa
       scene washes the chosen district with, so the two surfaces name the same
       row in the same colour. */
   asked: boolean
+  /** The network this district is waiting on and the lock line that says so,
+      when that is what is holding it up and the player does not own it yet. */
+  gate: { asset: GameAsset; lock: string } | null
   onSign: (district: TerritoryDistrict) => void
   onShowOnMap: (district: TerritoryDistrict) => void
+  onShowGate: (asset: GameAsset) => void
 }) {
   const state = district.owned ? 'held' : district.available ? 'open' : 'locked'
   const card = useRef<HTMLElement | null>(null)
@@ -100,7 +104,21 @@ function DistrictPlot({ district, signing, justSigned, asked, onSign, onShowOnMa
           <span>{reliefPercent(district.rent_relief_bps)}% of the lease</span>
         </p>
       ) : district.locks.length ? (
-        <p className="retainer-plot-lock">{district.locks.join(' · ')}</p>
+        /* A lock that names a network is the one lock earning more money will
+           never clear, and the card that clears it is on this same screen,
+           some way down the catalog under two filters that may be hiding it.
+           So it is a control rather than a sentence: the same "find that card"
+           trip the staff roster makes, from the row that needs it. The other
+           two locks — a tier, a reputation figure — stay plain text, because
+           there is nothing on this page to send anyone to. */
+        <p className="retainer-plot-lock">
+          {district.locks.filter((lock) => lock !== gate?.lock).join(' · ')}
+          {gate && (
+            <button type="button" className="retainer-plot-gate" onClick={() => onShowGate(gate.asset)}>
+              Requires the {gate.asset.name} <ChevronRight size={11} />
+            </button>
+          )}
+        </p>
       ) : (
         <div className="retainer-plot-buy">
           <b>{formatMoney(district.cost, true)}</b>
@@ -114,13 +132,39 @@ function DistrictPlot({ district, signing, justSigned, asked, onSign, onShowOnMa
   )
 }
 
-export function RetainerLedger({ game, highlightKey, onShowOnMap }: {
+/* Which network a district is waiting on.
+ *
+ * The server states the gate as prose — "Requires the local bar association" —
+ * and publishes no key for it, so the name is matched back against the catalog
+ * rather than looked up. Deliberately strict: only an unowned connection whose
+ * whole lowercased name is one of the lock lines counts, and anything that does
+ * not match leaves the lock exactly as the server wrote it. A wrong link here
+ * would be worse than no link, and the failure mode of a miss is the sentence
+ * that was already there. */
+function gateNetwork(game: GameState, district: TerritoryDistrict) {
+  if (!district.locks.length) return null
+  for (const lock of district.locks) {
+    const named = lock.replace(/^Requires the /, '').toLowerCase()
+    if (named === lock.toLowerCase()) continue
+    const asset = game.catalog.assets.find(
+      (entry) => entry.type === 'connection' && !entry.owned && entry.name.toLowerCase() === named,
+    )
+    if (asset) return { asset, lock }
+  }
+  return null
+}
+
+export function RetainerLedger({ game, highlightKey, onShowOnMap, onShowGate }: {
   game: GameState
   /** A district the map named on the way here, by selecting it on the ground.
       The other half of `onShowOnMap`: that sends a row to the map, this is the
       map sending a place back, and both land on the same marked row. */
   highlightKey?: string | null
   onShowOnMap: (district: TerritoryDistrict) => void
+  /** Send the reader to the catalog card for the network a district is waiting
+      on. The Firm page owns that trip because it owns the filters that may be
+      hiding the card. */
+  onShowGate: (asset: GameAsset) => void
 }) {
   const queryClient = useQueryClient()
   const { play } = useSound()
@@ -258,8 +302,10 @@ export function RetainerLedger({ game, highlightKey, onShowOnMap }: {
             signing={pendingKey === district.key && secure.isPending}
             justSigned={justSigned === district.key}
             asked={district.key === highlightKey}
+            gate={gateNetwork(game, district)}
             onSign={sign}
             onShowOnMap={onShowOnMap}
+            onShowGate={onShowGate}
           />
         ))}
       </div>
