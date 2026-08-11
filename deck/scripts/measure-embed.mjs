@@ -15,36 +15,21 @@
  * 3. **The app inside the frame** — the app's own margins and max-widths, which no
  *    amount of deck layout can fix.
  */
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { launchChromium } from './playwright-env.mjs'
+
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 const APP = 'http://localhost:5173'
 const BASE = 'http://localhost:5180'
 const OUT = resolve(DECK_DIR, '.deck-shots/measure')
 mkdirSync(OUT, { recursive: true })
 
-function findChrome() {
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  const builds = readdirSync(cache).filter((n) => /^chromium-\d+$/.test(n))
-    .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  throw new Error('no chromium')
-}
-
 const SLIDES = ['demo-case-answer', 'demo-case-verdict-review', 'demo-mega-litigation', 'demo-office-transformation', 'demo-map-and-firm']
 
-const { chromium } = await import(PLAYWRIGHT)
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+const browser = await launchChromium()
 const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 })
 const page = await context.newPage()
 

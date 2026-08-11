@@ -97,28 +97,14 @@
  * throwaway browser profile, and `/v1/auth/dev` is exactly the affordance the
  * runbook tells a human to click.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { cpus, homedir, loadavg } from 'node:os'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpus, loadavg } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
+import { launchChromium } from './playwright-env.mjs'
 
-function findChrome() {
-  if (process.env.DECK_CHROME) return process.env.DECK_CHROME
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  let builds = []
-  try {
-    builds = readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  } catch { /* fall through */ }
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  return `${cache}/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-}
+const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const flags = new Map(process.argv.slice(2).map((raw) => {
   const match = /^--([a-z][a-z0-9-]*)(?:=(.*))?$/.exec(raw)
@@ -216,11 +202,7 @@ const ok = (text) => { passes.push(text); console.log(`  \u2713 ${text}`) }
  */
 const note = (text) => { notes.push(text); }
 
-const { chromium } = await import(PLAYWRIGHT)
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+const browser = await launchChromium()
 const context = await browser.newContext({
   viewport: { width: 1920, height: 1080 },
   deviceScaleFactor: 1,

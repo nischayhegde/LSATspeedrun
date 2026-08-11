@@ -32,28 +32,12 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-/** Playwright is not a deck dependency; the other harnesses share this install. */
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
+import { launchChromium } from './playwright-env.mjs'
 
-function findChrome() {
-  if (process.env.DECK_CHROME) return process.env.DECK_CHROME
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  let builds = []
-  try {
-    builds = readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  } catch { /* fall through to the guess below */ }
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  return `${cache}/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-}
+const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const flags = new Map(process.argv.slice(2).map((raw) => {
   const match = /^--([a-z][a-z0-9-]*)(?:=(.*))?$/.exec(raw)
@@ -326,13 +310,10 @@ const problems = []
 const fail = (text) => { problems.push(text); console.error(`  \u2717 ${text}`) }
 const ok = (text) => console.log(`  \u2713 ${text}`)
 
-const { chromium } = await import(PLAYWRIGHT)
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  // The office and map are Three.js scenes; without a GL backend they render
-  // empty and the still would be a blank frame that looks fine in a file list.
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+// The office and map are Three.js scenes; without a GL backend they render
+// empty and the still would be a blank frame that looks fine in a file list.
+// `launchChromium` passes the SwiftShader flags by default.
+const browser = await launchChromium()
 const context = await browser.newContext({
   viewport: LOGICAL,
   deviceScaleFactor: SCALE,

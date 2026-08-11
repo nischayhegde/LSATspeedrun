@@ -22,28 +22,9 @@
  * Usage: node scripts/walk.mjs [--base=url] [--mash=n]
  */
 
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { mkdirSync } from 'node:fs'
 
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-const { chromium } = await import(PLAYWRIGHT)
-
-/** Named outright rather than resolved by channel, for the reason `shoot.mjs` gives. */
-function findChrome() {
-  if (process.env.DECK_CHROME) return process.env.DECK_CHROME
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  let builds = []
-  try {
-    builds = readdirSync(cache)
-      .filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  } catch { /* fall through to the pinned path */ }
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  return `${cache}/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-}
+import { launchChromium } from './playwright-env.mjs'
 
 const flags = new Map(
   process.argv.slice(2).map((raw) => {
@@ -68,10 +49,7 @@ const problems = []
 const note = (line) => console.log(line)
 const fail = (line) => { problems.push(line); console.log(`  FAIL  ${line}`) }
 
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+const browser = await launchChromium()
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
 
 const pageErrors = []

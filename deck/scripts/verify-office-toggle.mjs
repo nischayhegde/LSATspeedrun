@@ -48,29 +48,14 @@
  * is opened as `localhost` — never `127.0.0.1`, whose cookies are withheld from
  * the framed app. See `DEMO-NOTES.md` §8.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { cpus, homedir, loadavg } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { cpus, loadavg } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-/** Playwright is not a deck dependency; the other harnesses share this install. */
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
+import { launchChromium } from './playwright-env.mjs'
 
-function findChrome() {
-  if (process.env.DECK_CHROME) return process.env.DECK_CHROME
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  let builds = []
-  try {
-    builds = readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  } catch { /* fall through to the guess below */ }
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  return `${cache}/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-}
+const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const flags = new Map(process.argv.slice(2).map((raw) => {
   const match = /^--([a-z][a-z0-9-]*)(?:=(.*))?$/.exec(raw)
@@ -190,13 +175,10 @@ for (const file of ['demo-office-tier0.png', 'demo-office-tier14.png']) {
   }
 }
 
-const { chromium } = await import(PLAYWRIGHT)
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  // The office is a Three.js scene; with no GL backend it renders empty and
-  // every frame below would be a blank rectangle that looks fine in a file list.
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+// The office is a Three.js scene; with no GL backend it renders empty and every
+// frame below would be a blank rectangle that looks fine in a file list.
+// `launchChromium` passes the SwiftShader flags by default.
+const browser = await launchChromium()
 const context = await browser.newContext({
   viewport: { width: 1920, height: 1080 },
   deviceScaleFactor: 1,
