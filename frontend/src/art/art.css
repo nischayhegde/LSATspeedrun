@@ -231,18 +231,28 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 
 /* ----------------------------------------------------- scene frames */
 
-.game-viewport.av-viewport { border: 1px solid #0a111c; border-radius: 20px; background: var(--av-night); box-shadow: 0 26px 64px rgba(6, 10, 18, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05); isolation: isolate; image-rendering: auto; }
-.office-scene.av-scene { border: 1px solid #0a111c; border-radius: 20px; box-shadow: 0 26px 64px rgba(6, 10, 18, 0.45); background: var(--av-night); transform: none; image-rendering: auto; }
+/* A scene is a framed picture hung on the page, and every framed picture in
+   the app is now hung the same way: one warm ink hairline, the card radius,
+   a brass rule just inside the glass, and a real drop. What these two carried
+   instead was `#0a111c` — a cold near-black nothing else uses — at a 20px
+   radius that was neither the card's 16px nor anything else's, and a shadow
+   written out longhand. The frame is interface, not render: the pipeline
+   inside it is untouched. */
+.game-viewport.av-viewport { border: 1px solid var(--ink-line-strong); border-radius: var(--r-card); background: var(--av-night); box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .18), var(--el-3); isolation: isolate; image-rendering: auto; }
+.office-scene.av-scene { border: 1px solid var(--ink-line-strong); border-radius: var(--r-card); background: var(--av-night); box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .18), var(--el-3); transform: none; image-rendering: auto; }
 
 /* character panel + office duo */
 .av-office-duo { display: flex; gap: 18px; align-items: stretch; }
 .av-office-duo .office-explorer { flex: 1; min-width: 0; }
 .av-character-panel {
   position: relative; flex: 0 0 262px; display: flex; flex-direction: column; overflow: visible; isolation: isolate;
-  border: 0; border-radius: 20px; background: transparent; box-shadow: none;
+  border: 0; border-radius: var(--r-card); background: transparent; box-shadow: none;
   animation: av-scene-reveal 0.9s ease both;
 }
-.av-character-panel::before { content: ""; position: absolute; inset: 0; z-index: 0; border: 1px solid #0a111c; border-radius: inherit; pointer-events: none; background: radial-gradient(115% 78% at 50% 8%,#d7c29c,#786759 51%,#1b2833 100%); box-shadow: 0 26px 64px rgba(6,10,18,.45),inset 0 0 0 1px rgba(255,255,255,.3); }
+/* Third frame in the same row as the two above, so it is hung the same way.
+   Its inner rule stays white rather than brass: the gradient behind it runs to
+   parchment at the top, and a warm line on warm paper disappears. */
+.av-character-panel::before { content: ""; position: absolute; inset: 0; z-index: 0; border: 1px solid var(--ink-line-strong); border-radius: inherit; pointer-events: none; background: radial-gradient(115% 78% at 50% 8%,#d7c29c,#786759 51%,#1b2833 100%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), var(--el-3); }
 .av-character-panel::after { content: ""; position: absolute; inset: 1px; z-index: 1; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg,rgba(255,240,205,.07),transparent 36%,rgba(5,10,16,.24)),radial-gradient(120% 105% at 50% 35%,transparent 61%,rgba(4,9,14,.2) 100%); }
 .av-hero-stage { position: relative; z-index: 2; flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; padding: 12px 10px 0; overflow: visible; }
 /* The former inset lighting rectangle created a visible box behind the

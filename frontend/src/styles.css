@@ -863,17 +863,31 @@ h1, h2, h3 { letter-spacing: -.035em; }
   .economy-delta { animation: economy-delta-hold 1.6s steps(1) both; }
   @keyframes economy-delta-hold { from { opacity: 1; } 99% { opacity: 1; } to { opacity: 0; } }
 }
-.game-viewport { position: relative; overflow: hidden; border: 4px solid #080c13; background: #172538; box-shadow: inset 0 0 0 3px #34465a, 10px 10px 0 #080c13; isolation: isolate; }
+/* The frame around the explorable office. It was a 4px cold-black box on a
+   `10px 10px` hard offset with a steel inner bevel — a pixel cabinet holding an
+   illustrated room. `art.css` has drawn the real frame since the illustrated
+   pass landed (`.game-viewport.av-viewport`, one hairline and a real drop) and
+   the markup always carries both classes, so this rule has been invisible for
+   a while; it is restated in the same hand so the two agree if the modifier
+   ever comes off. */
+.game-viewport { position: relative; overflow: hidden; isolation: isolate; border: 1px solid var(--ink-line-strong); border-radius: var(--r-card); background: var(--night); box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .18), var(--el-3); }
 /* Taller than it was: with the greeting band gone, the room is what the freed
    height is for. */
 .office-explorer { aspect-ratio: 16 / 9.4; min-height: 640px; }@keyframes office-cloud { to { transform: translateX(420px); } }@keyframes office-rain { to { transform: translate(-12px, 180px); } }@keyframes lamp-pixel-flicker { 46% { opacity: 1; } 48% { opacity: .25; } 50% { opacity: .8; } }@keyframes screen-glow { 50% { color: #f4c95e; background: #2b5660; } }@keyframes printer-blink { 50% { background: #edc45d; } }
 .trophy-case { width: 13%; height: 18%; padding: 9px; position: absolute; z-index: 3; left: 67%; top: 6%; display: flex; align-items: end; justify-content: space-around; border: 4px solid #35261c; background: rgba(28,43,51,.82); box-shadow: inset 0 0 0 3px #bc8d3d; }
 .trophy-case i { color: #f0bd50; font-family: var(--font-pixel); font-size: 19px; font-style: normal; text-shadow: 3px 3px #7d5527; }@keyframes clock-hand { to { transform: rotate(360deg); } }@keyframes npc-idle { 50% { transform: translateY(-2px); } }
 @keyframes client-wait { 50% { transform: rotate(2deg); } }@keyframes quest-bounce { 50% { transform: translateY(-5px); } }.world-zone { width: 32px; height: 32px; padding: 0; position: absolute; z-index: 18; transform: translate(-50%, -50%); border: 0; background: transparent; }
-.world-zone > i { width: 18px; height: 10px; display: block; position: absolute; left: 7px; top: 11px; border: 3px solid #f4cd66; border-radius: 50%; background: rgba(238,196,89,.18); box-shadow: 0 0 0 4px rgba(244,205,102,.08); animation: zone-pulse 1.4s steps(3) infinite; }
-.world-zone > span { min-width: 175px; padding: 8px 10px; display: none; position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); border: 3px solid #0e131d; color: #f7e8b9; background: #17283a; box-shadow: inset 0 0 0 2px #40576a, 4px 4px #0e131d; font-family: var(--font-pixel); text-align: left; }
+/* The ring keeps its weight and its gold — it is a marker painted onto the
+   floor of a drawn room and it has to survive being read at 18px over
+   furniture — but it is the one brass the app uses now, and it breathes
+   instead of ticking in three frames. */
+.world-zone > i { width: 18px; height: 10px; display: block; position: absolute; left: 7px; top: 11px; border: 3px solid var(--brass-bright); border-radius: 50%; background: rgba(232, 200, 124, .18); box-shadow: 0 0 0 4px rgba(232, 200, 124, .08); animation: zone-pulse 1.6s ease-in-out infinite; }
+/* Its label was the last pixel tooltip in the app: a 3px cold-black box with a
+   steel inner bevel on a 4px hard offset, floating over the illustrated room.
+   Same panel, hairline and drop as every other thing that hovers. */
+.world-zone > span { min-width: 175px; padding: 9px 11px; display: none; position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); border: 1px solid var(--hairline); border-radius: var(--r-control); color: #f7e8b9; background: linear-gradient(170deg, #1d3245, #132433); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), var(--el-2); font-family: var(--font-hud); text-align: left; }
 .world-zone:hover > span { display: block; }
-.world-zone b, .world-zone small { display: block; }.world-zone b { color: #f2c75b; font-size: 10.5px; text-transform: uppercase; }.world-zone small { margin-top: 4px; color: #a9c0c7; font-size: 10px; }
+.world-zone b, .world-zone small { display: block; }.world-zone b { color: var(--brass-bright); font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; }.world-zone small { margin-top: 4px; color: #a9c0c7; font-size: 10px; }
 @keyframes zone-pulse { 50% { transform: scale(1.35); opacity: .5; } }
 
 /* Four 32px buttons float over the 3D office, and each one is 32px in which
@@ -905,9 +919,19 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .empire-game-page { width: 100%; min-height: calc(100vh - 68px); padding: 27px clamp(16px, 2.7vw, 44px) 48px; color: #f6e8bb; background: #101724; }
 /* Just the page title here — the map's own headquarters panel just below
    carries every stat, so this bar stays plain text with no boxed card. */
-@keyframes water-shimmer { 50% { transform: translateX(12px); } }@keyframes boat-bob { 50% { transform: translateY(5px); } }@keyframes map-train { from { transform: translate(-220px, 55px); } to { transform: translate(1150px, -120px); } }@keyframes map-cloud { to { transform: translateX(1500px); } }/* Pixel treatment for the rest of the game */.crest { border: 4px solid #141721; border-radius: 0; background: #1e3548; box-shadow: inset 0 0 0 2px #dbad4e, 5px 5px #141721; }
-.office-scene.pixel-scene { border: 4px solid #080c13; border-radius: 0; box-shadow: inset 0 0 0 3px #34465a, 8px 8px #080c13; }
-.case-lobby, .firm-page { color: #2a2830; }.active-matter-copy > span, .active-matter-fee > span, .matter-tag small, .question-progress, .case-timer small { font-family: var(--font-pixel); }.choice { border: 3px solid #544937; border-radius: 0; box-shadow: 3px 3px #544937; }
+@keyframes water-shimmer { 50% { transform: translateX(12px); } }@keyframes boat-bob { 50% { transform: translateY(5px); } }@keyframes map-train { from { transform: translate(-220px, 55px); } to { transform: translate(1150px, -120px); } }@keyframes map-cloud { to { transform: translateX(1500px); } }
+/* What was left of a block headed "Pixel treatment for the rest of the game".
+   Three of its four rules were square-cornered pixel boxes drawn over surfaces
+   that have since been redrawn — the crest (`login-page.css` now draws it as
+   the firm's brass plaque), the scene frame (`art.css` hangs it, and nothing
+   has carried `.pixel-scene` for some time) and the answer choice
+   (`case-instrument.css` draws it as a hairline row inside the case file). All
+   three lost to the later sheet on load order, so removing them changes
+   nothing on screen today and removes three traps for the next person who
+   wonders why their card has square corners. What is kept is the pair of
+   colour and type rules the block also carried, which nothing else states. */
+.case-lobby, .firm-page { color: #2a2830; }
+.active-matter-copy > span, .active-matter-fee > span, .matter-tag small, .question-progress, .case-timer small { font-family: var(--font-hud); }
 
 @media (max-width: 1120px) {
   .office-explorer { min-height: 520px; }}
