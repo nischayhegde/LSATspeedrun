@@ -424,14 +424,19 @@ body {
 
    The header is no longer in this list: it is the one surface here that is
    full-width, sticky and in front of the whole session, and its background was
-   opaque enough that the blur was invisible. See styles.css. */
+   opaque enough that the blur was invisible. See styles.css.
+
+   Neither is anything belonging to the world map. Every one of those panels
+   floats over a WebGL canvas that redraws continuously, which is the worst
+   backdrop a blur can have: it has to re-sample what is behind it whenever that
+   changes, and behind these it changes every frame. The unprefixed rules went
+   with them in unified-empire-map.css, and leaving the prefixed copies here
+   would have kept the whole cost on the one platform where the compositor is
+   least able to absorb it. `.uw-scene-view-tabs`, `.uw-map-toolbar button`,
+   `.uw-level-navigator` and `.uw-location-card` were all in this list. */
 @supports (-webkit-backdrop-filter: blur(1px)) {
-  .office-view-rail,
-  .uw-scene-view-tabs { -webkit-backdrop-filter: blur(10px); }
+  .office-view-rail { -webkit-backdrop-filter: blur(10px); }
   .office-inventory-panel { -webkit-backdrop-filter: blur(18px); }
-  .uw-map-toolbar button { -webkit-backdrop-filter: blur(8px); }
-  .uw-level-navigator,
-  .uw-location-card { -webkit-backdrop-filter: blur(12px); }
 }
 
 @media (pointer: coarse) {
