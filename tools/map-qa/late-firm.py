@@ -35,12 +35,15 @@ from app.game import (  # noqa: E402
     DISTRICTS,
     FIRM_TIERS,
     ASSETS,
+    WARDROBE,
+    _wardrobe_unlocked,
     advance_firm,
     create_profile,
     purchase_asset,
     secure_district,
+    wardrobe_selection,
 )
-from app.models import User  # noqa: E402
+from app.models import PlayerStoryState, User  # noqa: E402
 
 EMAIL = (sys.argv[1] if len(sys.argv) > 1 else "late-firm@localhost.test").strip().lower()
 # Enough to buy the whole catalog several times over, and to keep buying after
@@ -127,6 +130,27 @@ def main() -> int:
             region = next(item["region"] for item in DISTRICTS if item["key"] == key)
             by_region[region] = by_region.get(region, 0) + 1
         print(f"districts {len(held)}/{len(DISTRICTS)} {by_region}")
+
+        # The wardrobe's own gates, which tiers and assets do not cover: four
+        # pieces are earned by settled cases and two by resolving a chapter.
+        # `set_wardrobe` refuses a locked key, so a probe that wants to equip
+        # every piece through the real endpoint needs them all open. Cases are a
+        # counter and chapters are a list, so both are written directly; nothing
+        # here is claiming the play happened, only that the wardrobe is reachable.
+        cases = max(int(item["unlock"]["value"]) for item in WARDROBE if item["unlock"]["kind"] == "cases")
+        profile.total_cases = max(profile.total_cases, cases)
+        chapters = sorted({str(item["unlock"]["value"]) for item in WARDROBE if item["unlock"]["kind"] == "chapter"})
+        state = profile.story_state
+        if not state:
+            state = PlayerStoryState(profile=profile)
+            db.session.add(state)
+        seen = list(state.seen_chapters_json or [])
+        state.seen_chapters_json = seen + [key for key in chapters if key not in seen]
+        db.session.commit()
+        locked = [item["key"] for item in WARDROBE if not _wardrobe_unlocked(item, profile)]
+        print(f"wardrobe {len(WARDROBE) - len(locked)}/{len(WARDROBE)} unlocked"
+              + (f", still locked: {', '.join(locked)}" if locked else ""))
+        print(f"wearing {wardrobe_selection(profile)}")
         print(f"\n{EMAIL} is at tier {profile.office_tier}. Probe it with:")
         print(f"  MAPS_EMAIL={EMAIL} node tools/map-qa/landmarks.mjs")
     return 0
