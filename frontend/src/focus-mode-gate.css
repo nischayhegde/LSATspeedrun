@@ -69,6 +69,13 @@
   text-transform: none;
   text-shadow: 0 2px 0 rgba(6, 11, 20, .45);
 }
+/* The heading is `{route.name} is put away.`, and every route name starts with
+   a lower-case "the" so the sentence in the paragraph below reads correctly
+   ("…hides upgrades, staff…. That is why the Firm screen has no nav entry").
+   That was invisible while the line was set in an uppercase HUD face and looks
+   like a typo now it is a sentence, so the sentence is capitalised where it is
+   displayed rather than the data being bent to suit one of its two readings. */
+.focus-gate h1::first-letter { text-transform: uppercase; }
 
 .focus-gate p {
   max-width: var(--prose-measure);
