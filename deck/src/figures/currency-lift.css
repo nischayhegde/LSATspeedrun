@@ -40,7 +40,11 @@
 }
 
 .fig-cl-lede {
-  margin: 0;
+  /* The extra step below is the room the control's name needs. That name is
+     positioned off the dashed rule rather than laid out in the column, so it
+     costs the flow nothing and the flow gave it nothing: at one step of gap it
+     printed on top of this sentence's descenders. */
+  margin: 0 0 var(--s-3);
   font-size: var(--fig-label);
   line-height: 1.25;
   color: var(--on-field-dim);
@@ -106,13 +110,27 @@
   top: calc(var(--fig-cl-row-gap) / -2);
   bottom: calc(var(--fig-cl-row-gap) / -2);
   width: 0;
+}
+
+/* The rule is faint; its label is not. These were one element, so the .62 that
+   holds a dashed control line back from the bars it is a reference for was also
+   being applied to the only words naming what that line is — dim ink at 62% on
+   beige, in the smallest face in the figure. Two elements, two opacities. */
+.fig-cl-gate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   border-left: 1px dashed currentColor;
   opacity: .62;
 }
 
+/* Clear of the measure label above it, which gets the gap for it — see the
+   margin on `.fig-cl-lede`. At one step the two sat close enough that they
+   read as one wrapped caption and the eye had to separate a sentence about
+   what is counted from a two-word name for a control line. */
 .fig-cl-gate span {
   position: absolute;
-  bottom: calc(100% + .25em);
+  bottom: calc(100% + .35em);
   left: 0;
   transform: translateX(-50%);
   font-family: var(--font-pixel);
