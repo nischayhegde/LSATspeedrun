@@ -14,7 +14,7 @@
  *               the code rather than of how loaded the machine was.
  */
 import { chromium } from '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -33,8 +33,18 @@ export const OUT = process.env.MAPS_OUT || fileURLToPath(new URL('../../.maps', 
 // resolves to the x64 build on this machine and then reports the browser as not
 // installed, which reads like a missing download rather than an architecture
 // mismatch and costs a run to work out.
+const BUNDLED = `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+/**
+ * Stock Chrome, as the fallback.
+ *
+ * The `ms-playwright` cache is 400 MB of a disk that has been at 99% all day,
+ * and it was deleted out from under a running measurement this evening to
+ * reclaim space — which presents as "executable doesn't exist" and reads like a
+ * broken harness rather than like the disk. Re-downloading it costs back the
+ * space somebody deliberately freed, so prefer the browser already installed.
+ */
 export const CHROME = process.env.MAPS_CHROME
-  || `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+  || (existsSync(BUNDLED) ? BUNDLED : '/Applications/Google Chrome/Google Chrome.app/Contents/MacOS/Google Chrome')
 
 /** Region key to the label its navigation button carries. */
 export const TABS = {
