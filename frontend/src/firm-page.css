@@ -208,12 +208,21 @@
 .ledger-rule { width: min(480px, 76%); margin-top: 14px; display: flex; align-items: center; gap: 8px; color: #9b493c; }
 .ledger-rule i { height: 2px; flex: 1; background: repeating-linear-gradient(90deg, #9b493c 0 11px, transparent 11px 15px); }
 .ledger-rule span { font-family: Georgia, serif; font-size: 19px; font-weight: 900; }
-.firm-wallet { min-width: 246px; padding: 20px 18px 16px; position: relative; overflow: visible; border-color: #131018; color: #f4e4b7; background-color: #233e4d; background-image: linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px); background-size: 7px 7px; box-shadow: inset 0 0 0 3px #4c6872, 6px 6px #19141a; }
+/* Restated below the re-inking block above because this rule is later in the
+   file and was quietly putting the cold `#131018` outline and the flat
+   `#19141a` offset back on the one panel that block had just taken them off. */
+.firm-wallet { min-width: 246px; padding: 20px 18px 16px; position: relative; overflow: visible; border-color: var(--ink); color: #f4e4b7; background-color: #233e4d; background-image: linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px); background-size: 7px 7px; box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .26), 6px 6px rgba(27, 26, 36, .5), var(--el-2); }
 .firm-wallet::after { content: "TREASURY"; position: absolute; right: 10px; top: 9px; color: rgba(234,205,128,.24); font-family: var(--font-pixel); font-size: 9.5px; writing-mode: vertical-rl; }
-.firm-wallet strong { color: #f1cb69; font-size: 27px; text-shadow: 3px 3px #111a23; }
+.firm-wallet strong { color: #f1cb69; font-size: 27px; text-shadow: 0 2px 0 rgba(12, 20, 30, .55); }
+.firm-wallet small { color: rgba(234, 205, 128, .72); }
 .firm-wallet > span { color: #efe0ad; }
-.wallet-clasp { width: 36px; height: 20px; position: absolute; left: -13px; top: calc(50% - 10px); border: 3px solid #382816; background: #c99742; box-shadow: inset -4px -3px #8f5f26; }
-.wallet-clasp i { width: 5px; height: 5px; position: absolute; top: 5px; border: 1px solid #5d3e1e; background: #f1cb6a; }.wallet-clasp i:first-child { left: 5px; }.wallet-clasp i:last-child { right: 5px; }
+/* The clasp holding the treasury onto the page. It was drawn as a pixel
+   sprite — a flat brown box, a two-tone `inset -4px -3px` bevel and two square
+   studs — which is a different hand from the brass the same page draws its
+   plates, tabs and rules in. Same metal as everything else now: the plate
+   gradient inside an ink hairline, lit along the top edge, with round rivets. */
+.wallet-clasp { width: 36px; height: 20px; position: absolute; left: -13px; top: calc(50% - 10px); border: 1px solid var(--ink-line-strong); border-radius: 4px; background: var(--brass-plate); box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1); }
+.wallet-clasp i { width: 5px; height: 5px; position: absolute; top: 6px; border-radius: 50%; background: rgba(74, 48, 8, .55); box-shadow: inset 0 -1px 0 rgba(255, 246, 220, .4); }.wallet-clasp i:first-child { left: 6px; }.wallet-clasp i:last-child { right: 6px; }
 .firm-wallet .appearance-button { border: 1px solid var(--hairline); border-radius: var(--r-control); color: #efe4bd; background: linear-gradient(170deg, #1e3546, #142534); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); font-family: var(--font-hud); font-size: 9.5px; }
 .firm-wallet .appearance-button:hover:not(:disabled) { border-color: var(--hairline-strong); background: linear-gradient(170deg, #2a4859, #1b3140); }
 .firm-tabs { margin: 0 0 24px; padding: 0; align-items: flex-end; gap: 7px; overflow: visible; background: transparent; }
@@ -595,8 +604,12 @@
 /* The trophy case. Closed by default and out of the tab strip, because it is a
    record rather than a decision and it used to cost a whole tab slot. */
 .firm-trophies { grid-column: 1 / -1; margin-top: 14px; }
-.firm-trophies > summary { display: flex; align-items: center; gap: 8px; width: fit-content; padding: 7px 13px; cursor: pointer; list-style: none; font-size: .78rem; letter-spacing: .07em; text-transform: uppercase; color: #6d6a62; border: 1px solid #d8cfc1; border-radius: 999px; background: #fffdf8; }
+/* Drawn on the ledger's own paper. It was the prestige-print hand's grey-white
+   pill — `#fffdf8` inside a cool `#d8cfc1` line, set in body Inter — which is
+   the one control on this page not made of something the desk is made of. */
+.firm-trophies > summary { display: flex; align-items: center; gap: 8px; width: fit-content; padding: 7px 14px; cursor: pointer; list-style: none; font-family: var(--font-hud); font-size: 10px; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; color: #6b5433; border: 1px solid rgba(56, 40, 22, .34); border-radius: var(--r-chip); background: linear-gradient(170deg, #f4e3ba, var(--ledger-paper)); box-shadow: inset 0 1px 0 rgba(255, 250, 232, .7), var(--el-1); }
 .firm-trophies > summary::-webkit-details-marker { display: none; }
-.firm-trophies > summary:hover { color: var(--ink); border-color: #bfb4a3; }
-.firm-trophies > summary b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.firm-trophies > summary:hover { color: var(--ledger-ink); border-color: rgba(56, 40, 22, .58); }
+.firm-trophies > summary svg { color: var(--brass-deep); }
+.firm-trophies > summary b { color: var(--ledger-ink); font-variant-numeric: tabular-nums; }
 .firm-trophies[open] > summary { margin-bottom: 14px; }
