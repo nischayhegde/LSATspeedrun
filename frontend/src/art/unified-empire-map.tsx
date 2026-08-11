@@ -12,6 +12,7 @@ import type {
   MapLandmark,
   MapLandmarkKind,
   MapRegionKey,
+  MapSceneContact,
   MapSceneEvent,
   MapScenePoint,
   MapSceneRival,
@@ -191,6 +192,69 @@ function tierState(tier: number, officeTier: number): MapSceneTier['state'] {
   return 'locked'
 }
 
+/**
+ * What a place on the map is worth to the firm.
+ *
+ * The retainer board beneath this is the ledger: every district in the region,
+ * sortable, signable, with the money in it. This is the other half of the same
+ * question and the half a map is actually good at — you are looking at a
+ * *place*, so what it says is what holding this ground would do, and what is
+ * standing between you and it.
+ *
+ * Deliberately not a second buy button. Signing is the board's job and
+ * duplicating it here would give the same act two homes.
+ *
+ * A landmark with no district behind it — the planner lays out far more places
+ * than the catalog retains — falls back to the scene's own description, which
+ * is what this line has always shown.
+ */
+function DistrictBrief({ landmark, game, chosen }: { landmark: MapLandmark; game: GameState; chosen: boolean }) {
+  const district = game.territory.districts.find((entry) => entry.landmark_key === landmark.key)
+  if (!district) return <p className="uw-district-guide-detail">{landmark.detail}</p>
+  // Which network opened it, named whether or not it is held: an unheld gate
+  // appears in `locks` as prose, and a held one vanishes entirely, so the map
+  // could otherwise never say "you are here because of the bar association".
+  const opener = game.catalog.assets.find(
+    (asset) => asset.type === 'connection' && (asset.districts ?? []).some((entry) => entry.key === district.key),
+  )
+  // Where that network's contact is actually standing. The scene sites one
+  // contact per network at the first district it opens in the region, in the
+  // catalog's own order, so the same rule reproduces it here rather than the
+  // panel claiming a person is outside every door the network opens.
+  const contactHome = opener?.owned
+    ? (opener.districts ?? [])
+      .map((row) => game.territory.districts.find((entry) => entry.key === row.key))
+      .find((entry) => entry?.region === district.region && entry?.landmark_key)
+    : undefined
+  const state = district.owned ? 'held' : district.available ? 'open' : 'locked'
+  // The connection gate gets its own sentence above, so it would otherwise be
+  // stated twice; what is left is the tier and reputation bar.
+  const openerLock = opener ? `requires the ${opener.name.toLowerCase()}` : null
+  const otherLocks = district.locks.filter((lock) => lock.toLowerCase() !== openerLock)
+  return (
+    <div className={`uw-district-brief is-${state}${chosen ? ' is-chosen' : ''}`}>
+      <p>{landmark.detail}</p>
+      <div className="uw-district-brief-head">
+        <b>{district.owned ? 'RETAINER HELD' : district.available ? 'RETAINER OPEN' : 'RETAINER LOCKED'}</b>
+        <span>{district.retainer}</span>
+      </div>
+      <dl className="uw-district-brief-terms">
+        <div><dt>Standing</dt><dd>+{district.standing.toFixed(1)}</dd></div>
+        <div><dt>Rent relief</dt><dd>{(district.rent_relief_bps / 100).toFixed(0)}%</dd></div>
+        <div><dt>{district.owned ? 'Paid' : 'Fee'}</dt><dd>{formatMoney(district.cost, true)}</dd></div>
+      </dl>
+      {opener && (
+        <p className="uw-district-brief-gate">
+          {opener.owned
+            ? <>Open to you through the <b>{opener.name.toLowerCase()}</b>. {contactHome?.key === district.key ? 'Their contact stands here.' : contactHome ? `Their contact stands at ${contactHome.name}.` : ''}</>
+            : <>Gated by the <b>{opener.name.toLowerCase()}</b>, which your firm does not hold.</>}
+        </p>
+      )}
+      {otherLocks.length > 0 && <p className="uw-district-brief-gate">{otherLocks.join(' · ')}</p>}
+    </div>
+  )
+}
+
 export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistrict, onManage, empireValueLabel }: {
   game: GameState
   /** A rival key handed over from the firm tab's "Show on the map". */
@@ -228,6 +292,13 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
   const [cameraCommand, setCameraCommand] = useState<{ id: number; action: MapCameraAction; landmark?: string }>({ id: 0, action: 'focus' })
   const [landmarks, setLandmarks] = useState<MapLandmark[]>([])
   const [activeLandmark, setActiveLandmark] = useState<MapLandmark | null>(null)
+  /**
+   * The district the player has chosen, as distinct from the one they are
+   * pointing at. `activeLandmark` follows the pointer across the directory and
+   * is what fills the detail line; this survives the pointer leaving, and is
+   * what the scene draws its selection highlight from.
+   */
+  const [selectedDistrict, setSelectedDistrict] = useState<MapLandmark | null>(null)
   const [landmarkTip, setLandmarkTip] = useState<{ landmark: MapLandmark; x: number; y: number } | null>(null)
   // Collapsed by default. The district's places are discoverable in the world
   // itself (hover a building, click it); this is the index for someone who
@@ -283,6 +354,40 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
     [ownedLandmarkKeys],
   )
 
+  /*
+   * The networks the firm holds that reach into this region, and the districts
+   * in it they open.
+   *
+   * A connection has only ever existed as a crest on the office wall, and its
+   * effect happens on the retainer board rather than where the crest hangs. The
+   * scene can put a contact at a district; the catalog knows which districts a
+   * network unlocks; the territory board is the only place the two meet, since
+   * it is what carries `landmark_key`. So the join happens here.
+   *
+   * Flattened to a string for the same reason `ownedLandmarks` is: this is a
+   * scene dependency, `game` is refetched on a timer, and handing the world a
+   * freshly-built array every refetch would rebuild it every refetch.
+   */
+  const contactKey = game.catalog.assets
+    .filter((asset) => asset.type === 'connection' && asset.owned)
+    .map((asset) => {
+      const opens = (asset.districts ?? [])
+        .map((entry) => game.territory.districts.find((district) => district.key === entry.key))
+        .filter((district): district is TerritoryDistrict => Boolean(district?.landmark_key) && district?.region === activeRegionKey)
+      if (!opens.length) return ''
+      const role = opens.length === 1 ? `Opens ${opens[0].name}` : `Opens ${opens.length} retainers here`
+      return [asset.key, asset.name, role, opens.map((district) => district.landmark_key).join('~')].join('|')
+    })
+    .filter(Boolean)
+    .join(';')
+  const contacts = useMemo<MapSceneContact[]>(
+    () => (contactKey ? contactKey.split(';').map((row) => {
+      const [key, name, role, landmarks] = row.split('|')
+      return { key, name, role, landmarks: landmarks.split('~') }
+    }) : []),
+    [contactKey],
+  )
+
   const selected = points.find((point) => point.key === selectedKey)
   const established = game.catalog.tiers.filter((tier) => tier.tier <= game.office_tier).length
   // Empire-wide, not per-region: this is the count the page header used to
@@ -320,6 +425,7 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
     setViewMode('career')
     setLandmarks([])
     setActiveLandmark(null)
+    setSelectedDistrict(null)
     setLandmarkTip(null)
     setCameraCommand((command) => ({ id: command.id + 1, action: 'focus' }))
     void play('map', { seed: `arc:${key}`, scene: key, intensity: .44 })
@@ -338,6 +444,7 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
   const handleLandmarks = useCallback((next: MapLandmark[]) => {
     setLandmarks(next)
     setActiveLandmark(null)
+    setSelectedDistrict(null)
     setLandmarkTip(null)
   }, [])
   const handleLandmarkHover = useCallback((landmark: MapLandmark | null, client: { x: number; y: number } | null) => {
@@ -345,10 +452,12 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
   }, [])
   const handleLandmarkSelect = useCallback((landmark: MapLandmark) => {
     setActiveLandmark(landmark)
+    setSelectedDistrict(landmark)
     void play('select', { seed: `landmark:${landmark.key}`, intensity: .4 })
   }, [play])
   const travelToLandmark = (landmark: MapLandmark) => {
     setActiveLandmark(landmark)
+    setSelectedDistrict(landmark)
     setCameraCommand((command) => ({ id: command.id + 1, action: 'landmark', landmark: landmark.key }))
     void play('map', { seed: `travel:${landmark.key}`, scene: activeRegionKey, intensity: .38 })
   }
@@ -457,6 +566,8 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
             onLandmarkHover={handleLandmarkHover}
             onLandmarkSelect={handleLandmarkSelect}
             ownedLandmarks={ownedLandmarks}
+            contacts={contacts}
+            selectedLandmark={selectedDistrict?.key ?? null}
           />}
         </Suspense>
 
@@ -633,7 +744,13 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
                       </button>
                     ))}
                   </div>
-                  {activeLandmark && <p className="uw-district-guide-detail">{activeLandmark.detail}</p>}
+                  {(activeLandmark ?? selectedDistrict) && (
+                    <DistrictBrief
+                      landmark={(activeLandmark ?? selectedDistrict)!}
+                      game={game}
+                      chosen={selectedDistrict?.key === (activeLandmark ?? selectedDistrict)!.key}
+                    />
+                  )}
                 </>
               )}
             </aside>

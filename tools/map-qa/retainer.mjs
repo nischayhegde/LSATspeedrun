@@ -14,7 +14,7 @@
 //      use `depthTest: false` at renderOrder 40-44, which is what forced labels
 //      to renderOrder 70; a new ground overlay is exactly the kind of thing
 //      that breaks that again.
-import { open, region, save, TABS, OUT } from './lib.mjs'
+import { open, region, save, TABS, OUT, BASE } from './lib.mjs'
 import { mkdirSync, writeFileSync } from 'node:fs'
 
 const tag = process.argv[2] ?? 'after'
@@ -132,7 +132,7 @@ flush()
 
 // The scene rebuilds when `ownedLandmarks` changes, so reload rather than trust
 // an in-place update, and confirm what the fresh world contains.
-await page.goto('http://127.0.0.1:5173/map', { waitUntil: 'commit' })
+await page.goto(`${BASE}/map`, { waitUntil: 'commit' })
 await page.waitForTimeout(1500)
 for (let attempt = 0; attempt < 90; attempt += 1) {
   const up = await page.evaluate(() => {
