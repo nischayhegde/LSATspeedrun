@@ -169,6 +169,13 @@ const AUDIT = `(() => {
       // Two readings inside the same fixed HUD are its own layout, not a
       // collision with the page.
       if (a.fixed && b.fixed) continue
+      // Two inline runs in one paragraph. An inline box that wraps reports the
+      // union of its line boxes, so a <b> spanning two lines "contains" every
+      // emphasis on the second line and the report reads as a collision on
+      // every width. It is how inline layout is measured, not a defect: the
+      // Districts intro produced one of these at all 23 widths.
+      if (a.el.parentElement === b.el.parentElement
+        && a.style.display.startsWith('inline') && b.style.display.startsWith('inline')) continue
       const ox = Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left)
       const oy = Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top)
       if (ox > 4 && oy > 6) {
@@ -213,9 +220,17 @@ const browser = await chromium.launch()
 const report = []
 try {
   for (const size of widths) {
+    /* Touch below 900px, because that is the assumption the tap-target floor
+       further up already makes — and without it the floor was being applied to
+       a rendering that never saw the CSS meant to satisfy it. `mobile.css`
+       raises a dozen controls to 44px inside `@media (pointer: coarse)`, which
+       does not match in a plain desktop context, so the sweep reported the
+       caseboard and district-guide buttons as 32 and 34px on every tablet
+       width while a real tablet was getting 44. */
     const context = await browser.newContext({
       viewport: { width: size.width, height: size.height },
       deviceScaleFactor: 1,
+      hasTouch: size.width <= 900,
     })
     const login = await context.request.post(`${API}/v1/auth/dev`, {
       data: { email: EMAIL, display_name: 'UI QA' },
