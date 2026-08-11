@@ -288,7 +288,15 @@ COHORTS: tuple[dict, ...] = (
             r"|in which one of the following ways|conclusion of \w+(?:'s|s')\b"
             # "Frank's argument is an attempt to counter Lance's conclusion by"
             # is a method question that happens to use the word.
-            r"|\bcounters?\b[^.?]*\bby\s*$",
+            r"|\bcounters?\b[^.?]*\bby\s*$"
+            # An argument described as aimed at a conclusion is being asked what
+            # it concludes, and "derives its conclusion by" and "the
+            # relationship between the argument's conclusion and its claim" are
+            # method and role questions. All three name the argument's own
+            # conclusion without using any of the words above.
+            r"|structured\s+(?:so\s+as\s+)?to\s+lead\s+to"
+            r"|\b(?:argument|passage|reply|dialogue)\b[^.?]{0,12}\bleads? to the conclusion\b"
+            r"|\bderives? its conclusion\b|\brelationship (?:of|between)\b",
             (q.stem or "").lower(),
         ),
     },
