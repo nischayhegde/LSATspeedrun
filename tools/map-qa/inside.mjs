@@ -201,6 +201,10 @@ async function attribute(settings) {
   // on every lifetime then the crowd is not starting from the same place, and
   // no amount of pinning the *build* will make the walk reproducible.
   const entry = {
+    // Non-zero means some district on the way here had to be built with real
+    // frames, so this run's crowd did not start from the same place as anyone
+    // else's. Treat the whole run as uncomparable.
+    unpinnedBuilds: window.__unpinnedBuilds ?? 0,
     elapsed: crowd?.elapsed ?? null,
     spawnCursor: crowd?.spawnCursor ?? null,
     walkers: crowd?.walkers?.length ?? null,

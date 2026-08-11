@@ -347,10 +347,13 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
  * It turns out the build wants no frames at all. It is synchronous inside a
  * React effect, and everything it waits on is a promise rather than a frame, so
  * polling on an interval while the capture stays armed gets the same district
- * every time with an elapsed frame count of exactly zero. If a future build
- * step does need a frame this will hang rather than quietly go back to being
- * unreproducible, which is the right way round: `requireClock` already treats a
- * stalled loop as the one failure it must never pass silently.
+ * every time with an elapsed frame count of exactly zero. Mostly: some builds do
+ * want a frame — Sovereign Arc reliably, and the others now and then — so a
+ * build that has not published in twenty seconds gets real frames rather than
+ * hanging out the run. That is the unreproducible path, so it is counted on
+ * `window.__unpinnedBuilds` and reported in every probe's `entry` block; a run
+ * with a non-zero count is a run whose crowd started from wherever the machine's
+ * load left it, and it should not be compared with anything.
  */
 async function switchTo(page, label, key) {
   const toggle = page.locator('.uw-atlas-toggle')
@@ -359,10 +362,16 @@ async function switchTo(page, label, key) {
     await page.waitForTimeout(250)
   }
   await page.locator('.uw-arc-navigation button', { hasText: label }).first().click()
-  await page.waitForFunction((want) => window.__mapScene?.region === want, key, {
-    timeout: 120000,
-    polling: 50,
-  })
+  const arrived = (want) => window.__mapScene?.region === want
+  try {
+    await page.waitForFunction(arrived, key, { timeout: 20000, polling: 50 })
+  } catch {
+    await page.evaluate(() => {
+      window.__unpinnedBuilds = (window.__unpinnedBuilds ?? 0) + 1
+      window.__clock?.release()
+    })
+    await page.waitForFunction(arrived, key, { timeout: 120000, polling: 50 })
+  }
   if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') {
     await toggle.click()
   }
@@ -390,6 +399,10 @@ export async function region(page, label, { key, warmup = 600, cold = true } = {
   // happened to fit into that window — which is the variable this whole
   // function exists to remove. Building it again costs a second and makes the
   // district a function of the code.
+  // A key with no tab spends two minutes clicking whichever button matched
+  // `undefined` and then times out waiting for a region that cannot arrive.
+  // Sovereign Arc is `continent`, not `arc`, and that mistake has cost two runs.
+  if (!TABS[key]) throw new Error(`unknown region ${key}; expected one of ${Object.keys(TABS).join(', ')}`)
   if (cold) {
     const away = Object.entries(TABS).find(([other]) => other !== key)
     if (await page.evaluate(() => window.__mapScene?.region) === key && away) {
