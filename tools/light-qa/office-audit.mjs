@@ -25,8 +25,14 @@
  * sightline. Alongside it: the view's own triangle and mesh count, the room's
  * draw calls and triangles on a forced frame, and the build phases.
  *
- * Usage: node tools/light-qa/office-audit.mjs <tag> [tier...]
+ * Usage: node tools/light-qa/office-audit.mjs <tag> [tier...] [--window]
  *   LIGHT_BASE=http://127.0.0.1:5373 LIGHT_FLOOR=practice|chambers
+ *
+ * `--window` keeps the glass and the counters and drops the roof survey and the
+ * three whole-room stills. The full pass is a minute a tier, nearly all of it
+ * 121 rays against the scene graph and four 1.9 MB screenshots, and composing
+ * what is outside the glass takes several looks at it — a rate that turns a
+ * morning's art direction into an afternoon of waiting.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -37,6 +43,8 @@ const ROOT = process.env.LIGHT_OUT || fileURLToPath(new URL('../../.light', impo
 const tag = process.argv[2] ?? 'audit'
 const tiers = process.argv.slice(3).map(Number).filter((n) => Number.isFinite(n))
 const TIERS = tiers.length ? tiers : [0, 1, 2, 5, 8, 11, 14]
+/** Glass and counters only. See the header. */
+const WINDOW_ONLY = process.argv.includes('--window')
 const FLOOR = process.env.LIGHT_FLOOR || ''
 
 const SHOTS = `${ROOT}/.light-shots/${tag}`
@@ -65,6 +73,7 @@ try {
   await page.locator('button', { hasText: 'Enter local development firm' }).click({ timeout: 180000 })
   await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 60000 })
   await page.evaluate(() => localStorage.setItem('lsat-tour-v6', 'done')).catch(() => {})
+  await page.addInitScript((skip) => { window.__auditWindowOnly = skip }, WINDOW_ONLY)
 
   for (const tier of TIERS) {
     const floorParam = FLOOR ? `&officeFloor=${FLOOR}` : ''
@@ -100,6 +109,7 @@ try {
 
       const CEILING_Y = 5.5
       const floorY = root.position.y
+      const skipRoof = window.__auditWindowOnly === true
       const raycaster = new THREE.Raycaster()
       raycaster.far = 40
       const up = new THREE.Vector3(0, 1, 0)
@@ -117,7 +127,7 @@ try {
       let enclosedCovered = 0
       const heights = []
       const hitNames = new Map()
-      for (let ix = 0; ix < steps; ix += 1) {
+      for (let ix = 0; ix < (skipRoof ? 0 : steps); ix += 1) {
         for (let iz = 0; iz < steps; iz += 1) {
           const x = x0 + (x1 - x0) * (ix / (steps - 1))
           const z = z0 + (z1 - z0) * (iz / (steps - 1))
@@ -231,7 +241,7 @@ try {
     })
 
     report.tiers[tier] = measured
-    await page.screenshot({ path: `${SHOTS}/tier${tier}-room.png` })
+    if (!WINDOW_ONLY) await page.screenshot({ path: `${SHOTS}/tier${tier}-room.png` })
     if (measured.opening && measured.opening.w > 8 && measured.opening.h > 8) {
       const { x, y, w, h } = measured.opening
       await page.screenshot({
@@ -240,57 +250,59 @@ try {
       }).catch((error) => report.errors.push(`clip tier ${tier}: ${error.message}`))
     }
 
-    // The ceiling, from a camera pitched up at it. This is the picture that
-    // makes a missing roof visible rather than only measurable.
-    // What the player sees when they look up, through the room's own control.
-    // This is the picture that decides whether a missing ceiling is a defect or
-    // a detail off the top of the frame: the pitch clamp is +.42 rad, so 24
-    // degrees of upward look is reachable with the arrow keys on any tier.
-    // Dispatched at the canvas, which is where the look handler is bound and
-    // which owns its own focus (`canvas.tabIndex = 0`). A click on the canvas
-    // does not reliably focus it in a headless browser, and the keypresses then
-    // go to the document and do nothing, which looks like a clamp that is
-    // tighter than it is.
-    await page.evaluate(() => {
-      const canvas = document.querySelector('canvas')
-      if (!canvas) return
-      canvas.focus()
-      for (let press = 0; press < 14; press += 1) {
-        canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }))
-      }
-    })
-    await page.waitForTimeout(1600)
-    await page.screenshot({ path: `${SHOTS}/tier${tier}-lookup.png` })
+    if (!WINDOW_ONLY) {
+      // The ceiling, from a camera pitched up at it. This is the picture that
+      // makes a missing roof visible rather than only measurable.
+      // What the player sees when they look up, through the room's own control.
+      // This is the picture that decides whether a missing ceiling is a defect or
+      // a detail off the top of the frame: the pitch clamp is +.42 rad, so 24
+      // degrees of upward look is reachable with the arrow keys on any tier.
+      // Dispatched at the canvas, which is where the look handler is bound and
+      // which owns its own focus (`canvas.tabIndex = 0`). A click on the canvas
+      // does not reliably focus it in a headless browser, and the keypresses then
+      // go to the document and do nothing, which looks like a clamp that is
+      // tighter than it is.
+      await page.evaluate(() => {
+        const canvas = document.querySelector('canvas')
+        if (!canvas) return
+        canvas.focus()
+        for (let press = 0; press < 14; press += 1) {
+          canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }))
+        }
+      })
+      await page.waitForTimeout(1600)
+      await page.screenshot({ path: `${SHOTS}/tier${tier}-lookup.png` })
 
-    // The same thing through the primary control: a drag down the canvas is
-    // how a player looks up, and it reaches the clamp in one gesture.
-    const box = await page.locator('canvas').first().boundingBox()
-    if (box) {
-      await page.mouse.move(box.x + box.width * .5, box.y + box.height * .35)
-      await page.mouse.down()
-      for (let step = 1; step <= 12; step += 1) {
-        await page.mouse.move(box.x + box.width * .5, box.y + box.height * .35 + step * 60)
-        await page.waitForTimeout(40)
+      // The same thing through the primary control: a drag down the canvas is
+      // how a player looks up, and it reaches the clamp in one gesture.
+      const box = await page.locator('canvas').first().boundingBox()
+      if (box) {
+        await page.mouse.move(box.x + box.width * .5, box.y + box.height * .35)
+        await page.mouse.down()
+        for (let step = 1; step <= 12; step += 1) {
+          await page.mouse.move(box.x + box.width * .5, box.y + box.height * .35 + step * 60)
+          await page.waitForTimeout(40)
+        }
+        await page.mouse.up()
+        await page.waitForTimeout(1400)
+        await page.screenshot({ path: `${SHOTS}/tier${tier}-dragup.png` })
       }
-      await page.mouse.up()
-      await page.waitForTimeout(1400)
-      await page.screenshot({ path: `${SHOTS}/tier${tier}-dragup.png` })
+
+      // The room's own loop rewrites the camera from its rig on every frame, so
+      // an override followed by one render is overwritten before the screenshot
+      // is taken — which reads as "the override did nothing". The loop is stopped
+      // first, by taking rAF away from it; the next navigation restores it.
+      await page.evaluate(() => { window.requestAnimationFrame = () => 0 })
+      await page.waitForTimeout(250)
+      await page.evaluate(() => {
+        const { camera, renderer, scene, THREE } = window.__officeDebug
+        camera.position.set(0, 3.2, 3.4)
+        camera.lookAt(new THREE.Vector3(0, 8.5, -2))
+        camera.updateMatrixWorld()
+        renderer.render(scene, camera)
+      })
+      await page.screenshot({ path: `${SHOTS}/tier${tier}-ceiling.png` })
     }
-
-    // The room's own loop rewrites the camera from its rig on every frame, so
-    // an override followed by one render is overwritten before the screenshot
-    // is taken — which reads as "the override did nothing". The loop is stopped
-    // first, by taking rAF away from it; the next navigation restores it.
-    await page.evaluate(() => { window.requestAnimationFrame = () => 0 })
-    await page.waitForTimeout(250)
-    await page.evaluate(() => {
-      const { camera, renderer, scene, THREE } = window.__officeDebug
-      camera.position.set(0, 3.2, 3.4)
-      camera.lookAt(new THREE.Vector3(0, 8.5, -2))
-      camera.updateMatrixWorld()
-      renderer.render(scene, camera)
-    })
-    await page.screenshot({ path: `${SHOTS}/tier${tier}-ceiling.png` })
 
     console.log(
       `tier ${String(tier).padStart(2)}  roof ${(measured.roof.share * 100).toFixed(1)}%`,
