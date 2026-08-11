@@ -552,8 +552,9 @@ body {
   .firm-tabs button,
   .uw-scene-view-tabs button,
   .uw-level-navigator-track button { min-height: 44px; }
-  /* The toolbar's pixel-face label type is 9.5px, which is below the size iOS
-     Safari zooms into on focus. The select carries UI type instead. */
+  /* The toolbar's label type is 9.5px, which is below the size iOS Safari
+     zooms into on focus. The select is set larger in mobile/firm-page.css;
+     only its size changes there, so it keeps the toolbar's face. */
   /* Short labels such as "All" leave the view filters narrower than they are
      tall, so the padding alone does not reach a thumb-sized target. */
 

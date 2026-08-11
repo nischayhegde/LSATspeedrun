@@ -5,7 +5,10 @@
 @media (max-width: 640px) {
   .firm-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .firm-tabs button { min-width: 0; font-size: 8.5px; }
-  .catalog-toolbar label select { font-family: var(--font-ui); font-size: 16px; }
+  /* 16px is the floor below which iOS Safari zooms the page on focus. Only the
+     size is lifted: the face stays the toolbar's, so the filter row does not
+     change alphabet halfway across itself. */
+  .catalog-toolbar label select { font-size: 16px; }
   .catalog-view-buttons button { min-width: 44px; }
   .client-grid {
     display: flex;
