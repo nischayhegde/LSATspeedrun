@@ -5712,6 +5712,19 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
       : outerRecords
     if (cleared.length) group.add(buildFacadeGroup(cleared.map((record, index) => tintForRegion(region, record, index)), { region }))
   }
+  /*
+   * Backdrop, and it has to say so.
+   *
+   * Nothing here is reachable — the crowd network stops at 28.9 and the nearest
+   * of these hills is on a 58-unit ellipse — but a hill instance is 25 m across
+   * and the walker audit tests a box per instance, so one cone's bounding box
+   * covered the whole north-west corner of the Old Quarter and reported every
+   * walker standing in it as inside a solid. That was 119 of the district's 147
+   * hits, four fifths of its measured figure, and it was what the .0021 / .0109
+   * bimodality was flipping between: whether one walker's wander took it into
+   * the corner of a box drawn around a painted hill.
+   */
+  group.traverse((child) => { child.userData.horizonRing = true })
   return group
 }
 
