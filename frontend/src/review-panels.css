@@ -27,19 +27,23 @@
 .panel-heading h2 { margin: 4px 0 0; color: #f0e4c8; font-family: var(--font-display); font-size: 23px; }
 .panel-heading > svg { color: #d6b969; }
 .progress-panel-fallback { margin: 22px 0; min-height: 148px; padding: 20px; display: grid; place-items: center; border: 1px dashed rgba(226,194,118,.22); border-radius: 16px; color: #8fa19d; background: rgba(16,28,41,.5); font-size: 12px; }
-.learning-mode-banner { margin: 0 auto 12px; padding: 12px 16px; display: flex; align-items: center; gap: 15px; border: 1px solid rgba(104,199,183,.42); color: #e9e4d4; background: linear-gradient(100deg,#142d36,#1a2733); box-shadow: 0 10px 24px rgba(4,9,15,.28); }
+.learning-mode-banner { margin: 0 auto 12px; padding: 12px 16px; display: flex; align-items: center; gap: 15px; border: 1px solid rgba(104,199,183,.42); border-radius: var(--r-control); color: #e9e4d4; background: linear-gradient(100deg,#142d36,#1a2733); box-shadow: var(--el-2); }
 .learning-mode-banner > div { display: flex; align-items: center; gap: 7px; color: #73cdbd; white-space: nowrap; }
 .learning-mode-banner > div span { font: 900 10px var(--font-pixel); letter-spacing: .12em; }
 .learning-mode-banner > strong { flex: 1; min-width: 0; color: #e7d59c; font-size: 13px; font-weight: 650; }
-.learning-mode-banner > button { flex: 0 0 auto; padding: 7px 11px; border: 1px solid rgba(239,210,126,.45); color: #f0d583; background: rgba(7,14,20,.42); font: 900 9px var(--font-pixel); letter-spacing: .08em; text-transform: uppercase; }
+.learning-mode-banner > button { flex: 0 0 auto; padding: 7px 11px; border: 1px solid rgba(239,210,126,.45); border-radius: var(--r-control); color: #f0d583; background: rgba(7,14,20,.42); font: 900 9px var(--font-hud); letter-spacing: .08em; text-transform: uppercase; }
 .learning-mode-banner.diagnostic-session-banner { border-color: rgba(113,208,192,.5); background: linear-gradient(100deg,#16343d,#192c39); }
 .learning-mode-banner.diagnostic-session-banner > div { color: #71d0c0; }
 
-.training-focus-card,.training-evidence-card { padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid rgba(108,196,180,.27); color: #eee4cb; background: linear-gradient(145deg,#18303a,#142532); }
+.training-focus-card,.training-evidence-card { padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid rgba(108,196,180,.27); border-radius: var(--r-card); color: #eee4cb; background: linear-gradient(145deg,#18303a,#142532); }
 .training-focus-card span,.training-evidence-card span { color: #70cbbb; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .12em; }
 .training-focus-card h3 { margin: 4px 0; font-family: var(--font-display); }
 .training-focus-card p { max-width: 280px; margin: 0; color: #9fa9a4; font-size: 10px; }
-.training-focus-card button,.training-evidence-card button { padding: 8px 10px; border: 1px solid #e9ca74; color: #172331; background: #e8ca76; font-family: var(--font-pixel); font-size: 8px; font-weight: 900; }
+/* The one brass plate, at the smallest size it is drawn: an ink hairline, the
+   plate gradient and the light catching its top edge. It was a flat `#e8ca76`
+   fill inside a lighter line of itself, which is the same metal painted rather
+   than lit. */
+.training-focus-card button,.training-evidence-card button { padding: 8px 10px; border: 1px solid var(--ink-line-strong); border-radius: var(--r-control); color: #2a1e06; background: var(--brass-plate); box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1); font-family: var(--font-hud); font-size: 8px; font-weight: 900; }
 .training-evidence-card strong,.training-evidence-card small { display: block; }
 .training-evidence-card strong { margin: 3px 0; color: #efd17c; font-family: var(--font-display); font-size: 28px; }
 .training-evidence-card small { color: #9ca7a2; font-size: 9px; }
