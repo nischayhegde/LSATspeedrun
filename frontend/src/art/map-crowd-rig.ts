@@ -99,6 +99,23 @@ function hashUnit(seed: number) {
  * are in `.maps/crowd-framed/`, and `.map-crossing-notes.md` records the
  * containment numbers, which improve — but for the arithmetic reason that a
  * narrower body clears more, not because the plan got better.
+ *
+ * ## Two things followed this figure, and will follow it again
+ *
+ * Neither was free, and both were authored against the old one as world
+ * constants that read as correct until the day this moved:
+ *
+ * - **The player's furniture.** The selection ring, ground shadow, presence
+ *   light, beacon and name plate are now fractions of `COUNSEL_RIG_HEIGHT *
+ *   crowdRenderScale()` in `map-three-scene`; before that the ring was wider
+ *   than the counsel was tall.
+ * - **The crowd's pace.** `PACE_MIN` and `PACE_SPAN` in `map-agents` are
+ *   multiples of a body's own `naturalWalkSpeed` for this reason. As world units
+ *   they made the halved crowd sprint at 3.4 steps a second.
+ *
+ * So a third arm on this constant should expect to find a third of these. The
+ * test for one is whether a number in world units was tuned while this figure
+ * held still.
  */
 export const CROWD_RENDER_SCALE = .139
 
