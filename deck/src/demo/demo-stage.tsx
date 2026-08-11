@@ -565,7 +565,12 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
           style={{
             width: `${logicalWidth}px`,
             height: `${logicalHeight}px`,
-            transform: `scale(${scale || 0.001})`,
+            // The translate is what centres it, and it has to come before the
+            // scale: the element is laid out at its logical width, which is
+            // wider than the slot on any viewport smaller than about 1600x900,
+            // and an over-constrained `margin: auto` does not centre. See the
+            // long note on `.demo-stage-frame` in `demo-stage.css`.
+            transform: `translate(-50%, -50%) scale(${scale || 0.001})`,
           }}
           // Our own dev server, on our own machine. `allow-same-origin` is
           // required for the app to read its own cookies and localStorage, which

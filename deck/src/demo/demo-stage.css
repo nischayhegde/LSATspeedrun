@@ -54,10 +54,34 @@
   pointer-events: none;
 }
 
+/* Centred on the slot by translation rather than by `inset: 0; margin: auto`,
+   and the difference is not cosmetic.
+
+   The iframe is laid out at a *logical* width — 1250px on the case slide — and
+   then scaled to fit, so on any viewport whose slot is narrower than that the
+   element is wider than the box it is absolutely positioned in. `margin: auto`
+   does not centre an over-constrained absolutely positioned element: CSS 2.1
+   §10.3.7 resolves that case by setting the left margin to zero and letting the
+   element hang off the right, so the box sat flush left and the scale, taken
+   about its own centre, pushed the *visible* frame right by half the excess.
+
+   Measured before the fix, on `demo-mega-litigation`: at 1366x768 the app was
+   134px right of its slot — a 134px band of `--surface` down the left edge, the
+   app's cream paper against the deck's navy, and the dashboard's right-hand
+   column of numbers clipped off by the slot's `overflow: hidden`. At 1600x900
+   it was 28px. At 1920x1080, where 1250 fits inside the 1482px slot, `margin:
+   auto` centred it correctly and none of it happened — which is why this
+   survived: it is invisible at exactly the size everything gets checked at, and
+   1366x768 and 1600x900 are what conference projectors and laptop lids are.
+
+   `left/top: 50%` with a `translate(-50%, -50%)` ahead of the scale centres the
+   element on the slot whatever its size, because the translation is by half the
+   element's own border box rather than by whatever room is left over. The scale
+   is `contain`, so once it is centred nothing can be clipped at all. */
 .demo-stage-frame {
   position: absolute;
-  inset: 0;
-  margin: auto;
+  left: 50%;
+  top: 50%;
   border: 0;
   display: block;
   background: var(--surface);
