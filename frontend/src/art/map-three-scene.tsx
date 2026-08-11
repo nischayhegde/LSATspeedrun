@@ -2493,12 +2493,27 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
   })
   root.add(canalQuays(canalCurve, { innerHalf: CANAL_HALF, walk: .72, topY: .16, footY: -.09 }))
   streets.forEach((street, index) => {
-    const bridge = box([5.9, .2, streetWidth(street.streetClass) + .55], material(0x7b7770, .95), [CANAL_X, .13, street.position])
+    /*
+     * A bridge carries the whole street, pavements included.
+     *
+     * A pavement runs at half the carriageway plus `KERB_TO_PAVEMENT` and its
+     * own half width, and a walker may stand a beam beyond that again. The deck
+     * was the carriageway plus .275 a side, so both pavements crossed the canal
+     * on nothing at all — visible from the oblique camera as people walking on
+     * the water — and the lamp stood at .55, which is between the kerb and the
+     * pavement rather than clear of either. There is nowhere to step aside to
+     * on a bridge, so a lamp in the walking line is worth more frames there
+     * than the same lamp anywhere else in the district.
+     */
+    const walk = streetWidth(street.streetClass) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM
+    const bridge = box([5.9, .2, (walk + .25) * 2], material(0x7b7770, .95), [CANAL_X, .13, street.position])
     root.add(bridge)
     if (index % 2 === 0) for (const side of [-1, 1]) {
       const lamp = createLamp()
-      lamp.position.set(CANAL_X + side * 2.3, .2, street.position + .55)
+      lamp.position.set(CANAL_X + side * 2.3, .2, street.position + walk + .14)
       lamp.scale.setScalar(.8)
+      markAuthoredProp(lamp, .15)
+      lamp.userData.propAudit = { name: `city-bridge-lamp-${index}-${side > 0 ? 'e' : 'w'}`, region: 'city', groundY: .2 }
       root.add(lamp)
     }
   })
@@ -4686,7 +4701,7 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   // The formal parterres and the two axis monuments are open ground; nothing
   // from the block lattice may be built over them.
   for (const [x, z] of [[-6.6, -3.5], [6.6, -3.5], [-6.6, 3.3], [6.6, 3.3]] as XZ[]) reserved.push({ x, z, radius: 2.5 })
-  reserved.push({ x: 0, z: -9.4, radius: 3.2 }, { x: 0, z: 7.15, radius: 2.4 })
+  reserved.push({ x: 0, z: -9.4, radius: 3.2 }, { x: 0, z: 14.15, radius: 2.4 })
   // The parterre circles above only cover their own centres; a sector block
   // whose ring happens to land between the rond-point and a parterre could
   // still land right on the ceremonial axis itself. A short run of extra
