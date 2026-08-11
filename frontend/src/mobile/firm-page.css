@@ -137,6 +137,7 @@
   .retainer-regions button,
   .retainer-plot-buy button,
   .client-roster-go { min-height: 44px; }
+  .retainer-plot-gate { min-height: 44px; }
   /* The pin still draws at 22; the button around it grows. */
   .retainer-plot-map { width: 44px; height: 44px; }
 }

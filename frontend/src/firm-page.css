@@ -499,6 +499,25 @@
 .retainer-plot-map:hover { color: #16232b; background: #6fd0c5; }
 .retainer-plot-yield { margin: auto 0 0; padding-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 8px; color: #8fd2a8; font-family: var(--font-pixel); font-size: 9px; }
 .retainer-plot-lock { margin: auto 0 0; padding-top: 6px; color: #e0a184; font-family: var(--font-pixel); font-size: 9px; line-height: 1.5; }
+/* The one lock earning more money will never clear, made into the trip that
+   clears it. Reads as a link rather than a second button, because the plot
+   already has one control and this is a pointer at a card further down the
+   same page. */
+.retainer-plot-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 6px;
+  padding: 4px 0;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid rgba(111, 208, 197, .4);
+  color: #6fd0c5;
+  background: none;
+  font: inherit;
+  text-align: left;
+}
+.retainer-plot-gate:hover { color: #a5e8df; border-bottom-color: #a5e8df; }
 .retainer-plot-buy { margin: auto 0 0; padding-top: 7px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .retainer-plot-buy b { color: #f0cc68; font-family: var(--font-pixel); font-size: 11px; }
 .retainer-plot-buy button {

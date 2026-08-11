@@ -434,6 +434,7 @@ export function FirmPage() {
             game={game}
             highlightKey={searchParams.get('district')}
             onShowOnMap={(district) => navigate(`/map?district=${district.key}`)}
+            onShowGate={callAssetCard}
           />
         )}
         <div className="catalog-toolbar">
