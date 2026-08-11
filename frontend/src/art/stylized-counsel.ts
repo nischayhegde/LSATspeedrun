@@ -24,6 +24,16 @@ export type StylizedCounselRig = {
   rightHand: THREE.Group
   leftThumb: THREE.Object3D
   rightThumb: THREE.Object3D
+  /**
+   * The hair, on its own node under the head, and how freely this cut moves.
+   *
+   * Exposed because the motion belongs to the animation system rather than to
+   * the art: `HumanoidActor` already runs a bank of damped followers for the
+   * head, the arms and the hands, and hair is one more of them. See
+   * `hairSwing` for where the amount comes from and `HAIR_PIVOT` for why the
+   * node hangs where it does.
+   */
+  hair: { node: THREE.Object3D; swing: number }
   satchel: THREE.Group
   eyes: THREE.Group[]
   pupils: THREE.Object3D[]
@@ -706,34 +716,85 @@ const SALT_STANCE = 0x7feb352d
  * mass at the back of the fuller cuts. Both reuse primitives this file already
  * cuts, so no variant costs new heavy geometry.
  */
+/**
+ * Where the hair hinges when it swings.
+ *
+ * High on the skull, at the level of the crown, for the reason that decides
+ * whether this reads as hair or as a hat coming loose: the shell is one mesh
+ * carrying both the fringe and the mass at the nape, so whatever pivot it turns
+ * about, everything on the far side of that pivot travels the other way. Hinged
+ * at the middle of the head, a nape swinging back takes the hairline forward
+ * across the forehead, which is the exact silhouette of a wig slipping. Hinged
+ * at the crown, the hairline is a few centimetres from the axis and barely
+ * moves while the length below it moves freely — which is also where a real head
+ * of hair is anchored.
+ */
+const HAIR_PIVOT = .30
+
+/**
+ * How freely this cut moves, from its own profile rather than from a table.
+ *
+ * The one thing that decides whether hair swings is how far it hangs below the
+ * point it is anchored at, and `HAIR_PROFILES` already states that: `rimSide`
+ * and `rimBack` are where the cut ends, in head units, measured from the same
+ * origin. Reading the answer off them means the six cuts are ordered by their
+ * actual length rather than by a guess, and a seventh cut added later gets a
+ * motion matching its silhouette without anybody having to remember that this
+ * function exists.
+ *
+ * It comes out as: the male crop 0, the male side parting .30, the male full cut
+ * .52, the bob .40, the female signature .68 and the long full cut 1. That
+ * ordering is the brief — longer hair especially — arrived at from the geometry
+ * rather than asserted over it.
+ */
+export function hairSwing(gender: CharacterGender, variant: number) {
+  const profile = hairProfile(gender, variant)
+  const hangs = .22 - Math.min(profile.rimSide, profile.rimBack)
+  return Math.min(1, Math.max(0, (hangs - .22) / .5))
+}
+
+/**
+ * The hair, on a node of its own so that it can lag the head.
+ *
+ * Returns the node. Every piece is placed against the head exactly where it was
+ * before, by subtracting the pivot from its y, so the figure at rest is
+ * unchanged to the millimetre. What the node buys is one transform the actor can
+ * turn without touching a vertex, a material or a draw call — which is the whole
+ * reason this is the technique and not a vertex shader or a strand solver.
+ */
 function addHair(head: THREE.Group, gender: CharacterGender, hair: THREE.Material, variant: number) {
-  addMesh(head, referenceHairGeometry(gender, variant), hair)
+  const node = new THREE.Group()
+  node.position.set(0, HAIR_PIVOT, 0)
+  head.add(node)
+  const y = (at: number) => at - HAIR_PIVOT
+  addMesh(node, referenceHairGeometry(gender, variant), hair, [0, y(0), 0])
   if (variant === 1) {
     // Cropped. A short front only, sitting close: the whole point of this cut
     // is that there is nothing to sweep.
     if (gender === 'male') {
-      addMesh(head, capsuleGeometry(.115, .30, 8, 20), hair, [-.05, .375, .295], [0, 0, -2.32], [.74, .70, .52])
+      addMesh(node, capsuleGeometry(.115, .30, 8, 20), hair, [-.05, y(.375), .295], [0, 0, -2.32], [.74, .70, .52])
     }
-    return
+    return node
   }
   if (variant === 2) {
     // Full. A heavier fringe across the brow and a gathered mass at the back,
     // which is the silhouette break that reads first at office distance.
     if (gender === 'male') {
-      addMesh(head, capsuleGeometry(.13, .43, 8, 20), hair, [-.085, .44, .315], [0, 0, -2.22], [1.16, 1.02, .80])
-      ellipsoid(head, hair, [0, .045, -.44], [.22, .215, .13], 18)
+      addMesh(node, capsuleGeometry(.13, .43, 8, 20), hair, [-.085, y(.44), .315], [0, 0, -2.22], [1.16, 1.02, .80])
+      ellipsoid(node, hair, [0, y(.045), -.44], [.22, .215, .13], 18)
     } else {
-      ellipsoid(head, hair, [0, .085, -.47], [.185, .215, .155], 18)
+      ellipsoid(node, hair, [0, y(.085), -.47], [.185, .215, .155], 18)
     }
-    return
+    return node
   }
   // Signature: the side parting's own fringe, laid across the forehead on the
   // same side the shell's mass is carried.
   if (gender === 'male') {
-    addMesh(head, capsuleGeometry(.13, .43, 8, 20), hair, [-.075, .425, .315], [0, 0, -2.25], [1.02, .94, .70])
+    addMesh(node, capsuleGeometry(.13, .43, 8, 20), hair, [-.075, y(.425), .315], [0, 0, -2.25], [1.02, .94, .70])
   } else {
-    addMesh(head, capsuleGeometry(.11, .34, 8, 20), hair, [-.10, .405, .30], [0, 0, -2.38], [.92, .82, .62])
+    addMesh(node, capsuleGeometry(.11, .34, 8, 20), hair, [-.10, y(.405), .30], [0, 0, -2.38], [.92, .82, .62])
   }
+  return node
 }
 
 /* ------------------------------------------------------------- wardrobe
@@ -1214,7 +1275,7 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
     ellipsoid(head, skin, [side * .452 * faceWidthVariance, -.015, -.015], [.062, .105, .068], 24)
     ellipsoid(head, skinShade, [side * .474 * faceWidthVariance, -.018, .01], [.016, .05, .022], 18)
   }
-  addHair(head, gender, hair, hairVariant)
+  const hairNode = addHair(head, gender, hair, hairVariant)
 
   const eyes: THREE.Group[] = []
   const pupils: THREE.Object3D[] = []
@@ -1323,6 +1384,7 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
     rightHand: rightArm.hand,
     leftThumb: leftArm.thumb,
     rightThumb: rightArm.thumb,
+    hair: { node: hairNode, swing: hairSwing(gender, hairVariant) },
     satchel,
     eyes,
     pupils,
