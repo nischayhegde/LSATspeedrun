@@ -4,6 +4,65 @@
     {
       "question_id": "hf-lsat-lr:199809_3-LR2_8_9",
       "selected_label": "C",
+      "reasoning_sha256": "25f269668939e93414ae9b4e319e30d12ea350be177cd18bba75e3f9f2697b52",
+      "prompt_version": "coaching-v3-invalid-is-a-finding",
+      "beat": "solo",
+      "captured_at": "2026-08-11T01:08:27.983280+00:00",
+      "model": "gpt-5.6-luna",
+      "reasoning_preview": "The conclusion is about predictions being untrustworthy, and the only premise is that discoveries have conside...",
+      "coaching": {
+        "provider": "TrueFoundry",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "xhigh",
+        "prompt_version": "coaching-v3-invalid-is-a-finding",
+        "explanation_grade": 72,
+        "reasoning_verdict": "mostly_correct",
+        "reasoning_summary": "You chose C for the right gap, but you treated unpredictable discoveries as the only route and overlooked that unpredictable effects also satisfy the assumption.",
+        "understood_correctly": "You correctly focused on forecast reliability and distinguished it from benefits or developmental requirements.",
+        "first_error": {
+          "code": "unsupported_assumption",
+          "description": "The earliest flaw is treating reliable forecasts of discoveries as enough to make societal development reliably forecastable; their effects could still be unpredictable.",
+          "repair": "Apply C's full either/or bridge: the discoveries or their effects must be not entirely reliable to forecast."
+        },
+        "answer_analysis": {
+          "correct_answer_explanation": "C supplies the missing bridge: if discoveries or their effects cannot be forecast entirely reliably, societies with frequent discoveries will be especially hard to forecast. Considerable effects alone do not establish untrustworthy predictions.",
+          "selected_answer_explanation": "C may look tempting because it echoes the stimulus's prediction language. It succeeds because it identifies the missing premise connecting frequent, consequential discoveries to especially untrustworthy forecasts.",
+          "choice_explanations": [
+            {
+              "label": "A",
+              "is_correct": false,
+              "explanation": "A concerns harmful consequences caused by predictions, not whether the predictions are accurate. Harm is unnecessary to the argument."
+            },
+            {
+              "label": "B",
+              "is_correct": false,
+              "explanation": "B says discoveries are required for development, but the argument needs a reason predictions are unreliable. Requirement does not establish unpredictability."
+            },
+            {
+              "label": "C",
+              "is_correct": true,
+              "explanation": "C states that discoveries or their effects are not entirely reliable to forecast. That directly explains why frequent discoveries make predictions about societal conditions untrustworthy."
+            },
+            {
+              "label": "D",
+              "is_correct": false,
+              "explanation": "D says advanced societies benefit from discoveries. Benefits do not explain why predictions about those societies are unreliable."
+            },
+            {
+              "label": "E",
+              "is_correct": false,
+              "explanation": "E compares prediction difficulty in advanced and less advanced societies. The argument needs unreliability concerning discoveries or their effects, not this comparison."
+            }
+          ]
+        },
+        "next_step_hint": "If the conclusion attacks prediction reliability, test whether the underlying events or their effects are themselves unreliable to forecast.",
+        "solution_method": "1) Identify the conclusion and factual premise. 2) Ask what must make frequent, consequential discoveries hard to use in forecasting. 3) Select the choice stating that discoveries or their effects are not entirely reliable to forecast.",
+        "debrief": "The key gap is not whether discoveries help or harm society, but whether they can be forecast reliably. C fills that gap, while your analysis should retain both alternatives—discoveries and their effects."
+      }
+    },
+    {
+      "question_id": "hf-lsat-lr:199809_3-LR2_8_9",
+      "selected_label": "C",
       "reasoning_sha256": "20d54334681a32a8da9c2b8026433b2f8ccc137f8859a17fc2abd75095af75c7",
       "prompt_version": "coaching-v3-invalid-is-a-finding",
       "beat": "verdict-twin",
