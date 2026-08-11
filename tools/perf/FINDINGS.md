@@ -88,16 +88,62 @@ chunk and the framework chunk have both been downloaded, parsed and executed.
 Measured, that is 1580 ms — about 1.38 s after the browser already knew, from
 the URL alone, exactly which chunk it was going to need.
 
-### The route-script hint
+### The route-script hint (landed)
 
-Not yet measured. The change is to emit a `modulepreload` for the current
-path's own chunk closure from the head script that is already writing that
-path's stylesheets — the same `ROUTE_ENTRY_CHUNKS` table and the same
-`staticClosure` walk `redirectRouteHints` already uses, with only the JS side
-never emitted for a direct navigation. Results go here when `ab.mjs` has run
-them, and not before.
+`lsat-route-script-hints` in `frontend/vite.config.ts` emits a `modulepreload`
+for the current path's own chunk closure. Everything it needs was already
+there: the same `ROUTE_ENTRY_CHUNKS` table and the same `staticClosure` walk
+`redirectRouteHints` uses on `/`. Only the eight paths that *can* name their
+screen from the url were left out.
+
+Interleaved A/B, base is the same source without the plugin, same browser
+lifetime, 390px / 4x CPU / 1.6 Mbps / 150 ms, brotli, load stated per run.
+
+| route | chunk requested | route on the glass | largest paint | pairs won |
+|---|---|---|---|---|
+| `/story` | 1296 → 191 (−1105) | 2112 → 1708 (−404) | −380 | 9 of 9 |
+| `/firm` | 1312 → 190 (−1122) | 1975 → 1756 (−219) | −192 | 9 of 9 |
+| `/onboarding` | 1152 → 191 (−961) | 1617 → 1452 (−165) | −172 | 7 of 7 |
+| `/cases` | 1296 → 192 (−1104) | 2222 → 2091 (−131) | −460 | 9 of 9 |
+| `/progress` | 1262 → 189 (−1073) | 2405 → 2338 (−67) | −68 | 8 of 9 |
+| `/cases/<id>` | 1339 → 187 (−1152) | 2357 → 2348 (−9) | −16 | 6 of 9 |
+| `/login` | not hinted, see below | 1509 → 1508 (−1) | +4 | 4 of 9 |
+
+`/cases/<id>` is a documented neutral rather than a win. Its chunk arrives
+1.15 s earlier and the screen does not move, because that screen is gated on
+the session fetch and not on its code. It is left hinted because it costs
+nothing and 6 of 9 is not a regression, but nobody should expect it to help.
+
+First contentful paint did not move on any route, and that is the correct
+result: the opening plate is drawn by `index.html` itself, and nothing in the
+bundle can make it earlier or later. `index.html` grew 2789 bytes raw and
+**165 bytes brotli**.
+
+`/office` and `/map` are excluded because `scenePreloadHints` already emits
+their page chunk. `/login` is excluded because it measured 20 ms slower across
+7 of 7 pairs — see Killed.
 
 ## Killed
+
+**Hinting `/login`.** It is the one screen that cannot draw until a network
+answer arrives: `auth-config` decides whether the dev sign-in button is shown,
+so the route's own chunk is never what it is waiting for, and ~10 kB of hinted
+bytes is pure contention on that reply. 1507 → 1527 ms to content, losing 7 of
+7 pairs. Excluded by name in `HINT_LOSES`. This is the same shape as the 5.6 s
+that hinting three.js on this route cost earlier, three orders of magnitude
+smaller.
+
+**The first reading of the route-script hint, which said it was a regression.**
+Worth recording because the mistake is subtle and the harness was mine. The
+first A/B reported the hint making `/firm` 264 ms *slower* and `/story` 328 ms
+slower, losing 0 of 9 pairs on both, and the explanation was plausible:
+bandwidth contention on a 1.6 Mbps pipe, exactly the trap the `vite.config.ts`
+comment already records for three.js. It was wrong. The API proxy was
+forwarding `/v1/game` uncompressed — 165 kB instead of 26 kB — so the pipe was
+saturated by an artefact and every byte the hint moved forward really was
+stealing from the critical path. With the proxy compressing the way CloudFront
+does, the same comparison is a win of 67 to 404 ms winning 8 or 9 of 9 pairs.
+The trap at the top of this file is not a historical note.
 
 **Hinting three.js behind a redirect.** Recorded in `vite.config.ts` above
 `SCENE_ENTRY_CHUNKS` and repeated here because it is the trap a route-script

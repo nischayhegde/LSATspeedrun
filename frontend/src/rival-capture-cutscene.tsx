@@ -76,8 +76,24 @@ export function RivalCaptureCutscene({ asset, onClose }: { asset: GameAsset; onC
   }, [onClose])
 
   return (
-    <div className="rcc-backdrop" role="dialog" aria-modal="true" aria-labelledby="rcc-title" onClick={onClose}>
-      <div className="rcc-frame" onClick={(event) => event.stopPropagation()}>
+    /**
+     * The dialog is the frame, not the backdrop. The backdrop is the dimmed
+     * sheet behind it, and giving it the role told a screen reader that the
+     * whole viewport was the dialog and that its accessible name was a heading
+     * sitting several levels down inside it.
+     *
+     * Clicking the sheet still dismisses. That is a convenience duplicating
+     * three accessible controls — the close button, "Back to business", and
+     * Escape, bound above — so it is exempt from the keyboard rules rather
+     * than given a keydown handler no keyboard user could ever reach: the
+     * backdrop is not focusable and must not become a tab stop in front of the
+     * dialog's own buttons. Comparing target with currentTarget is what lets
+     * the frame drop the `stopPropagation` handler it used to need, which was
+     * itself only there to cancel this one.
+     */
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
+    <div className="rcc-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <div className="rcc-frame" role="dialog" aria-modal="true" aria-labelledby="rcc-title">
         <button type="button" className="rcc-close" onClick={onClose} aria-label="Dismiss">
           <CloseMark />
         </button>

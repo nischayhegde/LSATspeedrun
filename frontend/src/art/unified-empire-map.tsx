@@ -556,7 +556,6 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
   const travelToLandmarkKey = useCallback((key: string) => {
     const landmark = landmarks.find((candidate) => candidate.key === key)
     if (landmark) travelToLandmark(landmark)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landmarks])
 
   // A district named by the ledger cannot be flown to until the scene has

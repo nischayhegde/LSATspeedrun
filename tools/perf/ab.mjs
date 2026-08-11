@@ -55,7 +55,13 @@ const chunkFor = (dist, route) => {
   return readdirSync(resolve(dist, 'assets')).find((f) => f.startsWith(`${hit[1]}-`) && f.endsWith('.js')) || null
 }
 
-const cookies = await devAuthCookies(apiOrigin, email)
+/**
+ * `--anon` measures the way a visitor with no session does, which is the only
+ * honest way to time `/login` itself. `--signed-in-at` is the other half of
+ * that route: an account that is already signed in bounces straight off it,
+ * and that bounce is what a hint on `/login` once made 10x worse.
+ */
+const cookies = opts['--anon'] ? null : await devAuthCookies(apiOrigin, email)
 const a = await serveApp(baseDist, apiOrigin, compress)
 const b = await serveApp(headDist, apiOrigin, compress)
 const browser = await launch()
@@ -101,10 +107,22 @@ try {
    * statement about the harness, not about either build, and a bounce takes as
    * long as a load.
    */
-  const control = await measureRoute(browser, { origin: `http://127.0.0.1:${b.port}`, route: routes[0], cookies: null, link })
-  const ok = !control.valid && control.landedOn === '/login'
-  console.log(`\n  signed out control on ${routes[0]}: ${ok ? 'bounced to /login as it must' : `UNEXPECTED valid=${control.valid} landed ${control.landedOn}`}`)
-  if (!ok) bad = true
+  if (cookies) {
+    const control = await measureRoute(browser, { origin: `http://127.0.0.1:${b.port}`, route: routes[0], cookies: null, link })
+    const ok = !control.valid && control.landedOn === '/login'
+    console.log(`\n  signed out control on ${routes[0]}: ${ok ? 'bounced to /login as it must' : `UNEXPECTED valid=${control.valid} landed ${control.landedOn}`}`)
+    if (!ok) bad = true
+  } else {
+    /**
+     * With no cookie the control is the mirror image: a protected route has to
+     * bounce, which proves the run really is anonymous rather than reusing a
+     * session from a previous context.
+     */
+    const control = await measureRoute(browser, { origin: `http://127.0.0.1:${b.port}`, route: '/firm', cookies: null, link })
+    const ok = !control.valid && control.landedOn === '/login'
+    console.log(`\n  anonymous control on /firm: ${ok ? 'bounced to /login as it must' : `UNEXPECTED valid=${control.valid} landed ${control.landedOn}`}`)
+    if (!ok) bad = true
+  }
 } finally {
   await browser.close()
   a.server.close()
