@@ -82,7 +82,9 @@ try {
     await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 }).catch(() => {})
   }
 
-  await page.goto(`${baseUrl}/office?officeTier=${tier}&officeFloor=${floor}&officeAll=1`, { waitUntil: 'domcontentloaded' })
+  // `OFFICE_EXTRA=&officeEntropy=0` builds the same room on the grid, which is
+  // the only honest control for a claim about how a room looks.
+  await page.goto(`${baseUrl}/office?officeTier=${tier}&officeFloor=${floor}&officeAll=1${process.env.OFFICE_EXTRA ?? ''}`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.office-three-canvas.is-ready', { timeout: 120000 }).catch(async (error) => {
     // A timeout here is almost never the scene being slow; it is the page
     // showing something else entirely. Say which.
@@ -110,7 +112,7 @@ try {
       : ''),
   )
 
-  const stem = `${outDir}/t${String(tier).padStart(2, '0')}-${floor}-${width}`
+  const stem = `${outDir}/t${String(tier).padStart(2, '0')}-${floor}-${width}${process.env.OFFICE_STEM ?? ''}`
   const clip = await page.evaluate(() => {
     const canvas = document.querySelector('.office-three-canvas')
     const rect = canvas.getBoundingClientRect()
