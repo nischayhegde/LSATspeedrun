@@ -192,6 +192,18 @@
     scroll-snap-type: x proximity;
     scrollbar-width: none;
     font-size: 10px;
+    /* The second card is meant to peek, which is how a snap rail says there is
+       more of it. Without a soft edge it does not read as a peek: at 390 the
+       cut lands mid-word on "Reasoning" and the first screen anyone ever sees
+       opens with what looks like broken text. The mask turns the same 104px of
+       card into an edge that is obviously continuing.
+
+       A mask and not an overlay, because this rail sits on a translucent panel
+       over the office scene and a gradient strip painted on top of it would
+       have to match a background that moves. Cheap here for the same reason a
+       full-viewport one would not be: 366x38, four children, no blur. */
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
   }
   .feature-list::-webkit-scrollbar { display: none; }
   .feature-list span {
