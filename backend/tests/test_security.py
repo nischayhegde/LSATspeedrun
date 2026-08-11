@@ -215,6 +215,18 @@ def test_a_bearer_prefix_skips_csrf_but_still_has_to_be_a_real_token(app):
     assert response.json["error"]["code"] == "unauthorized"
 
 
+def test_the_csrf_exemption_list_is_matched_exactly_and_fails_closed(app):
+    """The four sign-in routes are exempt by exact path. A near miss has to land
+    on the *protected* side of that comparison, not slip through it."""
+    client = app.test_client()
+    body = {"email": "exempt@example.test", "display_name": "T"}
+    assert client.post("/v1/auth/dev", json=body).status_code == 200
+    for near_miss in ("/v1/auth/dev/", "/v1/AUTH/DEV", "//v1/auth/dev"):
+        response = client.post(near_miss, json=body)
+        assert response.status_code == 403, f"{near_miss} was treated as exempt"
+        assert response.json["error"]["code"] == "csrf_failed"
+
+
 def test_a_revoked_session_cookie_stops_working_immediately(app):
     client = app.test_client()
     headers = sign_in(client, "revoked@example.test")
