@@ -30,7 +30,13 @@ try {
           resited: siting.filter((row) => row.cleared && row.moved > 0).length,
           stuck: siting.filter((row) => !row.cleared).map((row) => row.label),
           furthest: siting.reduce((most, row) => Math.max(most, row.moved), 0),
-          rows: siting.map((row) => `${row.label} ${row.cleared ? row.moved.toFixed(2) : 'STUCK'} @ ${row.x.toFixed(2)},${row.z.toFixed(2)}`),
+          rows: siting.map((row) => [
+            row.label,
+            row.cleared ? row.moved.toFixed(2) : 'STUCK',
+            `@ ${row.x.toFixed(2)},${row.z.toFixed(2)}`,
+            // What it is standing in, and how far into it, when it is stuck.
+            row.cleared ? '' : `on ${row.blockedBy} by ${row.depth}`,
+          ].join(' ')),
         },
         authored: data.authoredClearance ?? null,
         trees: trees.reduce(
