@@ -179,19 +179,22 @@ body {
     border-radius: 12px;
     font-size: 10.5px;
   }
+  /* The phone header's overflow key, drawn as the same recessed chip the
+     desktop header's sound block and standing badges are, rather than as the
+     bevelled pixel key with a hard black offset it was left as. */
   .mobile-overflow-trigger {
     min-width: 48px;
     min-height: 44px;
     padding: 4px 7px;
     display: grid;
     place-items: center;
-    border: 2px solid #080c13;
-    border-radius: 3px;
+    border: 1px solid rgba(232, 200, 124, .22);
+    border-radius: var(--r-control);
     color: #f2d481;
-    background: #203147;
-    box-shadow: inset 0 -3px #152236, 2px 2px #080c13;
+    background: rgba(32, 49, 71, .82);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
   }
-  .mobile-overflow-trigger span { font-family: var(--font-pixel); font-size: 6.5px; letter-spacing: .04em; }
+  .mobile-overflow-trigger span { font-family: var(--font-hud); font-size: 8px; letter-spacing: .06em; }
   .mobile-site-menu {
     position: fixed;
     z-index: 150;
@@ -364,8 +367,7 @@ body {
     width: 34px;
     height: 34px;
     margin: -28px auto 4px;
-    border-width: 3px;
-    box-shadow: inset 0 0 0 1px #dbad4e, 3px 3px #141721;
+    box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-2);
   }
   .crest svg { width: 17px; height: 17px; }
   .login-panel .secondary-button.full { min-height: 38px; margin-top: 4px; padding-block: 7px; font-size: 8.5px; }

@@ -706,17 +706,23 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .account-menu-item.active { color: #ffe1ad; background: #653a36; }
 .account-menu-item.active svg { color: #ffe1ad; }
 .account-menu-item.sign-out svg { color: #d97a6b; }
+/* The sound block sits in the header between four rounded chips and a rounded
+   avatar, and was the last square-cornered pixel key left in that row: a 2px
+   `#080c13` outline, a `inset 0 -3px` bevel and a hard `2px 2px` offset. It is
+   now the same recessed chip as the standing badges two elements along, so the
+   whole right-hand group reads as one set of controls. */
 .sound-controls {
-  height: 38px;
+  height: 34px;
   min-width: 0;
-  padding: 3px;
+  padding: 2px 4px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 2px solid #080c13;
+  border: 1px solid rgba(232, 200, 124, .22);
+  border-radius: var(--r-chip);
   color: #9cb0bb;
-  background: #203147;
-  box-shadow: inset 0 -3px #152236, 2px 2px #080c13;
+  background: rgba(32, 49, 71, .82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
 }
 .sound-control-button {
   width: 28px;
@@ -726,17 +732,21 @@ h1, h2, h3 { letter-spacing: -.035em; }
   place-items: center;
   flex: 0 0 auto;
   border: 0;
+  border-radius: var(--r-chip);
   color: #9cb0bb;
   background: transparent;
-  font-family: var(--font-pixel);
-  font-size: 9px;
+  font-family: var(--font-hud);
+  font-size: 9.5px;
 }
-.sound-control-button:hover { color: #ffe394; background: #263f56; }
-.sound-control-button svg { width: 16px; height: 16px; stroke-width: 2.5; }
-.sound-reduced-button.active { color: #172131; background: #efc65e; box-shadow: inset -2px -2px #b87b2d; }
-.sound-ambient-button.active { color: #172131; background: #75c5b6; box-shadow: inset -2px -2px #3f847b; }
+.sound-control-button:hover { color: #ffe394; background: rgba(255, 255, 255, .07); }
+.sound-control-button svg { width: 16px; height: 16px; stroke-width: 2.35; }
+/* Lit, these are the same two plates the rest of the app lights things with:
+   brass for "held down by you", verdigris for "running". Both were bevelled
+   pixel keys with a two-pixel inner shadow on the bottom-right. */
+.sound-reduced-button.active { color: #2a1e06; background: var(--brass-plate); box-shadow: inset 0 1px 0 rgba(255, 246, 220, .6); }
+.sound-ambient-button.active { color: #10322e; background: linear-gradient(170deg, #a5ded4, var(--verdigris)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45); }
 .sound-volume-control { width: 62px; display: inline-flex; align-items: center; }
-.sound-volume-control input { width: 100%; height: 20px; accent-color: #efc65e; cursor: pointer; }
+.sound-volume-control input { width: 100%; height: 20px; accent-color: var(--brass-bright); cursor: pointer; }
 .sound-volume-control input:disabled { cursor: default; opacity: .35; }
 
 .eyebrow, .pixel-kicker { font-family: var(--font-pixel); font-weight: 900; letter-spacing: .14em; }
@@ -1360,9 +1370,12 @@ summary:focus-visible,
 .desktop-nav a {
   transition: color var(--mo-1) linear, background var(--mo-1) linear, transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass);
 }
+/* Which is a 1px seat into an inner shadow, not the 3px diagonal slide onto a
+   two-tone bevel this used to do — that was the pixel key the button above it
+   stopped being, and a claim of sameness the rule did not keep. */
 .desktop-nav a.active:active {
-  transform: translate(3px, 3px);
-  box-shadow: inset -3px -3px #b87b2d, inset 2px 2px #ffeb98;
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(74, 48, 8, .35);
 }
 
 /* ------------------------------------------------------- entrance */
