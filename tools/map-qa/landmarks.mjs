@@ -13,7 +13,9 @@
  * four for every district in a region and fails loudly on any that is missing:
  *
  *   join     every district's `landmark_key` resolves in its own region's scene
- *   siting   no landmark sits on standing ground, or in the launch's own lane
+ *   siting   on the sparse regions, no landmark sits on standing ground or in
+ *            the launch's own lane; elsewhere the same numbers are printed but
+ *            not gated, because there a landmark names a building on a street
  *   pin      the ledger row's pin lands on the map with the row marked
  *   flight   the guide row moves the camera to the place
  *   brief    the brief renders, and says held, open or locked
@@ -29,6 +31,25 @@ import { open, region, save, TABS, OUT, BASE, EMAIL } from './lib.mjs'
 const tag = process.argv[2] ?? 'v1'
 const keys = process.argv.slice(3).length ? process.argv.slice(3) : ['ocean', 'orbit']
 const dir = `${OUT}/landmarks-${tag}`
+
+/**
+ * Where "this district is standing on something" is a defect.
+ *
+ * On open water and on an orbital deck a landmark names a stretch of nothing,
+ * so a pick disc that reaches into standing ground is reaching into a rival's
+ * compound or the player's own office, and a disc in the launch's circuit puts
+ * a contact where the one vessel out there runs them down once a lap.
+ *
+ * In the Old Quarter, The Circuit and the Sovereign Arc a landmark names a
+ * *building*, which stands on ground with a street outside it, so both readings
+ * inverted: 3 of the 12 city landmarks and 2 of the 10 nation ones sit on their
+ * own footprint, and 5 city and 6 nation discs reach into a carriageway,
+ * because that is what a market on a high street is. Asserting the sparse rule
+ * there produced eleven failures against districts the user's own audit
+ * describes as working. They are still printed — the numbers are worth having —
+ * but only the two sparse regions are gated on them.
+ */
+const SPARSE = new Set(['ocean', 'orbit'])
 
 const { browser, page, errors } = await open()
 const report = { base: BASE, email: EMAIL, regions: {} }
@@ -170,6 +191,7 @@ try {
     }
     if (found.scene.duplicates.length) failures.push(`${key}: duplicate landmark keys ${found.scene.duplicates.join(', ')}`)
     for (const row of found.scene.overlaps) {
+      if (!SPARSE.has(key)) continue
       // Overlap is the defect: a district whose pick disc covers a rival's
       // compound or the player's own office steals the click from it.
       if (row.into > 0) failures.push(`${key}/${row.key}: reaches ${row.into} into standing ground at ${row.at}`)
@@ -179,6 +201,7 @@ try {
       else if (row.into > -.25) warnings.push(`${key}/${row.key}: only ${-row.into} clear of ground at ${row.at}`)
     }
     for (const row of found.scene.inLane) {
+      if (!SPARSE.has(key)) continue
       if (row.clear !== null && row.clear < 0) failures.push(`${key}/${row.key}: ${-row.clear} inside a traffic lane`)
     }
 
