@@ -137,9 +137,25 @@ function coveringText(element: HTMLElement) {
  *   `ANNOUNCE_MS` after any of its four figures moves — which is the one moment
  *   it has something to say, and the reason it is fixed rather than per-page.
  *
- * A phone has no pointer to reach with, but it also has the announcement and
- * the reserved strip of clearance at the end of every page, so the figures are
- * never more than a scroll away.
+ * That is the rule for the **desktop card**, which is a small pane floating in
+ * the bottom-left corner over whatever the page has put there.
+ *
+ * A phone is not that. Below 900px the card becomes a full-width strip resting
+ * one gap above the navigation dock, and `--mobile-dock-clearance` reserves the
+ * lane for it at the end of every page — so it is chrome, in the same sense the
+ * dock beneath it is chrome, and content passing under it while you scroll is
+ * that lane working rather than a collision. It also has no pointer to reach
+ * with, so "hidden until wanted" has no gesture that wants it.
+ *
+ * Measured before changing it: at 390 the strip was yielded at rest on every
+ * route, and the claim that the figures were "a scroll away" at the end of the
+ * page was true on Dashboard, true on Firm if you are willing to scroll 19,606
+ * pixels, and false on Practice. So the live ledger did not reach a phone.
+ *
+ * On a coarse pointer the strip therefore keeps only the first half of the
+ * rule — away while the page is moving, back when it stops — which is what it
+ * did before the covering test existed, and what the dock's own reserved lane
+ * makes correct there.
  *
  * Everything here writes a `data-` attribute straight onto the node rather than
  * going through state: this component is mounted for the whole session, and a
@@ -166,8 +182,16 @@ function useYieldWhileReading(node: React.RefObject<HTMLElement | null>, figures
     let pointerOver = false
     let covering = false
 
+    /* Read once, here rather than at module scope, so a browser resized across
+       the breakpoint or a device that changes pointer picks up the other rule
+       on the next mount. */
+    const finePointer = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false
+
     const apply = () => {
-      const away = scrolling || (covering && !pointerOver)
+      // See the note above the hook: on a coarse pointer the card is a docked
+      // strip with a reserved lane, so covering text while the page moves past
+      // it is not a reason to hide, and there is no pointer to bring it back.
+      const away = scrolling || (finePointer && covering && !pointerOver)
       if (away) element.setAttribute('data-yield', 'true')
       else element.removeAttribute('data-yield')
     }
@@ -191,6 +215,10 @@ function useYieldWhileReading(node: React.RefObject<HTMLElement | null>, figures
        without restoring it always answers "nothing there", and the card would
        return, cover a paragraph, and only discover it on the next scroll. */
     const remeasure = () => {
+      // Nothing consumes `covering` on a coarse pointer, and the hit-test is
+      // sixteen `elementsFromPoint` calls plus a subtree walk — not something
+      // to run on a phone for an answer nothing reads.
+      if (!finePointer) { apply(); return }
       const wasYielding = element.hasAttribute('data-yield')
       const previous = element.style.transition
       if (wasYielding) {
@@ -221,7 +249,6 @@ function useYieldWhileReading(node: React.RefObject<HTMLElement | null>, figures
       settle = window.setTimeout(() => { scrolling = false; remeasure() }, SETTLE_MS)
     }
 
-    const finePointer = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false
     const onPointerMove = (event: PointerEvent) => {
       if (frame) return
       const { clientX, clientY } = event

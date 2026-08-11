@@ -100,8 +100,25 @@ const AUDIT = `(() => {
     // economy ledger is a 214px card 14px off the same corner. One is a bar and
     // the other is a panel over the page.
     const spans = r.width >= vw - 40
-    if (spans && vh - r.bottom <= 24 && r.top > vh / 2) return 'bottom'
-    if (spans && r.top <= 24 && r.bottom < vh / 2) return 'top'
+    if (!spans) return 'float'
+    // Chrome stacks. The economy ledger on a phone is a full-width strip
+    // resting above the navigation dock, and the page reserves the lane for
+    // both — so "docked" has to mean nothing but other fixed chrome stands
+    // between it and the edge, not that it touches the edge itself.
+    const onlyChromeBelow = () => {
+      for (let y = r.bottom + 2; y < vh - 2; y += 8) {
+        const hit = document.elementFromPoint(vw / 2, y)
+        if (!hit) return false
+        let fixed = false
+        for (let n = hit; n && n !== document.body; n = n.parentElement) {
+          if (getComputedStyle(n).position === 'fixed') { fixed = true; break }
+        }
+        if (!fixed) return false
+      }
+      return true
+    }
+    if (r.top > vh / 2 && (vh - r.bottom <= 24 || onlyChromeBelow())) return 'bottom'
+    if (r.top <= 24 && r.bottom < vh / 2) return 'top'
     return 'float'
   }
 
