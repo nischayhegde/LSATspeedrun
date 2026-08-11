@@ -50,6 +50,23 @@ export type IllustratedStyleOptions = {
   saturation?: number
   /** Must match the exposure the scene was graded at. */
   exposure?: number
+  /**
+   * How much light a fully enclosed crevice loses. 0 switches the contact
+   * shading off entirely, and with it every tap it costs.
+   */
+  occlusion?: number
+  /** How far, in world units, a surface looks for its own occluders. */
+  occlusionRadius?: number
+  /**
+   * What an occluded surface fades towards.
+   *
+   * Not a grey. Occlusion is the loss of one particular light — the wide, soft
+   * one, sky outdoors and ceiling indoors — while the short-range bounce off
+   * whatever is doing the occluding survives. So a gutter under a warm stone
+   * wall goes warm as it goes dark, and a corner of a cool teal room goes
+   * cooler. Multiplying by a colour rather than a scalar is what carries that.
+   */
+  occlusionTint?: THREE.ColorRepresentation
 }
 
 const DEFAULTS: Required<IllustratedStyleOptions> = {
@@ -62,6 +79,9 @@ const DEFAULTS: Required<IllustratedStyleOptions> = {
   grain: .05,
   saturation: 1.12,
   exposure: 1,
+  occlusion: 0,
+  occlusionRadius: .5,
+  occlusionTint: 0x8f8579,
 }
 
 const VERTEX = /* glsl */`
@@ -91,6 +111,10 @@ uniform float uGrain;
 uniform float uSaturation;
 uniform float uExposure;
 uniform float uOrthographic;
+uniform float uOcclusion;
+uniform float uOcclusionRadius;
+uniform vec3 uOcclusionTint;
+uniform vec2 uProjScale;
 
 varying vec2 vUv;
 
@@ -171,6 +195,88 @@ float grainNoise(vec2 position) {
   return fract(sin(dot(position, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
+/**
+ * How much of the wide, soft light a point cannot see.
+ *
+ * ## Why this belongs here and not in the scenes
+ *
+ * Every one of these scenes lights with a hemisphere plus two or three
+ * directionals, and that family of lights has no notion of anything standing in
+ * its way: a skylight term is a function of the surface normal alone, so the
+ * strip of pavement in the angle of a wall receives exactly as much sky as the
+ * middle of the road, and the underside of a desk receives as much ceiling as
+ * the desktop. That is the single largest reason these rooms and streets read
+ * as assembled from separate pieces rather than as places — nothing is seated
+ * on anything. The alternative the engine offers is shadow maps, one per light,
+ * which is precisely the cost this project has spent months not paying.
+ *
+ * The depth buffer already in this pass answers the same question for free-ish.
+ * Occlusion is a purely local property of the geometry around a point, the
+ * depth buffer is a picture of that geometry, and no scene has to be re-drawn
+ * to ask.
+ *
+ * ## The sampling pattern is deterministic on purpose
+ *
+ * The textbook version rotates the tap pattern per pixel by a hash and blurs
+ * the noise away afterwards. Both halves are wrong here. The blur is a second
+ * fullscreen pass, and the noise it exists to remove is screen-locked, so
+ * without it a moving camera drags a field of static speckle across the world —
+ * which is the one thing the grain in this shader is carefully arranged not to
+ * do.
+ *
+ * A fixed rosette instead: eight directions at two radii, nudged by a fraction
+ * of one step so the pattern does not lock to the pixel grid. It undersamples,
+ * and undersampling shows up as a soft, smooth error rather than as noise —
+ * which is a wash, and a wash is what an illustrator would have put there.
+ */
+float contactOcclusion(vec3 origin, vec3 normal) {
+  // A world-space radius has to become a uv radius, and the two projections
+  // disagree about how. Perspective shrinks with distance; orthographic does
+  // not shrink at all, and dividing by depth there would give a portrait's
+  // shoulders a metre-wide search and its nose a millimetre.
+  vec2 radiusUv = uOcclusionRadius * uProjScale;
+  if (uOrthographic < .5) radiusUv /= max(-origin.z, .05);
+
+  // Below about a pixel there is nothing left to sample but the texel the
+  // centre already read, and every tap comes back reporting the surface
+  // occluding itself. Far geometry therefore fades out of the effect instead
+  // of turning into a grey film.
+  float footprint = smoothstep(.6, 2.5, min(radiusUv.x / uTexel.x, radiusUv.y / uTexel.y));
+  if (footprint <= 0.) return 0.;
+
+  // A fraction of one angular step, from the same static field as the paper
+  // grain, so the rosette does not print itself onto the image as an
+  // eight-petalled flower around every object.
+  float turn = grainNoise(gl_FragCoord.xy * .5) * .7853981634;
+  float sum = 0.;
+  for (int index = 0; index < 8; index += 1) {
+    float angle = float(index) * .7853981634 + turn;
+    // Alternating radii, so eight taps cover two rings: the inner one catches
+    // the tight crease where a chair leg meets the floor, the outer one the
+    // broad darkening under a desk.
+    float reach = mod(float(index), 2.) < .5 ? .48 : 1.;
+    vec2 sampleUv = vUv + vec2(cos(angle), sin(angle)) * radiusUv * reach;
+
+    // Off-screen taps clamp to the border texel, which would draw a dark frame
+    // around the whole image.
+    vec2 inside = step(vec2(0.), sampleUv) * step(sampleUv, vec2(1.));
+    float valid = inside.x * inside.y;
+
+    vec3 toSample = viewPosition(sampleUv) - origin;
+    float distance = length(toSample);
+    // The horizon term. A sample above the tangent plane is blocking light;
+    // one below it is behind the surface and blocks nothing. The bias keeps a
+    // flat surface from occluding itself out of sheer depth-buffer precision.
+    float horizon = max(dot(normal, toSample / max(distance, .0001)) - .07, 0.);
+    // Anything past the radius is a different object seen behind this one, not
+    // a neighbour. Without this every silhouette wears a dark halo of the
+    // background it happens to stand in front of.
+    float within = 1. - smoothstep(.55, 1., distance / uOcclusionRadius);
+    sum += horizon * within * valid;
+  }
+  return clamp(sum * .3 * footprint, 0., 1.);
+}
+
 void main() {
   vec4 source = texture2D(tDiffuse, vUv);
   float depth = rawDepth(vUv);
@@ -225,10 +331,27 @@ void main() {
 
   float edge = clamp(max(depthEdge, normalEdge), 0., 1.) * onGeometry;
 
+  // --- contact shading ---------------------------------------------------
+  // Before the grade, not after, because this is a light that is missing
+  // rather than a darkening of the picture. Taking it out of the linear
+  // radiance lets the tone map roll it off the way it rolls off every other
+  // shortfall of light; taken out of the graded image it would crush the
+  // shadow end and read as soot.
+  //
+  // The whole term is behind a uniform branch, so a surface that asks for no
+  // occlusion pays for none of the taps rather than multiplying by zero at the
+  // end. Portraits and the smaller busts are the reason: they are drawn many
+  // to a frame through a shared renderer and have almost nothing to occlude.
+  vec3 radiance = source.rgb;
+  if (uOcclusion > 0. && onGeometry > .5) {
+    float ambientLoss = contactOcclusion(viewPosition(vUv), normal) * uOcclusion;
+    radiance *= mix(vec3(1.), uOcclusionTint, ambientLoss);
+  }
+
   // --- paint -------------------------------------------------------------
   // Grade first, then stylise, so the bands land on values the eye will
   // actually see rather than on unbounded linear radiance.
-  vec3 colour = linearToSRGB(acesFilmic(source.rgb));
+  vec3 colour = linearToSRGB(acesFilmic(radiance));
 
   // Quantising a smoothly lit surface straight to bands lays visible contour
   // rings across it - a wall washed by one lamp turns into a set of concentric
@@ -331,6 +454,14 @@ export class IllustratedRenderPass {
         uSaturation: { value: settings.saturation },
         uExposure: { value: settings.exposure },
         uOrthographic: { value: 0 },
+        uOcclusion: { value: settings.occlusion },
+        uOcclusionRadius: { value: settings.occlusionRadius },
+        uOcclusionTint: { value: new THREE.Color(settings.occlusionTint) },
+        // Half the projection's own scale factors, which is what turns a world
+        // radius into a uv radius. Refreshed per frame from the camera below,
+        // because a scene that changes its field of view mid-flight would
+        // otherwise keep searching the wrong distance.
+        uProjScale: { value: new THREE.Vector2(1, 1) },
       },
     })
 
@@ -383,9 +514,22 @@ export class IllustratedRenderPass {
     uniforms.uNear.value = camera.near
     uniforms.uFar.value = camera.far
     uniforms.uInverseProjection.value.copy(camera.projectionMatrixInverse)
+    const projection = camera.projectionMatrix.elements
+    uniforms.uProjScale.value.set(projection[0] * .5, projection[5] * .5)
 
     this.renderer.setRenderTarget(previousTarget)
     this.renderer.render(this.quadScene, this.quadCamera)
+  }
+
+  /**
+   * The contact-shading strength this scene was authored with.
+   *
+   * Readable so a harness can switch the term off, measure, and put back
+   * exactly what was there rather than a number copied out of a source file
+   * that may since have moved.
+   */
+  get occlusionStrength() {
+    return this.material.uniforms.uOcclusion.value as number
   }
 
   /** Live-tune the look without rebuilding the pass. */
@@ -400,6 +544,9 @@ export class IllustratedRenderPass {
     if (options.grain !== undefined) uniforms.uGrain.value = options.grain
     if (options.saturation !== undefined) uniforms.uSaturation.value = options.saturation
     if (options.exposure !== undefined) uniforms.uExposure.value = options.exposure
+    if (options.occlusion !== undefined) uniforms.uOcclusion.value = options.occlusion
+    if (options.occlusionRadius !== undefined) uniforms.uOcclusionRadius.value = options.occlusionRadius
+    if (options.occlusionTint !== undefined) uniforms.uOcclusionTint.value.set(options.occlusionTint)
   }
 
   dispose() {

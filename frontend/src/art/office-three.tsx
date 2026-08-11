@@ -671,6 +671,27 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       bands: 10,
       flatten: .34,
       saturation: 1.18,
+      // The room needs this more than the districts do, and for a reason
+      // specific to how it is lit. Nothing in here casts a shadow: the sun is
+      // outside, `keyLight.castShadow` is false, and every point light was
+      // consolidated years ago precisely so none of them would need a shadow
+      // map. What lights the room is a hemisphere, an ambient term and four
+      // rectangular area sources, and not one of those can be blocked by
+      // anything. So a bookcase stood against a wall put no darkness in the
+      // gap behind it, a desk laid none under itself, and a chair sat on a
+      // floor that was exactly as bright underneath it as beside it.
+      //
+      // Contact shading is the whole of the answer here rather than half of
+      // it, which is why the strength is well above the map's.
+      occlusion: rustic ? 1 : .92,
+      // Short. An interior's occluders are furniture-sized and a metre of
+      // reach would put a soft grey bloom under every shelf instead of a line
+      // where the shelf meets the wall.
+      occlusionRadius: .34,
+      // Warm in the back room, where the light that survives in a corner has
+      // bounced off bare timber; cool in the fitted offices, where it has
+      // bounced off teal plaster.
+      occlusionTint: rustic ? 0x7a6248 : 0x5d6d72,
     })
 
     phase('renderer')
@@ -4043,6 +4064,9 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         renderer,
         root,
         roomHalf,
+        // The illustrated composite, so a harness can retune the look on a
+        // built room and price the change against the same frame.
+        stylePass,
         // Lowest point of each character's actual geometry against the floor
         // plane. A planted foot should read ~0; anything else is a body
         // hovering above the boards or sunk into them.

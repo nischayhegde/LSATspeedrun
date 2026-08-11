@@ -106,6 +106,17 @@ type ArcDefinition = {
   ambient: { sky: number; ground: number; intensity: number }
   fill: { color: number; intensity: number; position: [number, number, number] }
   rim: { color: number; intensity: number; position: [number, number, number] }
+  /**
+   * What a crevice in this district looks like.
+   *
+   * The tint is the colour light falls towards where the sky cannot reach, and
+   * it is a property of the place rather than a global constant: under a blue
+   * sky over warm stone, a gutter loses the blue and keeps the bounce, so it
+   * goes warm as it goes dark. Over water it loses far less, because the sea
+   * throws light back up. Under a night sky there is barely any wide light to
+   * lose in the first place, and the strength drops accordingly.
+   */
+  occlusion: { strength: number; tint: number }
 }
 
 const ARC: Record<MapRegionKey, ArcDefinition> = {
@@ -130,6 +141,7 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x9ebcc2, ground: 0x263631, intensity: .48 },
     fill: { color: 0x8bb6c1, intensity: .54, position: [20, 13, -18] },
     rim: { color: 0xffd69a, intensity: .76, position: [7, 15, -25] },
+    occlusion: { strength: .78, tint: 0x8a7a66 },
   },
   nation: {
     title: 'The Circuit', subtitle: 'Appellate route · regional courts',
@@ -157,6 +169,9 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0xa9c4c5, ground: 0x2b382d, intensity: .4 },
     fill: { color: 0x90b2bd, intensity: .36, position: [22, 12, -16] },
     rim: { color: 0xe8c98c, intensity: .7, position: [5, 14, -24] },
+    // Open country. Hedge bottoms and the shaded side of a barn are the only
+    // real crevices out here, and the grass bounces a lot of green back up.
+    occlusion: { strength: .62, tint: 0x8c8a6e },
   },
   ocean: {
     title: 'Treaty Sea', subtitle: 'Maritime counsel · diplomatic harbor',
@@ -170,6 +185,9 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0xaed2d3, ground: 0x193338, intensity: .62 },
     fill: { color: 0x69a9bb, intensity: .72, position: [23, 10, -19] },
     rim: { color: 0xffd18a, intensity: .88, position: [8, 13, -27] },
+    // Water is a second sky. Held down because a harbour under an overcast has
+    // very little directionality left to take away.
+    occlusion: { strength: .5, tint: 0x7d8b8d },
   },
   continent: {
     title: 'Sovereign Arc', subtitle: 'Continental chamber · civic axis',
@@ -203,6 +221,9 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x93b3c4, ground: 0x33443f, intensity: .46 },
     fill: { color: 0xe8d3b4, intensity: .82, position: [16, 11, 20] },
     rim: { color: 0xffc38a, intensity: .92, position: [5, 15, -27] },
+    // Masonry, colonnades and a deep cornice: the district with the most
+    // genuine self-shadowing in the game, and the palette carries the range.
+    occlusion: { strength: .85, tint: 0x8b7a67 },
   },
   orbit: {
     title: 'Global Compact', subtitle: 'International assembly · final jurisdiction',
@@ -216,6 +237,9 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x18233d, ground: 0x060a12, intensity: .18 },
     fill: { color: 0x5ea6bd, intensity: .66, position: [24, 8, -19] },
     rim: { color: 0x79dbe3, intensity: 1.05, position: [4, 12, -28] },
+    // Night, and an ambient floor of .18. There is almost no wide light here
+    // to be blocked, and pretending otherwise would only sink the district.
+    occlusion: { strength: .34, tint: 0x4a5766 },
   },
 }
 
@@ -7820,6 +7844,21 @@ export function MapThreeScene({
       bands: 8,
       flatten: .52,
       saturation: 1.3,
+      // Contact shading, which outdoors is almost entirely about the ground.
+      // The sun casts one shadow map here and the hemisphere fills everything
+      // it misses, and a hemisphere cannot tell the strip of pavement in the
+      // angle of a wall from the middle of the road, so a district of a
+      // thousand objects all stood on the same evenly lit plane. Half a metre
+      // of reach is the width of the dark line that should be at the foot of a
+      // wall, under a parked car and in the gutter of a roof valley.
+      occlusion: definition.occlusion.strength,
+      // Wider than the office's, and deliberately so: the smallest thing worth
+      // seating out here is a kerb or a tree bole, and the district is read
+      // from twenty-five metres up. A furniture-sized reach at that distance
+      // resolves to a line too fine to survive the ink pass sitting on top of
+      // it, so the same cost buys nothing.
+      occlusionRadius: 1.15,
+      occlusionTint: definition.occlusion.tint,
     })
 
     const scene = new THREE.Scene()
@@ -10355,6 +10394,13 @@ export function MapThreeScene({
       ;(window as unknown as { __mapScene?: unknown; __mapThree?: unknown }).__mapThree = THREE
       ;(window as unknown as { __mapScene?: unknown }).__mapScene = {
         region, scene, world, camera, renderer, lawyer, transports, landmarks, buildStartedAt, firstRenderAt,
+        // The composite itself, so its settings can be changed on a live scene
+        // and the cost of a change measured against the same district, the
+        // same crowd and the same frame, rather than against a second run of
+        // the dev server. The map's crowd population is not reproducible
+        // across server lifetimes and its frame time follows the crowd, so an
+        // A/B taken any other way measures the population as much as the code.
+        stylePass,
         firstFrameMs: firstRenderAt - buildStartedAt,
         roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer: standingFigureRenderer, vehicleHulls,
         // The counsel's rig and its own feet, so "does the walk skate" can be

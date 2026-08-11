@@ -156,6 +156,13 @@ try {
     if (!wanted(`office${tier}`)) continue
     await page.goto(`${BASE}/office?officeTier=${tier}`, { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(() => Boolean(window.__officeSceneStats && window.__officeDebug), { timeout: 180000, polling: 200 })
+    // An account with no game profile bounces to `/onboarding`, whose opening
+    // scene is a tier-0 office preview that publishes the same globals. It
+    // renders and it measures, so the run comes back with confident numbers for
+    // the wrong room unless the landing url is checked.
+    if (!new URL(page.url()).pathname.startsWith('/office')) {
+      throw new Error(`/office redirected to ${page.url()} — run tools/light-qa/bootstrap.mjs first`)
+    }
     await dismissOverlays(page)
     await page.waitForTimeout(1800)
     report.office[tier] = await page.evaluate(async () => {
@@ -208,15 +215,25 @@ try {
 
   // ---- portraits ---------------------------------------------------------
   if (wanted('portrait')) {
-    await page.goto(`${BASE}/firm`, { waitUntil: 'domcontentloaded' })
-    await dismissOverlays(page)
-    await page.waitForTimeout(4000)
+    // Whichever screen this account actually has portraits on. A bust is drawn
+    // by a pooled renderer into a small canvas, so an empty page reports a
+    // perfectly healthy zero and the portrait arm silently measures nothing.
+    let surface = null
+    for (const path of ['/firm', '/progress', '/story']) {
+      await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' })
+      await dismissOverlays(page)
+      await page.waitForTimeout(3500)
+      const found = await page.evaluate(() => document.querySelectorAll('.av-bust canvas, .av-person canvas').length)
+      if (found > 0) { surface = path; break }
+    }
     report.portrait = await page.evaluate(() => ({
       canvases: document.querySelectorAll('.av-bust canvas, .av-person canvas').length,
       busts: document.querySelectorAll('.av-bust').length,
+      people: document.querySelectorAll('.av-person').length,
     }))
-    await page.screenshot({ path: `${SHOTS}/firm-portraits.png` })
-    const bust = page.locator('.av-bust').first()
+    report.portrait.surface = surface
+    await page.screenshot({ path: `${SHOTS}/portraits-page.png` })
+    const bust = page.locator('.av-bust, .av-person').first()
     if (await bust.count()) await bust.screenshot({ path: `${SHOTS}/portrait-closeup.png` }).catch(() => {})
     console.log('portrait', JSON.stringify(report.portrait))
   }
