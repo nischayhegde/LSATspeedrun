@@ -71,8 +71,13 @@ const ALL_WIDTHS = [
   { name: '1600', width: 1600, height: 900 },
   { name: '1920', width: 1920, height: 1080 },
   { name: '2560', width: 2560, height: 1440 },
-  { name: 'land-844', width: 844, height: 390 },
-  { name: 'land-932', width: 932, height: 430 },
+  /* Both are phones, and both are wider than the 900px cutover — which is the
+     whole reason they are in the ladder. `touch` is declared rather than
+     inferred from the width for the same reason: inferring it is the mistake
+     the app kept making, and the sweep made it too, so at 932 it was auditing
+     a landscape iPhone with a mouse and could not see the rules meant for it. */
+  { name: 'land-844', width: 844, height: 390, touch: true },
+  { name: 'land-932', width: 932, height: 430, touch: true },
 ]
 
 const routes = args.routes
@@ -99,27 +104,56 @@ const AUDIT = `(() => {
     // nav is a pill inset 8px on both sides and 6px off the bottom, and the
     // economy ledger is a 214px card 14px off the same corner. One is a bar and
     // the other is a panel over the page.
+    // A dialog over the page is the page being interrupted on purpose, which is
+    // not the defect this looks for.
+    if (el.getAttribute('role') === 'dialog' || el.getAttribute('aria-modal') === 'true') return 'modal'
+    if (r.width * r.height > vw * vh * .5) return 'modal'
     const spans = r.width >= vw - 40
     if (!spans) return 'float'
-    // Chrome stacks. The economy ledger on a phone is a full-width strip
-    // resting above the navigation dock, and the page reserves the lane for
-    // both — so "docked" has to mean nothing but other fixed chrome stands
-    // between it and the edge, not that it touches the edge itself.
-    const onlyChromeBelow = () => {
-      for (let y = r.bottom + 2; y < vh - 2; y += 8) {
-        const hit = document.elementFromPoint(vw / 2, y)
-        if (!hit) return false
-        let fixed = false
-        for (let n = hit; n && n !== document.body; n = n.parentElement) {
-          if (getComputedStyle(n).position === 'fixed') { fixed = true; break }
-        }
-        if (!fixed) return false
+    /* Chrome stacks. The economy ledger on a phone is a full-width strip
+       resting a ten-pixel gap above the navigation dock, and the page reserves
+       the lane for both — so docked has to mean nothing but other fixed chrome
+       stands between it and the edge, not that it touches the edge itself.
+       Walked as a band rather than hit-tested, because hit-testing sees the
+       page through the gap between the two and calls the strip a floater. */
+    const chromeBelow = () => {
+      const bars = Array.from(document.body.querySelectorAll('*'))
+        .filter((n) => n !== el && getComputedStyle(n).position === 'fixed')
+        .map((n) => n.getBoundingClientRect())
+        .filter((b) => b.width >= vw - 40 && b.top >= r.bottom - 2 && b.height > 4)
+        .sort((a, b) => a.top - b.top)
+      let edge = r.bottom
+      for (const bar of bars) {
+        if (bar.top > edge + 16) break
+        edge = Math.max(edge, bar.bottom)
       }
-      return true
+      return vh - edge <= 24
     }
-    if (r.top > vh / 2 && (vh - r.bottom <= 24 || onlyChromeBelow())) return 'bottom'
+    if (r.top > vh / 2 && (vh - r.bottom <= 24 || chromeBelow())) return 'bottom'
     if (r.top <= 24 && r.bottom < vh / 2) return 'top'
     return 'float'
+  }
+
+  /* What of an element is actually painted. An ancestor that clips cuts the
+     box down, and comparing the uncut boxes reports collisions between things
+     the reader never sees in the same place: the run queue on the caseboard is
+     a scroller whose rows lie, geometrically, straight across the Help
+     disclosure below it, at 844, 932 and 2560. The screenshot shows a gap. */
+  const paintedRect = (el, rect) => {
+    let box = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+    for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+      const style = getComputedStyle(node)
+      if (style.overflow === 'visible' && style.overflowX === 'visible' && style.overflowY === 'visible') continue
+      const clip = node.getBoundingClientRect()
+      box = {
+        left: Math.max(box.left, clip.left),
+        top: Math.max(box.top, clip.top),
+        right: Math.min(box.right, clip.right),
+        bottom: Math.min(box.bottom, clip.bottom),
+      }
+      if (box.right <= box.left || box.bottom <= box.top) return null
+    }
+    return box
   }
 
   const hasFixedAncestor = (el) => {
@@ -223,10 +257,14 @@ const AUDIT = `(() => {
     if (!el.childElementCount) return el.textContent && el.textContent.trim().length > 1
     return Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim().length > 1)
   }).filter(({ style }) => style.position !== 'absolute')
-  for (const leaf of leaves) leaf.fixed = hasFixedAncestor(leaf.el)
+  for (const leaf of leaves) {
+    leaf.fixed = hasFixedAncestor(leaf.el)
+    leaf.painted = paintedRect(leaf.el, leaf.rect)
+  }
   for (let i = 0; i < leaves.length; i += 1) {
     for (let j = i + 1; j < leaves.length; j += 1) {
       const a = leaves[i], b = leaves[j]
+      if (!a.painted || !b.painted) continue
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue
       // Two readings inside the same fixed HUD are its own layout, not a
       // collision with the page.
@@ -238,8 +276,8 @@ const AUDIT = `(() => {
       // Districts intro produced one of these at all 23 widths.
       if (a.el.parentElement === b.el.parentElement
         && a.style.display.startsWith('inline') && b.style.display.startsWith('inline')) continue
-      const ox = Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left)
-      const oy = Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top)
+      const ox = Math.min(a.painted.right, b.painted.right) - Math.max(a.painted.left, b.painted.left)
+      const oy = Math.min(a.painted.bottom, b.painted.bottom) - Math.max(a.painted.top, b.painted.top)
       if (ox > 4 && oy > 6) {
         const hudOf = (leaf) => {
           if (!leaf.fixed) return null
@@ -249,7 +287,9 @@ const AUDIT = `(() => {
           return null
         }
         const hud = hudOf(a) || hudOf(b)
-        const row = { a: describe(a.el), b: describe(b.el), ox: Math.round(ox), oy: Math.round(oy), hud: hud ? describe(hud) : null, dock: hud ? dockOf(hud) : null }
+        const dock = hud ? dockOf(hud) : null
+        if (dock === 'modal') continue
+        const row = { a: describe(a.el), b: describe(b.el), ox: Math.round(ox), oy: Math.round(oy), hud: hud ? describe(hud) : null, dock }
         // A fixed overlay lying on the page is a different defect from two
         // parts of the page lying on each other: it is always going to sit over
         // *something*, so it is only worth reporting when it sits over words.
@@ -293,7 +333,7 @@ try {
     const context = await browser.newContext({
       viewport: { width: size.width, height: size.height },
       deviceScaleFactor: 1,
-      hasTouch: size.width <= 900,
+      hasTouch: size.touch ?? size.width <= 900,
     })
     const login = await context.request.post(`${API}/v1/auth/dev`, {
       data: { email: EMAIL, display_name: 'UI QA' },
