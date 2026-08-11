@@ -194,7 +194,18 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     // below is offset by it), which makes this route the missing 0°/180° pair
     // of radials rather than a path laid across them.
     route: [[-15, -.1], [-5, -.1], [5, -.1], [15, -.1]],
-    rail: [[-16, 7.7], [-9, 7], [-1, 7.7], [7, 6.8], [16, 7.3]],
+    // Threaded between the two inner rings rather than laid along the first of
+    // them. Every other district's rail wanders about z = 7 and nothing minds,
+    // but this composition is concentric: ring 7's outer pavement crosses z =
+    // 7.4 at the axis and the old alignment ran within 9 cm of it, so instead
+    // of a level crossing the tram shared four and a half metres of pavement
+    // with the crowd on each side of the terminus. The cut cannot fix that —
+    // it takes the pavement off the tracks only where some pavement is left
+    // afterwards, and a piece swallowed whole is kept rather than abolished,
+    // so the pieces that were worst off were exactly the ones that survived.
+    // Between the rings there is a two-and-a-half metre gap at the axis that
+    // widens as the arcs fall away, and the crossings it does make are square.
+    rail: [[-16, 14.9], [-9, 14.2], [-1, 14.7], [7, 14.1], [16, 14.6]],
     fov: 31, exposure: 1.3, fogDensity: .0062,
     camera: [24, 29, 39], target: [0, .75, -.3],
     sun: { color: 0xffc79c, intensity: 4.7, position: [-24, 30, 15] },
@@ -4873,11 +4884,15 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   assembly.position.set(0, .04, -9.4)
   root.add(assembly)
   registerLandmark(root, { key: 'continent-assembly', name: 'Sovereign Assembly', kind: 'civic', detail: 'The terminating monument of the north axis. Continental matters are heard behind that colonnade.', position: [0, -9.4], radius: 3.4 })
+  // Out at the line, which is now beyond the boulevards rather than on the
+  // first of them. The terminus still stands on the axis and still terminates
+  // it — the north radial runs out to r 18.9, so the avenue now ends at the
+  // station, which is what an avenue ending at a station looks like.
   const transit = createRailPlatform(.86)
-  transit.position.set(0, .02, 7.15)
+  transit.position.set(0, .02, 14.15)
   root.add(transit)
-  transitStops(root).push([0, 7.15])
-  registerLandmark(root, { key: 'continent-transit', name: 'Union Terminus', kind: 'transit', detail: 'The south terminus of the cross axis. The continental shuttle turns back here.', position: [0, 7.4], radius: 2.8 })
+  transitStops(root).push([0, 14.15])
+  registerLandmark(root, { key: 'continent-transit', name: 'Union Terminus', kind: 'transit', detail: 'The north terminus of the cross axis, out past the last boulevard. The continental shuttle turns back here.', position: [0, 14.4], radius: 2.8 })
 
   // The ring boulevard, on the line of the former walls: one closed circuit,
   // so its traffic never has to jump back to a start point.
@@ -7426,12 +7441,23 @@ function createMountain(scale = 1, color = 0x706b5c, snow = false) {
   return group
 }
 
+/**
+ * The mast is tall enough that the sweep clears a pedestrian.
+ *
+ * It was not. A 2.8-unit mast puts the bottom of the swept disc at 1.13 above
+ * the ground, and a walker on the Arc stands 1.56 with a shoulder .27 across,
+ * so the two turbines nearest the ring road accounted for 104 of the district's
+ * 202 walker-inside-solid frames — half its figure — at 21 cm of penetration,
+ * which is a blade through a head rather than a brush. The blades reach 1.175
+ * below the hub, so the hub has to stand above walker height plus that, and
+ * this now holds at the .72 the Arc places them at.
+ */
 function createWindTurbine(scale = 1) {
   const group = new THREE.Group()
   const pale = material(0xc5cbc4, .42, .18)
-  group.add(cylinder(.06 * scale, 2.8 * scale, pale, [0, 1.4 * scale, 0], 12))
+  group.add(cylinder(.06 * scale, 3.9 * scale, pale, [0, 1.95 * scale, 0], 12))
   const rotor = new THREE.Group()
-  rotor.position.set(0, 2.75 * scale, .04)
+  rotor.position.set(0, 3.85 * scale, .04)
   for (let index = 0; index < 3; index += 1) {
     const blade = box([.09 * scale, 1.25 * scale, .045 * scale], pale, [0, .58 * scale, 0])
     blade.position.y = .55 * scale
