@@ -160,7 +160,9 @@ export const EconomyLedger = memo(function EconomyLedger({ game, hidden }: {
         renderDelta={(delta) => formatMoneyDelta(delta)}
         hint={game.upkeep.completed
           ? 'The final charter is closed; rent no longer accrues.'
-          : 'Charged against activity. Retainers you sign reduce it.'}
+          /* "Retainers" here meant districts, not clients -- a client retainer
+             does nothing to rent. Named for the thing that actually reduces it. */
+          : 'Charged against activity. District counsel seats reduce it.'}
       />
     </aside>
   )

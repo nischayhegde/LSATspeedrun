@@ -67,6 +67,22 @@
 .achievement-grid p { margin: 0; font-size: 11px; line-height: 1.5; }
 .achievement-grid small { margin-top: 25px; display: flex; align-items: center; gap: 4px; color: var(--green); font-size: 10.5px; font-weight: 900; letter-spacing: .1em; }
 .achievement-grid small svg { width: 13px; }
+/* How far along an unearned honour is. Sits where the ACHIEVED line sits on
+   the earned ones, so the cabinet reads as one column of outcomes rather than
+   a row of stamps and a row of blanks. Brass, not the green a win earns. */
+.achievement-grid small.achievement-progress {
+  margin-top: auto;
+  padding-top: 18px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  color: #8a7449;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+.achievement-grid small.achievement-progress i { height: 5px; display: block; overflow: hidden; border: 1px solid #c9b083; background: #ded5c4; }
+.achievement-grid small.achievement-progress b { height: 100%; display: block; background: #c9a153; }
+.achievement-grid article { display: flex; flex-direction: column; }
 
 .client-roster-status { margin-bottom: 16px; padding: 16px 19px; display: grid; grid-template-columns: 90px 1fr minmax(260px, .65fr); align-items: center; gap: 16px; overflow: hidden; border: 1px solid #c19a52; border-radius: 14px; color: white; background: radial-gradient(circle at 82% 10%, #315969, transparent 31%), var(--navy); box-shadow: 0 15px 34px rgba(15,35,45,.14); }
 .client-roster-status h2 { margin: 4px 0 3px; font-family: Georgia, serif; font-size: 26px; font-weight: 500; }
@@ -76,6 +92,29 @@
 .client-roster-status aside span { display: block; color: #e7c77f; font-size: 10.5px; font-weight: 900; letter-spacing: .12em; }
 .client-roster-status aside strong { display: block; margin: 3px 0; font-family: Georgia, serif; font-size: 18px; font-weight: 500; }
 .client-roster-status aside small { display: block; color: #b8cbd2; font-size: 8.5px; line-height: 1.4; }
+/* The route out. A rate with no destination was the whole defect, so this is
+   sized as a real control rather than a footnote link. */
+.client-roster-go {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 10px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+  border: 1px solid rgba(228,193,117,.55);
+  border-radius: 8px;
+  color: #f3dda6;
+  background: rgba(228,193,117,.12);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: background var(--mo-2) var(--mo-out), translate var(--mo-2) var(--mo-out);
+}
+.client-roster-go:hover { color: #2a1f10; background: #e7c77f; }
+.client-roster-go:active { translate: 0 1px; }
 .client-card { padding-top: 17px; }
 .client-card-portrait { width: 86px; height: 92px; margin: -3px 0 -4px; }
 .client-card.selected { box-shadow: inset 0 0 0 3px rgba(200,155,75,.12), 0 13px 28px rgba(117,78,25,.1); }
@@ -93,6 +132,20 @@
   .page-heading { align-items: flex-start; flex-direction: column; }
   .firm-wallet { width: 100%; }
   .client-roster-status { grid-template-columns: 68px 1fr; padding: 14px; }
+  /* The portrait's caption is absolutely positioned, centred on an 86px bust
+     and set `white-space: nowrap`, so at this width "GENERAL COUNSEL" ran clean
+     across the sentence in the next column and took the first word of it with
+     the pill's background. The title is still on the portrait's aria-label, and
+     the panel spells the client out in the line beside it.
+
+     Both rules carry `.av-portrait`, which is not decoration: `art.css` sizes
+     and positions this portrait through `.client-portrait.av-portrait`, that
+     sheet is injected after this one, and without the extra class these two
+     lose the cascade to it and silently do nothing. */
+  .client-roster-status .client-portrait.av-portrait > small { display: none; }
+  /* And the bust itself is 86px in a 68px column, so it was overhanging the
+     sentence by the width of its first word. */
+  .client-roster-status .client-portrait.av-portrait { width: 68px; height: 73px; }
   .management-grid, .achievement-grid { grid-template-columns: 1fr; }
   .tier-upgrade-banner { grid-template-columns: 1fr; text-align: center; }
   .tier-preview { margin: auto; }
@@ -199,6 +252,37 @@
   .management-card.asset-card { min-height: 490px; } }.pro-bono-client{background:linear-gradient(150deg,#f1f4df,#fffdf2)!important;box-shadow:inset 0 0 0 3px #77a38d,5px 6px #83a38d!important}.pro-bono-seal{padding:7px 9px;position:absolute;z-index:8;right:8px;top:8px;display:flex;align-items:center;gap:6px;border:2px solid #28594f;color:#28594f;background:#dff2df;box-shadow:3px 3px #5d8875;font-family:var(--font-pixel);font-size:9px;transform:rotate(2deg)}.pro-bono-seal svg{width:15px}.purchase-row strong:has(del){display:grid;grid-template-columns:auto auto;gap:0 8px;align-items:center}.purchase-row del{grid-column:1/3;color:#96726c;font-size:11.5px}.purchase-row strong small{padding:3px;color:#d6ffe6;background:#2f6f5e;font-family:var(--font-pixel);font-size:9px}
 .catalog-toolbar{margin:4px 0 22px;padding:11px 13px;display:grid;grid-template-columns:1fr auto minmax(190px,auto);align-items:end;gap:13px;border:3px solid #231b17;color:#eedda9;background:#233b49;box-shadow:inset 0 0 0 2px #49606a,5px 5px #34261e}.catalog-toolbar>div:first-child span,.catalog-toolbar>div:first-child strong,.catalog-toolbar label>span{display:block;font-family:var(--font-pixel)}.catalog-toolbar>div:first-child span,.catalog-toolbar label>span{color:#6fd0c5;font-size:9px;letter-spacing:.12em}.catalog-toolbar>div:first-child strong{margin-top:5px;color:#f0cc68;font-size:11px}.catalog-view-buttons{display:flex;gap:5px}.catalog-view-buttons button{min-height:31px;padding:0 10px;border:2px solid #0f151d;color:#a9bdc2;background:#182a38;box-shadow:inset -2px -2px #0e1c28;font-family:var(--font-pixel);font-size:9.5px;text-transform:uppercase}.catalog-view-buttons button.active{color:#172233;background:#e8bf58;box-shadow:inset -3px -3px #a9782f}.catalog-toolbar label select{width:100%;min-height:33px;margin-top:4px;padding:0 26px 0 8px;border:2px solid #10151c;border-radius:0;color:#f0dda4;background:#172a38;font-family:var(--font-pixel);font-size:9.5px}@media (max-width:760px) {.catalog-toolbar{grid-template-columns:1fr 1fr}.catalog-toolbar label{grid-column:1/3}.catalog-view-buttons{justify-content:flex-end}.catalog-view-buttons button{padding-inline:7px} }
 
+/* The districts a network opens, named on the card. A signed one is green and
+   ticked, matching the held plots in the ledger above, so the same state reads
+   the same way in both places. */
+.connection-districts { margin: 9px 4px 0; }
+.connection-districts small { display: block; color: #8a6a3c; font-family: var(--font-pixel); font-size: 8.5px; letter-spacing: .1em; }
+.connection-districts ul { margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; list-style: none; }
+.connection-districts li {
+  padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid #c2a26c;
+  color: #6d4f26;
+  background: #f6ead0;
+  font-family: var(--font-pixel);
+  font-size: 8.5px;
+  line-height: 1.3;
+}
+.connection-districts li.is-held { border-color: #4e7d5c; color: #23492f; background: #d8ecd4; }
+
+/* The one line that reconciles the ledger's five map regions with the catalog's
+   fourteen firm addresses. Sits between the two controls it is about, and rides
+   up into the toolbar's own bottom margin rather than adding a band. */
+/* Brown ink on the parchment the panel is actually printed on, the same colour
+   a card's own body copy takes. It was set for the dark toolbar above it and
+   sat a shade off the page underneath, which is a poor showing for the one
+   line whose whole job is to be read. */
+.catalog-axis-note { margin: -18px 4px 20px; color: #6f5944; font-size: 11.5px; line-height: 1.55; }
+.catalog-axis-note b { color: #8a5a1f; font-weight: 700; }
+@media (max-width: 640px) { .catalog-axis-note { margin-inline: 0; font-size: 11px; } }
+
 .firm-ledger-heading {
   position: relative;
   overflow: hidden;
@@ -291,6 +375,21 @@
   70% { opacity: 1; scale: .94; }
 }
 .management-card.asset-card.just-bought { box-shadow: inset 0 0 0 3px #8ca070, 7px 8px #3a2a20, 0 0 0 4px rgba(114,161,120,.45); }
+
+/* "This one." The card the staff roster was asked to find, marked in brass
+   rather than the green a purchase earns, because arriving is not buying. It
+   comes off on a timer: a permanent ring would become another piece of card
+   furniture the next time you scrolled past. Set as a data attribute rather
+   than a class because it is applied to the element directly -- see
+   `callAssetCard`. */
+.management-card.asset-card[data-called] {
+  box-shadow: inset 0 0 0 3px #e8bf58, 7px 8px #3a2a20, 0 0 0 4px rgba(232,191,88,.4);
+}
+/* The card is only focusable so that the trip can land keyboard focus on it,
+   and the brass ring above already says where you are, so the browser's own
+   outline would be a second announcement of the same thing. */
+.management-card.asset-card:focus { outline: none; }
+.management-card.asset-card:focus-visible { outline: 3px solid #e8bf58; outline-offset: 3px; }
 /* A client card ends in a full-width button, so the stamp sits above it
    rather than over the control the reader might click again. */
 .client-card .asset-acquired { bottom: 74px; }
@@ -303,7 +402,7 @@
 .asset-card .purchase-row .primary-button:not(:disabled):active { box-shadow: inset -4px -4px #b67b2e, 1px 1px #17141a; }
 
 /* ---------------------------------------------------------------------------
-   The retainer ledger.
+   The standing-counsel ledger.
 
    The map owns where a district is; this owns what the firm holds. Three
    figures, a region rail, and the districts of one region -- about 400px at
@@ -311,6 +410,16 @@
    already long.
    --------------------------------------------------------------------------- */
 .retainer-ledger { margin: 0 4px 20px; padding: 14px; border: 3px solid #231b17; background: #23404a; box-shadow: inset 0 0 0 2px #49606a, 5px 5px #34261e; }
+
+/* The board used to begin at its own totals, which asks a first-time reader to
+   work out what a number means before being told what the thing is. Three
+   lines, ruled off from the figures, and the middle one is the sentence that
+   separates this from the client retainer two tabs away. */
+.retainer-ledger-head { margin-bottom: 13px; padding-bottom: 12px; border-bottom: 2px solid rgba(111,208,197,.22); }
+.retainer-ledger-head .eyebrow { display: block; color: #6fd0c5; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .12em; }
+.retainer-ledger-head h2 { margin: 7px 0 0; color: #f4e4b7; font-family: var(--font-pixel); font-size: 15px; line-height: 1.35; }
+.retainer-ledger-head p { max-width: 74ch; margin: 7px 0 0; color: #b7ced3; font-size: 12px; line-height: 1.6; }
+.retainer-ledger-head p b { color: #f0cc68; font-weight: inherit; }
 
 /* Left-packed and capped rather than stretched across the panel: a meter that
    spans 600px of a 1440 screen reads as a progress bar for the page. */
@@ -342,6 +451,9 @@
   font-family: var(--font-pixel);
   font-size: 9.5px;
 }
+.retainer-regions button > span { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.retainer-regions button em { color: rgba(169,189,194,.62); font-size: 7.5px; font-style: normal; letter-spacing: .08em; }
+.retainer-regions button.active em { color: rgba(23,34,51,.62); }
 .retainer-regions button b { color: #e8bf58; }
 .retainer-regions button i { height: 3px; position: absolute; left: 0; bottom: 0; background: rgba(111,208,197,.6); transition: width var(--mo-4) var(--mo-out); }
 .retainer-regions button:hover { color: #eaf5f2; }
@@ -396,8 +508,8 @@
 .retainer-plot.is-asked-for { border-color: #e4c36e; box-shadow: 0 0 0 3px rgba(228,195,110,.22), inset 0 0 0 1px rgba(228,195,110,.3); }
 
 /* The signature. The row turns held, the seal presses on, and the three
-   figures above it travel to their new values -- so what a retainer is worth
-   is legible at the moment it is bought rather than in a panel somewhere. */
+   figures above it travel to their new values -- so what a counsel seat is
+   worth is legible at the moment it is bought rather than in a panel somewhere. */
 .retainer-plot.just-signed { border-color: #8fd2a8; box-shadow: 0 0 0 3px rgba(143,210,168,.28); animation: plot-sign var(--mo-4) var(--mo-spring) both; }
 @keyframes plot-sign { from { scale: .96; } 55% { scale: 1.02; } }
 .retainer-plot-seal {
@@ -441,6 +553,9 @@
   .retainer-plot { flex: 0 0 min(72vw, 250px); scroll-snap-align: start; }
   .retainer-plot-buy button { min-height: 40px; }
   .retainer-plot-map { width: 30px; height: 30px; }
+  .retainer-ledger-head { margin-bottom: 11px; padding-bottom: 10px; }
+  .retainer-ledger-head h2 { font-size: 12.5px; }
+  .retainer-ledger-head p { font-size: 11.5px; line-height: 1.55; }
   .firm-wallet .wallet-delta { top: 42px; }
 }
 

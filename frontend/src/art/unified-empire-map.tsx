@@ -68,13 +68,19 @@ const landmarkTag: Record<MapLandmarkKind, string> = {
   monument: 'MON',
 }
 
-/* Standing retainers, surfaced in the region they belong to.
+/* Standing counsel, surfaced in the region it is held over.
  *
- * This is coverage, not conquest: signing a district's institutions to a
- * standing retainer makes your firm the default counsel there. It buys no
- * payout multiplier and absorbs no competitor, which is what keeps it from
- * treading on the rival acquisitions the same map already carries — those are
- * discrete moves against named firms, priced at a full five cases each.
+ * Called a *retainer* until now, which is the same word the Clients tab uses
+ * for the opposite arrangement — a client retainer is the thing that pays your
+ * fee, and a district seat pays no fee at all. One word, two mechanics, and
+ * both of them in the Firm tab since this board acquired a ledger there. The
+ * word now belongs to clients; a district appointment is standing counsel.
+ *
+ * This is coverage, not conquest: signing a district's institutions as their
+ * standing counsel makes your firm the default call there. It buys no payout
+ * multiplier and absorbs no competitor, which is what keeps it from treading on
+ * the rival acquisitions the same map already carries — those are discrete
+ * moves against named firms, priced at a full five cases each.
  *
  * This board is the *place* half of the mechanic and deliberately no more than
  * that: the districts of the region on screen, joined to the landmarks the
@@ -86,15 +92,22 @@ const landmarkTag: Record<MapLandmarkKind, string> = {
  *
  * Collapsed by default, and it stays a strip on the left rail beside the
  * district guide rather than becoming a board the map has to wear. */
-function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, highlightKey, defaultOpen = false }: {
+function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, highlightKeys, openedBy, defaultOpen = false }: {
   game: GameState
   regionKey: MapRegionKey
   regionName: string
   onTravel: (landmarkKey: string) => void
   onOpenLedger: () => void
-  /** A district the Firm tab named on the way here, marked so the row the
-      player asked for is findable among ten others. */
-  highlightKey?: string | null
+  /** Districts the Firm tab named on the way here, marked so the rows the
+      player asked for are findable among ten others. Plural because arriving
+      from a network card is arriving on behalf of everything that network
+      opens, which is the whole reason to make the trip. */
+  highlightKeys: string[]
+  /** The network that sent the player here, when one did. Buying a connection
+      used to land you on a board with no indication of which of its ten rows
+      had just changed, so the payoff read as "here is a board" rather than
+      "these are yours to sign". */
+  openedBy?: { name: string; owned: boolean } | null
   /** Open on arrival when the Firm tab sent the player here to see what a
       connection unlocked. Anything the player was not asked for stays shut. */
   defaultOpen?: boolean
@@ -126,28 +139,42 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
   }
 
   return (
-    <aside className={`uw-retainer-board ${open ? 'is-open' : ''} ${openable ? 'has-offer' : ''}`} aria-label={`${regionName} standing retainers`}>
+    <aside className={`uw-retainer-board ${open ? 'is-open' : ''} ${openable ? 'has-offer' : ''}`} aria-label={`${regionName} standing counsel`}>
       <button type="button" className="uw-retainer-toggle" aria-expanded={open} onClick={() => setOpen((was) => !was)}>
-        <small>STANDING RETAINERS</small>
+        <small>STANDING COUNSEL</small>
         <strong>{region.held} of {region.total} districts</strong>
         <i aria-hidden="true">{open ? <MinusMark /> : <PlusMark />}</i>
       </button>
       {open && (
         <>
+          {/* No longer promises that "every routine matter there arrives at
+              your door". Nothing delivered that: a held district moves the
+              reputation floor and the lease and is read by nothing in the
+              session or story code, so the one sentence that told a player what
+              they were buying was the one sentence that was not true. What is
+              left is the two effects that are real, and the distinction from
+              the client retainer that shares the tab. */}
           <p className="uw-retainer-intro">
-            Sign a district&apos;s institutions and every routine matter there arrives at your door.
-            Standing holds your reputation up; a branch you are already paid to keep offsets the lease.
+            Sign a district&apos;s institutions and your firm becomes their standing counsel. No fee
+            per case — that is what a client retainer is for. Standing holds your reputation up from
+            below; a branch you are already paid to keep offsets the daily lease.
           </p>
+          {openedBy && highlightKeys.length > 0 && (
+            <p className="uw-retainer-opened">
+              The <b>{openedBy.name.toLowerCase()}</b> {openedBy.owned ? 'opens' : 'would open'}
+              {' '}{highlightKeys.length === 1 ? 'this district' : `these ${highlightKeys.length} districts`} in {regionName}.
+            </p>
+          )}
           <div className="uw-retainer-list">
             {districts.map((district) => (
-              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}${district.key === highlightKey ? ' is-asked-for' : ''}`} key={district.key}>
+              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}${highlightKeys.includes(district.key) ? ' is-asked-for' : ''}`} key={district.key}>
                 {/* Not a <header>: inside the mobile Explore sheet a bare
                     header element inherits that sheet's own title styling. */}
                 <div className="uw-retainer-head">
                   <strong>{district.name}</strong>
                   <b>{district.owned ? 'HELD' : formatMoney(district.cost, true)}</b>
                 </div>
-                <em>Retains {district.retainer}</em>
+                <em>Counsel to {district.retainer}</em>
                 {district.owned
                   ? <small>+{district.standing.toFixed(2)} standing · {(district.rent_relief_bps / 100).toFixed(1)}% of the lease</small>
                   : district.locks.length
@@ -160,7 +187,7 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
                       >
                         {pendingKey === district.key && secure.isPending
                           ? 'Signing…'
-                          : district.affordable ? 'Sign the retainer' : 'Not enough cash'}
+                          : district.affordable ? 'Sign as counsel' : 'Not enough cash'}
                       </button>
                     )}
               </article>
@@ -168,13 +195,13 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
           </div>
           <p className="uw-retainer-foot">
             {region.swept
-              ? `Every district in ${regionName} is retained. +${region.sweep_standing.toFixed(1)} standing for the sweep.`
+              ? `Your firm is counsel to every district in ${regionName}. +${region.sweep_standing.toFixed(1)} standing for the sweep.`
               : `Hold all ${region.total} for a further +${region.sweep_standing.toFixed(1)} standing.`}
           </p>
           <button type="button" className="uw-retainer-ledger-link" onClick={onOpenLedger}>
             All {game.territory.held} of {game.territory.total} in the ledger <i aria-hidden="true"><ChevronMark /></i>
           </button>
-          {secure.error && <p className="uw-retainer-error">That retainer could not be signed. Try again.</p>}
+          {secure.error && <p className="uw-retainer-error">That appointment could not be signed. Try again.</p>}
         </>
       )}
     </aside>
@@ -243,7 +270,7 @@ function DistrictBrief({ landmark, game, chosen, onOpenLedger }: {
     <div className={`uw-district-brief is-${state}${chosen ? ' is-chosen' : ''}`}>
       <p>{landmark.detail}</p>
       <div className="uw-district-brief-head">
-        <b>{district.owned ? 'RETAINER HELD' : district.available ? 'RETAINER OPEN' : 'RETAINER LOCKED'}</b>
+        <b>{district.owned ? 'COUNSEL HELD' : district.available ? 'COUNSEL OPEN' : 'COUNSEL LOCKED'}</b>
         <span>{district.retainer}</span>
       </div>
       <dl className="uw-district-brief-terms">
@@ -260,7 +287,7 @@ function DistrictBrief({ landmark, game, chosen, onOpenLedger }: {
       )}
       {otherLocks.length > 0 && <p className="uw-district-brief-gate">{otherLocks.join(' · ')}</p>}
       <button type="button" className="uw-district-brief-ledger" onClick={() => onOpenLedger(district.key)}>
-        {district.owned ? 'This retainer in the ledger' : 'Sign it in the ledger'} <i aria-hidden="true"><ChevronMark /></i>
+        {district.owned ? 'This appointment in the ledger' : 'Sign it in the ledger'} <i aria-hidden="true"><ChevronMark /></i>
       </button>
     </div>
   )
@@ -418,10 +445,30 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
   const selectedPlot = selectedDistrict
     ? game.territory.districts.find((district) => district.landmark_key === selectedDistrict.key)
     : undefined
-  // What the player asked for last wins: arriving from the ledger names a
-  // district before anything is selected, and selecting one afterwards is a
-  // newer answer to the same question.
-  const highlightedPlotKey = selectedPlot?.key ?? focusPlot?.key ?? null
+  /* Which rows on the board the player is here about.
+   *
+   * Arriving from a network card used to change nothing but which region was
+   * on screen: the board opened, and every row in it looked the same, so the
+   * answer to "what did buying that get me" was a list you had to diff against
+   * memory. A network's districts in this region are therefore marked exactly
+   * as a single named district is, and the board says which network did it.
+   *
+   * What the player asked for last still wins. Selecting a place on the ground
+   * is a newer answer to the same question than the link that brought them. */
+  const networkPlotKeys = focusNetwork
+    ? (focusNetwork.districts ?? [])
+      .filter((entry) => game.territory.districts.find((district) => district.key === entry.key)?.region === activeRegionKey)
+      .map((entry) => entry.key)
+    : []
+  const highlightedPlotKeys = selectedPlot
+    ? [selectedPlot.key]
+    : focusPlot
+      ? [focusPlot.key]
+      : networkPlotKeys
+  const highlightedPlotKey = highlightedPlotKeys[0] ?? null
+  const openedBy = focusNetwork && !selectedPlot && !focusPlot
+    ? { name: focusNetwork.name, owned: focusNetwork.owned }
+    : null
   const openLedgerAt = (districtKey?: string | null) => onManage('connections', districtKey ?? undefined)
 
   const selected = points.find((point) => point.key === selectedKey)
@@ -676,7 +723,8 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
               regionName={activeRegion.name}
               onTravel={(key) => { travelToLandmarkKey(key); setMobileControlsOpen(false) }}
               onOpenLedger={() => openLedgerAt(highlightedPlotKey)}
-              highlightKey={highlightedPlotKey}
+              highlightKeys={highlightedPlotKeys}
+              openedBy={openedBy}
               defaultOpen={Boolean(focusNetwork || focusPlot)}
             />
             <div className="uw-mobile-camera-actions">
@@ -802,7 +850,8 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
             regionName={activeRegion.name}
             onTravel={travelToLandmarkKey}
             onOpenLedger={() => openLedgerAt(highlightedPlotKey)}
-            highlightKey={highlightedPlotKey}
+            highlightKeys={highlightedPlotKeys}
+            openedBy={openedBy}
             defaultOpen={Boolean(focusNetwork || focusPlot)}
           />
         </div>

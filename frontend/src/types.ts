@@ -55,10 +55,11 @@ export type GameAsset = {
    */
   payout_mult?: number
   /**
-   * Connections only: the districts this network lets you put on retainer, and
-   * whether each is currently held. The office relationship wall reads this so a
-   * seal can say which network it is and how much of the map that network has
-   * actually been used for.
+   * Connections only: the districts this network lets you sign as standing
+   * counsel, and whether each is currently held. Read by the connection card in
+   * the Firm tab, which names them, and by the office relationship wall, whose
+   * seals say which network they are and how much of the map each has actually
+   * been used for.
    */
   districts?: Array<{ key: string; name: string; held: boolean }>
   districts_held?: number
@@ -302,6 +303,11 @@ export type TerritoryState = {
     key: string
     name: string
     seat: string
+    /** Inclusive first and last firm tier this region covers. The catalog's own
+     *  `region` field is a different axis -- the street address the firm held at
+     *  one tier -- and this range is what nests one inside the other, so the two
+     *  can be shown on the same screen without reading as a contradiction. */
+    tier_range: [number, number]
     total: number
     held: number
     swept: boolean
@@ -415,7 +421,15 @@ export type GameState = {
     claimed: number[]
     goals: Array<{ cases: number; reward: number; complete: boolean; claimed: boolean }>
   }
-  achievements: Array<{ key: string; name: string; description: string; unlocked: boolean }>
+  achievements: Array<{
+    key: string
+    name: string
+    description: string
+    unlocked: boolean
+    /** How far along a locked honour is, when it counts something. Absent on
+     *  the ones that are a yes or a no, like joining a named network. */
+    progress?: { current: number; target: number; unit: 'cases' | 'streak' | 'reputation' | 'hired' | 'firms' | 'money' | 'tier' }
+  }>
   next_milestone?: { kind: 'tier' | 'asset'; name: string; cost: number; reputation: number } | null
   territory: TerritoryState
   story: StoryState

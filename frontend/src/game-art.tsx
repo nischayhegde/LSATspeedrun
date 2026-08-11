@@ -10,6 +10,7 @@ import { OfficeRoom } from './art/office'
 // the scene is even requested. Measured on a 4G profile that trade lost by a
 // wide margin (warm navigation to the map, canvas creation +113%).
 import { UnifiedEmpireMap } from './art/unified-empire-map'
+import { formatMoney } from './format'
 import { useSound } from './sound'
 import { MOTION_TIMING } from './motion'
 import {
@@ -271,14 +272,33 @@ export function PixelAssetArtwork({ asset }: { asset: GameAsset }) {
   )
 }
 
-export function StaffRoster({ staff }: { staff: GameAsset[] }) {
+/**
+ * The firm floor: everyone hired, and everyone who could be.
+ *
+ * The roster used to be a picture of a decision made somewhere else. The people
+ * in it are the same people the grid below sells, so a candidate who steps
+ * forward here and cannot be acted on sends you hunting for their card among
+ * two dozen others. Each figure is now the control that finds its own card, and
+ * says which of the two things it is: a hire you can make, or a colleague you
+ * already have. Nothing is bought from up here — the price, the requirement and
+ * the button stay in one place, on the card.
+ */
+export function StaffRoster({ staff, onSelect }: { staff: GameAsset[]; onSelect?: (asset: GameAsset) => void }) {
   const visible = staff.filter((asset) => asset.type === 'staff' && (asset.owned || asset.available))
+  const hires = visible.filter((asset) => !asset.owned).length
   return (
     <section className="firm-staff-roster" aria-label="Unlocked firm staff">
       <header>
         <span>YOUR PEOPLE</span>
         <h2>The firm floor</h2>
         <p>Hired staff work in the foreground; available candidates step forward when their requirements are met.</p>
+        {/* What the stage is worth acting on right now, and how. Both are things
+            a player otherwise had to work out by reading every nameplate. */}
+        <p className="firm-staff-roster-hint">
+          {hires
+            ? <>{hires === 1 ? 'One candidate is' : `${hires} candidates are`} ready to hire. Pick anyone on the floor to open their offer below.</>
+            : <>Everyone available is on staff. Pick anyone on the floor to find them in the catalog below.</>}
+        </p>
       </header>
       <div className="firm-staff-roster-stage">
         {visible.length ? visible.map((asset, index) => {
@@ -286,20 +306,30 @@ export function StaffRoster({ staff }: { staff: GameAsset[] }) {
           const [name, title] = profile.role.split('·').map((part) => part.trim())
           return (
             <article className={asset.owned ? 'is-hired' : 'is-available'} key={asset.key}>
-              <div className="firm-staff-model">
-                <Person
-                  identity={asset.key}
-                  tier={asset.tier}
-                  mood={asset.owned ? 'happy' : 'neutral'}
-                  activity={asset.owned ? (index % 2 ? 'briefing' : 'working') : 'idle'}
-                  label={`${name}, ${title || asset.name}`}
-                />
-              </div>
-              <div className="firm-staff-nameplate">
-                <small>{asset.owned ? 'ON STAFF' : 'READY TO HIRE'}</small>
-                <strong>{name}</strong>
-                <span>{title || asset.name}</span>
-              </div>
+              <button
+                type="button"
+                className="firm-staff-pick"
+                onClick={() => onSelect?.(asset)}
+                aria-label={asset.owned
+                  ? `${name}, ${title || asset.name}, on staff. Find in the catalog below.`
+                  : `${name}, ${title || asset.name}, ready to hire for ${asset.cost.toLocaleString()} dollars. Open the offer below.`}
+              >
+                <div className="firm-staff-model">
+                  <Person
+                    identity={asset.key}
+                    tier={asset.tier}
+                    mood={asset.owned ? 'happy' : 'neutral'}
+                    activity={asset.owned ? (index % 2 ? 'briefing' : 'working') : 'idle'}
+                    label={`${name}, ${title || asset.name}`}
+                  />
+                </div>
+                <div className="firm-staff-nameplate">
+                  <small>{asset.owned ? 'ON STAFF' : 'READY TO HIRE'}</small>
+                  <strong>{name}</strong>
+                  <span>{title || asset.name}</span>
+                  {!asset.owned && <em>{formatMoney(asset.cost)}</em>}
+                </div>
+              </button>
             </article>
           )
         }) : (
