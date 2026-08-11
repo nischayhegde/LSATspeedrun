@@ -309,6 +309,43 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
 }
 
 /**
+ * Clicks through to a district and waits for it, **without giving the page a
+ * single real frame** while it builds.
+ *
+ * This is the fix for the thing that made every number this harness has ever
+ * produced unreadable. A run does not draw from a distribution: it lands in one
+ * of a handful of discrete worlds, each perfectly reproducible, and what
+ * selects the world is how many real frames elapsed while the district was
+ * being built. The old code called `__clock.release()` here for exactly that
+ * stretch, on the reasoning that a build wants real frames — so the count was
+ * whatever the machine's load allowed, and the Old Quarter came back as either
+ * .0021 or .0109 depending on which side of a threshold it fell.
+ *
+ * It turns out the build wants no frames at all. It is synchronous inside a
+ * React effect, and everything it waits on is a promise rather than a frame, so
+ * polling on an interval while the capture stays armed gets the same district
+ * every time with an elapsed frame count of exactly zero. If a future build
+ * step does need a frame this will hang rather than quietly go back to being
+ * unreproducible, which is the right way round: `requireClock` already treats a
+ * stalled loop as the one failure it must never pass silently.
+ */
+async function switchTo(page, label, key) {
+  const toggle = page.locator('.uw-atlas-toggle')
+  if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') {
+    await toggle.click()
+    await page.waitForTimeout(250)
+  }
+  await page.locator('.uw-arc-navigation button', { hasText: label }).first().click()
+  await page.waitForFunction((want) => window.__mapScene?.region === want, key, {
+    timeout: 120000,
+    polling: 50,
+  })
+  if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') {
+    await toggle.click()
+  }
+}
+
+/**
  * Puts the scene on one district and returns it under the synthetic clock.
  *
  * The clock goes on the moment the scene exists, and the district is then
@@ -323,25 +360,21 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
  * `waitForFunction` is given an interval rather than its default, which polls
  * on rAF: the override would starve that poll and the wait would hang.
  */
-export async function region(page, label, { key, warmup = 600 } = {}) {
-  const current = await page.evaluate(() => window.__mapScene?.region)
-  if (current !== key) {
-    // Real frames while the next district is built; the accessor re-arms the
-    // capture the moment that district publishes itself.
-    await page.evaluate(() => window.__clock?.release())
-    const toggle = page.locator('.uw-atlas-toggle')
-    if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') {
-      await toggle.click()
-      await page.waitForTimeout(250)
+export async function region(page, label, { key, warmup = 600, cold = true } = {}) {
+  // Always build the district under measurement here, even when the app has
+  // already landed on it. The one the page arrives on was built while the
+  // harness was still signing in, with however many real frames the machine
+  // happened to fit into that window — which is the variable this whole
+  // function exists to remove. Building it again costs a second and makes the
+  // district a function of the code.
+  if (cold) {
+    const away = Object.entries(TABS).find(([other]) => other !== key)
+    if (await page.evaluate(() => window.__mapScene?.region) === key && away) {
+      await switchTo(page, away[1], away[0])
     }
-    await page.locator('.uw-arc-navigation button', { hasText: label }).first().click()
-    await page.waitForFunction((want) => window.__mapScene?.region === want, key, {
-      timeout: 120000,
-      polling: 50,
-    })
-    if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') {
-      await toggle.click()
-    }
+    await switchTo(page, label, key)
+  } else if (await page.evaluate(() => window.__mapScene?.region) !== key) {
+    await switchTo(page, label, key)
   }
   await dismissOverlays(page)
   await requireClock(page)
