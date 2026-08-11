@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api } from '../api'
 import { formatMoney } from '../format'
+import { useLiveAccrual } from '../motion'
 import { storeGame } from '../pages/shared'
 import { useSound } from '../sound'
 import {
@@ -23,6 +24,18 @@ import './office-earnings.css'
  *
  * The card is positioned inside the room, so it inherits `.av-room`'s clipping
  * and travels with the scene rather than floating over the whole page.
+ *
+ * Every card leads with whether the item is earning *right now*, because that is
+ * the question a player hovering an object is actually asking and it is not
+ * answerable from a rate alone: a passive earner stops the moment the safe hits
+ * its ceiling, a casework item has never earned anything by itself, and decor
+ * never will. The status is stated in words on every card rather than implied by
+ * whether a number happens to be moving.
+ *
+ * The ticking comes from the shared `useLiveAccrual`, the same hook the economy
+ * ledger uses, so there is exactly one thing in the app that turns a confirmed
+ * rate and a settlement timestamp into a live figure. This card asks it for
+ * cents on a shorter tick (see `AccrualWatch`); nothing else about it differs.
  *
  * Money is formatted with the shared `formatMoney`. The shared `useRollup` and
  * `useDelta` from `motion.ts` are deliberately *not* used here, which is worth
@@ -121,20 +134,31 @@ export function OfficeEarningsReadout({ target, onDismiss }: Props) {
   const reduced = useRef(
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   ).current
-  const [nowMs, setNowMs] = useState(() => Date.now())
 
   const item = target?.item ?? null
-  const ticking = !focusMode && item?.mode === 'passive' && Boolean(passive)
 
-  // The counter only runs while a passive card is open. A permanently animating
-  // element over a WebGL canvas is exactly the sort of thing that has cost this
-  // app frames before, and there is nothing to animate when nothing is hovered.
-  useEffect(() => {
-    if (!ticking || reduced) return
-    setNowMs(Date.now())
-    const timer = window.setInterval(() => setNowMs(Date.now()), 120)
-    return () => window.clearInterval(timer)
-  }, [ticking, reduced, item?.key])
+  // The one clock in this card, and it only runs while a passive card is open:
+  // a null rate makes `useLiveAccrual` a no-op, and there is nothing to animate
+  // when nothing is hovered. A permanently ticking element over a WebGL canvas
+  // is exactly the sort of thing that has cost this app frames before.
+  //
+  // Focus Mode passes null too. The card is not rendered there, so this would
+  // only be a timer nobody can see; the accrual itself is server-side and keeps
+  // running regardless of what this page does or does not tick.
+  const live = useLiveAccrual(
+    !focusMode && item?.mode === 'passive' && state
+      ? {
+        hourlyRate: item.hourly,
+        capHours: state.passive_income.cap_hours,
+        sinceIso: state.passive_income.last_collected_at,
+      }
+      : null,
+    // 120ms and cents, rather than the ledger's whole dollars every 600ms. An
+    // item's own rate is a fraction of the firm's, so at the rates most items
+    // charge a whole-dollar counter would sit still long enough to read as
+    // broken. See `showsCents` for where that threshold comes from.
+    { tickMs: 120, precision: 2 },
+  )
 
   // Dismissal for the tapped card. Escape is the desktop habit; the scene
   // handles tap-elsewhere itself, since it owns the canvas pointer events.
@@ -171,7 +195,7 @@ export function OfficeEarningsReadout({ target, onDismiss }: Props) {
             <PassiveBody
               item={item}
               passive={passive}
-              nowMs={nowMs}
+              live={live}
               reduced={reduced}
               pinned={target.pinned}
               onCollect={() => collect.mutate()}
@@ -187,10 +211,26 @@ export function OfficeEarningsReadout({ target, onDismiss }: Props) {
   )
 }
 
+/**
+ * Whether the item is putting money in the safe at this moment, said plainly.
+ *
+ * The dot is the same shape on every card and only animates when something is
+ * genuinely accumulating, so "is this earning" is answerable at a glance and
+ * without reading the number underneath it.
+ */
+function LiveState({ state, children }: { state: 'live' | 'paused' | 'pending' | 'idle'; children: ReactNode }) {
+  return (
+    <p className={`office-readout-state is-${state}`}>
+      <span className="office-readout-dot" aria-hidden="true" />
+      {children}
+    </p>
+  )
+}
+
 function PassiveBody({
   item,
   passive,
-  nowMs,
+  live,
   reduced,
   pinned,
   onCollect,
@@ -199,7 +239,10 @@ function PassiveBody({
 }: {
   item: OfficeItemEconomics
   passive: PassiveSnapshot
-  nowMs: number
+  /** Dollars and cents this item has accrued, from the shared clock. 0 when
+   *  the reader asked for reduced motion, which is why the figure below falls
+   *  back to the settled reading rather than trusting this on its own. */
+  live: number
   reduced: boolean
   /** Whether the card is tapped open rather than just hovered. The button
    *  below only appears pinned: an unpinned card has `pointer-events: none`
@@ -211,8 +254,12 @@ function PassiveBody({
   collecting: boolean
   collectError: boolean
 }) {
-  const accrual = passiveAccrual(item.hourly, passive, nowMs)
-  const exact = item.hourly * accrual.storedHours
+  // Renders are driven by the accrual clock above, so reading it here reads it
+  // at the tick. The settled figure is the floor rather than a second opinion:
+  // under reduced motion the clock is deliberately silent and returns 0, and a
+  // card that then showed $0 in the safe would be wrong, not merely still.
+  const accrual = passiveAccrual(item.hourly, passive, Date.now())
+  const exact = Math.max(live, accrual.stored)
   const whole = Math.floor(exact)
   const cents = Math.floor((exact - whole) * 100)
   // Reduced motion drops the cents rather than the figure: the number stays
@@ -221,6 +268,12 @@ function PassiveBody({
 
   return (
     <>
+      {/* The answer to "am I earning from this right now", above the number,
+          because the number alone cannot distinguish a full safe from a fast
+          one — both show a large figure and neither is moving much. */}
+      {accrual.full
+        ? <LiveState state="paused">Paused &mdash; safe is full</LiveState>
+        : <LiveState state="live">Earning now, {formatMoney(item.hourly)} an hour</LiveState>}
       <div
         className={`office-readout-figure${accrual.full ? ' is-full' : ''}`}
         aria-label={`${formatMoney(accrual.stored)} earned by this item since your last collection`}
@@ -229,11 +282,18 @@ function PassiveBody({
         {withCents && <small aria-hidden="true">.{String(cents).padStart(2, '0')}</small>}
       </div>
       <p className="office-readout-lede">in the safe from this item</p>
+      {/* How far through the safe's capacity this accrual is. The counter says
+          how much; this says how much room is left, which is the part that
+          decides whether it is still worth anything to leave it running. */}
+      <div
+        className={`office-readout-fill${accrual.full ? ' is-full' : ''}`}
+        style={{ ['--fill' as string]: `${Math.min(100, Math.round((accrual.storedHours / Math.max(passive.capHours, .0001)) * 100))}%` }}
+        aria-hidden="true"
+      />
       <dl>
-        <div>
-          <dt>Earning</dt>
-          <dd>{formatMoney(item.hourly)} / hour</dd>
-        </div>
+        {/* The hourly rate is stated in the status line above rather than
+            repeated here; what this adds is the size of it relative to
+            everything else the player owns. */}
         <div>
           <dt>Share of firm</dt>
           <dd>{accrual.share >= .005 ? `${Math.round(accrual.share * 100)}%` : '<1%'} of passive income</dd>
@@ -275,6 +335,9 @@ function CaseworkBody({ item, baseFee, clientName }: { item: OfficeItemEconomics
   const value = caseworkValue(item.payoutMult, baseFee)
   return (
     <>
+      {/* Same question, answered honestly: this one is not earning right now
+          and will not until a case settles. */}
+      <LiveState state="pending">Not earning now &mdash; pays when you win</LiveState>
       {/* No ticking figure here. This item is worth nothing until a case is won,
           so an accumulating counter would be a straightforward lie. */}
       <div className="office-readout-figure is-static">
@@ -301,6 +364,7 @@ function CaseworkBody({ item, baseFee, clientName }: { item: OfficeItemEconomics
 function ViewBody({ item }: { item: OfficeItemEconomics }) {
   return (
     <>
+      <LiveState state="idle">Earns nothing, now or later</LiveState>
       {/* Decor earns nothing, and saying so plainly is the whole point of this
           mode. The game's own catalog comment is the right voice for it: it
           reads as a choice the player made, not as a feature that is missing. */}
