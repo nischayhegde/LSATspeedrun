@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
@@ -13,7 +13,7 @@ import {
   Target,
   TimerReset,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
 import { ErrorNotice, LoadingScreen } from '../components'
@@ -52,6 +52,10 @@ const DASH_TABS: ReadonlyArray<{ key: DashTab; label: string }> = [
   { key: 'answers', label: 'Answers' },
 ]
 
+/** A `?tab=` value, if it names a real panel. Anything else is ignored. */
+const namedTab = (value: string | null): DashTab | null =>
+  (DASH_TABS.find((item) => item.key === value)?.key ?? null)
+
 
 export function PerformancePage() {
   const navigate = useNavigate()
@@ -71,7 +75,70 @@ export function PerformancePage() {
   // Which question type the answer log is scoped to. Lifted here so the skill
   // matrix can drill from an aggregate row straight into the answers behind it.
   const [answerLogType, setAnswerLogType] = useState('')
-  const [tab, setTab] = useState<DashTab>('skills')
+  // `?tab=` opens the dashboard on a named panel, the same way `/firm?tab=` and
+  // `/office?officeTier=` already do. Added because the answer wall is behind a
+  // tab rather than below the fold, so a plain `/progress` link cannot reach it:
+  // anything deep-linking to a student's answers — the deck's review slide, a
+  // "see these answers" link in an email — would otherwise land two clicks away
+  // on the skills matrix. Unknown values fall back rather than blanking the page.
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState<DashTab>(namedTab(searchParams.get('tab')) ?? 'skills')
+  useEffect(() => {
+    const requested = namedTab(searchParams.get('tab'))
+    if (!requested) return
+    setTab(requested)
+    // And bring it into view. The tab strip sits under the whole summary
+    // header — the accuracy ring, the projection rail, the next-up card — so a
+    // deep link that only selects the tab leaves the reader at the top of the
+    // page looking at something they did not ask for, with the thing they did
+    // ask for a screen and a half below. Deferred by a frame because the
+    // heavier panels are lazy chunks that have no height yet.
+    //
+    // Kept up for a beat rather than done once, because one scroll does not
+    // hold: on arrival the summary header above the strip has not finished
+    // laying out — the projection rail and the trial calendar both grow — and
+    // a single `scrollIntoView` measured against the short version leaves the
+    // strip drifting back off the top as the page fills in. Measured: one call
+    // on the next frame moved the page not at all. So it re-aims each frame
+    // until the target stops moving, then stops.
+    //
+    // Only ever runs for a URL that carries `?tab=`; choosing a tab by hand
+    // does not move the page, which would be obnoxious.
+    let raf = 0
+    let stop = false
+    // Any real input ends it immediately. A page that keeps pulling itself back
+    // while someone is trying to scroll is worse than one that never moved.
+    const yield_ = () => { stop = true }
+    // `Date.now`, not `performance.now`: `performance` is the dashboard's own
+    // query data in this scope and shadows the global.
+    const until = Date.now() + 2000
+    // Two ways to finish, and the first one matters more than the deadline: as
+    // soon as the strip has held still for a few frames, the page has finished
+    // growing and there is nothing left to correct. Holding the scroll for a
+    // fixed two seconds regardless meant this quietly outranked anything else
+    // that wanted to scroll in that window — opening an answer tile scrolls the
+    // drawer into view, and on `?tab=answers` that scroll was being undone
+    // frame by frame until the deadline passed.
+    let steady = 0
+    let last = null as number | null
+    const aim = () => {
+      if (stop) return
+      const strip = document.querySelector('.dash-tabs')
+      const top = strip ? Math.round(strip.getBoundingClientRect().top + window.scrollY) : null
+      if (top !== null && Math.abs(window.scrollY - top) > 2) window.scrollTo({ top, behavior: 'auto' })
+      steady = top !== null && top === last ? steady + 1 : 0
+      last = top
+      // ~20 frames of a stationary target, a third of a second, which is longer
+      // than the gap between the lazy panel mounting and its data landing.
+      if (steady < 20 && Date.now() < until) raf = requestAnimationFrame(aim)
+    }
+    raf = requestAnimationFrame(aim)
+    for (const event of ['wheel', 'touchstart', 'keydown', 'pointerdown']) window.addEventListener(event, yield_, { passive: true, once: true })
+    return () => {
+      cancelAnimationFrame(raf)
+      for (const event of ['wheel', 'touchstart', 'keydown', 'pointerdown']) window.removeEventListener(event, yield_)
+    }
+  }, [searchParams])
   const selectTab = (next: DashTab) => {
     if (next === tab) return
     void play('tab', { seed: `dash:${next}`, intensity: .24 })

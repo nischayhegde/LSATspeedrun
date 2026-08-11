@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Check, ChevronDown, Clock3, RotateCcw, X } from 'lucide-react'
 
@@ -42,8 +42,28 @@ export function AttemptDetail({ attemptId, onClose }: { attemptId: string; onClo
   })
   const attempt: HistoryAttemptDetail | undefined = detail.data?.attempt
   const coaching = attempt?.feedback?.coaching
+  // The drawer renders *after* the whole wall, not beside the tile that opened
+  // it, so on a full log it lands about a thousand pixels below the fold —
+  // measured at 1041 on a 826-tall viewport with 120 tiles up. The panel tells
+  // the reader to "tap any tile to re-read the question, your reasoning, and
+  // the coaching", and without this that tap appears to do nothing.
+  //
+  // Aimed twice, and the second one is the one that counts. The drawer mounts
+  // empty — "Pulling the full answer…", a couple of lines tall — and only grows
+  // to its real 852px once the question, the reasoning and the coaching arrive.
+  // A single scroll on mount therefore chases the loading state: measured, it
+  // scrolled to 775 and stopped, and the fetch then pushed both "WHAT YOU
+  // WROTE" and "COACH" back below the fold, which is the only part of the
+  // drawer anyone opened it for. The first call still happens, because the tap
+  // has to feel like it did something; the second re-aims once the content is
+  // there.
+  const box = useRef<HTMLDivElement>(null)
+  const settled = detail.isSuccess
+  useEffect(() => {
+    box.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [attemptId, settled])
   return (
-    <div className="answer-log-detail" role="region" aria-label="Answer detail">
+    <div className="answer-log-detail" role="region" aria-label="Answer detail" ref={box}>
       <div className="answer-log-detail-head">
         <div>
           {/* RC items carry the section as their type; printing it twice reads
