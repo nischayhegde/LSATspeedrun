@@ -70,43 +70,52 @@ def main() -> int:
         profile.reputation = 100.0
         db.session.commit()
 
-        # Assets in tier order, sweeping until a sweep buys nothing. `requires`
-        # can name an asset at the same tier, so one ordered pass is not enough
-        # and hard-coding the dependency order would rot the first time the
-        # catalog moves.
-        owned: set[str] = {asset.asset_key for asset in profile.assets}
-        for _ in range(len(ASSETS) + 1):
-            bought = 0
-            for item in sorted(ASSETS, key=lambda entry: (entry["tier"], entry["cost"])):
-                if item["key"] in owned:
-                    continue
-                try:
-                    purchase_asset(profile, item["key"])
-                except ValueError:
-                    continue
-                owned.add(item["key"])
-                bought += 1
-            if not bought:
-                break
-        print(f"assets {len(owned)}/{len(ASSETS)}")
+        def refill() -> None:
+            """Cash and standing back to the top, before every gated call.
 
-        # One tier at a time, which is the only way `advance_firm` will move.
-        for tier in range(profile.office_tier + 1, len(FIRM_TIERS)):
+            Upkeep settles against the wallet on the way into each of these
+            functions, and reputation is spent by nothing here, but both are
+            re-set anyway: the point of this script is that the *gates* are
+            real, not that the economy is.
+            """
             profile.cash = WALLET
+            profile.reputation = 100.0
             db.session.commit()
-            try:
-                advance_firm(profile, tier)
-            except ValueError as exc:
-                print(f"stopped at tier {profile.office_tier}: {exc}")
+
+        # Assets and tiers together, because each gates the other: an asset can
+        # require an office tier, and a tier requires its assets. Buying
+        # everything and then advancing therefore stalls at tier 2 with 14 of
+        # 107 assets, which is what the first version of this did.
+        owned: set[str] = {asset.asset_key for asset in profile.assets}
+        for _ in range(len(FIRM_TIERS) + 1):
+            progressed = False
+            for _pass in range(3):
+                for item in sorted(ASSETS, key=lambda entry: (entry["tier"], entry["cost"])):
+                    if item["key"] in owned:
+                        continue
+                    refill()
+                    try:
+                        purchase_asset(profile, item["key"])
+                    except ValueError:
+                        continue
+                    owned.add(item["key"])
+                    progressed = True
+            if profile.office_tier + 1 < len(FIRM_TIERS):
+                refill()
+                try:
+                    advance_firm(profile, profile.office_tier + 1)
+                    progressed = True
+                except ValueError as exc:
+                    print(f"tier {profile.office_tier} -> {profile.office_tier + 1}: {exc}")
+            if not progressed:
                 break
-        print(f"tier {profile.office_tier}")
+        print(f"assets {len(owned)}/{len(ASSETS)}, tier {profile.office_tier}")
 
         held = {row.district_key for row in profile.territories}
         for district in DISTRICTS:
             if district["key"] in held:
                 continue
-            profile.cash = WALLET
-            db.session.commit()
+            refill()
             try:
                 secure_district(profile, district["key"])
             except ValueError as exc:

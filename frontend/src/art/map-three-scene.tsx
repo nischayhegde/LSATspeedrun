@@ -8431,10 +8431,14 @@ export function MapThreeScene({
      * with it, and a building on open water reads as a bug rather than as a
      * choice. Each keeps a landform of its own, sized to what stands on it.
      */
-    const groundMarker = (x: number, z: number, radius: number, seed: number) => {
+    const groundMarker = (x: number, z: number, radius: number, seed: number, forContact = false) => {
       if (region !== 'ocean') return
       const island = createIslandLandform(radius, seed, 0x66725e)
       island.position.set(x, -.22, z)
+      // Distinguishable from the landforms the region itself lays down, because
+      // a landmark audit has to be able to ask "is this district sitting on a
+      // rival's island" without its own contact's footing answering yes.
+      if (forContact) island.userData.contactLandform = true
       world.add(island)
     }
     // A standing rival reads as a building with a name on it; putting one
@@ -8600,7 +8604,7 @@ export function MapThreeScene({
        * unbought Treaty Sea is triangle-for-triangle the region that was
        * measured. See `groundMarker`.
        */
-      groundMarker(sited.x, sited.z, .92, 860 + index * 41)
+      groundMarker(sited.x, sited.z, .92, 860 + index * 41, true)
       const standing = region === 'ocean' ? OCEAN_LANDFORM_TOP : .02
       const shingle = createContactShingle(0x6cae98)
       shingle.position.set(sited.x, standing, sited.z)

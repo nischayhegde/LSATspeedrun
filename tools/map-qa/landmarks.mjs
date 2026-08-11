@@ -53,6 +53,16 @@ try {
 
   for (const key of keys) {
     await region(page, TABS[key], { key })
+    // The scene resets `renderer.info` every frame, so reading it without
+    // drawing one reports 1 call and 1 triangle. Ticked, not slept.
+    await page.evaluate(() => window.__clock?.tick(2))
+    // A firm this probe stood up is a fresh firm, so the prologue chapter card
+    // is open over the right-hand third of the map. `dismissOverlays` does not
+    // know about it because no other probe signs in as a new account.
+    await page.evaluate(() => {
+      for (const button of document.querySelectorAll('.chapter-prompt-later, .tour-offer-decline')) button.click()
+    })
+    await page.waitForTimeout(200)
     const found = { key }
 
     /* ---- the join, and the ground each landmark was sited on ---- */
@@ -68,6 +78,11 @@ try {
       const box = new THREE.Box3()
       world.traverse((child) => {
         if (!child.isMesh || child.isInstancedMesh) return
+        // A contact's own footing is not ground the district has to avoid: on
+        // the Treaty Sea it is placed *at* the district, so counting it made
+        // all three districts with a contact look as though they had been sited
+        // on top of something.
+        if (child.userData?.contactLandform) return
         const type = child.geometry?.type ?? ''
         if (type !== 'ExtrudeGeometry' && type !== 'CylinderGeometry') return
         box.setFromObject(child)
@@ -153,12 +168,28 @@ try {
 
     // Every district in the region, one at a time: hover for the brief, click
     // for the flight. Both off the same row a player uses.
+    /*
+     * Where a landmark lands on screen, as a fraction of the half-viewport from
+     * dead centre. This is the honest test of a camera flight, and the first
+     * version of this probe got it wrong: it measured the camera's distance to
+     * the place and asserted the flight had shortened it. `travelToLandmark`
+     * pins the zoom at .72, so the camera ends at the *same* standoff from
+     * whatever it framed — 32.36 units on the Treaty Sea and 36.56 on the
+     * Global Compact, for all six districts of each — and a flight that started
+     * closer than the standoff correctly moves away. Three of twelve flights
+     * failed a test that was measuring the wrong thing.
+     */
     found.briefs = []
     for (const district of found.districts) {
-      const before = await page.evaluate(() => {
-        const camera = window.__mapScene.camera
-        return { x: camera.position.x, z: camera.position.z }
-      })
+      const framing = async () => page.evaluate((landmarkKey) => {
+        const THREE = window.__mapThree
+        const scene = window.__mapScene
+        const landmark = (scene.world.userData.landmarks ?? []).find((entry) => entry.key === landmarkKey)
+        if (!landmark) return null
+        const point = new THREE.Vector3(landmark.position[0], .2, landmark.position[1]).project(scene.camera)
+        return { off: Number(Math.hypot(point.x, point.y).toFixed(3)), behind: point.z > 1 }
+      }, district.landmark_key)
+      const before = await framing()
       const opened = await page.evaluate((landmarkKey) => {
         const scene = window.__mapScene
         const landmark = (scene.world.userData.landmarks ?? []).find((entry) => entry.key === landmarkKey)
@@ -190,18 +221,17 @@ try {
           ledger: node.querySelector('.uw-district-brief-ledger')?.textContent?.trim() ?? null,
         }
       })
-      const after = await page.evaluate(() => {
-        const camera = window.__mapScene.camera
-        return { x: camera.position.x, z: camera.position.z }
-      })
-      const reach = (point) => Math.hypot(point.x - opened.position[0], point.z - opened.position[1])
-      const flight = { from: Number(reach(before).toFixed(2)), to: Number(reach(after).toFixed(2)) }
+      const after = await framing()
+      const flight = { from: before?.off ?? null, to: after?.off ?? null, behind: after?.behind ?? null }
       found.briefs.push({ district: district.key, landmark: district.landmark_key, flight, brief })
       if (!brief) failures.push(`${key}/${district.key}: no brief rendered`)
       else if (!brief.head) failures.push(`${key}/${district.key}: brief fell back to the scene's own description, so the join did not resolve`)
-      // The camera has to end up nearer the place than it started, unless it
-      // was already framing it.
-      if (flight.to > flight.from && flight.to > 8) failures.push(`${key}/${district.key}: flight moved the camera from ${flight.from} to ${flight.to}`)
+      // Half a half-viewport from centre. Generous, because the flight settles
+      // over several frames and the district guide covers the left third, but
+      // far tighter than the 1.0 that means "somewhere on screen" and than the
+      // >1 that means the flight went to the wrong place or nowhere.
+      if (after?.behind) failures.push(`${key}/${district.key}: flight left the place behind the camera`)
+      else if ((after?.off ?? 9) > .5) failures.push(`${key}/${district.key}: flight left the place ${after?.off} off centre`)
       await page.screenshot({ path: `${dir}/${key}-${district.key}.png` })
     }
 
@@ -254,7 +284,7 @@ try {
     console.log(` lane clearance: ${found.scene.inLane.map((row) => `${row.key} ${row.clear ?? 'n/a'}`).join(' | ')}`)
     console.log(` contacts: ${found.scene.contacts.join(', ') || 'none'}`)
     for (const row of found.briefs) {
-      console.log(`  ${row.district} -> ${row.landmark} ${row.brief?.head ?? 'NO BRIEF'} · flight ${row.flight.from} -> ${row.flight.to}`)
+      console.log(`  ${row.district} -> ${row.landmark} ${row.brief?.head ?? 'NO BRIEF'} · framed ${row.flight.from} -> ${row.flight.to} off centre`)
     }
     console.log(` pin: ${found.pin.plot} hasPin=${found.pin.hasPin} back to ${found.returned.region} marked ${found.returned.row}`)
     console.log(` cost: ${found.scene.calls} calls, ${found.scene.triangles} triangles`)
