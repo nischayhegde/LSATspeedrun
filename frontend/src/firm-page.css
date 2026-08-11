@@ -136,11 +136,16 @@
      and set `white-space: nowrap`, so at this width "GENERAL COUNSEL" ran clean
      across the sentence in the next column and took the first word of it with
      the pill's background. The title is still on the portrait's aria-label, and
-     the panel spells the client out in the line beside it. */
-  .client-roster-status .client-portrait > small { display: none; }
-  /* And the bust itself is 86px in an 68px column, so it was overhanging the
+     the panel spells the client out in the line beside it.
+
+     Both rules carry `.av-portrait`, which is not decoration: `art.css` sizes
+     and positions this portrait through `.client-portrait.av-portrait`, that
+     sheet is injected after this one, and without the extra class these two
+     lose the cascade to it and silently do nothing. */
+  .client-roster-status .client-portrait.av-portrait > small { display: none; }
+  /* And the bust itself is 86px in a 68px column, so it was overhanging the
      sentence by the width of its first word. */
-  .client-roster-status .client-portrait { width: 68px; height: 73px; }
+  .client-roster-status .client-portrait.av-portrait { width: 68px; height: 73px; }
   .management-grid, .achievement-grid { grid-template-columns: 1fr; }
   .tier-upgrade-banner { grid-template-columns: 1fr; text-align: center; }
   .tier-preview { margin: auto; }
@@ -270,8 +275,12 @@
 /* The one line that reconciles the ledger's five map regions with the catalog's
    fourteen firm addresses. Sits between the two controls it is about, and rides
    up into the toolbar's own bottom margin rather than adding a band. */
-.catalog-axis-note { margin: -18px 4px 20px; color: #9fb6bc; font-size: 11.5px; line-height: 1.55; }
-.catalog-axis-note b { color: #e8bf58; font-weight: inherit; }
+/* Brown ink on the parchment the panel is actually printed on, the same colour
+   a card's own body copy takes. It was set for the dark toolbar above it and
+   sat a shade off the page underneath, which is a poor showing for the one
+   line whose whole job is to be read. */
+.catalog-axis-note { margin: -18px 4px 20px; color: #6f5944; font-size: 11.5px; line-height: 1.55; }
+.catalog-axis-note b { color: #8a5a1f; font-weight: 700; }
 @media (max-width: 640px) { .catalog-axis-note { margin-inline: 0; font-size: 11px; } }
 
 .firm-ledger-heading {
