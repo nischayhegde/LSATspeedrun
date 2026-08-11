@@ -153,7 +153,35 @@
   .firm-tabs button { padding-inline: 12px; }
   .firm-tabs button svg { display: none; }
   .firm-tabs { flex-wrap: wrap; overflow: visible; }
-  .firm-tabs button { flex: 1 1 calc(33.333% - 6px); } }.page-heading h1 { font-family: var(--font-pixel); font-size: clamp(28px, 4vw, 48px); font-weight: 900; text-transform: uppercase; }.firm-wallet, .tier-upgrade-banner, .client-roster-status { border: 4px solid #10151e; border-radius: 0; box-shadow: inset 0 0 0 2px #41576a, 6px 6px #10151e; }.firm-wallet { background: #20374a; }.firm-wallet small, .firm-wallet strong, .firm-wallet span { font-family: var(--font-pixel); }.firm-tabs { gap: 5px; border: 0; }.firm-tabs button { border: 3px solid #171923; border-radius: 0; background: #dbc89d; box-shadow: 3px 3px #171923; font-family: var(--font-pixel); font-size: 10.5px; }.firm-tabs button.active { color: #162031; border-color: #171923; background: #efc55a; box-shadow: inset -3px -3px #b57a2e, 3px 3px #171923; }.management-card, .achievement-grid article { border: 3px solid #171923; border-radius: 0; background: #f1dfb2; box-shadow: inset 0 0 0 2px #c9a568, 5px 5px #171923; }.management-card h3, .achievement-grid h3 { font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.tier-preview { border: 3px solid #131720; border-radius: 0; color: #efc65c; background: #243d4e; box-shadow: 3px 3px #131720; }.benefit-pill { border-radius: 0; font-family: var(--font-pixel); font-size: 10px; }@media (max-width: 620px) {  .firm-tabs button { font-size: 10px; } }
+  .firm-tabs button { flex: 1 1 calc(33.333% - 6px); } }
+/* ---------------------------------------------------------------------------
+   The Partners' Ledger is diegetic paper and stays that way: manila folder
+   tabs with their own paper clips, a treasury wallet with a clasp, index cards
+   taped to a board, and warm ledger inks (`#39291e`, `#37271c`, `#33261c`)
+   with real cast offsets. `docs/visual-language.md` says printed matter is
+   allowed that, and flattening it into the instrument register would be the
+   worst kind of tidying.
+
+   What was drift rather than design, and is fixed below:
+
+   - the page title. Every other route sets its h1 in Fraunces; this sheet
+     alone put it in the HUD face at 900 and forced it uppercase, against
+     markup that reads "Build a legendary practice." in sentence case.
+   - the ink. The paper on this page is inked in warm browns, but the cards
+     and dark panels were outlined and shadowed in `#171923`, `#10151e` and
+     `#131720` — three cold near-blacks out of the pixel palette, sitting on
+     parchment.
+   --------------------------------------------------------------------------- */
+.page-heading h1 { font-family: var(--font-display); font-size: clamp(28px, 4vw, 50px); font-weight: 620; letter-spacing: -.022em; text-transform: none; }
+.firm-wallet, .tier-upgrade-banner, .client-roster-status { border: 2px solid var(--ink); border-radius: var(--r-control); box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .26), 6px 6px rgba(27, 26, 36, .5); }
+.firm-wallet { background: #20374a; }
+.firm-wallet small, .firm-wallet strong, .firm-wallet span { font-family: var(--font-hud); }
+.firm-tabs { gap: 5px; border: 0; }
+.management-card, .achievement-grid article { border: 2px solid var(--ink); border-radius: 6px; background: #f1dfb2; box-shadow: inset 0 0 0 2px #c9a568, 5px 5px rgba(27, 26, 36, .34); }
+.management-card h3, .achievement-grid h3 { font-family: var(--font-hud); font-size: 13px; text-transform: uppercase; }
+.tier-preview { border: 2px solid var(--ink); border-radius: var(--r-control); color: var(--brass-bright); background: #243d4e; box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .22), var(--el-1); }
+.benefit-pill { border-radius: var(--r-chip); font-family: var(--font-hud); font-size: 10px; }
+@media (max-width: 620px) {  .firm-tabs button { font-size: 10px; } }
 .content-location-tag{min-height:18px;margin:2px 0 7px;display:flex;align-items:center;justify-content:space-between;gap:7px;color:#925537;font-family:var(--font-pixel);font-size:9px;letter-spacing:.08em;text-transform:uppercase}.content-location-tag b{padding:3px 5px;color:#e9d59b;background:#304b55;font-size:9px;letter-spacing:0}
 .client-special{min-height:46px;margin:10px 0;padding:7px 8px;display:flex;align-items:center;gap:7px;border:2px solid #493240;color:#63374c;background:#ecd291;box-shadow:inset 0 0 0 2px #f6e5ad,3px 3px rgba(61,42,32,.25);font-family:var(--font-pixel);font-size:9.5px;line-height:1.4}.client-special svg{flex:0 0 auto;color:#a04d4c}.client-special span,.client-special small{display:block}.client-special small{margin-bottom:3px;color:#a0533e;font-size:9px}
 /* The fee/close split. Every client at a tier is worth the same, so this bar is
@@ -186,8 +214,8 @@
 .firm-wallet > span { color: #efe0ad; }
 .wallet-clasp { width: 36px; height: 20px; position: absolute; left: -13px; top: calc(50% - 10px); border: 3px solid #382816; background: #c99742; box-shadow: inset -4px -3px #8f5f26; }
 .wallet-clasp i { width: 5px; height: 5px; position: absolute; top: 5px; border: 1px solid #5d3e1e; background: #f1cb6a; }.wallet-clasp i:first-child { left: 5px; }.wallet-clasp i:last-child { right: 5px; }
-.firm-wallet .appearance-button { border: 2px solid #101721; border-radius: 0; color: #efe4bd; background: #172b39; box-shadow: 2px 2px #0d1118; font-family: var(--font-pixel); font-size: 9.5px; }
-.firm-wallet .appearance-button:hover:not(:disabled) { border-color: #e3bd5b; background: #2c4b59; }
+.firm-wallet .appearance-button { border: 1px solid var(--hairline); border-radius: var(--r-control); color: #efe4bd; background: linear-gradient(170deg, #1e3546, #142534); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); font-family: var(--font-hud); font-size: 9.5px; }
+.firm-wallet .appearance-button:hover:not(:disabled) { border-color: var(--hairline-strong); background: linear-gradient(170deg, #2a4859, #1b3140); }
 .firm-tabs { margin: 0 0 24px; padding: 0; align-items: flex-end; gap: 7px; overflow: visible; background: transparent; }
 .firm-tabs button { min-height: 55px; padding: 8px 13px 7px; position: relative; flex: 1 1 0; flex-direction: column; gap: 4px; overflow: visible; border: 3px solid #33261c; color: #705a44; background-color: #c7a56c; background-image: linear-gradient(90deg, rgba(70,43,24,.06) 1px, transparent 1px); background-size: 7px 7px; box-shadow: inset 0 -5px rgba(95,60,30,.13), 4px 4px #37281e; }
 .firm-tabs button::before { content: ""; width: 9px; height: 9px; position: absolute; left: 6px; top: 6px; background: #b98e51; box-shadow: inset -2px -2px rgba(78,49,26,.35); }
@@ -203,7 +231,9 @@
 .firm-panel:focus { outline: none; }
 .firm-panel:focus-visible { outline: 3px dashed #9d493b; outline-offset: 6px; }
 .tier-upgrade-banner { margin: 0 4px 22px; padding: 18px; grid-template-columns: 118px 1fr auto; border-color: #14121a; background-color: #243e4d; background-image: linear-gradient(90deg, rgba(107,157,155,.07) 2px, transparent 2px), linear-gradient(rgba(107,157,155,.07) 2px, transparent 2px); background-size: 12px 12px; box-shadow: inset 0 0 0 3px #516974, 6px 6px #19151b; }
-.tier-upgrade-banner::after { content: "NEXT CHAPTER"; padding: 5px 8px; position: absolute; right: 15px; top: -12px; border: 2px solid #4c2b27; color: #f4dca3; background: #9c493d; box-shadow: 2px 2px #17131a; font-family: var(--font-pixel); font-size: 9.5px; transform: rotate(1deg); }
+/* A paper tag pinned to the top edge of the banner, so it keeps its tilt.
+   What it loses is the 2px hard black offset underneath it. */
+.tier-upgrade-banner::after { content: "NEXT CHAPTER"; padding: 5px 9px; position: absolute; right: 15px; top: -12px; border: 1px solid rgba(224, 152, 118, .42); border-radius: 5px; color: #f4dca3; background: linear-gradient(170deg, #a8534a, #8b3f37); box-shadow: inset 0 1px 0 rgba(255, 205, 175, .18), var(--el-1); font-family: var(--font-hud); font-size: 9.5px; transform: rotate(1deg); }
 .tier-upgrade-banner h2 { color: #f3d579; font-family: var(--font-pixel); font-size: 18px; text-transform: uppercase; }
 .tier-upgrade-banner .eyebrow, .tier-upgrade-banner small { font-family: var(--font-pixel); font-size: 10px; }
 .tier-upgrade-banner .tier-preview { background: #182c39; box-shadow: inset 0 0 0 3px #344d5a, 4px 4px #11131a; }
@@ -250,7 +280,7 @@
   .tier-upgrade-banner .tier-buy { grid-column: 1 / 3; align-items: stretch; flex-direction: row; justify-content: space-between; }
   .asset-management-grid { grid-template-columns: 1fr; padding: 1px; }
   .management-card.asset-card { min-height: 490px; } }.pro-bono-client{background:linear-gradient(150deg,#f1f4df,#fffdf2)!important;box-shadow:inset 0 0 0 3px #77a38d,5px 6px #83a38d!important}.pro-bono-seal{padding:7px 9px;position:absolute;z-index:8;right:8px;top:8px;display:flex;align-items:center;gap:6px;border:2px solid #28594f;color:#28594f;background:#dff2df;box-shadow:3px 3px #5d8875;font-family:var(--font-pixel);font-size:9px;transform:rotate(2deg)}.pro-bono-seal svg{width:15px}.purchase-row strong:has(del){display:grid;grid-template-columns:auto auto;gap:0 8px;align-items:center}.purchase-row del{grid-column:1/3;color:#96726c;font-size:11.5px}.purchase-row strong small{padding:3px;color:#d6ffe6;background:#2f6f5e;font-family:var(--font-pixel);font-size:9px}
-.catalog-toolbar{margin:4px 0 22px;padding:11px 13px;display:grid;grid-template-columns:1fr auto minmax(190px,auto);align-items:end;gap:13px;border:3px solid #231b17;color:#eedda9;background:#233b49;box-shadow:inset 0 0 0 2px #49606a,5px 5px #34261e}.catalog-toolbar>div:first-child span,.catalog-toolbar>div:first-child strong,.catalog-toolbar label>span{display:block;font-family:var(--font-pixel)}.catalog-toolbar>div:first-child span,.catalog-toolbar label>span{color:#6fd0c5;font-size:9px;letter-spacing:.12em}.catalog-toolbar>div:first-child strong{margin-top:5px;color:#f0cc68;font-size:11px}.catalog-view-buttons{display:flex;gap:5px}.catalog-view-buttons button{min-height:31px;padding:0 10px;border:2px solid #0f151d;color:#a9bdc2;background:#182a38;box-shadow:inset -2px -2px #0e1c28;font-family:var(--font-pixel);font-size:9.5px;text-transform:uppercase}.catalog-view-buttons button.active{color:#172233;background:#e8bf58;box-shadow:inset -3px -3px #a9782f}.catalog-toolbar label select{width:100%;min-height:33px;margin-top:4px;padding:0 26px 0 8px;border:2px solid #10151c;border-radius:0;color:#f0dda4;background:#172a38;font-family:var(--font-pixel);font-size:9.5px}@media (max-width:760px) {.catalog-toolbar{grid-template-columns:1fr 1fr}.catalog-toolbar label{grid-column:1/3}.catalog-view-buttons{justify-content:flex-end}.catalog-view-buttons button{padding-inline:7px} }
+.catalog-toolbar{margin:4px 0 22px;padding:11px 13px;display:grid;grid-template-columns:1fr auto minmax(190px,auto);align-items:end;gap:13px;border:2px solid var(--ink);border-radius:var(--r-control);color:#eedda9;background:#233b49;box-shadow:inset 0 0 0 1px rgba(232,200,124,.26),5px 5px rgba(27,26,36,.42)}.catalog-toolbar>div:first-child span,.catalog-toolbar>div:first-child strong,.catalog-toolbar label>span{display:block;font-family:var(--font-pixel)}.catalog-toolbar>div:first-child span,.catalog-toolbar label>span{color:#6fd0c5;font-size:9px;letter-spacing:.12em}.catalog-toolbar>div:first-child strong{margin-top:5px;color:#f0cc68;font-size:11px}.catalog-view-buttons{display:flex;gap:5px}.catalog-view-buttons button{min-height:31px;padding:0 11px;border:1px solid var(--hairline);border-radius:var(--r-control);color:#a9bdc2;background:linear-gradient(170deg,#1f3444,#14232f);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);font-family:var(--font-hud);font-size:9.5px;text-transform:uppercase}.catalog-view-buttons button.active{color:#2a1e06;border-color:var(--ink-line-strong);background:var(--brass-plate);box-shadow:inset 0 1px 0 rgba(255,246,220,.62),var(--el-1)}.catalog-toolbar label select{width:100%;min-height:33px;margin-top:4px;padding:0 26px 0 9px;border:1px solid var(--hairline);border-radius:var(--r-control);color:#f0dda4;background:linear-gradient(170deg,#1e3446,#142433);font-family:var(--font-hud);font-size:9.5px}@media (max-width:760px) {.catalog-toolbar{grid-template-columns:1fr 1fr}.catalog-toolbar label{grid-column:1/3}.catalog-view-buttons{justify-content:flex-end}.catalog-view-buttons button{padding-inline:7px} }
 
 /* The districts a network opens, named on the card. A signed one is green and
    ticked, matching the held plots in the ledger above, so the same state reads
@@ -399,7 +429,7 @@
 .asset-card .purchase-row .primary-button:not(:disabled):active,
 .retainer-plot-buy button:not(:disabled):active,
 .asset-locate:active { translate: 0 2px; }
-.asset-card .purchase-row .primary-button:not(:disabled):active { box-shadow: inset -4px -4px #b67b2e, 1px 1px #17141a; }
+.asset-card .purchase-row .primary-button:not(:disabled):active { box-shadow: inset 0 2px 5px rgba(74, 48, 8, .35); }
 
 /* ---------------------------------------------------------------------------
    The standing-counsel ledger.
@@ -409,7 +439,7 @@
    1440 and a single scroll-snap row on a phone, because the page it joins is
    already long.
    --------------------------------------------------------------------------- */
-.retainer-ledger { margin: 0 4px 20px; padding: 14px; border: 3px solid #231b17; background: #23404a; box-shadow: inset 0 0 0 2px #49606a, 5px 5px #34261e; }
+.retainer-ledger { margin: 0 4px 20px; padding: 14px; border: 2px solid var(--ink); border-radius: var(--r-card); background: #23404a; box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .26), 5px 5px rgba(27, 26, 36, .42); }
 
 /* The board used to begin at its own totals, which asks a first-time reader to
    work out what a number means before being told what the thing is. Three
@@ -444,11 +474,12 @@
   gap: 8px;
   flex: 0 0 auto;
   overflow: hidden;
-  border: 2px solid #0f151d;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-control);
   color: #a9bdc2;
-  background: #182a38;
-  box-shadow: inset -2px -2px #0e1c28;
-  font-family: var(--font-pixel);
+  background: linear-gradient(170deg, #1f3444, #14232f);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+  font-family: var(--font-hud);
   font-size: 9.5px;
 }
 .retainer-regions button > span { display: flex; flex-direction: column; gap: 2px; text-align: left; }
@@ -457,7 +488,7 @@
 .retainer-regions button b { color: #e8bf58; }
 .retainer-regions button i { height: 3px; position: absolute; left: 0; bottom: 0; background: rgba(111,208,197,.6); transition: width var(--mo-4) var(--mo-out); }
 .retainer-regions button:hover { color: #eaf5f2; }
-.retainer-regions button.active { color: #172233; background: #e8bf58; box-shadow: inset -3px -3px #a9782f; }
+.retainer-regions button.active { color: #2a1e06; border-color: var(--ink-line-strong); background: var(--brass-plate); box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1); }
 .retainer-regions button.active b { color: #4c2f0d; }
 .retainer-regions button.active i { background: rgba(23,34,51,.35); }
 
@@ -470,9 +501,10 @@
   flex-direction: column;
   gap: 3px;
   overflow: hidden;
-  border: 2px solid #16232b;
-  background: #1b3039;
-  box-shadow: inset 0 0 0 1px rgba(111,208,197,.12);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-control);
+  background: linear-gradient(170deg, #1e3540, #172a33);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
 }
 .retainer-plot-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .retainer-plot strong { color: #f4e4b7; font-family: var(--font-pixel); font-size: 10.5px; line-height: 1.35; }
@@ -486,15 +518,16 @@
 .retainer-plot-buy button {
   min-height: 32px;
   padding: 0 11px;
-  border: 2px solid #17141a;
-  color: #222019;
-  background: #eac459;
-  box-shadow: inset -3px -3px #b67b2e, 2px 2px #17141a;
-  font-family: var(--font-pixel);
+  border: 1px solid var(--ink-line-strong);
+  border-radius: var(--r-control);
+  color: #2a1e06;
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1);
+  font-family: var(--font-hud);
   font-size: 9.5px;
 }
-.retainer-plot-buy button:not(:disabled):hover { translate: 0 -2px; background: #f3d675; }
-.retainer-plot-buy button:disabled { color: #6f6455; background: #99917f; box-shadow: inset -2px -2px #7b7264, 2px 2px #17141a; }
+.retainer-plot-buy button:not(:disabled):hover { translate: 0 -1px; background: linear-gradient(170deg, #f8e3ae, #d3a856); box-shadow: inset 0 1px 0 rgba(255, 250, 235, .72), var(--el-2); }
+.retainer-plot-buy button:disabled { color: #6f6455; border-color: rgba(27, 26, 36, .34); background: linear-gradient(170deg, #a89f8b, #8e8674); box-shadow: none; }
 .retainer-plot.is-held { border-color: #3d704f; background: #1d3a33; }
 .retainer-plot.is-held strong { color: #dff0cf; }
 .retainer-plot.is-locked { background: #182530; }
