@@ -3234,10 +3234,48 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // They keep faces and furniture readable from every camera heading while
     // leaving the desk, hearth, and sconces to provide localized warmth.
     phase('staff')
-    scene.add(new THREE.HemisphereLight(rustic ? 0x9fb6b5 : 0xc2d6d7, rustic ? 0x2c1d14 : 0x32271e, rustic ? 1.05 : 1.58))
+    /*
+     * The room, lit as somewhere with one window in it.
+     *
+     * What was here before was an even, four-sided wash — a hemisphere, an
+     * ambient floor, a key, and rectangular sources on the ceiling, the rear
+     * wall and both side walls — and it was arrived at honestly, to keep faces
+     * readable through a full 360-degree orbit. But it had come loose from the
+     * one fact about this room that the player can actually see: there is a
+     * window in the front-left wall, and the district behind it is now built
+     * from the map region the firm stands in.
+     *
+     * Two disagreements in particular. The skylight was a fixed cool grey
+     * whatever was outside, so the same room sat under The Circuit's warm
+     * afternoon and Treaty Sea's overcast without changing. And the key came
+     * from up and to the *left*, while the view through the glass is lit by a
+     * sun up and to the *right*: every lit flank in the window faced one way
+     * and every lit flank in the room faced the other, which is two afternoons
+     * in one picture.
+     *
+     * Both are fixed by deriving from the view rather than by adding to the
+     * rig. The light count, the light types and the shadow maps — of which
+     * there are still none — are exactly as they were.
+     */
+    const daylight = new THREE.Color(windowView.daylight)
+    /** Which way is 'towards the sun' along the room's own left-right axis. */
+    const sunward = Math.sign(windowView.sunDirection.x) || 1
+    // The skylight the room sits under is the sky on the other side of its own
+    // window, so the hemisphere takes the district's colour — pulled only part
+    // of the way, because the tier's authored character lives in these two
+    // colours and a full substitution would flatten fourteen rooms into one.
+    const skylight = new THREE.Color(rustic ? 0x9fb6b5 : 0xc2d6d7).lerp(daylight, rustic ? .3 : .45)
+    scene.add(new THREE.HemisphereLight(skylight, rustic ? 0x2c1d14 : 0x32271e, rustic ? 1.05 : 1.58))
     scene.add(new THREE.AmbientLight(rustic ? 0x8d765e : 0x8ca3aa, rustic ? .34 : .42))
-    const keyLight = new THREE.DirectionalLight(rustic ? 0xe7bd89 : 0xffe1b2, rustic ? .46 : .72)
-    keyLight.position.set(-3.5, 7.2, 6.5)
+    const keyLight = new THREE.DirectionalLight(
+      new THREE.Color(rustic ? 0xe7bd89 : 0xffe1b2).lerp(daylight, .35),
+      rustic ? .46 : .72,
+    )
+    // Straight along the view's own sun. A directional light is a direction
+    // and a target, so only the bearing matters here; the height is held at
+    // the elevation the room was tuned for so nothing about how far the light
+    // reaches down a wall has changed.
+    keyLight.position.copy(windowView.sunDirection).multiplyScalar(9).setY(7.2)
     keyLight.castShadow = false
     scene.add(keyLight)
     const ceilingFill = new THREE.RectAreaLight(rustic ? 0xffd29b : 0xffdfb5, rustic ? 2.4 : 3.6, roomWidth * .52, 4.4)
@@ -3249,7 +3287,14 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     rearFill.lookAt(0, 2.25, .3)
     scene.add(rearFill)
     for (const side of [-1, 1]) {
-      const sideFill = new THREE.RectAreaLight(side < 0 ? 0xb7d2d0 : 0xffd5a0, rustic ? 1.35 : 2.45, 5.6, 3.1)
+      // The wall the sun is on returns warm light; the wall opposite it is in
+      // its own shade and returns the cool of the sky. This was a fixed
+      // cool-left, warm-right split, which was right half the time by
+      // coincidence and is now right by construction.
+      const facingSun = side === sunward
+      const fill = new THREE.Color(facingSun ? 0xffd5a0 : 0xb7d2d0)
+      if (!facingSun) fill.lerp(daylight, .3)
+      const sideFill = new THREE.RectAreaLight(fill, rustic ? 1.35 : 2.45, 5.6, 3.1)
       sideFill.position.set(side * (roomHalf - .45), 3.45, .55)
       sideFill.lookAt(0, 2.15, .55)
       scene.add(sideFill)

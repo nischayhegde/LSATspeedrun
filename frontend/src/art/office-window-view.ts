@@ -455,6 +455,17 @@ export type OfficeWindowView = {
   /** Colour the room's window spill should take, so inside agrees with out. */
   daylight: number
   daylightStrength: number
+  /**
+   * Where the sun stands, in the room's own axes.
+   *
+   * The view is built around a fixed `SUN` and then yawed onto the sightline,
+   * so the direction the district is lit from is only knowable here. The room
+   * needs it because its own key has to agree: with the sun up and to the
+   * viewer's right outside, every lit flank in the window faces right, and a
+   * key that rakes the room from the left puts the two halves of one picture
+   * under two different afternoons. Nobody names that and everybody sees it.
+   */
+  sunDirection: THREE.Vector3
   update: (elapsed: number) => void
   triangles: number
   meshes: number
@@ -656,6 +667,9 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
     region,
     daylight: look.daylight,
     daylightStrength: look.daylightStrength,
+    // The yaw is the only transform between this view's axes and the room's,
+    // so rotating the authored sun by it is the whole conversion.
+    sunDirection: SUN.clone().applyAxisAngle(UP, root.rotation.y),
     update,
     triangles,
     meshes: root.children.length,
