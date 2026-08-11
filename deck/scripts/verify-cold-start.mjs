@@ -127,6 +127,16 @@ console.log('\n\u2022 A cold browser opens the deck and starts the show')
     () => document.querySelectorAll('iframe[src*="deck-warm"]').length > 0,
     { timeout: 25000 },
   ).catch(() => undefined)
+  // A quiet window before judging, because this check was measuring itself.
+  //
+  // `startWarmUp` pumps its queue through `requestIdleCallback`, and everything
+  // above — the preflight poll, three `evaluate`s, a full-page screenshot —
+  // keeps the main thread busy enough that idle callbacks stop being handed
+  // out. So this reported "warmed 1/2" consistently while a passive observer
+  // that only watched requests saw office at 1.6s and map at 3.7s on the same
+  // machine. A presenter reading the start card is the passive case; this
+  // harness was the only thing creating the starvation it then reported.
+  if (warmed.size < 2) await page.waitForTimeout(6000)
   if (warmed.size < 2) {
     notes.push(`note: only warmed [${[...warmed].join(', ') || 'nothing'}] before Start was pressed`)
     console.log(`  \u00b7 warmed ${warmed.size}/2 scene routes before Start (office is the one that matters)`)

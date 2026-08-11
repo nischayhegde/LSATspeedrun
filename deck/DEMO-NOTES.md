@@ -349,7 +349,7 @@ still is worse than a visible failure, because it silently misleads the room.
 | `demo-map.png` | `map` | `/map` | `demo-map-and-firm` |
 | `demo-focus-mode.png` | `focus-mode` | `/office` **with Focus Mode on** | `demo-focus-mode` — its only content |
 | `demo-firm-upgrades.png` | `firm-upgrades` | `/firm?tab=upgrades` | (unused by the current cut) |
-| `demo-office-tier14.png` | `office-tier14` | `/office?officeTier=14&officeAll=1` | (unused by the current cut) |
+| `demo-office-tier14.png` | `office-tier14` | `/office?officeTier=14&officeAll=1` | `demo-office-transformation` — the *after* half of its toggle |
 | `scene-office-tier0.png`, `scene-office-tier14.png` | — | Deck art, not fallbacks | — |
 
 ### Recapturing them

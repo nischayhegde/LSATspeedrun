@@ -18,7 +18,7 @@
  * was alone on screen only by accident, because the positioning effect happened
  * to return before updating the host.
  *
- *   node scripts/verify-still-only.mjs --base=http://localhost:5185
+ *   cd deck && node scripts/verify-still-only.mjs
  */
 
 import { mkdirSync } from 'node:fs'
@@ -35,7 +35,12 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
   return [match[1], match[2] ?? '']
 }))
 
-const BASE = (flags.get('base') || 'http://localhost:5185').replace(/\/$/, '')
+// 5180, which is `server.port` in vite.config.ts and what every other harness
+// here defaults to. This defaulted to 5185, which is not the dev server and not
+// the preview server (5181) either, so the script died on a connection refusal
+// before its first check unless `--base` was passed — and the thing it checks
+// is the `stillOnly` unmount guard, which has no other test.
+const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
 const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
 const EMAIL = flags.get('email') || 'student@localhost.test'
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots/still-only')
