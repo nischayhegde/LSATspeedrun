@@ -69,7 +69,7 @@ async function shoot(page, name) {
 }
 
 /** Puts the camera on a spot at a human-scale distance and renders. */
-async function frame(page, at, height = 3.4, back = 5.2) {
+async function frame(page, at, height = 4.6, back = 6.4) {
   await page.evaluate(([x, z, h, b]) => {
     const { camera } = window.__mapScene
     camera.position.set(x + b * .7, h, z + b)
@@ -131,6 +131,29 @@ try {
     // The directory brief is the other half of the answer, so capture the rail.
     const rail = await page.$('.uw-map-rail')
     if (rail) await rail.screenshot({ path: `${dir}/${key}-brief.png` }).catch(() => {})
+
+    // And a contact's own card, which only shows while its district is the one
+    // being asked about — select that district and frame the contact.
+    const withContact = found.contacts[found.contacts.length - 1]
+    if (withContact) {
+      const network = withContact.key.replace('contact-', '')
+      await page.evaluate((key) => {
+        const scene = window.__mapScene
+        const row = (scene.world.userData.landmarkSiting ?? []).find((entry) => entry.label === `contact-${key}`)
+        // The label carries the landmark it belongs to; select that district by
+        // clicking its own row so the state travels the way a player's would.
+        const near = (scene.landmarks ?? [])
+          .map((landmark) => ({ landmark, d: Math.hypot(landmark.position[0] - row.x, landmark.position[1] - row.z) }))
+          .sort((a, b) => a.d - b.d)[0]
+        const rows = [...document.querySelectorAll('.uw-district-guide-list button')]
+        const match = rows.find((button) => button.textContent.includes(near.landmark.name))
+        if (match) match.click()
+      }, network)
+      await page.waitForTimeout(400)
+      await page.evaluate(() => window.__clock?.tick(30))
+      await frame(page, withContact.at, 3.2, 4.4)
+      await shoot(page, `${key}-${withContact.key}-named`)
+    }
   }
   report._errors = errors.slice(0, 10)
   save(`${dir}/report.json`, report)

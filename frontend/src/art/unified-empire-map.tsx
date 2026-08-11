@@ -204,6 +204,15 @@ function DistrictBrief({ landmark, game, chosen }: { landmark: MapLandmark; game
   const opener = game.catalog.assets.find(
     (asset) => asset.type === 'connection' && (asset.districts ?? []).some((entry) => entry.key === district.key),
   )
+  // Where that network's contact is actually standing. The scene sites one
+  // contact per network at the first district it opens in the region, in the
+  // catalog's own order, so the same rule reproduces it here rather than the
+  // panel claiming a person is outside every door the network opens.
+  const contactHome = opener?.owned
+    ? (opener.districts ?? [])
+      .map((row) => game.territory.districts.find((entry) => entry.key === row.key))
+      .find((entry) => entry?.region === district.region && entry?.landmark_key)
+    : undefined
   const state = district.owned ? 'held' : district.available ? 'open' : 'locked'
   // The connection gate gets its own sentence above, so it would otherwise be
   // stated twice; what is left is the tier and reputation bar.
@@ -224,7 +233,7 @@ function DistrictBrief({ landmark, game, chosen }: { landmark: MapLandmark; game
       {opener && (
         <p className="uw-district-brief-gate">
           {opener.owned
-            ? <>Open to you through the <b>{opener.name.toLowerCase()}</b>. Their contact stands here.</>
+            ? <>Open to you through the <b>{opener.name.toLowerCase()}</b>. {contactHome?.key === district.key ? 'Their contact stands here.' : contactHome ? `Their contact stands at ${contactHome.name}.` : ''}</>
             : <>Gated by the <b>{opener.name.toLowerCase()}</b>, which your firm does not hold.</>}
         </p>
       )}
