@@ -42,7 +42,12 @@ const probe = () => {
     }
   }
   return {
-    walkers: (crowd?.walkers ?? []).slice(0, 3).map((walker) => measure(walker.rig?.root ?? walker.root)),
+    walkers: (crowd?.walkers ?? []).map((walker) => ({
+      active: Boolean(walker.active),
+      radius: walker.radius ?? walker.bodyRadius ?? null,
+      ...(measure(walker.rig?.root ?? walker.root) ?? { height: null }),
+      tallest: undefined,
+    })),
     counsel: measure(scene?.counsel?.rig?.root ?? scene?.counsel?.root ?? scene?.player?.root),
   }
 }

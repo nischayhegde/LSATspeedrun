@@ -218,20 +218,45 @@ async function attribute(settings) {
     push(child.matrixWorld.clone(), 'static')
   })
 
-  let radius = .12
-  let low = .1
-  let high = .5
-  const sample = crowd?.walkers?.[0]
-  const root = sample?.rig?.root ?? sample?.root
-  if (root) {
-    const box = new THREE.Box3().setFromObject(root)
-    if (!box.isEmpty()) {
-      radius = Math.max(.06, Math.min(box.max.x - box.min.x, box.max.z - box.min.z) / 2)
-      const height = Math.max(.1, box.max.y - box.min.y)
-      low = box.min.y + height * .3
-      high = box.min.y + height * .92
-    }
+  /*
+   * The body the audit tests, taken from the whole crowd rather than from
+   * `walkers[0]`.
+   *
+   * One walker's world box is its box in the pose it is standing in. Mid-stride
+   * the legs are apart and the arms are out, so the narrowest horizontal extent
+   * — which is what a half-beam is — swings between .06 and .32 depending on
+   * which frame of which animation that one figure happens to be on. It was
+   * deciding the metric: the same untouched Sovereign Arc was tested at radius
+   * .3183 in one arm and .3 in the next, and The Circuit was tested for three
+   * sessions with an eighteen-centimetre body, because its first walker was
+   * caught with nothing but its shoes in the box. Three districts were being
+   * compared against each other with three different people.
+   *
+   * The median over every walker is stable to the digit across lifetimes and is
+   * an honest description of the figure actually drawn.
+   */
+  const middle = (values) => {
+    const sorted = [...values].sort((a, b) => a - b)
+    if (!sorted.length) return null
+    const half = Math.floor(sorted.length / 2)
+    return sorted.length % 2 ? sorted[half] : (sorted[half - 1] + sorted[half]) / 2
   }
+  const bodies = (crowd?.walkers ?? []).map((walker) => {
+    const root = walker.rig?.root ?? walker.root
+    if (!root) return null
+    const box = new THREE.Box3().setFromObject(root)
+    if (box.isEmpty()) return null
+    return {
+      half: Math.min(box.max.x - box.min.x, box.max.z - box.min.z) / 2,
+      height: box.max.y - box.min.y,
+      foot: box.min.y,
+    }
+  }).filter(Boolean)
+  const radius = Math.max(.06, middle(bodies.map((body) => body.half)) ?? .12)
+  const height = Math.max(.1, middle(bodies.map((body) => body.height)) ?? .5)
+  const foot = middle(bodies.map((body) => body.foot)) ?? 0
+  const low = foot + height * .3
+  const high = foot + height * .92
 
   // The sim's own state at the moment capture starts. If this is not the same
   // on every lifetime then the crowd is not starting from the same place, and
