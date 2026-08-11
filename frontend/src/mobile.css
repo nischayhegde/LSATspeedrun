@@ -2314,26 +2314,25 @@ body {
   }
   .economy-reading strong { font-size: 12.5px; }
   .economy-delta { top: -1px; font-size: 7px; }
-
-  /* The office and the world map run full-bleed on a phone, and their own HUD
-     already owns every edge — the brief toggle and scene status on the office,
-     the district guide and Explore sheet on the map. Rather than stack a fifth
-     floating element on top of them, the ledger stands down for those two
-     surfaces only; the same figures are in the Today brief and in the map's own
-     headquarters panel. It is unaffected everywhere else, including the Firm
-     screen where most purchases are made. */
-  .wide-scene-shell .economy-ledger { display: none; }
 }
 
-/* And on the pointer as well as the width, for the reason that keeps coming
-   up: an iPhone 14 Pro Max turned sideways is 932 CSS pixels wide, stops
-   matching the block above, and gets the desktop corner card — which lands on
-   the office floor name and its blurb, in the corner the scene's own HUD
-   already owns. Measured at 932x430 before this rule: four collisions with
-   `.office-floor-name` and `.office-floor-blurb`. A desktop keeps the card on
-   these routes; it has the room, and a mouse can reach it. */
-@media (pointer: coarse) {
-  .wide-scene-shell .economy-ledger { display: none; }
+/* The lane, for the band that never reserved one.
+   
+   `--mobile-dock-clearance` is applied per page — the Firm page, the caseboard,
+   the Dashboard, Story — and every one of those rules is inside a 640px block,
+   while the strip itself starts at 900. So from 641 to 900 the dock and the
+   strip were floating over pages that ended flush underneath them, and at
+   maximum scroll the last row stayed covered with nothing left to scroll.
+   Measured at 700, 768 and 900: the caseboard's Help disclosure, the Firm
+   tab's "Show on the map" and "See it in the office", and the Clients tab's
+   billing button.
+   
+   One rule on the scroller rather than a fourth copy per page, and bounded
+   below 641 so it does not double the padding the page rules already add. */
+@media (min-width: 641px) and (max-width: 900px) {
+  .app-shell:not(.wide-scene-shell):not(.active-case) > main {
+    padding-bottom: var(--mobile-dock-clearance);
+  }
 }
 
 /* A phone held sideways, past the 900px cutover.

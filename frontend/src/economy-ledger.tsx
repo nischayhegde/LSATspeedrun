@@ -82,6 +82,15 @@ function coveringText(element: HTMLElement) {
      So a hit on a container is treated as a candidate and its own leaves are
      checked against the card's rect — bounded to that container's subtree, so
      it is a handful of nodes rather than a document walk. */
+  /* The whole hit stack, not only the topmost element of it. Taking the first
+     hit and stopping is right when the thing on top is what the card is over,
+     and wrong whenever anything transparent is in the way — which on the
+     office is most of the screen, because the scene canvas and its HUD layers
+     are stacked over the readout panel. Measured at 1600x900: the card sat
+     across "OFFICE LEASE" and "Operating account" and reported nothing
+     underneath, because every one of the sixteen samples hit a scene layer
+     first and stopped there. A hit stack is a handful of entries, so reading
+     all of it costs nothing next to the subtree walk below. */
   const candidates = new Set<Element>()
   for (const x of xs) {
     for (const y of ys) {
@@ -90,13 +99,20 @@ function coveringText(element: HTMLElement) {
         if (node === document.body || node === document.documentElement) break
         if (hasOwnText(node)) return true
         candidates.add(node)
-        break
       }
     }
   }
 
+  /* Deepest first, which is the order a hit stack comes in, and on a budget.
+     Reading the whole stack means the layout containers near the bottom of it
+     are candidates too, and walking `<main>` is walking the page. The nodes
+     that carry text are in the small candidates, so the budget is spent on
+     them first and the walk stops before it becomes a document scan. This
+     runs when scrolling settles and on resize, never per frame. */
+  let budget = 600
   for (const candidate of candidates) {
     for (const leaf of candidate.querySelectorAll('*')) {
+      if (budget-- <= 0) return false
       if (!hasOwnText(leaf)) continue
       const box = leaf.getBoundingClientRect()
       if (box.width === 0 || box.height === 0) continue

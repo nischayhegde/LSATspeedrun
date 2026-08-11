@@ -773,6 +773,19 @@ h1, h2, h3 { letter-spacing: -.035em; }
    leaves along its own short edge rather than fading in place: a
    half-transparent panel over text is harder to read past than an opaque one. */
 .economy-ledger[data-yield] { translate: calc(-100% - 18px) 0; opacity: 0; }
+/* Not on the office and not on the world map, at any width.
+   
+   Both run their scene edge to edge and put their own economy readout in this
+   corner — the office lease and operating account on one, the headquarters
+   panel on the other — so the card is a second copy of figures already on
+   screen. It used to stand down on a phone only. On a desktop the yield rule
+   kept it out of the way at rest, but a refetch fires the announcement and
+   pops it over "OFFICE LEASE / Operating account" for three and a half
+   seconds, which is how the sweep caught it at 960, 1280 and 1600.
+   
+   Standing it down here also takes the covering hit-test off the two heaviest
+   routes in the app. */
+.wide-scene-shell .economy-ledger { display: none; }
 @media (prefers-reduced-motion: reduce) {
   /* No travel, but the card still has to get out of the way — the request was
      for less motion, not for the readout to keep covering the sentence. */
