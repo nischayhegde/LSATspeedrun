@@ -258,7 +258,7 @@ served from a `localhost` page — the same shape as the deck — and by driving
 | `/map` | **pass** |
 | Deck slide 12 frames `/cases/<id>`, lamp LIVE | **pass** |
 | Advancing 12 → 13 destroys the case iframe, loads `/progress` | **defect confirmed** |
-| `?stills=1` → no iframes, `/stills/demo-case.png`, STILLS badge | **pass** |
+| `?stills=1` → no iframes, `/stills/demo-case-answered.png`, STILLS badge | **pass** |
 | Health-check swap on a dead app origin → still + `APP NOT RUNNING` | **pass** |
 | Framing from `127.0.0.1` instead of `localhost` | **bounces to login, as documented** |
 

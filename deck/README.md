@@ -2,7 +2,7 @@
 
 A 24-slide pitch deck that frames the real product, live, on six of its slides —
 a seventh demo slide is a deliberate still rather than an embed.
-4:54 of talk, 1:22 of it inside a running app.
+4:50 of talk, 1:22 of it inside a running app.
 
 This file is the runbook. Read **Start-up** before presentation day and
 **Troubleshooting** on it.
@@ -316,7 +316,7 @@ data.
 
 ## Timing table
 
-4:54 total. 1:22 of it live in the app, across the six bolded slides.
+4:50 total. 1:22 of it live in the app, across the six bolded slides.
 
 | # | Slide id | Speaker | Seconds | Cumulative |
 | --- | --- | --- | ---: | ---: |
@@ -335,22 +335,24 @@ data.
 | 13 | `demo-case-answer` | Alan | **30** | 2:56 |
 | 14 | `demo-case-verdict-review` | Alan | **13** | 3:09 |
 | 15 | `demo-mega-litigation` | Alan | **14** | 3:23 |
-| 16 | `dashboard-everything` | Alan | 12 | 3:35 |
-| 17 | `pov-virtual-currency` | Alan | 13 | 3:48 |
-| 18 | `game-by-design` | Alan | 8 | 3:56 |
-| 19 | `demo-clients-walk-in` | Alan | **9** | 4:05 |
-| 20 | `demo-office-transformation` | Alan | **9** | 4:14 |
-| 21 | `demo-map-and-firm` | Alan | **8** | 4:22 |
-| 22 | `demo-focus-mode` | Alan | *8* | 4:30 |
-| 23 | `game-never-gates` | Alan | 11 | 4:41 |
-| 24 | `close-one-stop-shop` | Nischay | 13 | 4:54 |
+| 16 | `dashboard-everything` | Alan | 8 | 3:31 |
+| 17 | `pov-virtual-currency` | Alan | 13 | 3:44 |
+| 18 | `game-by-design` | Alan | 8 | 3:52 |
+| 19 | `demo-clients-walk-in` | Alan | **9** | 4:01 |
+| 20 | `demo-office-transformation` | Alan | **9** | 4:10 |
+| 21 | `demo-map-and-firm` | Alan | **8** | 4:18 |
+| 22 | `demo-focus-mode` | Alan | *8* | 4:26 |
+| 23 | `game-never-gates` | Alan | 11 | 4:37 |
+| 24 | `close-one-stop-shop` | Nischay | 13 | 4:50 |
 
 Slide 22's figure is *italicised* rather than bolded because it is not a live
 embed: `demo-focus-mode` carries `stillOnly`, and its eight seconds are speech
 over a frozen frame. The six bolded slides are the live ones.
 
-Pacing assumes roughly 170 spoken words per minute. Every figure is derived from
-its slide's note length, so a slower speaker scales the whole table.
+Pacing assumes roughly 150 spoken words per minute, and no slide exceeds 170.
+Every figure is derived from its slide's note length, so a slower speaker scales
+the whole table. `NARRATIVE.md` §C carries the same table with the per-slide word
+counts the seconds are computed from.
 
 **Demo overrun is the thing that breaks this deck.** `demo-case-answer`,
 `demo-case-verdict-review`, `demo-mega-litigation`, `demo-clients-walk-in`,
@@ -365,12 +367,12 @@ than by index because the deck gets renumbered often enough that a written
 ## Cut list
 
 **There is no cut list any more, and that is deliberate** — see §C of
-[`NARRATIVE.md`](./NARRATIVE.md), which governs. At 4:54 against a 4–5 minute cap
-there are 6 seconds of headroom, which is less than one stumble, and every slide
+[`NARRATIVE.md`](./NARRATIVE.md), which governs. At 4:50 against a 4–5 minute cap
+there are 10 seconds of headroom, which is still under two stumbles, and every slide
 is now short enough that there is nothing to trim inside one: it is either said
 or it is not. The order below is what to do if a cut is forced anyway. Each entry
 saves exactly that slide's current budget, no single one buys much, and all six
-together buy 56 seconds at the cost of six beats.
+together buy 52 seconds at the cost of six beats.
 
 | # | Slide | Saves | What replaces it |
 | --- | --- | ---: | --- |
@@ -378,7 +380,7 @@ together buy 56 seconds at the cost of six beats.
 | 2 | `pov-confidence-signal` | −11 | Fold the confidence claim into `pov-reasoning-is-the-work` as one sentence. |
 | 3 | `game-by-design` | −8 | Alan names two of the four Clark splits over the office transformation instead. |
 | 4 | `demo-map-and-firm` | −8 | Describe the map and the firm tab in one sentence over the preceding slide's last frame. |
-| 5 | `dashboard-everything` | −12 | The twelve signals go unshown, and the calibration argument goes with them into Q&A. |
+| 5 | `dashboard-everything` | −8 | The twelve signals go unshown, and the calibration argument goes with them into Q&A. |
 | 6 | `title-lawyer-tycoon` | −7 | Nischay says the names and the product category over slide 2's opening frame. |
 
 **Never cut, under any circumstances:** `turn-nothing-to-teach`,

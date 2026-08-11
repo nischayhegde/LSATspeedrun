@@ -69,8 +69,60 @@ import type { SlideSpec } from './types'
  *
  *  It was the first revision to move the runtime, taking the deck to 10:04. It
  *  was not the last: the cut that followed took the talk to a 4-5 minute target
- *  and the deck now runs **4:54** across 24 slides. §C of the narrative carries
+ *  and the deck now runs **4:50** across 24 slides. §C of the narrative carries
  *  the current table. Evidence for the new slide is `CITATIONS.md` §7.
+ *
+ *  Revision 9 is a subtractive pass and nothing else. The founders' longest
+ *  standing complaint is additive text — *"slides should be succinct and
+ *  straightforward to read, all the while being aesthetic"* — and the defect it
+ *  names, measured against what is actually drawn beside it, is one thing:
+ *  **copy that repeats what the slide already shows.** A fragment restating a
+ *  figure's own label, a standfirst reading numbers the chart draws at ten times
+ *  the size, a headline and a deck line making one point twice. None of that is
+ *  argument, so removing it costs the deck nothing and is what "one slide, one
+ *  reading" already asks for — the rule the stylesheet enforces for
+ *  `problem-coaching-tax` and `problem-hours-and-price`, whose fragment lines it
+ *  suppresses outright.
+ *
+ *      `thesis-speedrun`        deck's second sentence and `No curriculum path`
+ *                               were the headline and the route's three struck
+ *                               nodes, a third and fourth time.
+ *      `pov-reasoning-is-the…`  standfirst stopped reading d = 0.31 / 0.76 /
+ *                               0.79 aloud, since the figure draws all three as
+ *                               labelled bars; the competitive sentence was
+ *                               promoted off the fragment line into the space.
+ *      `pov-volume-is-the-c…`   the worst of them. Three of four fragments were
+ *                               the figure read back out; the standfirst's last
+ *                               two sentences were the headline. One fragment
+ *                               left, one standfirst line left.
+ *      `pov-real-clock`         two of three fragments were the second half of
+ *                               the headline.
+ *      `pov-virtual-currency`   the multiples are the figure's largest type.
+ *                               The two nulls stay: they are why the room
+ *                               believes the rest of the slide.
+ *      `game-never-gates`       `It only runs in that direction` was the fourth
+ *                               statement of one proposition on one slide.
+ *      `dashboard-everything`   the only cut to anything spoken. The script
+ *                               opened by reading the headline and then the
+ *                               standfirst. 12s → 8s, and it is the whole of
+ *                               the 4:54 → 4:50 move.
+ *
+ *  NOT CUT, and the reasons are worth holding, because each looks like the same
+ *  defect and is not. Every `credit` and every source line, without exception —
+ *  they are the deck's defence in a hostile Q&A and space is never a reason to
+ *  drop one. `problem-coaching-tax` and `problem-hours-and-price` keep their
+ *  fragments in the document because the stylesheet has already taken them out
+ *  of the picture and they are the figures' accessible text. On
+ *  `pov-strategy-inside-the-question`, `Tested against your own control` does
+ *  restate the figure's note, and it was left alone on instruction.
+ *  `pov-ai-never-answers` was cut and restored: `Hints, never solutions` reads
+ *  like the guarded trace's own label, but that trace is flat at the baseline
+ *  and its label never paints, so the fragment is the only place the guardrail
+ *  appears on screen. See the note on the slide.
+ *
+ *  `close-one-stop-shop` was reserved during this pass and is untouched. Note
+ *  that Revision 8 is the autoplay demo revision, recorded in §C of the
+ *  narrative rather than in its header — this is 9.
  *
  *  A writer owns exactly these fields per slide:
  *      eyebrow      the small line above the headline
@@ -103,7 +155,7 @@ import type { SlideSpec } from './types'
  *  belongs in `notes`, not on the slide.
  *
  *  `budgetSeconds` is taken from the narrative's timing table (§C) and sums to
- *  **4:54** across 24 slides. Seven slides carry a `demo` block with its own hard
+ *  **4:50** across 24 slides. Seven slides carry a `demo` block with its own hard
  *  budget, which is the number the presenter is held to; six of those mount a
  *  live frame and come to **1:22** between them, and the seventh —
  *  `demo-focus-mode` — is `stillOnly` and paints a single frame. Demo overrun is
@@ -276,11 +328,17 @@ export const SLIDES: readonly SlideSpec[] = [
     field: 'beige',
     eyebrow: 'Act II — the thesis',
     headline: 'So skip to the questions.',
-    deck: 'Minute one is question one. There is nothing to get through first.',
+    // "There is nothing to get through first" was a second statement of the
+    // headline, and the route figure below it is a third: three nodes greyed
+    // out and struck through is that sentence drawn.
+    deck: 'Minute one is question one.',
+    // "No curriculum path" went with it, for the same reason and one worse —
+    // it was the headline, the deck's cut sentence and the figure's three
+    // skipped nodes, all on one screen. What is left is the pair of Dunlosky
+    // rankings, which is the only thing on the slide the figure cannot draw.
     points: [
       'Practice testing: rated highest',
       'Rereading: rated lowest',
-      'No curriculum path',
     ],
     credit: 'Dunlosky et al. (2013), ten techniques rated',
     // The route ignores the first three nodes and cuts a hard diagonal to the
@@ -324,20 +382,25 @@ export const SLIDES: readonly SlideSpec[] = [
     field: 'beige',
     eyebrow: 'Act II — Spiky POV 01',
     headline: "Answering isn't studying. Explaining is.",
-    deck: 'Answer-level feedback is worth d = 0.31. Step-level is 0.76. A human tutor is 0.79.',
-    // The fourth fragment is the only sentence in the deck that compares us to
-    // anybody, and it names nobody. It arrives alone, after the coaching panel
-    // has finished underlining, in the same weight as the other three — the
-    // whole point of putting the competitive claim here rather than on a
-    // comparison slide is that by this moment the room has already accepted
-    // VanLehn, so it reads as an inference rather than a boast. See §D of the
+    // PROMOTED, NOT CUT. The standfirst used to read the three effect sizes
+    // aloud — d = 0.31, 0.76, 0.79 — while the figure draws them as three
+    // labelled bars a few inches to the right, at display scale, with the same
+    // three labels. The bars carry the numbers now.
+    //
+    // What takes the line is the sentence that was the fourth fragment: the
+    // only one in the deck that compares us to anybody, and it names nobody.
+    // It was also a full sentence in a list of three noun phrases and the
+    // longest item on that line. It is the deck's whole on-stage competitive
+    // positioning (Revision 4) and could not be dropped, so it moved up rather
+    // than out — which costs it the late, level-weighted arrival it had among
+    // the fragments and buys it legibility and a line of its own. See §D of the
     // narrative for why there is no comparison table, and `CITATIONS.md` §4 for
     // the seven-product reference that backs it.
+    deck: 'They explain the question. We grade your explanation.',
     points: [
       'Name the error',
       'Why yours was wrong',
       'Why the right one works',
-      'They explain the question. We grade your explanation.',
     ],
     credit: 'VanLehn (2011), 87 comparisons · Zhang & Fiorella (2024)',
     // The emphasis moves: the five choices shrink and desaturate while the
@@ -438,26 +501,40 @@ export const SLIDES: readonly SlideSpec[] = [
     headline: 'Everyone knows this. Doing it is the product.',
     // "its own free platform" was a shade wrong and free to fix: the platform was
     // Khan Academy's, hosting LSAC's Official LSAT Prep under a partnership.
-    deck: 'LSAC matched the usage logs of the free platform it ran with Khan Academy to real LSAT scores. The method is not in dispute. Finishing it is.',
+    //
+    // The standfirst used to run to three lines, and two of them were the
+    // headline again: "The method is not in dispute. Finishing it is." is
+    // "Everyone knows this. Doing it is the product." with different nouns.
+    // What is left is the one thing the headline cannot say, which is where the
+    // data comes from and what it was matched against.
+    deck: 'LSAC matched the usage logs of the free platform it ran with Khan Academy to real LSAT scores.',
+    // THE FRAGMENT LINE IS DOWN TO ONE, and the three that went were the figure
+    // directly above them read back out loud. This is the `problem-coaching-tax`
+    // collision — the one the stylesheet suppresses under "one slide, one
+    // reading" — except that `cohort-split` is not covered by that rule, so the
+    // fix has to be made here in the copy.
+    //
+    //   `+4.3 points, top decile vs bottom`  the practice row's own verdict is
+    //       `+4.3 points`, noted `10th vs 90th pct · different students`.
+    //   `Video minutes: not correlated`      the video row's verdict, verbatim,
+    //       noted `LSAC's words, not ours`.
+    //   `51% never finished one exam`        the bar's own `lostLabel`, which
+    //       reads `51% never completed a single practice exam`.
+    //
+    // Both of the corrections those fragments were carrying — that the +4.3 is
+    // an increment between independent groups rather than a gain, and that
+    // "not correlated" is LSAC's own verb rather than a paraphrase — are on
+    // screen in the figure's two `note` fields and are not lost with the text.
     points: [
-      // "from practice time" asserted production. LSAC pre-empts that phrasing
-      // two paragraphs under the figure it comes from: the numbers are "not
-      // gains... but rather increments for independent groups of students".
-      // Every correction to this slide lives on screen rather than in the notes,
-      // because a compressed talk drops notes and keeps fragments.
-      '+4.3 points, top decile vs bottom',
-      // LSAC's literal verb. "No relationship" is broader than "not correlated",
-      // which is a statement about linear association — and the slide attributes
-      // the phrase to them on screen, so it has to be their phrase.
-      'Video minutes: not correlated',
-      '51% never finished one exam',
       // The deck's third and last competitive line, and it uses the same device
       // as the two before it: a bare parallel sentence, arriving last, naming
       // nobody. It is the active-against-passive axis rather than the price
       // axis, which matters because price is the one axis LSAT Demon can meet.
       // "Hours" is the field's own unit — every product in `CITATIONS.md` §4 is
       // described by its instruction hours, lesson counts or class schedule —
-      // and the room already has the referent from slide 3's 250.
+      // and the room already has the referent from slide 3's 250. It is also
+      // the only one of the four fragments that added anything, which is why it
+      // is the only one still here.
       'They sell hours. We sell reps.',
     ],
     // The bar fills, then retreats to 49% and leaves its own hatched footprint,
@@ -617,6 +694,15 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act III — Spiky POV 03',
     headline: 'An AI that gives answers makes you worse.',
     deck: 'With unguarded ChatGPT, practice grades rose 48%. On the real exam, those students dropped 17%.',
+    // REVISION 9 CUT `Hints, never solutions` AND PUT IT BACK. On the data it
+    // looks like the third trace's own label repeated four inches lower — the
+    // guarded trace below is named "a coach that gives hints, never answers".
+    // It is not. That trace is flat at the baseline, so it draws underneath the
+    // control's dashed line and its label is never painted; a 4K still of the
+    // settled frame has bare background where the other two traces carry their
+    // right-edge labels. Cut the fragment and the deck's own guardrail — the
+    // one thing on this slide that is a product commitment rather than somebody
+    // else's finding — is spoken once and shown nowhere.
     points: [
       'Attempt first',
       'Hints, never solutions',
@@ -714,10 +800,14 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act III — Spiky POV 05',
     headline: 'Every question is timed. Every exam is optional.',
     deck: 'The LSAT is a stamina test, but a busy student cannot sit a full form on a Tuesday.',
+    // "Full form when you can · Never required" was the second half of the
+    // headline set again in a smaller face: *Every exam is optional* already
+    // says both, and the outer ring is drawn unfinished to say it a third time.
+    // "Real pacing from day one" survives because "from day one" is the one
+    // claim here that is not already somewhere else on the slide — the headline
+    // says every question is timed, not that there is no untimed ramp into it.
     points: [
       'Real pacing from day one',
-      'Full form when you can',
-      'Never required',
     ],
     // Two rings are the tension, stated visually: the per-question ring completes
     // and the frame holds still for a beat, then the full-form ring draws around
@@ -1083,15 +1173,22 @@ export const SLIDES: readonly SlideSpec[] = [
         { label: 'Full-test section breakdown', weight: 0.55, ring: 2 },
       ],
     },
+    // THE ONE SPOKEN CUT IN THIS PASS, and it is the same defect as the fragment
+    // lines: the script opened by reading the headline out loud and then read
+    // the standfirst out loud after it. Both are on screen, in the two largest
+    // faces the layout has. What is left is the pair of clauses that are not
+    // printed anywhere — why first-attempts-only matters, and what happens to a
+    // comparison before its sample is big enough. 29 words to 17, so the budget
+    // comes off 12 to 8.
     notes:
-      'Everything it watches, on one slide. First attempts only, so re-answering inflates nothing. '
-      + "Every figure carries how much evidence is behind it, and comparisons stay suppressed until there's enough."
+      'First attempts only, so re-answering inflates nothing. '
+      + "And comparisons stay suppressed until there's enough evidence behind them."
       + ' ⟢ IF CHALLENGED — the scheduler is a trained model rather than fixed boxes: Settles and Meeder cut recall '
       + 'error more than 45% over a Leitner system at Duolingo scale. Do not let that drift into "improved learning" — '
       + 'their live experiment measured practice activity, not learning gains. Confident misses head the repair queue, '
       + 'on Metcalfe. Correctness always comes from the verified answer key, never from the model.',
     speaker: 'Alan',
-    budgetSeconds: 12,
+    budgetSeconds: 8,
     // 2D over the blue field, no WebGL: this lands directly after a live demo and
     // the frame rate is worth protecting.
     scene: { id: 'metrics', framing: 'panel' },
@@ -1107,8 +1204,19 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act V — Spiky POV 06',
     headline: "Currency doesn't teach. It makes you practice.",
     deck: 'Three courses, three universities, currency isolated from every other game element. One thing moved.',
+    // The multiples came off the fragment line. They are the largest type in
+    // the figure — 1.3×, 2.5×, 3.7× set at display scale down the right-hand
+    // edge, under a measure label that already says "per student" — so
+    // "1.3× to 3.7× the practice" was the chart's own numerals repeated at a
+    // tenth of the size, and it repeated them as a range, which is a fourth
+    // number the study does not report.
+    //
+    // The two nulls stay, and stay as fragments rather than being left to the
+    // figure's `did not move` rule, which is set at hairline weight. They are
+    // the reason a room that distrusts gamification believes the rest of the
+    // slide, so they are the one thing here that has to be legible from the
+    // back. See `CITATIONS.md` §6.
     points: [
-      '1.3× to 3.7× the practice',
       'Intrinsic motivation: unchanged',
       'Course grades: not significant',
     ],
@@ -1465,7 +1573,11 @@ export const SLIDES: readonly SlideSpec[] = [
     field: 'blue',
     eyebrow: 'Act V',
     headline: 'The game never gates the practice.',
-    deck: 'The practice gates the game. It only runs in that direction.',
+    // The headline states the coupling negatively and the standfirst states it
+    // positively, which is the slide. "It only runs in that direction" was a
+    // third statement of the same proposition, in a frame where the figure's
+    // struck-out reverse arrow is already a fourth.
+    deck: 'The practice gates the game.',
     // The struck-through reverse arrow is the slide. The three couplings label
     // the direction that does exist; the denied one is drawn and then crossed
     // out, hard, once.
@@ -1543,7 +1655,7 @@ export const SECTION_LABELS: Record<SlideSpec['section'], string> = {
   close: 'Act VI — The Close',
 }
 
-/** Total budgeted runtime, for the presenter overlay's pacing figure. 4:54. */
+/** Total budgeted runtime, for the presenter overlay's pacing figure. 4:50. */
 export const TOTAL_BUDGET_SECONDS = SLIDES.reduce((sum, slide) => sum + (slide.budgetSeconds ?? 45), 0)
 
 /**
