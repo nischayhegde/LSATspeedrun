@@ -739,7 +739,7 @@ export const SLIDES: readonly SlideSpec[] = [
       "I'll take it from here. Bastani gave a thousand students plain ChatGPT. "
       + 'Practice grades up forty-eight percent. Take it away for the real exam: seventeen percent worse. '
       + 'Ours never gives the answer.'
-      + ' ⟢ IF CHALLENGED — Bastani and colleagues, 2024, a field experiment with about a thousand high-school '
+      + ' ⟢ IF CHALLENGED — Bastani and colleagues, PNAS 2025, a field experiment with about a thousand high-school '
       + 'students in Turkey. The detail that matters and is on the slide: the arm that gave hints instead of '
       + 'answers left students level with the control, so the harm is the answer, not the AI.',
     speaker: 'Alan',

@@ -32,14 +32,49 @@ const MARKS = [40, 1740, 3040] as const
  * trace runs through it. Pulling the plot in and ranging the label right
  * against the origin turns it into what it actually is: the axis's own label,
  * naming the point every trace departs from.
+ *
+ * The left strip used to be 27 units wide and the plot 41, which is a chart
+ * given a minority of its own slide. It was that wide because the control's
+ * name was set at the 20px legibility floor and still needed the room; setting
+ * it a step up and letting it take three lines instead of two costs eight units
+ * of strip and buys them back for the fan.
  */
-const PLOT = { left: 27, right: 68, top: 10, bottom: 88 } as const
+const PLOT = { left: 19, right: 64, top: 9, bottom: 89 } as const
 
 /** Minimum vertical separation between two right-hand labels, in viewBox units. */
 const LABEL_CLEARANCE = 6.4
 
+/**
+ * Headroom above the highest trace and below the lowest, as a share of the
+ * data's own span. Enough that a trace end does not touch the frame; not so
+ * much that the plot goes back to being mostly empty.
+ */
+const DOMAIN_PAD = 0.09
+
 export function Traces({ spec, active, reduced }: FigureBody<TracesFigure>) {
   const phase = usePhase(active, reduced, MARKS)
+
+  // The domain is fitted to the data rather than fixed at 0..1.
+  //
+  // Nothing here is a measurement on a scale — the points are shape, the study's
+  // two numbers live in the standfirst, and there is deliberately no axis (see
+  // the note above about gridlines). A fixed 0..1 domain therefore reserved a
+  // third of the plot's height for values no trace was ever going to visit: the
+  // data ran 0.29 to 0.98, so a fifth of the box sat empty above the fan and a
+  // third below it, and the whole chart read as a band floating in the middle of
+  // a slide. Fitting the domain scales every trace by the same factor, so the
+  // proportion between the rise and the fall — which is the only quantitative
+  // thing the picture claims — is exactly what it was.
+  const values = [spec.baseline, ...spec.traces.flatMap((trace) => trace.points)]
+  const low = Math.min(...values)
+  const high = Math.max(...values)
+  const span = high - low || 1
+  const domain = { low: low - span * DOMAIN_PAD, high: high + span * DOMAIN_PAD }
+  const yOf = (value: number) => {
+    const t = (value - domain.low) / (domain.high - domain.low)
+    return PLOT.bottom - Math.min(Math.max(t, 0), 1) * (PLOT.bottom - PLOT.top)
+  }
+
   const baselineY = yOf(spec.baseline)
 
   const traces = spec.traces.map((trace, index) => {
@@ -97,6 +132,15 @@ export function Traces({ spec, active, reduced }: FigureBody<TracesFigure>) {
         {spec.baselineLabel}
       </span>
 
+      {/* The point all three leave from. Without it the control's name in the
+          left strip ranges right against nothing in particular, and the claim
+          the fan makes — same students, same starting line, three ways of
+          working — has no visible origin to make it from. */}
+      <span
+        className="fig-tr-origin"
+        style={{ left: pct(PLOT.left / 100), top: pct(baselineY / 100), opacity: phase >= 1 ? 1 : 0 }}
+      />
+
       {traces.map((trace, index) => {
         const receded = trace.style === 'good' && phase >= 2
         const opacity = phase >= trace.revealAt ? (receded ? 0.55 : 1) : 0
@@ -123,12 +167,6 @@ export function Traces({ spec, active, reduced }: FigureBody<TracesFigure>) {
       })}
     </div>
   )
-}
-
-/** 0..1 up the plot, in viewBox units, y down. */
-function yOf(value: number): number {
-  const clamped = Math.min(Math.max(value, 0), 1)
-  return PLOT.bottom - clamped * (PLOT.bottom - PLOT.top)
 }
 
 /**

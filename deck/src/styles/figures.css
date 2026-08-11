@@ -1222,25 +1222,48 @@
     box-shadow var(--mo-3) var(--ease-out);
 }
 
-/* Four weights of one colour, which is how the narrative asks for it —
-   "four visibly different shades of royal blue" on a beige field. A tint of
-   `currentColor` rather than a fill, so the field shows through. */
+/* The card's own field: a wash, not a weight. Everything that has to be told
+   apart at a distance is in the rank band below. */
 .fig-ct-fill {
   position: absolute;
   inset: 0;
   background: currentColor;
-  /* Floor plus a wide span rather than a straight multiple. The four shades
-     have to be told apart from the back of a room in about a second — that
-     is the whole point of the sort — and a 0 to .32 ramp put the lightest
-     two within a few percent of each other and of the field. The ceiling
-     stops at .44 because the category label is set in the field's own ink
-     and has to stay legible on the darkest tile. */
-  opacity: calc(.07 + var(--fig-shade, 1) * .37);
+  opacity: calc(.035 + var(--fig-shade, 1) * .075);
   transition: opacity var(--mo-4) var(--ease-out);
+}
+
+/* Four visibly different shades of royal blue, as the narrative asks — but
+   in a band at the head of the card rather than across the whole of it. The
+   full ramp is spent over 26%..100% here, where it can be, because nothing
+   is set on top of it. */
+.fig-ct-rank {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Thickness ramps with the ink. Ink alone was not enough: royal blue on
+     beige is still emphatically royal blue at 48%, so the three unflagged
+     bands were four percent of a shade apart to the eye and the row read as
+     "one red, three navy" — which is a two-way sort, and the slide is
+     claiming a four-way one. Thickness is read before colour at projection
+     distance and it costs nothing to add. */
+  height: calc((.5 + var(--fig-shade, 1) * .6) * var(--u));
+  background: currentColor;
+  opacity: calc(.3 + var(--fig-shade, 1) * .7);
+  transition:
+    opacity var(--mo-4) var(--ease-out),
+    height var(--mo-4) var(--ease-out);
 }
 
 .fig-ct-tile[data-flagged='true'] {
   box-shadow: inset 0 0 0 2px var(--stamp);
+}
+
+/* The one tile the slide is about takes the verdict red, which is the deck's
+   scarcest colour and is spent here on its second and last outing. */
+.fig-ct-tile[data-flagged='true'] .fig-ct-rank {
+  background: var(--stamp);
+  opacity: 1;
 }
 
 .fig-ct-mark,
@@ -1250,8 +1273,8 @@
 }
 
 .fig-ct-mark {
-  width: 1.8em;
-  height: 1.8em;
+  width: 2.4em;
+  height: 2.4em;
 }
 
 .fig-ct-mark path {
@@ -1351,13 +1374,25 @@
   transition: opacity var(--mo-3) var(--ease-out) 720ms;
 }
 
+/* Open rather than filled, and in the baseline's own dim ink: it is the
+   reference the traces leave from, not a fourth result. */
+.fig-tr-origin {
+  position: absolute;
+  width: .62em;
+  height: .62em;
+  border-radius: 50%;
+  border: 2px solid var(--on-field-dim);
+  transform: translate(-50%, -50%);
+  transition: opacity var(--mo-4) var(--ease-out);
+}
+
 .fig-tr-tag {
   position: absolute;
   /* The strip `PLOT.right` leaves, less the offset the tag is placed at. Set
      narrower than that the longest label wrapped to two lines and the two
      lower tags — which are only six viewBox units apart by design, because
      the guarded trace lands on the baseline — closed up against each other. */
-  max-width: 29%;
+  max-width: 32%;
   transform: translateY(-50%);
   font-size: var(--fig-note);
   line-height: 1.25;
@@ -1366,17 +1401,21 @@
 
 /* Ranged right against the origin, in the strip the plot leaves for it, and
    centred on the rule rather than floated above it. See `PLOT` in
-   `traces.tsx` for why there is a strip at all. */
+   `traces.tsx` for why there is a strip at all.
+
+   Set at `--fig-note` and in the text face rather than at `--fig-micro` in
+   the readout mono. This is not a readout: it names the control group, which
+   is the reference every other line on the chart is measured against, and it
+   was the only piece of load-bearing text in the deck sitting exactly on the
+   20px floor — the size reserved for things a room is allowed to miss. */
 .fig-tr-baseline-label {
   position: absolute;
   left: 0;
   text-align: right;
-  padding-right: 1.2%;
+  padding-right: 1.4%;
   transform: translateY(-50%);
-  font-family: var(--font-pixel);
-  font-size: var(--fig-micro);
-  line-height: 1.3;
-  letter-spacing: .02em;
+  font-size: var(--fig-note);
+  line-height: 1.25;
   color: var(--on-field-dim);
   transition: opacity var(--mo-4) var(--ease-out);
 }
