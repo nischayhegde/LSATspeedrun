@@ -192,8 +192,8 @@ export function AppSceneLayer({ slots }: { slots: AppSceneSlot[] }) {
   // that made this worth a module.
   const covered = slots.some((slot) => slot.role === 'current')
   useEffect(() => {
-    setStageOccluded(covered)
-    return () => setStageOccluded(false)
+    setStageOccluded('app-scene', covered)
+    return () => setStageOccluded('app-scene', false)
   }, [covered])
 
   return (
