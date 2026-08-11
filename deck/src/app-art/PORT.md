@@ -122,6 +122,34 @@ lifted from `art.css` and `unified-empire-map.css`:
 - `office-scene-host.css`
 - `map-scene-host.css`
 
+### 6. `renderer.forceContextLoss()` on the office teardown
+
+One line added to `office-three.tsx`'s cleanup, and the only fix-up here that
+changes behaviour rather than types, imports or hosting.
+
+`renderer.dispose()` releases three.js's own GPU objects but not the WebGL
+context behind the canvas; the browser reclaims that only when the canvas is
+collected, which is not deterministic and in practice is late. Upstream mounts
+the office once per page load, so a context that lingers until GC costs nothing
+and the omission is invisible there. The deck mounts and unmounts the same
+component every time the presenter moves through the demo slides, and a
+rehearsal is many passes — so contexts accumulate against Chrome's per-page
+limit, and when that limit is reached Chrome discards the **oldest** live
+context, which is the shared stage's, created at boot.
+
+The symptom is therefore reported against the wrong object: a navigation stress
+run logged `deck: WebGL context lost — reload the deck` from `scenes/stage.ts`
+while the leak was here. On stage it would mean a dead 3D background for the
+rest of the talk, with no recovery but a reload.
+
+`map-three-scene.tsx` already calls `forceContextLoss()` in its own teardown and
+`scenes/map-scene.tsx` documents it as the required pattern, so this brings the
+office in line with its sibling rather than inventing anything.
+
+**This belongs upstream too** — `frontend/src/art/office-three.tsx` has the same
+single-`dispose()` teardown. It is lower severity there for the reason above, but
+it is the same bug, and once it is fixed upstream this fix-up can be dropped.
+
 ## What was deliberately *not* changed
 
 `import.meta.env.DEV` is used in several files and works unchanged under Vite,

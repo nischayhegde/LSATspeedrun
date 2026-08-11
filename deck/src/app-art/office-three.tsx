@@ -4159,6 +4159,17 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         }
       })
       floorMap.dispose(); wallMap?.dispose(); screenMap.dispose(); stylePass.dispose(); renderer.dispose()
+      // deck port fix-up — see PORT.md §5. `dispose()` frees three's own GPU
+      // objects and does NOT release the WebGL context; the browser reclaims
+      // that only when the canvas is collected, which is not deterministic.
+      // Upstream mounts this office once per page load and never notices. The
+      // deck mounts and unmounts it every time the presenter passes the demo
+      // slides, so the contexts accumulate against Chrome's per-page cap, and
+      // when the cap is reached Chrome drops the OLDEST context — which is the
+      // shared stage's, created at boot. That is why a navigation stress run
+      // reported "deck: WebGL context lost" against the stage while the leak
+      // was here. `map-three-scene.tsx` already does this on its own teardown.
+      renderer.forceContextLoss()
       if (import.meta.env.DEV) {
         ;(window as unknown as { __officeTeardownMs?: number }).__officeTeardownMs = performance.now() - teardownStarted
       }
