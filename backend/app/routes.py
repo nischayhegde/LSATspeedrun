@@ -780,7 +780,15 @@ def start_practice_session():
 @require_auth
 def current_study_session():
     session = find_resumable_session(g.current_user)
-    return jsonify({"session": serialize_session(session) if session else None})
+    return jsonify(
+        {
+            "session": serialize_session(session) if session else None,
+            # As on /study-sessions/active: the run size the surface promises in
+            # its own copy. Both endpoints carry it because the two surfaces
+            # that quote the number query one each.
+            "session_size": int(current_app.config["PRACTICE_SESSION_SIZE"]),
+        }
+    )
 
 
 @api.get("/study-sessions/active")

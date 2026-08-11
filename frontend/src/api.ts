@@ -258,8 +258,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ rival_key: rivalKey, operation_key: operationKey }),
     }),
-  currentSession: () => request<{ session: StudySession | null }>('/study-sessions/current'),
-  activeSessions: () => request<{ sessions: StudySession[]; queue_cap: number }>('/study-sessions/active'),
+  // `session_size` is how many questions "Start N cases" starts. It is served
+  // rather than held as a constant here because it is deployment-configurable
+  // and because it has moved once already (ten to six).
+  currentSession: () => request<{ session: StudySession | null; session_size: number }>('/study-sessions/current'),
+  activeSessions: () => request<{ sessions: StudySession[]; queue_cap: number; session_size: number }>('/study-sessions/active'),
   dailyDocket: () => request<{ daily_docket: DailyDocket }>(`/daily-docket?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`),
   performance: () => request<{ performance: PerformanceSnapshot }>('/performance'),
   currentDiagnostic: () => request<{

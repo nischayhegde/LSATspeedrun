@@ -719,7 +719,6 @@ Resources:
               AI_JOB_MAX_ATTEMPTS=3
               DEV_AUTH_ENABLED=false
               AUTO_SEED=false
-              PRACTICE_SESSION_SIZE=10
               ENVIRONMENT
 
               install -d -o lsatapp -g lsatapp /opt/lsat-speedrun/backend/instance

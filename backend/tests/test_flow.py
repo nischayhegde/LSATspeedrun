@@ -1266,7 +1266,7 @@ def test_completed_run_stops_at_training_lab_boundary(app, monkeypatch):
     assert completed.status_code == 200
     assert completed.json["run_complete"] is True
     assert completed.json["session"]["status"] == "completed"
-    assert client.get("/v1/study-sessions/current", headers=headers).json == {"session": None}
+    assert client.get("/v1/study-sessions/current", headers=headers).json["session"] is None
 
 
 def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monkeypatch):
