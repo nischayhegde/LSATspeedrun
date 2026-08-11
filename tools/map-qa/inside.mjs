@@ -82,10 +82,48 @@ async function attribute(settings) {
   // Every solid as a box in its own frame, named.
   const solids = []
   world.updateMatrixWorld(true)
+  // `horizonRing` is the painted backdrop past the last block. It is 58 units
+  // out at its nearest and the crowd network stops at 29, so nothing in it is
+  // reachable — but its hills are 25 m across and a box drawn round one covered
+  // a corner of the district. See `createHorizonRing`.
   const decoration = (data) => data.cloud || data.skyUniforms || data.auroraUniforms || data.waterUniforms
+    || data.horizonRing
     || data.atmosphere || data.mapLabelKind || data.mapLabelAlways || data.mapEmphasisKind || data.destinationMarker
     || data.lawyerBeacon || data.playerMarker || data.lighthouseBeam || data.heldLandmarkAccent
     || data.ambientActor || data.ambientWing || data.planet || data.orbitalRing || data.flagUniforms
+
+  /** One box per triangle, in world space. See the two callers for why. */
+  const triangles = (geometry, matrixWorld, kind, name) => {
+    const position = geometry.attributes?.position
+    if (!position) return
+    const index = geometry.index
+    const count = index ? index.count : position.count
+    const vertex = new THREE.Vector3()
+    for (let triangle = 0; triangle + 2 < count; triangle += 3) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
+      for (let corner = 0; corner < 3; corner += 1) {
+        const at = index ? index.getX(triangle + corner) : triangle + corner
+        vertex.fromBufferAttribute(position, at).applyMatrix4(matrixWorld)
+        if (vertex.x < minX) minX = vertex.x
+        if (vertex.x > maxX) maxX = vertex.x
+        if (vertex.y < minY) minY = vertex.y
+        if (vertex.y > maxY) maxY = vertex.y
+        if (vertex.z < minZ) minZ = vertex.z
+        if (vertex.z > maxZ) maxZ = vertex.z
+      }
+      if (maxY <= floorY) continue
+      const midX = (minX + maxX) / 2
+      const midZ = (minZ + maxZ) / 2
+      if (midX < -70 || midX > 70 || midZ < -70 || midZ > 70) continue
+      solids.push({
+        name, kind,
+        x: midX, z: midZ,
+        hx: (maxX - minX) / 2, hz: (maxZ - minZ) / 2,
+        low: minY, high: maxY,
+        cos: 1, sin: 0,
+      })
+    }
+  }
 
   world.traverse((child) => {
     if (excluded.has(child) || !child.isMesh || !child.geometry) return
@@ -132,7 +170,33 @@ async function attribute(settings) {
       const matrix = new THREE.Matrix4()
       for (let index = 0; index < child.count; index += 1) {
         child.getMatrixAt(index, matrix)
-        push(matrix.clone().premultiply(child.matrixWorld), isFacade ? 'facade' : 'instanced')
+        const world = matrix.clone().premultiply(child.matrixWorld)
+        /*
+         * A box per instance is right for a cottage and wrong for a hill.
+         *
+         * The bounding-box mistake this instrument was rewritten to remove came
+         * back through the instanced path: the Old Quarter's outskirts include
+         * landform cones 25 m across, and one instance's box covered a quarter
+         * of the district. 119 of the district's 147 hits were walkers standing
+         * on open grass inside that box — 81% of the figure, and it is what the
+         * old .0021 / .0109 bimodality was flipping between.
+         *
+         * Anything whose footprint is over four metres is an envelope rather
+         * than a shape, so it goes in a triangle at a time like a static batch.
+         * A tree, a bollard or a cottage stays one cheap box.
+         */
+        const scale = new THREE.Vector3().setFromMatrixScale(world)
+        const wide = half.x * Math.abs(scale.x) > 2 || half.z * Math.abs(scale.z) > 2
+        /*
+         * A box's own bounding box is the box. Anything tapered — a hip roof, a
+         * tree crown, a horizon hill — fills a fraction of one, and the corners
+         * of that fraction are open air a walker is entitled to stand in. The
+         * Old Quarter's terraces read as 62 and 83 frames of walker-inside-roof
+         * on the strength of it.
+         */
+        const tapered = child.geometry.type !== 'BoxGeometry'
+        if (wide || tapered) triangles(child.geometry, world, isFacade ? 'facade' : 'instanced', name)
+        else push(world, isFacade ? 'facade' : 'instanced')
       }
       return
     }
@@ -148,54 +212,51 @@ async function attribute(settings) {
      * the merge.
      */
     if (child.userData?.staticBatch) {
-      const position = child.geometry.attributes?.position
-      if (!position) return
-      const index = child.geometry.index
-      const count = index ? index.count : position.count
-      const vertex = new THREE.Vector3()
-      for (let triangle = 0; triangle + 2 < count; triangle += 3) {
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
-        for (let corner = 0; corner < 3; corner += 1) {
-          const at = index ? index.getX(triangle + corner) : triangle + corner
-          vertex.fromBufferAttribute(position, at).applyMatrix4(child.matrixWorld)
-          if (vertex.x < minX) minX = vertex.x
-          if (vertex.x > maxX) maxX = vertex.x
-          if (vertex.y < minY) minY = vertex.y
-          if (vertex.y > maxY) maxY = vertex.y
-          if (vertex.z < minZ) minZ = vertex.z
-          if (vertex.z > maxZ) maxZ = vertex.z
-        }
-        if (maxY <= floorY) continue
-        const midX = (minX + maxX) / 2
-        const midZ = (minZ + maxZ) / 2
-        if (midX < -70 || midX > 70 || midZ < -70 || midZ > 70) continue
-        solids.push({
-          name, kind: 'static',
-          x: midX, z: midZ,
-          hx: (maxX - minX) / 2, hz: (maxZ - minZ) / 2,
-          low: minY, high: maxY,
-          cos: 1, sin: 0,
-        })
-      }
+      triangles(child.geometry, child.matrixWorld, 'static', name)
       return
     }
     push(child.matrixWorld.clone(), 'static')
   })
 
-  let radius = .12
-  let low = .1
-  let high = .5
-  const sample = crowd?.walkers?.[0]
-  const root = sample?.rig?.root ?? sample?.root
-  if (root) {
-    const box = new THREE.Box3().setFromObject(root)
-    if (!box.isEmpty()) {
-      radius = Math.max(.06, Math.min(box.max.x - box.min.x, box.max.z - box.min.z) / 2)
-      const height = Math.max(.1, box.max.y - box.min.y)
-      low = box.min.y + height * .3
-      high = box.min.y + height * .92
-    }
+  /*
+   * The body the audit tests, taken from the whole crowd rather than from
+   * `walkers[0]`.
+   *
+   * One walker's world box is its box in the pose it is standing in. Mid-stride
+   * the legs are apart and the arms are out, so the narrowest horizontal extent
+   * — which is what a half-beam is — swings between .06 and .32 depending on
+   * which frame of which animation that one figure happens to be on. It was
+   * deciding the metric: the same untouched Sovereign Arc was tested at radius
+   * .3183 in one arm and .3 in the next, and The Circuit was tested for three
+   * sessions with an eighteen-centimetre body, because its first walker was
+   * caught with nothing but its shoes in the box. Three districts were being
+   * compared against each other with three different people.
+   *
+   * The median over every walker is stable to the digit across lifetimes and is
+   * an honest description of the figure actually drawn.
+   */
+  const middle = (values) => {
+    const sorted = [...values].sort((a, b) => a - b)
+    if (!sorted.length) return null
+    const half = Math.floor(sorted.length / 2)
+    return sorted.length % 2 ? sorted[half] : (sorted[half - 1] + sorted[half]) / 2
   }
+  const bodies = (crowd?.walkers ?? []).map((walker) => {
+    const root = walker.rig?.root ?? walker.root
+    if (!root) return null
+    const box = new THREE.Box3().setFromObject(root)
+    if (box.isEmpty()) return null
+    return {
+      half: Math.min(box.max.x - box.min.x, box.max.z - box.min.z) / 2,
+      height: box.max.y - box.min.y,
+      foot: box.min.y,
+    }
+  }).filter(Boolean)
+  const radius = Math.max(.06, middle(bodies.map((body) => body.half)) ?? .12)
+  const height = Math.max(.1, middle(bodies.map((body) => body.height)) ?? .5)
+  const foot = middle(bodies.map((body) => body.foot)) ?? 0
+  const low = foot + height * .3
+  const high = foot + height * .92
 
   // The sim's own state at the moment capture starts. If this is not the same
   // on every lifetime then the crowd is not starting from the same place, and
@@ -251,7 +312,15 @@ async function attribute(settings) {
       const spot = `${Math.round(worst.solid.x)},${Math.round(worst.solid.z)}`
       const key = `${worst.solid.kind}@${spot}`
       const found = tally[key] ?? (tally[key] = {
-        frames: 0, depth: 0, top: +worst.solid.high.toFixed(2), near: nearestProp(worst.solid.x, worst.solid.z),
+        frames: 0,
+        depth: 0,
+        top: +worst.solid.high.toFixed(2),
+        near: nearestProp(worst.solid.x, worst.solid.z),
+        // The box itself, so the site can be looked up rather than guessed at.
+        // `whatis` takes a rounded coordinate and a radius, and a site whose
+        // solid is 5 cm wide is a different search from one 4 m wide.
+        box: `${(worst.solid.hx * 2).toFixed(2)}x${(worst.solid.hz * 2).toFixed(2)} at ${worst.solid.x.toFixed(2)},${worst.solid.z.toFixed(2)} y${worst.solid.low.toFixed(2)}-${worst.solid.high.toFixed(2)}`,
+        where: `${worst.solid.x.toFixed(2)},${worst.solid.z.toFixed(2)}`,
       })
       found.frames += 1
       if (worst.depth > found.depth) found.depth = +worst.depth.toFixed(3)
@@ -284,7 +353,7 @@ try {
     console.log(`\n=== ${key} === solids ${report[key].solids} (facade ${report[key].facades}) share ${report[key].share}`)
     console.log(`  entry ${JSON.stringify(report[key].entry)}`)
     for (const row of report[key].worst) {
-      console.log(`  ${String(row.frames).padStart(5)}  ${row.what.padEnd(22)} top ${String(row.top).padStart(5)}  depth ${row.depth}  near ${row.near}`)
+      console.log(`  ${String(row.frames).padStart(5)}  ${row.what.padEnd(22)} ${row.box}  depth ${row.depth}  near ${row.near}`)
     }
     report._errors = errors.slice(0, 10)
     save(`${dir}/report.json`, report)

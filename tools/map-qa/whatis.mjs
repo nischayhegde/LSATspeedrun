@@ -49,7 +49,13 @@ function identify(settings) {
       const audit = node.userData?.propAudit?.name
       const at = `${+node.position.x.toFixed(2)},${+node.position.z.toFixed(2)}`
       const name = audit ? `<${audit}>` : (node.name || node.type)
-      parts.push(node.isGroup ? `${name}@${at}[${node.children.length}]` : `${name}@${at}`)
+      // Whatever the builder left on the node. Almost every set-piece here is
+      // an unnamed group, but the ones that matter to routing carry something
+      // — a `footprintRadius`, a `solid`, a `treeField` — and printing the keys
+      // is what turns "an instanced mesh at (-32,40)" into a builder to read.
+      const keys = Object.keys(node.userData ?? {}).filter((entry) => entry !== 'propAudit')
+      const tag = keys.length ? `{${keys.join(',')}}` : ''
+      parts.push(`${name}@${at}${node.isGroup ? `[${node.children.length}]` : ''}${tag}`)
     }
     return parts.reverse().join(' / ')
   }
@@ -92,7 +98,23 @@ function identify(settings) {
           if (maxZ < z - radius || minZ > z + radius) continue
           const label = chain(child)
           const bucket = found[q]
-          const seen = bucket.get(label) ?? { label, instanced, triangles: 0, low: Infinity, high: -Infinity, minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity }
+          const seen = bucket.get(label) ?? {
+            label,
+            instanced,
+            // The geometry and colour of the thing itself, which is usually
+            // what recognises it: a cottage is a box in brick, a tram platform
+            // is a long thin box in stone.
+            geometry: geometry.type,
+            color: child.material?.color ? `#${child.material.color.getHexString()}` : null,
+            instances: instanced ? child.count : 1,
+            triangles: 0,
+            low: Infinity,
+            high: -Infinity,
+            minX: Infinity,
+            maxX: -Infinity,
+            minZ: Infinity,
+            maxZ: -Infinity,
+          }
           seen.triangles += 1
           seen.low = Math.min(seen.low, minY)
           seen.high = Math.max(seen.high, maxY)
@@ -127,7 +149,9 @@ function identify(settings) {
       .sort((a, b) => b.high - a.high)
       .map((entry) => ({
         what: entry.label,
-        instanced: entry.instanced,
+        geometry: entry.geometry,
+        color: entry.color,
+        instanced: entry.instanced ? entry.instances : false,
         triangles: entry.triangles,
         y: [round(entry.low), round(entry.high)],
         x: [round(entry.minX), round(entry.maxX)],

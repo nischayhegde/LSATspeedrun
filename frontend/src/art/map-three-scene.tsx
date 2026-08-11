@@ -219,7 +219,18 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     // below is offset by it), which makes this route the missing 0°/180° pair
     // of radials rather than a path laid across them.
     route: [[-15, -.1], [-5, -.1], [5, -.1], [15, -.1]],
-    rail: [[-16, 7.7], [-9, 7], [-1, 7.7], [7, 6.8], [16, 7.3]],
+    // Threaded between the two inner rings rather than laid along the first of
+    // them. Every other district's rail wanders about z = 7 and nothing minds,
+    // but this composition is concentric: ring 7's outer pavement crosses z =
+    // 7.4 at the axis and the old alignment ran within 9 cm of it, so instead
+    // of a level crossing the tram shared four and a half metres of pavement
+    // with the crowd on each side of the terminus. The cut cannot fix that —
+    // it takes the pavement off the tracks only where some pavement is left
+    // afterwards, and a piece swallowed whole is kept rather than abolished,
+    // so the pieces that were worst off were exactly the ones that survived.
+    // Between the rings there is a two-and-a-half metre gap at the axis that
+    // widens as the arcs fall away, and the crossings it does make are square.
+    rail: [[-16, 14.9], [-9, 14.2], [-1, 14.7], [7, 14.1], [16, 14.6]],
     fov: 31, exposure: 1.3, fogDensity: .0062,
     camera: [24, 29, 39], target: [0, .75, -.3],
     sun: { color: 0xffc79c, intensity: 4.7, position: [-24, 30, 15] },
@@ -2517,12 +2528,27 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
   })
   root.add(canalQuays(canalCurve, { innerHalf: CANAL_HALF, walk: .72, topY: .16, footY: -.09 }))
   streets.forEach((street, index) => {
-    const bridge = box([5.9, .2, streetWidth(street.streetClass) + .55], material(0x7b7770, .95), [CANAL_X, .13, street.position])
+    /*
+     * A bridge carries the whole street, pavements included.
+     *
+     * A pavement runs at half the carriageway plus `KERB_TO_PAVEMENT` and its
+     * own half width, and a walker may stand a beam beyond that again. The deck
+     * was the carriageway plus .275 a side, so both pavements crossed the canal
+     * on nothing at all — visible from the oblique camera as people walking on
+     * the water — and the lamp stood at .55, which is between the kerb and the
+     * pavement rather than clear of either. There is nowhere to step aside to
+     * on a bridge, so a lamp in the walking line is worth more frames there
+     * than the same lamp anywhere else in the district.
+     */
+    const walk = streetWidth(street.streetClass) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM
+    const bridge = box([5.9, .2, (walk + .25) * 2], material(0x7b7770, .95), [CANAL_X, .13, street.position])
     root.add(bridge)
     if (index % 2 === 0) for (const side of [-1, 1]) {
       const lamp = createLamp()
-      lamp.position.set(CANAL_X + side * 2.3, .2, street.position + .55)
+      lamp.position.set(CANAL_X + side * 2.3, .2, street.position + walk + .14)
       lamp.scale.setScalar(.8)
+      markAuthoredProp(lamp, .15)
+      lamp.userData.propAudit = { name: `city-bridge-lamp-${index}-${side > 0 ? 'e' : 'w'}`, region: 'city', groundY: .2 }
       root.add(lamp)
     }
   })
@@ -4710,7 +4736,7 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   // The formal parterres and the two axis monuments are open ground; nothing
   // from the block lattice may be built over them.
   for (const [x, z] of [[-6.6, -3.5], [6.6, -3.5], [-6.6, 3.3], [6.6, 3.3]] as XZ[]) reserved.push({ x, z, radius: 2.5 })
-  reserved.push({ x: 0, z: -9.4, radius: 3.2 }, { x: 0, z: 7.15, radius: 2.4 })
+  reserved.push({ x: 0, z: -9.4, radius: 3.2 }, { x: 0, z: 14.15, radius: 2.4 })
   // The parterre circles above only cover their own centres; a sector block
   // whose ring happens to land between the rond-point and a parterre could
   // still land right on the ceremonial axis itself. A short run of extra
@@ -4908,11 +4934,15 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   assembly.position.set(0, .04, -9.4)
   root.add(assembly)
   registerLandmark(root, { key: 'continent-assembly', name: 'Sovereign Assembly', kind: 'civic', detail: 'The terminating monument of the north axis. Continental matters are heard behind that colonnade.', position: [0, -9.4], radius: 3.4 })
+  // Out at the line, which is now beyond the boulevards rather than on the
+  // first of them. The terminus still stands on the axis and still terminates
+  // it — the north radial runs out to r 18.9, so the avenue now ends at the
+  // station, which is what an avenue ending at a station looks like.
   const transit = createRailPlatform(.86)
-  transit.position.set(0, .02, 7.15)
+  transit.position.set(0, .02, 14.15)
   root.add(transit)
-  transitStops(root).push([0, 7.15])
-  registerLandmark(root, { key: 'continent-transit', name: 'Union Terminus', kind: 'transit', detail: 'The south terminus of the cross axis. The continental shuttle turns back here.', position: [0, 7.4], radius: 2.8 })
+  transitStops(root).push([0, 14.15])
+  registerLandmark(root, { key: 'continent-transit', name: 'Union Terminus', kind: 'transit', detail: 'The north terminus of the cross axis, out past the last boulevard. The continental shuttle turns back here.', position: [0, 14.4], radius: 2.8 })
 
   // The ring boulevard, on the line of the former walls: one closed circuit,
   // so its traffic never has to jump back to a start point.
@@ -5747,6 +5777,19 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
       : outerRecords
     if (cleared.length) group.add(buildFacadeGroup(cleared.map((record, index) => tintForRegion(region, record, index)), { region }))
   }
+  /*
+   * Backdrop, and it has to say so.
+   *
+   * Nothing here is reachable — the crowd network stops at 28.9 and the nearest
+   * of these hills is on a 58-unit ellipse — but a hill instance is 25 m across
+   * and the walker audit tests a box per instance, so one cone's bounding box
+   * covered the whole north-west corner of the Old Quarter and reported every
+   * walker standing in it as inside a solid. That was 119 of the district's 147
+   * hits, four fifths of its measured figure, and it was what the .0021 / .0109
+   * bimodality was flipping between: whether one walker's wander took it into
+   * the corner of a box drawn around a painted hill.
+   */
+  group.traverse((child) => { child.userData.horizonRing = true })
   return group
 }
 
@@ -7448,12 +7491,23 @@ function createMountain(scale = 1, color = 0x706b5c, snow = false) {
   return group
 }
 
+/**
+ * The mast is tall enough that the sweep clears a pedestrian.
+ *
+ * It was not. A 2.8-unit mast puts the bottom of the swept disc at 1.13 above
+ * the ground, and a walker on the Arc stands 1.56 with a shoulder .27 across,
+ * so the two turbines nearest the ring road accounted for 104 of the district's
+ * 202 walker-inside-solid frames — half its figure — at 21 cm of penetration,
+ * which is a blade through a head rather than a brush. The blades reach 1.175
+ * below the hub, so the hub has to stand above walker height plus that, and
+ * this now holds at the .72 the Arc places them at.
+ */
 function createWindTurbine(scale = 1) {
   const group = new THREE.Group()
   const pale = material(0xc5cbc4, .42, .18)
-  group.add(cylinder(.06 * scale, 2.8 * scale, pale, [0, 1.4 * scale, 0], 12))
+  group.add(cylinder(.06 * scale, 3.9 * scale, pale, [0, 1.95 * scale, 0], 12))
   const rotor = new THREE.Group()
-  rotor.position.set(0, 2.75 * scale, .04)
+  rotor.position.set(0, 3.85 * scale, .04)
   for (let index = 0; index < 3; index += 1) {
     const blade = box([.09 * scale, 1.25 * scale, .045 * scale], pale, [0, .58 * scale, 0])
     blade.position.y = .55 * scale

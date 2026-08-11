@@ -46,6 +46,15 @@ function dump() {
       // Flat `[x, z, x, z, ...]`, which is how `buildFootway` stores them.
       flat: Array.from(way.points ?? []).map(round),
     })),
+    // The declared rights of way — the rail alignment among them, which is the
+    // one corridor a pavement may not share, since a tram has no perception and
+    // the crowd has nothing to yield to.
+    corridors: (world.userData.clearanceCorridors ?? []).map((corridor) => ({
+      label: corridor.label ?? null,
+      halfWidth: round(corridor.halfWidth ?? 0),
+      closed: Boolean(corridor.closed),
+      points: line(corridor.points ?? []),
+    })),
     buildings: (world.userData.buildingAudit ?? []).map((record) => ({
       x: round(record.x), z: round(record.z), width: round(record.width), depth: round(record.depth), rotationY: round(record.rotationY ?? 0),
     })),

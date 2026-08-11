@@ -134,9 +134,10 @@ async function measure(settings) {
     if (child.isInstancedMesh || child.isSkinnedMesh) return
     const data = child.userData ?? {}
     // Decoration that nothing can drive into: sky, clouds, labels, rings,
-    // beams, birds, and the animated water surfaces themselves.
+    // beams, birds, the animated water surfaces themselves, and the painted
+    // backdrop past the last block.
     if (
-      data.cloud || data.skyUniforms || data.auroraUniforms || data.waterUniforms || data.atmosphere
+      data.cloud || data.horizonRing || data.skyUniforms || data.auroraUniforms || data.waterUniforms || data.atmosphere
       || data.mapLabelKind || data.mapLabelAlways || data.mapEmphasisKind || data.destinationMarker
       || data.lawyerBeacon || data.playerMarker || data.lighthouseBeam || data.heldLandmarkAccent
       || data.ambientActor || data.ambientWing || data.planet || data.orbitalRing || data.flagUniforms
