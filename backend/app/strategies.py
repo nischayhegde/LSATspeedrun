@@ -436,7 +436,7 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
     r"assum\w*[^.?]{0,120}?\b(?:depends?|depended|requir\w+|necessary|presuppos\w+|relies|rests?|based)\b"
     r"|\b(?:depends?|depended|requir\w+|necessary|presuppos\w+|relies|rests?|based on)\b[^.?]{0,120}?assum\w*"
     r"|\bdepends? (?:on|upon) which one of the following\b"
-    r"|\bmust be assumed\b|\btakes? for granted\b"
+    r"|\bmust be assumed\b|\btakes? for granted\b|\bpresuppos\w+\b"
 )
 # Sufficient assumption, held apart on purpose. "Which one of the following, if
 # assumed, allows the conclusion to be properly drawn" is a different question,
@@ -628,10 +628,14 @@ def _reading_candidates(question: Question, tags: frozenset[str]) -> list[str]:
 
 
 def _passage_stages_a_debate(question: Question) -> bool:
-    text = question.passage.canonical_text if question.passage else ""
+    # Case-folded, like every other pattern here. Read raw, a party named at the
+    # start of a sentence — "Critics of the reform argue" — does not match, so
+    # whether a passage stages a debate would depend on where in the sentence
+    # its parties happen to appear.
+    text = (question.passage.canonical_text or "" if question.passage else "").lower()
     if not text:
         return False
-    return len({match.group(0).lower() for match in _PASSAGE_PARTIES.finditer(text)}) >= _MIN_PASSAGE_PARTIES
+    return len({match.group(0) for match in _PASSAGE_PARTIES.finditer(text)}) >= _MIN_PASSAGE_PARTIES
 
 
 def _reasoning_candidates(question: Question, tags: frozenset[str]) -> list[str]:
