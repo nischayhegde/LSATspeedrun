@@ -585,7 +585,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
           all, is never handed it again. */}
       {game && !isActiveCase && tourReady && (
         <Suspense fallback={null}>
-          <GuidedTour oriented={user.guided_tour_completed || game.total_cases > 0} />
+          <GuidedTour oriented={user.guided_tour_completed || game.total_cases > 0} focusMode={isFocusMode} />
         </Suspense>
       )}
       {/* Fixed, and deliberately outside <main>: these figures move while the
