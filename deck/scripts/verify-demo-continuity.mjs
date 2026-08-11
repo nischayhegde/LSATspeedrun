@@ -729,7 +729,7 @@ else if (!stills.loaded) fail(`?stills=1 asks for ${stills.src}, which did not l
 else if (/demo-case\.png$/.test(stills.src)) {
   fail(`?stills=1 falls back to ${stills.src}, which is the opening frame of this slide — partner tip up, `
     + 'choices dimmed, no verdict. The slide is the whole case to a ruling, so its still has to be the end '
-    + 'state: demo-case-answered.png.')
+    + 'state: demo-case-answered.webp.')
 } else {
   ok(`?stills=1 shows ${stills.src} and no embed`)
 }

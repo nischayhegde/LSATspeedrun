@@ -62,6 +62,23 @@ PORT=5001 DEV_AUTH_ENABLED=true ../.venv/bin/python run.py
 establish its own session. Without it the start card will tell you so, in red,
 before you begin.
 
+**On a machine with no `backend/instance/` yet — a fresh clone — run the
+migrations first, or nothing else in this file will work:**
+
+```bash
+cd backend && ../.venv/bin/python -m flask db upgrade
+```
+
+`AUTO_SEED=true` builds the question bank on boot, but it refuses to seed a
+database that is not at the latest migration, because seeding a half-built schema
+is worse than not seeding. Against an empty `instance/` it logs one `WARNING`
+line — *"Skipping automatic question seeding: the database is not at the latest
+migration"* — and then carries on and serves, so the failure does not look like a
+failure until `/v1/health` answers **500** with `no such table: questions` and
+every embed in the deck is empty. After `flask db upgrade`, the next `run.py`
+seeds all 6,886 questions itself and `/v1/health` comes back `ok`. It takes about
+two minutes, once, and only on a database built from nothing.
+
 ### 2 — Frontend dev server, port 5173
 
 ```bash
@@ -300,7 +317,12 @@ title bar says which you are looking at — `live`, `stills`, `connecting`,
 
 The stills are real captures of this seeded account, in `public/stills/`, and they
 are the images the slides were composed against. They are a real fallback, not a
-theoretical one.
+theoretical one — which is why they are 2.0 MB of WebP rather than the 12.4 MB of
+PNG they used to be. A fallback the room waits for is a poor fallback, and
+`demo-office-tier14.webp` in particular is fetched at the instant the presenter
+presses `O`. Regenerate them with `node scripts/recapture-stills.mjs`, which needs
+`cwebp` on `PATH` (`brew install webp`, or `apt install webp`) and will tell you so
+rather than writing PNGs.
 
 ---
 
@@ -545,7 +567,7 @@ copy is documented as a copy in [`src/app-art/PORT.md`](./src/app-art/PORT.md),
 and `diff -r public/art ../frontend/public/art` should always be silent. Run the
 `cp` after a fresh clone, and again whenever the app's catalog art changes.
 
-**`public/stills/` is tracked, deliberately, at 12 MB across 8 files.** There is
+**`public/stills/` is tracked, deliberately, at 2.0 MB across 8 files.** There is
 a generator — `node scripts/recapture-stills.mjs`, all eight, keyed by `--only`
 and listed in `DEMO-NOTES.md` — but it is not a reason to ignore them. It
 reproduces the *shape* of each frame and not the state inside it: the captures
@@ -553,10 +575,14 @@ are of a seeded account at one moment (a $6.66M treasury, a tier-4 office with
 35 staff, 922 answered), and re-seeding produces a different account, not those
 numbers.
 
-It was 16 MB across 12 files until 2026-08-11, when four that no slide named
-were deleted. `public/` is copied into `dist/` unread, so an unreferenced still
-is not clutter, it is payload. Keep the invariant: every file here is named by a
-slide's `still:`, and `DEMO-NOTES.md` lists the whole directory.
+It was 16 MB across 12 files until 2026-08-11, when four that no slide named were
+deleted and the remaining eight were re-encoded from PNG to WebP — 12.4 MB to
+2.0 MB, and the built deck from 15.3 MB to 4.9 MB. `public/` is copied into
+`dist/` unread, so an unreferenced still is not clutter, it is payload, and a
+still in the wrong format is payload too. Keep both invariants:
+`verify-still-only.mjs` checks that every file here is named by a slide's
+`still:` and that nothing here is a leftover PNG, and `DEMO-NOTES.md` lists the
+whole directory.
 
 These are the fallback the whole talk leans on when a demo dies on stage, and
 they are the images the slides were composed against. Do not add them to
