@@ -111,18 +111,29 @@ def _in_sittings(legacy_questions: float, *, minimum: int = 1) -> int:
 # The daily goals, in questions, and what each is worth relative to the others.
 #
 # One, two and three sittings, rather than the 5/10/20 they were authored as.
-# The point of a daily goal is that finishing a run finishes a goal, and 5/10/20
-# was half a ten-question sitting, one, and two. At six questions a sitting the
-# same goals land at 6/12/18: the three goals now close at the end of the first,
-# second and third run of the day instead of two of them landing mid-run.
+# The point of a daily goal is that finishing a run finishes a goal, and at
+# 5/10/20 two of the three landed mid-run. At 6/12/18 all three close at the end
+# of the first, second and third run of the day.
 #
 # Deliberately NOT `_in_sittings`, which would give 3/6/12 and hold the goals at
 # half, one and two sittings. That preserves the wrong quantity. The day's ask
 # is what keeps question volume up, and cutting the top goal from twenty
-# questions to twelve would tell the player to stop at twelve. 18 holds the ask
-# where it was while moving it onto a run boundary.
+# questions to twelve would tell the player to stop at twelve.
 #
-# None of this changes what a day is worth. DAILY_REWARD_CASE_BUDGET fixes the
+# 18 rather than 20 is the one place this change asks for less than it did, and
+# it is a choice rather than a rounding. Measured on the curve, 6/12/20 is
+# indistinguishable from 6/12/18 -- 2,084.8 played cases and 121.90 hours either
+# way, because the modelled player works twenty a day and claims all three goals
+# under both -- so the economy does not decide it. 6/12/24 does move: 2,229.5
+# cases and 130.4 hours, 7% longer, because a twenty-a-day player stops claiming
+# the top goal at all. So the real choice was 18 against 20, and it went to 18
+# because 20 is not a run boundary: a player chasing it either abandons a fourth
+# run two questions in, which is the exact behaviour this whole change exists to
+# reduce, or finishes it and does 24. 18 asks for three finished runs and
+# nothing half-done. The cost is honest and small -- the nominal daily ask falls
+# 20 -> 18, a tenth -- and 20 is a one-line change if that trade is not wanted.
+#
+# None of this changes what a day is *worth*. DAILY_REWARD_CASE_BUDGET fixes the
 # whole day's cash at two nominal cases and the 1:3:8 ratio splits it, so a
 # player working twenty questions a day claims exactly what they claimed before
 # and the pace band does not move -- which matters, because TIER_EFFORT_BASE has
@@ -954,6 +965,15 @@ def _replace_case_payout_benefit(item: dict, percentage: int) -> None:
     item["benefit"] = " · ".join([f"+{percentage}% case payout", *secondary])
 
 
+# What each contract-bonus asset was authored to pay, as a multiple of the fee,
+# when a sitting was ten questions. Filled in by `_rebalance_asset_catalog` as it
+# overwrites them, for the same reason as `LEGACY_CONTRACT_LENGTHS`: the authored
+# figure is destroyed at import and it is the only thing the rescale can be
+# checked against. See
+# `test_sitting_scale.test_a_contract_bonus_is_worth_the_same_per_question`.
+LEGACY_CONTRACT_BONUS_MULTS: dict[str, float] = {}
+
+
 def _rebalance_asset_catalog() -> None:
     """Give every purchase durable value and price it in successful cases."""
     for item in ASSETS:
@@ -1018,6 +1038,7 @@ def _rebalance_asset_catalog() -> None:
             # Eight assets carry it, one to three each, and at a six-question
             # sitting they read 0.6 to 1.8. The decimal is the honest number: the
             # bonus is smaller because contracts now close nearly twice as often.
+            LEGACY_CONTRACT_BONUS_MULTS[item["key"]] = item["contract_bonus_mult"]
             item["contract_bonus_mult"] = round(
                 float(item["contract_bonus_mult"]) * SITTING_QUESTIONS / LEGACY_SITTING_QUESTIONS, 2
             )
@@ -1159,7 +1180,20 @@ def _rescale_contract_lengths() -> None:
     has at length four and which gets worse the shorter contracts get.
     """
     for client in CLIENTS:
+        LEGACY_CONTRACT_LENGTHS[client["key"]] = client["length"]
         client["length"] = _in_sittings(client["length"], minimum=3)
+
+
+# What each contract was authored to take, in wins, when a sitting was ten
+# questions. Filled in by `_rescale_contract_lengths` as it overwrites them.
+#
+# Kept because the authored figure is otherwise destroyed at import and it is
+# the only thing the rescale can be checked against. The check that matters is
+# one-directional and is the user's own condition on this change: a contract
+# that used to take three wins must not become six chores, so no contract may
+# come out of the rescale longer than it went in. See
+# `test_sitting_scale.test_no_contract_got_longer_when_the_run_got_shorter`.
+LEGACY_CONTRACT_LENGTHS: dict[str, int] = {}
 
 
 _CONTRACT_LENGTH_WORDS = {
