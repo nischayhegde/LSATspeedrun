@@ -756,3 +756,63 @@ step without replacing that would have moved the stall onto the office slide.
 card is up and discards them immediately; only the dev server's transform cache is
 wanted. They are tagged `?deck-warm=1` so harnesses can tell them from a real
 embed, and the queue is abandoned the moment Start is pressed.
+
+---
+
+## 11. Verified on Linux, 2026-08-11
+
+Everything below was run against the full stack in a Linux VM — backend on 5001
+with `AUTO_SEED=true`, the app on 5173, the deck on 5180, opened as `localhost`
+throughout. It is recorded because most of it had never been run anywhere but
+one laptop: until `scripts/playwright-env.mjs`, every harness in `scripts/`
+imported Playwright from an absolute path under `/private/tmp` and looked for a
+macOS arm64 app bundle, so on any other machine they did not fail, they asked to
+be configured.
+
+**No coaching gateway was available** (`TFY_API_KEY` and `TFY_URL` are empty), so
+one thing below is a known red and one claim is untested. Both are named.
+
+| Harness | Result |
+| --- | --- |
+| `verify-demo-continuity.mjs` | 27 pass, 1 fail — the fail is the gateway, below |
+| `verify-demo-sizing.mjs` | all 7 demo slides, no problems |
+| `verify-demo-proportion.mjs` | centred and uncut on all 7, at all 4 sizes |
+| `verify-cold-start.mjs` | all green from an empty cookie jar |
+| `verify-still-only.mjs` | all green |
+| `verify-office-toggle.mjs` | all green, both live and stills, plus an eyeball on the four frames |
+| `walk.mjs` (forward, backward, 25-press mash) | no problems, renderer memory plateaus |
+| Arrow-key walk of the whole deck, three times | all 7 demo slides on their routes, nothing blank, no embed outliving its slide |
+
+### Proportion, since it was asked about specifically
+
+Share of the viewport taken by the painted embed, measured rather than estimated.
+The founders asked for "half, if not more".
+
+| | 1366x768 | 1600x900 | 1920x1080 | 2560x1440 |
+| --- | ---: | ---: | ---: | ---: |
+| the six live slides | 57.5% | 61.9% | 66.2% | 71.8% |
+| `demo-focus-mode` (still) | 63.1% | 65.8% | 68.6% | 72.0% |
+
+The copy plate is 342px wide and the embed starts at x=359 at every size, so
+there is 17px of clearance and the headline cannot overlap the frame. The plate's
+own height varies with its copy and its bottom sits flush to the viewport edge by
+design; nothing overflows.
+
+### What the gateway would have proved, and what stands in its place
+
+`demo-case-answer` plays itself correctly and ends wrong. The driver engages, runs
+the sequence in 19.8s against a 30s budget, selects **C** — the letter pinned as
+`soloAnswerKey` — and lands the SUSTAINED stamp with no grading spinner at any
+point. Then the judge says *"The answer key decides correctness. The judge coaches
+your explanation"* and there is no coaching, because there is no model to have
+produced it.
+
+That is worse than an empty panel. The slide's headline claim is that the grade is
+about the reasoning rather than the letter, and what it currently demonstrates is
+a tick beside a letter, immediately after promising otherwise. **With a gateway
+configured this is a staging artefact and not a defect** — `stage_demo.py` grades
+the case once, stores it on the attempt, and the beat becomes a read. Untested
+here, for the obvious reason.
+
+If you are ever in a room without the gateway: `useStills: true` in
+`demo.config.ts`, and `demo-case-answered.png` carries the coached frame.
