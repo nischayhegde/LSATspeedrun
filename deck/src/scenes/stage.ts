@@ -358,9 +358,29 @@ export class DeckStage {
   private remember(id: string, scene: DeckScene) {
     this.cache.set(id, scene)
     this.touch(id)
-    while (this.recent.length > CACHE_LIMIT) {
+    // Evict least-recently-used until the *cache* is inside its limit.
+    //
+    // This used to loop on `recent.length` and to `continue` past the scene on
+    // screen — which had already been shifted off the front by then. So the
+    // active scene was silently dropped out of the recency list while staying
+    // in the cache: `recent` shrank, the loop exited, and from that moment the
+    // two structures disagreed about what was cached. The scene on screen was
+    // no longer tracked, so it could never be evicted afterwards, and every
+    // subsequent walk of the deck left the cache one entry larger than the
+    // limit it is supposed to enforce. The size that is actually being bounded
+    // is the cache's, so that is what the condition now reads, and a scene that
+    // cannot be evicted goes back on the end of the list instead of vanishing
+    // from it. The guard bounds the pass at one lap, so an un-evictable entry
+    // cannot spin.
+    let guard = this.recent.length
+    while (this.cache.size > CACHE_LIMIT && guard > 0) {
+      guard -= 1
       const oldest = this.recent.shift()
-      if (!oldest || oldest === this.active?.id) continue
+      if (!oldest) break
+      if (oldest === this.active?.id) {
+        this.recent.push(oldest)
+        continue
+      }
       const evicted = this.cache.get(oldest)
       if (!evicted) continue
       this.cache.delete(oldest)

@@ -80,6 +80,8 @@ export const TRANSITION_MS: Record<TransitionKind, number> = {
 class Batch {
   private readonly animations: Animation[] = []
   private readonly cleanups: Array<() => void> = []
+  /** Pending `after` callbacks, so `finish()` can flush them. See `after`. */
+  private readonly deferrals: Array<() => void> = []
 
   play(
     element: Element,
@@ -124,6 +126,58 @@ class Batch {
   }
 
   /**
+   * Run `fn` once, `ms` from now — or immediately, if the transition is
+   * finished early.
+   *
+   * THE BUG THIS EXISTS TO KILL. Five kernels — `letterbox`, `camera`,
+   * `foil-seal`, `exposure-blowout` and `price-curtain` — cannot call
+   * `onMidpoint` synchronously, because their midpoint is a real moment part
+   * way through: the instant the shutter is shut, or the foil plate is opaque,
+   * and the outgoing scene can be released behind it. All five reached for a
+   * bare `window.setTimeout`, which is the one thing in this file that
+   * `finish()` could not reach.
+   *
+   * `finish()` is the deck's whole answer to fast navigation: it jumps every
+   * animation to its end and commits, synchronously, so the next move can
+   * start. A bare timer survives that. It then fires somewhere inside the
+   * *next* transition, and what it runs is `setAppScenes(computeAppScenes(
+   * index, null))` against an `index` captured when it was scheduled — so a
+   * superseded navigation reaches forward and rewrites the app-scene set of a
+   * slide that is already on screen. Either the scene the current slide needs
+   * is torn down, or one it does not need is left mounted with its own
+   * `WebGLRenderer` running.
+   *
+   * `camera` defers by 880ms, which is longer than four of the six kernels
+   * take end to end, and `camera` is the transition between the demo slides.
+   * A presenter walking out of the demos at any speed above deliberate is
+   * therefore *routinely* landing stale timers on the slides after them — and
+   * the last of those is the close, which is entered on `foil-seal` and then
+   * held for the entire Q&A. That is the "incredibly glitchy" closing slide,
+   * and it is why holding it still measured clean: nothing is wrong inside
+   * `doorways-scene.ts`, the damage is done to it on arrival by a timer
+   * belonging to a slide the room has already left.
+   *
+   * Finishing early runs the callback rather than dropping it, which is the
+   * only correct reading of `finish()`: it means "we are at the end state
+   * now", and the midpoint is behind the end. Dropping it would leak the
+   * outgoing scene instead, which is the same failure with a longer fuse.
+   */
+  after(ms: number, fn: () => void) {
+    let ran = false
+    const run = () => {
+      if (ran) return
+      ran = true
+      fn()
+    }
+    const timer = window.setTimeout(run, ms)
+    this.deferrals.push(run)
+    this.onCleanup(() => {
+      window.clearTimeout(timer)
+      run()
+    })
+  }
+
+  /**
    * Resolves when every animation has finished or been cancelled.
    *
    * A cancelled animation rejects, which is normal rather than exceptional here,
@@ -139,6 +193,11 @@ class Batch {
   }
 
   finish() {
+    // Midpoints first, and before the animations are jumped: a midpoint
+    // releases the outgoing scene, and it has to have happened by the time the
+    // caller's next line sets up the move that follows. `run` is idempotent,
+    // so the timer firing later is a no-op.
+    for (const deferral of this.deferrals) deferral()
     for (const animation of this.animations) {
       // `finish()` throws on an animation with an infinite duration; none here
       // has one, but a transition that throws on stage is worse than one that
@@ -288,7 +347,7 @@ const letterbox: Kernel = async ({ from, to, overlay, onMidpoint }, batch) => {
   ], { duration: total, easing: 'cubic-bezier(.22,1,.36,1)' })
 
   // The outgoing scene is released inside the black.
-  window.setTimeout(() => onMidpoint?.(), close)
+  batch.after(close, () => onMidpoint?.())
 }
 
 // ---------------------------------------------------------------------------
@@ -340,7 +399,7 @@ const camera: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
     ], { duration: total, easing: 'cubic-bezier(.16,1,.3,1)' })
   }
 
-  window.setTimeout(() => onMidpoint?.(), total * .8)
+  batch.after(total * .8, () => onMidpoint?.())
 }
 
 // ---------------------------------------------------------------------------
@@ -470,7 +529,7 @@ const foilSeal: Kernel = ({ from, to, overlay, onMidpoint }, batch) => {
     { opacity: 1, transform: 'scale(1)' },
   ], { duration: total, easing: 'cubic-bezier(.22,1,.36,1)' })
 
-  window.setTimeout(() => onMidpoint?.(), cover)
+  batch.after(cover, () => onMidpoint?.())
 }
 
 // ===========================================================================
@@ -769,7 +828,7 @@ const exposureBlowout: Kernel = ({ from, to, overlay, onMidpoint }, batch) => {
     { opacity: 1 },
   ], { duration: total, easing: 'linear' })
 
-  window.setTimeout(() => onMidpoint?.(), total * .4)
+  batch.after(total * .4, () => onMidpoint?.())
 }
 
 /**
@@ -813,7 +872,7 @@ const priceCurtain: Kernel = ({ from, to, onMidpoint }, batch) => {
     { transform: 'translate3d(0,0,0)' },
   ], { duration: total, easing: 'cubic-bezier(.3,0,.2,1)' })
 
-  window.setTimeout(() => onMidpoint?.(), total * .4)
+  batch.after(total * .4, () => onMidpoint?.())
 }
 
 const OVERRIDES: readonly Override[] = [
