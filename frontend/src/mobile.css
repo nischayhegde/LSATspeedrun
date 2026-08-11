@@ -2342,6 +2342,36 @@ body {
   .wide-scene-shell .economy-ledger { display: none; }
 }
 
+/* And on the pointer as well as the width, for the reason that keeps coming
+   up: an iPhone 14 Pro Max turned sideways is 932 CSS pixels wide, stops
+   matching the block above, and gets the desktop corner card — which lands on
+   the office floor name and its blurb, in the corner the scene's own HUD
+   already owns. Measured at 932x430 before this rule: four collisions with
+   `.office-floor-name` and `.office-floor-blurb`. A desktop keeps the card on
+   these routes; it has the room, and a mouse can reach it. */
+@media (pointer: coarse) {
+  .wide-scene-shell .economy-ledger { display: none; }
+}
+
+/* A phone held sideways, past the 900px cutover.
+   
+   Between 901px and the strip's breakpoint a landscape phone gets the desktop
+   corner card: 214px wide, parked bottom-left, with no dock lane under it and
+   no pointer to reach for it. Measured at 932x430 it lies across the
+   caseboard's CASES tab on Practice and across the chapter title on Story, and
+   neither can be cleared — scrolling does not move a fixed card and there is
+   no hover on a touchscreen.
+   
+   So it stands down there, which is the call already made for the office and
+   the map and made for the same reason: the figures are on the Dashboard and
+   in the Firm header, and 430px of height has no room to spare for a card that
+   cannot be dismissed. Bounded by height as well as pointer so it catches
+   every landscape phone and no tablet — an iPad in landscape is at least
+   744px tall and keeps the card. */
+@media (pointer: coarse) and (min-width: 901px) and (max-height: 560px) {
+  .economy-ledger { display: none; }
+}
+
 /* ---------------------------------------------------------------------------
    A tablet held sideways.
 
