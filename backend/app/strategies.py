@@ -464,7 +464,7 @@ _TASK_ROLE = re.compile(
     # A stem that trails off in "by" wants the move named, which is this
     # question whichever verb it used: "Debbie attempts to counter Carl's
     # argument by", "Maria objects to Pedro's argument by".
-    r"|\b(?:counters?|objects?|replies|repl(?:y|ies)|answers?|rebuts?|attacks?)\b(?=[^.?]*\bby\s*$)"
+    r"|\b(?:counters?|objects?|repl(?:y|ies)|answers?|rebuts?|attacks?)\b(?=[^.?]*\bby\s*$)"
     # And the shapes that ask what somebody did without naming a verb at all.
     r"|\bdoes which one of the following\b|\bin advancing\b"
     r"|\bin which one of the following ways\b|\bfunction of\b|\bpart of the argument\b"
@@ -507,10 +507,10 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
     # of the question always says so ("if assumed", "allows the conclusion"),
     # and that phrasing is held apart just below.
     r"|\bassumes which\b|\bis assumed (?:in|by) the\b"
-    # Spelled out, because "makes which one of the following errors of
-    # reasoning" is the same shape and is a flaw question.
-    # The repeated "of the" is not a typo here: one stem in the bank reads
-    # "must make which of the of the following assumptions".
+    # "Makes which one of the following assumptions", with the noun spelled out
+    # because "makes which one of the following errors of reasoning" is the same
+    # shape and is a flaw question. The repeated "of the" is not a typo: one
+    # stem in the bank reads "must make which of the of the following".
     r"|\b(?:must )?makes? which (?:one )?(?:of the )+following assumptions?\b"
     # "Anson bases his conclusion about Dr. Ladlow on which one of the
     # following?" — the answer is the premise the argument needs.
