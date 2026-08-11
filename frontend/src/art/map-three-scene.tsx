@@ -917,7 +917,7 @@ function plannedGround(root: THREE.Group): ClearanceCorridor[] {
 }
 
 /** Where a landmark ended up, and how far the plan had to move it to get there. */
-type PlanSite = { x: number; z: number; moved: number; cleared: boolean }
+type PlanSite = { x: number; z: number; moved: number; cleared: boolean; blockedBy?: string; depth?: number }
 
 /**
  * Site an authored landmark on the street plan instead of on its own table.
@@ -973,8 +973,10 @@ function siteOnPlan(
 ): PlanSite {
   const footprint = { hx, hz, cos: Math.cos(rotationY), sin: Math.sin(rotationY) }
   const radius = Math.hypot(hx, hz)
-  const free = (atX: number, atZ: number) => !clearanceIntrusion(ground, atX, atZ, radius, footprint)
-  if (free(x, z)) return { x, z, moved: 0, cleared: true }
+  const at = (atX: number, atZ: number) => clearanceIntrusion(ground, atX, atZ, radius, footprint)
+  const free = (atX: number, atZ: number) => !at(atX, atZ)
+  const asked = at(x, z)
+  if (!asked) return { x, z, moved: 0, cleared: true }
   // Fine enough to find the gap between two village lanes, which is the
   // tightest thing being searched: The Circuit's alleys are .52 apart at their
   // closest and the free strip between their pavements is about a third of a
@@ -999,7 +1001,20 @@ function siteOnPlan(
     const atZ = z + reach.alongZ * candidate.along + acrossZ * candidate.lateral
     if (free(atX, atZ)) return { x: atX, z: atZ, moved: Math.hypot(atX - x, atZ - z), cleared: true }
   }
-  return { x, z, moved: 0, cleared: false }
+  // What was standing on the ground it asked for, and how deep into it the
+  // parcel reached. Without this a stuck parcel is a dead end for whoever picks
+  // it up: the ground looks empty from above and every audit answers a
+  // different question. This is what identified the Old Quarter's blockers as
+  // the ward lanes, which keep .99 either side, rather than the avenues
+  // everybody including me had assumed.
+  return {
+    x,
+    z,
+    moved: 0,
+    cleared: false,
+    blockedBy: `${asked.label ?? 'unlabelled'}@${(asked.atX ?? 0).toFixed(2)},${(asked.atZ ?? 0).toFixed(2)}±${(asked.halfWidth ?? 0).toFixed(2)}`,
+    depth: +asked.depth.toFixed(2),
+  }
 }
 
 /** Book one siting decision for `tools/map-qa/authored.mjs`. */

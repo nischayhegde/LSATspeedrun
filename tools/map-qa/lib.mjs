@@ -14,7 +14,8 @@
  *               the code rather than of how loaded the machine was.
  */
 import { chromium } from '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -33,8 +34,18 @@ export const OUT = process.env.MAPS_OUT || fileURLToPath(new URL('../../.maps', 
 // resolves to the x64 build on this machine and then reports the browser as not
 // installed, which reads like a missing download rather than an architecture
 // mismatch and costs a run to work out.
+const BUNDLED = `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+/**
+ * Stock Chrome, as the fallback.
+ *
+ * The `ms-playwright` cache is 400 MB of a disk that has been at 99% all day,
+ * and it was deleted out from under a running measurement this evening to
+ * reclaim space — which presents as "executable doesn't exist" and reads like a
+ * broken harness rather than like the disk. Re-downloading it costs back the
+ * space somebody deliberately freed, so prefer the browser already installed.
+ */
 export const CHROME = process.env.MAPS_CHROME
-  || `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+  || (existsSync(BUNDLED) ? BUNDLED : '/Applications/Google Chrome/Google Chrome.app/Contents/MacOS/Google Chrome')
 
 /** Region key to the label its navigation button carries. */
 export const TABS = {
@@ -87,7 +98,7 @@ const CLOCK_SCRIPT = () => {
   let capturing = false
   let queue = new Map()
   const clock = {
-    now: realNow(),
+    now: 0,
     step: 1000 / 60,
     frames: 0,
     errors: [],
@@ -163,11 +174,34 @@ const CLOCK_SCRIPT = () => {
       published = value
       if (!value || capturing) return
       capturing = true
-      // Behind the scene's own `previousFrame`, so the loop's first delta
-      // clamps to zero and every delta after it is exactly one step. Rebasing
-      // to the current instant instead would leave the first frame carrying
-      // whatever sub-millisecond gap the assignment happened to take.
-      clock.now = realNow() - 10000
+      /*
+       * Zero, and the same zero every run. This one line was the bimodality.
+       *
+       * It used to be `realNow() - 10000`, which is behind the scene's own
+       * `previousFrame` — so the loop's first delta still clamps to zero, which
+       * was the point — but it also made every synthetic timestamp a sum of
+       * steps onto an origin that was different in every server lifetime. The
+       * loop computes its delta as `(frameNow - previousFrame) / 1000`, and in
+       * float64 that subtraction rounds differently depending on the magnitude
+       * of its operands, so the crowd's accumulated time came out a few units
+       * in the last place apart between runs. Its decisions are drawn from
+       * `hashUnit(agent.seed + this.elapsed)`, and once in a while a walker
+       * landed the other side of a threshold, took a different turning, and
+       * spent the rest of the run inside a building.
+       *
+       * That is why a run was never a spread but one of a handful of discrete,
+       * perfectly reproducible worlds — a handful being how many distinct
+       * rounding patterns the origin can fall into — and why the other worker
+       * saw a fresh run reproduce an earlier one bit for bit across a restart.
+       * Observed directly before the fix: the crowd's `elapsed` came back as
+       * 29.99999999999958 or 30.00000000000056, and its spawn cursor as 23, 25
+       * or 26, on an untouched tree at the same frame count.
+       *
+       * A fixed origin makes the whole timestamp sequence bit-identical, and
+       * zero keeps it as far behind any real timestamp the page captured before
+       * capture began as the old value did.
+       */
+      clock.now = 0
     },
   })
   window.__clock = clock
@@ -209,8 +243,53 @@ async function dismissOverlays(page) {
   }
 }
 
+/**
+ * Whether the dev server behind `BASE` has hot-reloaded since it started.
+ *
+ * Measured, this matters more than most of the changes this harness is used to
+ * judge: an unmodified tree read .0021 on a freshly started server and .0109 on
+ * one that had hot-reloaded through six edits, and the static geometry was
+ * identical to the unit both times. Vite keeps a module graph across an edit and
+ * the scene does not come back the same. Every arm measured without a restart
+ * is therefore comparing against a control taken in a different world.
+ *
+ * Detected rather than trusted to discipline: the server's own start time
+ * against the newest source file under it. Best-effort — a remote `BASE`, a
+ * missing `lsof` or a production build all return `null`, which is reported as
+ * unknown rather than as clean.
+ */
+function serverWarmth(base) {
+  try {
+    const port = new URL(base).port
+    if (!port) return null
+    const pid = execFileSync('lsof', ['-ti', `:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
+    if (!pid) return null
+    // `etime` is elapsed wall time, which needs no date parsing and no locale.
+    const elapsed = execFileSync('ps', ['-o', 'etime=', '-p', pid], { encoding: 'utf8' }).trim()
+    const parts = elapsed.split(/[-:]/).map(Number).reverse()
+    const seconds = (parts[0] ?? 0) + (parts[1] ?? 0) * 60 + (parts[2] ?? 0) * 3600 + (parts[3] ?? 0) * 86400
+    const started = Date.now() - seconds * 1000
+    const root = fileURLToPath(new URL('../../frontend/src', import.meta.url))
+    let newest = 0
+    for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile()) continue
+      const at = statSync(`${entry.parentPath ?? entry.path}/${entry.name}`).mtimeMs
+      if (at > newest) newest = at
+    }
+    return { cold: newest <= started, editedAgoMs: Date.now() - newest, upMs: Date.now() - started }
+  } catch {
+    return null
+  }
+}
+
 /** Signs in, opens the map, and waits for a scene to exist. */
 export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
+  const warmth = serverWarmth(BASE)
+  if (warmth && !warmth.cold) {
+    console.warn('\n!! HOT SERVER: a source file has changed since this dev server started.')
+    console.warn('!! Restart it before measuring. An unmodified tree reads .0021 cold and .0109 hot.')
+    console.warn(`!! (up ${(warmth.upMs / 1000).toFixed(0)}s, last edit ${(warmth.editedAgoMs / 1000).toFixed(0)}s ago)\n`)
+  }
   const browser = await chromium.launch({
     executablePath: CHROME,
     args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
@@ -253,6 +332,52 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
 }
 
 /**
+ * Clicks through to a district and waits for it, **without giving the page a
+ * single real frame** while it builds.
+ *
+ * This is the fix for the thing that made every number this harness has ever
+ * produced unreadable. A run does not draw from a distribution: it lands in one
+ * of a handful of discrete worlds, each perfectly reproducible, and what
+ * selects the world is how many real frames elapsed while the district was
+ * being built. The old code called `__clock.release()` here for exactly that
+ * stretch, on the reasoning that a build wants real frames — so the count was
+ * whatever the machine's load allowed, and the Old Quarter came back as either
+ * .0021 or .0109 depending on which side of a threshold it fell.
+ *
+ * It turns out the build wants no frames at all. It is synchronous inside a
+ * React effect, and everything it waits on is a promise rather than a frame, so
+ * polling on an interval while the capture stays armed gets the same district
+ * every time with an elapsed frame count of exactly zero. Mostly: some builds do
+ * want a frame — Sovereign Arc reliably, and the others now and then — so a
+ * build that has not published in twenty seconds gets real frames rather than
+ * hanging out the run. That is the unreproducible path, so it is counted on
+ * `window.__unpinnedBuilds` and reported in every probe's `entry` block; a run
+ * with a non-zero count is a run whose crowd started from wherever the machine's
+ * load left it, and it should not be compared with anything.
+ */
+async function switchTo(page, label, key) {
+  const toggle = page.locator('.uw-atlas-toggle')
+  if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') {
+    await toggle.click()
+    await page.waitForTimeout(250)
+  }
+  await page.locator('.uw-arc-navigation button', { hasText: label }).first().click()
+  const arrived = (want) => window.__mapScene?.region === want
+  try {
+    await page.waitForFunction(arrived, key, { timeout: 20000, polling: 50 })
+  } catch {
+    await page.evaluate(() => {
+      window.__unpinnedBuilds = (window.__unpinnedBuilds ?? 0) + 1
+      window.__clock?.release()
+    })
+    await page.waitForFunction(arrived, key, { timeout: 120000, polling: 50 })
+  }
+  if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') {
+    await toggle.click()
+  }
+}
+
+/**
  * Puts the scene on one district and returns it under the synthetic clock.
  *
  * The clock goes on the moment the scene exists, and the district is then
@@ -267,25 +392,25 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
  * `waitForFunction` is given an interval rather than its default, which polls
  * on rAF: the override would starve that poll and the wait would hang.
  */
-export async function region(page, label, { key, warmup = 600 } = {}) {
-  const current = await page.evaluate(() => window.__mapScene?.region)
-  if (current !== key) {
-    // Real frames while the next district is built; the accessor re-arms the
-    // capture the moment that district publishes itself.
-    await page.evaluate(() => window.__clock?.release())
-    const toggle = page.locator('.uw-atlas-toggle')
-    if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') {
-      await toggle.click()
-      await page.waitForTimeout(250)
+export async function region(page, label, { key, warmup = 600, cold = true } = {}) {
+  // Always build the district under measurement here, even when the app has
+  // already landed on it. The one the page arrives on was built while the
+  // harness was still signing in, with however many real frames the machine
+  // happened to fit into that window — which is the variable this whole
+  // function exists to remove. Building it again costs a second and makes the
+  // district a function of the code.
+  // A key with no tab spends two minutes clicking whichever button matched
+  // `undefined` and then times out waiting for a region that cannot arrive.
+  // Sovereign Arc is `continent`, not `arc`, and that mistake has cost two runs.
+  if (!TABS[key]) throw new Error(`unknown region ${key}; expected one of ${Object.keys(TABS).join(', ')}`)
+  if (cold) {
+    const away = Object.entries(TABS).find(([other]) => other !== key)
+    if (await page.evaluate(() => window.__mapScene?.region) === key && away) {
+      await switchTo(page, away[1], away[0])
     }
-    await page.locator('.uw-arc-navigation button', { hasText: label }).first().click()
-    await page.waitForFunction((want) => window.__mapScene?.region === want, key, {
-      timeout: 120000,
-      polling: 50,
-    })
-    if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') {
-      await toggle.click()
-    }
+    await switchTo(page, label, key)
+  } else if (await page.evaluate(() => window.__mapScene?.region) !== key) {
+    await switchTo(page, label, key)
   }
   await dismissOverlays(page)
   await requireClock(page)

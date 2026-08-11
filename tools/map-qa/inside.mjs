@@ -197,6 +197,25 @@ async function attribute(settings) {
     }
   }
 
+  // The sim's own state at the moment capture starts. If this is not the same
+  // on every lifetime then the crowd is not starting from the same place, and
+  // no amount of pinning the *build* will make the walk reproducible.
+  const entry = {
+    // Non-zero means some district on the way here had to be built with real
+    // frames, so this run's crowd did not start from the same place as anyone
+    // else's. Treat the whole run as uncomparable.
+    unpinnedBuilds: window.__unpinnedBuilds ?? 0,
+    elapsed: crowd?.elapsed ?? null,
+    spawnCursor: crowd?.spawnCursor ?? null,
+    walkers: crowd?.walkers?.length ?? null,
+    active: crowd?.walkers?.filter((walker) => walker.active).length ?? null,
+    firstSeeds: (crowd?.walkers ?? []).slice(0, 3).map((walker) => +Number(walker.seed ?? 0).toFixed(4)),
+    firstAt: (crowd?.walkers ?? []).slice(0, 3).map((walker) => {
+      const body = walker.rig?.root ?? walker.root
+      return body ? `${body.position.x.toFixed(3)},${body.position.z.toFixed(3)}` : null
+    }),
+  }
+
   const tally = {}
   let samples = 0
   let hits = 0
@@ -242,6 +261,7 @@ async function attribute(settings) {
 
   return {
     region: scene.region,
+    entry,
     solids: solids.length,
     facades: solids.filter((solid) => solid.kind === 'facade').length,
     body: { radius: +radius.toFixed(4), low: +low.toFixed(4), high: +high.toFixed(4) },
@@ -262,6 +282,7 @@ try {
     await region(page, TABS[key], { key })
     report[key] = await page.evaluate(attribute, { frames: FRAMES, floorY: .16, rideOver: .18 })
     console.log(`\n=== ${key} === solids ${report[key].solids} (facade ${report[key].facades}) share ${report[key].share}`)
+    console.log(`  entry ${JSON.stringify(report[key].entry)}`)
     for (const row of report[key].worst) {
       console.log(`  ${String(row.frames).padStart(5)}  ${row.what.padEnd(22)} top ${String(row.top).padStart(5)}  depth ${row.depth}  near ${row.near}`)
     }

@@ -59,7 +59,7 @@ function dump() {
 const { browser, page } = await open()
 try {
   for (const key of REGIONS) {
-    await region(page, TABS[key], { key, warmup: 0 })
+    await region(page, TABS[key], { key, warmup: Number(process.env.PLAN_WARMUP ?? 0) })
     const plan = await page.evaluate(dump)
     save(`${OUT}/plan-${key}.json`, plan)
     console.log(key, {
