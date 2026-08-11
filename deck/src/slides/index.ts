@@ -251,8 +251,16 @@ export const SLIDES: readonly SlideSpec[] = [
       ticks: [
         { at: 0.16, source: 'Kaplan', range: '150–300' },
         { at: 0.4, source: 'Blueprint', range: '200–300' },
-        { at: 0.66, source: 'Princeton Review', range: '250–300' },
-        { at: 0.88, source: 'LSAC' },
+        { at: 0.62, source: 'Princeton Review', range: '250–300' },
+        // Pulled in from 0.88. The tick positions carry no quantity — all three
+        // published ranges top out at 300 — so they are spacing, and at 0.88 the
+        // blank one sat close enough to the outcome sliver at the bar's right
+        // end that "a few points" read as a label on LSAC's tick rather than on
+        // the sliver its leader line points at. The blank tick is drawn at full
+        // strength precisely so it is not mistaken for anything else; it should
+        // not then be crowded by the one mark on the slide it could be confused
+        // with.
+        { at: 0.79, source: 'LSAC' },
       ],
       outcome: 'a few points',
       curriculum: [
