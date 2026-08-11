@@ -754,6 +754,38 @@ Resources:
               WantedBy=multi-user.target
               SERVICE
 
+              # Flask sets these on /v1/ in its own after_request, but nothing
+              # was setting them on the document or the assets, which nginx
+              # serves straight off disk without Flask ever seeing the request.
+              # The application page could therefore be framed by any site.
+              #
+              # It is a file included per location rather than one block at
+              # server level for two reasons, both of which are how nginx
+              # actually behaves: `add_header` in a location *replaces* every
+              # inherited one, so a server-level set would vanish from
+              # `/assets/` the moment that block added Cache-Control; and a
+              # server-level set would also apply to the proxied /v1/
+              # responses, giving each of them a second X-Frame-Options, which
+              # some browsers treat as malformed and ignore entirely. So the
+              # only places these appear are the two nginx answers itself.
+              #
+              # `always` keeps them on error responses too — where the SPA's
+              # 404-to-index fallthrough and the assets `=404` both land.
+              #
+              # HSTS is asserted because CloudFront in front of this origin is
+              # redirect-to-https, so a browser only ever reads these over TLS.
+              # There is deliberately no Content-Security-Policy: see the
+              # "Content-Security-Policy" section of docs/SECURITY.md for the
+              # two things that have to be settled before one can be turned on
+              # without breaking sign-in and the route hints.
+              cat > /etc/nginx/lsat-security-headers.conf <<'HEADERS'
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header X-Frame-Options "DENY" always;
+              add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+              add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+              HEADERS
+
               cat > /etc/nginx/conf.d/lsat-speedrun.conf <<'NGINX'
               server {
                   listen 80 default_server;
@@ -772,11 +804,13 @@ Resources:
 
                   location /assets/ {
                       try_files $uri =404;
-                      add_header Cache-Control "public, max-age=31536000, immutable";
+                      include /etc/nginx/lsat-security-headers.conf;
+                      add_header Cache-Control "public, max-age=31536000, immutable" always;
                   }
 
                   location / {
                       try_files $uri $uri/ /index.html;
+                      include /etc/nginx/lsat-security-headers.conf;
                   }
               }
               NGINX

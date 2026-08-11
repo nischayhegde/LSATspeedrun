@@ -24,6 +24,10 @@ from .seed import seed_questions
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
+#: What `SECRET_KEY` falls back to when nothing sets it. Development only —
+#: `create_app` refuses to boot a production process that still holds it.
+LOCAL_SECRET_KEY = "local-only-change-me"
+
 
 @event.listens_for(Engine, "connect")
 def _sqlite_concurrency_pragmas(dbapi_connection, _connection_record):
@@ -129,6 +133,19 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
     dev_auth_requested = os.getenv("DEV_AUTH_ENABLED", "false").lower() == "true"
     if is_production and dev_auth_requested:
         raise RuntimeError("DEV_AUTH_ENABLED must be false in production.")
+    secret_key = os.getenv("SECRET_KEY", "").strip()
+    if is_production and (not secret_key or secret_key == LOCAL_SECRET_KEY):
+        # The placeholder is in a public repository, so a production process
+        # holding it is holding a published key. It signs nothing today —
+        # sessions are opaque tokens hashed in `auth_sessions`, not Flask's
+        # signed cookie — but that is a property of the current code rather
+        # than a guarantee, and the failure is silent: the app boots, serves,
+        # and looks healthy. Refuse at startup instead, where a deployment
+        # notices. The stack under `deploy/` already generates one.
+        raise RuntimeError(
+            "SECRET_KEY must be set to a generated secret in production; "
+            "the development placeholder is published in this repository."
+        )
     database_secret = _database_secret()
     database_url = _database_url(database_secret)
     if database_url.startswith("postgres://"):
@@ -137,7 +154,7 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
     app.config.from_mapping(
-        SECRET_KEY=os.getenv("SECRET_KEY", "local-only-change-me"),
+        SECRET_KEY=secret_key or LOCAL_SECRET_KEY,
         SQLALCHEMY_DATABASE_URI=database_url,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         FRONTEND_ORIGIN=os.getenv("FRONTEND_ORIGIN", "http://localhost:5173"),
