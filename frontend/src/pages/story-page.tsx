@@ -88,7 +88,12 @@ export function StoryPage() {
 
       <section className="campaign-timeline">
           <div className="story-section-heading"><span>01 · THE CAMPAIGN</span><h2>From one light to a constellation</h2><p>Chapters unlock with headquarters tiers. Story decisions are permanent.</p></div>
-        <div className="chapter-track">
+        {/* Focusable because it pans horizontally below 900px and its cards
+            hold no control to tab to until one unlocks, so without this a
+            keyboard can reach the track's contents only by scrolling past
+            them. `role="group"` with a name keeps the focus stop announced as
+            something rather than as a bare div. */}
+        <div className="chapter-track" tabIndex={0} role="group" aria-label="Campaign chapters">
           {story.chapters.map((chapter, index) => (
             <article key={chapter.key} className={`${chapter.seen ? 'seen' : ''} ${story.pending_chapter?.key === chapter.key ? 'pending' : ''}`}>
               <i>{chapter.seen ? <Check /> : story.pending_chapter?.key === chapter.key ? '!' : <Lock />}</i>

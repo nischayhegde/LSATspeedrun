@@ -57,6 +57,22 @@ if (shots) mkdirSync(shots, { recursive: true })
 const ROUTES = only.length ? only : ['/office', '/cases', '/firm', '/progress', '/story', '/map']
 
 /**
+ * A route's default tab is a fraction of its screen. These are opened after the
+ * route settles and checked in the same pass, because the panels behind a tab
+ * are exactly where a defect survives: nobody looks at them on every change.
+ */
+const PANELS = {
+  '/firm': [
+    '#firm-tab-upgrades',
+    '#firm-tab-decor',
+    '#firm-tab-staff',
+    '#firm-tab-clients',
+    '#firm-tab-connections',
+    '#firm-tab-rivals',
+  ],
+}
+
+/**
  * Noise that is not this app's to fix, kept in one place so the report can say
  * what it ignored. Anything not matched here is reported verbatim.
  */
@@ -116,19 +132,34 @@ try {
     }
 
     await page.addScriptTag({ content: AXE })
-    const axe = await page.evaluate(async () => {
+    const runAxe = (where) => page.evaluate(async (label) => {
       const run = await window.axe.run(document, {
         runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa'] },
         rules: { 'color-contrast': { enabled: false } },
       })
       return run.violations.map((violation) => ({
+        where: label,
         id: violation.id,
         impact: violation.impact,
         help: violation.help,
         nodes: violation.nodes.length,
         first: violation.nodes[0]?.target?.join(' ') ?? '',
       }))
-    })
+    }, where)
+
+    const axe = await runAxe('')
+    // A route's default tab is a fraction of its screen, and the panels behind
+    // a tab are where a defect survives longest: nobody opens them on every
+    // change. Each is checked in this same pass.
+    for (const selector of PANELS[route] ?? []) {
+      const tab = page.locator(selector).first()
+      if (!(await tab.count())) continue
+      await tab.click()
+      await page.waitForTimeout(1500)
+      for (const violation of await runAxe(selector)) {
+        if (!axe.some((seen) => seen.id === violation.id && seen.first === violation.first)) axe.push(violation)
+      }
+    }
 
     if (shots) await page.screenshot({ path: `${shots}/${route.replace(/\//g, '_') || 'root'}.png`, fullPage: false })
 
@@ -139,7 +170,7 @@ try {
     for (const line of [...new Set(failed)]) console.log(`      ${line}`)
     console.log(`    axe       ${axe.length ? `${axe.length} violation kinds` : 'clean (wcag2a/aa, contrast excluded)'}`)
     for (const violation of axe) {
-      console.log(`      [${violation.impact}] ${violation.id} x${violation.nodes} — ${violation.help}`)
+      console.log(`      [${violation.impact}] ${violation.id} x${violation.nodes} ${violation.where} — ${violation.help}`)
       console.log(`         first: ${violation.first.slice(0, 120)}`)
     }
     findings.push({ route, console: [...new Set(console_)], failed: [...new Set(failed)], axe })
