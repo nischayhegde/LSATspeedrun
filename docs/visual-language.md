@@ -68,14 +68,31 @@ Rules:
 
 ### Type
 
+Three faces, and the rule is which face does which job, not what size it is
+set at.
+
 - **Fraunces** (`--font-display`), 620 weight, `-0.01em`: headings, figures a
   reader is meant to register, plaque names.
 - **Archivo** (`--font-hud`, aliased as `--font-pixel`): labels, control text,
-  eyebrows, chips. Small, 800–900, tracked 0.1–0.24em, usually uppercase.
-- **Inter**: body copy. Nothing else.
+  eyebrows, chips — anything that is tracked caps. Typically 7.5–11px at
+  800–900, tracked 0.06–0.24em.
+- **Inter** (`--font-body`, aliased as `--font-ui`): body copy and sentences.
+  Nothing else.
 - Georgia appears in ~20 rules and is the prestige-print hand. It is only
   correct where a surface is deliberately printed matter.
-- Minimum interface text is 11.5px. Anything below that is legacy.
+
+The defect this rule catches is a **tracked-caps label set in Inter**, or a
+sentence set in Archivo — two faces doing one job on one screen. The exam
+bar's "SECTION 1 OF 3" against the paper's "QUESTION 1" 350 pixels below it
+was the last of those.
+
+There is deliberately **no minimum size** here. An earlier draft of this file
+said 11.5px and called anything smaller legacy; that was written from the
+instrument chrome and is wrong about the app. The HUD register runs at 7–9px
+throughout `art.css`, the map HUD, the strategy gate and the projection
+panel — hundreds of rules, drawn small and tracked on purpose so a readout
+sits under the thing it labels without competing with it. Re-typesetting
+those would be a redesign, not a sweep, and nothing in the sweep enforced it.
 
 ### Form
 
@@ -86,11 +103,20 @@ Rules:
   `--ink-line` on a light one. Borders of 3px, 4px and 5px belong to the pixel
   hand, except on the diegetic paper surfaces below.
 - **Elevation**: `--el-1`/`--el-2`/`--el-3`, already defined in `styles.css`.
-  Soft, downward, and coloured by the ink rather than by black. A hard offset
-  shadow with no blur (`4px 4px 0 #171923`) is the pixel hand.
+  Soft, downward, and coloured by the ink rather than by black.
+- **Offset shadows**: a hard offset in flat opaque near-black
+  (`4px 4px 0 #171923`) is the pixel hand and reads as printed onto the page.
+  The diegetic paper below is allowed a real offset, but it is warm ink at
+  low alpha and it is paired with a blurred `--el-*` — `7px 8px 0
+  rgba(27, 26, 36, .18), var(--el-3)` is paper lifting off a desk; the same
+  offset at full strength in `#171923` is a sprite.
 - **Bevel**: none. `inset -4px -4px …` plus `inset 2px 2px …` is a pixel key.
   Depth comes from the hairline, a single inset highlight at the top edge, and
-  the drop.
+  the drop. A pressed control seats 1px into `inset 0 2px 5px`; it does not
+  slide 3px diagonally onto a two-tone bevel.
+- **Text shadows**: straight down, `0 2px 0` at low alpha. `3px 3px` diagonal
+  into a cold near-black is the pixel hand, and was still on the treasury
+  figure and the mobile login headline.
 
 ### Iconography
 
@@ -107,6 +133,16 @@ Three families, and only three:
 A typographic character standing alone inside a button (`×`, `☰`, `§`, `›`) is
 not an icon: whichever face the platform substituted decides its weight and
 whether it centres. Those were replaced with marks and must not come back.
+
+The platform's own `<details>` marker is the same defect wearing a different
+hat, and it had survived on six of the app's ten disclosures. `styles.css`
+now suppresses it everywhere and draws one chevron in its place; a summary
+that already carries a real icon is skipped through `:has(svg)`, so nothing
+ends up with two affordances for one action. A new `<details>` needs no rule.
+
+The tab icon counts. It was a stroked line drawing on a navy disc long after
+the interface stopped drawing anything that way, and it is the one mark a
+reader sees before the app has loaded at all.
 
 ### Motion
 
@@ -145,6 +181,14 @@ their ink is `--ink`, their paper is the parchment ramp, their brass is
 interface rules entirely. Flattening a cel-shaded room to match a flat panel
 would be a mistake.
 
+**The proctored screen** — `/cases` once a mega-litigation is running — is a
+fourth register and says so at the top of `exam-flow.css`: no leather, no
+portraits, no stamps, because a student sitting a timed form is being
+measured and every piece of decoration is somewhere for the eye to go that
+the real test would not have offered. Its plainness is a decision. What it
+still owes the rest of the app is the *face* a job is done in, not the
+weight of its ornament.
+
 ---
 
 ## What the sweep did not change, and why
@@ -160,3 +204,21 @@ would be a mistake.
 - The `Courier New` fallback on `--font-pixel` in `styles.css`. It is dead:
   `art.css` is on the entry sheet and always redefines the token. Removing it
   would be a change with no effect, in a file three other branches are editing.
+- The pixel-hand rules in `styles.css` that a later sheet already fully
+  overrides — `.pixel-asset-art`'s 4px outline and `✓` badge (`art.css` wins),
+  the `.mobile-nav` bar (`mobile.css` wins), `.office-cat`, `.map-rail` and
+  `.trophy-case` (no markup renders them). They are dead code, which belongs to
+  the refactoring pass, and every one of them is in a file another branch is
+  editing. The live ones in the same block were fixed.
+- `guided-tour.css`. Its skyline and desk illustrations are still drawn in the
+  pixel hand — 3px `#181c1b` outlines, a `steps(2)` window flicker — and they
+  are the same defect the study vignettes were. The tutorial is another
+  agent's remit and they have that file open; redrawing scenery underneath a
+  rewrite would cost the user a merge for no gain. Reported, not touched.
+- The map HUD's eight `backdrop-filter: blur()` panels over the WebGL canvas.
+  The sheet already carries a measured note about removing a ninth for exactly
+  this reason. That is the performance pass's call, not a visual one.
+- The ~1,600 distinct hex literals across the sheets. Most are in `art.css`,
+  which draws illustrations in CSS, and in the scene HUDs. The tokens exist so
+  the next surface stops adding to that number, not so this sweep could
+  mechanically rewrite every one of them.
