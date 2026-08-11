@@ -4770,7 +4770,10 @@ function addOceanEnvironment(root: THREE.Group) {
       'The head of the channel, where a delegation comes ashore. Everything that goes wrong before the talks begin goes wrong here first.'],
     ['ocean-roads', 'The Bonded Roads', 'industry', [-6, -7.6], 2.8,
       'Deep water south of the fairway, where a hull lies at anchor with its cargo still legally nowhere. An entire practice lives in that gap.'],
-    ['ocean-chandlers', 'Chandler\u2019s Row', 'market', [-5.8, 3.3], 2.3,
+    // South and west of where this was first put: at `-5.8,3.3` its disc came
+    // within .12 of the western docket island's landform, which `landmarks.mjs`
+    // warns about and is one lattice change from being a real overlap. .82 now.
+    ['ocean-chandlers', 'Chandler\u2019s Row', 'market', [-5.4, 2.6], 2.3,
       'The agents\u2019 water, north of the channel. Every master who refuses to sail is refusing to sail from somewhere on this reach.'],
     ['ocean-anchorage', 'Treaty Anchorage', 'water', [1.6, 4], 2.4,
       'The middle of the sea, and neutral only because everyone agreed it was. The agreement is the practice.'],
