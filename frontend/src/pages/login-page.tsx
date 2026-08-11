@@ -4,6 +4,7 @@ import { Building2, Play, Scale, Sparkles, TrendingUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { api } from '../api'
+import { ScalesMark } from '../art-2d/marks'
 import { Brand, ErrorNotice } from '../components'
 import { SoundControls, useSound } from '../sound'
 import { storeAuthenticatedUser } from './shared'
@@ -99,7 +100,10 @@ export function LoginPage() {
       </section>
       <aside className="login-panel-wrap">
         <div className="login-panel">
-          <div className="crest"><Scale /></div>
+          {/* The firm's own crest, the same drawn mark the header carries. It
+              was a `lucide` scale, which put a 2px line icon where every other
+              plaque in the app has a filled one. */}
+          <div className="crest"><ScalesMark /></div>
           <span className="eyebrow">THE BAR IS OPEN</span>
           <h2>Enter your firm</h2>
           <p>Your cases, cash, reputation, character, office, and every acquisition stay with your account.</p>
