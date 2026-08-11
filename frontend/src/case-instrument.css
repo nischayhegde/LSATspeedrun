@@ -520,15 +520,19 @@
 .case-run-rail-note { animation: mo-rise var(--mo-3) var(--mo-out) both; }
 .case-run-rail-toggle:active { transform: translateY(1px); }
 
-/* The two committing controls in the case view. This surface strips the
-   pixel key's offset shadow, so the seat is the entire press signal,
+/* The two committing controls in the case view. This surface is
+   deliberately not brass: the case file is a reading instrument in its
+   own restrained teal, and a gold plate here would be the loudest thing
+   on a screen whose job is to disappear behind the question. So it
+   carries no plate and no drop, the seat is the entire press signal,
    and --mo-brass is what makes seating read as weight rather than as a
    jump. Twice the travel of the rail toggle, because these two end a
    question and the toggle only opens a drawer.
-   The press also has to restate `box-shadow: none`: the global pixel-key
-   press outranks this panel's flat rest style, so without it a gold
-   inner bevel from a button shape this surface does not use flashed on
-   every submit. */
+   The press still has to restate `box-shadow: none`: the shared button's
+   own press shadow outranks this panel's flat rest style, so without it
+   an inset from a button shape this surface does not use flashes on
+   every submit. That was a gold pixel bevel and is now a soft inset;
+   either way it does not belong here. */
 .case-instrument .verdict-button,
 .case-instrument .next-case-button {
   transition:
