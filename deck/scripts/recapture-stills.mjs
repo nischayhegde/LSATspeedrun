@@ -1,20 +1,20 @@
 /**
- * Regenerate `deck/public/stills/*.png` from the live app.
+ * Regenerate `deck/public/stills/*.webp` from the live app.
  *
- * Those PNGs are the deck's on-stage fallback: when a demo route fails to load,
- * or when the presenter hits `?stills=1`, the audience sees one of these instead
- * of the live product. The app is under active development, so they drift — and
- * a drifted still is worse than a visible failure, because it silently shows the
+ * They are the deck's on-stage fallback: when a demo route fails to load, or when
+ * the presenter hits `?stills=1`, the audience sees one of these instead of the
+ * live product. The app is under active development, so they drift — and a
+ * drifted still is worse than a visible failure, because it silently shows the
  * room a product that no longer exists. This makes recapture a command.
  *
  *   node scripts/recapture-stills.mjs                  # all of them
  *   node scripts/recapture-stills.mjs --only=focus-mode,map
  *   node scripts/recapture-stills.mjs --list
  *
- * Requires the app on :5173 and the backend on :5001, and a seeded demo account
- * (`cd deck && npm run reset-demo`).
+ * Requires the app on :5173 and the backend on :5001, a seeded demo account
+ * (`cd deck && npm run reset-demo`), and `cwebp` on PATH — see `encodeStill`.
  *
- * Two things here are deliberate and worth not "simplifying":
+ * Three things here are deliberate and worth not "simplifying":
  *
  * 1. **The viewport is the embed's logical viewport, not the projector's.** The
  *    stage caps a demo iframe at 1150 logical pixels wide so app text is legible
@@ -29,9 +29,16 @@
  *    seen at 19, so it failed silently and fell back to a stale pinned id. If a
  *    step here is slow, it should be slow and correct rather than fast and
  *    wrong.
+ *
+ * 3. **The output is WebP, and this script is the only thing that decides that.**
+ *    Playwright can only encode PNG, and PNG is the wrong format for a fallback
+ *    that has to arrive under pressure — the eight stills were 12.4 MB as PNGs
+ *    and are 2.0 MB as WebP. Encoding lives in `encodeStill`, so a recapture
+ *    cannot quietly put the 12.4 MB back.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -78,6 +85,64 @@ const solo = (() => {
     return { session: '', answers: '' }
   }
 })()
+
+/**
+ * Encode one screenshot as the WebP that ships, and say which way it went.
+ *
+ * These stills are the deck's insurance policy: they are what the room sees when
+ * a live embed fails, and `demo-office-tier14` is fetched cold at the moment the
+ * presenter presses the toggle. So their size is not housekeeping — a
+ * multi-megabyte fallback is a fallback that arrives late, under exactly the
+ * pressure it exists for. As PNGs the eight came to 12.4 MB; as WebP they come
+ * to 2.0 MB.
+ *
+ * **Both encodings are tried and the smaller file wins.** That is the whole
+ * policy, and it is a rule rather than a table because the answer depends on the
+ * picture: the four 3D scenes are soft-shaded renders that lossy compresses to
+ * an eighth, while the flattest UI screenshots are large runs of identical
+ * pixels, which lossless WebP encodes *smaller than lossy* — so for those there
+ * is nothing to trade and no reason to lose a pixel. Measured on the current
+ * eight, `demo-answer-log` and `demo-focus-mode` come out bit-exact and the
+ * other six at q92.
+ *
+ * On q92 for the rest, and why raising it is not the lever it looks like: the
+ * residual error is almost entirely chroma on glyph edges, because lossy WebP is
+ * always YUV 4:2:0 — the format has no lossy 4:4:4. Its peak barely moves
+ * between q88 and q98 (measured: 69 vs 69 levels on the dashboard's amber
+ * figures) and `-sharp_yuv` only trims it to 64, so quality cannot buy away the
+ * failure mode that would matter for small type. What can is losslessness, which
+ * is why that is the other arm of the rule rather than a higher number here.
+ * Inspected at 1:1 and at 4x on the smallest saturated micro-caps in the set,
+ * q92 is indistinguishable from source; the error is single-pixel and the eye
+ * has little chroma acuity at that frequency, which is why 4:2:0 exists.
+ */
+function encodeStill(png, staging) {
+  const attempt = (args, suffix) => {
+    const out = `${staging}.${suffix}`
+    const result = spawnSync('cwebp', ['-quiet', ...args, png, '-o', out], { encoding: 'utf8' })
+    if (result.error?.code === 'ENOENT') {
+      fail('cwebp is not installed, and these stills ship as WebP.\n'
+        + '  macOS: brew install webp\n'
+        + '  Debian/Ubuntu: sudo apt install webp\n'
+        + 'Nothing was written. Install it and re-run rather than committing PNGs.')
+      process.exit(1)
+    }
+    if (result.status !== 0) {
+      fail(`cwebp failed on ${png}: ${(result.stderr || '').trim() || `exit ${result.status}`}`)
+      process.exit(1)
+    }
+    return { path: out, size: statSync(out).size }
+  }
+
+  const lossy = attempt(['-q', '92', '-m', '6'], 'lossy')
+  const lossless = attempt(['-lossless', '-z', '9'], 'lossless')
+  const [winner, loser, mode] = lossless.size <= lossy.size
+    ? [lossless, lossy, 'lossless']
+    : [lossy, lossless, 'q92']
+  unlinkSync(loser.path)
+  renameSync(winner.path, staging)
+  return { staging, mode }
+}
 
 /**
  * Wait until the page stops scrolling itself, and report where it came to rest.
@@ -134,7 +199,7 @@ async function topChromeBottom(page) {
  * Park the viewport with the first present selector `margin` px below the app's
  * top chrome, and make sure it stayed there.
  *
- * Written after `demo-case-answered.png` came out framed two different ways
+ * Written after `demo-case-answered.webp` came out framed two different ways
  * from the same code: the app's own scroll-to-verdict landed *before* the
  * framing scroll on one run and *after* it on the next, and on the second run
  * it dragged the frame 61px down and took the credited choice off the top edge
@@ -181,7 +246,7 @@ const STILLS = [
   // A future cut that wants the opening frame adds one line.
   {
     key: 'case-answered',
-    file: 'demo-case-answered.png',
+    file: 'demo-case-answered.webp',
     // The driven session, played by the app's own autoplay driver, exactly as
     // the slide frames it. Not the open hand-worked case: this still stands in
     // for `demo-case-answer`, and that slide is the driven one.
@@ -232,7 +297,7 @@ const STILLS = [
       // shape rather than a framing choice: `.reasoning-box` unmounts the moment
       // the verdict lands, so the case theory and the ruling on it never coexist
       // on this screen. It is shown live during the beat before, and it is in the
-      // review drawer on the next slide — which is `demo-answer-log.png`.
+      // review drawer on the next slide — which is `demo-answer-log.webp`.
       await frameOn(page, ['.choices .choice.selected', '.verdict-stamp'], 16)
     },
     // What the frame has to contain to be worth keeping, checked against the
@@ -250,10 +315,10 @@ const STILLS = [
       '.coaching-panel',
     ],
   },
-  { key: 'progress', file: 'demo-progress.png', route: '/progress' },
+  { key: 'progress', file: 'demo-progress.webp', route: '/progress' },
   {
     key: 'answer-log',
-    file: 'demo-answer-log.png',
+    file: 'demo-answer-log.webp',
     // `?tab=` picks the panel and scrolls to it; the answer wall is behind a
     // dashboard tab rather than below the fold, so a bare `/progress` lands two
     // clicks away on the skills matrix and photographs the wrong screen.
@@ -281,16 +346,16 @@ const STILLS = [
     // rendered frame below, because "it wrote a PNG" has never been the bar.
     require: ['.answer-log-reasoning', '.answer-log-coaching'],
   },
-  { key: 'office', file: 'demo-office.png', route: '/office' },
-  { key: 'office-tier0', file: 'demo-office-tier0.png', route: '/office?officeTier=0' },
-  { key: 'office-tier14', file: 'demo-office-tier14.png', route: '/office?officeTier=14&officeAll=1' },
-  { key: 'map', file: 'demo-map.png', route: '/map' },
+  { key: 'office', file: 'demo-office.webp', route: '/office' },
+  { key: 'office-tier0', file: 'demo-office-tier0.webp', route: '/office?officeTier=0' },
+  { key: 'office-tier14', file: 'demo-office-tier14.webp', route: '/office?officeTier=14&officeAll=1' },
+  { key: 'map', file: 'demo-map.webp', route: '/map' },
   // `firm-upgrades` / `demo-firm-upgrades.png` was removed with `case`, above,
   // and for the same reason: no slide has ever named it. `/firm?tab=upgrades`
   // is the route to put back if one does.
   {
     key: 'focus-mode',
-    file: 'demo-focus-mode.png',
+    file: 'demo-focus-mode.webp',
     // The Office rather than the Firm or the Map: the audience has just watched
     // the office demo, so "the Office is put away" has a referent, and this
     // route's copy names three game systems at once. The frame has to carry the
@@ -486,7 +551,7 @@ try {
     }
 
     // A still that renders but shows the wrong thing is the failure mode these
-    // files have, not a still that fails to render: `demo-progress.png` stood in
+    // files have, not a still that fails to render: `demo-progress.webp` stood in
     // for the review slide for a while and looked entirely fine while making
     // none of its point. So a still may name what it has to contain, and the
     // frame is checked for it before the bytes are kept.
@@ -520,15 +585,19 @@ try {
       }
     }
 
-    // Write beside the target and move into place only once the bytes exist, so
-    // an interrupted run cannot leave a truncated PNG as the fallback.
+    // Playwright encodes PNG or JPEG and nothing else, so the shutter writes a
+    // PNG to a scratch path and `encodeStill` turns it into the WebP that ships.
+    // Written beside the target and moved into place only once the bytes exist,
+    // so an interrupted run cannot leave a truncated image as the fallback.
     const target = resolve(OUT, still.file)
-    // Keeps the `.png` suffix, which Playwright uses to pick the encoder.
-    const staging = resolve(OUT, `.tmp-${still.file}`)
-    await page.screenshot({ path: staging, animations: 'disabled' })
-    renameSync(staging, target)
+    const shot = resolve(OUT, `.tmp-${still.file}.png`)
+    await page.screenshot({ path: shot, animations: 'disabled' })
+    const encoded = encodeStill(shot, resolve(OUT, `.tmp-${still.file}`))
+    unlinkSync(shot)
+    renameSync(encoded.staging, target)
     const kb = Math.round(statSync(target).size / 1024)
-    ok(`wrote ${still.file} at ${Math.round(LOGICAL.width * SCALE)}x${Math.round(LOGICAL.height * SCALE)} (${kb} KB)`)
+    ok(`wrote ${still.file} at ${Math.round(LOGICAL.width * SCALE)}x${Math.round(LOGICAL.height * SCALE)}`
+      + ` (${kb} KB, ${encoded.mode})`)
   }
 } catch (error) {
   // The fatal paths above have already reported themselves through `fail`, so

@@ -124,7 +124,12 @@ console.log('\n\u2022 public/stills matches the slides that name it')
 {
   const source = readFileSync(resolve(DECK_DIR, 'src/slides/index.ts'), 'utf8')
   const named = new Set([...source.matchAll(/\bstill:\s*'([^']+)'/g)].map((match) => match[1]))
-  const onDisk = new Set(readdirSync(resolve(DECK_DIR, 'public/stills')).filter((name) => /\.png$/.test(name)))
+  // Every image extension, not just the one in use. The stills ship as WebP, so
+  // a `.png` here is either a slide naming the pre-2026-08-11 filename or 12 MB
+  // of superseded captures nobody deleted — and both should land in one of the
+  // two lists below rather than being filtered out of the check.
+  const onDisk = new Set(readdirSync(resolve(DECK_DIR, 'public/stills'))
+    .filter((name) => /\.(webp|png|jpe?g|avif|gif)$/i.test(name)))
 
   const missing = [...named].filter((file) => !onDisk.has(file))
   const orphans = [...onDisk].filter((file) => !named.has(file))
