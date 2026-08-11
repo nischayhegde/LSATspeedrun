@@ -98,7 +98,7 @@ const CLOCK_SCRIPT = () => {
   let capturing = false
   let queue = new Map()
   const clock = {
-    now: realNow(),
+    now: 0,
     step: 1000 / 60,
     frames: 0,
     errors: [],
@@ -174,11 +174,34 @@ const CLOCK_SCRIPT = () => {
       published = value
       if (!value || capturing) return
       capturing = true
-      // Behind the scene's own `previousFrame`, so the loop's first delta
-      // clamps to zero and every delta after it is exactly one step. Rebasing
-      // to the current instant instead would leave the first frame carrying
-      // whatever sub-millisecond gap the assignment happened to take.
-      clock.now = realNow() - 10000
+      /*
+       * Zero, and the same zero every run. This one line was the bimodality.
+       *
+       * It used to be `realNow() - 10000`, which is behind the scene's own
+       * `previousFrame` — so the loop's first delta still clamps to zero, which
+       * was the point — but it also made every synthetic timestamp a sum of
+       * steps onto an origin that was different in every server lifetime. The
+       * loop computes its delta as `(frameNow - previousFrame) / 1000`, and in
+       * float64 that subtraction rounds differently depending on the magnitude
+       * of its operands, so the crowd's accumulated time came out a few units
+       * in the last place apart between runs. Its decisions are drawn from
+       * `hashUnit(agent.seed + this.elapsed)`, and once in a while a walker
+       * landed the other side of a threshold, took a different turning, and
+       * spent the rest of the run inside a building.
+       *
+       * That is why a run was never a spread but one of a handful of discrete,
+       * perfectly reproducible worlds — a handful being how many distinct
+       * rounding patterns the origin can fall into — and why the other worker
+       * saw a fresh run reproduce an earlier one bit for bit across a restart.
+       * Observed directly before the fix: the crowd's `elapsed` came back as
+       * 29.99999999999958 or 30.00000000000056, and its spawn cursor as 23, 25
+       * or 26, on an untouched tree at the same frame count.
+       *
+       * A fixed origin makes the whole timestamp sequence bit-identical, and
+       * zero keeps it as far behind any real timestamp the page captured before
+       * capture began as the old value did.
+       */
+      clock.now = 0
     },
   })
   window.__clock = clock
