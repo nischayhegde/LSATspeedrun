@@ -686,6 +686,67 @@
 /* The numerals go. Three closing words are a rhythm, not an inventory. */
 .deck-layer[data-section='close'] .plate .ledger i { display: none; }
 
+/* ----------------------------------------------------------------
+   THE CLOSE, WHEN THE PRODUCT IS BEHIND IT
+
+   The rules above set the close's type in royal blue with no plate
+   surface, because the scene behind it is a pale beige wall. Put the
+   built office behind the same slide and every one of those decisions
+   inverts: navy type on a dark, busy, sixteen-person room is not
+   low-contrast, it is *gone*. Shot it to be sure — the headline was
+   unreadable across most of its own length.
+
+   `concept-lawyer-tycoon` already solves this and has shipped: the
+   same office scene, with the copy on a dark translucent plate at the
+   edge of the frame, legible over the busiest part of the room. This
+   is that treatment, applied to the close.
+
+   Keyed on a mounted scene actually being present rather than on the
+   slide id, so it is inert today and becomes correct the moment the
+   scene swap lands in `index.ts` — no second edit, and no window where
+   the deck ships an illegible close. `.deck-appscene[data-role=
+   'current']` is the app-scene layer's own marker for the scene being
+   shown rather than merely warmed.
+   ---------------------------------------------------------------- */
+.deck:has(.deck-appscene[data-role='current']) .deck-layer[data-section='close'] .body-statement {
+  /* Bottom-left rather than centred-top. The office's own subject is the
+     partner desk on the centre line, and a centred headline sits straight on
+     top of it. */
+  align-content: end;
+  justify-content: start;
+  padding: 0 0 calc(4.5 * var(--u)) calc(4 * var(--u));
+}
+
+.deck:has(.deck-appscene[data-role='current']) .deck-layer[data-section='close'] .plate {
+  max-width: calc(44 * var(--u));
+  margin-inline: 0;
+  text-align: left;
+  padding: calc(1.9 * var(--u)) calc(2.2 * var(--u));
+  border-radius: calc(.45 * var(--u));
+  /* Opaque enough to guarantee the contrast ratio over *any* frame of the
+     room, since the staff move and the light changes. A plate that is legible
+     on average is not legible. */
+  background: color-mix(in srgb, var(--navy, #10233f) 88%, transparent);
+  backdrop-filter: blur(calc(.45 * var(--u))) saturate(115%);
+  border: 1px solid color-mix(in srgb, var(--gold, #c9a227) 28%, transparent);
+  box-shadow: 0 calc(1 * var(--u)) calc(2.8 * var(--u)) rgba(0, 0, 0, .45);
+  color: var(--cream, #f4eee2);
+}
+
+/* The headline carries its own colour from the light-wall rules and does not
+   inherit the plate's, so it stayed navy-on-navy and read as a faint ghost
+   across the plate. Everything in here takes the plate's colour unless a rule
+   below deliberately softens it. */
+.deck:has(.deck-appscene[data-role='current']) .deck-layer[data-section='close'] .plate :is(h1, h2, h3, p, strong, em) {
+  color: inherit;
+}
+
+.deck:has(.deck-appscene[data-role='current']) .deck-layer[data-section='close'] .plate .slide-deck {
+  margin-inline: 0;
+  max-width: calc(38 * var(--u));
+  color: color-mix(in srgb, var(--cream, #f4eee2) 82%, transparent);
+}
+
 .deck-layer[data-section='close'] .plate .slide-credit { display: none; }
 
 /* ================================================================
