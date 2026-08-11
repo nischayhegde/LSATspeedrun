@@ -310,12 +310,30 @@ if (skipStage) {
         `solo case ${solo.session_id} is staged but ungraded`,
         `${solo.coaching?.mechanism || 'no grade was produced'}\n`
         + 'The sequence will play and submit, but the feedback beat will show the\n'
-        + 'grading placeholder instead of the coach. Re-run to try the call again.',
+        + 'grading placeholder instead of the coach. Re-run to try the call again.\n'
+        + '\n'
+        + 'If this machine has no TFY_API_KEY / TFY_URL it never will, and no login\n'
+        + 'changes that — the coach is called by the backend, not by the browser. Run\n'
+        + '`npm run capture-coaching` once on a machine where the gateway works and\n'
+        + 'commit backend/scripts/demo_fixtures/coaching.json; every machine then\n'
+        + 'stages this beat from that captured grade. See that folder\'s README.',
       )
     } else {
       ok(`solo case ${solo.session_id}: answer ${solo.answer_key}, `
         + `graded ${solo.coaching.grade}, fee ${solo.settled_payout ?? '?'}`)
+      // Say so when the payoff beat is running on the committed capture rather
+      // than on a grade this machine just produced. Both are real output from
+      // the same model on the same reasoning, so neither is a problem — but a
+      // presenter who does not know which one is on screen cannot tell that
+      // their gateway went down, and this is the one beat where that matters.
+      if (/^replayed the committed capture/.test(solo.coaching.mechanism || '')) {
+        note(`solo case grade came from ${'scripts/demo_fixtures/coaching.json'}`,
+          `${solo.coaching.mechanism}\n`
+          + 'This is the intended fallback and the slide is fine. If you expected a live\n'
+          + 'grade, your TFY_API_KEY / TFY_URL are not reaching the coach from here.')
+      }
     }
+    if (solo.coaching?.capture) note('coaching capture updated', `${solo.coaching.capture}\nCommit it.`)
   }
   // The same check for the verdict twin, which was not being made at all.
   //
@@ -342,6 +360,7 @@ if (skipStage) {
       ok(`verdict twin ${verdict.session_id}: graded ${verdict.coaching.grade}`
         + ` (${verdict.coaching.model || 'model unrecorded'})`)
     }
+    if (verdict.coaching?.capture) note('coaching capture updated', `${verdict.coaching.capture}\nCommit it.`)
   }
 }
 
