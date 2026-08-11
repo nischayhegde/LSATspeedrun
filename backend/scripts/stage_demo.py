@@ -449,18 +449,19 @@ def _stage_graded_twin(user: User, question: Question, *, live_model: bool) -> d
                 "model": attempt.coaching_model,
             }
         else:
-            # Named at this length because of what it looks like on the
-            # projector. The attempt stays `pending`, and the review screen
-            # polls a grade that is never coming — so the verdict beat plays as
-            # a thinking judge and an empty panel, indefinitely, rather than as
-            # an error anybody can read from the third row.
+            # No slide requests `{verdictSession}` as things stand, so this
+            # costs nothing on stage today and the note says so rather than
+            # crying wolf. What it would cost if one did is worth stating,
+            # because it is silent: the attempt stays `pending`, the review
+            # screen polls a grade that is never coming, and the beat plays as
+            # a thinking judge over an empty panel rather than as any kind of
+            # error a presenter could recognise from the front of a room.
             graded = {
-                "mechanism": f"UNGRADED — the coach refused four times ({failure_text})",
+                "mechanism": f"ungraded — the coach refused four times ({failure_text})",
                 "grade": None,
-                "presenter_warning": (
-                    "The verdict slide will show the grading spinner and never resolve. "
-                    "Configure TFY_API_KEY and TFY_URL and re-run, or set useStills: true "
-                    "in deck/demo.config.ts so that slide plays its captured still instead."
+                "presenter_note": (
+                    "No slide points at {verdictSession} today, so nothing on stage changes. "
+                    "Configure TFY_API_KEY and TFY_URL and re-run before pointing one at it."
                 ),
             }
 

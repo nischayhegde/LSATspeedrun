@@ -78,6 +78,15 @@ const warn = (text, hint) => {
   console.log(`  ! ${text}`)
   if (hint) console.log(hint.replace(/^/gm, '    '))
 }
+/**
+ * Below `warn`: something is not as intended, but nothing on stage changes
+ * today. Separate from `warn` so that the `!` marks stay worth reading — a
+ * report where everything is a warning is a report nobody reads to the end.
+ */
+const note = (text, hint) => {
+  console.log(`  \u00b7 ${text}`)
+  if (hint) console.log(hint.replace(/^/gm, '    '))
+}
 
 function die(message, hint) {
   console.error(`\nprepare-demo failed: ${message}`)
@@ -308,23 +317,29 @@ if (skipStage) {
         + `graded ${solo.coaching.grade}, fee ${solo.settled_payout ?? '?'}`)
     }
   }
-  // The same check for the verdict twin, which was not being made. An ungraded
-  // twin is the worse of the two: the solo sequence at least plays and shows a
-  // placeholder, whereas the verdict slide's whole content is the stored grade,
-  // so with none it renders a thinking judge over an empty panel and polls a
-  // result that is never coming. Silence here is how that reaches the room.
+  // The same check for the verdict twin, which was not being made at all.
+  //
+  // Reported rather than warned, and the distinction is deliberate: no slide
+  // requests `{verdictSession}` today — `demo-case-verdict-review` goes to the
+  // answer wall at /progress?tab=answers — so an ungraded twin currently costs
+  // nothing on stage. It stays staged and pinned because it is what a slide
+  // would point back at to show the post-submit verdict screen without waiting
+  // on a live model call, and it would fail badly if it did: the screen's whole
+  // content is the stored grade, so with none it renders a thinking judge over
+  // an empty panel and polls a result that never arrives.
+  //
+  // Saying "the verdict slide will break" when there is no such slide is how a
+  // presenter learns to scroll past this whole section.
   const verdict = stagedReport?.verdict
   if (verdict?.session_id) {
     if (verdict.coaching?.grade == null) {
-      warn(
-        `verdict session ${verdict.session_id} is staged but ungraded`,
+      note(`verdict twin ${verdict.session_id} is staged but ungraded`,
         `${verdict.coaching?.mechanism || 'no grade was produced'}\n`
-        + (verdict.coaching?.presenter_warning
-          ? `${verdict.coaching.presenter_warning}\n`
-          : 'The verdict slide will show the grading spinner and never resolve.\n'),
-      )
+        + 'No slide requests it today, so nothing on stage changes. It is pinned for a\n'
+        + 'slide that wants the post-submit verdict screen as a read; point one at\n'
+        + '{verdictSession} and this becomes a grading spinner that never resolves.')
     } else {
-      ok(`verdict session ${verdict.session_id}: graded ${verdict.coaching.grade}`
+      ok(`verdict twin ${verdict.session_id}: graded ${verdict.coaching.grade}`
         + ` (${verdict.coaching.model || 'model unrecorded'})`)
     }
   }
