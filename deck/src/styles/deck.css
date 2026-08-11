@@ -609,7 +609,7 @@
 .statement-pull {
   margin: calc(2.6 * var(--u)) 0 0;
   font-family: var(--font-display);
-  font-size: var(--t-lead);
+  font-size: var(--t-md);
   font-weight: var(--weight-display);
   letter-spacing: var(--track-display);
   line-height: 1;
