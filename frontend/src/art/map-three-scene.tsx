@@ -852,7 +852,7 @@ function pedestrianGround(root: THREE.Group): ClearanceCorridor[] {
     ground.push({
       points: way.points,
       closed: way.closed,
-      halfWidth: (way.width ?? 1.5) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM,
+      halfWidth: (way.width ?? 1.5) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + walkerHalfBeam(),
       label: 'walked',
     })
   }
@@ -860,7 +860,7 @@ function pedestrianGround(root: THREE.Group): ClearanceCorridor[] {
     ground.push({
       points: way.points,
       closed: way.closed,
-      halfWidth: (way.halfWidth ?? CROWD_FOOTWAY_HALF) + WALKER_HALF_BEAM,
+      halfWidth: (way.halfWidth ?? CROWD_FOOTWAY_HALF) + walkerHalfBeam(),
       label: 'walked',
     })
   }
@@ -1931,6 +1931,27 @@ function tintForRegion(region: MapRegionKey, record: InstancedBlockRecord, index
 const WALKER_HALF_BEAM = .16
 
 /**
+ * The same figure, read through a development-only override.
+ *
+ * This constant decides how much ground every setback in every plan reserves,
+ * so it cannot be A/B'd by editing the file: the two arms would land in two
+ * server lifetimes, and two lifetimes are two different worlds — the whole
+ * reason this map's numbers were untrustworthy for a week. The override lets
+ * `tools/map-qa/beam-arm.mjs` rebuild a district with the other value against
+ * the same crowd in the same page, minutes apart.
+ *
+ * Stripped in a production build: `import.meta.env.DEV` is a compile-time
+ * constant, so the branch folds away and the call inlines to the constant.
+ */
+function walkerHalfBeam() {
+  if (import.meta.env.DEV) {
+    const override = (globalThis as { __mapWalkerBeam?: unknown }).__mapWalkerBeam
+    if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override
+  }
+  return WALKER_HALF_BEAM
+}
+
+/**
  * The village footway beside a country lane: the two edges of the paving, and
  * the line the crowd walks down the middle of it, as offsets from the lane.
  *
@@ -1988,7 +2009,7 @@ function buildingCorridors(root: THREE.Group): ClearanceCorridor[] {
     corridors.push({
       points: way.points,
       closed: way.closed,
-      halfWidth: (way.halfWidth ?? .65) + WALKER_HALF_BEAM,
+      halfWidth: (way.halfWidth ?? .65) + walkerHalfBeam(),
       label: 'footway',
     })
   }
@@ -2342,7 +2363,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
     // walkable half-width ends — so a walker at the outer edge of the paving
     // still had its body over the steps. Leaving the beam as well is what makes
     // the margin a margin for a person rather than for a line on a plan.
-    const courtMargin = .3 + WALKER_HALF_BEAM * 2
+    const courtMargin = .3 + walkerHalfBeam() * 2
     const courtScale = Math.min(.84, (court.width - courtMargin) / 5.2, (court.depth - courtMargin) / 3.5)
     const courtShift = Math.max(0, Math.min(.55, court.depth / 2 - 3.5 * courtScale / 2 - .15))
     const building = createCourthouse(courtScale, definition.stone)
@@ -2540,7 +2561,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
      * on a bridge, so a lamp in the walking line is worth more frames there
      * than the same lamp anywhere else in the district.
      */
-    const walk = streetWidth(street.streetClass) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM
+    const walk = streetWidth(street.streetClass) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + walkerHalfBeam()
     const bridge = box([5.9, .2, (walk + .25) * 2], material(0x7b7770, .95), [CANAL_X, .13, street.position])
     root.add(bridge)
     if (index % 2 === 0) for (const side of [-1, 1]) {
