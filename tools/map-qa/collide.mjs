@@ -28,8 +28,15 @@ mkdirSync(dir, { recursive: true })
  * serialise it; everything it needs comes in through `settings`.
  */
 async function measure(settings) {
-  const { frames, cell, floorY, skin, shrink, rideOver } = settings
+  const { frames, cell, floorY, skin, shrink, rideOver, standoff } = settings
   const scene = window.__mapScene
+  /*
+   * The kerb standoff, switchable at runtime so its control is the same build
+   * in the same server lifetime rather than a second checkout. Comparing two
+   * lifetimes cannot distinguish a fix from this metric's unexplained mode
+   * structure; comparing two runs of one lifetime can.
+   */
+  if (standoff === 'off') for (const link of scene.crowd?.crossings ?? []) link.waitBack = 0
   // Under SwiftShader a frame is almost entirely rasterisation, and the
   // collision count never reads a pixel. Stubbing the draw makes a frame nearly
   // free without touching the simulation: nothing in `TrafficSim`, `Crowd` or
@@ -892,6 +899,7 @@ for (const key of keys) {
   }
   report[key] = await page.evaluate(measure, {
     frames: FRAMES,
+    standoff: process.env.MAPS_STANDOFF ?? 'on',
     cell: .14,
     floorY: .16,
     skin: .02,
