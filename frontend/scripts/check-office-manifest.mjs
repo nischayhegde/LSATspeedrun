@@ -81,27 +81,48 @@ if (new Set(environments.map((environment) => environment.identity)).size !== en
 environments.forEach((environment, index) => {
   if (!environment.centerpiece) fail(`tier ${environment.tier} has no centerpiece`)
   if (environment.density < 2 || (index > 0 && environment.density <= environments[index - 1].density)) fail(`tier ${environment.tier} furnishing density must increase from the previous office`)
-  if (environment.shift < 1 || environment.shift > 5) fail(`tier ${environment.tier} active staff limit must be between 1 and 5`)
+  // `staffOnShift` is a headcount on the floor, not a rota size, and it runs
+  // 1 at the shack to 30 at the nexus. The bound here used to be 1-5, which
+  // was true of an earlier manifest and has been failing on thirteen of the
+  // fifteen tiers since it stopped being. What is actually worth asserting is
+  // the property the scene depends on: the floor never empties, and growing
+  // the firm never removes people from it.
+  if (environment.shift < 1) fail(`tier ${environment.tier} has nobody on the floor`)
+  if (index > 0 && environment.shift < environments[index - 1].shift) {
+    fail(`tier ${environment.tier} puts fewer staff on the floor than tier ${environments[index - 1].tier}`)
+  }
 })
 
 const layoutStart = manifest.indexOf('export const OFFICE_LAYOUT_FAMILIES')
 const layoutEnd = manifest.indexOf('\n]', layoutStart)
 if (layoutStart < 0 || layoutEnd < 0) throw new Error('Could not isolate OFFICE_LAYOUT_FAMILIES')
 const layoutBody = manifest.slice(layoutStart, layoutEnd)
-const layoutFamilies = [...layoutBody.matchAll(/\{ key: '([^']+)', tiers: \[([^\]]+)\], stationInset: ([\d.]+), stationRows: \[([^\]]+)\], stationCant: \[([^\]]+)\] \}/g)]
+// A family is now one authored plan scaled by two numbers rather than a set of
+// hand-placed rows, so `stationInset`/`stationRows`/`stationCant` are gone and
+// `spread`/`reach` replace them. The regex below matched none of the current
+// entries, which is why this reported "found " with an empty tier list rather
+// than reporting a real gap: a check that cannot parse its input fails in a way
+// that looks like a data problem.
+const layoutFamilies = [...layoutBody.matchAll(/\{ key: '([^']+)', tiers: \[([^\]]+)\], spread: ([\d.]+), reach: ([\d.]+) \}/g)]
   .map((match) => ({
     key: match[1],
     tiers: match[2].split(',').map((value) => Number(value.trim())),
-    inset: Number(match[3]),
-    rows: match[4].split(',').map((value) => Number(value.trim())),
-    cant: match[5].split(',').map((value) => Number(value.trim())),
+    spread: Number(match[3]),
+    reach: Number(match[4]),
   }))
+if (!layoutFamilies.length) fail('OFFICE_LAYOUT_FAMILIES parsed to nothing; this check no longer understands its shape')
 const layoutTiers = layoutFamilies.flatMap((family) => family.tiers).sort((left, right) => left - right)
 if (JSON.stringify(layoutTiers) !== JSON.stringify(expectedTiers)) fail(`layout families must cover every tier exactly once; found ${layoutTiers.join(', ')}`)
 if (layoutFamilies.some((family) => family.tiers.length < 2)) fail('every layout family must be reusable across at least two office tiers')
-layoutFamilies.forEach((family) => {
-  if (family.rows.length !== 3 || family.cant.length !== 3) fail(`${family.key} must define exactly three staff rows and three angles`)
-  if (family.inset < 1.5 || family.inset > 3.5) fail(`${family.key} station inset is outside the supported room envelope`)
+layoutFamilies.forEach((family, index) => {
+  for (const [name, value] of [['spread', family.spread], ['reach', family.reach]]) {
+    if (!(value > 0) || value > 1) fail(`${family.key} ${name} is ${value}; it scales the authored plan and must be within (0, 1]`)
+  }
+  // The plan opens out as the firm grows. A later family that took less floor
+  // than an earlier one would make an office upgrade look like a downgrade.
+  if (index > 0 && (family.spread < layoutFamilies[index - 1].spread || family.reach < layoutFamilies[index - 1].reach)) {
+    fail(`${family.key} takes less floor than ${layoutFamilies[index - 1].key}`)
+  }
 })
 
 const tierCatalog = pythonList('FIRM_TIERS')
