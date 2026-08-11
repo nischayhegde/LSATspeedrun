@@ -11,7 +11,9 @@ param(
     [ValidateRange(5, 59)]
     [int]$PollSeconds = 10,
     [ValidateRange(5, 30)]
-    [int]$BootstrapTimeoutMinutes = 15
+    [int]$BootstrapTimeoutMinutes = 15,
+    [ValidateRange(0, 2048)]
+    [int]$MaxNewFileMegabytes = 25
 )
 
 Set-StrictMode -Version Latest
@@ -92,6 +94,56 @@ function Assert-StagedContentSafe {
         throw "Refusing to commit possible secret files: $($blocked -join ', ')"
     }
     Invoke-External -FilePath $GitPath -ArgumentList @("diff", "--cached", "--check")
+}
+
+# `git add --all` below stages whatever the ignore list did not catch, and the
+# ignore list has been wrong three times: ~810 MB and ~420 MB of agent scratch
+# were caught by hand, and a 27 MB run directory was committed. A release is a
+# few hundred KB of source, so measure the additions rather than trusting the
+# list. This runs before anything is pushed or any AWS resource is touched, so
+# stopping here costs one re-run and nothing else.
+function Assert-StagedAdditionsBounded {
+    param(
+        [string]$GitPath,
+        [string]$RepoRoot,
+        [int]$MaxMegabytes
+    )
+    if ($MaxMegabytes -le 0) {
+        return
+    }
+    $addedPaths = @(& $GitPath diff --cached --name-only --diff-filter=A)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not inspect staged additions."
+    }
+    if ($addedPaths.Count -eq 0) {
+        return
+    }
+    # A path git cannot be resolved on disk is skipped rather than fatal: this is
+    # a size guard, and it must not be the reason a good deploy fails.
+    $measured = @(
+        $addedPaths | ForEach-Object {
+            $item = Get-Item -LiteralPath (Join-Path $RepoRoot $_) -ErrorAction SilentlyContinue
+            if ($item -and -not $item.PSIsContainer) {
+                [pscustomobject]@{ Path = $_; Bytes = [int64]$item.Length }
+            }
+        }
+    )
+    $totalBytes = [int64](@($measured | Measure-Object -Property Bytes -Sum).Sum)
+    if ($totalBytes -lt ([int64]$MaxMegabytes * 1MB)) {
+        return
+    }
+    $largest = @(
+        $measured |
+            Sort-Object -Property Bytes -Descending |
+            Select-Object -First 10 |
+            ForEach-Object { "  {0,9:N1} MB  {1}" -f ($_.Bytes / 1MB), $_.Path }
+    )
+    throw (
+        "Refusing to commit {0:N1} MB of new files across {1} path(s); the limit is {2} MB." -f
+            ($totalBytes / 1MB), $addedPaths.Count, $MaxMegabytes
+    ) + "`nThese were swept in by ``git add --all``. Add the scratch among them to .gitignore," +
+        " or pass -MaxNewFileMegabytes if the release really is this large.`nLargest additions:`n" +
+        ($largest -join [Environment]::NewLine)
 }
 
 function Get-AwsJson {
@@ -545,6 +597,7 @@ try {
     Write-Step "Staging and validating the release"
     Invoke-External -FilePath $gitExecutable -ArgumentList @("add", "--all")
     Assert-StagedContentSafe -GitPath $gitExecutable
+    Assert-StagedAdditionsBounded -GitPath $gitExecutable -RepoRoot $repoRoot -MaxMegabytes $MaxNewFileMegabytes
     Invoke-External -FilePath $gitExecutable -ArgumentList @("diff", "--cached", "--stat")
     & $gitExecutable diff --cached --quiet
     $initialStagedStatus = $LASTEXITCODE

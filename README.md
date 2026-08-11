@@ -106,3 +106,5 @@ The guarded AWS sandbox workflow validates, commits, pushes, migrates, deploys, 
 ```
 
 It requires the existing sandbox stack, GitHub access, AWS CLI, and managed sandbox credentials. Review `git status` first because the command includes all non-ignored workspace changes.
+
+Because it stages everything, it refuses to continue if the new files it swept in come to 25 MB or more, and prints the largest of them. That normally means scratch is missing from `.gitignore`; add it there. If a release genuinely carries that much new material, raise the limit with `-MaxNewFileMegabytes`. The check happens before anything is pushed or any AWS resource is touched.

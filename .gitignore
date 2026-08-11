@@ -108,6 +108,7 @@ frontend/dist-qa*/
 # but not ignored is pushed to main and re-fetched onto the 1 GiB build box.
 deck/node_modules/
 deck/dist/
+deck/.deck-qa/
 deck/.deck-shots/
 deck/tsconfig.tsbuildinfo
 
@@ -129,3 +130,31 @@ deck/public/art/
 
 # Local dev worktrees symlink this to a shared install; the trailing-slash rule above does not match a symlink.
 frontend/node_modules
+
+# Every scratch directory named above is a dot directory at the repository root,
+# and so is every one found in the eight sibling worktrees on this machine. The
+# list has now missed three: ~810 MB and ~420 MB were caught by hand just before
+# a release, and `.qa-run/` (27 MB) was committed and had to be untracked. A name
+# has to be added at the moment the directory is created, by whoever is deep in
+# something else, or `deploy-sandbox.ps1` sweeps it into main with `git add --all`.
+#
+# So the default at the root is inverted: a directory whose name begins with a
+# dot is scratch unless something says otherwise. This is safe because an ignore
+# rule cannot untrack anything. `.qa-tmp/` and `.verify/` are the only root dot
+# directories with tracked contents — the parity fixtures and the benchmark
+# harnesses — and both are already ignored by name above, so their tracked files
+# stay tracked and nothing about them changes. Dot *files* are not matched, since
+# the trailing slash restricts the rule to directories, so `.qa-report.md`,
+# `.firm-audit.md` and the rest of the write-ups stay visible as before.
+#
+# It is anchored to the root on purpose, so scratch below the root stays listed
+# by name — `deck/.deck-qa/` and `deck/.deck-shots/` above, `frontend/.rig-*`
+# further up. A nested dot directory is not reliably scratch: a published
+# `frontend/public/.well-known/` is the kind of thing the mobile client asks for,
+# and it would be a bad thing to lose silently.
+/.*/
+
+# Shared configuration that has to be versioned if it is ever added. Nothing
+# lives here today; the exception is written down now so that the rule above
+# cannot one day swallow CI without anyone noticing.
+!/.github/
