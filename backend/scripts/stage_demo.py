@@ -816,6 +816,36 @@ def _stage_solo_case(user: User, question: Question, *, capture_coaching: bool =
     mechanism = "kept — already graded, and a staged grade outlives a rehearsal"
     model = attempt.coaching_model
     capture_note = None
+
+    # `--capture-coaching` has to call the coach, so it re-grades a beat that is
+    # already graded rather than reading the stored payload back out.
+    #
+    # This was a real hole: the capture below sits inside the `coaching is None`
+    # branch, so the first person to run `npm run capture-coaching` captured the
+    # verdict twin and nothing else — the solo case was already graded from an
+    # earlier staging, so the branch never ran and the centrepiece got no
+    # fixture. Which is the beat the fixture exists for.
+    #
+    # It re-grades rather than capturing what is stored because a stored grade
+    # cannot be told apart from one a local stub wrote, and the whole value of
+    # this file is that everything in it came out of a real coach. `main()`
+    # already refuses the flag without a configured provider, so this call is
+    # against the gateway the operator has right now. If it fails, the existing
+    # grade stays exactly where it was: a capture attempt must not cost the demo
+    # a grade it already had.
+    if coaching is not None and capture_coaching:
+        try:
+            regraded, meta = generate_attempt_coaching(attempt)
+            coaching = regraded
+            model = meta.get("model") or "stage-pregrade"
+            mechanism = "re-graded by the real coaching pipeline so the grade could be captured"
+            capture_note = _fixture_store(question, attempt.selected_label, SOLO_REASONING, regraded, "solo")
+        except CoachingProviderError as failure:
+            mechanism = (
+                f"kept — already graded, and the re-grade for --capture-coaching failed ({failure}), "
+                "so nothing was captured and nothing was lost"
+            )
+
     if coaching is None:
         # Graded even under `--no-model`, which the twin above does not do, and
         # the difference is deliberate. `--no-model` exists so `stage-demo:fast`
