@@ -764,12 +764,13 @@ h1, h2, h3 { letter-spacing: -.035em; }
 }
 /* Off the words it is sitting on.
    Click-through was half the answer to a fixed panel on a scrolling page; the
-   other half is reading, and the sweep found this card lying across page text
-   at almost every width — at 1024 on the Dashboard it covered half of the
-   heading "Accuracy by question type". `economy-ledger.tsx` sets this while
-   the page is scrolling and while a fine pointer is within 24px of the card,
-   which are the two signals that someone is trying to read what is under it.
-   It leaves along its own short edge rather than fading in place: a
+   other half is reading, and measuring what sits under this card found it over
+   real text at almost every route and width — 35% of its own area over the
+   heading "Accuracy by question type" at 1024, 69% over the mega-litigation
+   line at 1180. `economy-ledger.tsx` sets this while the page is scrolling and
+   while the card has come to rest on top of words, and clears it when a fine
+   pointer reaches for the corner or when one of the four figures moves. It
+   leaves along its own short edge rather than fading in place: a
    half-transparent panel over text is harder to read past than an opaque one. */
 .economy-ledger[data-yield] { translate: calc(-100% - 18px) 0; opacity: 0; }
 @media (prefers-reduced-motion: reduce) {
