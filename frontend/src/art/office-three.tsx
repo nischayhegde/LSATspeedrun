@@ -1134,6 +1134,51 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
           addMesh(root, new THREE.BoxGeometry(level >= 10 ? .1 : .18, .16, 10.35), level >= 10 ? brass : darkWood, [x, 6.46, .42])
         }
       }
+
+      /*
+       * The ceiling itself.
+       *
+       * Tier 0 has had a plank ceiling since it was built. Every tier above it
+       * had the *trim* of a ceiling — a cornice at 6.35 and, from tier 3, a run
+       * of coffer beams at 6.46 — and no surface between them, so the room's
+       * envelope was open from the wall head at 6.75 upward and the beams hung
+       * in the clear colour. Measured with `tools/light-qa/office-audit.mjs`,
+       * which fires a grid of rays straight up from the floor and counts the
+       * ones that meet anything above 5.5 m: tier 0 answered 100%, and tiers 1,
+       * 5, 11 and 14 all answered 7 to 9% — and that residue was the tops of
+       * the tall bookcases, not a ceiling.
+       *
+       * It is one plane, and it sits above the beams rather than between them so
+       * the coffer rhythm still reads as relief against it. The finish follows
+       * the same three-stage progression the walls do — plaster, then panelled,
+       * then stone — because a ceiling that stays plaster into a stone-and-metal
+       * tower is the tell that it was added as an afterthought.
+       */
+      /*
+       * Lighter than the walls, which is both what a ceiling is and what this
+       * one needs to be to read at all. It faces down, so the only sources
+       * reaching it are the ambient term and the *ground* half of the
+       * hemisphere — a dark brown — and a ceiling painted from the wall colour
+       * came back as a black lid: geometrically closed and visually still a
+       * hole. A real ceiling is the brightest surface in a room because it is
+       * the one collecting bounce off the floor and the window.
+       */
+      const ceilingTone = new THREE.Color(look.wall)
+        .lerp(new THREE.Color(international ? 0xd7dcda : 0xdcd6c6), international ? .52 : executive ? .46 : .38)
+      const ceiling = addMesh(
+        root,
+        // Keyed on the width, because the cache outlives the room and the room
+        // is wider at every tier.
+        constantGeometry(`PlaneGeometry:${roomWidth},9.6`, () => new THREE.PlaneGeometry(roomWidth, 9.6)),
+        sharedStandard({ color: ceilingTone.getHex(), roughness: international ? .74 : .88, metalness: international ? .12 : 0 }),
+        [0, 6.72, .64],
+        [Math.PI / 2, 0, 0],
+      )
+      // A ceiling that casts is a ceiling between the room and its own fill:
+      // `ceilingFill` is a rect-area source at 6.1 and the key rakes in from
+      // the window, so the only thing an overhead caster can do here is put a
+      // lid of shadow on the room it was added to complete.
+      ceiling.castShadow = false
     }
 
     phase('shell')
