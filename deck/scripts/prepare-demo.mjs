@@ -20,9 +20,10 @@
  *      driven run's credited answers, and writes all of them into
  *      `demo.config.ts`.
  *   4. Proves, in a headless browser, that a localhost page can frame the
- *      signed-in app — and then tells the presenter the two things they must
- *      still do by hand in their *own* browser, because a Playwright profile
- *      is not the profile that will be on the projector.
+ *      signed-in app — and then reminds the presenter of the one thing a
+ *      Playwright profile cannot do for them: open the deck on the `localhost`
+ *      spelling. Nothing else is manual; the deck signs itself in and the tour
+ *      is silenced server-side (`DEMO-NOTES.md` §10).
  *
  * Flags: --help, --skip-seed, --skip-stage, --email <address>.
  */
@@ -32,6 +33,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO_ROOT = resolve(DECK_DIR, '..')
@@ -43,10 +46,6 @@ const APP_ORIGIN = 'http://localhost:5173'
 const HARNESS_PORT = 5179
 /** `TOUR_STORAGE_KEY` in frontend/src/guided-tour.tsx. Verified 2026-08-10. */
 const TOUR_KEY = 'lsat-tycoon:guided-tour:v6'
-/** Where `tools/map-qa/lib.mjs` finds Playwright and the arm64 Chromium. */
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-const CHROME = process.env.DECK_CHROME
-  || `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
 
 const HELP = `
 prepare-demo — seed the demo account and wire the deck to it.
@@ -460,14 +459,7 @@ if (!appAnswered) {
   framed.note = `skipped: ${APP_ORIGIN} is not up`
   warn(framed.note)
 } else {
-  let chromium = null
-  try {
-    ;({ chromium } = await import(PLAYWRIGHT))
-  } catch {
-    framed.note = `skipped: no Playwright at ${PLAYWRIGHT} (set DECK_PLAYWRIGHT to override)`
-    warn(framed.note)
-  }
-  if (chromium) {
+  {
     framed.attempted = true
     // Served without a host argument so the socket is dual-stack: whichever of
     // ::1 / 127.0.0.1 the browser picks for `localhost`, it lands here. The
@@ -480,10 +472,7 @@ if (!appAnswered) {
     await new Promise((resolveListen) => server.listen(HARNESS_PORT, resolveListen))
     let browser = null
     try {
-      browser = await chromium.launch({
-        executablePath: CHROME,
-        args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-      })
+      browser = await launchChromium()
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
       await page.goto(`${APP_ORIGIN}/login`, { waitUntil: 'domcontentloaded' })
       await page.locator('button', { hasText: 'Enter local development firm' }).click()
@@ -523,26 +512,26 @@ if (!appAnswered) {
 
 console.log(`
 ${'-'.repeat(72)}
-DO THIS IN THE BROWSER YOU WILL PRESENT FROM
+IN THE BROWSER YOU WILL PRESENT FROM
 
-The check above ran in a throwaway Playwright profile. It proves the path
-works; it cannot sign in your Chrome. Two manual steps, once per machine:
+One thing, and it is about the address bar rather than about signing in:
 
-  1. Open  ${APP_ORIGIN}/login  and click "Enter local development firm".
-     That sets the lsat_session / lsat_csrf cookies the framed pages need.
+  Open the deck at  http://localhost:5180  — spelled "localhost".
+  http://127.0.0.1:5180 renders identically and will silently sign the
+  iframes out: the browser treats 127.0.0.1 and localhost as different
+  sites, and the app's cookies are SameSite=Lax.
 
-  2. Still on that tab, open devtools (Cmd-Opt-J) and paste:
+There is deliberately no sign-in step and no devtools paste any more. Both
+were invisible per-profile state that worked on the machine they were set up
+on and failed on a fresh profile, in a guest window, or on a borrowed laptop
+— which is a fair description of presentation morning. The deck signs itself
+in during preflight through /v1/auth/dev, and stage_demo.py marks the demo
+account as already oriented server-side, so the 21-step guided tour is
+silenced for every browser at once. See DEMO-NOTES.md §10.
 
-       localStorage.setItem('${TOUR_KEY}', 'complete')
-
-     That stops the 21-step guided tour from opening inside a slide's iframe.
-     localStorage is per-origin, so it has to be run on ${APP_ORIGIN},
-     not on the deck's own origin.
-
-  3. Open the deck at  http://localhost:5180  — spelled "localhost".
-     http://127.0.0.1:5180 renders identically and will silently sign the
-     iframes out: the browser treats 127.0.0.1 and localhost as different
-     sites, and the app's cookies are SameSite=Lax.
+(The check above still signs in and sets '${TOUR_KEY}'
+in its own throwaway Playwright profile. That is the harness proving the
+framed path works, not a step anybody has to repeat by hand.)
 ${'-'.repeat(72)}`)
 
 // ---------------------------------------------------------------------------
