@@ -340,6 +340,9 @@ const steps: TourStep[] = [
     title: 'Where the firm is the first call.',
     body: 'The Districts tab opens on a board of 38 districts across five regions of the map. Signing one makes your firm standing counsel to its institutions — the duty roster, the shopkeepers’ association, the port authority. This is not a client retainer and it pays no fee per case.',
     visual: 'board',
+    // The board this step is describing, behind the card, rather than the
+    // Upgrades grid the previous step left on screen.
+    route: '/firm?tab=connections',
     facts: [
       'Standing holds your reputation up from below, so a bad week costs less than it would',
       'A branch you are already paid to keep comes off the daily lease — district counsel seats are the thing that reduces rent',
@@ -355,6 +358,7 @@ const steps: TourStep[] = [
     eyebrow: 'CONNECTIONS',
     title: 'A network is not a perk. It is a key.',
     body: 'A connection card in the same tab — the local bar association, the chamber of commerce, the board network — carries a small share of every case fee, but that is the least of what it does. What you are buying is the districts it unlocks, and the card names them and ticks the ones you have already signed.',
+    route: '/firm?tab=connections',
     facts: [
       '"Show on the map" flies to the region and marks every district that connection opened',
       'Their crests hang on the office wall, and hovering one names the same districts in the same two colours',
@@ -369,6 +373,7 @@ const steps: TourStep[] = [
     eyebrow: 'STAFF, CLIENTS, RIVALS',
     title: 'Three tabs you can walk from one end to the other.',
     body: 'The firm floor on the Staff tab is not a picture: every figure standing on it is a button that finds that person’s card, clears whichever filter was hiding it, and marks it. Nothing is bought from the roster — price, requirement and button stay together on the card.',
+    route: '/firm?tab=staff',
     facts: [
       'Clients set the fee every case pays, and the bar on each card shows how much is banked per win against how much waits for the close',
       'A reputation slip puts a client on hold and someone else bills at their rate until it recovers',
@@ -502,10 +507,20 @@ export function GuidedTour({ oriented, focusMode = false }: { oriented: boolean;
   // doing what it was asked to do — `open` is now only ever set by a click, on
   // the offer below or on "Replay tutorial" in either menu — so the navigation
   // is consented rather than imposed.
+  // A step's route may carry a query, because three of the Firm chapter's steps
+  // describe one particular tab of six and the page reads which tab from
+  // `?tab=`. Comparing the whole route against `pathname` alone would never
+  // match one of those and the effect would navigate on every render, so the
+  // comparison is against pathname plus search — and a step with no query still
+  // matches whatever query the page is already carrying, which is what keeps
+  // the tour from resetting a tab the reader chose themselves.
   useEffect(() => {
-    if (!open || !step) return
-    if (step.route && location.pathname !== step.route) navigate(step.route, { replace: true })
-  }, [location.pathname, navigate, open, step])
+    if (!open || !step?.route) return
+    const [wantPath, wantQuery] = step.route.split('?')
+    const here = location.pathname === wantPath
+      && (!wantQuery || location.search.replace(/^\?/, '') === wantQuery)
+    if (!here) navigate(step.route, { replace: true })
+  }, [location.pathname, location.search, navigate, open, step])
 
   useEffect(() => {
     if (!open || step.kind !== 'spotlight') {
