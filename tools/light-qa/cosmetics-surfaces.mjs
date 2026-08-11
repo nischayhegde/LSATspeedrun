@@ -89,6 +89,24 @@ await page.addInitScript(() => {
     let meshes = 0
     let triangles = 0
     let colour = 0
+    /*
+     * A digest of the vertices themselves, and the reason it is here.
+     *
+     * Counts and colours were the whole signature, and they missed a piece.
+     * `female:3` — the cut added so that a woman's "Full" is not a second copy
+     * of her own default — is the same sphere at the same segment counts,
+     * displaced differently, plus one accent ellipsoid where the old cut also
+     * had one. Mesh count, triangle count and the summed material colour are
+     * therefore *byte-identical* between the two cuts, and the probe reported
+     * the new hair as never arriving while the stills plainly showed it. Any
+     * item that changes a shape without changing how many triangles are in it
+     * had the same hole under it.
+     *
+     * Positions are taken in the mesh's own local space and weighted by index,
+     * so it is sensitive to where the vertices are and to their order, and
+     * unaffected by the pose the surface happens to be caught in.
+     */
+    let vertices = 0
     const box = new THREE.Box3()
     root.updateWorldMatrix(true, true)
     root.traverse((node) => {
@@ -97,21 +115,37 @@ await page.addInitScript(() => {
       const index = node.geometry.getIndex()
       const position = node.geometry.getAttribute('position')
       triangles += index ? index.count / 3 : (position ? position.count / 3 : 0)
+      if (position) {
+        for (let at = 0; at < position.count; at += 1) {
+          vertices = (vertices + (at + 1) * (Math.abs(position.getX(at))
+            + Math.abs(position.getY(at)) * 3 + Math.abs(position.getZ(at)) * 7)) % 1e9
+        }
+      }
       if (node.material && node.material.color) colour = (colour + node.material.color.getHex()) % 0xffffffff
       box.expandByObject(node)
     })
     const round = (value) => Number(value.toFixed(3))
     return {
-      meshes, triangles, colour,
+      meshes, triangles, colour, vertices: round(vertices),
       box: [round(box.min.x), round(box.min.y), round(box.min.z), round(box.max.x), round(box.max.y), round(box.max.z)].join(),
     }
   }
 })
 
-async function equip(key) {
+/**
+ * One piece on, everything else back to this firm's issue.
+ *
+ * `PATCH` is partial by design, so sending one category leaves the previous
+ * item in place. Measuring like that compares each piece against the
+ * accumulation of every piece before it: once the pinstripe suit had been
+ * equipped, all six ties read as +6 meshes against the baseline whether or not
+ * they arrived, so a tie that reached nothing would still have passed. The whole
+ * look is restated for every measurement instead.
+ */
+async function equip(key, defaults = {}) {
   const category = CATEGORY_OF[key]
   if (!category) throw new Error(`${key} is not in the suite`)
-  return page.evaluate(async ({ category, key }) => {
+  return page.evaluate(async ({ category, key, defaults }) => {
     // The same header `api.ts` sends on every non-GET: without it the endpoint
     // answers 403 and the probe would report the whole suite as broken.
     const csrf = document.cookie.split('; ').find((row) => row.startsWith('lsat_csrf='))?.split('=')[1]
@@ -119,7 +153,7 @@ async function equip(key) {
       method: 'PATCH',
       headers: { 'content-type': 'application/json', ...(csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {}) },
       credentials: 'include',
-      body: JSON.stringify({ selection: { [category]: key } }),
+      body: JSON.stringify({ selection: { ...defaults, [category]: key } }),
     })
     const body = await response.json().catch(() => null)
     const error = body?.error
@@ -128,7 +162,7 @@ async function equip(key) {
       wearing: body?.cosmetics?.selection ?? null,
       error: error ? (error.code ?? error.message ?? JSON.stringify(error)) : null,
     }
-  }, { category, key })
+  }, { category, key, defaults })
 }
 
 /** The office hero's live rig, and a still of it. */
@@ -259,7 +293,24 @@ async function mapFigure(label) {
 }
 
 const same = (a, b) => Boolean(a) && Boolean(b) && a.meshes === b.meshes && a.triangles === b.triangles
-  && a.colour === b.colour && a.box === b.box
+  && a.colour === b.colour && a.vertices === b.vertices && a.box === b.box
+
+/**
+ * The same comparison without the bounding box, for the map.
+ *
+ * The portrait rig is parked — the context is opened with `reducedMotion:
+ * 'reduce'`, so the idle does not breathe and two captures of the same look are
+ * the same pose. The map's counsel walks a route, so its box is different every
+ * time it is photographed whatever it is wearing, and including it reported the
+ * five pieces this firm was already wearing as changing the map figure and not
+ * the portrait. Mesh count, triangle count, the summed material colour and the
+ * local-space vertex digest are all pose-independent, and between them they
+ * catch all three kinds of piece: one that adds geometry moves the counts, one
+ * that only recolours moves the sum, and one that changes a shape without
+ * changing how much of it there is moves the digest.
+ */
+const sameShape = (a, b) => Boolean(a) && Boolean(b) && a.meshes === b.meshes
+  && a.triangles === b.triangles && a.colour === b.colour && a.vertices === b.vertices
 
 try {
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
@@ -287,7 +338,7 @@ try {
     return Object.fromEntries(categories.map((category) => [category.key, category.default]))
   })
   report.defaults = defaults
-  for (const [category, key] of Object.entries(defaults)) await equip(key)
+  for (const key of Object.values(defaults)) await equip(key, defaults)
   const basePortrait = mapOnly ? null : await portrait('baseline')
   const baseMap = await mapFigure('baseline')
   report.baseline = { portrait: basePortrait?.own ?? null, map: baseMap, wearing: defaults }
@@ -298,7 +349,7 @@ try {
   const findings = []
   for (const key of items) {
     const wanted = mapItems.includes(key)
-    const equipped = await equip(key)
+    const equipped = await equip(key, defaults)
     if (equipped.status !== 200) {
       findings.push(`${key}: PATCH returned ${equipped.status} ${equipped.error ?? ''}`)
       continue
@@ -312,13 +363,18 @@ try {
       const shot = await portrait(key)
       row.portrait = shot.own
       row.portraitMovedFromDefault = !same(shot.own, basePortrait?.own)
+      // Judged by the map's own metric as well, because the two surfaces can
+      // only be held to agree on a question both are able to answer: a piece
+      // that changes proportions and nothing else moves the portrait's box and
+      // is invisible to a pose-independent census.
+      row.portraitShapeMoved = !sameShape(shot.own, basePortrait?.own)
       // A piece must not reach the seeded cast, who are other people.
       row.cast = shot.all.filter((entry) => entry.role !== 'counsel').length
     }
     if (wanted) {
       const figure = await mapFigure(key)
       row.map = figure
-      row.mapMovedFromDefault = !same(figure, baseMap)
+      row.mapMovedFromDefault = !sameShape(figure, baseMap)
     }
     report.items[key] = row
     const isDefault = defaults[CATEGORY_OF[key]] === key
@@ -330,10 +386,11 @@ try {
     console.log(
       `${key.padEnd(26)} portrait ${String(row.portrait?.meshes ?? '-').padStart(3)}m/${String(row.portrait?.triangles ?? '-').padStart(6)}t`
       + `  map ${String(row.map?.meshes ?? '-').padStart(3)}m/${String(row.map?.triangles ?? '-').padStart(5)}t`
+      + `  v${String(row.map?.vertices ?? row.portrait?.vertices ?? '-').padStart(12)}`
       + `  ${flags.length ? flags.join(' ') : 'ok'}${isDefault ? ' (this firm\'s default)' : ''}`,
     )
   }
-  for (const [category, key] of Object.entries(defaults)) await equip(key)
+  for (const key of Object.values(defaults)) await equip(key, defaults)
   report.findings = findings
   console.log(`\n${findings.length} findings`)
   for (const line of findings) console.log(`  ${line}`)
@@ -349,7 +406,7 @@ try {
  */
 function figureAgrees(row) {
   if (row.portrait === undefined || row.map === undefined) return true
-  return row.portraitMovedFromDefault === row.mapMovedFromDefault
+  return row.portraitShapeMoved === row.mapMovedFromDefault
 }
 
 console.log(`\nwrote ${REPORTS}/cosmetics-surfaces-${tag}.json and stills in ${SHOTS}`)
