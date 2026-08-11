@@ -485,6 +485,18 @@ type HairProfile = {
    *  lifts off the crown. Zero on both is a centre-weighted round cut. */
   sweep: number
   lift: number
+  /**
+   * How far down the sphere the shell is swept, in half-turns. Defaults to the
+   * .86 every cut was authored against.
+   *
+   * It exists for the one cut that hangs below where that sweep reaches. The
+   * shell's edge is not its bottom ring — `rimBack` fades the surface into the
+   * skull, and the fade needs about .17 of head below the rim to finish — so a
+   * cut whose rim is close to the last ring shows that ring as a hard hem. The
+   * segment counts do not depend on it, so a longer sweep is the same vertex
+   * count and the same triangles; what it buys is somewhere for the tuck to go.
+   */
+  arc?: number
 }
 
 /**
@@ -512,6 +524,23 @@ const HAIR_PROFILES: Record<string, HairProfile> = {
   'female:1': { crown: .145, sides: .175, nape: .175, rimFront: .285, rimSide: -.145, rimBack: -.20, sweep: .18, lift: .035 },
   // Long and full, well past the jaw.
   'female:2': { crown: .275, sides: .225, nape: .315, rimFront: .245, rimSide: -.30, rimBack: -.50, sweep: .30, lift: .095 },
+  /*
+   * Longer and heavier again, and the only cut here a seed cannot roll.
+   *
+   * It exists because the wardrobe offers four haircuts and a female player was
+   * being shown three. Her figure is built from a fixed seed — 1, from her
+   * gender, since the player is the one unseeded counsel — and that seed rolls
+   * variant 2, so "Signature" *is* the long full cut and the "Full" entry, which
+   * also asked for variant 2, handed her a second copy of the hair she already
+   * had. Measured rather than reasoned: `tools/light-qa/cosmetics-surfaces.mjs`
+   * reported `hair_full` as byte-identical to her default on both surfaces.
+   *
+   * The fix has to leave her default alone — changing what "Signature" resolves
+   * to would change the figure of every player who has never opened the
+   * wardrobe — so "Full" gets somewhere further to go instead. Nothing else can
+   * reach it: the seed rolls `% 3`.
+   */
+  'female:3': { crown: .315, sides: .28, nape: .365, rimFront: .245, rimSide: -.35, rimBack: -.60, sweep: .26, lift: .105, arc: .96 },
 }
 
 function hairProfile(gender: CharacterGender, variant: number) {
@@ -529,7 +558,7 @@ function referenceHairGeometry(gender: CharacterGender, variant: number) {
     // actually ends; anything past it is tucked inside the skull and never
     // seen, so the sweep only has to be long enough for the longest profile
     // rather than tuned per cut.
-    const geometry = new THREE.SphereGeometry(1, Math.min(28, radial), Math.min(18, height), 0, Math.PI * 2, 0, Math.PI * .86)
+    const geometry = new THREE.SphereGeometry(1, Math.min(28, radial), Math.min(18, height), 0, Math.PI * 2, 0, Math.PI * (profile.arc ?? .86))
     const positions = geometry.getAttribute('position') as THREE.BufferAttribute
     for (let index = 0; index < positions.count; index += 1) {
       const nx = positions.getX(index)
@@ -708,7 +737,8 @@ const SALT_ACCESSORY = 0x2545f491
 const SALT_STANCE = 0x7feb352d
 
 /**
- * Three cuts per character, each a shape of its own.
+ * Three cuts a seed can roll, and a fourth the wardrobe can ask for, each a
+ * shape of its own.
  *
  * The shell above already differs per variant, so nothing here scales one mesh
  * into three. What is left is the accent that finishes each silhouette: the
@@ -745,7 +775,10 @@ const HAIR_PIVOT = .30
  * It comes out as: the male crop 0, the male side parting .30, the male full cut
  * .52, the bob .40, the female signature .68 and the long full cut 1. That
  * ordering is the brief — longer hair especially — arrived at from the geometry
- * rather than asserted over it.
+ * rather than asserted over it. The wardrobe's longest cut, `female:3`, is
+ * longer again and the clamp holds it at 1: past shoulder length the amount is
+ * set by how much a rotation may move the shell before it leaves the shoulders,
+ * not by the hair.
  */
 export function hairSwing(gender: CharacterGender, variant: number) {
   const profile = hairProfile(gender, variant)
@@ -787,6 +820,13 @@ function addHair(head: THREE.Group, gender: CharacterGender, hair: THREE.Materia
     }
     return node
   }
+  if (variant === 3) {
+    // The same gathered mass, carried lower and wider so the difference from
+    // the cut above is legible in silhouette and not only in length. One mesh,
+    // as every other variant's accent is.
+    ellipsoid(node, hair, [0, y(-.015), -.49], [.215, .265, .17], 18)
+    return node
+  }
   // Signature: the side parting's own fringe, laid across the forehead on the
   // same side the shell's mass is carried.
   if (gender === 'male') {
@@ -824,11 +864,18 @@ const NECKWEAR_COLORS: Record<string, number> = {
   tie_cravat: 0xe6d9bd,
 }
 
-/** Which of `addHair`'s three silhouettes an item asks for, and whether it
- *  recolors. `hair_signature` is absent on purpose: it keeps the seed's own. */
-const HAIRSTYLES: Record<string, { variant: number; color?: number }> = {
+/**
+ * Which of `addHair`'s silhouettes an item asks for, and whether it recolors.
+ * `hair_signature` is absent on purpose: it keeps the seed's own.
+ *
+ * `female` overrides `variant` for a woman's figure, and only `hair_full` needs
+ * it: a male player's seed rolls variant 0, so his four entries are already four
+ * cuts, while a female player's rolls variant 2 and this entry was a duplicate
+ * of her own default. See `female:3` in `HAIR_PROFILES`.
+ */
+const HAIRSTYLES: Record<string, { variant: number; female?: number; color?: number }> = {
   hair_cropped: { variant: 1 },
-  hair_full: { variant: 2 },
+  hair_full: { variant: 2, female: 3 },
   hair_distinguished: { variant: 0, color: 0xb4aea6 },
 }
 
@@ -1097,7 +1144,9 @@ export function buildStylizedCounsel(gender: CharacterGender, tier: number, opti
   const buildVariance = 1 + ((subHash(paletteSeed, SALT_BUILD) % 7) - 3) * .018
   const faceWidthVariance = .96 + (subHash(paletteSeed, SALT_FACE_W) % 9) * .01
   const faceHeightVariance = .97 + (subHash(paletteSeed, SALT_FACE_H) % 7) * .009
-  const hairVariant = options.hairVariant ?? hairstyle?.variant ?? subHash(paletteSeed, SALT_HAIRSTYLE) % 3
+  const hairVariant = options.hairVariant
+    ?? (gender === 'female' ? hairstyle?.female ?? hairstyle?.variant : hairstyle?.variant)
+    ?? subHash(paletteSeed, SALT_HAIRSTYLE) % 3
   const accessoryRoll = subHash(paletteSeed, SALT_ACCESSORY) % 5
   const authoredEyewear = options.eyewear && options.eyewear !== 'none'
     ? `eyewear_${options.eyewear}`
