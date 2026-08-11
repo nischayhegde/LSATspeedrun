@@ -55,10 +55,11 @@ export type GameAsset = {
    */
   payout_mult?: number
   /**
-   * Connections only: the districts this network lets you put on retainer, and
-   * whether each is currently held. The office relationship wall reads this so a
-   * seal can say which network it is and how much of the map that network has
-   * actually been used for.
+   * Connections only: the districts this network lets you sign as standing
+   * counsel, and whether each is currently held. Read by the connection card in
+   * the Firm tab, which names them, and by the office relationship wall, whose
+   * seals say which network they are and how much of the map each has actually
+   * been used for.
    */
   districts?: Array<{ key: string; name: string; held: boolean }>
   districts_held?: number

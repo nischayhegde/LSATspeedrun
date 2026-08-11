@@ -242,6 +242,52 @@
   font-weight: 600;
 }
 
+/* What a connection opened. Sits at the foot of the card, under whatever the
+   item's mode had to say about money, because a network is both things and the
+   fee share is the smaller half.
+
+   The two chip colours are the crest's own: a signed district glows the same
+   amber the seal's tab lights with and the map uses for a held plot, and an
+   unsigned one stays the dark wood it is carved from. So the card and the
+   object it describes agree at a glance, from either distance. */
+.office-readout-districts {
+  margin: 0;
+  padding-top: .36rem;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.office-readout-districts p {
+  margin: 0 0 .3rem;
+  color: #7d8d97;
+  font-size: .68rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.office-readout-districts ul {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .22rem;
+  list-style: none;
+}
+
+.office-readout-districts li {
+  padding: .1rem .3rem;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 2px;
+  color: #9fb0ba;
+  font-size: .68rem;
+  line-height: 1.35;
+}
+
+.office-readout-districts li.is-held {
+  border-color: rgba(242, 206, 133, .5);
+  color: #f2ce85;
+  background: rgba(242, 206, 133, .1);
+}
+
 /* The actual fix for the ceiling, sitting right under the line that names it.
    Only ever rendered while the card is pinned — see `PassiveBody`'s `pinned`
    prop — because that is the only state in which `.office-readout-card` (via

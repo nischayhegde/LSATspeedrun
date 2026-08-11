@@ -206,6 +206,7 @@ export function OfficeEarningsReadout({ target, onDismiss }: Props) {
           : item.mode === 'casework'
             ? <CaseworkBody item={item} baseFee={baseFee} clientName={clientName} />
             : <ViewBody item={item} />}
+        <DistrictsOpened item={item} />
       </div>
     </div>
   )
@@ -361,6 +362,39 @@ function CaseworkBody({ item, baseFee, clientName }: { item: OfficeItemEconomics
       </dl>
       <p className="office-readout-cap">Answer questions to collect it</p>
     </>
+  )
+}
+
+/**
+ * What a connection opened, which is the thing its crest is on the wall for.
+ *
+ * A network carries a small fee share — the local bar association is +2% — so
+ * it classified as `casework` and the card described it as two percent of a
+ * case fee and nothing else. That is true and it is the least of what the
+ * purchase did: the network is the only reason a district's institutions will
+ * sign the firm as standing counsel, and the crest already carries a wooden tab
+ * per district that lights when one is signed. This says in words what those
+ * tabs say in enamel, so the wall can be read from a chair as well as from
+ * across the room.
+ *
+ * Rendered under every mode rather than as a fourth one, because a network is
+ * genuinely both things at once and the modes describe how an item pays.
+ */
+function DistrictsOpened({ item }: { item: OfficeItemEconomics }) {
+  if (!item.districts.length) return null
+  const held = item.districts.filter((district) => district.held).length
+  return (
+    <div className="office-readout-districts">
+      <p>
+        Opens {item.districts.length === 1 ? 'one district' : `${item.districts.length} districts`}
+        {held > 0 && <span> &middot; {held} signed</span>}
+      </p>
+      <ul>
+        {item.districts.map((district) => (
+          <li key={district.name} className={district.held ? 'is-held' : ''}>{district.name}</li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

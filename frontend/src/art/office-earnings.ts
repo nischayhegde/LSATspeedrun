@@ -36,6 +36,11 @@ export type OfficeItemLike = {
   benefit: string
   passive_hourly?: number
   payout_mult?: number
+  /** Connections only: the districts this network lets the firm sign as
+   *  standing counsel, and whether each is signed. Carried through because a
+   *  network's fee share is the smaller half of what it bought — see
+   *  `OfficeItemEconomics.districts`. */
+  districts?: Array<{ key: string; name: string; held: boolean }>
 }
 
 export type OfficeItemEconomics = {
@@ -47,6 +52,16 @@ export type OfficeItemEconomics = {
   hourly: number
   /** Fraction added to the firm's case-fee multiplier: `.04` is +4%. */
   payoutMult: number
+  /**
+   * The districts a connection opened, if this item is one.
+   *
+   * A network's fee share is real but small — the local bar association is
+   * +2% — and it is not what the player bought the network for. What they
+   * bought is which districts will sign the firm as standing counsel, and a
+   * card that quotes only the 2% describes the least of it. Empty for
+   * everything that is not a connection.
+   */
+  districts: Array<{ name: string; held: boolean }>
 }
 
 /**
@@ -58,7 +73,8 @@ export function officeItemEconomics(item: OfficeItemLike): OfficeItemEconomics {
   const hourly = Math.max(0, Math.floor(item.passive_hourly ?? 0))
   const payoutMult = Math.max(0, item.payout_mult ?? 0)
   const mode: OfficeItemMode = hourly > 0 ? 'passive' : payoutMult > 0 ? 'casework' : 'view'
-  return { key: item.key, name: item.name, benefit: item.benefit, mode, hourly, payoutMult }
+  const districts = (item.districts ?? []).map((district) => ({ name: district.name, held: district.held }))
+  return { key: item.key, name: item.name, benefit: item.benefit, mode, hourly, payoutMult, districts }
 }
 
 /**
@@ -88,6 +104,10 @@ export function officeGroupEconomics(items: OfficeItemLike[]): OfficeItemEconomi
     mode: hourly > 0 ? 'passive' : payoutMult > 0 ? 'casework' : 'view',
     hourly,
     payoutMult,
+    // Flattened rather than taken from the lead: only connections carry
+    // districts and each has its own crest, so in practice this is one item's
+    // list, but a shared object would legitimately open all of them.
+    districts: parts.flatMap((part) => part.districts),
   }
 }
 
