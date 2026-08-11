@@ -773,10 +773,24 @@
     transform var(--mo-4) var(--ease-in-out);
 }
 
+/* The resting state, and therefore the one that matters most: the recession
+   happens in the first two seconds and the room then looks at this for the
+   next twenty.
+  
+   It used to rest at .88rem, which is 14.08px — under the 16px floor this
+   sheet names as the legibility bar in the `cohort-split` note, and the
+   smallest type anywhere in the deck. Measured across all 24 slides it was the
+   only run below 16px that a member of the audience is expected to read. The
+   comment above it said "a de-emphasised answer choice is still a thing the
+   back of the room can see", which was the right intent and the wrong number.
+  
+   So the recession is carried where it costs nothing: the choices still drop
+   2.4px against the stem, still indent, and are still washed back — three
+   signals, none of which require the type to go under the floor. */
 .fig-rc-choices[data-receded='true'] {
-  font-size: .88rem;
-  gap: .22em;
-  opacity: .44;
+  font-size: 1rem;
+  gap: .26em;
+  opacity: .52;
   transform: translateX(.7em);
 }
 
@@ -800,17 +814,38 @@
      clipped bottom edge. */
   flex: 0 1 5.2em;
   min-height: 0;
+  display: flex;
+  align-items: center;
   padding: .65em .8em;
   border: 1px solid var(--on-field-dim);
   overflow: hidden;
+  /* `flex-grow` as well as `flex-basis`: the focused state now grows into the
+     card's spare height rather than declaring a percentage of it, and
+     `flex-basis` alone would step to that in one frame. Both are animatable
+     numbers, so the box still opens rather than appearing open. */
   transition:
+    flex-grow var(--mo-4) var(--ease-in-out),
     flex-basis var(--mo-4) var(--ease-in-out),
     border-color var(--mo-3) var(--ease-out),
     box-shadow var(--mo-3) var(--ease-out);
 }
 
+/* Sized for the sentence it holds, not for the emphasis it carries.
+   At 44% the focused box was 110px tall around two lines of ~28px, so a third
+   of the card was a lit, ring-shadowed, conspicuously empty rectangle — the
+   single largest piece of dead space in the deck, and directly under the one
+   thing on the card the audience is supposed to read. The ring and the blue
+   are what mark this box as the focus; its height was never doing that job.
+
+   Grown rather than sized, because the first attempt at this only moved the
+   hole: at a fixed 32% the box fitted its sentence and the 70px it gave up
+   reappeared between the box and the coach rule, which `margin-top: auto`
+   holds to the bottom of the card. A gap between two elements has no
+   explanation; slack inside a lit, ringed box that is visibly *the answer
+   area* does. So the box takes whatever the card has spare and centres its
+   sentence, and the card is left with no unaccounted space anywhere. */
 .fig-rc-box[data-focused='true'] {
-  flex-basis: 44%;
+  flex: 1 1 auto;
   border-color: var(--blue-lit);
   box-shadow: 0 0 0 3px var(--blue-lit);
 }
@@ -1300,10 +1335,59 @@
   height: auto;
   display: flex;
   flex-direction: column;
-  gap: 1.7em;
+  /* The one gap in the box that carries meaning: the break between the stem
+     and the answers. It used to be an empty rule element in the middle of a
+     flat list of ten; now that the two groups are real elements it is simply
+     the gap between them. */
+  gap: 2.2em;
   padding: 2.5em 2.2em 2.5em 2.6em;
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
   transition: opacity 240ms var(--ease-out);
+}
+
+.fig-mf-question-stem {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1em;
+}
+
+/* Five answers, lettered and hung.
+   The letters are the whole reason this box stopped reading as a skeleton: a
+   column of bars is a component that has not loaded, and the same column with
+   A–E down its left edge is a multiple-choice question. The rules are indented
+   past the letter rather than starting under it, which is how a real choice
+   list sets and what stops the letters reading as a separate column of marks. */
+.fig-mf-question-choices {
+  display: flex;
+  flex-direction: column;
+  gap: .95em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fig-mf-question-choices li {
+  display: grid;
+  grid-template-columns: 1.5em 1fr;
+  align-items: center;
+  gap: .3em;
+}
+
+/* Set at close to full strength, and deliberately stronger than the rules they
+   letter. These five glyphs are the only thing in the box carrying the message
+   "this is a question"; at the 58% they were first given they were present in
+   the DOM and absent on the projector, which is the same as not having done
+   it. The rules stay faint — the card is still subordinate to the method
+   docking against it — so the contrast between letter and rule is what does
+   the reading. */
+.fig-mf-question-choices i {
+  font-family: var(--font-pixel);
+  font-style: normal;
+  font-size: 1.02em;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .04em;
+  color: color-mix(in srgb, currentColor 88%, transparent);
 }
 
 /* Tinted rather than faded. `opacity` composites the whole element including

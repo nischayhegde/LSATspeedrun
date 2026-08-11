@@ -58,10 +58,26 @@
      division between `who the cohort was` and `what the study measured` is
      what the composition wants anyway. */
   justify-content: space-between;
-  gap: clamp(1.4rem, 4vh, 3.2rem);
+  gap: clamp(1rem, 2.6vh, 2.2rem);
   /* Clearance for the fragment line, which sits in the slide's own grid row
-     directly beneath and would otherwise meet the last verdict. */
-  padding-bottom: clamp(.25rem, 1.4vh, 1rem);
+     directly beneath and would otherwise meet the last verdict.
+  
+     Sized for the *last row's verdict*, not for the run above it. Rows are
+     `align-items: center`, and the video row's verdict is two lines — the
+     `not correlated` numeral and the `LSAC's words, not ours` attribution
+     under it — so it stands proud of the row's own height by half its
+     overhang in both directions. At the old .25–1rem the bottom line of the
+     last verdict crossed into the fragment row beneath and photographed as a
+     clipped string, which is the one annotation on the slide whose whole job
+     is to be readable when the claim is challenged from the floor.
+  
+     Measured rather than guessed, because the first attempt at this made it
+     worse: `.figure-stage` clips (deliberately — see `deck.css`), the figure's
+     content was 427px inside a 379px stage at 1080p, and *adding* bottom
+     padding pushed another 22px of it under the knife. The 48px had to come
+     out of the figure, not be padded around, so it is taken off the four
+     vertical measures below and this is left at roughly what it was. */
+  padding-bottom: clamp(.6rem, 1.8vh, 1.2rem);
 }
 
 .fig-cs-lede {
@@ -87,8 +103,13 @@
   position: relative;
   /* The hero object, and sized like one. At the old 4.4vh the bar was a rule
      with a fill in it; the retreat has to be the largest movement on the slide
-     or the room does not register that anything left. */
-  height: clamp(2.4rem, 8vh, 5.6rem);
+     or the room does not register that anything left.
+  
+     Trimmed from 8vh to 6.6vh to help pay back the figure's 48px of overflow.
+     It is still comfortably the largest object in the frame — the next tallest
+     thing is a 1.35rem run — so the retreat still reads; what it is not any
+     longer is tall enough to push the video row's attribution off the stage. */
+  height: clamp(2.2rem, 6.6vh, 4.6rem);
   border: 1px solid currentColor;
   transition: opacity var(--mo-3) var(--ease-out);
 }
@@ -142,12 +163,12 @@
 
 .fig-cs-inputs {
   margin: 0;
-  padding-top: clamp(1rem, 2.8vh, 2.2rem);
+  padding-top: clamp(.8rem, 2.2vh, 1.7rem);
   border-top: 1px solid currentColor;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: clamp(.9rem, 2.6vh, 1.9rem);
+  gap: clamp(.8rem, 2vh, 1.5rem);
 }
 
 .fig-cs-input {

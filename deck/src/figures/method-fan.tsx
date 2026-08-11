@@ -80,18 +80,38 @@ const DOCK = { x: 8.5, y: 22.5 } as const
  * and it is the only place on the slide where the method being handed over is
  * shown actually being *used*.
  */
-const CARD_RULES: ReadonlyArray<{ width: number; mark?: number }> = [
-  { width: 92 },
-  { width: 84, mark: 58 },
-  { width: 88 },
-  { width: 56 },
-  { width: 0 },
-  { width: 62 },
-  { width: 48 },
-  { width: 71 },
-  { width: 55 },
-  { width: 64 },
+const CARD_LINES: ReadonlyArray<{ role: 'stem' | 'choice'; width: number; mark?: number }> = [
+  { role: 'stem', width: 92 },
+  { role: 'stem', width: 84, mark: 58 },
+  { role: 'stem', width: 88 },
+  { role: 'stem', width: 56 },
+  { role: 'choice', width: 62 },
+  { role: 'choice', width: 48 },
+  { role: 'choice', width: 71 },
+  { role: 'choice', width: 55 },
+  { role: 'choice', width: 64 },
 ]
+
+/**
+ * The one thing on this card that is a real glyph.
+ *
+ * Ten evenly spaced grey bars are the universal drawing of a *loading skeleton*,
+ * and no number of them fixes that — the previous pass tried, going from three
+ * rules to ten on the reasoning that "a question card is allowed to be as tall
+ * as a question", and the box still photographed as a component that had failed
+ * to fetch. Which is the founders' "unfinished", exactly.
+ *
+ * What separates a greeked question from a skeleton is not how many lines it
+ * has but whether it has *structure*: a stem block, then five answers, each one
+ * lettered. So the choices get their real letters. That is structural labelling
+ * rather than editorial copy — the same category as the ledger's `01`, and not
+ * the sort of string `slides/types.ts` requires to live in the registry — so
+ * the card can read as an LSAT item without this figure inventing a question,
+ * which it must not do: the one on slide 6 is a specific item whose credited
+ * answer is load-bearing, and a second, different question two slides later
+ * would be read as the same one.
+ */
+const CHOICE_LETTERS = ['A', 'B', 'C', 'D', 'E'] as const
 
 export function MethodFan({ spec, active, reduced }: FigureBody<MethodFanFigure>) {
   const phase = usePhase(active, reduced, MARKS)
@@ -108,23 +128,29 @@ export function MethodFan({ spec, active, reduced }: FigureBody<MethodFanFigure>
       {/* The question card the survivor docks against. Outline only — the card
           itself is slide 6's job, and this slide is about what arrives beside it. */}
       <div className="fig-mf-question" style={{ opacity: phase >= 4 ? 1 : 0 }}>
-        {CARD_RULES.map((rule, index) => (
-          rule.width === 0
-            ? <span className="fig-mf-question-gap" key={index} />
-            : (
-              <span className="fig-mf-question-rule" key={index} style={{ width: `${rule.width}%` }}>
-                {rule.mark === undefined ? null : (
-                  // The drag itself. It runs left to right over the stem after
-                  // the method has docked, at a hand's speed rather than an
-                  // interface's, because the point is that a person did it.
-                  <span
-                    className="fig-mf-mark"
-                    style={{ width: phase >= 5 ? `${rule.mark}%` : '0%' }}
-                  />
-                )}
-              </span>
-            )
-        ))}
+        <div className="fig-mf-question-stem">
+          {CARD_LINES.filter((line) => line.role === 'stem').map((rule, index) => (
+            <span className="fig-mf-question-rule" key={index} style={{ width: `${rule.width}%` }}>
+              {rule.mark === undefined ? null : (
+                // The drag itself. It runs left to right over the stem after
+                // the method has docked, at a hand's speed rather than an
+                // interface's, because the point is that a person did it.
+                <span
+                  className="fig-mf-mark"
+                  style={{ width: phase >= 5 ? `${rule.mark}%` : '0%' }}
+                />
+              )}
+            </span>
+          ))}
+        </div>
+        <ol className="fig-mf-question-choices">
+          {CARD_LINES.filter((line) => line.role === 'choice').map((rule, index) => (
+            <li key={index}>
+              <i>{CHOICE_LETTERS[index]}</i>
+              <span className="fig-mf-question-rule" style={{ width: `${rule.width}%` }} />
+            </li>
+          ))}
+        </ol>
       </div>
 
       {methods.map((method, index) => {
