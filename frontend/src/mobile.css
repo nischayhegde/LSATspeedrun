@@ -495,11 +495,11 @@ body {
      640px block and a phone stops matching that the moment it is turned
      sideways — an iPhone in landscape is 844 CSS pixels wide and still has no
      cursor, and measured there they came straight back at 32 and 33px. */
-  .chapter-play-button,
-  .wr-locate,
-  .wr-acquire,
-  .wr-target-detail button,
-  .quest-grid article button { min-height: 44px; }
+  /* These five moved to the sheets that set their heights —
+     `rival-war-room.css` and `narrative.css` — because from here they never
+     applied. Both are route sheets injected after this one and both rules are
+     a single class, so the later declaration won and the buttons measured 38
+     and 32px on a real phone the whole time this block claimed otherwise. */
 }
 
 /* -------------------------------------------------------------------------

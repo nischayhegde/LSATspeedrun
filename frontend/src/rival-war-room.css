@@ -100,6 +100,17 @@
 .wr-locate { margin-top: 7px; min-height: 32px; color: #9fb6bb; background: #1c2f3a; box-shadow: inset -2px -2px #12222b; }
 .wr-locate:hover { color: var(--pixel-paper); background: #26414f; }
 
+/* The finger floor, here rather than in mobile.css, which is where it was and
+   where it never once applied. mobile.css is the entry sheet; this is a route
+   sheet, injected after it, and both rules are one class deep — so the later
+   one wins and these stayed 38 and 32px on every phone and tablet. Nothing
+   about the two rules said so, which is why it survived: the rule existed,
+   read correctly, and lost. A floor belongs in the sheet that sets the height
+   it is a floor for. */
+@media (pointer: coarse) {
+  .wr-acquire, .wr-locate, .wr-operation button, .wr-target-detail button { min-height: 44px; }
+}
+
 .wr-operation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); gap: 11px; }
 .wr-operation { padding: 14px 15px 15px; display: grid; align-content: start; gap: 8px; border: 3px solid #0a121b; background: #1a2a34; box-shadow: inset -3px -3px #101c24; }
 .wr-operation header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
