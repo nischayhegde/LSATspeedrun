@@ -62,11 +62,23 @@ const MAX_BYTES = 10_000_000
  * `index.html` back for `/v1/me`, which is a 200 with an HTML body — the app
  * reads that as a signed-in reader whose game state is an empty object and
  * renders a screen no real visitor ever sees.
+ *
+ * `apiOrigin` overrides that with a proxy to a real backend, which is the only
+ * way to measure a route behind the sign-in wall. A 401 sends every protected
+ * screen to `/login`, so a run without this measures the login page no matter
+ * which route it asked for — see `tools/perf/FINDINGS.md`. The proxy hop is
+ * loopback and outside the emulated link, but it is on the same side of the
+ * throttle as production's origin fetch, so a request the app makes still
+ * blocks the app exactly as it does in the browser.
  */
-export function serveLikeProd(root, { compress = 'auto', api = true } = {}) {
+export function serveLikeProd(root, { compress = 'auto', api = true, apiOrigin = null } = {}) {
   const cache = new Map()
   const server = createServer(async (req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0])
+    if (apiOrigin && url.startsWith('/v1/')) {
+      await proxy(req, res, apiOrigin)
+      return
+    }
     if (api && url.startsWith('/v1/')) {
       res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify({ detail: 'unauthorized', code: 'unauthorized' }))
@@ -100,6 +112,52 @@ export function serveLikeProd(root, { compress = 'auto', api = true } = {}) {
     } catch { res.writeHead(404); res.end('no') }
   })
   return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ server, port: server.address().port })))
+}
+
+/**
+ * Forwards one `/v1` call to a real backend, headers and body both ways.
+ *
+ * Cookies matter more than anything else here: the session cookie is how an
+ * authenticated run stays authenticated, and `set-cookie` is how it becomes
+ * authenticated in the first place, so both are passed through untouched. The
+ * hop-by-hop headers are dropped because they describe this connection rather
+ * than the message.
+ */
+const HOP_BY_HOP = new Set([
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+  'te', 'trailer', 'transfer-encoding', 'upgrade', 'host',
+])
+
+async function proxy(req, res, origin) {
+  const chunks = []
+  for await (const chunk of req) chunks.push(chunk)
+  const headers = {}
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (!HOP_BY_HOP.has(k.toLowerCase()) && v != null) headers[k] = v
+  }
+  // The backend must not answer compressed: this server compresses on the way
+  // out and would otherwise hand the browser a doubly-encoded body.
+  headers['accept-encoding'] = 'identity'
+  try {
+    const upstream = await fetch(new URL(req.url, origin), {
+      method: req.method,
+      headers,
+      body: chunks.length ? Buffer.concat(chunks) : undefined,
+      redirect: 'manual',
+    })
+    const out = {}
+    upstream.headers.forEach((value, key) => {
+      if (key.toLowerCase() === 'content-encoding' || key.toLowerCase() === 'content-length') return
+      out[key] = value
+    })
+    const setCookie = upstream.headers.getSetCookie?.() ?? []
+    if (setCookie.length) out['set-cookie'] = setCookie
+    res.writeHead(upstream.status, out)
+    res.end(Buffer.from(await upstream.arrayBuffer()))
+  } catch (err) {
+    res.writeHead(502, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ detail: `api proxy failed: ${err.message}`, code: 'proxy_failed' }))
+  }
 }
 
 /** How a run should describe the wire it measured over. */
