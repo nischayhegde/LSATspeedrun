@@ -389,7 +389,14 @@ _TASK_PARALLEL = re.compile(
 )
 _TASK_STRENGTHEN = re.compile(
     r"\bstrengthens?\b|\bstrengthening\b|\bjustif\w+\b|\bmost helps? to (?:support|justify)\b"
-    r"|\bprovides? (?:the )?(?:most|best|strongest) support\b|\bsupports? the (?:argument|conclusion|claim)\b"
+    # What is being supported has to be the argument. "The statements above
+    # provide the most support for holding that Sandra would disagree with
+    # Taylor" is the standard point-at-issue stem, and reading it as a
+    # strengthen question put a causal approach on it whenever the stimulus
+    # happened to mention a cause.
+    r"|\b(?:provides?|lends?) (?:the )?(?:most|best|strongest|greatest)? ?support (?:for|to) "
+    r"(?:the |this )?(?:argument|conclusion|claim|hypothesis|position|prediction|proposal|view|theory|explanation)\b"
+    r"|\bsupports? the (?:argument|conclusion|claim)\b"
 )
 _TASK_WEAKEN = re.compile(
     r"\bweaken\w*\b|\bcasts? doubt\b|\bundermin\w+\b|\bcalls? into question\b"
@@ -402,9 +409,20 @@ _TASK_EXPLAIN = re.compile(
 _TASK_EVALUATE = re.compile(
     r"\bevaluat\w+\b|\bmost (?:useful|helpful|important) to (?:know|determine|establish)\b"
 )
+# Point at issue, which has no approach of its own and is here to be held apart
+# from strengthen. "The editors' dialogue provides the most support for the
+# claim that they disagree about whether" is asking what the two speakers
+# differ on, not what would help the argument.
+_TASK_POINT_AT_ISSUE = re.compile(
+    r"\bdisagree\w*\b|\bagree with each other\b|\bpoint at issue\b|\bat issue between\b"
+    r"|\bcommitted to (?:disagreeing|agreeing)\b"
+)
 _TASK_EXCEPT = re.compile(r"\bexcept\b")
 _TASK_ROLE = re.compile(
-    r"\brole\b|\bfigures? in\b|\bmethod\b|\btechnique\b|\bstrateg\w+\b"
+    # Plurals included, because "plays which one of the following roles in the
+    # argument" and "uses which one of the following techniques" are the two
+    # commonest phrasings of exactly this question.
+    r"\broles?\b|\bfigures? in\b|\bmethods?\b|\btechniques?\b|\bstrateg\w+\b"
     r"|\bargument proceeds\b|\bproceeds by\b|\bresponds? to\b|\bresponse to\b"
     r"|\bin which one of the following ways\b|\bfunction of\b|\bpart of the argument\b"
 )
@@ -445,11 +463,13 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
 # "keep it only if the argument collapses" — throws away the credited answer.
 _TASK_SUFFICIENT_ASSUMPTION = re.compile(
     r"\bif assumed\b|\bif (?:it is )?assumed\b|\ballows? the conclusion\b|\benables? the conclusion\b"
+    r"|\bfollows? logically if\b|\bproperly (?:drawn|inferred|concluded) if\b"
+    r"|\bassumption that would (?:permit|allow|enable)\b"
+    r"|\bif which one of the following is assumed\b"
 )
 
 # A causal claim, as opposed to the word "cause" appearing somewhere. Read on
-# the stimulus, where the claim lives, and on the stem, where the task
-# sometimes names it outright.
+# the stimulus, where the claim lives.
 _CAUSAL_CLAIM = re.compile(
     r"\bcaus(?:e|es|ed|ing|al|ally|ation)\b"
     r"|\bdue to\b|\bbecause of\b|\bowing to\b"
@@ -463,6 +483,19 @@ _CAUSAL_CLAIM = re.compile(
     r"|\bexplains? why\b|\bexplanation for\b|\breason (?:for|why)\b"
 )
 
+# The same thing read on the stem, which needs to be narrower. A stem is about
+# an argument, so its verbs of consequence are usually about reasoning rather
+# than about the world: "the reasoning leading to the prediction" and "the
+# argument is structured to lead to which conclusion" are not causal questions,
+# and "the author's reason for mentioning" is a role question. What is left is
+# the vocabulary that can only be about causation.
+_CAUSAL_TASK = re.compile(
+    r"\bcaus(?:e|es|ed|ing|al|ally|ation)\b"
+    r"|\bdue to\b|\bbecause of\b|\bowing to\b|\bresponsible for\b"
+    r"|\bbrought about\b|\bbrings? about\b|\battributable to\b|\bgives? rise to\b"
+    r"|\beffects? (?:of|on)\b|\bno effect\b|\bexplains? why\b|\breason why\b"
+)
+
 # Conditional operators, and deliberately not bare "all" or "no". A universal
 # claim does translate to a conditional, so the quantified forms are kept — but
 # as quantifiers with something quantified ("all X are Y", "no X is Y"), not as
@@ -472,9 +505,15 @@ _CAUSAL_CLAIM = re.compile(
 _CONDITIONAL_OPERATOR = re.compile(
     r"\bif\b|\bunless\b|\bwhenever\b|\bprovided that\b|\bas long as\b"
     r"|\brequir(?:e|es|ed|ement)\b|\bnecessary\b|\bsufficient\b|\bprerequisite\b"
+    r"|\bessential (?:to|for)\b|\bindispensable (?:to|for)\b"
     r"|\ball\s+(?:\w+\s+){0,2}?(?:are|is|was|were|have|has|must|will|can|do|does)\b"
     r"|\bno\s+\w+\s+(?:is|are|was|were|can|will|has|have|ever|may|would|could)\b"
-    r"|\bevery\b|\ban(?:y|yone|ything|body)\s+(?:who|that|which)\b|\bnone of\b"
+    r"|\bevery\b|\bnone of\b"
+    r"|\ban(?:y|yone|ything|body)\s+(?:who|whom|that|which|with|without|lacking|having)\b"
+    # "Without trust there can be no meaningful connection" is a conditional
+    # written the other way round, and it is how the LSAT states a necessary
+    # condition without using the word.
+    r"|\bwithout\s+\w+(?:\s+\w+){0,2},?\s+(?:there (?:can|will|would|is|are)|cannot|could not|nobody|no one|nothing)\b"
     r"|\bonly\s+(?:if|those|when|by|a\s+person|people\s+who)\b|\bin order (?:to|for)\b"
 )
 
@@ -486,12 +525,17 @@ _CONDITIONAL_OPERATOR = re.compile(
 # question about function.
 _RC_PURPOSE = re.compile(
     r"\bpurpose\b|\bfunction\b|\bin order to\b|\bserves? (?:primarily )?to\b"
-    r"|\borganiz\w+\b|\bstructure(?:d)?\b|\brole\b|\bwhy the author\b"
+    r"|\borganiz\w+\b|\bstructure(?:d)?\b|\bwhy the author\b"
+    # "Role" only where the passage's own furniture is what has the role. Read
+    # bare it also matches "the role that Wheatley played in the evolution of
+    # the form", which is a question about the subject matter.
+    r"|\broles?\b(?=[^.?]*\b(?:passage|paragraph|sentence|line|lines|quotation|reference|discussion|example|statement)\b)"
     r"|\bprimarily (?:in order )?to\b|\bmost probably (?:in order )?to\b"
 )
 _RC_MAIN_POINT = re.compile(
-    r"\bmain (?:point|idea|concern|focus)\b|\bprimary purpose\b|\bcentral (?:point|idea|claim|thesis|argument)\b"
-    r"|\bprimarily concerned\b|\bbest title\b|\btitle for the passage\b"
+    r"\bmain (?:point|idea|concern|focus|conclusion|thesis)\b|\bprimary purpose\b"
+    r"|\bcentral (?:point|idea|claim|thesis|argument)\b"
+    r"|\bprimarily concerned\b|\btitles?\b"
     r"|\bmost accurately (?:expresses|states|summarizes) the\b|\bpassage as a whole\b"
 )
 # The author's or a party's stance, asked about by the question. This is the
@@ -573,13 +617,14 @@ def _task_tags(question: Question) -> frozenset[str]:
             tags.add("attribution")
         return frozenset(tags)
 
+    disputed = bool(_TASK_POINT_AT_ISSUE.search(stem))
     if _TASK_INFERENCE.search(labelled) or stored == "inference":
         tags.add("inference")
     if _TASK_PRINCIPLE.search(labelled) or stored == "principle":
         tags.add("principle")
     if _TASK_PARALLEL.search(labelled) or stored == "parallel reasoning":
         tags.add("parallel")
-    if _TASK_STRENGTHEN.search(labelled) or stored == "strengthen":
+    if (_TASK_STRENGTHEN.search(labelled) or stored == "strengthen") and not disputed:
         tags.add("strengthen")
     if _TASK_WEAKEN.search(labelled) or stored == "weaken":
         tags.add("weaken")
@@ -599,7 +644,13 @@ def _task_tags(question: Question) -> frozenset[str]:
         tags.add("necessary_assumption")
     elif _TASK_SUFFICIENT_ASSUMPTION.search(stem):
         tags.add("sufficient_assumption")
-    if _CAUSAL_CLAIM.search(stem):
+        # Supplying the missing premise is not inferring from the premises
+        # given, and "the conclusion follows logically if which one of the
+        # following is assumed" says both. The scope-and-force procedure is
+        # written for proving an answer from the stimulus, so the chain gets
+        # this question and the proof reading does not.
+        tags.discard("inference")
+    if _CAUSAL_TASK.search(stem):
         tags.add("causal_stem")
     return frozenset(tags)
 

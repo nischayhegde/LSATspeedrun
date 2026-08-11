@@ -337,10 +337,119 @@ def test_main_does_not_match_remain_mainly_or_domain(stem):
         ("Which one of the following most accurately expresses the conclusion of the argument?", True),
         ("Which one of the following most accurately expresses the conclusion of the ethicist's argument?", True),
         ("The main conclusion of the argument is that", True),
+        # Plurals, which are how the LSAT actually asks this. Reading "role" and
+        # "technique" in the singular dropped 70 genuine method questions.
+        ("The statement that food capacity has grown plays which one of the following roles in the argument?", True),
+        ("In countering the original conclusion the reasoning above uses which one of the following techniques?", True),
+        (
+            "The rejection by the meteorologist of the statistician's conclusion employs which one of the "
+            "following techniques of argumentation?",
+            True,
+        ),
     ],
 )
 def test_the_word_conclusion_is_not_a_conclusion_question(stem, expected):
     assert ("role_map" in _candidate_keys(lr(stem))) is expected
+
+
+# ---------------------------------------------------------------------------
+# Verbs of consequence in a stem are usually about the reasoning
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # "Lead to" and "leading to" in a stem are about where an argument goes.
+        "The argument is structured to lead to which one of the following conclusions?",
+        "Which one of the following indicates an error in the reasoning leading to the prediction above?",
+        # And a stem's "reason for" is usually the author's, not the world's.
+        "The author's reason for mentioning the second survey is to",
+    ],
+)
+def test_an_argument_that_leads_somewhere_is_not_a_causal_question(stem):
+    assert "causal_audit" not in _candidate_keys(lr(stem))
+
+
+def test_point_at_issue_is_not_a_strengthen_question():
+    """"Provides the most support for the claim that they disagree" is not support.
+
+    Reading it as one made a causal stimulus enough to offer the causal
+    approach on a question about what two speakers differ over.
+    """
+    keys = _candidate_keys(
+        lr(
+            "The editors' dialogue provides the most support for the claim that they disagree "
+            "with each other about whether the ban was effective",
+            stimulus=CAUSAL_STIMULUS,
+        )
+    )
+    assert "causal_audit" not in keys
+
+
+def test_support_for_the_argument_itself_is_still_a_strengthen_question():
+    assert "causal_audit" in _candidate_keys(
+        lr(
+            "Which one of the following, if true, provides the most support for the argument?",
+            stimulus=CAUSAL_STIMULUS,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        "The physics professor's conclusion follows logically if which one of the following is assumed?",
+        "Which one of the following is an assumption that would permit the conclusion above to be properly drawn?",
+        "The argument's conclusion is properly drawn if which one of the following is assumed?",
+    ],
+)
+def test_supplying_the_missing_premise_is_not_proving_an_answer(stem):
+    """These stems say "follows logically", and they are not inference questions.
+
+    The scope-and-force procedure is written for proving an answer from the
+    stimulus. A question that asks for the premise which would make the
+    argument work wants the chain instead.
+    """
+    keys = _candidate_keys(lr(stem, stimulus=CONDITIONAL_STIMULUS))
+    assert "negation_test" not in keys
+    assert "scope_precision" not in keys
+    assert "conditional_chain" in keys
+
+
+# ---------------------------------------------------------------------------
+# Reading Comprehension: the passage's own furniture, and the whole passage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("Which one of the following best states the author's main conclusion in the passage?", True),
+        ("Which one of the following titles most completely and accurately expresses the contents of the passage?", True),
+        ("Which one of the following best states the central idea of the passage?", True),
+        ("According to the passage, the annex was built in which year?", False),
+    ],
+)
+def test_the_whole_passage_questions_reach_the_synthesis(stem, expected):
+    assert ("main_point_synthesis" in _candidate_keys(rc(stem))) is expected
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("The author mentions the number of ice ages in the third paragraph most probably in order to", True),
+        ("Which one of the following most accurately states the function of the third paragraph?", True),
+        # A role in the subject matter is not a role in the passage.
+        (
+            "Which one of the following, if true, would most weaken the author's argument concerning "
+            "the role that Wheatley played in the evolution of the form?",
+            False,
+        ),
+    ],
+)
+def test_a_role_in_the_passage_is_not_a_role_in_the_subject_matter(stem, expected):
+    assert ("paragraph_function" in _candidate_keys(rc(stem))) is expected
 
 
 # ---------------------------------------------------------------------------

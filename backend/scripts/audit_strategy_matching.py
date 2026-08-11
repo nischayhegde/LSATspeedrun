@@ -132,7 +132,12 @@ _CAUSAL_CLAIM = re.compile(
 _ANY_CONDITIONAL = re.compile(
     r"\bif\b|\bunless\b|\bwhenever\b|\bprovided that\b|\bas long as\b|\brequir\w+\b"
     r"|\bnecessary\b|\bsufficient\b|\bprerequisite\b|\bevery\b|\bnone of\b"
-    r"|\ban(?:y|yone|ything|body)\s+(?:who|that|which)\b|\bin order (?:to|for)\b"
+    # A necessary condition stated without the word: "clean water is essential
+    # for human health", "without trust there can be no connection".
+    r"|\bessential (?:to|for)\b|\bindispensable (?:to|for)\b"
+    r"|\bwithout\s+\w+(?:\s+\w+){0,2},?\s+(?:there (?:can|will|would|is|are)|cannot|could not|nobody|no one|nothing)\b"
+    r"|\ban(?:y|yone|ything|body)\s+(?:who|whom|that|which|with|without|lacking|having)\b"
+    r"|\bin order (?:to|for)\b"
     r"|\ball\s+(?:\w+\s+){0,2}?(?:are|is|was|were|have|has|must|will|can|do|does)\b"
     r"|\bno\s+\w+\s+(?:is|are|was|were|can|will|has|have|ever|may|would|could)\b"
     r"|\bonly\s+(?:if|those|when|by|a\s+person|people\s+who)\b"
@@ -279,7 +284,7 @@ COHORTS: tuple[dict, ...] = (
         and not re.search(
             r"main (?:conclusion|point)|overall conclusion|conclusion (?:drawn|of the argument)"
             r"|most accurately (?:expresses|states|describes)[^.?]{0,40}conclusion"
-            r"|conclusion of (?:the|this)\b|\brole\b|\bmethod\b|argument proceeds|\btechnique\b"
+            r"|conclusion of (?:the|this)\b|\broles?\b|\bmethods?\b|argument proceeds|\btechniques?\b"
             r"|in which one of the following ways|conclusion of \w+(?:'s|s')\b",
             (q.stem or "").lower(),
         ),
