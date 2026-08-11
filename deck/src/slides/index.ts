@@ -694,18 +694,20 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act III — Spiky POV 03',
     headline: 'An AI that gives answers makes you worse.',
     deck: 'With unguarded ChatGPT, practice grades rose 48%. On the real exam, those students dropped 17%.',
-    // REVISION 9 CUT `Hints, never solutions` AND PUT IT BACK. On the data it
-    // looks like the third trace's own label repeated four inches lower — the
-    // guarded trace below is named "a coach that gives hints, never answers".
-    // It is not. That trace is flat at the baseline, so it draws underneath the
-    // control's dashed line and its label is never painted; a 4K still of the
-    // settled frame has bare background where the other two traces carry their
-    // right-edge labels. Cut the fragment and the deck's own guardrail — the
-    // one thing on this slide that is a product commitment rather than somebody
-    // else's finding — is spoken once and shown nowhere.
+    // `Hints, never solutions` is CUT, and the reason it was restored no longer
+    // holds. Revision 9 cut it as a repeat of the guarded trace's own label —
+    // "a coach that gives hints, never answers" — and then put it back on the
+    // finding that the trace is flat at the baseline, draws underneath the
+    // control's dashed line, and never paints its label at all.
+    //
+    // It paints. `spreadLabels` in `traces.tsx` pushes coincident right-edge
+    // labels apart precisely so that this one is legible, and a 1920x1080
+    // capture of the settled frame shows all three tags. So the restored
+    // fragment is what it looked like in the first place: the sentence
+    // immediately above it, set again in a smaller face. Two fragments left,
+    // and they are the two halves of the guardrail the trace does not draw.
     points: [
       'Attempt first',
-      'Hints, never solutions',
       'One step at a time',
     ],
     credit: 'Bastani et al. (2024), ~1,000 students, field experiment',

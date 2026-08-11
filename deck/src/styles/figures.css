@@ -68,6 +68,21 @@
   justify-content: center;
   color: var(--on-field);
   font-family: var(--font-ui);
+
+  /* THE `em` BASE, AND WHY IT IS DECLARED.
+     Most of the geometry in this file is in `em` — a card's padding, the
+     gap between a stem and its answers, the height of a rule. That is the
+     right unit, because it keeps a box in proportion with the type inside
+     it. But `em` resolves against whatever font-size is inherited, and
+     nothing between `:root` and here set one, so every such measurement in
+     every figure was resolving against the browser's 16px default while
+     the slide around it was scaling with the projector. On a 4K stage the
+     headline doubled and the figures' interiors did not move at all.
+
+     Set here, once, so `1em` inside a figure means one step of the figure
+     scale rather than one step of the browser's. */
+  font-size: var(--fig-note);
+
   /* Declared once so no element has to guard its own `var()` fallback. */
   --fig-delay: 0ms;
 
@@ -553,7 +568,9 @@
 .fig-rt-hud {
   position: absolute;
   left: 0;
-  top: 0;
+  /* `top` is the skip lane, set inline; this lifts the chip clear of the rule
+     that leaves it so the two read as connected rather than as overprinted. */
+  transform: translateY(calc(-100% - .5em));
   display: flex;
   align-items: stretch;
   gap: .8em;
@@ -819,18 +836,18 @@
    happens in the first two seconds and the room then looks at this for the
    next twenty.
   
-   It used to rest at .88rem, which is 14.08px — under the 16px floor this
-   sheet names as the legibility bar in the `cohort-split` note, and the
-   smallest type anywhere in the deck. Measured across all 24 slides it was the
-   only run below 16px that a member of the audience is expected to read. The
-   comment above it said "a de-emphasised answer choice is still a thing the
-   back of the room can see", which was the right intent and the wrong number.
-  
-   So the recession is carried where it costs nothing: the choices still drop
-   2.4px against the stem, still indent, and are still washed back — three
-   signals, none of which require the type to go under the floor. */
+   It used to rest at .88rem, which is 14.08px, and then at 1rem, which is 16px
+   and is still a browser measurement on a stage that is not measured in
+   browsers. Both were under the floor for a projected room. The comment above
+   it said "a de-emphasised answer choice is still a thing the back of the room
+   can see", which was the right intent and the wrong number twice.
+
+   So the recession is carried where it costs nothing: the choices drop one
+   step of the figure scale against the stem, still indent, and are still
+   washed back — three signals, none of which require the type to go under the
+   floor `--fig-micro` sets. */
 .fig-rc-choices[data-receded='true'] {
-  font-size: 1rem;
+  font-size: var(--fig-micro);
   gap: .26em;
   opacity: .52;
   transform: translateX(.7em);
@@ -1330,22 +1347,29 @@
 
 .fig-tr-tag {
   position: absolute;
-  max-width: 25%;
+  /* The strip `PLOT.right` leaves, less the offset the tag is placed at. Set
+     narrower than that the longest label wrapped to two lines and the two
+     lower tags — which are only six viewBox units apart by design, because
+     the guarded trace lands on the baseline — closed up against each other. */
+  max-width: 29%;
   transform: translateY(-50%);
-  font-size: var(--fig-label);
-  line-height: 1.2;
+  font-size: var(--fig-note);
+  line-height: 1.25;
   transition: opacity var(--mo-3) var(--ease-out) 720ms;
 }
 
+/* Ranged right against the origin, in the strip the plot leaves for it, and
+   centred on the rule rather than floated above it. See `PLOT` in
+   `traces.tsx` for why there is a strip at all. */
 .fig-tr-baseline-label {
   position: absolute;
-  left: 3.5%;
-  /* Well clear of the rule it names. All three traces leave from this exact
-     point, so the few pixels that were enough on a bare baseline put the
-     label inside the fan the moment the first trace drew. */
-  transform: translateY(-250%);
+  left: 0;
+  text-align: right;
+  padding-right: 1.2%;
+  transform: translateY(-50%);
   font-family: var(--font-pixel);
   font-size: var(--fig-micro);
+  line-height: 1.3;
   letter-spacing: .02em;
   color: var(--on-field-dim);
   transition: opacity var(--mo-4) var(--ease-out);
@@ -1380,9 +1404,14 @@
   /* The one gap in the box that carries meaning: the break between the stem
      and the answers. It used to be an empty rule element in the middle of a
      flat list of ten; now that the two groups are real elements it is simply
-     the gap between them. */
-  gap: 2.2em;
-  padding: 2.5em 2.2em 2.5em 2.6em;
+     the gap between them.
+
+     These were tuned when `1em` inside a figure was the browser's 16px. It is
+     now a step of the figure scale, which is 44% larger, and at the old
+     numbers the card ran off the bottom of the stage and took its last two
+     answers with it. Retuned against the box they actually have to fit. */
+  gap: 1.3em;
+  padding: 1.5em 1.4em 1.5em 1.6em;
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
   transition: opacity 240ms var(--ease-out);
 }
@@ -1390,7 +1419,7 @@
 .fig-mf-question-stem {
   display: flex;
   flex-direction: column;
-  gap: 1.1em;
+  gap: .8em;
 }
 
 /* Five answers, lettered and hung.
@@ -1402,7 +1431,7 @@
 .fig-mf-question-choices {
   display: flex;
   flex-direction: column;
-  gap: .95em;
+  gap: .62em;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1462,7 +1491,7 @@
 /* The break between the stem and the choices. It is the one piece of white
    space in the box that means something, so it is a real element rather than a
    larger gap on one rule. */
-.fig-mf-question-gap { display: block; height: 1.1em; }
+.fig-mf-question-gap { display: block; height: .7em; }
 
 .fig-mf-card {
   position: absolute;
@@ -1676,7 +1705,7 @@
   position: relative;
   flex: none;
   aspect-ratio: 1;
-  height: 62%;
+  height: 72%;
   max-width: 46%;
 }
 
@@ -2250,14 +2279,21 @@
 .fig-gt {
   display: flex;
   flex-direction: column;
-  gap: var(--s-4);
+  gap: var(--s-5);
   width: 100%;
   height: 100%;
 }
 
+/* Three fifths to the diagram, two to the couplings.
+   The frame used to take every pixel the couplings did not need, and the
+   couplings needed very few — so the slide was a wide empty band with two
+   arrows in it and three hairlines huddled underneath. The couplings are the
+   concrete half of this argument (the diagram states the rule; these are the
+   three places it bites) and they are entitled to a share of the frame rather
+   than to the remainder. */
 .fig-gt-frame {
   position: relative;
-  flex: 1;
+  flex: 0 1 58%;
   min-height: 0;
 }
 
@@ -2412,14 +2448,21 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: .5em;
+  gap: var(--s-2);
 }
 
+/* Each row is a three-column rule of its own at a shared width, so the three
+   arrows stack into one vertical and the causes and effects range off it.
+   Centring each row independently — which is what a flex row does — left the
+   arrows at three different x positions and the whole block read as loose
+   type rather than as a table of consequences. */
 .fig-gt-couplings li {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: .6em;
-  font-size: var(--fig-label);
+  gap: var(--s-3);
+  width: min(100%, 62ch);
+  font-size: var(--fig-strong);
   line-height: 1.2;
   transition:
     opacity var(--mo-3) var(--ease-out) var(--fig-delay),
@@ -2430,10 +2473,12 @@
    right, in the same direction as the arrow above them. */
 .fig-gt-cause {
   font-weight: 600;
+  text-align: right;
 }
 
 .fig-gt-effect {
   color: var(--on-field-dim);
+  text-align: left;
 }
 
 .fig-gt-thin {

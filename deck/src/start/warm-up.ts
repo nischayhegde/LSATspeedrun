@@ -51,12 +51,18 @@ function whenIdle(task: () => void, timeout = 1200): IdleHandle {
  * designed in, and `document.fonts.load` is the only way to ask for a specific
  * instance rather than hoping the browser has decided it is needed.
  *
- * All four are Archivo since the display face moved off Fraunces. Google serves
- * Archivo as *static instances*, so each weight is its own file and each one has
- * to be asked for by name: a weight that is requested here but absent from the
- * `index.html` stylesheet resolves to the nearest available and gets synthesised,
- * which is a smeared approximation rather than the drawn weight. 800 is display,
- * 500 is text, and 600 and 700 are set in between by the slide layouts.
+ * The first four are Archivo since the display face moved off Fraunces. Google
+ * serves Archivo as *static instances*, so each weight is its own file and each
+ * one has to be asked for by name: a weight that is requested here but absent
+ * from the `index.html` stylesheet resolves to the nearest available and gets
+ * synthesised, which is a smeared approximation rather than the drawn weight.
+ * 800 is display, 500 is text, and 600 and 700 are set in between by the slide
+ * layouts.
+ *
+ * The fifth is the readout face. Its fallback is Courier New, which is a
+ * different width to Plex Mono, so a credit line that paints before it arrives
+ * reflows visibly — and the credit is the one element that sits at the bottom
+ * edge of the frame where a reflow is most obvious.
  */
 async function warmFonts(): Promise<void> {
   if (!('fonts' in document)) return
@@ -65,6 +71,7 @@ async function warmFonts(): Promise<void> {
     '700 40px Archivo',
     '600 20px Archivo',
     '500 20px Archivo',
+    '500 20px "IBM Plex Mono"',
   ]
   await Promise.all(faces.map((face) => document.fonts.load(face).catch(() => undefined)))
 }

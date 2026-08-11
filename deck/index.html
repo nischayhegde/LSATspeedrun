@@ -15,21 +15,32 @@
          `display=swap` so nothing is ever hidden waiting for it. Everything else —
          art, textures, geometry — is either procedural or served from `public/`.
 
-         One family, four weights. Fraunces was requested here until the display
+         Two families, one request. Fraunces was requested here until the display
          face moved to Archivo; it was then a face nothing rendered, costing 5.4KB
          of render-blocking CSS and 24 dead `@font-face` registrations, plus a
          forced 67.4KB download because `start/warm-up.ts` was still asking for it
          by name. The app itself is still set in Fraunces and loads it separately,
          so the live demo slides are unaffected.
 
-         The four weights are not optional. Google serves Archivo's latin subset as
+         Archivo's four weights are not optional. Google serves its latin subset as
          one variable file, so asking for four instances costs the same bytes as
          asking for one — but a weight left out of this list is *synthesised* by the
          browser rather than drawn, and 800 in particular is the display face.
          There is deliberately no italic: Archivo's italic is not served here, so
-         any `font-style: italic` would be a sheared roman. -->
+         any `font-style: italic` would be a sheared roman.
+
+         IBM Plex Mono is the second family and it is what `--font-pixel` resolves
+         to. That token used to be Courier New, and Courier New is the single most
+         dated thing a screen can put in front of a room: it is the face a document
+         wears when nobody chose a face. It carries every source credit in this
+         deck, the speedrun clock, and about thirty labels inside the figures, so
+         it was doing a great deal of the work of making the deck look unfinished.
+         Plex Mono is a contemporary institutional mono, has real weight at 500 and
+         600 where Courier has none, and holds up projected. It is one extra family
+         on a request that was already being made; if it fails to arrive the
+         `font-display: swap` fallback is Courier New, which is exactly today. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <title>Lawyer Tycoon</title>

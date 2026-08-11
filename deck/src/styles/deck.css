@@ -37,7 +37,13 @@
   --t-body: calc(1.5 * var(--u));  /* a ledger row */
   --t-dense: calc(1.26 * var(--u));/* a ledger row beside something else */
   --t-eyebrow: calc(1.06 * var(--u));
-  --t-credit: calc(.95 * var(--u));
+  /* Was .95u — 18px on a 1080p stage, in a monospace, at the very bottom
+     of the frame. That is under what a room reads, and a citation the
+     room cannot read is decoration pretending to be evidence. Held at
+     the figures' own floor so the credit and the smallest chart label
+     are the same size, which is the only pair of sizes on these slides
+     that a viewer sees side by side. */
+  --t-credit: calc(1.05 * var(--u));
 
   /* --- the spacing scale, in the same stage units -----------------
      The type scale above has existed since the deck was built. A
@@ -445,6 +451,7 @@
   border-top: 1px solid color-mix(in srgb, var(--on-field) 24%, transparent);
   font-family: var(--font-pixel);
   font-size: var(--t-credit);
+  font-weight: 500;
   line-height: 1.45;
   letter-spacing: .01em;
   color: var(--on-field-dim);
@@ -2044,7 +2051,20 @@ kbd {
 .body-figure .figure-foot {
   display: grid;
   justify-items: center;
-  gap: calc(.5 * var(--u));
+  gap: var(--s-1);
+}
+
+/* The foot is the deck's one horizontal datum: across twelve figure slides
+   in a row, the fragment line is the element the eye uses to check that
+   nothing has moved. Four of those slides carry no source credit, and
+   without this their fragment line dropped to where the other eight put
+   the credit — a 25px step, on consecutive slides, which reads as the
+   layout slipping rather than as two different slides.
+
+   Reserved rather than centred, so the fragment line lands on the same
+   baseline whether a credit follows it or not. */
+.body-figure:not(:has(.slide-credit)) .figure-foot {
+  padding-bottom: calc(var(--t-credit) * 1.45 + var(--s-1));
 }
 
 /* On a field slide the eyebrow drops the gold. The narrative's palette is

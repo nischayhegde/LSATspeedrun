@@ -21,8 +21,19 @@ import { DRAW_PX, pct, usePhase, vars, type FigureBody } from './kit'
 /** Cumulative milliseconds. The 1.7s gap after the first mark is the misdirection: draw, then hold. */
 const MARKS = [40, 1740, 3040] as const
 
-/** Plot box in viewBox units, with the right-hand strip reserved for the trace labels. */
-const PLOT = { left: 3, right: 70, top: 10, bottom: 88 } as const
+/**
+ * Plot box in viewBox units, with a strip reserved down each side: the left one
+ * carries the control's name, the right one the three trace labels.
+ *
+ * The left strip is the fix for the one collision this figure could not avoid.
+ * All three traces leave from the same point on the baseline, so a label for
+ * that point has nowhere to go *near* it — set above the origin it sits inside
+ * the fan the moment the first trace draws, and set below it the descending
+ * trace runs through it. Pulling the plot in and ranging the label right
+ * against the origin turns it into what it actually is: the axis's own label,
+ * naming the point every trace departs from.
+ */
+const PLOT = { left: 27, right: 68, top: 10, bottom: 88 } as const
 
 /** Minimum vertical separation between two right-hand labels, in viewBox units. */
 const LABEL_CLEARANCE = 6.4
@@ -77,7 +88,11 @@ export function Traces({ spec, active, reduced }: FigureBody<TracesFigure>) {
 
       <span
         className="fig-tr-baseline-label"
-        style={{ top: pct(baselineY / 100), opacity: phase >= 1 ? 1 : 0 }}
+        style={{
+          width: pct((PLOT.left - 3) / 100),
+          top: pct(baselineY / 100),
+          opacity: phase >= 1 ? 1 : 0,
+        }}
       >
         {spec.baselineLabel}
       </span>

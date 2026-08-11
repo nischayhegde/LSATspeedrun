@@ -20,9 +20,14 @@ const MARKS = [40, 420, 1000, 1500] as const
 /** How far apart the skip ticks land. Three nodes at 150ms is a rhythm; five is still under the budget. */
 const SKIP_STAGGER_MS = 150
 
-/** The lane the curriculum sits on, and the lane the route ends on, in percent of the frame. */
-const SKIP_LANE = 26
-const TAKEN_LANE = 78
+/**
+ * The lane the curriculum sits on, and the lane the route ends on, in percent of
+ * the frame. Pulled apart from 26/78 so the cut is steeper: at the old spacing
+ * the diagonal fell about one unit in three across the whole frame, which reads
+ * as a gentle decline rather than as a route leaving the curriculum.
+ */
+const SKIP_LANE = 22
+const TAKEN_LANE = 82
 
 /** Where the readout is held when motion is off: a plausible mid-run split rather than a row of zeroes. */
 const FROZEN_MS = 52_400
@@ -53,8 +58,17 @@ export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
       {/* The track is the first child, on the HUD's leading edge, because the
           transition in from slide 4 lands the collapsed numeral on it and a
           target that moved with the label's width would be a target that
-          moved between projectors. */}
-      <div className="fig-rt-hud" style={{ opacity: phase >= 1 ? 1 : 0 }}>
+          moved between projectors.
+
+          Sat on the run's own lane rather than in the corner of the frame. A
+          speedrun HUD pinned to the top-left of a slide is a badge; sat at the
+          start of the line, with the lead-in leaving its right edge, it is the
+          run's origin — and it stops the composition being a diagonal with an
+          unrelated chip floating above it. */}
+      <div
+        className="fig-rt-hud"
+        style={vars({ top: pct(SKIP_LANE / 100), opacity: phase >= 1 ? 1 : 0 })}
+      >
         <span
           className="fig-rt-hud-track"
           data-morph="timer-track"

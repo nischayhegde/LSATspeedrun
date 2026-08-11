@@ -41,14 +41,24 @@ const MARKS = [40, 560, 1800, 2400] as const
 /** The narrative's rhythm for the assembly: about 80ms a node, so eleven land in roughly a second. */
 const NODE_STAGGER_MS = 80
 
-/** Ring radii in percent of the square plot. The gap between them is label space. */
+/**
+ * Ring radii in percent of the square plot. The gap between them is label space.
+ *
+ * The outer ring is 33 rather than 41 because of what is *outside* it. The plot
+ * is a square as tall as its row, so a node at the top of the outer ring has
+ * only `50 - radius` of that square above it to set its name in — and the name
+ * is set above the node, by `anchorFor`. At 41 that was 9% of the row, about
+ * forty pixels on a 1080p stage, and the two vertical labels were clipped by
+ * the figure stage's own overflow rule. The side labels have the square's
+ * margins to run into; the top and bottom ones have only this.
+ */
 const RINGS = {
-  1: { radiusX: 19, radiusY: 19, offsetDeg: 45 },
-  2: { radiusX: 41, radiusY: 41, offsetDeg: 0 },
+  1: { radiusX: 16, radiusY: 16, offsetDeg: 45 },
+  2: { radiusX: 33, radiusY: 33, offsetDeg: 0 },
 } as const
 
 /** The clear space the Speedrun Index occupies. Wires start on its edge. */
-const HUB = { radiusX: 9, radiusY: 9 } as const
+const HUB = { radiusX: 8, radiusY: 8 } as const
 
 export function Radial({ spec, active, reduced }: FigureBody<RadialFigure>) {
   const phase = usePhase(active, reduced, MARKS)
