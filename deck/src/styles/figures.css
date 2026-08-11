@@ -1686,6 +1686,22 @@
   position: relative;
   width: 100%;
   height: 100%;
+  /* But not the whole 87u the figure row offers.
+     The ring below runs around this element's own edge, and at the row's full
+     width that is a 1674×430 rectangle with a 378px dial in the middle of it —
+     six hundred pixels of empty beige on either side of the only thing in the
+     picture. That is the third time this slide has arrived at "tiny figure
+     marooned in a dead band"; the header in `clock-rings.tsx` describes the
+     first two, both of which moved the *ring* and neither of which changed the
+     amount of nothing inside it.
+     The band's height fixes the dial at about 20u, so the width that puts a
+     sensible margin around it is roughly twice that plus the ring's own
+     clearance. 44u leaves a little over half a dial of air on each side, which
+     reads as a plaque with a clock set into it. The leftover row width is not
+     lost — it becomes ordinary slide margin, which the rest of the deck has
+     plenty of and this slide had none of. */
+  max-width: calc(44 * var(--u));
+  margin-inline: auto;
   /* `align-items` and `justify-content` were being declared on a block box and
      doing nothing, which let the core size itself and run off the bottom of the
      slide over the fragment line. */
@@ -1853,19 +1869,20 @@
   box-shadow: inset 0 0 0 2px currentColor;
 }
 
-.fig-cr-card-rule {
-  height: .38em;
-  background: currentColor;
-  opacity: .18;
-}
-
-.fig-cr-card-rule:nth-of-type(1) { width: 84%; }
-.fig-cr-card-rule:nth-of-type(2) { width: 56%; }
-
+/* The label is the whole of the card's contents now.
+   It used to sit under two grey bars at 84% and 56% width, standing in for the
+   text of a question — which is, exactly and unfortunately, how every loading
+   skeleton on the web is drawn. "Figures that read as loading skeletons rather
+   than content" was on the founders' list, and this was the clearest instance
+   of it in the deck: a bordered box with two grey bars of decreasing width, at
+   the dead centre of the frame, on a slide the room looks at for eleven
+   seconds. An outlined card with two words in it reads as a card; the bars only
+   ever read as a card that had not finished loading. */
 .fig-cr-inner-label {
-  margin: .45em 0 0;
-  font-size: var(--fig-note);
+  margin: 0;
+  font-size: var(--fig-label);
   line-height: 1.25;
+  text-align: center;
 }
 
 /* ================================================================

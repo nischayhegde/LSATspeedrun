@@ -324,8 +324,6 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
         </svg>
 
         <div className="fig-cr-card" data-settled={phase >= 3 ? 'true' : 'false'} style={{ opacity: phase >= 1 ? 1 : 0 }}>
-          <span className="fig-cr-card-rule" />
-          <span className="fig-cr-card-rule" />
           <p className="fig-cr-inner-label">{spec.innerLabel}</p>
         </div>
       </div>
