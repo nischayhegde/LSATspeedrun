@@ -39,6 +39,7 @@ const specs = (args[1] ?? '14:practice').split(',').filter(Boolean).map((entry) 
 })
 const doDrag = flags.has('--drag')
 const doShots = flags.has('--shots')
+const doFocus = flags.has('--focus')
 
 const executablePath = process.env.OFFICE_CHROME
   ?? `${process.env.HOME}/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell`
@@ -67,6 +68,7 @@ async function waitForCdp() {
 await waitForCdp()
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`)
 const report = []
+let focusReport = null
 
 try {
   await mkdir(outDir, { recursive: true })
@@ -215,24 +217,109 @@ try {
     const after = await readScene()
     const persisted = await page.evaluate(() => Object.keys(window.localStorage).filter((key) => key.startsWith('lsat-tycoon:office-layout:')))
 
+    const canvasBox = async () => page.evaluate(() => {
+      const canvas = document.querySelector('.office-three-canvas')
+      if (!canvas) return null
+      const rect = canvas.getBoundingClientRect()
+      return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+    })
+    const stem = `t${String(spec.tier).padStart(2, '0')}-${spec.floor}-${spec.width}`
+
     if (doShots) {
-      const box = await page.evaluate(() => {
-        const canvas = document.querySelector('.office-three-canvas')
-        if (!canvas) return null
-        const rect = canvas.getBoundingClientRect()
-        return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
-      })
-      if (box) {
-        await page.screenshot({
-          path: `${outDir}/t${String(spec.tier).padStart(2, '0')}-${spec.floor}-${spec.width}.png`,
-          clip: box,
-          timeout: 120000,
-        })
-      }
+      const box = await canvasBox()
+      if (box) await page.screenshot({ path: `${outDir}/${stem}.png`, clip: box, timeout: 120000 })
     }
 
-    report.push({ spec, stable, before, rigid, moved, after, persisted })
+    // The readout, over the item it describes. Hovering a passive earner is the
+    // only way to see the live figure, so it is the only way to photograph it.
+    const hoverable = after.earnings.find((entry) => entry.mode === 'passive' && entry.reachable)
+      ?? after.earnings.find((entry) => entry.reachable)
+    let hovered = null
+    if (hoverable) {
+      const box = await canvasBox()
+      const x = Math.min(Math.max(hoverable.clientX, box.x + 2), box.x + box.width - 2)
+      const y = Math.min(Math.max(hoverable.clientY, box.y + 2), box.y + box.height - 2)
+      await page.mouse.move(x - 6, y - 6)
+      await page.mouse.move(x, y)
+      await page.waitForTimeout(700)
+      hovered = await page.evaluate(() => {
+        const card = document.querySelector('.office-readout')
+        if (!card) return null
+        return {
+          name: card.querySelector('header strong')?.textContent ?? null,
+          state: card.querySelector('.office-readout-state')?.textContent ?? null,
+          figure: card.querySelector('.office-readout-figure')?.textContent ?? null,
+          fill: card.querySelector('.office-readout-fill')?.getAttribute('style') ?? null,
+        }
+      })
+      // A second reading a moment later: the whole claim is that it is live.
+      await page.waitForTimeout(1400)
+      const later = await page.evaluate(() => document.querySelector('.office-readout-figure')?.textContent ?? null)
+      if (hovered) hovered.moved = later !== hovered.figure ? later : false
+      if (doShots && box) await page.screenshot({ path: `${outDir}/${stem}-hover.png`, clip: box, timeout: 120000 })
+      await page.mouse.move(box.x + 4, box.y + 4)
+    }
+
+    report.push({ spec, stable, before, rigid, moved, after, persisted, hovered, hoverKey: hoverable?.key ?? null })
     await writeFile(`${outDir}/arrange.json`, JSON.stringify({ report, errors }, null, 2))
+  }
+
+  // Focus Mode. The economy is meant to keep running underneath while none of
+  // its chrome is drawn, and "none" includes the readout this pass added, so
+  // the switch is really thrown and the office really opened rather than the
+  // component being reasoned about.
+  if (doFocus) {
+    const setLevel = (level) => page.evaluate(async (value) => {
+      const csrf = document.cookie.split('; ').find((part) => part.startsWith('lsat_csrf='))?.split('=')[1]
+      const response = await fetch('/v1/me', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {}) },
+        body: JSON.stringify({ assistance_level: value }),
+      })
+      return { ok: response.status, level: (await response.json())?.user?.assistance_level ?? null }
+    }, level)
+
+    const spec = specs[0]
+    try {
+      const on = await setLevel('focus')
+      await page.setViewportSize({ width: spec.width, height: spec.width < 500 ? 844 : 940 })
+      await page.goto(`${baseUrl}/office?officeTier=${spec.tier}&officeFloor=${spec.floor}&officeAll=1`, { waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(6000)
+      const gated = await page.evaluate(() => ({
+        gate: Boolean(document.querySelector('.focus-gate')),
+        canvas: Boolean(document.querySelector('.office-three-canvas')),
+        readout: Boolean(document.querySelector('.office-readout')),
+        ledger: Boolean(document.querySelector('.economy-ledger')),
+      }))
+      // The one surface that renders the same scene without the route gate, so
+      // the readout's own Focus Mode guard is the only thing standing between
+      // a hover and a card.
+      await page.goto(`${baseUrl}/onboarding`, { waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(9000)
+      const ungated = await page.evaluate(async () => {
+        const canvas = document.querySelector('.office-three-canvas')
+        if (!canvas) return { canvas: false, hovered: 0, readout: false }
+        const targets = canvas.__officeEarningsProbe?.() ?? []
+        let hovered = 0
+        for (const target of targets.slice(0, 8)) {
+          if (!target.reachable) continue
+          hovered += 1
+          canvas.dispatchEvent(new PointerEvent('pointermove', {
+            clientX: target.clientX, clientY: target.clientY, pointerType: 'mouse', bubbles: true,
+          }))
+          await new Promise((resolve) => setTimeout(resolve, 120))
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        return { canvas: true, hovered, readout: Boolean(document.querySelector('.office-readout')) }
+      })
+      const off = await setLevel('full')
+      focusReport = { turnedOn: on, officeRoute: gated, sceneWithoutTheGate: ungated, turnedOff: off }
+    } catch (error) {
+      focusReport = { error: String(error) }
+      await setLevel('full').catch(() => {})
+    }
+    await writeFile(`${outDir}/arrange.json`, JSON.stringify({ report, focusReport, errors }, null, 2))
   }
 
   for (const entry of report) {
@@ -265,8 +352,12 @@ try {
         + `cursor ${move.aim?.cursor}/${move.cursorDuring}  event ${move.event ? move.event.item : 'none'}\n`,
       )
     }
-    process.stdout.write(`  persisted ${entry.persisted.length} key(s)\n`)
+    process.stdout.write(
+      `  hover   ${entry.hoverKey ?? 'nothing reachable'}: ${entry.hovered ? JSON.stringify(entry.hovered) : 'NO CARD'}\n`
+      + `  persisted ${entry.persisted.length} key(s)\n`,
+    )
   }
+  if (focusReport) process.stdout.write(`\nfocus mode: ${JSON.stringify(focusReport, null, 2)}\n`)
   if (errors.length) process.stdout.write(`\nPAGE ERRORS (${errors.length}):\n${errors.slice(0, 8).join('\n')}\n`)
   else process.stdout.write('\nno page errors\n')
 } finally {

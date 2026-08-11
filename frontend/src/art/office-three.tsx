@@ -3442,21 +3442,37 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       })
       pickWorldReady = true
     }
+    /** How much better aimed one candidate has to be before it beats a nearer
+     *  one. Small: two items the pointer is genuinely between should go to the
+     *  nearer, and two items it is not between are usually an order of
+     *  magnitude apart on this measure. */
+    const PICK_TIE = .02
     const itemUnderPointer = (event: PointerEvent) => {
       resolvePickWorld()
       updateDragRay(event)
       let best: PickTarget | null = null
-      let bestDistance = Infinity
+      let bestAim = Infinity
+      let bestDepth = Infinity
       for (const target of pickTargets) {
         const world = target.world
         if (!world) continue
-        if (raycaster.ray.distanceSqToPoint(world) > target.radiusSq) continue
-        // Two forgiving spheres can overlap along the ray, so the nearer object
-        // wins — which is also what stops something behind a wall being reported
-        // in front of the thing actually being pointed at.
-        const distance = raycaster.ray.origin.distanceToSquared(world)
-        if (distance < bestDistance) {
-          bestDistance = distance
+        const miss = raycaster.ray.distanceSqToPoint(world)
+        if (miss > target.radiusSq) continue
+        // Two forgiving spheres overlap constantly in a room this dense, and
+        // depth alone is the wrong way to settle it: a partner desk's sphere is
+        // metres across and sits in front of half the room, so anything behind
+        // it was unhoverable however precisely it was pointed at — that is why
+        // three of the twenty-two installations could never be read. So how
+        // well an item is aimed at comes first, measured as how close the ray
+        // passes relative to that item's own size, and depth only settles a
+        // near-tie. Being dead-centre on a small thing beats grazing the edge
+        // of a large one; grazing both still gives the nearer, which is what
+        // keeps something behind a wall from being reported in front of it.
+        const aim = miss / target.radiusSq
+        const depth = raycaster.ray.origin.distanceToSquared(world)
+        if (best === null || aim < bestAim - PICK_TIE || (aim < bestAim + PICK_TIE && depth < bestDepth)) {
+          bestAim = aim
+          bestDepth = depth
           best = target
         }
       }
@@ -3482,8 +3498,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     const anchorFor = (target: PickTarget) => {
       const point = projectFor(target)
       if (!point) return null
+      // Half the widest the card can be, because it is centred on this anchor
+      // and the room clips its own overflow: an inset smaller than that loses
+      // the card's leading edge, which is where the item's name is. The two
+      // widths are `office-earnings.css`'s caps, 17.5rem and 15rem under the
+      // 620px breakpoint, and on a canvas too narrow for either the card is
+      // simply centred.
+      const inset = Math.min(point.width / 2, point.width < 620 ? 124 : 144)
       return {
-        x: THREE.MathUtils.clamp(point.x, 96, Math.max(96, point.width - 96)),
+        x: THREE.MathUtils.clamp(point.x, inset, Math.max(inset, point.width - inset)),
         y: THREE.MathUtils.clamp(point.y, 12, Math.max(12, point.height)),
       }
     }
@@ -3492,12 +3515,38 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // sweep the canvas hunting for hit spheres, which fights this scene's own
     // hover throttle and takes minutes per run. Compiled out of production
     // builds, exactly like the tier and asset overrides above.
+    /** Where in a patch around an item the hit test actually returns it, if
+     *  anywhere. DEV-only, and the honest form of "can this be hovered". */
+    const reachableAt = (
+      target: PickTarget,
+      point: { x: number; y: number },
+      bounds: DOMRect,
+    ): { x: number; y: number; blockedBy?: string } | null => {
+      const blockers = new Set<string>()
+      for (const radius of [0, 14, 28, 44]) {
+        for (const angle of radius === 0 ? [0] : [0, 45, 90, 135, 180, 225, 270, 315]) {
+          const radians = (angle * Math.PI) / 180
+          const x = THREE.MathUtils.clamp(point.x + Math.cos(radians) * radius, 2, bounds.width - 2)
+          const y = THREE.MathUtils.clamp(point.y + Math.sin(radians) * radius, 2, bounds.height - 2)
+          const hit = itemUnderPointer({ clientX: bounds.left + x, clientY: bounds.top + y } as PointerEvent)
+          if (hit?.economics.key === target.economics.key) {
+            return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) }
+          }
+          blockers.add(hit ? hit.economics.key : 'nothing')
+        }
+      }
+      // What the pointer found instead, which is the difference between an
+      // item that is off screen and one that is behind a neighbour.
+      return { x: -1, y: -1, blockedBy: [...blockers].join('/') }
+    }
     if (import.meta.env.DEV) {
       (canvas as unknown as Record<string, unknown>).__officeEarningsProbe = () => {
         resolvePickWorld()
         const bounds = canvas.getBoundingClientRect()
         return pickTargets.map((target) => {
           const point = projectFor(target)
+          const depth = point ? Number(pickProjection.z.toFixed(3)) : null
+          const spot = point ? reachableAt(target, point, bounds) : null
           return {
             key: target.economics.key,
             name: target.economics.name,
@@ -3506,22 +3555,29 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
             payoutMult: target.economics.payoutMult,
             // Viewport coordinates, so a harness can drive real pointer input
             // straight at the item without knowing where the canvas sits.
+            // `reachX`/`reachY` is where a pointer actually finds it, which is
+            // the point to aim at; the centre is where it is.
             clientX: point ? point.x + bounds.left : -1,
             clientY: point ? point.y + bounds.top : -1,
+            reachX: spot && !spot.blockedBy ? spot.x + bounds.left : -1,
+            reachY: spot && !spot.blockedBy ? spot.y + bounds.top : -1,
+            blockedBy: spot?.blockedBy ?? null,
             onScreen: Boolean(point) && point!.x > 0 && point!.y > 0
               && point!.x < bounds.width && point!.y < bounds.height,
             // Whether a pointer can actually reach it, which is the claim that
-            // matters and is not the same as its centre being on screen. The
-            // hit test is a sphere around the item, so something whose middle
-            // sits past the bottom edge — a rug — is still reachable across
-            // the part of it that is in frame. Asked by running the real pick
-            // at the nearest point inside the canvas.
-            reachable: point
-              ? itemUnderPointer({
-                clientX: bounds.left + THREE.MathUtils.clamp(point.x, 2, bounds.width - 2),
-                clientY: bounds.top + THREE.MathUtils.clamp(point.y, 2, bounds.height - 2),
-              } as PointerEvent)?.economics.key === target.economics.key
-              : false,
+            // matters and is not the same as its centre being on screen. Two
+            // things break that equivalence and both are real: the hit test is
+            // a sphere, so something whose middle sits past the bottom edge —
+            // a rug — is still reachable across the part of it that is in
+            // frame, and spheres overlap, so an item can lose its own centre
+            // to a nearer neighbour and still be reachable a few pixels away.
+            // So the real pick is run over a small patch around the item
+            // rather than at one point, and the answer is where it landed.
+            reachable: Boolean(spot && !spot.blockedBy),
+            // Where the anchor sits in clip space. A point behind the camera
+            // projects mirrored into frame, so a plausible-looking screen
+            // position can belong to something nobody can see.
+            depth,
           }
         })
       }

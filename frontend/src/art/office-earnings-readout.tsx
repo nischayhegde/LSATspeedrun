@@ -294,9 +294,12 @@ function PassiveBody({
         {/* The hourly rate is stated in the status line above rather than
             repeated here; what this adds is the size of it relative to
             everything else the player owns. */}
+        {/* Labelled rather than described, because "31% of passive income" as
+            a value wraps onto two lines on a phone and the label has room for
+            the words. */}
         <div>
-          <dt>Share of firm</dt>
-          <dd>{accrual.share >= .005 ? `${Math.round(accrual.share * 100)}%` : '<1%'} of passive income</dd>
+          <dt>Share of passive</dt>
+          <dd>{accrual.share >= .005 ? `${Math.round(accrual.share * 100)}%` : '<1%'} of the firm</dd>
         </div>
         {item.payoutMult > 0 && (
           <div>
