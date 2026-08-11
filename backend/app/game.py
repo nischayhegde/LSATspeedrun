@@ -1426,7 +1426,14 @@ def _relieved_daily_rent(profile: PlayerProfile, held: set[str] | None = None) -
 def _district_locks(profile: PlayerProfile, district: dict, owned: set[str] | None = None) -> list[str]:
     locks: list[str] = []
     if profile.office_tier < district["tier"]:
-        locks.append(f"Requires a {FIRM_TIERS[district['tier']]['name']}")
+        # Three of the fifteen office names begin with a vowel -- International
+        # Practice, Oceanic Law Citadel, Orbital Arbitration Ring -- and the
+        # article was fixed, so every district gated behind tier 7, 11 or 12
+        # read "Requires a International Practice" on the counsel board and in
+        # the map's district brief.
+        tier_name = FIRM_TIERS[district["tier"]]["name"]
+        article = "an" if tier_name[:1].upper() in "AEIOU" else "a"
+        locks.append(f"Requires {article} {tier_name}")
     if profile.reputation < district["reputation"]:
         locks.append(f"Requires {district['reputation']} reputation")
     connection_key = DISTRICT_CONNECTION_GATE.get(district["key"])
