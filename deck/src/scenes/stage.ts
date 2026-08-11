@@ -70,6 +70,8 @@ export class DeckStage {
   private width = 1
   private height = 1
   private running = false
+  /** Latched by `dispose`, and the guard every async continuation checks. */
+  private disposed = false
   private frame = 0
   private previousTime = 0
   private sceneElapsed = 0
@@ -152,10 +154,7 @@ export class DeckStage {
     window.addEventListener('pointermove', this.handlePointer, { passive: true })
     // A lost context is unrecoverable mid-talk, so it is at least reported
     // loudly rather than showing a frozen frame nobody can explain.
-    this.canvas.addEventListener('webglcontextlost', (event) => {
-      event.preventDefault()
-      console.error('deck: WebGL context lost — reload the deck')
-    })
+    this.canvas.addEventListener('webglcontextlost', this.handleContextLost)
 
     // A function rather than an object, so a caller gets this frame's values
     // instead of a snapshot taken when the deck booted. Read-only by
@@ -176,11 +175,16 @@ export class DeckStage {
    * has already been built, so the keystroke costs a camera tween.
    */
   async warm(id: string) {
-    if (!id || id === 'none' || this.cache.has(id)) return
+    if (this.disposed || !id || id === 'none' || this.cache.has(id)) return
     const factory = this.factories.get(id)
     if (!factory) return
     try {
       const scene = await factory(this.context)
+      // The stage went away while this was building. Nothing will ever show it
+      // and `dispose` has already walked the cache, so putting it in the cache
+      // now is a scene's worth of geometry and textures held against a dead
+      // renderer for the life of the document.
+      if (this.disposed) { scene.dispose(); return }
       // The show that raced ahead of this warm may already have built and
       // cached the same scene; keep the one that is in use.
       if (this.cache.has(id)) { scene.dispose(); return }
@@ -204,6 +208,7 @@ export class DeckStage {
     params: Record<string, string | number | boolean> | undefined,
     blend: 'ink' | 'none',
   ) {
+    if (this.disposed) return
     const mine = ++this.token
 
     // Same scene, different framing: this is the continuous camera move, and it
@@ -230,6 +235,7 @@ export class DeckStage {
         console.error(`deck: scene "${id}" failed to build`, error)
         return
       }
+      if (this.disposed) { next.dispose(); return }
       if (mine !== this.token) {
         // Superseded. Keep it — it is built and correct, and the presenter is
         // very likely coming back to it — but do not activate it.
@@ -304,10 +310,17 @@ export class DeckStage {
   }
 
   dispose() {
+    // Set first, and read by `warm` and `show` on the far side of their awaits.
+    // Both build a scene asynchronously and then put it in the cache, and both
+    // could be in flight here — `dispose` walks the cache once, so anything
+    // that arrives afterwards is a room's worth of geometry and textures held
+    // against a disposed renderer with nothing left that could ever free it.
+    this.disposed = true
     this.stop()
     registerProbe('__deckStage', undefined)
     window.removeEventListener('resize', this.handleResize)
     window.removeEventListener('pointermove', this.handlePointer)
+    this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     for (const scene of this.cache.values()) scene.dispose()
     this.cache.clear()
     this.recent.length = 0
@@ -340,6 +353,11 @@ export class DeckStage {
     // Every cached scene, not only the visible one: an off-screen scene with a
     // stale aspect is a wrong first frame the moment it is shown.
     for (const scene of this.cache.values()) scene.resize(width, height)
+  }
+
+  private handleContextLost = (event: Event) => {
+    event.preventDefault()
+    console.error('deck: WebGL context lost — reload the deck')
   }
 
   private handlePointer = (event: PointerEvent) => {

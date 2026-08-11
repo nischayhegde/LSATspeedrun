@@ -35,8 +35,24 @@
  *
  * The deck's own demo embeds are excluded from the verdict: without the product
  * running locally they fail to connect, and that is expected here.
+ *
+ * ## And the ledger, which is the part that finds the bug rather than its symptom
+ *
+ * Everything above is indirect. A stranded interval is only a console error on
+ * the run where it happens to touch something that has been torn down; the run
+ * where it merely burns the frame budget for the rest of the talk is silent, and
+ * that is the run the founder saw. So `ledger.js` wraps `setTimeout`,
+ * `setInterval`, `requestAnimationFrame` and `addEventListener` before any of the
+ * deck's own code loads, and keeps the creation stack of everything still
+ * outstanding.
+ *
+ * After the idle phase the report therefore names, with the line that created
+ * them: every interval still armed, every timeout armed more than a slide ago,
+ * how many frame callbacks the page is scheduling per second at rest, and the
+ * net window/document listener count by type. A leak is a number, not an
+ * inference.
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -141,6 +157,9 @@ const context = await browser.newContext({
   reducedMotion: 'no-preference',
 })
 const page = await context.newPage()
+
+// Before anything of the deck's is parsed. See `ledger.js`.
+await page.addInitScript({ content: readFileSync(resolve(DECK_DIR, 'scripts/ledger.js'), 'utf8') })
 
 /** Every complaint, with the phase it arrived in, so a failure has an address. */
 const faults = []
@@ -287,16 +306,30 @@ const memory = await page.evaluate(() => {
   return heap ? { usedMB: Math.round(heap.usedJSHeapSize / 1048576) } : null
 })
 
+// The ledger, read after the idle so that anything short-lived has long since
+// gone and what is left is genuinely outstanding.
+const ledger = await page.evaluate(() => window.__deckLedger?.read() ?? null)
+const rafPerSecond = await page.evaluate(() => window.__deckLedger?.rafPerSecond(1000) ?? null)
+
 await shot('settled')
 await browser.close()
 
-const report = { base: BASE, ranAt: new Date().toISOString(), rounds: ROUNDS, idleMs: IDLE, settled, fps, memory, idleSpanMs: IDLE, startedAt: before, faults }
+const report = { base: BASE, ranAt: new Date().toISOString(), rounds: ROUNDS, idleMs: IDLE, settled, fps, memory, ledger, rafPerSecond, idleSpanMs: IDLE, startedAt: before, faults }
 writeFileSync(`${OUT}/stress-report.json`, `${JSON.stringify(report, null, 2)}\n`)
 
 console.log(`\n${'-'.repeat(64)}`)
 console.log(`settled on   ${settled.hash}  (live layers ${settled.liveCount}, canvases ${settled.canvases}, app scenes ${settled.appScenes}, iframes ${settled.frames})`)
 console.log(`fps at rest  ${fps}`)
 if (memory) console.log(`heap         ${memory.usedMB}MB`)
+if (ledger) {
+  console.log(`frame loops  ${rafPerSecond} rAF/s at rest  (one self-rescheduling loop is one refresh rate)`)
+  console.log(`timers       ${ledger.intervals.length} intervals armed, ${ledger.liveTimeouts} timeouts pending (${ledger.staleTimeouts.length} older than 4s)`)
+  for (const entry of ledger.intervals) console.log(`  interval ${entry.delay}ms, age ${entry.ageMs}ms — ${entry.site}`)
+  for (const entry of ledger.staleTimeouts) console.log(`  timeout  ${entry.delay}ms, age ${entry.ageMs}ms — ${entry.site}`)
+  const drifting = ledger.listeners.filter((entry) => entry.net > 2)
+  console.log(`listeners    ${ledger.listeners.length} types with a non-zero net count`)
+  for (const entry of drifting) console.log(`  ${entry.key}  net ${entry.net}`)
+}
 console.log(`faults       ${faults.length}`)
 for (const fault of faults.slice(0, 40)) console.log(`  [${fault.phase}] ${fault.kind}: ${fault.text}`)
 if (faults.length > 40) console.log(`  ... and ${faults.length - 40} more`)
