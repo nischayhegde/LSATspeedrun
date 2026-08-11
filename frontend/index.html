@@ -73,20 +73,21 @@
       #boot {
         min-height: 65vh; display: flex; flex-direction: column;
         align-items: center; justify-content: center; gap: 13px;
-        background: #111a29; color: #f6dfaa; font-size: 12px;
+        background: #0e1521; color: #f6dfaa; font-size: 12px;
         font-family: Archivo, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       }
       #boot i {
-        width: 57px; height: 57px; box-sizing: border-box; display: grid; place-items: center;
-        border: 3px solid #090d15; border-radius: 2px; background: #f1c85f; color: #172131;
-        box-shadow: .43px .43px 0 8.23px rgba(108,87,49,.18);
+        width: 54px; height: 54px; box-sizing: border-box; display: grid; place-items: center;
+        border: 1px solid rgba(27,26,36,.82); border-radius: 12px; color: #2a1e06;
+        background: linear-gradient(170deg, #f2d791, #c89b4b);
+        box-shadow: inset 0 1px 0 rgba(255,246,220,.62), 0 13px 29px rgba(4,9,15,.26);
         animation: boot-pulse 1.3s ease-in-out infinite;
       }
       #boot svg { width: 30px; height: 30px; }
       #boot g:first-child { fill: rgba(104,68,16,.42); }
       #boot g:last-child { fill: currentColor; }
       #boot .beam { transform-origin: 12px 7px; animation: boot-settle 2.1s ease-in-out infinite; }
-      @keyframes boot-pulse { 50% { transform: scale(1.06); box-shadow: 0 0 0 9px rgba(200,155,75,.1); } }
+      @keyframes boot-pulse { 50% { transform: scale(1.06); box-shadow: inset 0 1px 0 rgba(255,246,220,.62), 0 13px 29px rgba(4,9,15,.26), 0 0 0 9px rgba(200,155,75,.1); } }
       @keyframes boot-settle { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
     </style>
     <!-- Every protected screen blocks on the same two calls before it can draw
