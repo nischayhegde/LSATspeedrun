@@ -1790,6 +1790,18 @@ function createBuoy(color = 0xb47b45, scale = 1) {
   return group
 }
 
+/**
+ * How high the deck of a Treaty Sea landform sits, at the `y = -.22` every
+ * caller places one at.
+ *
+ * Derived rather than measured off a screenshot: the extrusion below is .34
+ * deep with a .07 bevel at each end, so it spans .41 above its own origin, and
+ * the origin is sunk .22 to put the coast under the swell. The buildings that
+ * stand on one are plinthed and can afford to be set at .04 and buried; a
+ * person is .49 units tall at `CROWD_RENDER_SCALE` and cannot.
+ */
+const OCEAN_LANDFORM_TOP = .34 + .07 - .22
+
 function createIslandLandform(radius: number, seed: number, color = 0x66745f) {
   const shape = new THREE.Shape()
   const segments = 28
@@ -4725,6 +4737,51 @@ function addOceanEnvironment(root: THREE.Group) {
   // Slow. A launch at road speed reads as a jet ski, and the wake shader's
   // strength saturates at .97 units per second anyway.
   roadWays(root).push({ points: passage, closed: true, kind: 'water', speed: 1.05 })
+
+  /*
+   * The six districts the catalog retains out here.
+   *
+   * Treaty Sea and Global Compact were both authored without any, which took
+   * the whole map half of the district mechanic away from tier 7 upwards: no
+   * pin on the ledger row, no flight, no brief, and — because five of the
+   * fourteen connections open districts *only* in these two regions — five
+   * networks that could never put their contact anywhere.
+   *
+   * Nothing is built for them, and that is the point rather than a shortcut. A
+   * landmark is a position and a pick radius (see `registerLandmark`); the ring,
+   * the wash and the label are all overlay. So six named places cost this
+   * region zero triangles and zero draw calls, which is what lets the sparse
+   * rebuild stand: it was five quay islands, thirty-two buoys and nine boats of
+   * scenery that had to go, not the sea's ability to have places in it.
+   *
+   * And naming water is what the sea is for. Four of the six *are* water in the
+   * catalog's own copy — roads, an anchorage, a light, an admiralty court whose
+   * whole point is that it has no permanent address — which is the same licence
+   * `city-canal` and `nation-pond` already take on land.
+   *
+   * Sited by hand, and against the eight landforms this region actually has
+   * (three career islands, three rival compounds, two docket islands), the
+   * shipping channel the counsel swims, and the launch's standing circuit. All
+   * three are measured rather than assumed: `tools/map-qa/sites.mjs` prints
+   * them, and `landmarks.mjs` fails the run if a district lands on any of them.
+   */
+  const sea: Array<[string, string, MapLandmarkKind, XZ, number, string]> = [
+    ['ocean-quay', 'The Diplomatic Quay', 'transit', [-16.2, 4.9], 2.5,
+      'The head of the channel, where a delegation comes ashore. Everything that goes wrong before the talks begin goes wrong here first.'],
+    ['ocean-roads', 'The Bonded Roads', 'industry', [-6, -7.6], 2.8,
+      'Deep water south of the fairway, where a hull lies at anchor with its cargo still legally nowhere. An entire practice lives in that gap.'],
+    ['ocean-chandlers', 'Chandler\u2019s Row', 'market', [-5.8, 3.3], 2.3,
+      'The agents\u2019 water, north of the channel. Every master who refuses to sail is refusing to sail from somewhere on this reach.'],
+    ['ocean-anchorage', 'Treaty Anchorage', 'water', [1.6, 4], 2.4,
+      'The middle of the sea, and neutral only because everyone agreed it was. The agreement is the practice.'],
+    ['ocean-lantern', 'The Lantern Light', 'transit', [16.8, -1], 2.5,
+      'The seaward approach, where pilotage becomes compulsory. Compulsory means litigated, and the board has never had counsel who understood both.'],
+    ['ocean-court', 'Free Harbour Court', 'civic', [5, -8.6], 2.8,
+      'The sea\u2019s own courthouse sits wherever the roll is called. A place on it is the closest thing the Treaty Sea has to a permanent address.'],
+  ]
+  for (const [key, name, kind, position, radius, detail] of sea) {
+    registerLandmark(root, { key, name, kind, detail, position, radius })
+  }
 }
 
 /**
@@ -5143,6 +5200,38 @@ function addGlobalEnvironment(root: THREE.Group) {
     orbit.rotation.x = Math.PI / 2
     orbit.rotation.y = (radius - 8) * .035
     root.add(orbit)
+  }
+
+  /*
+   * The six districts the catalog retains up here — the other half of the gap
+   * described in `addOceanEnvironment`, and the easier half, because this region
+   * is a station with a continuous deck under all of it. A contact sited at any
+   * of these stands on the platform above, so none of them needs ground found
+   * for it the way a district on open water does.
+   *
+   * Placed on the deck rather than on the relay masts and orbital stations
+   * already standing there: those are five relays and two stations doing their
+   * own job, and hanging a retained district off one would say the district is
+   * that structure. `sites.mjs` prints where they all are, and each of these is
+   * clear of them, of the three career parcels, of the three rival compounds,
+   * of both docket sites and of the transfer corridor itself.
+   */
+  const compact: Array<[string, string, MapLandmarkKind, XZ, number, string]> = [
+    ['orbit-concourse', 'The Compact Concourse', 'transit', [4.2, -3.4], 2.9,
+      'The deck every signatory crosses to reach its own bench. Standing counsel to the desk is in the room before the room convenes.'],
+    ['orbit-chamber', 'Hearing Chamber One', 'civic', [-6.6, -5.4], 2.7,
+      'The first chamber, and the list that decides who is heard and in what order. Nothing here is worth more or costs less to hold.'],
+    ['orbit-registry', 'The Registry Vault', 'civic', [-6, -12], 2.4,
+      'Below the deck on the shadow side, where every treaty in force is actually kept. Custody is a duty, and duties are retained.'],
+    ['orbit-landing', 'Far-Side Landing', 'transit', [-16, 8.6], 2.8,
+      'The furthest pad from the planet, and the furthest place a writ has ever been served. The authority would rather it were served by you.'],
+    ['orbit-gallery', 'The Assembly Gallery', 'civic', [3.4, 12.4], 2.8,
+      'Public seats above a private negotiation. The secretariat needs someone who can tell the powerful no, in writing.'],
+    ['orbit-reading-room', 'The Founders\u2019 Reading Room', 'monument', [16.4, 4.6], 2.4,
+      'Nine chairs and the original charter, out past the last office. There is no larger room to be invited into.'],
+  ]
+  for (const [key, name, kind, position, radius, detail] of compact) {
+    registerLandmark(root, { key, name, kind, detail, position, radius })
   }
 }
 
@@ -8497,8 +8586,24 @@ export function MapThreeScene({
       // Facing the landmark they belong to, so the figure reads as standing
       // outside a place rather than pointing away from one.
       const facing = Math.atan2(post.position[0] - sited.x, post.position[1] - sited.z)
+      /*
+       * Four of the Treaty Sea's six districts are open water, so a contact
+       * belonging to one has nothing to stand on: `siteOnPlan` reports the
+       * centre already clear, correctly, because there is no obstacle out there
+       * to be clear of.
+       *
+       * They get the same answer the rivals and the dockets got when this
+       * region gave up its scenery — a landform of their own, sized to what
+       * stands on it — rather than a quay or a pontoon, which is furniture this
+       * region was deliberately emptied of. It is one mesh per contact, three at
+       * most, and only for a network the firm has actually bought, so an
+       * unbought Treaty Sea is triangle-for-triangle the region that was
+       * measured. See `groundMarker`.
+       */
+      groundMarker(sited.x, sited.z, .92, 860 + index * 41)
+      const standing = region === 'ocean' ? OCEAN_LANDFORM_TOP : .02
       const shingle = createContactShingle(0x6cae98)
-      shingle.position.set(sited.x, .02, sited.z)
+      shingle.position.set(sited.x, standing, sited.z)
       shingle.rotation.y = facing
       world.add(shingle)
       const label = labelSprite(['YOUR CONNECTION', contact.name, contact.role], 2.4, '#82c3ad')
@@ -8514,7 +8619,7 @@ export function MapThreeScene({
       // Opposite the bracket. The board hangs off the post's local +x, which is
       // `(cos, -sin)` in world for a `rotation.y`, so putting the figure on that
       // same side stands them underneath their own sign.
-      figure.root.position.set(sited.x - Math.cos(facing) * .58, .02, sited.z + Math.sin(facing) * .58)
+      figure.root.position.set(sited.x - Math.cos(facing) * .58, standing, sited.z + Math.sin(facing) * .58)
       figure.root.rotation.y = facing
       standingFigures.push({ walker: figure, baseHipsY: figure.rig.hips.position.y, phase: index * 2.7 + 5.3 })
     })

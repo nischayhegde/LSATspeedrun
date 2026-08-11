@@ -322,8 +322,20 @@ function serverWarmth(base) {
   }
 }
 
+/**
+ * Which development firm to sign in as.
+ *
+ * The button on the login page always signs in the one default profile, and
+ * most probes want that. The late-game map does not exist on it: districts in
+ * the Treaty Sea and the Global Compact only unlock at tier 7 and tier 12, and
+ * a contact figure is placed only for a connection the firm owns. Setting this
+ * signs in by email instead, so `tools/map-qa/late-firm.py` can stand a tier-14
+ * firm up beside the tier-0 one rather than on top of it.
+ */
+export const EMAIL = process.env.MAPS_EMAIL || null
+
 /** Signs in, opens the map, and waits for a scene to exist. */
-export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
+export async function open({ viewport = { width: 1440, height: 900 }, email = EMAIL } = {}) {
   const warmth = serverWarmth(BASE)
   if (warmth && !warmth.cold) {
     console.warn('\n!! HOT SERVER: a source file has changed since this dev server started.')
@@ -351,13 +363,28 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
   // way to fail.
   try {
     await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-    // Generous, because the first load of a cold dev server compiles the whole
-    // module graph before the page renders at all, and the default 30 s expires
-    // on a loaded machine while Vite is still optimising dependencies. That
-    // presents as "the dev-login button does not exist", which sends a reader
-    // looking at the backend's auth config instead of at the clock.
-    await page.locator('button', { hasText: 'Enter local development firm' }).click({ timeout: 180000 })
-    await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 })
+    if (email) {
+      // The same endpoint the button posts to, with a chosen firm. Done in the
+      // page so the auth cookies land on this context exactly as they would.
+      const signedIn = await page.evaluate(async (address) => {
+        const response = await fetch('/v1/auth/dev', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email: address, display_name: 'Late Firm' }),
+        })
+        return response.status
+      }, email)
+      if (signedIn !== 200) throw new Error(`dev sign-in for ${email} returned ${signedIn}`)
+    } else {
+      // Generous, because the first load of a cold dev server compiles the whole
+      // module graph before the page renders at all, and the default 30 s expires
+      // on a loaded machine while Vite is still optimising dependencies. That
+      // presents as "the dev-login button does not exist", which sends a reader
+      // looking at the backend's auth config instead of at the clock.
+      await page.locator('button', { hasText: 'Enter local development firm' }).click({ timeout: 180000 })
+      await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 })
+    }
     await page.evaluate(() => localStorage.setItem('lsat-tour-v6', 'done')).catch(() => {})
 
     // Interval polling, not the default. The default polls on rAF, which this
