@@ -117,17 +117,19 @@ deck/tsconfig.tsbuildinfo
 
 # JavaScript compiled out of the deck's TypeScript, which lands beside the source
 # it came from. `npm run typecheck` used to pass `--noEmit false` at a config with
-# no `outDir`, which put a stale `.js` twin next to all 110 sources; the script and
-# the config are both fixed, and this is the backstop, because the failure mode is
-# not a broken build but a silent one — `deploy-sandbox.ps1` runs `git add --all`,
-# so 99 compiled duplicates would go to main and into the shipped payload.
+# no `outDir`, which put a stale `.js` twin next to all 97 sources in `src/` and
+# the two at the root; the script and the config are both fixed, and this is the
+# backstop, because the failure mode is not a broken build but a silent one —
+# `deploy-sandbox.ps1` runs `git add --all`, so those 99 compiled duplicates would
+# go to main and into the shipped payload without anyone typing `git add`.
 #
 # Nothing hand-written is captured. The deck has no `.js` sources at all: `src/` is
-# 110 `.ts`/`.tsx`, and the harnesses in `scripts/` are `.mjs`, which these lines do
-# not match. The two root entries are named rather than globbed as `deck/*.js`
-# because tsconfig's `include` lists exactly these two files outside `src/`, so
-# they are the only root-level output possible — and a real `deck/eslint.config.js`,
-# such as the one `frontend/` already tracks, must stay committable.
+# 97 `.ts`/`.tsx` beside 11 `.css` and 2 `.md`, and the harnesses in `scripts/` are
+# `.mjs`, which these lines do not match. The two root entries are named rather
+# than globbed as `deck/*.js` because tsconfig's `include` lists exactly these two
+# files outside `src/`, so they are the only root-level output possible — and a
+# real `deck/eslint.config.js`, like the one `frontend/` already tracks, must stay
+# committable.
 deck/src/**/*.js
 deck/src/**/*.js.map
 deck/vite.config.js
