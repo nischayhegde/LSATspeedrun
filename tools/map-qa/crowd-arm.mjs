@@ -49,11 +49,29 @@ const RADIUS = Number(process.env.MAPS_RADIUS ?? .25)
 /**
  * And its height, which `beam-arm.mjs` never had to pin.
  *
- * .49 is what the crowd measures at the shipped .278 — the value quoted in the
- * note on `OCEAN_LANDFORM_TOP` — so the control tests the same person in both
- * arms from shins to shoulders, not just the same waist.
+ * 1.5335 is what the crowd measures at the shipped .278, so the control tests
+ * the same person in both arms from shins to shoulders rather than the same
+ * waist.
+ *
+ * It was .49 for the first run of this arm, on the authority of the note on
+ * `OCEAN_LANDFORM_TOP`, which states outright that "a person is .49 units tall
+ * at `CROWD_RENDER_SCALE`". That number is wrong by a factor of three and
+ * `tools/map-qa/yardstick.mjs` exists because of it: a counsel rig is **5.558
+ * units tall at renderScale 1**, so .278 of one is 1.54. It is a survival of the
+ * capsule proxy this crowd replaced, which was about 1.75 units tall. A control
+ * body .49 tall is a slab from a real walker's shins to its knees, which is a
+ * legitimate null but not the person anybody is arguing about.
  */
-const HEIGHT = Number(process.env.MAPS_HEIGHT ?? .49)
+const HEIGHT = Number(process.env.MAPS_HEIGHT ?? 1.5335)
+/**
+ * And how far off the pavement that control body's band starts.
+ *
+ * .1015 is the median walker's box floor at the shipped .278, which is where a
+ * crowd body's shoes are once the actor has grounded its soles. It has to be
+ * pinned for the same reason the height does — see the note in `metrics.mjs` —
+ * and the first run of this arm did not pin it, which is why its control moved.
+ */
+const FOOT = Number(process.env.MAPS_FOOT ?? .1015)
 /** `only` skips the numbers, `skip` skips the pictures, anything else takes both. */
 const STILLS = process.env.MAPS_STILLS ?? 'both'
 const dir = `${OUT}/crowd-${tag}`
@@ -151,7 +169,10 @@ function survey() {
   }
 }
 
-const report = { tag, scales, frames: FRAMES, pinned: { radius: RADIUS, height: HEIGHT }, at: new Date().toISOString(), arms: {} }
+const report = {
+  tag, scales, frames: FRAMES, pinned: { radius: RADIUS, height: HEIGHT, foot: FOOT },
+  at: new Date().toISOString(), arms: {},
+}
 /*
  * A stills pass inherits the numbers rather than erasing them.
  *
@@ -186,12 +207,15 @@ try {
       if (applied !== scale) throw new Error(`crowd scale override did not stick: asked ${scale}, page has ${applied}`)
       const surveyed = await page.evaluate(survey)
       const inside = await page.evaluate(insideMetric, { frames: FRAMES, ...INSIDE_SETTINGS })
-      const control = await page.evaluate(insideMetric, { frames: FRAMES, radius: RADIUS, height: HEIGHT, ...INSIDE_SETTINGS })
+      const control = await page.evaluate(insideMetric, {
+        frames: FRAMES, radius: RADIUS, height: HEIGHT, foot: FOOT, ...INSIDE_SETTINGS,
+      })
       const parked = await page.evaluate(strandedMetric, { frames: PARK_FRAMES })
       report.arms[scale][key] = { applied, survey: surveyed, inside, control, parked }
       console.log(
         `\n=== ${key} crowd ${scale} === inside ${inside.share} (${inside.hits}/${inside.samples})`,
-        `body r${inside.body.radius} h${inside.body.height} · control ${control.share} (r${control.body.radius} h${control.body.height})`,
+        `body r${inside.body.radius} h${inside.body.height} foot ${inside.body.foot}`,
+        `· control ${control.share} (r${control.body.radius} h${control.body.height} band ${control.body.low}-${control.body.high})`,
       )
       console.log(
         `    ${surveyed.walkers} walkers at ${surveyed.walkerHeight} tall, counsel ${surveyed.lawyerHeight};`,
@@ -252,7 +276,21 @@ try {
   const SETTLE = 170
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => Boolean(window.__mapScene), null, { timeout: 180000, polling: 100 })
-  const settle = (count) => page.evaluate((frames) => window.__clock.tick(frames), count)
+  /*
+   * Ticked in chunks, with the page given a moment between them.
+   *
+   * `tick(170)` in one call is one JavaScript task that draws a hundred and
+   * seventy real frames on a software rasteriser, and the main thread is inside
+   * it for minutes. Playwright's screenshot needs the renderer to commit a
+   * frame, which it cannot do from inside that task, so the shutter timed out at
+   * two minutes on a page that was working perfectly.
+   */
+  const settle = async (count) => {
+    for (let done = 0; done < count; done += 20) {
+      await page.evaluate((frames) => window.__clock.tick(frames), Math.min(20, count - done))
+      await page.waitForTimeout(30)
+    }
+  }
   const press = (label) => page.locator(`button[aria-label="${label}"]`).click().catch(() => {})
   for (const scale of STILLS === 'skip' ? [] : scales) {
     for (const key of REGIONS) {

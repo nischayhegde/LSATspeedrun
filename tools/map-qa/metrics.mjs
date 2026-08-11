@@ -27,9 +27,11 @@
  * The share of walker-frames in which a walker's body overlaps solid geometry,
  * with every hit attributed to a place.
  *
- * Settings: `{ frames, floorY, rideOver }`. `inside.mjs` calls it with
- * `floorY: .16` and `rideOver: .18`, which are the values every recorded
- * baseline was taken at.
+ * Settings: `{ frames, floorY, rideOver, radius, height, foot }`. `inside.mjs`
+ * calls it with `floorY: .16` and `rideOver: .18`, which are the values every
+ * recorded baseline was taken at, and with none of the last three, which
+ * measures the body the arm actually draws. Supplying any of them pins that
+ * dimension of the test body across arms; see the notes where they are read.
  */
 export function insideMetric(settings) {
   const { frames, floorY, rideOver } = settings
@@ -290,8 +292,43 @@ export function insideMetric(settings) {
    */
   const measuredRadius = Math.max(.06, middle(bodies.map((body) => body.half)) ?? .12)
   const radius = settings.radius ?? measuredRadius
-  const height = Math.max(.1, middle(bodies.map((body) => body.height)) ?? .5)
-  const foot = middle(bodies.map((body) => body.foot)) ?? 0
+  const measuredHeight = Math.max(.1, middle(bodies.map((body) => body.height)) ?? .5)
+  /*
+   * How tall the test body is, pinnable for the same reason the radius is.
+   *
+   * `beam-arm.mjs` only ever needed the radius pinned, because both of its arms
+   * drew the same person and changed the ground under them. `crowd-arm.mjs`
+   * changes the person: at half scale a walker is .245 units tall instead of
+   * .49, so the band between its shins and its shoulders drops from .147-.451
+   * to .073-.225 — and a solid is only counted when it reaches into that band
+   * and stands `rideOver` above its floor. Half the district's kerbs and plinths
+   * leave the figure entirely, so an unpinned pair moves for two reasons at once
+   * and neither can be told from the other.
+   *
+   * Pinning both makes a control that answers one question only: did the plan
+   * change. It must not, because a render scale is a scale on a root.
+   */
+  const height = settings.height ?? measuredHeight
+  /*
+   * And where the band starts, which is the third dimension of the test body and
+   * the one that was missed.
+   *
+   * `radius` and `height` pinned the figure's size and left its *elevation*
+   * derived: the band is measured up from the median walker's box floor, and a
+   * body drawn at half scale sits with its box floor five centimetres lower. So
+   * `crowd-arm.mjs`'s "pinned control" — the arm whose entire job was to show
+   * that a render scale does not touch the plan — was still testing two
+   * different volumes, one of them straddling a different set of the district's
+   * kerbs, and it duly reported the plan changing in three regions at once
+   * (city .0058 to .0173, continent .0118 to .0289) when nothing in the plan
+   * had been touched.
+   *
+   * Pinning all three makes the control a genuine null: same radius, same
+   * height, same height above the pavement, so the only thing left that can move
+   * the share is where the walkers went.
+   */
+  const measuredFoot = middle(bodies.map((body) => body.foot)) ?? 0
+  const foot = settings.foot ?? measuredFoot
   const low = foot + height * .3
   const high = foot + height * .92
 
@@ -376,6 +413,12 @@ export function insideMetric(settings) {
       // suppress and the size of that thing is itself a finding.
       measuredRadius: +measuredRadius.toFixed(4),
       pinned: settings.radius !== undefined,
+      height: +height.toFixed(4),
+      measuredHeight: +measuredHeight.toFixed(4),
+      pinnedHeight: settings.height !== undefined,
+      foot: +foot.toFixed(4),
+      measuredFoot: +measuredFoot.toFixed(4),
+      pinnedFoot: settings.foot !== undefined,
       low: +low.toFixed(4),
       high: +high.toFixed(4),
     },
