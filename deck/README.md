@@ -195,6 +195,12 @@ answer, reasoning and prompt version they were produced for, and nothing in the
 staging path ever writes coaching text; see
 `backend/scripts/demo_fixtures/README.md`.
 
+**The committed `coaching.json` currently covers the verdict twin only, so this is
+still owed one run.** The first one captured half of what it should have, because
+the solo capture only fired on a case that had no grade yet; that is fixed, and a
+second run picks up both beats. You can check the file yourself — it should contain
+a `"beat": "solo"` entry as well as `"beat": "verdict-twin"`.
+
 Useful flags on `npm run prepare-demo`: `--skip-seed` (re-resolve the session and
 rewrite the config without re-seeding), `--email <address>`, `--help`.
 

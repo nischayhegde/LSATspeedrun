@@ -953,6 +953,16 @@ So the remaining gap is one command on the laptop that already has the key:
 `npm run capture-coaching`, commit the result. Until someone runs it, the
 paragraph above still describes what a keyless machine shows.
 
+**That command has been run once, on 2026-08-11, and it captured only half of what
+it should have** — `74b3377` committed a real `gpt-5.6-luna` grade for the verdict
+twin and nothing for the solo case, which is this slide. The cause was a bug in
+`stage_demo.py`, not in the run: the solo capture only fired when the case had no
+grade yet, so a solo case already graded from an earlier staging skipped it
+silently. Fixed, and the fix re-grades rather than copying the stored payload, so
+what gets captured is what the gateway says now. **Run `npm run capture-coaching`
+once more and commit `coaching.json`** — it will pick up both beats this time, and
+you can check by eye that the file contains a `"beat": "solo"` entry.
+
 If you are ever in a room without the gateway *and* without a capture:
 `FORCE_STILLS = true` in `demo.config.ts`, and `demo-case-answered.webp` carries
 the coached frame.
