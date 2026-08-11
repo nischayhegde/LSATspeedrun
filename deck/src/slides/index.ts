@@ -1148,31 +1148,31 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act IV — proof',
     headline: 'Everything it watches, and why the numbers hold.',
     deck: 'First attempts only. Every figure carries how much evidence is behind it.',
-    // Twelve signals, deliberately — the founders asked for the complete list on
+    // Eleven signals, deliberately — the founders asked for the complete list on
     // one slide, and this is the one slide that knowingly exceeds the
-    // three-fragment rule. They are the radial's nodes rather than body copy, so
+    // three-fragment rule. They are the figure's rows rather than body copy, so
     // `points` is empty here on purpose: printing them twice would be the whole
     // list at half the size next to itself.
     //
-    // The Speedrun Index sits at the centre because it is the only derived
-    // figure; `weight` is how much each signal feeds it, and it sets hairline
-    // thickness. `forming` marks the ones whose sample is still too small to
+    // The Speedrun Index is the only derived figure, so it is what the eleven
+    // converge on; `weight` orders the column and sets both the weight bar and
+    // the hairline. `forming` marks the ones whose sample is still too small to
     // compare, which is the honesty claim the notes make out loud.
     figure: {
-      kind: 'radial',
+      kind: 'signal-index',
       centre: { label: 'Speedrun Index', value: '61' },
       nodes: [
-        { label: 'Accuracy by question type', weight: 1, ring: 1 },
-        { label: 'Pace against target time', weight: 0.9, ring: 1 },
-        { label: 'Reasoning quality grade', weight: 0.85, ring: 1 },
-        { label: 'Confidence calibration', weight: 0.7, ring: 1 },
-        { label: 'Weakest link and next focus', weight: 0.65, ring: 1, highlight: true },
-        { label: 'Review recovery', weight: 0.5, ring: 2 },
-        { label: 'Trend vs. your previous window', weight: 0.45, ring: 2 },
-        { label: 'Per-method lift', weight: 0.4, ring: 2, forming: true },
-        { label: 'Evidence confidence', weight: 0.35, ring: 2 },
-        { label: 'Comparison readiness', weight: 0.3, ring: 2, forming: true },
-        { label: 'Full-test section breakdown', weight: 0.55, ring: 2 },
+        { label: 'Accuracy by question type', weight: 1 },
+        { label: 'Pace against target time', weight: 0.9 },
+        { label: 'Reasoning quality grade', weight: 0.85 },
+        { label: 'Confidence calibration', weight: 0.7 },
+        { label: 'Weakest link and next focus', weight: 0.65, highlight: true },
+        { label: 'Full-test section breakdown', weight: 0.55 },
+        { label: 'Review recovery', weight: 0.5 },
+        { label: 'Trend vs. your previous window', weight: 0.45 },
+        { label: 'Per-method lift', weight: 0.4, forming: true },
+        { label: 'Evidence confidence', weight: 0.35 },
+        { label: 'Comparison readiness', weight: 0.3, forming: true },
       ],
     },
     // THE ONE SPOKEN CUT IN THIS PASS, and it is the same defect as the fragment

@@ -58,7 +58,7 @@
      division between `who the cohort was` and `what the study measured` is
      what the composition wants anyway. */
   justify-content: space-between;
-  gap: var(--s-4);
+  gap: var(--s-3);
   /* Clearance for the fragment line, which sits in the slide's own grid row
      directly beneath and would otherwise meet the last verdict.
   
@@ -76,8 +76,15 @@
      content was 427px inside a 379px stage at 1080p, and *adding* bottom
      padding pushed another 22px of it under the knife. The 48px had to come
      out of the figure, not be padded around, so it is taken off the four
-     vertical measures below and this is left at roughly what it was. */
-  padding-bottom: var(--s-2);
+     vertical measures below and this is left at roughly what it was.
+
+     It was still 63px over at 1080p when the whole deck was measured with an
+     overflow audit rather than by eye, and what it was losing was the bottom
+     line of the video row — `LSAC's words, not ours`, the attribution that
+     defends the null when it is challenged from the floor. Another five
+     measures came down for it: the column gap, the ledger's rule clearance and
+     row gap, the dose labels' drop, and the cohort bar. */
+  padding-bottom: var(--s-1);
 }
 
 .fig-cs-lede {
@@ -109,7 +116,7 @@
      It is still comfortably the largest object in the frame — the next tallest
      thing is a 1.35rem run — so the retreat still reads; what it is not any
      longer is tall enough to push the video row's attribution off the stage. */
-  height: calc(4.8 * var(--u));
+  height: calc(4 * var(--u));
   border: 1px solid currentColor;
   transition: opacity var(--mo-3) var(--ease-out);
 }
@@ -163,12 +170,12 @@
 
 .fig-cs-inputs {
   margin: 0;
-  padding-top: var(--s-4);
+  padding-top: var(--s-3);
   border-top: 1px solid currentColor;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
+  gap: var(--s-2);
 }
 
 .fig-cs-input {
@@ -204,7 +211,7 @@
 /* The contrast row hangs a dose label under each of its two marks, and that
    label has to be paid for in layout or it collides with the row beneath. */
 .fig-cs-run[data-shape='contrast'] {
-  margin-bottom: var(--s-4);
+  margin-bottom: var(--s-3);
 }
 
 /* The origin tick. It is the entire mark on the video row, which is the point:

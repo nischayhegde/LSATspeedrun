@@ -195,20 +195,19 @@ export type ClockRingsFigure = {
   outerLabel: string
 }
 
-/** Slide 15 — the dashboard as a radial diagram. */
-export type RadialFigure = {
-  kind: 'radial'
-  /** The large beige numeral at the centre. */
+/** Slide 15 — every signal the product watches, converging on the one derived number. */
+export type SignalIndexFigure = {
+  kind: 'signal-index'
+  /** The large numeral the signals are read into. */
   centre: { label: string; value: string }
   nodes: Array<{
     label: string
-    /** Hairline thickness: how much this signal feeds the centre, 0..1. */
+    /** How much this signal feeds the index, 0..1. Sets the row order, the
+     *  weight bar and the hairline's thickness. */
     weight: number
-    /** Inner or outer ring. */
-    ring: 1 | 2
     /** The current weakest link burns brighter. */
     highlight?: boolean
-    /** Gets an `evidence forming` tag when the outer ring dims. */
+    /** Carries an `evidence forming` tag: the sample is not big enough to compare yet. */
     forming?: boolean
   }>
 }
@@ -299,7 +298,7 @@ export type FigureSpec =
   | TracesFigure
   | MethodFanFigure
   | ClockRingsFigure
-  | RadialFigure
+  | SignalIndexFigure
   | SpokesFigure
   | CurrencyLiftFigure
   | PairedBarsFigure

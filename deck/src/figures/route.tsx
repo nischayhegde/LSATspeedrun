@@ -60,14 +60,28 @@ export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
           target that moved with the label's width would be a target that
           moved between projectors.
 
-          Sat on the run's own lane rather than in the corner of the frame. A
-          speedrun HUD pinned to the top-left of a slide is a badge; sat at the
-          start of the line, with the lead-in leaving its right edge, it is the
-          run's origin — and it stops the composition being a diagonal with an
-          unrelated chip floating above it. */}
+          IN THE CORNER, AND IT HAS TO BE. This sat on the skip lane, at the
+          start of the run, on the argument that a HUD pinned to a corner is a
+          badge while a HUD on the line is the run's origin. The argument was
+          right and the geometry was not: the node labels are stacked *above*
+          their lane — they have to be, or the route strikes through them — so
+          the chip and the first node's name were placed in the same band, and
+          `SPEEDRUN 0:07.41` printed straight across `intro course` on every
+          frame the deck has ever been shot at. The two cannot both be there:
+          the chip's width is set by its type and the node's position by a
+          percentage of the row, so no amount of nudging makes the clearance
+          hold from a 4:3 projector to a 21:9 one.
+
+          The bottom-left corner is where it goes instead, and there are two
+          reasons it is not a consolation. It is where a speedrun timer
+          actually lives, in every run the metaphor is borrowed from. And it is
+          the one part of this frame that nothing else can ever occupy — the
+          route leaves the curriculum lane at the top left and lands at the
+          bottom right, so the triangle underneath its departure was the empty
+          quarter of the slide. */}
       <div
         className="fig-rt-hud"
-        style={vars({ top: pct(SKIP_LANE / 100), opacity: phase >= 1 ? 1 : 0 })}
+        style={vars({ opacity: phase >= 1 ? 1 : 0 })}
       >
         <span
           className="fig-rt-hud-track"

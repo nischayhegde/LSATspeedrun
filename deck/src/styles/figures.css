@@ -568,9 +568,7 @@
 .fig-rt-hud {
   position: absolute;
   left: 0;
-  /* `top` is the skip lane, set inline; this lifts the chip clear of the rule
-     that leaves it so the two read as connected rather than as overprinted. */
-  transform: translateY(calc(-100% - .5em));
+  bottom: 0;
   display: flex;
   align-items: stretch;
   gap: .8em;
@@ -1809,170 +1807,124 @@
 }
 
 /* ================================================================
-   15 · radial — the measurement surface
+   15 · signal-index — eleven signals, read into one number
    ================================================================ */
 
-/* SQUARE, SO THE RING IS A RING.
-   Every coordinate in `radial.tsx` is a percentage of this box, so this box's
-   aspect *is* the ring's aspect. At the row's own 1674 by 507 the outer ring
-   drew 602 across and 182 down — the labels on the left and right then sat on
-   a curve that was travelling almost horizontally through them. A square as
-   tall as the row costs nothing: the width it gives up becomes the margin the
-   eleven labels radiate into. */
-.fig-rd {
+/* The whole figure is one coordinate space: the rows are a grid inside it, the
+   wires are an SVG over it in percentages of it, and the index is positioned in
+   percentages of it. That is what guarantees a wire leaves the row it belongs
+   to at every frame size — the alternative, measuring the rows and feeding the
+   numbers back, needs a `ResizeObserver` and one frame of the wires being
+   wrong. */
+.fig-si {
   position: relative;
-  height: 100%;
-  aspect-ratio: 1;
-  /* On a frame narrow enough that the square would be wider than the row, the
-     width wins and the figure simply gets smaller. It stays square either way. */
-  max-width: 100%;
-}
-
-.fig-rd-wires {
-  position: absolute;
-  inset: 0;
   width: 100%;
   height: 100%;
 }
 
-.fig-rd-guide {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1;
-  opacity: .13;
-  transition: opacity var(--mo-4) var(--ease-out);
+/* Exactly the box the wires' `WIRE_FROM` names, so a hairline starts where the
+   text stops rather than under it. */
+.fig-si-rows {
+  position: absolute;
+  /* Two points clear of the wires' own `WIRE_FROM` of 46, so a hairline starts
+     beside its label rather than touching the last glyph of it. */
+  inset: 0 56% 0 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  /* Equal fractions rather than auto, because `rowY` in the figure computes a
+     wire's origin as `(index + .5) / count` — the geometry is only true if the
+     rows really are equal. */
+  grid-auto-rows: 1fr;
 }
 
-.fig-rd-wire {
+/* Flush right, against the wires. The figure sits inside a centred layout and
+   would otherwise inherit `text-align: center`, which is what a ragged column
+   of eleven labels floating in the middle of the frame looks like — and it
+   detaches every label from the hairline it is supposed to own. */
+.fig-si-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: .9em;
+  min-width: 0;
+  transition:
+    opacity var(--mo-3) var(--ease-out) var(--fig-delay),
+    transform var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+
+.fig-si-label {
+  font-size: var(--fig-note);
+  line-height: 1.2;
+  color: var(--on-field-dim);
+  /* One line each. The column is over 600px on a 1080p stage and the longest
+     label is "Trend vs. your previous window", so nothing has to wrap — and a
+     list where one row is two lines tall breaks the grid the wires rely on. */
+  white-space: nowrap;
+}
+
+/* The weakest link is the one thing on this slide the presenter points at. */
+.fig-si-row[data-highlight='true'] .fig-si-label {
+  color: var(--on-field);
+  font-weight: 600;
+}
+
+.fig-si-tag {
+  font-style: normal;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-micro);
+  letter-spacing: .04em;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+  opacity: .72;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-si-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.fig-si-wire {
   fill: none;
   stroke: currentColor;
-  /* Screen pixels — see `DRAW_PX` in `kit.tsx`. The outer ring's wires are
-     over six hundred pixels long on a 1920 frame, so at 400 the dash did not
-     cover them and the diagram drew itself in dashes. */
+  /* Screen pixels — see `DRAW_PX` in `kit.tsx`. The stroke is non-scaling, so
+     the dash pattern is measured in device pixels and only needs to be longer
+     than any projector is wide. */
   stroke-dasharray: 4000;
-  opacity: .5;
+  opacity: .42;
   transition:
     stroke-dashoffset var(--mo-3) var(--ease-out) var(--fig-delay),
     opacity var(--mo-4) var(--ease-out);
 }
 
-.fig-rd-wire[data-highlight='true'] {
-  opacity: .95;
-}
+.fig-si-wire[data-highlight='true'] { opacity: .9; }
 
-.fig-rd[data-forming='true'] .fig-rd-wire[data-ring='2'] {
-  opacity: .28;
-}
+/* When the honesty tags arrive, the two signals that are not yet comparable
+   step back — the same gesture the slide is making out loud. */
+.fig-si[data-forming='true'] .fig-si-wire[data-forming='true'] { opacity: .16; }
+.fig-si[data-forming='true'] .fig-si-row[data-forming='true'] .fig-si-label { opacity: .6; }
 
-.fig-rd[data-forming='true'] .fig-rd-guide[data-ring='2'] {
-  opacity: .07;
-}
-
-.fig-rd-node {
+/* Left-aligned at the point the wires arrive at, not centred on it: the eleven
+   hairlines end in a single node and the number reads as what that node
+   resolves to, which only works if the number begins there. */
+.fig-si-index {
   position: absolute;
-  display: flex;
-  align-items: center;
-  /* Shrink-to-fit measures from `left` to the plot's right edge, and the plot
-     is only as wide as the row is tall. A node at 91% of it had forty-five
-     pixels to set its name in, so "Trend vs. your previous window" came out
-     four lines deep and lay across the ring. The labels are *meant* to leave
-     the plot — that is what the square's side margins are for. */
-  width: max-content;
-  /* A label two or three lines tall is centred on its dot, so it reaches above
-     and below the ring — and the ring is curving away from it the whole time.
-     The gap is what keeps the text off the line: at .45em the tallest labels on
-     the right sat across it. */
-  gap: .95em;
-  transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
-}
-
-/* Anchored by the direction of the node, so a label always runs away from
-   the diagram and never back across it. The `.4em` is half a dot: it puts
-   the dot's centre exactly on the ring. */
-.fig-rd-node[data-anchor='right'] {
-  transform: translate(-.4em, -50%);
-}
-
-.fig-rd-node[data-anchor='left'] {
-  flex-direction: row-reverse;
-  transform: translate(calc(-100% + .4em), -50%);
-  text-align: right;
-}
-
-.fig-rd-node[data-anchor='above'] {
-  flex-direction: column-reverse;
-  transform: translate(-50%, calc(-100% + .4em));
-  text-align: center;
-}
-
-.fig-rd-node[data-anchor='below'] {
-  flex-direction: column;
-  transform: translate(-50%, -.4em);
-  text-align: center;
-}
-
-.fig-rd-dot {
-  flex: 0 0 auto;
-  width: .8em;
-  height: .8em;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: .8;
-  transition: transform var(--mo-3) var(--ease-spring), opacity var(--mo-3) var(--ease-out);
-}
-
-.fig-rd-node[data-highlight='true'] .fig-rd-dot {
-  transform: scale(1.85);
-  opacity: 1;
-}
-
-/* Wide enough that the longest of them — "Trend vs. your previous window" —
-   sets on two lines rather than four. The square plot handed back nearly six
-   hundred pixels of margin on each side; spending it on fewer line breaks is
-   what that margin was for. */
-.fig-rd-label {
-  display: block;
-  max-width: 12em;
-  font-size: var(--fig-note);
-  line-height: 1.18;
-  color: var(--on-field-dim);
-}
-
-/* The inner ring's labels run into the gap between the rings, which is the
-   tightest space in the figure. */
-.fig-rd-node[data-ring='1'] .fig-rd-label {
-  max-width: 7.5em;
-}
-
-.fig-rd-node[data-highlight='true'] .fig-rd-label {
-  color: var(--on-field);
-  font-weight: 600;
-}
-
-.fig-rd-tag {
-  display: block;
-  margin-top: .18em;
-  font-family: var(--font-pixel);
-  font-size: var(--fig-micro);
-  letter-spacing: .04em;
-  color: var(--on-field-dim);
-  transition: opacity var(--mo-3) var(--ease-out);
-}
-
-.fig-rd-centre {
-  position: absolute;
-  left: 50%;
   top: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(.5em, -50%);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: .1em;
-  text-align: center;
+  text-align: left;
   transition: opacity var(--mo-4) var(--ease-out);
 }
 
-.fig-rd-centre b {
+.fig-si-index b {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: var(--fig-num-lg);
@@ -1980,7 +1932,7 @@
   letter-spacing: -.02em;
 }
 
-.fig-rd-centre span {
+.fig-si-index span {
   max-width: 8.5em;
   font-size: var(--fig-note);
   line-height: 1.2;

@@ -11,9 +11,9 @@ import { HoursBar } from './hours-bar'
 import { MethodFan } from './method-fan'
 import { Numeral } from './numeral'
 import { PairedBars } from './paired-bars'
-import { Radial } from './radial'
 import { ReasoningCard } from './reasoning-card'
 import { Route } from './route'
+import { SignalIndex } from './signal-index'
 import { Spokes } from './spokes'
 import { Traces } from './traces'
 import '../styles/figures.css'
@@ -80,8 +80,8 @@ function body(spec: FigureSpec, active: boolean, reduced: boolean): ReactNode {
       return <MethodFan spec={spec} active={active} reduced={reduced} />
     case 'clock-rings':
       return <ClockRings spec={spec} active={active} reduced={reduced} />
-    case 'radial':
-      return <Radial spec={spec} active={active} reduced={reduced} />
+    case 'signal-index':
+      return <SignalIndex spec={spec} active={active} reduced={reduced} />
     case 'spokes':
       return <Spokes spec={spec} active={active} reduced={reduced} />
     case 'currency-lift':
