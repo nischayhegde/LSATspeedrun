@@ -81,6 +81,13 @@ export function Deck() {
       <div
         className={`deck-layer${live ? ' is-live' : ''}`}
         data-act-label={SECTION_LABELS[slide.section]}
+        // Which slide this layer is holding, on the layer itself. The HUD
+        // carries the same string but is off by default and suppressed under
+        // the presenter overlay, so the two harnesses in `scripts/` had no
+        // reliable way to ask the deck what it thought was on screen — and
+        // "the deck lost track of which slide it is on" is precisely the
+        // failure a navigation stress run exists to catch.
+        data-slide={slide.id}
         data-kind={slide.kind}
         data-section={slide.section}
         // The deck inverts between a royal blue field and a beige one as a
