@@ -333,7 +333,10 @@
 
 .fig-hb {
   --fig-hb-height: calc(3.6 * var(--u));
-  --fig-hb-pad: 2.9em;
+  /* Clearance above the bar for the outcome label and its leader. Trimmed from
+     2.9em because the figure stood 3px proud of `.figure-stage`, which clips,
+     and the 3px it was losing were the descenders of the late line item. */
+  --fig-hb-pad: 2.5em;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -373,15 +376,20 @@
 
 .fig-hb-wash {
   background: currentColor;
-  opacity: .16;
+  opacity: .22;
 }
 
-/* Film grain and scanlines, procedurally. The hours visibly become video
-   at the moment the curriculum quotes land. */
+/* Scanlines, procedurally. The hours visibly become video at the moment the
+   curriculum quotes land.
+
+   Horizontal only, and much fainter than they were. Crossed with a second
+   gradient every nine pixels the effect was not scanlines but a *hatch*, and a
+   250-hour bar filled with a regular mesh is the drawing convention for a
+   quantity that is missing — which on a slide whose whole subject is a
+   quantity that is real and enormous is precisely backwards. It photographed
+   as a placeholder. One axis reads as a screen; two axes read as a swatch. */
 .fig-hb-grain {
-  background-image:
-    repeating-linear-gradient(0deg, currentColor 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 9px);
+  background-image: repeating-linear-gradient(0deg, currentColor 0 1px, transparent 1px 5px);
   transition: opacity var(--mo-4) var(--ease-out);
 }
 
@@ -1475,19 +1483,25 @@
   font-weight: 600;
 }
 
-/* The filter. Inside the catalogue pane, which is both where it belongs —
-   the catalogue is the thing being filtered — and what stops it contributing
-   its own off-frame width to the stage's scroll box. As a child of the figure
-   it was 250px of horizontal overflow for a decoration. */
+/* The filter. Inside the catalogue pane, which is where it belongs — the
+   catalogue is the thing being filtered — and mounted only for the phase it
+   crosses, so that at rest it contributes nothing to the pane's scroll box.
+   See the note in `method-lab.tsx`. */
 .fig-ml-sweep {
   position: absolute;
   top: 0;
   bottom: 0;
+  left: -16%;
   width: 22%;
-  transform: translateX(-50%);
+  opacity: .34;
   background: linear-gradient(90deg, transparent, currentColor, transparent);
   pointer-events: none;
-  transition: left 200ms linear, opacity 140ms linear;
+  animation: fig-ml-sweep 190ms linear both;
+}
+
+@keyframes fig-ml-sweep {
+  from { transform: translateX(0); }
+  to { transform: translateX(600%); }
 }
 
 /* ---- the one that was handed over ------------------------------------ */
@@ -1641,75 +1655,63 @@
   justify-content: center;
 }
 
-/* Square and concentric with the inner ring. Centred on it so the two read as
-   one dial rather than as two unrelated arcs.
+/* THE FULL FORM.
 
-   This used to be 118% of the stage, so that the full-form ring "went off past
-   the edge of your attention". The stage clips, and what the room actually saw
-   was a lopsided arc entering and leaving the bottom corners — not a clock that
-   was too big to take in, just a broken curve. The ring is inside the frame
-   now and carries its meaning the way the narrative's other half does: it is
-   drawn to 38% and never closed. An open ring reads as unfinished at any size;
-   a clipped one only reads as clipped. */
-.fig-cr-outer-frame {
+   A rounded rectangle on the frame's own edge rather than a circle, for the
+   reasons set out at length in `clock-rings.tsx`: the figure row is four times
+   as wide as it is tall, and the two previous circles were respectively a
+   broken curve leaving the bottom corners and a 396px ring marooned in six
+   hundred pixels of empty beige on either side.
+
+   Its viewBox is the element's pixel box, so `inset: 0` and no width or height
+   in CSS — the element carries its own, from `useBoxSize`. */
+.fig-cr-frame-ring {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  aspect-ratio: 1;
-  /* The stroke is at radius 46 of 100, so the ring's own diameter is 92% of
-     this — which lands it just inside the stage row. */
-  height: 100%;
-  transform: translate(-50%, -50%);
+  inset: 0;
   pointer-events: none;
 }
 
-.fig-cr-outer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.fig-cr-outer-arc {
+/* The unrun part of the form, at a weight that says "this exists and you have
+   not done it" rather than "this is a border". Without it the ring's open end
+   has nothing to be open *against*, and an arc that simply stops reads as an
+   arc that failed to draw — which is the difference between a deliberate
+   statement and a rendering fault, on a slide whose whole point is the gap. */
+.fig-cr-frame-track {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.4;
   stroke-linecap: butt;
-  opacity: .78;
+  opacity: .1;
+}
+
+.fig-cr-frame-arc {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: butt;
+  opacity: .5;
+  /* Slower than everything else on the slide by a factor of three. The
+     per-question ring completes in 1.7s and this one is still going, which is
+     the comparison the slide is making, made out of time rather than out of
+     type. */
   transition: stroke-dashoffset 2400ms var(--ease-in-out);
 }
 
+/* Hung off the ring's open end, on whichever edge that turned out to be. The
+   knockout is what lets it sit *on* the line: the label belongs at the gap,
+   and moving it clear of the stroke would put it somewhere the gap is not. */
 .fig-cr-outer-label {
   position: absolute;
-  /* Shrink-to-fit measures the room between `left` and the containing block's
-     right edge, and this label is pinned near that edge by construction — it
-     belongs at the ring's open end. Without `max-content` the box collapsed to
-     about sixty pixels and set five words on four lines, which read as a note
-     stuck to the slide rather than as a caption on the gap. */
   width: max-content;
-  max-width: 11em;
-  padding: .25em .5em;
-  font-size: var(--fig-note);
+  max-width: 26em;
+  padding: .3em .6em;
+  font-size: var(--fig-label);
   line-height: 1.25;
-  /* A halo in the field's own colour. The label belongs at the ring's open
-     end — that is the whole point of it — and the ring runs through where it
-     has to sit. Moving it clear would put it off the bottom of the row on a
-     wide frame; knocking the rule out behind the words is what a drawing does.
-     Falls back to transparent on a slide with no painted field, where there is
-     nothing to knock out. */
   background: var(--field, transparent);
   transition: opacity var(--mo-4) var(--ease-out);
 }
 
-.fig-cr-outer-label[data-side='right'] {
-  transform: translate(.6em, -50%);
-}
-
-.fig-cr-outer-label[data-side='left'] {
-  transform: translate(calc(-100% - .6em), -50%);
-  text-align: right;
-}
+.fig-cr-outer-label[data-anchor='middle'] { transform: translate(-50%, -50%); }
+.fig-cr-outer-label[data-anchor='end'] { transform: translate(-100%, -50%); text-align: right; }
+.fig-cr-outer-label[data-anchor='start'] { transform: translate(0, -50%); }
 
 /* Sized off the height so the two rings stay concentric and inside the stage
    row whatever the projector's aspect ratio is. At 62% the gap between the
@@ -1720,7 +1722,11 @@
   position: relative;
   flex: none;
   aspect-ratio: 1;
-  height: 72%;
+  /* As tall as the band allows once the frame ring has its clearance. The dial
+     used to be 72%, which was sized against an outer circle that no longer
+     exists; with the full form out on the frame's edge there is nothing for it
+     to stay concentric with, and every pixel it gains is legibility. */
+  height: 88%;
   max-width: 46%;
 }
 
@@ -2380,11 +2386,16 @@
 /* One short steep slash across the reverse arrow, drawn in 140ms with no
    easing worth the name. `clip-path` rather than a scale, so the mark grows
    from the end the pen would start at instead of unfolding from its middle. */
+/* Short. At 4.4u rotated 56 degrees the mark stood 58px tall across a shaft
+   5px thick — ten times the height of the thing it was striking — so it read
+   not as a line through an arrow but as a stray solidus floating above one.
+   A strike has to be legibly *attached* to what it cancels, which means it is
+   sized against the stroke it crosses rather than against the frame. */
 .fig-gt-strike {
   position: absolute;
-  width: calc(4.4 * var(--u));
+  width: calc(2.4 * var(--u));
   height: 4px;
-  transform: translate(-50%, -50%) rotate(-56deg);
+  transform: translate(-50%, -50%) rotate(-58deg);
   background: currentColor;
   clip-path: inset(0 100% 0 0);
   transition: clip-path 140ms linear;
@@ -2409,15 +2420,21 @@
   transition: opacity var(--mo-3) var(--ease-out) 220ms;
 }
 
+/* Takes the rest of the frame and centres in it, rather than sitting straight
+   under the diagram and leaving the last fifth of the slide empty. The
+   couplings are the concrete half of the argument — the diagram states the
+   rule, these are the three places it bites — and a block of content with a
+   void under it reads as a slide that stopped early. */
 .fig-gt-couplings {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--s-2);
+  justify-content: center;
+  gap: var(--s-3);
 }
 
 /* Each row is a three-column rule of its own at a shared width, so the three

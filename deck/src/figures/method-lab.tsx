@@ -107,15 +107,22 @@ export function MethodLab({ spec, active, reduced }: FigureBody<MethodLabFigure>
           ))}
         </ol>
 
-        {/* The filter, one pass, left to right, then gone. It lives inside the
-            catalogue rather than over the whole figure — both because the
-            catalogue is what is being filtered, and because as a child of the
-            frame it used to add its own off-frame width to the stage's scroll
-            box, which is 250px of horizontal overflow for a decoration. */}
-        <span
-          className="fig-ml-sweep"
-          style={{ left: phase >= 2 ? '116%' : '-16%', opacity: phase >= 2 && phase < 3 ? .34 : 0 }}
-        />
+        {/* The filter: one pass, left to right, then gone — and gone from the
+            document, not merely transparent.
+            
+            A parked sweep is not free. This element is wider than its pane and
+            lives outside it at both ends of its travel, so as a permanent child
+            it added its own off-frame width to the scroll box for the whole
+            slide: 137px on the catalogue, and 250px on the figure back when it
+            was a child of the figure. Nothing shows it — the pane clips — but a
+            layout audit that asks "does anything here overflow its frame" can
+            no longer tell this apart from a real fault, and the next person to
+            run one wastes their afternoon the way this one did.
+            
+            Mounting it for the one phase it is visible means its travel has to
+            be a keyframe rather than a transition, since there is no previous
+            style to transition from on the frame it appears. */}
+        {phase === 2 ? <span className="fig-ml-sweep" /> : null}
       </div>
 
       {/* ── the one that was handed over ───────────────────────────────── */}

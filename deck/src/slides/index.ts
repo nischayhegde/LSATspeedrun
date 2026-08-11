@@ -1235,11 +1235,13 @@ export const SLIDES: readonly SlideSpec[] = [
     // tenth of the size, and it repeated them as a range, which is a fourth
     // number the study does not report.
     //
-    // The two nulls stay, and stay as fragments rather than being left to the
-    // figure's `did not move` rule, which is set at hairline weight. They are
-    // the reason a room that distrusts gamification believes the rest of the
-    // slide, so they are the one thing here that has to be legible from the
-    // back. See `CITATIONS.md` §6.
+    // The two nulls are fragments and only fragments. The figure used to draw
+    // them a second time under a rule, as a pixel-face `DID NOT MOVE` label and
+    // two flat stubs — the same two findings, in the least legible type on the
+    // slide, directly under the sentence that already said them. They are the
+    // reason a room that distrusts gamification believes the rest of the slide,
+    // so they have to be readable from the back, and saying a thing twice with
+    // one of the two illegible is not emphasis. See `CITATIONS.md` §6.
     points: [
       'Intrinsic motivation: unchanged',
       'Course grades: not significant',
@@ -1283,8 +1285,6 @@ export const SLIDES: readonly SlideSpec[] = [
         { course: 'Discrete Structures', venue: 'private research university, PA', multiple: 2.5 },
         { course: 'Computer Networking', venue: 'private university, MO', multiple: 3.7 },
       ],
-      unmovedLabel: 'did not move',
-      unmoved: ['intrinsic motivation', 'final course grades'],
     },
     notes:
       'Back to the fifty-one percent. Dicheva isolated virtual currency in three courses. '

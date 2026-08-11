@@ -31,7 +31,7 @@
      guessed, and the multiple gutter from `3.7×` in the display face. */
   --fig-cl-label: calc(15 * var(--u));
   --fig-cl-mult: calc(4.8 * var(--u));
-  --fig-cl-row-gap: var(--s-2);
+  --fig-cl-row-gap: var(--s-3);
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -41,7 +41,7 @@
 
 .fig-cl-lede {
   margin: 0;
-  font-size: var(--fig-note);
+  font-size: var(--fig-label);
   line-height: 1.25;
   color: var(--on-field-dim);
   transition: opacity var(--mo-3) var(--ease-out);
@@ -73,20 +73,20 @@
 
 .fig-cl-where b {
   font-weight: 600;
-  font-size: var(--fig-note);
+  font-size: var(--fig-label);
 }
 
 /* The three universities are the reason this is a multi-case result rather
    than one classroom, so they are on the slide — but one step down, because
    the argument is the overshoot and not the address. */
 .fig-cl-where span {
-  font-size: var(--fig-micro);
+  font-size: var(--fig-note);
   color: var(--on-field-dim);
 }
 
 .fig-cl-track {
   position: relative;
-  height: calc(1.8 * var(--u));
+  height: calc(2.4 * var(--u));
 }
 
 .fig-cl-run {
@@ -116,7 +116,7 @@
   left: 0;
   transform: translateX(-50%);
   font-family: var(--font-pixel);
-  font-size: var(--fig-micro);
+  font-size: var(--fig-note);
   letter-spacing: .03em;
   white-space: nowrap;
   color: var(--on-field-dim);
@@ -126,53 +126,8 @@
   justify-self: end;
   font-family: var(--font-display);
   font-weight: var(--weight-strong);
-  font-size: var(--fig-lead);
+  font-size: var(--fig-num-sm);
   line-height: 1;
   white-space: nowrap;
   transition: opacity var(--mo-3) var(--ease-out) 420ms;
-}
-
-/* ---- the two nulls ---------------------------------------------------- */
-
-.fig-cl-null {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--s-3);
-  padding-top: clamp(.5rem, 1.4vh, 1rem);
-  border-top: 1px solid currentColor;
-  transition: opacity var(--mo-4) var(--ease-out);
-}
-
-.fig-cl-null-label {
-  font-family: var(--font-pixel);
-  font-size: clamp(.76rem, .9vw, .92rem);
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--on-field-dim);
-}
-
-.fig-cl-null ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: clamp(.9rem, 2.2vw, 2.2rem);
-}
-
-.fig-cl-null li {
-  display: flex;
-  align-items: center;
-  gap: .55em;
-  font-size: clamp(.88rem, 1.05vw, 1.06rem);
-}
-
-/* A flat stub where the other half of the figure has a bar. The null is drawn
-   at the control length and stops there, which is what the study found. */
-.fig-cl-null li i {
-  width: clamp(1.4rem, 2.6vw, 2.6rem);
-  height: 0;
-  border-top: 2px solid currentColor;
-  opacity: .55;
 }

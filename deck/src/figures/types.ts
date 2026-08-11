@@ -254,10 +254,6 @@ export type CurrencyLiftFigure = {
   /** Sits on the shared dashed gate, printed once on the first row. */
   controlLabel: string
   rows: Array<{ course: string; venue: string; multiple: number }>
-  /** The eyebrow on the null register, e.g. `did not move`. */
-  unmovedLabel: string
-  /** Outcomes the study measured and found unchanged. Drawn flat, never as bars. */
-  unmoved: string[]
 }
 
 /** Slide 17 — the four Clark splits, ours against the alternative. */
