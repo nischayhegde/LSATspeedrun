@@ -3,7 +3,18 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { demoConfig } from '../../demo.config'
 import { TRANSITION_MS } from '../engine/transitions'
 import type { DemoSpec, SlideSpec } from '../slides/types'
-import { getSlot, getStatus, resolveRoute, runtimeVersion, setStatus, subscribeRuntime } from './demo-runtime'
+import {
+  activeState,
+  getSlot,
+  getStatus,
+  isToggled,
+  resetToggle,
+  resolveRoute,
+  runtimeVersion,
+  setStatus,
+  subscribeRuntime,
+  toggleDemo,
+} from './demo-runtime'
 import { probeApp } from './health'
 import './demo-stage.css'
 
@@ -57,6 +68,12 @@ import './demo-stage.css'
  * rather than snapping to the route the slide names. That is the right default —
  * it is never destructive — and `L` reloads the current slide's route when it is
  * not.
+ *
+ * A slide with a `toggle` reaches rule 4 without the slide changing: the toggle
+ * flips which route the slide is asking for, and the policy then performs the
+ * navigation it already knew how to perform. Nothing here is special-cased for
+ * it, which is deliberate — the toggle is one slide's editorial decision and this
+ * file should not grow a mode for it.
  *
  * ## Where it sits
  *
@@ -158,7 +175,7 @@ type Run = {
 }
 
 function routeFor(demo: DemoSpec, sessionId: string): string {
-  return resolveRoute(demo.route, sessionId)
+  return resolveRoute(activeState(demo).route, sessionId)
 }
 
 export function DemoStage({ slides, index, stills, annotations, moving }: Props) {
@@ -167,6 +184,13 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
 
   const slide = slides[index]
   const demo = slide?.demo
+  /**
+   * Whether this slide is showing its toggled-to state. Read through the runtime
+   * rather than held here, because `demo-frame.tsx` paints the still off the same
+   * answer and the two must not be able to disagree — and because it has to
+   * survive this component re-rendering for any other reason.
+   */
+  const toggled = isToggled(demo)
   const sessionId = status.sessionId || demoConfig.liveSessionId
   const authEpoch = status.authEpoch
   /**
@@ -315,7 +339,7 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
     // `run` is read, not depended on: including it would re-run the policy on
     // every change and re-decide a decision already taken.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, showStill, sessionId, authEpoch])
+  }, [index, showStill, sessionId, authEpoch, toggled])
 
   // --- `L` reloads the current slide's route ------------------------------
   // The escape hatch for rule 3 above. Imperative rather than through state,
@@ -334,6 +358,60 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [demo, sessionId])
+
+  // --- the toggle: one slide's before/after -------------------------------
+  /**
+   * `demo-office-transformation` is scripted as a toggle and had nothing that
+   * toggled. Its key is declared on the spec (`demo.toggle.key`) rather than
+   * fixed here, so the click path, the staging note and the presenter overlay
+   * name the key the handler actually binds.
+   *
+   * Two properties this needs and a bare `src` assignment would not have:
+   *
+   * - **It flips state, not the iframe.** The run policy above already knows how
+   *   to navigate a surviving element to a route the slide asks for — that is
+   *   rule 4, and it is the same path `/office` → `/office?officeTier=0` takes
+   *   between the previous slide and this one. So this only changes what the
+   *   slide is asking *for*, and the existing policy performs it. That is also
+   *   what makes it work with no live app at all: with a still on screen there is
+   *   no frame to navigate, and `demo-frame.tsx` simply paints the other picture.
+   * - **It is reversible.** A mis-press is one more press, not a stranded slide.
+   *   On a slide with five scripted seconds of silence, the recovery mattering
+   *   more than the flourish is the whole design.
+   *
+   * Guarded on the deck being the keyboard's owner the same way `L` is. If focus
+   * has been taken by the embed the deck sees no keys at all, and the mitigation
+   * is the pointer-driven blur below rather than anything specific to this key.
+   */
+  useEffect(() => {
+    const wanted = demo?.toggle?.key?.toLowerCase()
+    if (!demo || !wanted) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key.toLowerCase() !== wanted) return
+      const target = event.target as HTMLElement | null
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      event.preventDefault()
+      toggleDemo(demo)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [demo])
+
+  /**
+   * Leaving the slide puts it back to its "before" state.
+   *
+   * Without this the toggle works exactly once per page load. Stepping back to
+   * the slide, or reaching it again in a second run-through, would open on the
+   * tier-14 office — so the presenter's toggle would play the money shot
+   * backwards, from the built firm to the shack, with nothing on screen
+   * admitting it. The direction of travel *is* the argument, and a rehearsal
+   * loop is exactly where this would be discovered too late.
+   */
+  useEffect(() => {
+    if (!demo?.toggle) return
+    return () => resetToggle(demo)
+  }, [demo])
 
   // --- giving the keyboard back -------------------------------------------
   /**

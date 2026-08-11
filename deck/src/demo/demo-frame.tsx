@@ -77,7 +77,7 @@ export function DemoFrame({ demo, stills, active }: Props) {
   useSyncExternalStore(subscribeRuntime, runtimeVersion)
   const slot = useRef<HTMLDivElement | null>(null)
 
-  const { showStill, label, route } = describeSurface(demo, stills)
+  const { showStill, label, route, still } = describeSurface(demo, stills)
 
   /**
    * Published under this slide's own `DemoSpec`, and only while this layer is the
@@ -126,7 +126,11 @@ export function DemoFrame({ demo, stills, active }: Props) {
             the slide it belongs to. */}
         <div className="demo-screen" ref={slot}>
           {showStill ? (
-            <img className="demo-still" src={`/stills/${demo.still}`} alt={demo.caption ?? route} />
+            // `still` off the surface, not `demo.still`: a toggled slide has two,
+            // and the fallback has to follow the toggle or the before/after
+            // collapses to "before" twice over — which is the state this slide
+            // was in, and the reason it could not perform its own script.
+            <img className="demo-still" src={`/stills/${still}`} alt={demo.caption ?? route} />
           ) : null}
         </div>
       </div>

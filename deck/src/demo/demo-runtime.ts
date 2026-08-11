@@ -127,8 +127,66 @@ export function runtimeVersion(): number {
 }
 
 // ---------------------------------------------------------------------------
-// route placeholders
+// the one toggled demo
 // ---------------------------------------------------------------------------
+
+/**
+ * Which demo slides are currently showing their toggled-to state.
+ *
+ * Keyed by the `DemoSpec` object, for the same reason the slot map is: the two
+ * ends that need this answer are `demo-frame.tsx`, which paints the still, and
+ * `demo-stage.tsx`, which navigates the embed, and the spec is the only identity
+ * they already share. Module state rather than React state because those two
+ * ends sit on opposite sides of a component tree neither of them owns — the same
+ * argument the file header makes about the slot map and the status.
+ *
+ * A `Set` rather than a boolean, even though exactly one slide has a `toggle`
+ * today: the alternative is a single global flag that would leak across slides
+ * the moment a second one ever gets a toggle, and that class of bug is
+ * invisible until it is on a projector.
+ */
+const toggled = new Set<DemoSpec>()
+
+export function isToggled(demo: DemoSpec | null | undefined): boolean {
+  return Boolean(demo && toggled.has(demo))
+}
+
+/** Flip a demo between its two states. Reversible, so a mis-press is recoverable. */
+export function toggleDemo(demo: DemoSpec): void {
+  if (!demo.toggle) return
+  if (!toggled.delete(demo)) toggled.add(demo)
+  publish()
+}
+
+/**
+ * Put a demo back to its "before" state, called when its slide is left.
+ *
+ * This is the difference between a toggle that works once and one that works in
+ * rehearsal. Without it the flag survives the slide: stepping back to
+ * `demo-office-transformation`, or reaching it a second time in a run-through,
+ * would open on the tier-14 office and the presenter would toggle *to the shack*
+ * — the money shot played backwards, silently, with nothing on screen admitting
+ * it. The slide's whole argument is the direction of travel.
+ */
+export function resetToggle(demo: DemoSpec | null | undefined): void {
+  if (demo && toggled.delete(demo)) publish()
+}
+
+/**
+ * The route and still a demo is showing right now, after the toggle.
+ *
+ * Everything that needs to know what is on screen goes through here — the frame's
+ * title bar, the still it paints, the stage's navigation, `L`, and the presenter
+ * overlay — so none of them can disagree about which of the two states the slide
+ * is in. That mattered enough to centralise: `demo-focus-mode` once painted a
+ * still captured at one route under a title bar naming another, and this slide
+ * has two of each.
+ */
+export function activeState(demo: DemoSpec): { route: string; still: string } {
+  return isToggled(demo) && demo.toggle
+    ? { route: demo.toggle.route, still: demo.toggle.still }
+    : { route: demo.route, still: demo.still }
+}
 
 // ---------------------------------------------------------------------------
 // presenter-only chrome
@@ -151,6 +209,10 @@ export function runtimeVersion(): number {
  */
 export const presenterChrome = typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).has('hud')
+
+// ---------------------------------------------------------------------------
+// route placeholders
+// ---------------------------------------------------------------------------
 
 /**
  * Fill a slide's route placeholders.
@@ -200,6 +262,15 @@ export type DemoSurface = {
   label: 'live' | 'connecting' | 'stills' | 'app not running' | 'no seeded session'
   /** The route with placeholders filled from the resolved session. */
   route: string
+  /**
+   * The still to paint, which is not always `demo.still`: a toggled slide has a
+   * second one. Returned from here rather than read off the spec by whoever is
+   * painting, so the picture and the route in the title bar above it are decided
+   * in the same place and cannot describe different states.
+   */
+  still: string
+  /** True when this slide is showing its toggled-to state. Presenter-facing only. */
+  toggled: boolean
 }
 
 /**
@@ -217,7 +288,8 @@ export type DemoSurface = {
 export function describeSurface(demo: DemoSpec, forceStills: boolean): DemoSurface {
   const status = getStatus()
   const sessionId = status.sessionId || demoConfig.liveSessionId
-  const sessionMissing = demo.route.includes('{session}') && !sessionId
+  const state = activeState(demo)
+  const sessionMissing = state.route.includes('{session}') && !sessionId
   const pinnedToStill = forceStills || demoConfig.useStills || demo.stillOnly
 
   return {
@@ -231,6 +303,8 @@ export function describeSurface(demo: DemoSpec, forceStills: boolean): DemoSurfa
           : status.health === 'checking'
             ? 'connecting'
             : 'app not running',
-    route: resolveRoute(demo.route, sessionId),
+    route: resolveRoute(state.route, sessionId),
+    still: state.still,
+    toggled: isToggled(demo),
   }
 }

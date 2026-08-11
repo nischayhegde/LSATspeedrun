@@ -120,7 +120,7 @@ than a low score, which reads as a strawman.
 
 ## 3. Per-demo second counts
 
-Total live-demo time: **74 seconds** across 6 live slides, plus one still.
+Total live-demo time: **82 seconds** (1:22) across 6 live slides, plus one still.
 Budget spoken words against these numbers, not against the old ones.
 
 **Slides are identified by id, never by index.** A slide was inserted earlier in
@@ -129,18 +129,21 @@ be wrong. Ids do not move.
 
 | Slide id | Route | Seconds | Beats |
 | --- | --- | --- | --- |
-| `demo-case-answer` | `/cases/{session}` | **20** | 5 |
-| `demo-case-verdict-review` | `/cases/{verdictSession}` | **14** | 3 |
+| `demo-case-answer` | `{autoplay}` | **30** | 5 |
+| `demo-case-verdict-review` | `/progress?tab=answers` | **12** | 3 |
 | `demo-mega-litigation` | `/progress` | **14** | 3 |
 | `demo-clients-walk-in` | `/office` | **9** | 2 |
 | `demo-office-transformation` | `/office?officeTier=0` | **9** | 3 |
 | `demo-map-and-firm` | `/map` | **8** | 2 |
-| `demo-focus-mode` | *still only* — `demo-focus-mode.png` | **0** live | — |
+| `demo-focus-mode` | *still only* — `demo-focus-mode.png` | **6** budget, **0** live | — |
 
 `demo-focus-mode` is no longer a live embed. It carries `stillOnly` and paints
 `demo-focus-mode.png`, so it costs no load and cannot fail. See §7.
 
-### `demo-case-answer` — the case, 20s
+### `demo-case-answer` — the case, 30s
+
+*The beat-by-beat table below describes the superseded hand-driven cut. The slide
+now plays itself, and the current choreography is in `src/slides/index.ts`.*
 
 Reasoning is already in the box. **Alan never types.**
 
@@ -167,7 +170,10 @@ that claim be true.
 Submitting would create a fresh attempt and put a 20-40 second model call on
 stage. The verdict you want is already waiting on the next slide.
 
-### `demo-case-verdict-review` — the verdict, 14s
+### `demo-case-verdict-review` — the verdict, 12s
+
+*The beat-by-beat table below describes the superseded hand-driven cut. The
+current choreography is in `src/slides/index.ts`.*
 
 Advancing points the same iframe *element* at a different session — the
 pre-graded one — so the app **does reload**, briefly. It is a warm, already
@@ -274,6 +280,33 @@ not a free win: **rehearse the advance into `demo-case-verdict-review`
 specifically**, confirm the loading cover hides the boot rather than flashing
 white, and give the presenter a line to speak across it.
 
+> **That script has now actually been run, which it never had been.** It was
+> written around the autoplay choreography and left unexecuted because running it
+> means an autoplay run, so every assertion in it was unexercised and a green
+> result from it meant nothing. First live run: **28 checks, all passing**, one
+> warm reload across each seam, the element surviving throughout, and the case
+> reaching its verdict in 19.6s against its 30s budget. Nothing was wrong in the
+> deck. Three things were wrong in the script, and all three were of the kind that
+> makes a report say less than it knows:
+>
+> - Every `note:` it gathered went into `report.json` and was **never printed**.
+>   Thin headroom, a wrong question on top of the Answer Log, a first tile the
+>   presenter would have to scroll to — all filed out of sight under a green
+>   summary. They are printed now, under their own heading after the checks.
+> - Its screenshots were named `12-`, `13-` and `14-` for slides that sit at 13,
+>   14 and 15, which is the thing its own header opens by forbidding. Named by id
+>   now.
+> - Its timing check could not tell a slow deck from a busy laptop while telling
+>   the reader to "suspect machine load first". It failed at 33.8s on a machine at
+>   load 31, minutes after the same code ran in 18.2s. It now samples the load
+>   average and **voids** the measurement instead of failing it when the machine is
+>   over 1.5 per core — a red that means "your laptop was busy" is how a check
+>   stops being read.
+>
+> Measured spread across four runs, same code, same machine: 18.2, 19.6, 25.1 and
+> 33.8 seconds, the last two under heavy load. The 30s budget holds on a quiet
+> machine with about 10s to spare.
+
 ---
 
 ## 6. Fallback stills — which still stands in for which route
@@ -307,7 +340,8 @@ still is worse than a visible failure, because it silently misleads the room.
 
 | Still | `--only` key | Stands in for | Used by |
 | --- | --- | --- | --- |
-| `demo-case.png` | `case` | `/cases/{session}` | `demo-case-answer` |
+| `demo-case.png` | `case` | `/cases/{session}` | (unused by the current cut — the *opening* frame) |
+| `demo-case-answered.png` | `case-answered` | `{autoplay}` at rest: (C) credited, stamp down, coach's reading in shot | `demo-case-answer` — see below |
 | `demo-answer-log.png` | `answer-log` | `/progress?tab=answers`, first tile open | `demo-case-verdict-review` — see below |
 | `demo-progress.png` | `progress` | `/progress` | `demo-mega-litigation` |
 | `demo-office.png` | `office` | `/office` | `demo-clients-walk-in` |
@@ -329,7 +363,8 @@ node scripts/recapture-stills.mjs --list              # keys and routes
 
 Needs the app on `:5173`, the backend on `:5001`, and a seeded account
 (`npm run reset-demo`). Roughly 15s per still, most of it deliberate settling
-time for the 3D scenes.
+time for the 3D scenes; `case-answered` takes about 35s on its own, because it
+waits out a full autoplay run.
 
 Three details in there are load-bearing:
 
@@ -358,9 +393,9 @@ node scripts/shoot.mjs --out=.deck-shots/live            # live embeds
 node scripts/shoot.mjs --stills --out=.deck-shots/canned # forced to stills
 ```
 
-Check `demo-case.png` after any change to the case UI, and the office and map
-stills after any change to a game scene — those are the ones under active
-development.
+Check `demo-case-answered.png` after any change to the case UI, and the office
+and map stills after any change to a game scene — those are the ones under
+active development.
 
 > `demo-answer-log.png` is the one still that needs a click to exist. The
 > attempt drawer has no URL — the router has no per-attempt route and the panel
@@ -372,9 +407,29 @@ development.
 > dashboard instead of the review drawer: a still can be wrong without being
 > broken, and a fallback that quietly stops making the slide's point is the
 > worst of the three states it can be in.
+
+> `demo-case-answered.png` is the one still whose capture takes half a minute:
+> its `prepare` step lets the app's own autoplay driver play the whole sequence
+> and waits for the page to stop changing, because driving it from the script
+> would race it for the same controls. That replay goes through the attempt's
+> idempotency key, so it writes no new row and cannot displace the tile slide 14
+> depends on — but re-run `stage-demo:fast` afterwards anyway and look.
 >
-> **`demo-case-verdict-review` still names `demo-progress.png`.** Changing that
-> is a one-line edit in `src/slides/index.ts`, which the demo work does not own.
+> Two things about its framing are worth knowing before touching it, because
+> each produced a plausible-looking wrong frame first:
+>
+> - **The app scrolls itself when the verdict lands**, smoothly, and there is
+>   nothing to await on. A `prepare` step that scrolled as soon as its selectors
+>   appeared won that race on one run and lost it on the next — the same code
+>   produced two different pictures, one of them with the credited choice pulled
+>   off the top edge. `frameOn` waits for the document's scroll offset to go
+>   quiet, sets the frame, then re-checks that the frame held.
+> - **`header.app-header` is sticky and opaque, and 68px of the top of every
+>   capture is behind it.** An element scrolled under it is inside the viewport by
+>   every geometric measure and invisible in the photograph, so the first frame
+>   that passed a strict "fully in the viewport" check still had (C) hidden behind
+>   the header. Both the framing and the `require` check now measure that band and
+>   treat it as off screen.
 
 > All eight stills were regenerated on 2026-08-10 and each was eyeballed. Two
 > were materially wrong before that: `demo-progress.png` was not the dashboard at

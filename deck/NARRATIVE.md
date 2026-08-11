@@ -1,6 +1,6 @@
 # Lawyer Tycoon — Pitch Narrative & Speaker Notes
 
-**Revision 7** — the talk cut from **10:04 to 4:46**, and the argument re-aimed at a room that already agrees with half of it. Two instructions arrived together and they solve each other. The first is a hard 4–5 minute cap. The second is that the audience has independently volunteered the anti-lecture premise — they have said, about their own institution's hundred-hour lecture courses, that passive learning produces terrible outcomes. **A deck that spends its scarcest seconds proving a proposition the room has already granted is making the most expensive mistake available at this length**, so Revision 7 stops proving it. Slides 3 and 4 assert it in half a sentence each and bank the nod; the enumeration that used to do the proving stays on screen as fragments and comes out of the mouth. Nothing was deleted from the projector.
+**Revision 7** — the talk cut from **10:04 to 4:54**, and the argument re-aimed at a room that already agrees with half of it. Two instructions arrived together and they solve each other. The first is a hard 4–5 minute cap. The second is that the audience has independently volunteered the anti-lecture premise — they have said, about their own institution's hundred-hour lecture courses, that passive learning produces terrible outcomes. **A deck that spends its scarcest seconds proving a proposition the room has already granted is making the most expensive mistake available at this length**, so Revision 7 stops proving it. Slides 3 and 4 assert it in half a sentence each and bank the nod; the enumeration that used to do the proving stays on screen as fragments and comes out of the mouth. Nothing was deleted from the projector.
 
 The reclaimed seconds go to the half the room has *not* been given: **what "active" concretely means inside this product.** That is now stated in the terms that distinguish it — you *produce* your reasoning rather than recognise an answer, the reasoning is graded and returned, the strategy is applied inside the question rather than taught before it. Generation on every rep, against a lecture hall's reception. "Strip away the fluff" is the founders' own phrase for this and it lands on slide 5, early, then recurs. The active-versus-passive axis that `pov-volume-is-the-constraint` draws as a figure is now a through-line rather than one slide's chart: it connects the problem, the thesis, the POVs and the demo, and it is the axis the competitors lose on.
 
@@ -14,7 +14,7 @@ The reframe also retires the deck's softest inference for free. LSAC's video-min
 
 **Revision 3** — rebuilt against the complete 68-page brainlift (23 articles, 8 DOK 3s, 8 DOK 4s) and reconciled against the fact-check in `deck/CITATIONS.md`.
 
-**Deck:** 24 slides · **Runtime:** 4:49 · **Spoken script:** 751 words · **Live demo budget:** 1:17 across six slides (a seventh is a still; the case demo is automated)
+**Deck:** 24 slides · **Runtime:** 4:54 · **Spoken script:** 751 words · **Live demo budget:** 1:22 across six slides (a seventh is a still; the case demo is automated)
 **Speakers:** Nischay Hegde (framing, problem, close) · Alan Abraham (product, demos)
 **Pacing assumption:** 155 spoken words per minute, measured rather than assumed — every slide's seconds figure is the actual word count of its spoken script divided by pace, and no slide exceeds 170. The `⟢ IF CHALLENGED` blocks in the notes are **off the clock**: they are answers to hold, not lines to say, and none of them is counted above.
 **Theme:** royal blue and beige. Tokens for the builder — `--blue: #1B2F6B`, `--blue-lit: #2A4BB8`, `--beige: #EFE6D6`, `--beige-dim: #D8CBB4`, `--ink: #0E1524`, `--stamp: #A8321F` (verdict red, used exactly twice in the deck).
@@ -76,11 +76,27 @@ Then the hinge, and it is the claim the whole company rests on. **The method is 
 
 That framing is also the sharpest competitive line available, and it is the one axis a well-funded, well-argued competitor cannot meet by lowering a price: the field's engagement is passive, and passive engagement produces hours logged rather than questions answered.
 
-**Why this ordering beats the founders' current deck.** The existing version opens with a spiky POV before anyone has a reason to care, states the goal as a three-column abstraction, spends eight untitled slides on a walkthrough with no argument attached, and closes on another three-column grid restating the middle. Nothing in it turns, and nothing in it is sourced. This version withholds the product for seven slides, spends its credibility on numbers the audience can verify from primary sources during the talk, and only then lets Alan show software, so every demo click is evidence for a claim the room already accepted. The demo is capped at 3:14 with written click-paths, because the founders' own diagnosis is that it sprawled while trying to prove too many ideas at once. Each demo now proves exactly one.
+**Why this ordering beats the founders' current deck.** The existing version opens with a spiky POV before anyone has a reason to care, states the goal as a three-column abstraction, spends eight untitled slides on a walkthrough with no argument attached, and closes on another three-column grid restating the middle. Nothing in it turns, and nothing in it is sourced. This version withholds the product for seven slides, spends its credibility on numbers the audience can verify from primary sources during the talk, and only then lets Alan show software, so every demo click is evidence for a claim the room already accepted. The demo is capped at 1:22 with written click-paths, because the founders' own diagnosis is that it sprawled while trying to prove too many ideas at once. Each demo now proves exactly one.
 
 ---
 
 ## B. Slide-by-slide specification
+
+> **Read the durations and the speaker notes in this section as pre-cut, and do
+> not rehearse from them.** Revision 7 cut the talk from 10:04 to 4:54 by moving
+> supporting detail out of the presenter's mouth and onto slides it was already
+> printed on. The timing table in §C and the `notes` fields in
+> `src/slides/index.ts` were rewritten for that cut; the per-slide sections below
+> were not. So `problem-coaching-tax` is headed 27s here and prints 76 words of
+> notes, while the slide it describes is budgeted 12s and speaks 33 — and every
+> non-demo section below is stale the same way, by roughly a factor of two.
+>
+> Everything else here is current and is why the section is kept: the on-screen
+> copy, the visual direction, the transitions, and the reasoning for each slide's
+> existence. **For what is actually said on stage, the registry is the source of
+> truth and this section is not.** Reconciling these notes to the cut is an
+> outstanding piece of work and it is authoring rather than editing, so it has not
+> been done quietly in passing.
 
 ### ACT I — THE BILL (slides 1–3)
 
@@ -312,11 +328,11 @@ Under a hairline rule, the ledger: two rows, *practice minutes* with a run that 
 
 ---
 
-#### 13 · `demo-case-answer` — Act IV · live demo · **56 seconds**
+#### 13 · `demo-case-answer` — Act IV · live demo · **30 seconds**
 
 **On-screen copy**
 > # One case, start to finish.
-> *(hairline frame, live app fills the slide, 20s budget bar top-right)*
+> *(hairline frame, live app fills the slide, 30s budget bar top-right)*
 
 **Visual direction.** The app iframe occupies about 88% of the frame, floated on royal blue with a soft long shadow so it reads as a physical object rather than a screenshot. A slim beige budget bar depletes across the top. No callout arrows, no zoom effects; the presenter's cursor is the pointer. One permitted flourish: the tier-6 office parallaxing very slowly behind the floating window, heavily blurred and darkened.
 
@@ -324,7 +340,7 @@ Under a hairline rule, the ledger: two rows, *practice minutes* with a run that 
 
 **The click path previously said (B). It was wrong, and a wrong letter on a projector in front of a room of lawyers-to-be is the single most expensive error in the deck** — it costs the credibility of every sourced number that came before it. Corrected in the registry and in `demo.config.ts`, where the credited answer is now pinned beside the session id so the two cannot drift apart.
 
-**There is no click path any more. The app plays this itself.** A driver runs the sequence unattended, measured at 21 seconds to rest across five runs; the route is `{autoplay}`, which expands to the whole route including its query string. What follows is a **watch list** — the beats Alan narrates over, with the time each spends on screen. **Hands off the keyboard throughout.**
+**There is no click path any more. The app plays this itself.** A driver runs the sequence unattended, measured across four runs that reached rest between 20.8 and 25.6 seconds; the route is `{autoplay}`, which expands to the whole route including its query string. What follows is a **watch list** — the beats Alan narrates over, with the time each spends on screen. **Hands off the keyboard throughout.**
 
 1. **0:00–0:03** — The partner tip appears, *"Guess before you look"*, with the answer choices **dimmed** beneath it. Say that the choices are locked.
 2. **0:03–0:04** — The tip is taken up and the card records it.
@@ -338,7 +354,7 @@ Under a hairline rule, the ledger: two rows, *practice minutes* with a run that 
 
 **Why it submits now, having been forbidden to for three revisions.** The attempt is answered and graded during staging, so submitting replays a stored verdict instead of starting a 20–40 second model call. The submit itself is genuine: real endpoint, real session, the stored attempt for exactly that reasoning. **The grading is not live and nobody says it is** — the truthful one-liner is in the slide's notes, and it ends with an offer to run one cold in Q&A.
 
-**Why 25 seconds and not 21.** 21 is when the page comes to rest and then nothing moves again — a floor, not a duration. The extra four let the room actually read the coach's line after it appears, and the slide can be held past 25 indefinitely, so Alan is never racing a bar.
+**Why 30 seconds and not 21.** Time to rest is a floor rather than a duration, and it is not one number either: four measured runs came to rest at 20.8, 21.0, 22.9 and 25.6 seconds. The old budget of 25 was set against the fastest of them, so the slowest run overran the bar. 30 is the worst measurement plus headroom, and the headroom is doing a second job, because the last thing to arrive is the coach's reading and the room then has to read it. Nothing moves once the page is at rest, so the slide can be held past 30 indefinitely and Alan is never racing a bar.
 
 **Skip entirely:** the passage tab switcher, the per-question timer explanation, the client and fee line, reading any other answer choice, the settlement numbers, and touching the keyboard or mouse at any point.
 
@@ -603,36 +619,36 @@ Every figure below is the slide's **actual spoken word count** divided by pace, 
 | 10 | `pov-ai-never-answers` | Alan | 33 | 13 | 152 | 2:05 |
 | 11 | `pov-strategy-inside-the-question` | Alan | 29 | 11 | 158 | 2:16 |
 | 12 | `pov-real-clock` | Alan | 25 | 10 | 150 | 2:26 |
-| 13 | `demo-case-answer` | Alan | 61 | **25** | 146 | 2:51 |
-| 14 | `demo-case-verdict-review` | Alan | 32 | **13** | 148 | 3:04 |
-| 15 | `demo-mega-litigation` | Alan | 33 | **14** | 141 | 3:18 |
-| 16 | `dashboard-everything` | Alan | 30 | 12 | 150 | 3:30 |
-| 17 | `pov-virtual-currency` | Alan | 36 | 13 | 166 | 3:43 |
-| 18 | `game-by-design` | Alan | 21 | 8 | 158 | 3:51 |
-| 19 | `demo-clients-walk-in` | Alan | 21 | **9** | 140 | 4:00 |
-| 20 | `demo-office-transformation` | Alan | 20 | **9** | 133 | 4:09 |
-| 21 | `demo-map-and-firm` | Alan | 21 | **8** | 158 | 4:17 |
-| 22 | `demo-focus-mode` | Alan | 22 | *8* | 165 | 4:25 |
-| 23 | `game-never-gates` | Alan | 29 | 11 | 158 | 4:36 |
-| 24 | `close-one-stop-shop` | Nischay | 36 | 13 | 166 | 4:49 |
+| 13 | `demo-case-answer` | Alan | 61 | **30** | 122 | 2:56 |
+| 14 | `demo-case-verdict-review` | Alan | 32 | **13** | 148 | 3:09 |
+| 15 | `demo-mega-litigation` | Alan | 33 | **14** | 141 | 3:23 |
+| 16 | `dashboard-everything` | Alan | 30 | 12 | 150 | 3:35 |
+| 17 | `pov-virtual-currency` | Alan | 36 | 13 | 166 | 3:48 |
+| 18 | `game-by-design` | Alan | 21 | 8 | 158 | 3:56 |
+| 19 | `demo-clients-walk-in` | Alan | 21 | **9** | 140 | 4:05 |
+| 20 | `demo-office-transformation` | Alan | 20 | **9** | 133 | 4:14 |
+| 21 | `demo-map-and-firm` | Alan | 21 | **8** | 158 | 4:22 |
+| 22 | `demo-focus-mode` | Alan | 22 | *8* | 165 | 4:30 |
+| 23 | `game-never-gates` | Alan | 29 | 11 | 158 | 4:41 |
+| 24 | `close-one-stop-shop` | Nischay | 36 | 13 | 166 | 4:54 |
 
-**Total 4:49 — 751 spoken words at 156 wpm. Live demo total 1:17** across the six **bolded** slides, down from 3:14. Slide 22 is *italicised* rather than bolded because it is no longer live: it is a still, and the eight seconds are speech over a frozen frame.
+**Total 4:54 — 751 spoken words at 153 wpm. Live demo total 1:22** across the six **bolded** slides, down from 3:14. Slide 22 is *italicised* rather than bolded because it is no longer live: it is a still, and the eight seconds are speech over a frozen frame.
 
 **Slide 22 is a still by decision, not by fallback.** It was the third visit to `/progress` in the talk and the interaction was a menu toggle, so the audience learned nothing from watching a nav bar shorten that they do not learn from seeing it already short. The founders' two asks both survive in one sentence — the switch exists, and the game never gated practice — and the seven seconds of live embed are gone along with the risk of a live toggle misfiring in front of the room. Mechanically it is `stillOnly: true` on the demo spec, a new flag that keeps the frame a still **even when the app is running and healthy**, so a working backend cannot quietly turn this back into a live demo. Painting the still is not sufficient on its own — the stage positions the live embed *over* the frame's slot, so the flag also has to stop the slot registering, or the running app renders on top of the picture. The title-bar lamp reads `stills` on this slide alone, which is correct rather than a fault, and the eyebrow reads **Act V — the switch** rather than *Act V — live*, because a slide that announces `STILLS` in its own chrome must not call itself live a metre away.
 
 **The still is `demo-focus-mode.png`**, captured separately and verified on screen: the navigation is already collapsed to Dashboard and Practice, the Focus Mode chip is lit, and the panel reads *"the office is put away"* with the line *"Focus Mode is a preference, never a lock."* That last sentence is the founders' ask rendered in the product's own words, which is better than the presenter asserting it. `demo-progress.png` was the wrong file and briefly sat here — it is the plain progress route, and the entire content of this slide is what is *missing* from the nav bar, which a plain capture cannot show.
 
-**Nothing was cut from the projector. 24 slides in, 24 slides out.** Every headline, fragment, figure and credit that was there at 10:04 is still there at 4:46, and the deck lost 5:18 of *talking*. That distinction is the whole method: a fragment on screen costs zero seconds and the room reads it in parallel, so the compression moved the argument's supporting detail from the presenter's mouth onto the slide it was already printed on. Slide 3 is the clearest instance — 7Sage's 900 videos and LSAT Lab's five classes a week used to be recited as proof that lecture hours are passive, and they now sit on screen while Nischay says *you already know how that ends*. The room supplies the inference. That is only affordable because the audience volunteered the premise first, which is why the two founder instructions in Revision 7 solve each other rather than compete.
+**Nothing was cut from the projector. 24 slides in, 24 slides out.** Every headline, fragment, figure and credit that was there at 10:04 is still there at 4:54, and the deck lost 5:10 of *talking*. That distinction is the whole method: a fragment on screen costs zero seconds and the room reads it in parallel, so the compression moved the argument's supporting detail from the presenter's mouth onto the slide it was already printed on. Slide 3 is the clearest instance — 7Sage's 900 videos and LSAT Lab's five classes a week used to be recited as proof that lecture hours are passive, and they now sit on screen while Nischay says *you already know how that ends*. The room supplies the inference. That is only affordable because the audience volunteered the premise first, which is why the two founder instructions in Revision 7 solve each other rather than compete.
 
-**Where the 5:15 came from.** Two minutes is the demos, which went from 3:14 to 1:14 — beats rather than pace, cutting the seconds where the room watched a cursor travel between things Alan was already describing, plus slide 22 becoming a still. Roughly 2:10 is the POV and problem slides no longer reading their own fragments aloud. The remaining ~1:05 is Revision 7's premise-banking on slides 3, 4 and 8.
+**Where the 5:10 came from.** Two minutes is the demos, which went from 3:14 to 1:22 — beats rather than pace, cutting the seconds where the room watched a cursor travel between things Alan was already describing, plus slide 22 becoming a still. Roughly 2:10 is the POV and problem slides no longer reading their own fragments aloud. The remaining ~1:05 is Revision 7's premise-banking on slides 3, 4 and 8.
 
-**Revision 8 — the case demo plays itself, and it bought the missing beat for free.** A driver inside the app now runs the whole case sequence unattended, measured at 21 seconds to rest and reproducible across five runs, so Alan narrates instead of clicking. The route is `{autoplay}`, which expands to the entire route including its query string rather than sitting inside a path. The slide is budgeted at **25**, not 21, because 21 is the moment the page comes to rest and then nothing moves again — a floor, not a duration — and the last thing to arrive is the coach's reading, which the room has to actually read. It can be held past 25 indefinitely, so there is no cliff.
+**Revision 8 — the case demo plays itself, and it bought the missing beat for free.** A driver inside the app now runs the whole case sequence unattended, so Alan narrates instead of clicking. The route is `{autoplay}`, which expands to the entire route including its query string rather than sitting inside a path. The slide is budgeted at **30**, and that figure is a measurement rather than a preference: four live runs came to rest at 20.8, 21.0, 22.9 and 25.6 seconds. The budget was 25, set against the fastest of the four, which is the wrong end of a spread to budget from — and the slowest run duly overran it. 30 is the worst measurement plus headroom. Time to rest was never the duration in any case; it is a floor, because the last thing to arrive is the coach's reading and the room then has to read it. Nothing moves once the page is at rest, so the slide can be held past 30 indefinitely and there is no cliff.
 
 **The slide now submits, reversing an instruction that stood for three revisions.** That constraint existed because submitting meant a human clicking into a 19–38 second live model call. The attempt is answered and graded during staging, so submission is a database read: the verdict stamp and the coach's reading land in the same frame. The submit is genuine — real endpoint, real session, the stored attempt for exactly that reasoning — and the notes give the presenter a truthful one-liner for the obvious question, because nobody should claim the model is thinking live.
 
 **And that freed slide 14 to close the loop the founders asked for at the very start of this project: *seeing a snapshot of that specific question in review within the dashboard*.** That beat has been missing from every revision. The old arrangement spent a whole slide, a second staged session and an iframe reload just to re-display a ruling the previous slide was not allowed to earn. Now that the verdict is earned where it happens, slide 14 goes to `/progress`, opens the first tile in the Answer Log — newest-first, so it is the question the room just watched — and shows the attempt drawer with **WHAT YOU WROTE** and **COACH** side by side. That is the argument that this is a system rather than a quiz, and it sets up `dashboard-everything` two slides later.
 
-**The exchange was free.** Slide 13 went 21 → 25 and slide 14 went 17 → 13, so the pair costs 38 seconds either way and the talk stays at 4:49. A demo that does strictly more, for nothing.
+**The exchange was free. What came after it was not.** Slide 13 went 21 → 25 and slide 14 went 17 → 13, so at the time the pair cost 38 seconds either way and the talk did not move — a demo that did strictly more, for nothing. The +5 that took slide 13 from 25 to **30** was bought separately and afterwards, and it bought nothing on stage: it is the measurement correction described above, not a beat. The pair now costs **43** seconds and the talk is 4:54. The review beat is still free; the budget that makes the autoplay honest is what was paid for.
 
 **The strategy gate got words, because the deck was underclaiming it.** The answer choices render *dimmed* until the suggested approach is taken up — the app refuses to show them, rather than suggesting a method and hoping. `pov-strategy-inside-the-question` says the method arrives inside the question; this shows it being enforced. Three seconds of the script now point at it, and it is the strongest version of that POV available.
 
@@ -640,18 +656,18 @@ Every figure below is the slide's **actual spoken word count** divided by pace, 
 
 **What every slide gained, at no cost: the `⟢ IF CHALLENGED` blocks.** Fourteen slides now carry a prepared defence in the notes — the LSAC baseline confound, the 42-minute video dose, the Dicheva per-student multiples, the VanLehn comparison count, the LawHub fee. **None of it is spoken and none of it is in the table above.** Compression made the on-stage claims shorter, which makes each one *more* exposed, so the sourcing had to get deeper in exactly the places the script got shallower. Anything longer than a sentence lives in `notes/qa.ts`, which is where the presenter reads it from during Q&A.
 
-**No cut list, and that is deliberate.** Previous revisions carried one because they were over budget. At 4:46 against a 4–5 minute cap there is 14 seconds of headroom, which is about one stumble, and the correct response to running long is now to take the buffer rather than to drop a beat. If a hard cut is genuinely forced, the order is unchanged and starts at `pov-real-clock` — but it is 10 seconds now, so it buys almost nothing, which is another way of saying there is no slack left to find.
+**No cut list, and that is deliberate.** Previous revisions carried one because they were over budget. At 4:54 against a 4–5 minute cap there are 6 seconds of headroom, which is less than one stumble — it will absorb a slow transition and it will not absorb a fumbled sentence — so the buffer is real but it is not a plan. The correct response to running long is still to spend what buffer there is rather than to drop a beat, and the correct response to the buffer being this thin is to rehearse the seams. If a hard cut is genuinely forced, the order is unchanged and starts at `pov-real-clock` — but it is 10 seconds now, so it buys almost nothing, which is another way of saying there is no slack left to find.
 
-**Cut order if running long.** Cut in this sequence and stop when you fit.
+**Cut order if running long.** The paragraph above governs. This is the sequence to follow if a cut is forced anyway, and each entry now saves exactly its current budget, because at these lengths there is nothing left to trim inside a slide — a slide is either said or it is not.
 
-1. `pov-real-clock` (−21). Fold it into the mega-litigation demo, which already shows the clock; Alan adds "timed to real pacing from day one, and full forms are optional" over the click path.
-2. `pov-confidence-signal` (−20, +3 back). Fold the confidence claim into `pov-reasoning-is-the-work` as one sentence. Net −17.
-3. `game-by-design` (−17, +3 back). Alan names two of the four Clark splits over the office transformation instead. Net −14.
-4. Trim `demo-map-and-firm` to 10 (−8). Map pull-back only; describe the firm tab without clicking.
-5. Trim `dashboard-everything` to 26 (−4). Let the ring assemble and name six of the twelve.
-6. Trim `title-lawyer-tycoon` to 12 (−4). Names and product category only; slide 2 carries the opening.
+1. `pov-real-clock` (−10). Fold it into the mega-litigation demo, which already shows the clock; Alan adds "timed to real pacing from day one, and full forms are optional" over the click path.
+2. `pov-confidence-signal` (−11). Fold the confidence claim into `pov-reasoning-is-the-work` as one sentence.
+3. `game-by-design` (−8). Alan names two of the four Clark splits over the office transformation instead.
+4. `demo-map-and-firm` (−8). Describe the map and the firm tab in one sentence over the preceding slide's last frame; the game layer is already visible by then.
+5. `dashboard-everything` (−12). The twelve signals go unshown, and the calibration argument goes with them into Q&A.
+6. `title-lawyer-tycoon` (−7). Nischay says the names and the product category over slide 2's opening frame.
 
-**The list above is retained for reference only and its numbers are pre-Revision-7.** At 4:46 the slides it names now cost 10, 11, 8, 8 and 12 seconds, so the whole list buys about 40 seconds and costs the deck five beats — a bad trade at any point. Take the 14 seconds of headroom instead. Never cut, under any circumstances: `turn-nothing-to-teach`, `pov-reasoning-is-the-work`, **`pov-volume-is-the-constraint`**, `pov-ai-never-answers`, `demo-case-answer`, `demo-office-transformation`, `game-never-gates`, `close-one-stop-shop`. The new one is on that list because without it the game is an amenity and Act V is twenty percent of the talk spent on an amenity. **Do not trim `problem-hours-and-price`** either; every corrected number in the problem act lives there, and cutting it for time is how a wrong figure gets improvised back in.
+**No single cut buys much, which is the paragraph above stated from the other end.** The largest item on the list is 12 seconds, all six together are 56, and each one costs a beat the deck was built around — a bad trade at any point, and a worse one at these lengths, where losing a slide means losing the whole of the argument it carries rather than some of it. Take the 6 seconds of headroom first. Never cut, under any circumstances: `turn-nothing-to-teach`, `pov-reasoning-is-the-work`, **`pov-volume-is-the-constraint`**, `pov-ai-never-answers`, `demo-case-answer`, `demo-office-transformation`, `game-never-gates`, `close-one-stop-shop`. The new one is on that list because without it the game is an amenity and Act V is twenty percent of the talk spent on an amenity. **Do not trim `problem-hours-and-price`** either; every corrected number in the problem act lives there, and cutting it for time is how a wrong figure gets improvised back in.
 
 ---
 
@@ -741,24 +757,24 @@ This is the thesis-early, proof-late split working as intended: Act II argues th
 
 | # | Founders' requirement | Satisfied by |
 | --- | --- | --- |
-| 1 | Problem statement first, where third-party apps fail | `problem-coaching-tax` and `problem-hours-and-price` (slides 2–3, complete by 1:15) |
+| 1 | Problem statement first, where third-party apps fail | `problem-coaching-tax` and `problem-hours-and-price` (slides 2–3, complete by 0:30) |
 | 2 | App concept and spiky POVs in a logical order; must mention the interactive game loop | `concept-lawyer-tycoon` (slide 9) names the interactive game loop explicitly, and slide 8 makes it load-bearing before it is named; POV order is 6 → 7 → 8 → 10 → 11 → 12 → 17, rationale in §D |
 | 3a | POV: virtual currency | `pov-virtual-currency` (slide 17), rebuilt on the one study that isolated the mechanic; both nulls on screen |
 | 3b | POV: reasoning + feedback is most efficient, **placed before the concept slide** | `pov-reasoning-is-the-work` (slide 6), three slides before `concept-lawyer-tycoon` (slide 9) |
-| 3c | POV: practicing and actively applying test-taking strategies | `pov-strategy-inside-the-question` (slide 10) |
-| 3d | POV: practicing under real timed conditions | `pov-real-clock` (slide 11), proven live in `demo-mega-litigation` (slide 14) |
-| 3e | Optional extra controversial DOK-4 claim | Two, both from the brainlift: `pov-ai-never-answers` (slide 9) and `pov-confidence-signal` (slide 7). Reasoning in §D |
-| 4 | Speedrun thesis, placed near the beginning | `thesis-speedrun` (slide 5, at 1:45 of a 9:40 deck), set up by `turn-nothing-to-teach` (slide 4) |
-| 5 | Case demo: strategy, answer, reasoning, feedback, then that question in dashboard review | `demo-case-answer` (slide 12) and `demo-case-verdict-review` (slide 13), 1:34 combined, reasoning pre-filled per the staging note |
-| 6 | Full practice test / blind review demo and the dashboard update | `demo-mega-litigation` (slide 14), 0:38, ends on the dashboard retargeting |
-| 7 | Single slide listing every unique point the dashboard finds, with how the figures are calibrated | `dashboard-everything` (slide 15): twelve signals in one diagram, with first-attempts-only, evidence labels, Metcalfe-based repair ordering and trained scheduling in the notes |
-| 8a | Game demo: client walk-ins and case handling | `demo-clients-walk-in` (slide 18) |
-| 8b | Game demo: office transformation scene | `demo-office-transformation` (slide 19) |
-| 8c | Game demo: the map | `demo-map-and-firm` (slide 20) |
-| 8d | Game demo: firm tab, abstract explanation of interactions | `demo-map-and-firm` (slide 20) |
-| 8e | Focus mode demo | `demo-focus-mode` (slide 21) |
-| 8f | Game does not gate practice; independent; practice always grants game progress; full tests grant a tier; cases earn money and advance the story | `game-never-gates` (slide 22), set up by `demo-focus-mode` (slide 21) |
-| 9 | Closing remarks landing the one-stop shop idea, both student types | `close-one-stop-shop` (slide 23), which also carries the cheaper / narrower / harder-to-quit argument |
+| 3c | POV: practicing and actively applying test-taking strategies | `pov-strategy-inside-the-question` (slide 11) |
+| 3d | POV: practicing under real timed conditions | `pov-real-clock` (slide 12), proven live in `demo-mega-litigation` (slide 15) |
+| 3e | Optional extra controversial DOK-4 claim | Two, both from the brainlift: `pov-ai-never-answers` (slide 10) and `pov-confidence-signal` (slide 7). Reasoning in §D |
+| 4 | Speedrun thesis, placed near the beginning | `thesis-speedrun` (slide 5, at 0:42 of a 4:54 deck), set up by `turn-nothing-to-teach` (slide 4) |
+| 5 | Case demo: strategy, answer, reasoning, feedback, then that question in dashboard review | `demo-case-answer` (slide 13) and `demo-case-verdict-review` (slide 14), 0:43 combined, reasoning pre-filled per the staging note |
+| 6 | Full practice test / blind review demo and the dashboard update | `demo-mega-litigation` (slide 15), 0:14, ends on the dashboard retargeting |
+| 7 | Single slide listing every unique point the dashboard finds, with how the figures are calibrated | `dashboard-everything` (slide 16): twelve signals in one diagram, with first-attempts-only, evidence labels, Metcalfe-based repair ordering and trained scheduling in the notes |
+| 8a | Game demo: client walk-ins and case handling | `demo-clients-walk-in` (slide 19) |
+| 8b | Game demo: office transformation scene | `demo-office-transformation` (slide 20), which now performs the before/after itself: `O` swaps the embed between the tier-0 and tier-14 office, and swaps the still for `demo-office-tier14.png` on the stills path |
+| 8c | Game demo: the map | `demo-map-and-firm` (slide 21) |
+| 8d | Game demo: firm tab, abstract explanation of interactions | `demo-map-and-firm` (slide 21) |
+| 8e | Focus mode demo | `demo-focus-mode` (slide 22) |
+| 8f | Game does not gate practice; independent; practice always grants game progress; full tests grant a tier; cases earn money and advance the story | `game-never-gates` (slide 23), set up by `demo-focus-mode` (slide 22) |
+| 9 | Closing remarks landing the one-stop shop idea, both student types | `close-one-stop-shop` (slide 24), which also carries the cheaper / narrower / harder-to-quit argument |
 
 ---
 

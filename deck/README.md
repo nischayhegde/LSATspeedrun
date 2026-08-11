@@ -1,7 +1,8 @@
 # Lawyer Tycoon — the deck
 
-A 23-slide pitch deck that frames the real product, live, on seven of its slides.
-9:40 of talk, 3:14 of it inside a running app.
+A 24-slide pitch deck that frames the real product, live, on six of its slides —
+a seventh demo slide is a deliberate still rather than an embed.
+4:54 of talk, 1:22 of it inside a running app.
 
 This file is the runbook. Read **Start-up** before presentation day and
 **Troubleshooting** on it.
@@ -148,7 +149,7 @@ match the one the demo data is seeded under.
 | `→` `↓` `space` `PageDown` `enter` | Next slide |
 | `←` `↑` `PageUp` `backspace` | Previous slide |
 | `Home` / `End` | First / last slide |
-| `G` | Grid overview of all 23 slides — click one to jump |
+| `G` | Grid overview of all 24 slides — click one to jump |
 | `P` | Presenter notes: this slide's notes, what's next, the clock, ahead/behind |
 | `Q` | Q&A panel: ammunition, evidence warnings, the cut list — searchable |
 | `A` | Reveal the next demo callout |
@@ -315,60 +316,75 @@ data.
 
 ## Timing table
 
-9:40 total. 3:14 of it live in the app, across the seven bolded slides.
+4:54 total. 1:22 of it live in the app, across the six bolded slides.
 
 | # | Slide id | Speaker | Seconds | Cumulative |
 | --- | --- | --- | ---: | ---: |
-| 1 | `title-lawyer-tycoon` | Nischay | 16 | 0:16 |
-| 2 | `problem-coaching-tax` | Nischay | 27 | 0:43 |
-| 3 | `problem-hours-and-price` | Nischay | 32 | 1:15 |
-| 4 | `turn-nothing-to-teach` | Nischay | 30 | 1:45 |
-| 5 | `thesis-speedrun` | Nischay | 21 | 2:06 |
-| 6 | `pov-reasoning-is-the-work` | Nischay | 28 | 2:34 |
-| 7 | `pov-confidence-signal` | Nischay | 20 | 2:54 |
-| 8 | `concept-lawyer-tycoon` | Nischay | 26 | 3:20 |
-| 9 | `pov-ai-never-answers` | Alan | 27 | 3:47 |
-| 10 | `pov-strategy-inside-the-question` | Alan | 22 | 4:09 |
-| 11 | `pov-real-clock` | Alan | 21 | 4:30 |
-| 12 | `demo-case-answer` | Alan | **56** | 5:26 |
-| 13 | `demo-case-verdict-review` | Alan | **38** | 6:04 |
-| 14 | `demo-mega-litigation` | Alan | **38** | 6:42 |
-| 15 | `dashboard-everything` | Alan | 30 | 7:12 |
-| 16 | `pov-virtual-currency` | Alan | 21 | 7:33 |
-| 17 | `game-by-design` | Alan | 17 | 7:50 |
-| 18 | `demo-clients-walk-in` | Alan | **16** | 8:06 |
-| 19 | `demo-office-transformation` | Alan | **18** | 8:24 |
-| 20 | `demo-map-and-firm` | Alan | **18** | 8:42 |
-| 21 | `demo-focus-mode` | Alan | **10** | 8:52 |
-| 22 | `game-never-gates` | Alan | 20 | 9:12 |
-| 23 | `close-one-stop-shop` | Nischay | 28 | 9:40 |
+| 1 | `title-lawyer-tycoon` | Nischay | 7 | 0:07 |
+| 2 | `problem-coaching-tax` | Nischay | 12 | 0:19 |
+| 3 | `problem-hours-and-price` | Nischay | 11 | 0:30 |
+| 4 | `turn-nothing-to-teach` | Nischay | 12 | 0:42 |
+| 5 | `thesis-speedrun` | Nischay | 10 | 0:52 |
+| 6 | `pov-reasoning-is-the-work` | Nischay | 14 | 1:06 |
+| 7 | `pov-confidence-signal` | Nischay | 11 | 1:17 |
+| 8 | `pov-volume-is-the-constraint` | Nischay | 21 | 1:38 |
+| 9 | `concept-lawyer-tycoon` | Nischay | 14 | 1:52 |
+| 10 | `pov-ai-never-answers` | Alan | 13 | 2:05 |
+| 11 | `pov-strategy-inside-the-question` | Alan | 11 | 2:16 |
+| 12 | `pov-real-clock` | Alan | 10 | 2:26 |
+| 13 | `demo-case-answer` | Alan | **30** | 2:56 |
+| 14 | `demo-case-verdict-review` | Alan | **13** | 3:09 |
+| 15 | `demo-mega-litigation` | Alan | **14** | 3:23 |
+| 16 | `dashboard-everything` | Alan | 12 | 3:35 |
+| 17 | `pov-virtual-currency` | Alan | 13 | 3:48 |
+| 18 | `game-by-design` | Alan | 8 | 3:56 |
+| 19 | `demo-clients-walk-in` | Alan | **9** | 4:05 |
+| 20 | `demo-office-transformation` | Alan | **9** | 4:14 |
+| 21 | `demo-map-and-firm` | Alan | **8** | 4:22 |
+| 22 | `demo-focus-mode` | Alan | *8* | 4:30 |
+| 23 | `game-never-gates` | Alan | 11 | 4:41 |
+| 24 | `close-one-stop-shop` | Nischay | 13 | 4:54 |
+
+Slide 22's figure is *italicised* rather than bolded because it is not a live
+embed: `demo-focus-mode` carries `stillOnly`, and its eight seconds are speech
+over a frozen frame. The six bolded slides are the live ones.
 
 Pacing assumes roughly 170 spoken words per minute. Every figure is derived from
 its slide's note length, so a slower speaker scales the whole table.
 
-**Demo overrun is the thing that breaks this deck.** Slides 12, 13, 14, 18, 19, 20
-and 21 each carry a written click path with per-beat seconds and an explicit list
-of what to skip. Rehearse against those, not against the total.
+**Demo overrun is the thing that breaks this deck.** `demo-case-answer`,
+`demo-case-verdict-review`, `demo-mega-litigation`, `demo-clients-walk-in`,
+`demo-office-transformation`, `demo-map-and-firm` and `demo-focus-mode` each
+carry a written click path with per-beat seconds and an explicit list of what to
+skip. Rehearse against those, not against the total. (They are named by id rather
+than by index because the deck gets renumbered often enough that a written
+"slide 12" goes stale — the convention `DEMO-NOTES.md` §3 states.)
 
 ---
 
 ## Cut list
 
-If you are running long, cut in this order and stop when you fit. All six lands
-you at **8:32**.
+**There is no cut list any more, and that is deliberate** — see §C of
+[`NARRATIVE.md`](./NARRATIVE.md), which governs. At 4:54 against a 4–5 minute cap
+there are 6 seconds of headroom, which is less than one stumble, and every slide
+is now short enough that there is nothing to trim inside one: it is either said
+or it is not. The order below is what to do if a cut is forced anyway. Each entry
+saves exactly that slide's current budget, no single one buys much, and all six
+together buy 56 seconds at the cost of six beats.
 
 | # | Slide | Saves | What replaces it |
 | --- | --- | ---: | --- |
-| 1 | `pov-real-clock` | −21 | Fold into the mega-litigation demo, which already shows the clock. Alan adds "timed to real pacing from day one, and full forms are optional" over the click path. |
-| 2 | `pov-confidence-signal` | −17 | Fold the confidence claim into `pov-reasoning-is-the-work` as one sentence. |
-| 3 | `game-by-design` | −14 | Alan names two of the four Clark splits over the office transformation instead. |
-| 4 | `demo-map-and-firm` → 10s | −8 | Map pull-back only; describe the firm tab without clicking. |
-| 5 | `dashboard-everything` → 26s | −4 | Let the ring assemble and name six of the twelve. |
-| 6 | `title-lawyer-tycoon` → 12s | −4 | Names and product category only; slide 2 carries the opening. |
+| 1 | `pov-real-clock` | −10 | Fold into the mega-litigation demo, which already shows the clock. Alan adds "timed to real pacing from day one, and full forms are optional" over the click path. |
+| 2 | `pov-confidence-signal` | −11 | Fold the confidence claim into `pov-reasoning-is-the-work` as one sentence. |
+| 3 | `game-by-design` | −8 | Alan names two of the four Clark splits over the office transformation instead. |
+| 4 | `demo-map-and-firm` | −8 | Describe the map and the firm tab in one sentence over the preceding slide's last frame. |
+| 5 | `dashboard-everything` | −12 | The twelve signals go unshown, and the calibration argument goes with them into Q&A. |
+| 6 | `title-lawyer-tycoon` | −7 | Nischay says the names and the product category over slide 2's opening frame. |
 
 **Never cut, under any circumstances:** `turn-nothing-to-teach`,
-`pov-reasoning-is-the-work`, `pov-ai-never-answers`, `demo-case-answer`,
-`demo-office-transformation`, `game-never-gates`, `close-one-stop-shop`.
+`pov-reasoning-is-the-work`, `pov-volume-is-the-constraint`,
+`pov-ai-never-answers`, `demo-case-answer`, `demo-office-transformation`,
+`game-never-gates`, `close-one-stop-shop`.
 
 **Do not trim `problem-hours-and-price` either.** Every corrected number in the
 problem act lives there — the attributed hours, the competitors' own published

@@ -31,7 +31,7 @@
  *    wrong.
  */
 
-import { existsSync, mkdirSync, readdirSync, renameSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -74,6 +74,111 @@ const SCALE = Number(flags.get('scale') || 5 / 3)
 const SETTLE = Number(flags.get('settle') || 3500)
 
 /**
+ * The driven case session and its credited answer, read out of `demo.config.ts`.
+ *
+ * `demo-case-answer` frames `{autoplay}`, which the deck expands to
+ * `/cases/<soloSessionId>?autoplay=<soloAnswerKey>`. A still standing in for that
+ * slide has to be a capture of the same driven session, so the two values are
+ * read from the file `prepare-demo.mjs` writes them into rather than copied here
+ * — a second copy is a copy that goes stale on the next reseed, and the whole
+ * hazard of this directory is a still that looks right and is not.
+ */
+const solo = (() => {
+  try {
+    const source = readFileSync(resolve(DECK_DIR, 'demo.config.ts'), 'utf8')
+    return {
+      session: /soloSessionId:\s*'([^']*)'/.exec(source)?.[1] ?? '',
+      answers: /soloAnswerKey:\s*'([^']*)'/.exec(source)?.[1] ?? '',
+    }
+  } catch {
+    return { session: '', answers: '' }
+  }
+})()
+
+/**
+ * Wait until the page stops scrolling itself, and report where it came to rest.
+ *
+ * Some app screens scroll on their own — the case screen scrolls to the verdict
+ * when it lands, smoothly, over a few hundred milliseconds. There is nothing to
+ * await on that, so a `prepare` step that scrolls the moment its selectors
+ * appear is racing an animation it cannot see.
+ */
+async function scrollQuiet(page, { quietFor = 900, timeout = 15_000 } = {}) {
+  const started = Date.now()
+  let last = null
+  let unchangedSince = Date.now()
+  for (;;) {
+    const y = await page.evaluate(() => Math.round(window.scrollY))
+    if (y !== last) {
+      last = y
+      unchangedSince = Date.now()
+    } else if (Date.now() - unchangedSince >= quietFor) {
+      return y
+    }
+    if (Date.now() - started >= timeout) return last
+    await page.waitForTimeout(150)
+  }
+}
+
+/**
+ * How much of the top of the viewport the app's own chrome is sitting on.
+ *
+ * The app has a sticky, opaque `header.app-header` 68px tall. Anything the page
+ * scrolls under it is *in* the viewport by every geometric measure and invisible
+ * in the photograph, so both the framing below and the `require` check have to
+ * treat this band as off screen. Measured rather than hard-coded: the header is
+ * the visual layer's file, and it has changed height twice.
+ */
+async function topChromeBottom(page) {
+  return page.evaluate(() => {
+    let bottom = 0
+    for (const element of document.querySelectorAll('body *')) {
+      const style = getComputedStyle(element)
+      if (style.position !== 'fixed' && style.position !== 'sticky') continue
+      const box = element.getBoundingClientRect()
+      // Pinned to the top edge, spanning most of the width, and actually opaque:
+      // a transparent overlay or a narrow floating control hides nothing.
+      if (box.top > 4 || box.height === 0 || box.width < innerWidth * 0.6) continue
+      if (style.backgroundColor === 'transparent' || /,\s*0\)$/.test(style.backgroundColor)) continue
+      bottom = Math.max(bottom, Math.round(box.bottom))
+    }
+    return bottom
+  })
+}
+
+/**
+ * Park the viewport with the first present selector `margin` px below the app's
+ * top chrome, and make sure it stayed there.
+ *
+ * Written after `demo-case-answered.png` came out framed two different ways
+ * from the same code: the app's own scroll-to-verdict landed *before* the
+ * framing scroll on one run and *after* it on the next, and on the second run
+ * it dragged the frame 61px down and took the credited choice off the top edge
+ * with it. A capture that depends on which of two animations wins is a capture
+ * that will eventually be wrong on stage, so this waits for the app's scrolling
+ * to go quiet, sets the frame, and then re-checks that the frame held — and
+ * throws rather than photographing a position it did not choose.
+ */
+async function frameOn(page, selectors, margin) {
+  await scrollQuiet(page)
+  const gap = margin + await topChromeBottom(page)
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const target = await page.evaluate(({ list, offset }) => {
+      const element = list.map((selector) => document.querySelector(selector)).find(Boolean)
+      if (!element) return null
+      const top = element.getBoundingClientRect().top + window.scrollY
+      const want = Math.max(0, Math.round(top - offset))
+      window.scrollTo({ top: want, behavior: 'instant' })
+      return want
+    }, { list: selectors, offset: gap })
+    if (target === null) throw new Error(`none of ${selectors.join(', ')} is on the page`)
+    const settled = await scrollQuiet(page)
+    if (Math.abs(settled - target) <= 2) return
+  }
+  throw new Error(`the page kept scrolling away from ${selectors[0]}`)
+}
+
+/**
  * The still catalogue. `route` is what the deck's slide asks for; `file` is what
  * the slide's `still:` field names. Keep this table and the table in
  * DEMO-NOTES.md in step.
@@ -83,6 +188,77 @@ const SETTLE = Number(flags.get('settle') || 3500)
  */
 const STILLS = [
   { key: 'case', file: 'demo-case.png', route: '/cases/{session}' },
+  {
+    key: 'case-answered',
+    file: 'demo-case-answered.png',
+    // The driven session, played by the app's own autoplay driver, exactly as
+    // the slide frames it. Not the open hand-worked case: this still stands in
+    // for `demo-case-answer`, and that slide is the driven one.
+    route: '/cases/{solo}?autoplay={soloAnswers}',
+    /**
+     * Why this still exists at all.
+     *
+     * `demo-case-answer` used to fall back to `demo-case.png`, which is the
+     * *opening* frame — the partner tip, choices not yet shown. So on the stills
+     * path the slide stopped before everything it is for: the room would see the
+     * question it was told the app was about to answer, and never the verdict.
+     * The slide's own script says the stamp and the coach's reading "land in the
+     * same frame", and that frame did not exist.
+     *
+     * The driver is left to play the whole sequence rather than being driven from
+     * here — driving it would race it for the same controls — and this waits for
+     * the page to stop changing, the same way `verify-demo-continuity.mjs` does.
+     */
+    prepare: async (page) => {
+      // Generous: four reference runs reached rest between 20.8 and 25.6s, and a
+      // loaded machine is slower. A short wait here would photograph the middle
+      // of the sequence, which is the failure this still is replacing.
+      await page.waitForSelector('.verdict-stamp', { timeout: 60_000 })
+      await page.waitForSelector('.coaching-panel', { timeout: 60_000 })
+      // The verdict is supposed to paint from the attempt's stored coaching. If
+      // either of these is still up, the room would be watching a live model
+      // call and the still would be a photograph of a spinner.
+      await page.waitForFunction(
+        () => !document.querySelector('.grading-pending') && !document.querySelector('.judge-thinking'),
+        undefined,
+        { timeout: 60_000 },
+      )
+      // The stamp animates in and the reward counters tick. Let them, and let
+      // the app's own scroll-to-verdict finish, before taking the frame over.
+      await page.waitForTimeout(2_000)
+      // Frame it on the **credited choice**, not on the stamp.
+      //
+      // Measured on this screen at the 1152x648 capture viewport: the selected
+      // choice sits 160px above the stamp and the coach's verdict card runs to
+      // 429px below the choice, so putting the choice just under the app header
+      // puts all three in one frame — (C) lit, SUSTAINED, and the coach's reading
+      // of the reasoning — with the bench notes heading at the bottom edge.
+      // Anchoring on the stamp instead, which is where the app leaves the page,
+      // scrolls the letter off the top edge — and the letter is the thing the
+      // presenter says out loud over this frame.
+      //
+      // The written case theory cannot be in this frame, and that is the app's
+      // shape rather than a framing choice: `.reasoning-box` unmounts the moment
+      // the verdict lands, so the case theory and the ruling on it never coexist
+      // on this screen. It is shown live during the beat before, and it is in the
+      // review drawer on the next slide — which is `demo-answer-log.png`.
+      await frameOn(page, ['.choices .choice.selected', '.verdict-stamp'], 16)
+    },
+    // What the frame has to contain to be worth keeping, checked against the
+    // rendered viewport rather than the document. The stamp alone is not enough:
+    // the slide's claim is that the grade is about the reasoning rather than the
+    // letter, so the coach's reading has to be in shot — and the credited choice
+    // is asked for `whole`, because a sliver of it is not something the room can
+    // read as "C". That is not hypothetical: the first capture here kept a frame
+    // with 31 of the choice's 52 pixels showing, and passed a check that only
+    // asked whether any part of it was visible.
+    require: [
+      { selector: '.choices .choice.selected', whole: true },
+      '.verdict-stamp',
+      '.judge-review',
+      '.coaching-panel',
+    ],
+  },
   { key: 'progress', file: 'demo-progress.png', route: '/progress' },
   {
     key: 'answer-log',
@@ -259,9 +435,21 @@ try {
   page.on('pageerror', (error) => fail(`pageerror: ${String(error).slice(0, 160)}`))
 
   for (const still of wanted) {
-    const route = still.route.replace('{session}', sessionId)
+    const route = still.route
+      .replace('{session}', sessionId)
+      .replace('{solo}', solo.session)
+      .replace('{soloAnswers}', solo.answers)
     if (route.includes('{session}')) {
       fail(`skipped ${still.file}: no session id available`)
+      continue
+    }
+    // Refused rather than captured against a half-filled URL. An empty
+    // `soloSessionId` would leave `/cases/?autoplay=C`, which is a 404 the
+    // inspector would reject anyway — but saying which value is missing turns a
+    // confusing rejection into one line of instruction.
+    if (route.includes('{solo')) {
+      fail(`skipped ${still.file}: demo.config.ts has no soloSessionId/soloAnswerKey. `
+        + 'Run `npm run reset-demo` so the driven case is staged and pinned.')
       continue
     }
     console.log(`\n\u2022 ${still.file} \u2014 ${route}`)
@@ -312,13 +500,30 @@ try {
     // for the review slide for a while and looked entirely fine while making
     // none of its point. So a still may name what it has to contain, and the
     // frame is checked for it before the bytes are kept.
+    //
+    // An entry may be a bare selector, meaning "some part of this is in shot",
+    // or `{ selector, whole: true }`, meaning "all of it is". The second form
+    // exists because "in shot" is a low bar for something the presenter reads
+    // aloud: a clipped row satisfies it and is still unreadable from the room.
     if (still.require) {
-      const missing = await page.evaluate((selectors) => selectors.filter((selector) => {
+      // The band the app's sticky header is sitting on counts as off screen, not
+      // as visible: see `topChromeBottom`.
+      const ceiling = await topChromeBottom(page)
+      const missing = await page.evaluate(({ entries, top: ceilingPx }) => entries.map(({ selector, whole }) => {
         const element = document.querySelector(selector)
-        if (!element) return true
+        if (!element) return `${selector} (absent)`
         const box = element.getBoundingClientRect()
-        return box.bottom <= 0 || box.top >= innerHeight || box.width === 0
-      }), still.require)
+        if (box.width === 0) return `${selector} (not rendered)`
+        const offscreen = whole
+          ? box.top < ceilingPx || box.bottom > innerHeight
+          : box.bottom <= ceilingPx || box.top >= innerHeight
+        if (!offscreen) return null
+        return whole ? `${selector} (clipped)` : `${selector} (off screen)`
+      }).filter(Boolean),
+      {
+        entries: still.require.map((entry) => (typeof entry === 'string' ? { selector: entry } : entry)),
+        top: ceiling,
+      })
       if (missing.length) {
         fail(`${still.file}: NOT written — not in frame: ${missing.join(', ')}`)
         continue

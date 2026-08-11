@@ -9,7 +9,12 @@ import type { SlideSpec } from './types'
  *  Every headline, deck, point, pull, credit and speaker note below is the
  *  approved copy from `deck/NARRATIVE.md` (Revision 4), which is the source of
  *  truth. If the two ever disagree, the narrative is right and this file is
- *  stale. `deck/CITATIONS.md` is the fact-check behind the numbers, and it
+ *  stale — with **one exception, and it runs the other way**: the `notes` below
+ *  were rewritten for the Revision 7 cut and the narrative's per-slide sections
+ *  in §B were not, so §B still prints the pre-cut speaker notes at roughly twice
+ *  the words. For what is spoken on stage, this file is current and §B is not.
+ *  The narrative's §C table and its on-screen copy are current either way, and
+ *  §B is banner-warned. `deck/CITATIONS.md` is the fact-check behind the numbers, and it
  *  still refers to two slides by their pre-revision ids — `turn-610-reader` is
  *  now `turn-nothing-to-teach`, and `problem-200-hours` is now
  *  `problem-hours-and-price`.
@@ -62,9 +67,10 @@ import type { SlideSpec } from './types'
  *      `game-never-gates`       one sentence of notes: the one-way coupling is a
  *                               consequence of the design, not a promise.
  *
- *  This is the only revision that has moved the runtime. The deck is **10:04**;
- *  §C of the narrative carries the new table and the two cheapest ways back
- *  under ten minutes. Evidence for the new slide is `CITATIONS.md` §7.
+ *  It was the first revision to move the runtime, taking the deck to 10:04. It
+ *  was not the last: the cut that followed took the talk to a 4-5 minute target
+ *  and the deck now runs **4:54** across 24 slides. §C of the narrative carries
+ *  the current table. Evidence for the new slide is `CITATIONS.md` §7.
  *
  *  A writer owns exactly these fields per slide:
  *      eyebrow      the small line above the headline
@@ -97,10 +103,12 @@ import type { SlideSpec } from './types'
  *  belongs in `notes`, not on the slide.
  *
  *  `budgetSeconds` is taken from the narrative's timing table (§C) and sums to
- *  9:40. The seven demo slides also carry a hard budget inside `demo`, which is
- *  the number the presenter is held to — demo overrun is the founders' single
- *  biggest complaint about the previous deck, so every demo here has a written
- *  click path with per-beat seconds and an explicit skip list.
+ *  **4:54** across 24 slides. Seven slides carry a `demo` block with its own hard
+ *  budget, which is the number the presenter is held to; six of those mount a
+ *  live frame and come to **1:22** between them, and the seventh —
+ *  `demo-focus-mode` — is `stillOnly` and paints a single frame. Demo overrun is
+ *  the founders' single biggest complaint about the previous deck, so every demo
+ *  here has a written click path with per-beat seconds and an explicit skip list.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const SLIDES: readonly SlideSpec[] = [
@@ -749,10 +757,11 @@ export const SLIDES: readonly SlideSpec[] = [
   // a hairline frame and the budget bar across the top. Two browser contexts are
   // pre-staged before the talk and neither is created live:
   //
-  //   Context A — signed in at office tier 6, an active cases run already open on
-  //     a Logical Reasoning question with a strategy brief attached, the reasoning
-  //     field PRE-FILLED with a strong paragraph, no answer selected, no
-  //     confidence set.
+  //   Context A — signed in at office tier 6. The case demo is now AUTOMATED: a
+  //     driver inside the app plays the whole sequence — approach taken up,
+  //     question read, case theory shown, answer chosen and submitted — off a
+  //     session staged by `stage_demo.py`, whose attempt is answered and graded
+  //     before the talk. The presenter narrates and never touches the keyboard.
   //   Context B — the same account with a completed mega-litigation and its
   //     finished audit already on screen.
   //
@@ -766,52 +775,102 @@ export const SLIDES: readonly SlideSpec[] = [
     kind: 'demo',
     eyebrow: 'Act IV — proof',
     headline: 'One case, start to finish.',
-    // ACTIVE-VS-PASSIVE, BEAT 4 — the proof. "Nothing here is watching" is four
-    // words and it is the whole through-line cashed out: the room has been told
-    // twice that this product is active, and this is the twenty-five seconds
-    // where they see what that means. Every beat below is the student producing
-    // something — a markup, a choice, a written argument, a confidence rating —
-    // and not one of them is reception.
+    // ACTIVE-VS-PASSIVE, BEAT 4 — the proof, and now the app performs it rather
+    // than the presenter demonstrating it. The room has been told twice that
+    // this product is active; this is where they watch it. Every beat is the
+    // student producing something — a prediction, a marked stimulus, a written
+    // case theory, a choice — and not one of them is reception.
+    //
+    // The script is written to be spoken OVER a sequence that plays itself, so
+    // it narrates what the room is watching instead of announcing what the
+    // presenter is about to click. "I'm not touching anything" is worth its two
+    // seconds: it tells the audience the pace they are seeing is the product's,
+    // not a rehearsed operator's, which is the difference between a demo and a
+    // performance.
+    //
+    // The dimmed choices got words because they are the strongest version of
+    // the strategy POV available and the deck was underclaiming them. Slide 11
+    // says the method arrives inside the question; this shows the app REFUSING
+    // to show the choices until the method is taken up. Enforced, not suggested.
     notes:
-      'Real LSAT questions from released exams. Nothing here is watching. '
-      + "This one's an Assumption question, and the method up top is Prephrase Before Choices. "
-      + 'I mark the stimulus, pick (C), and then the box nobody else makes you do: '
-      + "my reasoning, in my own words, before I'm allowed to see anything. Then confidence."
-      + ' ⟢ THE ANSWER IS (C). Say the letter once and move — do not read the choice aloud, and do not read the '
-      + 'other four. If you lose your place: the stimulus says discoveries shape how societies develop, so '
-      + 'predictions about high-discovery societies are untrustworthy, and (C) is the assumption that the '
-      + 'discoveries themselves cannot be reliably forecast. (A) is the trap — it is about discoveries doing harm, '
-      + 'and the argument is about whether predictions can be trusted, not whether they hurt. '
-      + '⟢ DO NOT SUBMIT ON THIS SLIDE, and do not say a word that implies you will. The script ends on '
-      + '"then confidence" for that reason. Submitting starts a fresh attempt and a live model call; the graded '
-      + 'verdict you want is already waiting on the next slide. '
-      + '⟢ YOU NEVER TYPE. The reasoning is already in the box. Read its first clause; do not touch the keyboard.',
+      "Watch this — I'm not touching anything. "
+      + 'It opens with the approach: guess before you look. '
+      + "And see the choices greyed out — it won't let you read them yet. "
+      + "That's the method enforced, not suggested. "
+      + 'Now the question. Now the case theory, written out. '
+      + 'Choices unlock, C, submitted — and the ruling comes back on the reasoning, not the letter.'
+      + ' ⟢ HANDS OFF THE KEYBOARD. The app drives this. Measured at 21 to 26 seconds to rest across four runs, '
+      + 'and the slide holds 30 — so a slow run still has room, and a fast one leaves you four seconds to say '
+      + 'nothing in. If you finish narrating early, stop talking and let the coach\'s line be read. '
+      + 'Do not tap anything to "help" — there is nothing to help, and the variance is the machine, not a fault. '
+      + '⟢ THE ANSWER IS (C). Say the letter once as it lights and move on. If you lose your place: the stimulus '
+      + 'says discoveries shape how societies develop, so predictions about high-discovery societies are '
+      + 'untrustworthy, and (C) is the assumption that the discoveries themselves cannot be reliably forecast. '
+      + '(A) is the trap — it is about discoveries doing harm, and the argument is about whether predictions can '
+      + 'be trusted, not whether they hurt. '
+      + '⟢ IF ASKED WHETHER THE GRADE IS LIVE — the submit is real: real endpoint, real session, the stored '
+      + 'attempt for exactly that reasoning. The grading ran at staging rather than in that second, because a '
+      + 'frontier call takes twenty to forty seconds and we were not going to spend a quarter of this talk on a '
+      + 'spinner. Offer to run one cold in Q&A. Never say the model is thinking live, and never imply it.',
     speaker: 'Alan',
-    budgetSeconds: 21,
+    // 30, and the number moved because the measurement did. Four live runs to
+    // rest: 20.8, 21.0, 22.9 and 25.6 seconds. The single figure this used to
+    // quote — "21 seconds" — was the fastest of them, and against the 25 that
+    // was budgeted here the slowest run OVERRAN: the budget bar would have
+    // bottomed out while the app was still performing, which tells the presenter
+    // they are late at the exact moment the product is making its case.
+    //
+    // Time to rest is also a floor rather than a duration. The last thing to
+    // arrive is the coach's reading, which the room then has to actually read,
+    // and the slide can be held past any of these numbers indefinitely — once
+    // the page is at rest nothing moves again. So 30 is worst-measured plus
+    // enough headroom to survive a stage machine driving a projector, and it is
+    // headroom rather than a countdown to beat.
+    budgetSeconds: 30,
     scene: { id: 'none', framing: 'still' },
     // The unfinished outer ring of `pov-real-clock` snaps closed and becomes the
     // border of the live app frame. Demo mode begins.
     transition: 'letterbox',
     demo: {
-      route: '/cases/{session}',
-      still: 'demo-case.png',
+      // `{autoplay}` expands to the WHOLE route including its query string —
+      // `/cases/<soloSessionId>?autoplay=C` — so it replaces the path rather
+      // than sitting inside one. Writing `/cases/{autoplay}` would nest a route
+      // inside a route. The single letter is the credited answer, pinned in
+      // `demo.config.ts` beside the session id because the API deliberately
+      // omits `correct_answer` from what the client is sent, so a driver reading
+      // only the client's own data could not answer anything.
+      route: '{autoplay}',
+      // The END state of the driven run, not the opening frame.
+      //
+      // This was `demo-case.png` — the partner tip with the choices still dimmed
+      // — which is the first three seconds of a thirty second beat. On the stills
+      // path the slide therefore stopped before the only thing it is for: the room
+      // saw the question it had just been told the app was about to answer, and
+      // never saw it answered. `demo-case-answered.png` is the same driven session
+      // at rest, with (C) credited, the stamp down and the coach's reading in
+      // shot, so the fallback makes the slide's point instead of setting it up.
+      still: 'demo-case-answered.png',
       width: 1440,
       zoom: 1.12,
-      budgetSeconds: 20,
+      budgetSeconds: 30,
       context: 'Context A',
-      // Down from 56s, and the cut is beats rather than pace: the removed time
-      // was the room watching a cursor travel between things the presenter was
-      // already describing. The two beats that explain the most per second — the
-      // scratchpad drag and the written reasoning — kept most of their length,
-      // because they are what the active-versus-passive through-line cashes out
-      // on. Every beat here is the student producing something rather than
-      // receiving it, and that is the point the room should leave the demo with.
+      // NOT A CLICK PATH ANY MORE — a watch list. The app drives itself, so
+      // these are the beats the presenter narrates over, in the order they
+      // appear. Nothing here is an instruction to touch anything.
+      //
+      // The boundaries are taken from the fastest of four measured runs, which
+      // reached rest at 20.8s; the slowest took 25.6s. So they are an ORDER with
+      // approximate lengths rather than a stopwatch, and every beat can slip by
+      // a second or two on a loaded machine. Narrate what is on screen, not what
+      // the clock says should be.
       clickPath: [
-        { start: 0, end: 4, action: 'Point at the strategy brief at the top of the question. Say its name — **Prephrase Before Choices**. Do not read the three steps aloud.' },
-        { start: 4, end: 9, action: 'Drag-highlight exactly one clause in the stimulus. One drag only.' },
-        { start: 9, end: 12, action: 'Select answer choice **(C)**. It is the credited answer; do not read the other four.' },
-        { start: 12, end: 18, action: 'Scroll the pre-filled reasoning into view. Read only its first clause aloud. Do not type.' },
-        { start: 18, end: 20, action: 'Click confidence 4. Do NOT submit — advance the slide instead.' },
+        { start: 0, end: 3, action: 'HANDS OFF. The partner tip appears — *"Guess before you look"* — with the answer choices **dimmed** beneath it. Say that the choices are locked. This is the strongest two seconds in the demo.' },
+        { start: 3, end: 4, action: 'The tip is taken up and the card records it. Nothing to do.' },
+        { start: 4, end: 8, action: 'Stimulus and stem paint. Do not read them aloud — the room can read.' },
+        { start: 8, end: 13, action: 'The written case theory appears, 827 characters of it. This is the beat that matters: let its length be seen.' },
+        { start: 13, end: 15, action: 'The choices unlock and render.' },
+        { start: 15, end: 17, action: '**(C)** lights up. Say the letter once.' },
+        { start: 17, end: 30, action: 'Submitted. The verdict stamp and the coach\'s reading land in the same frame. Stop talking and let them read it. This beat absorbs the slack on a slow run.' },
       ],
       skip: [
         'the passage tab switcher',
@@ -819,12 +878,21 @@ export const SLIDES: readonly SlideSpec[] = [
         'the client and fee line',
         'reading any other answer choice',
         'the settlement numbers',
+        'touching the keyboard or mouse at any point',
       ],
       staging:
-        'No callout arrows and no zoom effects — the presenter\'s cursor is the pointer. '
-        + 'The reasoning field is pre-filled by the seeder; typing it live costs about forty seconds the deck does not have. '
-        + 'At 21 seconds this is still the longest slide in the talk and it should be: it is the only place the audience '
-        + 'sees the product do the thing the previous six slides argued for.',
+        'AUTOMATED. A driver inside the app plays this sequence itself and the presenter never touches the '
+        + 'keyboard. Four live runs reached rest at 20.8, 21.0, 22.9 and 25.6 seconds — reproducible in shape, '
+        + 'not to the second, and the spread is machine load rather than anything the deck controls. '
+        + 'The slide is budgeted 30 for that reason: the old 25 was set against the fastest run and the slowest '
+        + 'one went past it. '
+        + 'The slide submits, which reverses the old instruction: submission is now a database read, because the '
+        + "attempt is answered and graded during staging, so the stamp and the coach's reading arrive together "
+        + 'instead of behind a 20-40 second model call. The submit replays through an idempotency key, so playing '
+        + 'this slide writes no new attempt — which is also what keeps the next slide\'s first tile correct. '
+        + 'At 30 seconds this is the longest slide in the talk and it should be: it is the only place the audience '
+        + 'sees the product do the thing the previous six slides argued for. It can be held past 30 indefinitely — '
+        + 'once the page is at rest nothing moves again, so there is no cliff and no reason to rush.',
     },
   },
   {
@@ -832,64 +900,106 @@ export const SLIDES: readonly SlideSpec[] = [
     section: 'product',
     kind: 'demo',
     eyebrow: 'Act IV — proof',
-    headline: 'Then it tells you where you broke.',
-    // THE FIRST SENTENCE IS LOAD-BEARING AND IT IS NOT ABOUT THE ARGUMENT.
-    // Advancing here reassigns the iframe `src` — the two slides point at
-    // different sessions — so there is a real app reload under this beat. That
-    // pause reads as a bug when it is silent and as a transition when it is
-    // spoken over, so "here's what came back" exists to cover it, and it is a
-    // sentence the presenter would have said anyway rather than a stall.
+    headline: 'And that question is waiting in review.',
+    // REPURPOSED, AND THIS IS THE WIN. This slide used to re-display a verdict
+    // the previous slide was forbidden to earn — a whole slide, a second staged
+    // session and an iframe reload spent showing a ruling that should have
+    // landed thirty seconds earlier. The autoplay demo now earns the verdict in
+    // its own frame, which frees this slide entirely.
     //
-    // It is also literally true. The coaching on screen is genuine output from
-    // the real model, generated ahead of time and stored, so it did come back —
-    // just not in the last two seconds. Nothing in this script claims a live
-    // call is happening, and nothing should be added that does.
+    // What it does instead is the beat the founders asked for at the very start
+    // of this project and that has been missing from every revision since:
+    // *seeing a snapshot of that specific question in review within the
+    // dashboard*. It closes the loop. The room watches a question get answered,
+    // then watches it turn into a durable record with the reasoning and the
+    // coaching still attached to it — which is the argument that this is a
+    // system rather than a quiz, and it is the setup for the dashboard slide.
+    //
+    // The old headline, "Then it tells you where you broke", moved to the
+    // previous slide's job when the verdict moved there. This one names what is
+    // actually on screen.
     notes:
-      "Here's what came back. It grades my reasoning, not my letter — ninety-five, "
-      + 'and it names what I got right: I focused on reliability, not on whether discoveries do harm. '
-      + "And it's not a popup — every question I've answered is in the dashboard."
-      + ' ⟢ SAY THE FIRST SENTENCE OVER THE RELOAD. The app is reassigning the frame to the graded session and '
-      + 'you will see a beat of blank. Start talking on the keypress, not after the paint. '
-      + '⟢ IF ASKED WHETHER THAT WAS LIVE — answer plainly: the coaching is real output from the model we ship, '
-      + 'run ahead of time and stored, because a frontier call takes twenty to forty seconds and we were not going '
-      + 'to spend a third of the talk watching a spinner. Offer to run one cold in Q&A. Never claim it just '
-      + 'generated on stage. '
-      + '⟢ THE 95 IS DELIBERATE. A low score here would read as a strawman; a high score with a specific '
-      + 'compliment is what demonstrates that the grade is about the reasoning rather than the letter.',
+      "And it doesn't vanish. Here's that same question in review — "
+      + 'my reasoning, the ruling on it, and where it sits against everything else I have argued. '
+      + 'Every rep is kept.'
+      + ' ⟢ THE TILE YOU WANT IS THE FIRST ONE, and staging puts it there — the log is newest-first and the '
+      + 'driven attempt is stamped to sort above everything else on the account. Verified on three live runs. '
+      + 'If the top tile is somehow the wrong question, do not hunt: say "here is one from earlier" and open '
+      + 'any tile, because every one shows the same anatomy. '
+      + '⟢ WHAT TO POINT AT, IN ORDER — "WHAT YOU WROTE", then "COACH". Those two headings side by side are '
+      + 'the entire argument: the record keeps the student\'s own words and the grading of them, not a score. '
+      + 'Do not read either aloud in full. '
+      + '⟢ IF ASKED WHETHER THAT WAS LIVE — same answer as the previous slide. Real submit, real stored attempt, '
+      + 'grading computed at staging. Offer to run one cold in Q&A.',
     speaker: 'Alan',
-    budgetSeconds: 17,
+    budgetSeconds: 13,
     scene: { id: 'none', framing: 'still' },
-    // No slide change as far as the audience is concerned: the verdict stamp
-    // lands and the title bar quietly relabels. 12 and 13 are one shot.
+    // A cut, and now it is an honest one. This used to be "no slide change as
+    // far as the audience is concerned" — the verdict stamp landing while the
+    // title bar quietly relabelled — which was a fiction covering a reload
+    // between two staged case sessions that the room could see perfectly well.
+    // There is still exactly one warm reload here, because the deck and the app
+    // are on different origins and a route change means reassigning `src`. What
+    // changed is that it is now a navigation the audience is *meant* to watch:
+    // the beat is the question travelling off the case screen and into a
+    // permanent record, so the app moving is the point rather than the cost.
     transition: 'cut',
     demo: {
-      // The pre-graded twin, not the open case. Its attempt already carries
-      // stored coaching, so the verdict and the coaching panel paint from the
-      // database. Submitting live instead would put a 20-40 second frontier
-      // model call on stage, which is the single largest risk in the talk.
-      route: '/cases/{verdictSession}',
-      still: 'demo-case.png',
+      // The answer wall, which is where review lives. `?tab=` names the panel:
+      // the Answer Log is behind a dashboard tab rather than below the fold, so
+      // a bare `/progress` opens on the skills matrix and leaves the presenter
+      // two clicks from the entire subject of the slide. The app selects the
+      // named panel and scrolls the tab strip to the top of the frame, so this
+      // lands on the tile wall rather than on the summary header above it.
+      //
+      // This is as deep as a URL goes. The router has no per-attempt route, so
+      // the drawer is still opened by clicking the first tile — that is the
+      // slide's second beat rather than a shortcoming of the link.
+      route: '/progress?tab=answers',
+      // Captured for this slide and nothing else: the Answer Log with the first
+      // tile open and both "WHAT YOU WROTE" and "COACH" in frame. It replaces
+      // `demo-progress.png`, which belongs to `demo-mega-litigation` and shows
+      // the top of the dashboard — a fallback that rendered perfectly while
+      // making none of this slide's point, which is the worst of the three
+      // states a still can be in. `recapture-stills.mjs` now checks both
+      // headings are actually in the frame before it keeps the bytes.
+      still: 'demo-answer-log.png',
       width: 1440,
       zoom: 1.06,
-      budgetSeconds: 14,
+      budgetSeconds: 12,
       context: 'Context A, continuing',
       clickPath: [
-        { start: 0, end: 4, action: 'Talk over the reload — say "here\'s what came back" on the keypress. Then read the verdict line in one sentence. Do not itemize answer, explanation and time points.' },
-        { start: 4, end: 10, action: 'Open the coaching panel. Point at the **95** and read one clause of the "got right" line.' },
-        { start: 10, end: 14, action: 'Click **Dashboard** in the nav — land on the history with the reasoning attached. Do not scroll.' },
+        { start: 0, end: 4, action: 'Land on the dashboard and go straight to the **Answer Log** — the tile wall, "every question you have answered". Do not tour the rest of the page.' },
+        { start: 4, end: 7, action: 'Click the **first tile**. It is the question the room just watched, because the log is newest-first.' },
+        { start: 7, end: 12, action: 'The drawer opens. Point at **WHAT YOU WROTE**, then **COACH**. Do not read either in full, and do not scroll past them.' },
       ],
       skip: [
-        'scrolling the rest of the dashboard',
+        'the projection chart and the rest of the dashboard',
         'the cash and reputation change',
-        'the next question',
+        'the filter and outcome controls above the tile wall',
         'the review queue mechanics',
+        'closing the drawer — advance with it open',
       ],
       staging:
-        'Advancing from the previous slide reassigns the iframe to the pre-graded case, which IS a real app reload — '
-        + 'the two slides are different sessions. That is the deliberate trade that removes a 19-40 second live model '
-        + 'call from the stage, and the script covers the pause with a spoken line rather than leaving it silent. '
-        + 'The coaching is already stored on the attempt, so once it paints there is no spinner. '
-        + 'Do not click Submit on the previous slide — the verdict you want is already on this screen.',
+        'THE FIRST TILE IS THE ATTEMPT THE ROOM JUST WATCHED — confirmed on three consecutive live runs, and '
+        + 'guaranteed at the source rather than hoped for. The log is newest-first by the attempt\'s creation '
+        + 'time, and the pre-graded twin of the same question used to outrank it, so `stage_demo.py` now stamps '
+        + "the driven attempt's `created_at` as it stages. Both tiles are that question and both are correct, "
+        + 'so the wrong one is not detectable by looking at it — only by reading the reasoning and noticing it is '
+        + 'not the text that was on screen thirty seconds earlier. '
+        + 'THE ONE WAY TO BREAK IT: any new attempt on this account after staging takes the top tile, and playing '
+        + 'the previous slide does NOT count, because the driven submit replays through an idempotency key and '
+        + 'writes no row. So rehearse freely, but if anyone works a case by HAND on this account, re-run '
+        + '`npm run stage-demo:fast` before the talk. If the top tile is somehow not the right question, the '
+        + 'fallback is in the notes: open any tile, since every one has the same anatomy. '
+        + 'The route carries `?tab=answers` because the Answer Log is behind a dashboard tab, not below the fold. '
+        + 'Advancing here reassigns the frame from the case to the dashboard: one warm reload of an app that is '
+        + 'already signed in, which `verify-demo-continuity.mjs` holds to exactly one. '
+        + 'The coaching is already stored on the attempt, so the drawer paints without a spinner. '
+        + 'IN STILLS MODE the frame is frozen at the third beat — the open drawer, with both headings in view and '
+        + 'the tile wall scrolled off above it. That is the right frame to keep, since it is the payoff, but it '
+        + 'means the first two beats are described rather than shown: say "every question I have answered is on '
+        + 'this wall" instead of pointing at it.',
     },
   },
   {
@@ -1148,7 +1258,14 @@ export const SLIDES: readonly SlideSpec[] = [
     headline: 'Every object in this room was bought with LSAT questions.',
     notes:
       'You start here. And this is where it ends up. '
-      + 'One path between those two rooms — thousands of LSAT questions.',
+      + 'One path between those two rooms — thousands of LSAT questions.'
+      + ' ⟢ PRESS **O** ONCE, after "you start here", and then say nothing for five seconds. O is the only key on '
+      + 'this slide. It works the same way whether the app is live or you are on stills, so if the stack has died '
+      + 'this beat still happens — do not skip the slide. '
+      + '⟢ IF YOU PRESS IT EARLY OR TWICE — press it again. It toggles both ways, and the room reads a second '
+      + 'rebuild as part of the effect. Do not reach for the mouse. '
+      + '⟢ THE ORBIT IS THE APP\'S, NOT YOURS. Let it run. The rebuild plus the orbit is the five seconds; if you '
+      + 'talk over it you have spent the slide and shown nothing.',
     speaker: 'Alan',
     budgetSeconds: 9,
     scene: { id: 'none', framing: 'still' },
@@ -1157,6 +1274,41 @@ export const SLIDES: readonly SlideSpec[] = [
     demo: {
       route: '/office?officeTier=0',
       still: 'demo-office-tier0.png',
+      // THE MECHANISM THE SLIDE WAS MISSING. This slide is scripted as a toggle
+      // and had nothing that toggled: one route, pinned at tier 0, and `L`
+      // merely reloaded it. The before/after — the entire point — could not
+      // happen, live or on the fallback.
+      //
+      // `demo-office-tier14.png` already existed and was referenced by nothing,
+      // which is why the stills path costs no new capture: press the key with
+      // `?stills=1` on and the two pictures swap, so the beat survives the whole
+      // stack being dead. That is the state in which this slide most needs to
+      // work, since it is the one demo the cut list marks as never to be cut.
+      //
+      // `officeAll=1` alongside the tier is not optional — without it the scene
+      // renders the tier's shell but not the staff and furniture that make the
+      // room read as built, and the line being spoken is about the objects.
+      toggle: {
+        route: '/office?officeTier=14&officeAll=1',
+        still: 'demo-office-tier14.png',
+        // `O` for office. It is the only key on this slide, so there is nothing
+        // to confuse it with while the five silent seconds run, and its
+        // neighbours are all harmless: `L` reloads this same route, `P` opens
+        // the presenter overlay, `I` and `K` do nothing.
+        //
+        // NOT `T`, which is the obvious mnemonic and is already taken. `T`
+        // brings the start card back over the running deck, and it is bound in
+        // `start/use-start-gate.ts` as a *capture-phase* window listener that
+        // calls `stopPropagation()` — so it wins silently and no handler further
+        // down ever sees the key. That file's own comment predicted this: "the
+        // deck has no `t` case today, but a deck that grew one would silently do
+        // both things." It was tried, and what actually happened on stage would
+        // have been the title card dropping over the money shot.
+        // `scripts/verify-office-toggle.mjs` caught it on its first run, which
+        // is the reason that script exists rather than a bare eyeball pass.
+        key: 'o',
+        label: 'tier 14 — the built firm',
+      },
       width: 1440,
       zoom: 1.06,
       budgetSeconds: 9,
@@ -1167,7 +1319,7 @@ export const SLIDES: readonly SlideSpec[] = [
       // and the silent one kept five of its eight.
       clickPath: [
         { start: 0, end: 2, action: 'Tier 0 office. "You start here." Nothing else.' },
-        { start: 2, end: 7, action: 'Toggle to tier 14. SAY NOTHING while the room rebuilds and the camera orbits.' },
+        { start: 2, end: 7, action: 'Press **O** to toggle to tier 14. SAY NOTHING while the room rebuilds and the camera orbits.' },
         { start: 7, end: 9, action: 'One line: one path between those rooms, and it is questions.' },
       ],
       skip: [
@@ -1178,10 +1330,23 @@ export const SLIDES: readonly SlideSpec[] = [
         'the office cat, however tempting',
       ],
       staging:
-        'The money shot, and it earns its length by being short. Do not crossfade — let the real scene rebuild with the '
+        'ONE KEY: **O** (for office), and it is the only thing to press on this slide. It swaps the embed between the app\'s two '
+        + 'real tier overrides — `?officeTier=0` and `?officeTier=14&officeAll=1` — in the same iframe element, so the '
+        + 'app is never reloaded from cold. Press it again to go back; a mis-press is one more press rather than a '
+        + 'stranded slide. Leaving the slide resets it to tier 0, so a second run-through starts on the shack again '
+        + 'instead of playing the transformation backwards. '
+        + 'IT WORKS ON STILLS TOO — with `?stills=1` or after `S`, O swaps `demo-office-tier0.png` for '
+        + '`demo-office-tier14.png`. The before/after is the whole slide, so it had to survive the stack being dead; '
+        + 'this is the one demo the cut list says never to cut. '
+        + 'The tier overrides are DEV query parameters and only exist under `npm run dev` — never against a '
+        + 'production build. '
+        + 'The money shot, and it earns its length by being short. Do not crossfade — let the real scene rebuild with the '
         + 'camera locked in the same position so the room grows around a fixed viewpoint, then release the camera into one '
         + 'slow 20-degree orbit. Hold the final frame a full second in silence before speaking. Rehearse this one — '
-        + 'at nine seconds it is the least forgiving slide in the talk, and the five silent seconds are not optional.',
+        + 'at nine seconds it is the least forgiving slide in the talk, and the five silent seconds are not optional. '
+        + 'The tier-14 scene is the heaviest thing in the deck: the start card warms the office route in a hidden frame, '
+        + 'but if O is pressed within a second or two of the slide arriving the rebuild can still be visibly slow. '
+        + 'That is what the five silent seconds are for.',
     },
   },
   {
@@ -1378,11 +1543,21 @@ export const SECTION_LABELS: Record<SlideSpec['section'], string> = {
   close: 'Act VI — The Close',
 }
 
-/** Total budgeted runtime, for the presenter overlay's pacing figure. 9:40. */
+/** Total budgeted runtime, for the presenter overlay's pacing figure. 4:54. */
 export const TOTAL_BUDGET_SECONDS = SLIDES.reduce((sum, slide) => sum + (slide.budgetSeconds ?? 45), 0)
 
 /**
- * Total seconds spent inside a live app frame. 3:14 across seven slides, and the
+ * Total seconds spent inside a live app frame. 1:22 across six slides, and the
  * number the founders asked to be held to.
+ *
+ * `stillOnly` slides are excluded, which they were not before: `demo-focus-mode`
+ * carries a `demo` block for its route and caption but never mounts a frame, so
+ * counting its 6 seconds made this 1:28 and made the one number the founders
+ * watch disagree with every table in the docs. Nothing reads this — the presenter
+ * overlay paces against `TOTAL_BUDGET_SECONDS` — so it is here to be quoted, and
+ * a figure that exists only to be quoted has to be the figure it claims to be.
  */
-export const DEMO_BUDGET_SECONDS = SLIDES.reduce((sum, slide) => sum + (slide.demo?.budgetSeconds ?? 0), 0)
+export const DEMO_BUDGET_SECONDS = SLIDES.reduce(
+  (sum, slide) => sum + (slide.demo && !slide.demo.stillOnly ? slide.demo.budgetSeconds ?? 0 : 0),
+  0,
+)
