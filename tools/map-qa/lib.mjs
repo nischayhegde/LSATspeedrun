@@ -14,7 +14,8 @@
  *               the code rather than of how loaded the machine was.
  */
 import { chromium } from '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -219,8 +220,53 @@ async function dismissOverlays(page) {
   }
 }
 
+/**
+ * Whether the dev server behind `BASE` has hot-reloaded since it started.
+ *
+ * Measured, this matters more than most of the changes this harness is used to
+ * judge: an unmodified tree read .0021 on a freshly started server and .0109 on
+ * one that had hot-reloaded through six edits, and the static geometry was
+ * identical to the unit both times. Vite keeps a module graph across an edit and
+ * the scene does not come back the same. Every arm measured without a restart
+ * is therefore comparing against a control taken in a different world.
+ *
+ * Detected rather than trusted to discipline: the server's own start time
+ * against the newest source file under it. Best-effort — a remote `BASE`, a
+ * missing `lsof` or a production build all return `null`, which is reported as
+ * unknown rather than as clean.
+ */
+function serverWarmth(base) {
+  try {
+    const port = new URL(base).port
+    if (!port) return null
+    const pid = execFileSync('lsof', ['-ti', `:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
+    if (!pid) return null
+    // `etime` is elapsed wall time, which needs no date parsing and no locale.
+    const elapsed = execFileSync('ps', ['-o', 'etime=', '-p', pid], { encoding: 'utf8' }).trim()
+    const parts = elapsed.split(/[-:]/).map(Number).reverse()
+    const seconds = (parts[0] ?? 0) + (parts[1] ?? 0) * 60 + (parts[2] ?? 0) * 3600 + (parts[3] ?? 0) * 86400
+    const started = Date.now() - seconds * 1000
+    const root = fileURLToPath(new URL('../../frontend/src', import.meta.url))
+    let newest = 0
+    for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile()) continue
+      const at = statSync(`${entry.parentPath ?? entry.path}/${entry.name}`).mtimeMs
+      if (at > newest) newest = at
+    }
+    return { cold: newest <= started, editedAgoMs: Date.now() - newest, upMs: Date.now() - started }
+  } catch {
+    return null
+  }
+}
+
 /** Signs in, opens the map, and waits for a scene to exist. */
 export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
+  const warmth = serverWarmth(BASE)
+  if (warmth && !warmth.cold) {
+    console.warn('\n!! HOT SERVER: a source file has changed since this dev server started.')
+    console.warn('!! Restart it before measuring. An unmodified tree reads .0021 cold and .0109 hot.')
+    console.warn(`!! (up ${(warmth.upMs / 1000).toFixed(0)}s, last edit ${(warmth.editedAgoMs / 1000).toFixed(0)}s ago)\n`)
+  }
   const browser = await chromium.launch({
     executablePath: CHROME,
     args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
