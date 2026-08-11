@@ -74,24 +74,55 @@ async function measure({ frames, standoff }) {
   let worstAt = null
   const exposedSites = {}
   const waitSites = {}
-  // Cached per position, because a waiting walker does not move and the scan is
-  // over every road edge.
+  /*
+   * The same question asked of everybody, not just of the ones standing at a
+   * kerb — and, unlike the wait figure, it turns out not to mean much. Every
+   * district spends about a third of its walker-frames inside a swept path
+   * (33% / 39% / 31%), including the Old Quarter, which scores no contacts at
+   * all, and the figure barely moves when the crowd is deliberately held to the
+   * clear part of each pavement. Kept because that is worth knowing: the
+   * pavements on this map are broadly inside the traffic and it is the *wait*,
+   * where somebody stands still in one place for seconds at a time, that turns
+   * that into a collision.
+   */
+  let bodyFrames = 0
+  let onRoadFrames = 0
+  let worstOnRoad = Number.POSITIVE_INFINITY
+  const onRoadSites = {}
+  // Cached on a five-centimetre grid, because the scan is over every road edge
+  // and a waiting walker asks the same question every frame it waits.
   const cache = new Map()
+  const cached = (x, z) => {
+    const key = `${Math.round(x * 20)},${Math.round(z * 20)}`
+    let clearance = cache.get(key)
+    if (clearance === undefined) {
+      clearance = clearanceAt(x, z)
+      cache.set(key, clearance)
+    }
+    return clearance
+  }
 
   for (let frame = 0; frame < frames; frame += 1) {
     window.__clock.tick(1)
     for (const walker of crowd.walkers) {
-      if (!walker.active || walker.crossing < 0) continue
+      if (!walker.active) continue
+      const body = walker.rig?.root ?? walker.root
+      if (body) {
+        bodyFrames += 1
+        const clearance = cached(body.position.x, body.position.z) - walkerRadius
+        if (clearance < 0) {
+          onRoadFrames += 1
+          const at = `${Math.round(body.position.x)},${Math.round(body.position.z)}`
+          onRoadSites[at] = (onRoadSites[at] ?? 0) + 1
+          if (clearance < worstOnRoad) worstOnRoad = clearance
+        }
+      }
+      if (walker.crossing < 0) continue
       if (walker.crossPhase !== 'wait') continue
       const root = walker.rig?.root ?? walker.root
       if (!root) continue
       waitFrames += 1
-      const key = `${Math.round(root.position.x * 20)},${Math.round(root.position.z * 20)}`
-      let clearance = cache.get(key)
-      if (clearance === undefined) {
-        clearance = clearanceAt(root.position.x, root.position.z)
-        cache.set(key, clearance)
-      }
+      const clearance = cached(root.position.x, root.position.z)
       const site = `${Math.round(root.position.x)},${Math.round(root.position.z)}`
       waitSites[site] = (waitSites[site] ?? 0) + 1
       // Room between this body's own edge and the side of a passing vehicle.
@@ -119,6 +150,11 @@ async function measure({ frames, standoff }) {
     worstAt,
     topExposedSites: Object.entries(exposedSites).sort((a, b) => b[1] - a[1]).slice(0, 8),
     topWaitSites: Object.entries(waitSites).sort((a, b) => b[1] - a[1]).slice(0, 8),
+    bodyFrames,
+    onRoadFrames,
+    onRoadShare: +(onRoadFrames / Math.max(1, bodyFrames)).toFixed(4),
+    worstOnRoad: Number.isFinite(worstOnRoad) ? +worstOnRoad.toFixed(3) : 0,
+    topOnRoadSites: Object.entries(onRoadSites).sort((a, b) => b[1] - a[1]).slice(0, 8),
   }
 }
 
@@ -140,10 +176,13 @@ try {
       exposedShare: value.exposedShare,
       worstStanding: value.worstStanding,
       worstAt: value.worstAt,
+      onRoadFrames: value.onRoadFrames,
+      onRoadShare: value.onRoadShare,
+      worstOnRoad: value.worstOnRoad,
       standoffs: value.network?.standoffs,
-      standoffWorst: value.network?.standoffWorst,
     }))
     console.log('   exposed', JSON.stringify(value.topExposedSites))
+    console.log('   onRoad ', JSON.stringify(value.topOnRoadSites))
     console.log('   waits  ', JSON.stringify(value.topWaitSites))
     save(`${OUT}/wait-${tag}/${key}.json`, value)
   }
