@@ -1183,9 +1183,55 @@ const CORRIDOR_BUILDING_LINE: Partial<Record<MapRegionKey, number>> = { city: 1.
 /** Half the depth of a tier plinth, as `createLevelBuilding` marks it solid. */
 const TIER_PLINTH_HALF_DEPTH = 1.275
 
-/** Where one level's headquarters is authored to stand, and facing which way. */
+/**
+ * The streets a parcel set back from this region's route would have to cross,
+ * as positions on the axis the route runs along.
+ *
+ * Only the districts laid out on a declared lattice can answer this. The
+ * Circuit and Sovereign Arc grow their towns procedurally around the route and
+ * have no such list, so they get an empty one and keep the position they have
+ * always had.
+ */
+function crossStreetLines(region: MapRegionKey): number[] {
+  return region === 'city' ? OLD_QUARTER_AVENUES.map((line) => line.position) : []
+}
+
+/**
+ * Where one level's headquarters is authored to stand, and facing which way.
+ *
+ * The distance along the route is a *preference*, not a coordinate. It used to
+ * be `.12 + i / (n - 1) * .76` outright — five headquarters spread evenly along
+ * the curve, a number with no relationship to where the streets are — and on
+ * the Old Quarter three of the five landed on an avenue. Nothing downstream can
+ * recover from that: the parcel is 3.2 m wide, the gap between an avenue's two
+ * pavements is 1.5, and clearing it needs a slide of 2.8 against a search
+ * budget of 1.2.
+ *
+ * So the even spread stays the thing it always was — an aesthetic wish about
+ * pacing along the route — and the plan gets to say which nearby stretch of it
+ * is actually a frontage. The search is over the *authored* position, before
+ * anything is built, and it is bounded to about one block either way, so a
+ * headquarters still arrives where the pacing wanted it and simply stands
+ * between two streets rather than across one. This is deliberately not a wider
+ * siting search: that would move a finished building off the street it belongs
+ * to, which is the failure `authored.mjs` exists to catch.
+ */
 function tierParcelSite(region: MapRegionKey, route: THREE.Curve<THREE.Vector3>, index: number, count: number) {
-  const t = count <= 1 ? .5 : .12 + index / (count - 1) * .76
+  const wanted = count <= 1 ? .5 : .12 + index / (count - 1) * .76
+  const lines = crossStreetLines(region)
+  let t = wanted
+  if (lines.length) {
+    let best = Number.NEGATIVE_INFINITY
+    for (let step = -12; step <= 12; step += 1) {
+      const candidate = Math.min(.94, Math.max(.06, wanted + step * .005))
+      const at = route.getPointAt(candidate)
+      const clear = Math.min(...lines.map((line) => Math.abs(at.x - line)))
+      // Clearance first, and the authored spacing as the tie-break, so a parcel
+      // that is already mid-block does not wander looking for a wider one.
+      const score = clear - Math.abs(step) * .012
+      if (score > best) { best = score; t = candidate }
+    }
+  }
   const roadPoint = route.getPointAt(t)
   const tangent = route.getTangentAt(t).normalize()
   const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
