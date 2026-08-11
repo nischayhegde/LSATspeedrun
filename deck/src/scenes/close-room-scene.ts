@@ -2,7 +2,7 @@ import * as THREE from 'three'
 
 import { HumanoidActor, assignHumanoidLod, type HumanoidGesture, type HumanoidState } from '../app-art/rig'
 import { buildStylizedCounsel, type StylizedCounselRig } from '../app-art/stylized-counsel'
-import { registerProbe } from './probe'
+import { registerProbe, withdrawProbe } from './probe'
 import { CameraRig, disposeTree, seededRandom } from './scene-kit'
 import type { DeckScene, SceneContext } from './types'
 
@@ -581,12 +581,13 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
    *
    *     __deckClose()   // { elapsed, weight, visits, folding }
    */
-  registerProbe('__deckClose', () => ({
+  const probe = () => ({
     elapsed: Number(sceneClock.toFixed(3)),
     weight: Number(foldWeight(foldClock).toFixed(4)),
     visits,
     folding,
-  }))
+  })
+  registerProbe('__deckClose', probe)
 
   const startFold = () => {
     folding = true
@@ -702,7 +703,15 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
 
     setFraming(name, immediate) {
       rig.go(name, immediate, 1.8)
-      if (!immediate || context.reduced) return
+      if (!immediate) return
+      // Take the hatch back. When a warm and a show race, both build this
+      // scene and both publish; the one that is thrown away can be the one
+      // that published last, and its dispose then leaves the name withdrawn
+      // while this instance is the one on screen. Re-asserting on activation
+      // means the reader always points at the scene being drawn, which is the
+      // only instance a measurement could sensibly be about.
+      registerProbe('__deckClose', probe)
+      if (context.reduced) return
       // The stage passes `immediate: true` exactly when a scene has been put
       // on screen — a first build or a cache hit — and `false` for the
       // same-scene camera tween, which must not disturb anything.
@@ -722,7 +731,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
     },
 
     dispose() {
-      registerProbe('__deckClose', undefined)
+      withdrawProbe('__deckClose', probe)
       // ADOPTION rule 4: call `dispose` — the mixer caches bindings against
       // the root object and an actor collected without it keeps the rig alive.
       actor.dispose()
