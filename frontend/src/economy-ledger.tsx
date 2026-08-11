@@ -39,11 +39,90 @@
  *    `opacity`. Each row owns its own animation state, so a rolling figure
  *    re-renders one row rather than the application shell.
  */
-import { memo } from 'react'
+import { memo, useEffect, useRef } from 'react'
 
 import { formatCountDelta, formatMoney, formatMoneyDelta } from './format'
 import { useDelta, useLiveAccrual, useRollup, type AccrualRate } from './motion'
 import type { GameState } from './types'
+
+/** How long after the last scroll event the card comes back. */
+const SETTLE_MS = 420
+
+/**
+ * Gets the card out of the way of the thing it is sitting on.
+ *
+ * A fixed panel on a scrolling document is always over *something* — the note
+ * on `.economy-ledger` in styles.css says as much, and click-through was the
+ * answer to half of it. The other half is reading. Measured across nine routes
+ * at twenty-five widths (`tools/ui-qa/viewport-sweep.mjs`), this card was lying
+ * across page text in 472 of the 225 route/width pairs' findings, and at 1024
+ * on the Dashboard it covered half of the words "Accuracy by question type".
+ *
+ * So it yields, on the two signals that mean someone is trying to read what is
+ * underneath it:
+ *
+ * - The page is scrolling. Text sliding under an opaque box is the worst of it,
+ *   and it is also the moment the figures matter least.
+ * - A fine pointer has arrived over it. The card takes no pointer events, so it
+ *   has no `:hover` of its own and CSS cannot express this; a listener that
+ *   compares one cached rect per animation frame can. Coarse pointers are left
+ *   out — there is no hover to read intent from, and the scroll signal already
+ *   covers a phone.
+ *
+ * Everything here writes a `data-` attribute straight onto the node rather than
+ * going through state: this component is mounted for the whole session, and a
+ * re-render of it per scroll frame is exactly the cost the file's third rule
+ * exists to avoid. The animation is transform and opacity only.
+ */
+function useYieldWhileReading(node: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const element = node.current
+    if (!element) return
+
+    let settle = 0
+    let frame = 0
+    let scrolling = false
+    let pointerOver = false
+
+    const apply = () => {
+      if (scrolling || pointerOver) element.setAttribute('data-yield', 'true')
+      else element.removeAttribute('data-yield')
+    }
+
+    const onScroll = () => {
+      scrolling = true
+      apply()
+      window.clearTimeout(settle)
+      settle = window.setTimeout(() => { scrolling = false; apply() }, SETTLE_MS)
+    }
+
+    const finePointer = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false
+    const onPointerMove = (event: PointerEvent) => {
+      if (frame) return
+      const { clientX, clientY } = event
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        const rect = element.getBoundingClientRect()
+        // A margin, so the card is already gone by the time the cursor lands on
+        // the word it is covering rather than moving out from under it.
+        const inside = clientX >= rect.left - 24 && clientX <= rect.right + 24
+          && clientY >= rect.top - 24 && clientY <= rect.bottom + 24
+        if (inside === pointerOver) return
+        pointerOver = inside
+        apply()
+      })
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true })
+    if (finePointer) window.addEventListener('pointermove', onPointerMove, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.clearTimeout(settle)
+      if (frame) window.cancelAnimationFrame(frame)
+    }
+  }, [node])
+}
 
 /** Whether a rise in this figure is a good thing, which is what colours it. */
 type Polarity = 'asset' | 'liability'
@@ -104,6 +183,8 @@ export const EconomyLedger = memo(function EconomyLedger({ game, hidden }: {
   game: GameState
   hidden?: boolean
 }) {
+  const card = useRef<HTMLElement>(null)
+  useYieldWhileReading(card)
   if (hidden) return null
   // Cash and firm value share one accrual: firm value is cash plus a fixed
   // sum of past investment (`_valuation` on the backend), so whatever passive
@@ -119,7 +200,7 @@ export const EconomyLedger = memo(function EconomyLedger({ game, hidden }: {
     }
     : undefined
   return (
-    <aside className="economy-ledger" aria-label="Firm economy">
+    <aside className="economy-ledger" aria-label="Firm economy" ref={card}>
       <EconomyReadingRow
         label="CASH"
         value={game.cash}
