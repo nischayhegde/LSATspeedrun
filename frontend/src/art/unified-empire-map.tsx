@@ -68,13 +68,19 @@ const landmarkTag: Record<MapLandmarkKind, string> = {
   monument: 'MON',
 }
 
-/* Standing retainers, surfaced in the region they belong to.
+/* Standing counsel, surfaced in the region it is held over.
  *
- * This is coverage, not conquest: signing a district's institutions to a
- * standing retainer makes your firm the default counsel there. It buys no
- * payout multiplier and absorbs no competitor, which is what keeps it from
- * treading on the rival acquisitions the same map already carries — those are
- * discrete moves against named firms, priced at a full five cases each.
+ * Called a *retainer* until now, which is the same word the Clients tab uses
+ * for the opposite arrangement — a client retainer is the thing that pays your
+ * fee, and a district seat pays no fee at all. One word, two mechanics, and
+ * both of them in the Firm tab since this board acquired a ledger there. The
+ * word now belongs to clients; a district appointment is standing counsel.
+ *
+ * This is coverage, not conquest: signing a district's institutions as their
+ * standing counsel makes your firm the default call there. It buys no payout
+ * multiplier and absorbs no competitor, which is what keeps it from treading on
+ * the rival acquisitions the same map already carries — those are discrete
+ * moves against named firms, priced at a full five cases each.
  *
  * This board is the *place* half of the mechanic and deliberately no more than
  * that: the districts of the region on screen, joined to the landmarks the
@@ -126,17 +132,25 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
   }
 
   return (
-    <aside className={`uw-retainer-board ${open ? 'is-open' : ''} ${openable ? 'has-offer' : ''}`} aria-label={`${regionName} standing retainers`}>
+    <aside className={`uw-retainer-board ${open ? 'is-open' : ''} ${openable ? 'has-offer' : ''}`} aria-label={`${regionName} standing counsel`}>
       <button type="button" className="uw-retainer-toggle" aria-expanded={open} onClick={() => setOpen((was) => !was)}>
-        <small>STANDING RETAINERS</small>
+        <small>STANDING COUNSEL</small>
         <strong>{region.held} of {region.total} districts</strong>
         <i aria-hidden="true">{open ? <MinusMark /> : <PlusMark />}</i>
       </button>
       {open && (
         <>
+          {/* No longer promises that "every routine matter there arrives at
+              your door". Nothing delivered that: a held district moves the
+              reputation floor and the lease and is read by nothing in the
+              session or story code, so the one sentence that told a player what
+              they were buying was the one sentence that was not true. What is
+              left is the two effects that are real, and the distinction from
+              the client retainer that shares the tab. */}
           <p className="uw-retainer-intro">
-            Sign a district&apos;s institutions and every routine matter there arrives at your door.
-            Standing holds your reputation up; a branch you are already paid to keep offsets the lease.
+            Sign a district&apos;s institutions and your firm becomes their standing counsel. No fee
+            per case — that is what a client retainer is for. Standing holds your reputation up from
+            below; a branch you are already paid to keep offsets the daily lease.
           </p>
           <div className="uw-retainer-list">
             {districts.map((district) => (
@@ -147,7 +161,7 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
                   <strong>{district.name}</strong>
                   <b>{district.owned ? 'HELD' : formatMoney(district.cost, true)}</b>
                 </div>
-                <em>Retains {district.retainer}</em>
+                <em>Counsel to {district.retainer}</em>
                 {district.owned
                   ? <small>+{district.standing.toFixed(2)} standing · {(district.rent_relief_bps / 100).toFixed(1)}% of the lease</small>
                   : district.locks.length
@@ -160,7 +174,7 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
                       >
                         {pendingKey === district.key && secure.isPending
                           ? 'Signing…'
-                          : district.affordable ? 'Sign the retainer' : 'Not enough cash'}
+                          : district.affordable ? 'Sign as counsel' : 'Not enough cash'}
                       </button>
                     )}
               </article>
@@ -168,13 +182,13 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
           </div>
           <p className="uw-retainer-foot">
             {region.swept
-              ? `Every district in ${regionName} is retained. +${region.sweep_standing.toFixed(1)} standing for the sweep.`
+              ? `Your firm is counsel to every district in ${regionName}. +${region.sweep_standing.toFixed(1)} standing for the sweep.`
               : `Hold all ${region.total} for a further +${region.sweep_standing.toFixed(1)} standing.`}
           </p>
           <button type="button" className="uw-retainer-ledger-link" onClick={onOpenLedger}>
             All {game.territory.held} of {game.territory.total} in the ledger <i aria-hidden="true"><ChevronMark /></i>
           </button>
-          {secure.error && <p className="uw-retainer-error">That retainer could not be signed. Try again.</p>}
+          {secure.error && <p className="uw-retainer-error">That appointment could not be signed. Try again.</p>}
         </>
       )}
     </aside>
@@ -243,7 +257,7 @@ function DistrictBrief({ landmark, game, chosen, onOpenLedger }: {
     <div className={`uw-district-brief is-${state}${chosen ? ' is-chosen' : ''}`}>
       <p>{landmark.detail}</p>
       <div className="uw-district-brief-head">
-        <b>{district.owned ? 'RETAINER HELD' : district.available ? 'RETAINER OPEN' : 'RETAINER LOCKED'}</b>
+        <b>{district.owned ? 'COUNSEL HELD' : district.available ? 'COUNSEL OPEN' : 'COUNSEL LOCKED'}</b>
         <span>{district.retainer}</span>
       </div>
       <dl className="uw-district-brief-terms">
@@ -260,7 +274,7 @@ function DistrictBrief({ landmark, game, chosen, onOpenLedger }: {
       )}
       {otherLocks.length > 0 && <p className="uw-district-brief-gate">{otherLocks.join(' · ')}</p>}
       <button type="button" className="uw-district-brief-ledger" onClick={() => onOpenLedger(district.key)}>
-        {district.owned ? 'This retainer in the ledger' : 'Sign it in the ledger'} <i aria-hidden="true"><ChevronMark /></i>
+        {district.owned ? 'This appointment in the ledger' : 'Sign it in the ledger'} <i aria-hidden="true"><ChevronMark /></i>
       </button>
     </div>
   )

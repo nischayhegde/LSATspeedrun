@@ -9,10 +9,29 @@ import { useSound } from './sound'
 import type { GameState, TerritoryDistrict } from './types'
 import { storeGame } from './pages/shared'
 
-/* Standing retainers, in the tab that houses firm interactions.
+/* Standing counsel, in the tab that houses firm interactions.
  *
- * The map already carries a retainer board and this is deliberately not a copy
- * of it. A retainer has two halves and each surface owns one:
+ * ## Why this is not called a retainer any more
+ *
+ * It used to be, and so does the Clients tab three tabs away, and the two mean
+ * opposite things. A *client retainer* is a paying relationship: it sets the
+ * fee every case earns. A district seat pays no fee at all — it buys a
+ * reputation floor and relief against the lease. Two surfaces in one tab used
+ * one word for both, which is the likeliest source of the "am I taking up
+ * cases or receiving cases?" confusion, and it got worse when this board moved
+ * off the map and into the Firm tab beside the client list.
+ *
+ * So the word "retainer" now means one thing — a client paying your rate — and
+ * a district appointment is *standing counsel*, which is both the correct term
+ * of art and the word the district catalog was already written in: districts
+ * describe themselves as having "never had counsel of their own" and having
+ * "needed proper counsel for thirty years". The vocabulary was there before the
+ * mechanic was named over the top of it.
+ *
+ * ## Why this board is not the map's board
+ *
+ * The map already carries one and this is deliberately not a copy. A seat has
+ * two halves and each surface owns one:
  *
  *   the map     — where a district *is*. It is scoped to the region you are
  *                 standing in, joins the district to a landmark the planner
@@ -74,7 +93,7 @@ function DistrictPlot({ district, signing, justSigned, asked, onSign, onShowOnMa
           </button>
         )}
       </div>
-      <em>Retains {district.retainer}</em>
+      <em>Counsel to {district.retainer}</em>
       {district.owned ? (
         <p className="retainer-plot-yield">
           <span>+{district.standing.toFixed(2)} standing</span>
@@ -90,7 +109,7 @@ function DistrictPlot({ district, signing, justSigned, asked, onSign, onShowOnMa
           </button>
         </div>
       )}
-      {justSigned && <span className="retainer-plot-seal" aria-hidden="true"><Stamp size={15} /> RETAINED</span>}
+      {justSigned && <span className="retainer-plot-seal" aria-hidden="true"><Stamp size={15} /> APPOINTED</span>}
     </article>
   )
 }
@@ -168,7 +187,22 @@ export function RetainerLedger({ game, highlightKey, onShowOnMap }: {
   }
 
   return (
-    <section className="retainer-ledger" aria-label="Standing retainers">
+    <section className="retainer-ledger" aria-label="Standing counsel">
+      {/* The map's copy of this board opens by saying what it is. This one did
+          not, and this is where most players meet it first -- it is one tab
+          along from the client list, so a reader arrives already holding the
+          other meaning of the word. Hence the second sentence, which exists to
+          be the difference rather than to describe the mechanic twice. */}
+      <header className="retainer-ledger-head">
+        <span className="eyebrow">STANDING COUNSEL · {territory.total} DISTRICTS</span>
+        <h2>Where the firm is the first call.</h2>
+        <p>
+          Sign a district&apos;s institutions and your firm becomes their standing counsel.
+          {' '}<b>This is not a client retainer and pays no fee per case.</b>
+          {' '}It buys <b>standing</b>, which holds your reputation up from below, and a branch
+          you are already paid to keep, which comes off the <b>daily lease</b>.
+        </p>
+      </header>
       <div className="retainer-totals">
         <div>
           <small>DISTRICTS HELD</small>
@@ -192,7 +226,7 @@ export function RetainerLedger({ game, highlightKey, onShowOnMap }: {
         </div>
       </div>
 
-      <nav className="retainer-regions" aria-label="Retainer regions">
+      <nav className="retainer-regions" aria-label="Map regions">
         {territory.regions.map((entry) => (
           <button
             key={entry.key}
@@ -222,7 +256,7 @@ export function RetainerLedger({ game, highlightKey, onShowOnMap }: {
         ))}
       </div>
       {region.swept && <p className="retainer-sweep">{region.name} is swept · +{region.sweep_standing.toFixed(1)} standing</p>}
-      {secure.error && <p className="retainer-error" role="alert">That retainer could not be signed. Try again.</p>}
+      {secure.error && <p className="retainer-error" role="alert">That appointment could not be signed. Try again.</p>}
     </section>
   )
 }

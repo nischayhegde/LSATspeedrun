@@ -1345,7 +1345,9 @@ def _describe_connection_unlocks() -> None:
         names = opened.get(item["key"], [])
         parts = [part.strip() for part in item["benefit"].split("·") if "unlock" not in part.lower()]
         if names:
-            parts.append(f"Retainers open in {names[0]}" if len(names) == 1 else f"Retainers open in {len(names)} districts")
+            # "Retainers" was the wrong word: a client retainer pays a fee and a
+            # district appointment does not, and the Firm tab now shows both.
+            parts.append(f"Counsel opens in {names[0]}" if len(names) == 1 else f"Counsel opens in {len(names)} districts")
         item["benefit"] = " · ".join(parts)
 
 
