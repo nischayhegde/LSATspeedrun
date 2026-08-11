@@ -340,6 +340,10 @@
 .uw-retainer-toggle i { grid-row: 1 / span 2; grid-column: 2; width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid rgba(220, 199, 145, .34); border-radius: 5px; color: #e2c67f; font-size: 11px; font-style: normal; }
 
 .uw-retainer-intro { margin: 0; padding: 0 9px 7px; color: #8ea19c; font-size: 9.5px; line-height: 1.45; }
+/* Named in the same selection gold the marked rows below it take, so the
+   sentence and the rows it is about read as one statement. */
+.uw-retainer-opened { margin: 0 9px 8px; padding: 6px 8px; border-left: 2px solid #e4c36e; color: #e8d5a4; background: rgba(228, 195, 110, .12); font-size: 9.5px; line-height: 1.45; }
+.uw-retainer-opened b { color: #f0cc68; font-weight: inherit; }
 .uw-retainer-list { max-height: 214px; padding: 0 5px 5px; display: grid; gap: 4px; overflow-y: auto; overscroll-behavior: contain; }
 .uw-retainer-row { padding: 6px 7px; display: grid; gap: 3px; border: 1px solid rgba(255, 255, 255, .06); border-left: 3px solid #6f7a78; border-radius: 0 6px 6px 0; background: rgba(255, 255, 255, .035); }
 .uw-retainer-row.is-held { border-left-color: #7fd0ac; }
@@ -379,6 +383,8 @@
   .uw-mobile-scene-menu .uw-retainer-toggle { min-height: 44px; grid-template-columns: minmax(0, 1fr) auto; }
   .uw-mobile-scene-menu .uw-retainer-list { max-height: 208px; }
   .uw-mobile-scene-menu .uw-retainer-intro { display: none; }
+  /* The intro is dropped in the phone sheet for room, but the line naming what
+     a network just opened is the reason the player is looking at this board. */
 }
 
 /* Marks in the map's control surface. Each container already sets `color`, so

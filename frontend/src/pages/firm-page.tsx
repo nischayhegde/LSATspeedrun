@@ -95,6 +95,32 @@ function ClientShape({ client }: { client: GameClient }) {
 }
 
 
+/* A network's entire effect is the districts it opens, and the benefit pill
+   could only ever say "Counsel opens in 3 districts" -- a number, in a tab
+   whose whole problem is that what you buy is hard to see. The server has
+   published the names and their held state all along (`asset.districts`), so
+   the card names them and marks the ones already signed. Three chips is also
+   the shortest honest answer to "what does this actually get me", which the
+   payout clause beside it cannot give. */
+function ConnectionDistricts({ asset }: { asset: GameAsset }) {
+  const districts = asset.districts ?? []
+  if (!districts.length) return null
+  const held = asset.districts_held ?? districts.filter((district) => district.held).length
+  return (
+    <div className="connection-districts">
+      <small>OPENS {districts.length === 1 ? 'ONE DISTRICT' : `${districts.length} DISTRICTS`}{held > 0 && ` · ${held} SIGNED`}</small>
+      <ul>
+        {districts.map((district) => (
+          <li key={district.key} className={district.held ? 'is-held' : ''}>
+            {district.held && <Check size={10} />}{district.name}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+
 function ClientRequirementLine({ client, game }: { client: GameClient; game: GameState }) {
   if (client.unlocked) return <small className="requirements met">Closing bonus every {client.length} wins</small>
   const assetNames = client.requirements.assets.map((key) => game.catalog.assets.find((asset) => asset.key === key)?.name ?? key.replaceAll('_', ' '))
@@ -403,6 +429,7 @@ export function FirmPage() {
               <PixelAssetArtwork asset={item} />
               <div className="card-status">{item.owned ? <><Check size={13} /> OWNED</> : item.available ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
               <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{item.benefit}</span></div>
+              {item.type === 'connection' && <ConnectionDistricts asset={item} />}
               <RequirementLine asset={item} game={game} />
               {/* Locked is named before cost, because an unmet requirement is the
                   blocker that earning more cannot clear. Leaving it out labelled a

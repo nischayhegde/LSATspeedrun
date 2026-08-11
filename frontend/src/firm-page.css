@@ -231,6 +231,26 @@
   .management-card.asset-card { min-height: 490px; } }.pro-bono-client{background:linear-gradient(150deg,#f1f4df,#fffdf2)!important;box-shadow:inset 0 0 0 3px #77a38d,5px 6px #83a38d!important}.pro-bono-seal{padding:7px 9px;position:absolute;z-index:8;right:8px;top:8px;display:flex;align-items:center;gap:6px;border:2px solid #28594f;color:#28594f;background:#dff2df;box-shadow:3px 3px #5d8875;font-family:var(--font-pixel);font-size:9px;transform:rotate(2deg)}.pro-bono-seal svg{width:15px}.purchase-row strong:has(del){display:grid;grid-template-columns:auto auto;gap:0 8px;align-items:center}.purchase-row del{grid-column:1/3;color:#96726c;font-size:11.5px}.purchase-row strong small{padding:3px;color:#d6ffe6;background:#2f6f5e;font-family:var(--font-pixel);font-size:9px}
 .catalog-toolbar{margin:4px 0 22px;padding:11px 13px;display:grid;grid-template-columns:1fr auto minmax(190px,auto);align-items:end;gap:13px;border:3px solid #231b17;color:#eedda9;background:#233b49;box-shadow:inset 0 0 0 2px #49606a,5px 5px #34261e}.catalog-toolbar>div:first-child span,.catalog-toolbar>div:first-child strong,.catalog-toolbar label>span{display:block;font-family:var(--font-pixel)}.catalog-toolbar>div:first-child span,.catalog-toolbar label>span{color:#6fd0c5;font-size:9px;letter-spacing:.12em}.catalog-toolbar>div:first-child strong{margin-top:5px;color:#f0cc68;font-size:11px}.catalog-view-buttons{display:flex;gap:5px}.catalog-view-buttons button{min-height:31px;padding:0 10px;border:2px solid #0f151d;color:#a9bdc2;background:#182a38;box-shadow:inset -2px -2px #0e1c28;font-family:var(--font-pixel);font-size:9.5px;text-transform:uppercase}.catalog-view-buttons button.active{color:#172233;background:#e8bf58;box-shadow:inset -3px -3px #a9782f}.catalog-toolbar label select{width:100%;min-height:33px;margin-top:4px;padding:0 26px 0 8px;border:2px solid #10151c;border-radius:0;color:#f0dda4;background:#172a38;font-family:var(--font-pixel);font-size:9.5px}@media (max-width:760px) {.catalog-toolbar{grid-template-columns:1fr 1fr}.catalog-toolbar label{grid-column:1/3}.catalog-view-buttons{justify-content:flex-end}.catalog-view-buttons button{padding-inline:7px} }
 
+/* The districts a network opens, named on the card. A signed one is green and
+   ticked, matching the held plots in the ledger above, so the same state reads
+   the same way in both places. */
+.connection-districts { margin: 9px 4px 0; }
+.connection-districts small { display: block; color: #8a6a3c; font-family: var(--font-pixel); font-size: 8.5px; letter-spacing: .1em; }
+.connection-districts ul { margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; list-style: none; }
+.connection-districts li {
+  padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid #c2a26c;
+  color: #6d4f26;
+  background: #f6ead0;
+  font-family: var(--font-pixel);
+  font-size: 8.5px;
+  line-height: 1.3;
+}
+.connection-districts li.is-held { border-color: #4e7d5c; color: #23492f; background: #d8ecd4; }
+
 /* The one line that reconciles the ledger's five map regions with the catalog's
    fourteen firm addresses. Sits between the two controls it is about, and rides
    up into the toolbar's own bottom margin rather than adding a band. */

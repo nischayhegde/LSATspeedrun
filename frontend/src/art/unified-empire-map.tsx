@@ -92,15 +92,22 @@ const landmarkTag: Record<MapLandmarkKind, string> = {
  *
  * Collapsed by default, and it stays a strip on the left rail beside the
  * district guide rather than becoming a board the map has to wear. */
-function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, highlightKey, defaultOpen = false }: {
+function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, highlightKeys, openedBy, defaultOpen = false }: {
   game: GameState
   regionKey: MapRegionKey
   regionName: string
   onTravel: (landmarkKey: string) => void
   onOpenLedger: () => void
-  /** A district the Firm tab named on the way here, marked so the row the
-      player asked for is findable among ten others. */
-  highlightKey?: string | null
+  /** Districts the Firm tab named on the way here, marked so the rows the
+      player asked for are findable among ten others. Plural because arriving
+      from a network card is arriving on behalf of everything that network
+      opens, which is the whole reason to make the trip. */
+  highlightKeys: string[]
+  /** The network that sent the player here, when one did. Buying a connection
+      used to land you on a board with no indication of which of its ten rows
+      had just changed, so the payoff read as "here is a board" rather than
+      "these are yours to sign". */
+  openedBy?: { name: string; owned: boolean } | null
   /** Open on arrival when the Firm tab sent the player here to see what a
       connection unlocked. Anything the player was not asked for stays shut. */
   defaultOpen?: boolean
@@ -152,9 +159,15 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
             per case — that is what a client retainer is for. Standing holds your reputation up from
             below; a branch you are already paid to keep offsets the daily lease.
           </p>
+          {openedBy && highlightKeys.length > 0 && (
+            <p className="uw-retainer-opened">
+              The <b>{openedBy.name.toLowerCase()}</b> {openedBy.owned ? 'opens' : 'would open'}
+              {' '}{highlightKeys.length === 1 ? 'this district' : `these ${highlightKeys.length} districts`} in {regionName}.
+            </p>
+          )}
           <div className="uw-retainer-list">
             {districts.map((district) => (
-              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}${district.key === highlightKey ? ' is-asked-for' : ''}`} key={district.key}>
+              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}${highlightKeys.includes(district.key) ? ' is-asked-for' : ''}`} key={district.key}>
                 {/* Not a <header>: inside the mobile Explore sheet a bare
                     header element inherits that sheet's own title styling. */}
                 <div className="uw-retainer-head">
@@ -432,10 +445,30 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
   const selectedPlot = selectedDistrict
     ? game.territory.districts.find((district) => district.landmark_key === selectedDistrict.key)
     : undefined
-  // What the player asked for last wins: arriving from the ledger names a
-  // district before anything is selected, and selecting one afterwards is a
-  // newer answer to the same question.
-  const highlightedPlotKey = selectedPlot?.key ?? focusPlot?.key ?? null
+  /* Which rows on the board the player is here about.
+   *
+   * Arriving from a network card used to change nothing but which region was
+   * on screen: the board opened, and every row in it looked the same, so the
+   * answer to "what did buying that get me" was a list you had to diff against
+   * memory. A network's districts in this region are therefore marked exactly
+   * as a single named district is, and the board says which network did it.
+   *
+   * What the player asked for last still wins. Selecting a place on the ground
+   * is a newer answer to the same question than the link that brought them. */
+  const networkPlotKeys = focusNetwork
+    ? (focusNetwork.districts ?? [])
+      .filter((entry) => game.territory.districts.find((district) => district.key === entry.key)?.region === activeRegionKey)
+      .map((entry) => entry.key)
+    : []
+  const highlightedPlotKeys = selectedPlot
+    ? [selectedPlot.key]
+    : focusPlot
+      ? [focusPlot.key]
+      : networkPlotKeys
+  const highlightedPlotKey = highlightedPlotKeys[0] ?? null
+  const openedBy = focusNetwork && !selectedPlot && !focusPlot
+    ? { name: focusNetwork.name, owned: focusNetwork.owned }
+    : null
   const openLedgerAt = (districtKey?: string | null) => onManage('connections', districtKey ?? undefined)
 
   const selected = points.find((point) => point.key === selectedKey)
@@ -690,7 +723,8 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
               regionName={activeRegion.name}
               onTravel={(key) => { travelToLandmarkKey(key); setMobileControlsOpen(false) }}
               onOpenLedger={() => openLedgerAt(highlightedPlotKey)}
-              highlightKey={highlightedPlotKey}
+              highlightKeys={highlightedPlotKeys}
+              openedBy={openedBy}
               defaultOpen={Boolean(focusNetwork || focusPlot)}
             />
             <div className="uw-mobile-camera-actions">
@@ -816,7 +850,8 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
             regionName={activeRegion.name}
             onTravel={travelToLandmarkKey}
             onOpenLedger={() => openLedgerAt(highlightedPlotKey)}
-            highlightKey={highlightedPlotKey}
+            highlightKeys={highlightedPlotKeys}
+            openedBy={openedBy}
             defaultOpen={Boolean(focusNetwork || focusPlot)}
           />
         </div>
