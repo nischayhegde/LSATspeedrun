@@ -42,6 +42,25 @@ export type DemoConfig = {
    */
   verdictSessionId: string
   /**
+   * Session id of the *single* case the app plays end to end by itself, and the
+   * credited answer for it — one letter, because it is one question.
+   *
+   * This is the case demo: the suggested approach taken up, the question read,
+   * the written case theory shown, the answer chosen and submitted, and the
+   * coach's reading of that reasoning coming back. All of it unattended, so the
+   * founders narrate instead of clicking.
+   *
+   * Its attempt is answered and graded during staging, so submitting on stage
+   * replays a stored verdict rather than starting a 20-40 second model call —
+   * the same trick `verdictSessionId` uses, folded into the one slide so the
+   * submit and its own payoff no longer have to be split across two.
+   *
+   * `stage_demo.py --apply` prints these as `solo.session_id` and
+   * `solo.answer_key`, and `prepare-demo.mjs` pins them here together.
+   */
+  soloSessionId: string
+  soloAnswerKey: string
+  /**
    * Session id of the fifteen-question run the app drives itself through, and
    * the credited answers for it, in item order — `'ACEBACAEBEAADBD'` means item
    * 0's answer is A, item 1's is C, and so on.
@@ -57,8 +76,10 @@ export type DemoConfig = {
    * asking for autoplay falls back to the ordinary live case rather than to a
    * URL that would answer nothing.
    *
-   * Nothing in the deck requests this today. The app ignores `?autoplay=`
-   * unless it is present, so pinning these changes no slide until one asks.
+   * The volume run, kept rather than used: the founders' case demo is one
+   * question, not fifteen. It works, it is tested and it is inert, so it stays
+   * reachable behind `{autoplayRun}` in case a volume argument ever wants a
+   * picture. Nothing in the deck requests it.
    */
   autoplaySessionId: string
   autoplayAnswerKey: string
@@ -79,9 +100,11 @@ export type DemoConfig = {
 
 export const demoConfig: DemoConfig = {
   appOrigin: 'http://localhost:5173',
-  liveSessionId: '9b6ed193-b08a-49db-ae8c-21d9a408d664',
-  verdictSessionId: '95fde78d-f8c9-491a-87fd-1806b7e69ccb',
-  autoplaySessionId: '67b5e565-39d1-40f7-be3e-bc93e59596d0',
+  liveSessionId: 'a91a19c4-d28f-4a01-80ab-641f27850002',
+  verdictSessionId: '2bb4c733-3ee6-4f3e-bf71-dfb5fc473d94',
+  soloSessionId: '38e2cbf5-763e-428e-99bb-ee9de02fb784',
+  soloAnswerKey: 'C',
+  autoplaySessionId: '6dc21ec7-446e-429c-8a9a-4682e6bb7601',
   autoplayAnswerKey: 'ACEBACAEBEAADBD',
   demoEmail: 'student@localhost.test',
   useStills: false,

@@ -11,14 +11,23 @@ import {
   spanOf,
   waitFor,
   type AutoplayRequest,
+  type RunPace,
+  type SoloPace,
   type Span,
 } from './autoplay-plan'
 import './autoplay.css'
 
 /**
- * The driver: it reads a question, picks the credited answer, submits it,
- * shows the room the verdict, and turns the page — fifteen times, with nobody
- * touching the keyboard.
+ * The driver, in two sequences.
+ *
+ * **solo** plays one case all the way through — takes up the suggested
+ * approach, reads the question, shows the written case theory, picks the
+ * credited answer, submits it, and holds on the coach's reading of that
+ * reasoning. One slide, the entire product loop, nobody touching the keyboard.
+ *
+ * **run** answers fifteen questions in about seventy seconds, turning the page
+ * itself. Both share everything below; they differ only in what they frame and
+ * how long they hold it.
  *
  * ## What it drives, and what it does not
  *
@@ -74,14 +83,19 @@ export type AutoplayInputs = {
   position: number | undefined
   choiceLabels: readonly string[]
   resultId: string | undefined
+  /** A suggested approach is on screen and is waiting to be taken up or declined. */
+  strategyPending: boolean
   /** The submit button would accept a click right now. */
   canSubmit: boolean
   submitFailed: boolean
   /** Explanation grading has been requested for the pending attempt. */
   coachingRequested: boolean
+  /** The coach's reading of the reasoning is on screen. */
+  coachingReady: boolean
   advanceFailed: boolean
   answerCard: RefObject<HTMLElement | null>
   verdict: RefObject<HTMLElement | null>
+  applyStrategy: () => void
   select: (label: string) => void
   submit: () => void
   advance: () => void
@@ -171,6 +185,7 @@ export function useAutoplay(inputs: AutoplayInputs): void {
   const active = Boolean(request) && keyFits && !stopped && inputs.eligible
 
   const pace = request?.pace
+  const scene = request?.scene
 
   // Held for the whole slide, not per question: it changes the document height,
   // and doing that between questions would move the page under the audience.
@@ -197,6 +212,67 @@ export function useAutoplay(inputs: AutoplayInputs): void {
         card.querySelector('h1'),
         card.querySelector('.choices'),
       )
+    }
+
+    /*
+     * The single case's four reading beats. Each one is a separate span rather
+     * than a scroll offset, because the page's real height depends on the
+     * question, on whether the approach has been taken up yet, and on whether
+     * the reasoning box is still mounted — all of which change under the
+     * sequence as it runs. Measuring at the moment of use is the only version
+     * of this that survives a different question being pinned.
+     */
+    // Not `.strategy-tip` alone: the control arm of the strategy trial renders
+    // an `.is-neutral` card in the same slot, which offers nothing to take up.
+    const strategySpan = (): Span | null =>
+      spanOf(document.querySelector('.strategy-tip:not(.is-neutral)'))
+
+    const stemSpan = (): Span | null => {
+      const card = latest.current.answerCard.current
+      if (!card) return null
+      return spanOf(
+        card.querySelector('.stimulus'),
+        card.querySelector('.question-label'),
+        card.querySelector('h1'),
+      )
+    }
+
+    const reasoningSpan = (): Span | null =>
+      spanOf(latest.current.answerCard.current?.querySelector('.reasoning-box') ?? null)
+
+    /**
+     * The five choices, and nothing else.
+     *
+     * The first version of this reached down to the submit button as well, on
+     * the theory that choosing and committing are one gesture and should be
+     * framed together. Watching it run said otherwise: the case theory sits
+     * between the choices and the button, so the span covered most of the card
+     * and resolved to a scroll 76 pixels from where the reasoning beat had just
+     * left the page. A 76-pixel move is not a camera move, it is a twitch, and
+     * it made the moment the answer is chosen look like a rendering glitch.
+     *
+     * So the selection beat goes back up to the choices — a real move, away
+     * from the reasoning and onto the five options — and the confirmation is
+     * left to the thing that actually confirms, which is the verdict.
+     */
+    const choicesSpan = (): Span | null =>
+      spanOf(latest.current.answerCard.current?.querySelector('.choices') ?? null)
+
+    /**
+     * The payoff, anchored at the stamp.
+     *
+     * The verdict, the grade, the fee and the coach's reading of the reasoning
+     * are together taller than the frame, and no arrangement fits them. So this
+     * deliberately does not try: it starts at the stamp and lets the review run
+     * off the bottom, because the top of that block is the part the narration
+     * is about and the part the room reads first.
+     */
+    const soloVerdictSpan = (): Span | null => {
+      const card = latest.current.answerCard.current
+      return spanOf(
+        card?.querySelector('.verdict-stamp') ?? null,
+        latest.current.verdict.current,
+      ) ?? spanOf(card)
     }
 
     /**
@@ -243,7 +319,10 @@ export function useAutoplay(inputs: AutoplayInputs): void {
       // Land on a composed frame rather than wherever the last aborted scroll
       // left the page. Its own controller, because `signal` is about to abort.
       const settle = new AbortController()
-      const span = latest.current.resultId ? verdictSpan() : readSpan()
+      const ruled = Boolean(latest.current.resultId)
+      const span = scene === 'solo'
+        ? (ruled ? soloVerdictSpan() : stemSpan() ?? strategySpan())
+        : (ruled ? verdictSpan() : readSpan())
       if (span) void easeScroll(frameScrollTop(span), pace.scrollMs, settle.signal)
     }
 
@@ -285,7 +364,7 @@ export function useAutoplay(inputs: AutoplayInputs): void {
       return 'the next case was refused twice'
     }
 
-    const readAndAnswer = async () => {
+    const readAndAnswer = async (dwell: RunPace) => {
       const position = latest.current.position
       const label = position == null ? undefined : request!.answers[position]
       // Out of key, or a key that does not name a choice this question has.
@@ -305,22 +384,22 @@ export function useAutoplay(inputs: AutoplayInputs): void {
         // longer exists by the time anyone looks at it.
         await settleLayout(signal)
         await frameOn(readSpan())
-        await sleep(pace.warmupMs, signal)
+        await sleep(dwell.warmupMs, signal)
       }
       await frameOn(readSpan())
-      await sleep(pace.readMs, signal)
+      await sleep(dwell.readMs, signal)
       if (signal.aborted) return
       latest.current.select(label)
-      await sleep(pace.selectMs, signal)
+      await sleep(dwell.selectMs, signal)
       if (signal.aborted) return
       const failure = await submitAnswer()
       if (failure && !signal.aborted) giveUp(failure)
     }
 
-    const confirmAndTurn = async () => {
-      await sleep(pace.verdictSettleMs, signal)
+    const confirmAndTurn = async (dwell: RunPace) => {
+      await sleep(dwell.verdictSettleMs, signal)
       await frameOn(verdictSpan())
-      await sleep(pace.verdictMs, signal)
+      await sleep(dwell.verdictMs, signal)
       if (signal.aborted) return
       const handedOff = await waitFor(() => latest.current.coachingRequested, HANDOFF_TIMEOUT_MS, signal)
       if (signal.aborted) return
@@ -332,11 +411,91 @@ export function useAutoplay(inputs: AutoplayInputs): void {
       if (failure && !signal.aborted) giveUp(failure)
     }
 
-    void (resultId ? confirmAndTurn() : readAndAnswer())
+    /**
+     * One case, from the suggested approach to the coach's reading of it.
+     *
+     * The order is the product's order, not a convenient one: the method is
+     * chosen *before* the question is read, because that is the claim — that
+     * picking an approach up front is what changes the answer. Reading the
+     * stem after the tip, and the written theory after the stem, means the room
+     * watches a case being worked rather than a form being filled in.
+     */
+    const playSoloCase = async (dwell: SoloPace) => {
+      const label = request!.answers[0]
+      if (!latest.current.choiceLabels.includes(label)) {
+        giveUp(`key says ${label}, which this question does not offer`)
+        return
+      }
+      if (!startedRef.current) {
+        startedRef.current = true
+        await settleLayout(signal)
+        await frameOn(strategySpan() ?? stemSpan())
+        await sleep(dwell.warmupMs, signal)
+      }
+
+      if (latest.current.strategyPending) {
+        await frameOn(strategySpan())
+        await sleep(dwell.strategyMs, signal)
+        if (signal.aborted) return
+        latest.current.applyStrategy()
+        // Taking the approach up can unfold a panel beneath the card, which
+        // moves everything under it. Frame after that has happened, not before.
+        await sleep(dwell.appliedMs, signal)
+        await settleLayout(signal, 900)
+      }
+      if (signal.aborted) return
+
+      await frameOn(stemSpan())
+      await sleep(dwell.stemMs, signal)
+      if (signal.aborted) return
+
+      await frameOn(reasoningSpan())
+      await sleep(dwell.reasoningMs, signal)
+      if (signal.aborted) return
+
+      await frameOn(choicesSpan())
+      await sleep(dwell.choicesMs, signal)
+      if (signal.aborted) return
+      latest.current.select(label)
+      await sleep(dwell.selectMs, signal)
+      if (signal.aborted) return
+
+      const failure = await submitAnswer()
+      if (failure && !signal.aborted) giveUp(failure)
+    }
+
+    /**
+     * The end of the slide, and the end of the sequence.
+     *
+     * Nothing is turned and nothing is advanced: one case is the whole demo, so
+     * the composed final state and the intended final state are the same
+     * screen. The driver stops here on purpose, which means the ordinary
+     * ending and every failure ending look alike from the audience's side.
+     */
+    const holdSoloVerdict = async (dwell: SoloPace) => {
+      await sleep(dwell.verdictSettleMs, signal)
+      // The reasoning box and the approach card both unmount when the verdict
+      // arrives, so the page is materially shorter than the one just framed.
+      await settleLayout(signal, 1_200)
+      await frameOn(soloVerdictSpan())
+      // Pre-graded, so this is a read rather than a wait — but if a grade ever
+      // is missing, the frame is already correct and the hold still happens.
+      await waitFor(() => latest.current.coachingReady, 2_000, signal)
+      await frameOn(soloVerdictSpan())
+      await sleep(dwell.verdictMs, signal)
+    }
+
+    if (scene === 'solo') {
+      const dwell = pace as SoloPace
+      void (resultId ? holdSoloVerdict(dwell) : playSoloCase(dwell))
+    } else {
+      const dwell = pace as RunPace
+      void (resultId ? confirmAndTurn(dwell) : readAndAnswer(dwell))
+    }
 
     return () => controller.abort()
     // `latest` carries everything else. Re-running on anything but the two
     // identities below would restart a sequence that is already mid-question.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, pace, inputs.itemId, inputs.resultId])
+  }, [active, pace, scene, inputs.itemId, inputs.resultId])
 }

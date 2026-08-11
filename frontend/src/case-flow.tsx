@@ -26,7 +26,7 @@ import { useSound } from './sound'
 import { MarkupLayer, MarkupToolbar, useCaseMarkup } from './markup'
 import { MOTION_TIMING } from './motion'
 import { LockedChoicesNotice, useStrategyGate } from './strategy-enforcement'
-import type { AttemptReward, CoachingFeedback, GameResponse, StudySession } from './types'
+import type { AttemptResult, AttemptReward, CoachingFeedback, GameResponse, StudySession } from './types'
 
 /* The case run itself, split out of `components.tsx` so the app shell no
    longer drags the 3D portraits, the strategy gate and the whole verdict
@@ -317,7 +317,24 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const { play } = useSound()
   const gameQuery = useQuery({ queryKey: ['game'], queryFn: api.game })
   const item = session.pending_item || session.current_item
-  const result = session.pending_result
+  /**
+   * The submit endpoint's own answer, kept for the one case where the session
+   * will never carry it.
+   *
+   * `submit_attempt` has a duplicate branch: an item that already holds an
+   * attempt hands that attempt straight back rather than grading a second one.
+   * It returns the whole result — verdict, feedback, coaching, settled fee —
+   * but it returns before the debrief pointer is set, so `pending_result` stays
+   * empty and the verdict would never render. That branch is what the demo's
+   * single case rides on: the attempt is answered and graded during staging so
+   * the payoff needs no model call, and submitting on stage replays it.
+   *
+   * Held only for a driven run. In ordinary use a duplicate submit is a
+   * double-click, and the app's existing handling of that is not this hook's
+   * business to change.
+   */
+  const [replayed, setReplayed] = useState<AttemptResult | null>(null)
+  const result = session.pending_result ?? replayed ?? undefined
   const isDiagnostic = session.mode === 'diagnostic'
   const isBlindReview = session.mode === 'blind_review'
   const isAssessment = isDiagnostic || isBlindReview
@@ -325,7 +342,20 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   // Every practice run is a paid, fully coached case now, so the only banner
   // and panel split left is diagnostic versus everything else.
   const learningOnly = isAssessment
-  const [selected, setSelected] = useState(item?.draft.selected_label || '')
+  /**
+   * A driven run always starts from an unanswered question.
+   *
+   * The app autosaves the draft as you work, which includes the choice you have
+   * highlighted — so the demo's own last run leaves its answer behind, and
+   * playing the slide a second time without re-staging opens with the credited
+   * answer already lit. The audience then watches the app "choose" something it
+   * is already showing, which is the one impression this whole sequence exists
+   * to avoid. Staging clears the draft, but a rehearsal loop should not depend
+   * on remembering to re-stage between takes, and neither should going back a
+   * slide mid-talk. The written case theory is still loaded from the draft:
+   * that is the staged content, and it is the point.
+   */
+  const [selected, setSelected] = useState(AUTOPLAY_ENGAGED ? '' : item?.draft.selected_label || '')
   const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
   const minChars = item?.reasoning_min_chars ?? 0
   const reasoningLength = reasoning.trim().length
@@ -364,12 +394,13 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const formExpiredRef = useRef(false)
 
   useEffect(() => {
-    setSelected(item?.draft.selected_label || '')
+    setSelected(AUTOPLAY_ENGAGED ? '' : item?.draft.selected_label || '')
     setReasoning(item?.draft.reasoning || '')
     setConfidence(3)
     setAnswerChanged(false)
     setStrategyApplied(null)
     setStrategyPromptMs(0)
+    setReplayed(null)
     setMobileCasePane(item?.question.passage ? 'passage' : 'question')
     setOpenedAt(Date.now())
   }, [item?.id])
@@ -472,6 +503,9 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       createRequestId(),
     ),
     onSuccess: ({ result: submittedResult }) => {
+      if (AUTOPLAY_ENGAGED && submittedResult.duplicate && submittedResult.feedback_released) {
+        setReplayed(submittedResult)
+      }
       if (!submittedResult.feedback_released && !submittedResult.session_complete) {
         void beginPageTurn(() => queryClient.invalidateQueries({ queryKey: ['session', session.id] }))
         return
@@ -532,6 +566,16 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     if (selected && selected !== label) setAnswerChanged(true)
     setSelected(label)
   }
+  const takeSuggestedApproach = () => {
+    if (strategyApplied === null) setStrategyPromptMs(Math.min(60_000, Date.now() - openedAt))
+    setStrategyApplied(true)
+    void play('select', { seed: `${item?.id}:strategy-use`, intensity: .36 })
+  }
+  const skipSuggestedApproach = () => {
+    if (strategyApplied === null) setStrategyPromptMs(Math.min(60_000, Date.now() - openedAt))
+    setStrategyApplied(false)
+    void play('paper', { seed: `${item?.id}:strategy-skip`, intensity: .25 })
+  }
   const submitAnswer = () => {
     void play('submit', { seed: item?.id ?? '', intensity: .68 })
     submit.mutate()
@@ -566,8 +610,13 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     position: item?.position,
     choiceLabels: item?.question.choices.map((choice) => choice.label) ?? [],
     resultId: result?.attempt_id,
+    // A prompted approach has to be taken up or declined before anything else
+    // on the card is live, so the driver waits on the same condition the submit
+    // button does rather than on a timer.
+    strategyPending: Boolean(item?.strategy_trial && strategyApplied === null && !result),
     canSubmit: Boolean(
-      item && !result && selected && reasoningComplete && !item.strategy_trial
+      item && !result && selected && reasoningComplete
+      && !(item.strategy_trial && strategyApplied === null)
       && strategyGate.satisfied && !submit.isPending && !pageTurning,
     ),
     submitFailed: Boolean(submit.error),
@@ -575,9 +624,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     // grading, so the driver waits for the request to have been *made* — never
     // for the grade, which is a 20-40 second model call.
     coachingRequested: !coachingWanted || coaching.isFetched || Boolean(coaching.error),
+    coachingReady,
     advanceFailed: Boolean(continueCases.error),
     answerCard: answerCardRef,
     verdict: verdictRef,
+    applyStrategy: takeSuggestedApproach,
     select: chooseAnswer,
     submit: submitAnswer,
     advance: goToNextCase,
@@ -776,16 +827,8 @@ export function QuestionFlow({ session }: { session: StudySession }) {
           <ol>{strategyTrial.steps.map((step, index) => <li key={step}><b>{index + 1}</b>{step}</li>)}</ol>
           <div className="strategy-tip-actions">
             {!result ? <>
-              <button type="button" className={`strategy-tip-use ${strategyApplied === true ? 'active' : ''}`} aria-pressed={strategyApplied === true} onClick={() => {
-                if (strategyApplied === null) setStrategyPromptMs(Math.min(60_000, Date.now() - openedAt))
-                setStrategyApplied(true)
-                void play('select', { seed: `${item.id}:strategy-use`, intensity: .36 })
-              }}><Check size={15} /> Use it</button>
-              <button type="button" className={`strategy-tip-skip ${strategyApplied === false ? 'active' : ''}`} aria-pressed={strategyApplied === false} onClick={() => {
-                if (strategyApplied === null) setStrategyPromptMs(Math.min(60_000, Date.now() - openedAt))
-                setStrategyApplied(false)
-                void play('paper', { seed: `${item.id}:strategy-skip`, intensity: .25 })
-              }}>Skip this one</button>
+              <button type="button" className={`strategy-tip-use ${strategyApplied === true ? 'active' : ''}`} aria-pressed={strategyApplied === true} onClick={takeSuggestedApproach}><Check size={15} /> Use it</button>
+              <button type="button" className={`strategy-tip-skip ${strategyApplied === false ? 'active' : ''}`} aria-pressed={strategyApplied === false} onClick={skipSuggestedApproach}>Skip this one</button>
             </> : <div className="strategy-tip-recorded"><Check size={17} /><span>{strategyApplied ? 'Used this approach' : 'Answered without it'}</span></div>}
           </div>
         </section>

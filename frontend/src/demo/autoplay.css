@@ -27,3 +27,28 @@
 html.autoplay-run .markup-toolbar {
   display: none;
 }
+
+/*
+ * A backstop behind the app, for the frames where the app is not there yet.
+ *
+ * `html` and `body` are cream (#f2eee5 and #eee8dc), the desk shell above the
+ * case is tan, and `.session-page` — the dark surface the case is actually on —
+ * is `min-height: calc(100vh - 72px)` deep inside them. Every one of those is
+ * correct for a person scrolling with a wheel. Under a driven scroll it is one
+ * layer too many: a frame captured while the page was still settling under a
+ * mounting gate panel showed a band of cream across the top of the embed, above
+ * the header, which is exactly the kind of flash a room notices and a developer
+ * never sees.
+ *
+ * Painting the case surface's own colour on the root makes any such gap
+ * invisible instead of trying to prevent it, which is the version of this that
+ * cannot be defeated by a layout the driver did not anticipate. The literal
+ * duplicates `.session-page`'s `background-color` in `case-session-styles.css`
+ * on purpose — a variable would have to be introduced into a sheet this file
+ * does not own. If the case ever gets restyled, the cost of the drift is a
+ * backstop in the old colour, visible only in the moment it exists to cover.
+ */
+html.autoplay-run,
+html.autoplay-run body {
+  background-color: #142534;
+}

@@ -88,7 +88,7 @@ frontend/scratch-*
 # Demo-walkthrough verification scratch (screenshots, harnesses, reports).
 .demo-verify/
 
-# Demo autoplay driver scratch: filmstrip captures (738 PNG, 782 MB), timing
+# Demo autoplay driver scratch: filmstrip captures (1.2 GB), timing
 # and geometry probes, and the harnesses that drive them. All regenerated on
 # demand. Ignored for the `git add --all` reason above: at this size it is the
 # worst thing in the tree to hand to the 1 GiB build box. The driver's own

@@ -5,11 +5,21 @@
  * ## Why any of this exists
  *
  * The deck frames the live app in an iframe so the founders can narrate over a
- * running product rather than over a video. Clicking through fifteen questions
- * by hand while talking does not work — it splits the speaker's attention at
- * exactly the moment the room is deciding whether the product is real. So the
- * app can drive itself: real answers, submitted through the real endpoints,
- * against a session seeded for the purpose.
+ * running product rather than over a video. Driving it by hand while talking
+ * does not work — it splits the speaker's attention at exactly the moment the
+ * room is deciding whether the product is real. So the app can drive itself:
+ * real answers, submitted through the real endpoints, against a session seeded
+ * for the purpose.
+ *
+ * Two sequences, chosen by the shape of the answer key:
+ *
+ *   * **solo** — one case, played end to end: the suggested approach taken up,
+ *     the question read, the written case theory shown, an answer chosen and
+ *     submitted, and the coach's reading of that reasoning coming back. This is
+ *     the product's whole loop in one slide, and it is the one the deck wants.
+ *   * **run** — fifteen questions in about seventy seconds. Kept because it
+ *     works and costs nothing to keep, and because a volume argument may want a
+ *     picture again one day.
  *
  * ## Why it is behind a URL parameter
  *
@@ -35,20 +45,44 @@
 /** Answer labels only, and never more than a session could hold. */
 const ANSWER_KEY = /^[A-E]{1,60}$/
 
-export type AutoplayPace = {
+type SharedPace = {
   /** Before the first move, so the room sees a composed page first. */
   warmupMs: number
   /** One eased scroll. Long enough to read as a hand, short enough to not idle. */
   scrollMs: number
-  /** Dwell on the framed stem and choices before a choice is picked. */
-  readMs: number
   /** Between the choice lighting up and the answer being submitted. */
   selectMs: number
   /** After the verdict lands, before the page is re-framed around it. */
   verdictSettleMs: number
-  /** Dwell on the confirmation before the page turns. */
+  /** Dwell on the confirmation. */
   verdictMs: number
 }
+
+/** The fifteen-question run: one question is a beat, and there are fifteen. */
+export type RunPace = SharedPace & {
+  /** Dwell on the framed stem and choices before a choice is picked. */
+  readMs: number
+}
+
+/**
+ * The single case: one question is the whole slide, so every step of it is a
+ * beat of its own and gets time to be understood rather than time to be got
+ * through.
+ */
+export type SoloPace = SharedPace & {
+  /** Dwell on the suggested approach before it is taken up. */
+  strategyMs: number
+  /** After "Use it", so the card visibly records the decision. */
+  appliedMs: number
+  /** Dwell on the stimulus and the stem. A real question, actually readable. */
+  stemMs: number
+  /** Dwell on the written case theory. The differentiator, so it is not rushed. */
+  reasoningMs: number
+  /** Dwell on the choices before one of them lights up. */
+  choicesMs: number
+}
+
+export type AutoplayScene = 'run' | 'solo'
 
 /**
  * The measured pace, not an estimated one.
@@ -75,7 +109,7 @@ export type AutoplayPace = {
  * half a second of network and page-turn per question, so re-tune against a
  * stopwatch rather than against this sum.
  */
-export const AUTOPLAY_PACE: AutoplayPace = {
+export const AUTOPLAY_PACE: RunPace = {
   warmupMs: 700,
   scrollMs: 500,
   readMs: 1350,
@@ -84,33 +118,85 @@ export const AUTOPLAY_PACE: AutoplayPace = {
   verdictMs: 950,
 }
 
-export type AutoplayRequest = {
-  /** Credited answers by item position, so a desynced driver stops rather than guesses. */
-  answers: readonly string[]
-  pace: AutoplayPace
+/**
+ * The single case, paced to be understood rather than to be short.
+ *
+ * The fifteen-question run had a budget problem: fifteen of anything inside a
+ * five-minute talk means every beat is fighting the clock. One case has the
+ * opposite problem. Nothing is competing for the time, so the only question is
+ * how long each thing takes to actually land, and the failure mode is a
+ * sequence that is over before the room has understood what it watched.
+ *
+ * The five dwells below are five different reading jobs, sized to what is on
+ * screen rather than to a uniform tempo:
+ *
+ *   * the partner tip is a title and three numbered steps — long enough to see
+ *     that a named method is being chosen, not long enough to study it;
+ *   * the stimulus and stem are 250 characters of real LSAT argument, and a
+ *     room that has not read the question cannot judge anything that follows;
+ *   * the case theory is 827 characters. Nobody reads that in four seconds and
+ *     it is not there to be read — it is there to be seen to be substantive,
+ *     and to be on screen long enough that the coaching about it lands as a
+ *     response to something specific rather than as generic praise;
+ *   * the choices get their own beat before one lights up, or the selection
+ *     reads as the app knowing rather than the app deciding;
+ *   * the verdict carries the stamp, the grade, the fee and the coach's
+ *     reading of the reasoning. It is the slide's subject and it gets the
+ *     longest hold on the page.
+ *
+ * Measured, not estimated: 20.5 seconds from the slide opening to the verdict
+ * landing, and about 21 seconds to the page coming to rest on it — after which
+ * nothing moves again. `?autoplayTempo=` scales every dwell: 0.85 brings it to
+ * 18 seconds and 1.2 takes it to 26.5, both measured the same way.
+ */
+export const SOLO_PACE: SoloPace = {
+  warmupMs: 900,
+  scrollMs: 520,
+  strategyMs: 2_600,
+  appliedMs: 900,
+  stemMs: 4_200,
+  reasoningMs: 4_200,
+  choicesMs: 2_200,
+  // Longer than it looks like it needs to be. The submit that follows replaces
+  // the whole card, so this is the entire window in which the room can see
+  // that an answer was chosen — at 900ms the choice lit up and the page had
+  // moved on, which reads as the app knowing rather than the app deciding.
+  selectMs: 1_400,
+  verdictSettleMs: 260,
+  verdictMs: 6_500,
 }
 
-function scalePace(pace: AutoplayPace, factor: number): AutoplayPace {
+export type AutoplayRequest =
+  /** Credited answers by item position, so a desynced driver stops rather than guesses. */
+  | { scene: 'run'; answers: readonly string[]; pace: RunPace }
+  | { scene: 'solo'; answers: readonly string[]; pace: SoloPace }
+
+function scalePace<T extends Record<string, number>>(pace: T, factor: number): T {
   if (factor === 1) return pace
-  return {
-    warmupMs: Math.round(pace.warmupMs * factor),
+  const scaled: Record<string, number> = {}
+  for (const [key, value] of Object.entries(pace)) {
+    if (key === 'verdictSettleMs') scaled[key] = value
     // The scroll is a hand moving, not a beat of narration: stretching it with
     // everything else makes a slow run look sluggish rather than calm.
-    scrollMs: Math.round(pace.scrollMs * Math.min(factor, 1.35)),
-    readMs: Math.round(pace.readMs * factor),
-    selectMs: Math.round(pace.selectMs * factor),
-    verdictSettleMs: pace.verdictSettleMs,
-    verdictMs: Math.round(pace.verdictMs * factor),
+    else if (key === 'scrollMs') scaled[key] = Math.round(value * Math.min(factor, 1.35))
+    else scaled[key] = Math.round(value * factor)
   }
+  return scaled as T
 }
 
 /**
  * The autoplay request carried by a URL, or null for every URL that does not
  * carry one — which is all of them until a slide asks.
  *
- * `?autoplayTempo=` scales the dwells so the pace can be rehearsed against a
- * real script without a rebuild. It is clamped rather than validated into an
- * error: a mistyped tempo on stage must fall back to the tuned pace, not
+ * Which sequence to play is read off the key rather than asked for separately,
+ * because the key already says it: an answer key with one answer in it is a run
+ * with one question in it, and a one-question run *is* the single-case
+ * sequence. `?autoplayScene=` overrides that for the one case the inference
+ * cannot cover — rehearsing the long-form pacing against a short run.
+ *
+ * `?autoplayTempo=` scales the dwells so the pace can be tuned against a real
+ * script without a rebuild. Both are clamped rather than validated into an
+ * error: a mistyped parameter on stage must fall back to the tuned pace, not
  * refuse to play.
  */
 export function readAutoplayRequest(search: string): AutoplayRequest | null {
@@ -122,9 +208,16 @@ export function readAutoplayRequest(search: string): AutoplayRequest | null {
   }
   const key = (params.get('autoplay') || '').trim().toUpperCase()
   if (!ANSWER_KEY.test(key)) return null
+  const answers = key.split('')
   const tempo = Number(params.get('autoplayTempo'))
   const factor = Number.isFinite(tempo) && tempo >= 0.4 && tempo <= 4 ? tempo : 1
-  return { answers: key.split(''), pace: scalePace(AUTOPLAY_PACE, factor) }
+  const asked = (params.get('autoplayScene') || '').trim().toLowerCase()
+  const scene: AutoplayScene = asked === 'solo' || asked === 'run'
+    ? asked
+    : answers.length === 1 ? 'solo' : 'run'
+  return scene === 'solo'
+    ? { scene, answers, pace: scalePace(SOLO_PACE, factor) }
+    : { scene, answers, pace: scalePace(AUTOPLAY_PACE, factor) }
 }
 
 // ---------------------------------------------------------------------------

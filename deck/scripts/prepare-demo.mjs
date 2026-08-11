@@ -57,8 +57,8 @@ prepare-demo — seed the demo account and wire the deck to it.
                     from the running backend, rewrites demo.config.ts, and does
                     the browser checks. Use this when the account is already
                     seeded and you only want the config and the tour key.
-  --skip-stage      Do not re-run stage_demo.py. Leaves autoplaySessionId and
-                    autoplayAnswerKey in demo.config.ts exactly as they are.
+  --skip-stage      Do not re-run stage_demo.py. Leaves the solo and autoplay
+                    ids in demo.config.ts exactly as they are.
   --email <address> Account to seed. Must end in @localhost.test.
                     Default: student@localhost.test
   --help            This text.
@@ -272,11 +272,12 @@ if (skipSeed) {
 // full `npm run stage-demo` is still what grades a verdict the first time.
 
 let autoplay = null
+let solo = null
 
 if (skipStage) {
   step('Skipping stage_demo.py (--skip-stage)')
 } else {
-  step('Staging the pinned question and the autoplay run')
+  step('Staging the pinned question, the solo case and the autoplay run')
   const staged = await runPython('stage_demo.py', ['--apply', '--no-model', '--email', email])
   const stagedReport = parseReport(staged.stdout)
   if (staged.code === 0 && stagedReport?.autoplay?.answer_key) {
@@ -290,6 +291,23 @@ if (skipStage) {
       'The autoplay ids below are left as they are. The rest of the demo is\n'
       + 'unaffected — nothing in the deck requests autoplay by default.',
     )
+  }
+  if (stagedReport?.solo?.answer_key) {
+    solo = stagedReport.solo
+    // An ungraded solo case is the one staging outcome that costs a slide
+    // rather than a convenience: the sequence still plays, submits and stamps
+    // a verdict, but the coaching it exists to reveal is not there to reveal.
+    if (solo.coaching?.grade == null) {
+      warn(
+        `solo case ${solo.session_id} is staged but ungraded`,
+        `${solo.coaching?.mechanism || 'no grade was produced'}\n`
+        + 'The sequence will play and submit, but the feedback beat will show the\n'
+        + 'grading placeholder instead of the coach. Re-run to try the call again.',
+      )
+    } else {
+      ok(`solo case ${solo.session_id}: answer ${solo.answer_key}, `
+        + `graded ${solo.coaching.grade}, fee ${solo.settled_payout ?? '?'}`)
+    }
   }
 }
 
@@ -417,6 +435,10 @@ const pin = (source, name, value) => {
 
 let configAfter = pin(configBefore, 'liveSessionId', sessionId)
 if (verdictId) configAfter = pin(configAfter, 'verdictSessionId', verdictId)
+if (solo) {
+  configAfter = pin(configAfter, 'soloSessionId', solo.session_id)
+  configAfter = pin(configAfter, 'soloAnswerKey', solo.answer_key)
+}
 if (autoplay) {
   // Together or not at all: a session id paired with the previous run's answer
   // key is fifteen wrong answers played to an audience, which reads as a broken
@@ -530,6 +552,7 @@ ${'-'.repeat(72)}`)
 console.log(`
 Summary
   live session id  ${sessionId}
+  solo case        ${solo ? `${solo.session_id} (${solo.answer_key}, grade ${solo.coaching?.grade ?? 'none'})` : skipStage ? 'left as-is (--skip-stage)' : 'not staged'}
   autoplay run     ${autoplay ? `${autoplay.session_id} (${autoplay.answer_key})` : skipStage ? 'left as-is (--skip-stage)' : 'not staged'}
   written to       ${CONFIG_PATH}
   app origin       ${APP_ORIGIN}   (answering: ${appAnswered ? 'yes' : 'NO'})

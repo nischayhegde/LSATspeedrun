@@ -21,7 +21,12 @@ live demo seconds are the most expensive thing in the deck. It:
      verbatim when `coaching_status == "completed"`, so a pre-grade turns the
      payoff beat into a database read. The audience sees the real feedback UI
      rendering real model output, with no live call to lose.
-  5. Stages a separate fifteen-question run for the in-app autoplay driver and
+  5. Stages a single-question run that the in-app driver plays end to end —
+     strategy applied, question read, reasoning already written, answer in,
+     graded feedback back — with its attempt pre-answered and pre-graded, so
+     the one slide that carries the whole product loop has no model call in it.
+     See `_stage_solo_case` for why the attempt exists before the demo submits.
+  6. Stages a separate fifteen-question run for the in-app autoplay driver and
      prints its credited answers, which is the one thing the client is never
      sent (`serialize_question` omits it on purpose). `prepare-demo.mjs` pins
      that key into `deck/demo.config.ts`, and the driver is handed it in the
@@ -29,7 +34,7 @@ live demo seconds are the most expensive thing in the deck. It:
      endpoints without anyone touching the keyboard.
 
 Local only, idempotent, and safe to run between rehearsals: every run rewinds
-the open case session and the autoplay run to their pre-answer state.
+the open case, the solo case and the autoplay run to their pre-answer state.
 """
 
 from __future__ import annotations
@@ -38,6 +43,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import defaultdict
 from datetime import timedelta
 from pathlib import Path
@@ -48,7 +54,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 from sqlalchemy import func  # noqa: E402
 
 from app import create_app  # noqa: E402
-from app.coaching import generate_attempt_coaching  # noqa: E402
+from app.coaching import CoachingProviderError, generate_attempt_coaching  # noqa: E402
 from app.extensions import db  # noqa: E402
 from app.models import (  # noqa: E402
     Attempt,
@@ -62,9 +68,11 @@ from app.models import (  # noqa: E402
 )
 from app.seed import SOURCE_PREFIX  # noqa: E402
 from app.services import (  # noqa: E402
+    _feedback,
     create_study_session,
     find_resumable_session,
     list_resumable_sessions,
+    run_attempt_coaching,
     serialize_item,
 )
 from app.strategies import STRATEGIES  # noqa: E402
@@ -88,6 +96,15 @@ DEMO_STRATEGY_KEY = "prephrase"
 
 # Marks the pre-graded twin attempt so a rerun can find and replace it.
 STAGE_VERDICT_KEY = "stage:verdict:"
+
+# Marks the pre-graded attempt behind the one-question driven sequence.
+STAGE_SOLO_KEY = "stage:solo:"
+
+# What the solo case reports as its own elapsed time. A plausible working pace
+# for one Assumption question with written reasoning — the number the case
+# timer and the fee calculation both read, so it has to look like a person
+# rather than like a script.
+SOLO_ELAPSED_MS = 108_000
 
 # How many questions the in-app autoplay driver answers unattended. Fifteen is
 # the top of the range the driver was built for: long enough that the room stops
@@ -408,6 +425,273 @@ def _stage_graded_twin(user: User, question: Question, *, live_model: bool) -> d
     }
 
 
+# The solo sequence's written case theory, and deliberately *not* the paragraph
+# above.
+#
+# Two reasons, one of them load-bearing. The soft one: the open case and the
+# solo case can end up on adjacent slides, and the same paragraph appearing
+# twice reads as a template rather than as a person thinking. The hard one:
+# `_is_reused_reasoning` compares an attempt's normalised reasoning against the
+# user's last fifty attempts and, on a match, forces the Invalid band — zero
+# fee, "this explanation repeats reasoning used on an earlier case". The
+# pre-graded twin already holds `DEMO_REASONING`, so reusing it here settles the
+# demo's payoff case at nothing and puts a plagiarism notice on the projector.
+# Measured, not guessed: the first staging of this run did exactly that.
+#
+# Same voice and the same job as the other one — reaches C by its own route,
+# records a real near-miss on B, and dismisses D in a line — but it leaves E
+# unexamined, which is the strongest distractor on this question and is
+# therefore the substantive thing the coach has to say about it.
+SOLO_REASONING = (
+    "The conclusion is about predictions being untrustworthy, and the only premise "
+    "is that discoveries have considerable effects on how a society develops. "
+    "Effects on their own don't make anything unpredictable - plenty of things have "
+    "considerable effects and are still forecastable. So the argument needs the "
+    "discoveries themselves to be the part nobody can forecast: if I could reliably "
+    "forecast the discoveries, I could forecast the development they drive, and a "
+    "prediction about that society would be no worse than any other. That is C. B "
+    "tempted me for a minute because it also ties development to discovery, but B is "
+    "a claim about what development requires, not about whether anyone can see the "
+    "discoveries coming, and requirement is not what the conclusion trades on. D is "
+    "a benefit claim and never touches prediction at all."
+)
+
+
+def _find_solo_case(user: User, question: Question) -> StudySession | None:
+    """The one-question sequence this script staged last time.
+
+    Found rather than rebuilt, for the same reason the driven run is: the deck
+    pins this session id, and handing it a new one on every `stage-demo:fast`
+    would break the slide several times an hour. Identified by the idempotency
+    key its attempt carries, which is the only durable marker a StudySession
+    can be given from outside the app.
+    """
+    for attempt in Attempt.query.filter(
+        Attempt.user_id == user.id,
+        Attempt.idempotency_key.like(f"{STAGE_SOLO_KEY}%"),
+    ).all():
+        item = attempt.session_item
+        if item is None or item.question_id != question.id:
+            continue
+        session = StudySession.query.get(item.session_id)
+        if session is not None:
+            return session
+    return None
+
+
+def _release_attempt(attempt: Attempt) -> None:
+    """Drop the spaced-review references to an attempt about to be deleted.
+
+    SQLite runs here with foreign keys unenforced, so a deleted attempt leaves
+    the review queue holding ids that resolve to nothing rather than raising.
+    """
+    for stale in ReviewQueueItem.query.filter(
+        db.or_(
+            ReviewQueueItem.last_attempt_id == attempt.id,
+            ReviewQueueItem.source_attempt_id == attempt.id,
+        )
+    ).all():
+        if stale.last_attempt_id == attempt.id:
+            stale.last_attempt_id = None
+        if stale.source_attempt_id == attempt.id:
+            stale.source_attempt_id = None
+
+
+def _stage_solo_case(user: User, question: Question) -> dict:
+    """One case, staged so it can be played end to end with no model on stage.
+
+    ## What the slide has to show
+
+    The strategy being applied to a real question, the written case theory, an
+    answer going in, and the AI's reading of that reasoning coming back. All of
+    it in one continuous sequence, because splitting the submit away from its
+    own verdict is what forced the deck's "do not submit on this slide" note in
+    the first place.
+
+    ## Why the attempt already exists
+
+    Explanation grading is a 19-38 second frontier call, and there is no
+    arrangement of a live submit that makes it land inside a slide. So the
+    attempt is answered and graded *here*, through the real coaching pipeline,
+    exactly as the verdict twin already is — and the item is then rewound to
+    look untouched, so the case opens as an open case.
+
+    Submitting on stage takes `submit_attempt`'s duplicate branch: it finds the
+    attempt already on the item and hands it straight back, feedback, grade and
+    settled fee included. The endpoint is real, the request is real, the
+    reasoning is the reasoning on screen, and the verdict is the one the model
+    actually wrote about it. The only thing that happened early is the waiting.
+
+    ## Why the fee is settled here too
+
+    `serialize_attempt_result` carries the settlement, and the case screen only
+    calls the coaching endpoint when the submit response arrives without one.
+    Settling during staging therefore removes the last request from the beat —
+    the payoff renders from the submit response alone — and it stops a
+    rehearsal from banking the same fee once per run-through, which would show
+    up on the office slides as an account that grows every time anyone
+    practises the talk.
+    """
+    session = _find_solo_case(user, question)
+    if session is None:
+        session = create_study_session(user, count=1, practice_style="cases")
+    item = sorted(session.items, key=lambda entry: entry.position)[0]
+
+    item.question_id = question.id
+    item.requires_reasoning = True
+    item.from_review_queue = False
+    item.strategy_key = DEMO_STRATEGY_KEY
+    item.strategy_variant = "prompt"
+    item.target_time_seconds = 150
+    session.status = "in_progress"
+    session.current_index = item.position
+    session.pending_attempt_id = None
+    session.completed_at = None
+    session.summary_json = None
+    session.results_seen_at = None
+    session.summary_seen_at = None
+    session.ended_by_user = False
+    db.session.commit()
+
+    # Serving freezes the case terms and computes the gate. Done here, from a
+    # script, so the enforcement level cannot be recomputed by a mastery change
+    # when the page is opened on stage — then overwrite what serving chose.
+    # "light" keeps the strategy card and its steps on screen, which is the
+    # mechanic the slide is about, without hiding the choices behind a typed
+    # prediction the driver would have to invent.
+    item.served_at = None
+    serialize_item(item)
+    item.strategy_enforcement_level = "light"
+    item.draft_reasoning_text = SOLO_REASONING
+    item.draft_selected_label = None
+    item.draft_updated_at = utcnow()
+    db.session.commit()
+
+    attempt = item.attempt
+    # An attempt whose reasoning no longer matches what the page will show is a
+    # grade of some other text, and its settlement is a fee for some other work.
+    # Both are worse than no grade at all, because they are wrong quietly.
+    if attempt is not None and (attempt.reasoning_text or "") != SOLO_REASONING:
+        _release_attempt(attempt)
+        db.session.delete(attempt)
+        db.session.commit()
+        attempt = None
+    if attempt is None:
+        attempt = Attempt(
+            user_id=user.id,
+            session_item_id=item.id,
+            idempotency_key=f"{STAGE_SOLO_KEY}{session.id}",
+            selected_label=question.correct_answer,
+            is_correct=True,
+            confidence=4,
+            reasoning_text=SOLO_REASONING,
+            strategy_key=DEMO_STRATEGY_KEY,
+            strategy_variant="prompt",
+            strategy_applied=True,
+            strategy_prompt_ms=0,
+            server_elapsed_ms=SOLO_ELAPSED_MS,
+            client_elapsed_ms=SOLO_ELAPSED_MS,
+            coaching_status="pending",
+        )
+        db.session.add(attempt)
+        db.session.commit()
+
+    coaching = (attempt.feedback_json or {}).get("coaching")
+    mechanism = "kept — already graded, and a staged grade outlives a rehearsal"
+    model = attempt.coaching_model
+    if coaching is None:
+        # Graded even under `--no-model`, which the twin above does not do, and
+        # the difference is deliberate. `--no-model` exists so `stage-demo:fast`
+        # can rewind state between run-throughs in six seconds; skipping a grade
+        # that already exists costs nothing. But an *ungraded* solo case is not a
+        # slower demo, it is a demo with no payoff — the slide's entire subject
+        # is the feedback. Spending 20-40 seconds once, on the first staging
+        # after a database rebuild, buys every later `stage-demo:fast` the fast
+        # path and spares whoever is rehearsing at midnight the job of noticing
+        # a flag. The grade persists; this branch runs once.
+        #
+        # Survivable, because it is one network call to a model that sometimes
+        # returns prose where the schema wants JSON. An exception here used to
+        # abort the whole script, which meant a flaky grading call left the
+        # *open case* unstaged too: one slide's optional payoff taking out four
+        # slides' worth of setup.
+        #
+        # Four tries, not two. Two consecutive refusals were observed in one
+        # afternoon, and the cost of another try is a few seconds on a path that
+        # runs once per database rebuild, against a payoff of not handing the
+        # presenter a grading placeholder where the coach should be.
+        for remaining in (3, 2, 1, 0):
+            try:
+                coaching, meta = generate_attempt_coaching(attempt)
+                mechanism = "pre-generated by the real coaching pipeline, stored on the attempt"
+                model = meta.get("model") or "stage-pregrade"
+                break
+            except CoachingProviderError as failure:
+                mechanism = f"ungraded — the coach refused ({failure}). Re-run to try again."
+                if not remaining:
+                    break
+                time.sleep(2)
+
+    # Rebuilt through the app's own writer rather than assembled here, so the
+    # staged attempt is shaped exactly like a live one — the choice marks and
+    # the diagnosis line on the verdict screen read fields that a hand-written
+    # dict would have to guess the names of.
+    feedback = _feedback(question, attempt.selected_label, True, DEMO_REASONING)
+    if coaching is not None:
+        feedback["coaching"] = coaching
+        attempt.coaching_status = "completed"
+        attempt.coaching_model = model
+        attempt.coached_at = utcnow()
+    attempt.feedback_json = feedback
+    db.session.commit()
+    if coaching is not None and not attempt.settlement:
+        run_attempt_coaching(attempt)
+
+    # The settlement is computed from the grade, but not only from it: a
+    # reasoning band of Invalid against a high grade means the economy refused
+    # this write-up for a reason the grade cannot see — reuse, most likely. That
+    # combination renders as a strong verdict beside a zero fee, which is the
+    # kind of quietly incoherent screen that costs more than a missing one.
+    settlement = attempt.settlement
+    if settlement is not None and coaching is not None:
+        graded = coaching.get("explanation_grade")
+        if settlement.explanation_grade == "Invalid" and (graded or 0) >= 50:
+            raise SystemExit(
+                f"The solo case graded {graded} but settled as Invalid, so the demo would show "
+                "a strong verdict beside a zero fee. This is what a repeated explanation looks "
+                "like: check that SOLO_REASONING is not also on another attempt for this user."
+            )
+
+    # Everything above answered the case; this un-answers the *presentation* of
+    # it. The attempt stays in the database — that is the point — but the item
+    # stops looking finished, so `serialize_session` serves it as the live
+    # question rather than as a debrief.
+    item.completed_at = None
+    item.active_elapsed_ms = 0
+    item.timer_started_at = None
+    item.timer_activated_at = None
+    item.paused_at = None
+    item.timer_compromised = False
+    db.session.commit()
+
+    return {
+        "session_id": session.id,
+        "item_id": item.id,
+        "attempt_id": attempt.id,
+        "route": f"/cases/{session.id}",
+        "answer_key": question.correct_answer,
+        "strategy_enforcement_level": item.strategy_enforcement_level,
+        "reasoning_chars": len(SOLO_REASONING),
+        "coaching": {
+            "mechanism": mechanism,
+            "grade": (coaching or {}).get("explanation_grade"),
+            "verdict": (coaching or {}).get("reasoning_verdict"),
+            "model": model,
+        },
+        "settled_payout": attempt.settlement.payout if attempt.settlement else None,
+    }
+
+
 def _autoplay_questions(count: int, *, exclude_ids: set[str]) -> list[Question]:
     """Short Logical Reasoning items for the driven run, one per type in turn.
 
@@ -616,8 +900,8 @@ def _stage_autoplay_run(user: User, *, count: int, exclude_ids: set[str]) -> dic
     }
 
 
-def _park_autoplay_run(session_id: str, behind: StudySession) -> None:
-    """Leave the driven run open, and older than the case the presenter answers.
+def _park_driven_run(session_id: str, behind: StudySession, *, minutes: int) -> None:
+    """Leave a driven run open, and older than the case the presenter answers.
 
     It has to be `in_progress`: a paused run opens on "Return to the case", and
     the only way past that is the Resume endpoint, which pauses every other run —
@@ -631,10 +915,14 @@ def _park_autoplay_run(session_id: str, behind: StudySession) -> None:
     keeps that answer pointing at the open case, which is what every other demo
     surface — the office's walk-in client, the daily docket, `next_route` — reads
     too.
+
+    `minutes` separates the driven runs from each other as well as from the
+    open case, so the ordering is total rather than a tie the database breaks
+    however it likes.
     """
     session = StudySession.query.get(session_id)
     session.status = "in_progress"
-    session.started_at = _aware(behind.started_at) - timedelta(minutes=30)
+    session.started_at = _aware(behind.started_at) - timedelta(minutes=minutes)
     db.session.commit()
 
 
@@ -707,21 +995,21 @@ def main() -> int:
             exclude_ids={question.id},
         )
         twin = _stage_graded_twin(user, question, live_model=not args.no_model)
+        solo = _stage_solo_case(user, question)
         open_case = _stage_open_case(
             user,
             question,
-            avoid_ids={twin["session_id"], autoplay["session_id"]},
+            avoid_ids={twin["session_id"], autoplay["session_id"], solo["session_id"]},
         )
-        if open_case["session_id"] in {twin["session_id"], autoplay["session_id"]}:
+        if open_case["session_id"] in {twin["session_id"], autoplay["session_id"], solo["session_id"]}:
             raise SystemExit(
                 "The open case collided with another staged run, so the verdict slide "
                 "would wait on a live model call. "
                 "Run seed_demo.py --apply to restore a second practice run."
             )
-        _park_autoplay_run(
-            autoplay["session_id"],
-            behind=StudySession.query.get(open_case["session_id"]),
-        )
+        anchor = StudySession.query.get(open_case["session_id"])
+        _park_driven_run(autoplay["session_id"], behind=anchor, minutes=30)
+        _park_driven_run(solo["session_id"], behind=anchor, minutes=45)
         current = find_resumable_session(user)
         if current is None or current.id != open_case["session_id"]:
             raise SystemExit(
@@ -733,6 +1021,7 @@ def main() -> int:
                 "answer_key": _answer_key(question, open_case, twin),
                 "open_case": open_case,
                 "verdict": twin,
+                "solo": solo,
                 "autoplay": autoplay,
                 "guided_tour": "silenced now" if tour_silenced else "already silenced",
             },

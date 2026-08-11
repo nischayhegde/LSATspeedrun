@@ -163,28 +163,33 @@ export const presenterChrome = typeof window !== 'undefined'
  * irrelevant — but both live here so the stage and the frame chrome can never
  * disagree about the URL they claim to be showing.
  *
- * `{autoplay}` is a whole route rather than an id: the fifteen-question run the
- * app drives itself through, plus the credited answers it is driven with, which
- * the app has no other way to learn (the API omits them from every question it
- * serves). It expands last and expands to nothing else, so a slide is either
- * `{autoplay}` or it is not.
+ * `{autoplay}` and `{autoplayRun}` are whole routes rather than ids: a driven
+ * session plus the credited answers it is driven with, which the app has no
+ * other way to learn (the API omits them from every question it serves). They
+ * expand last and expand to nothing else, so a slide is either one of them or
+ * it is not.
  *
- * When that run has not been staged it falls back to the ordinary live case.
- * A slide that asked to play itself and instead sits on a real case the
- * presenter can answer by hand has lost a flourish; the same slide framing a
- * URL with an empty session id would show the room an error page.
+ * `{autoplay}` is the case demo — one question played end to end, approach
+ * applied, reasoning shown, answer submitted, graded feedback revealed.
+ * `{autoplayRun}` is the fifteen-question volume run, kept because it works and
+ * costs nothing to keep. Nothing asks for it.
+ *
+ * When a run has not been staged it falls back to the ordinary live case. A
+ * slide that asked to play itself and instead sits on a real case the presenter
+ * can answer by hand has lost a flourish; the same slide framing a URL with an
+ * empty session id would show the room an error page.
  */
 export function resolveRoute(route: string, sessionId: string): string {
   return route
     .replace('{session}', sessionId)
     .replace('{verdictSession}', demoConfig.verdictSessionId)
-    .replace('{autoplay}', autoplayRoute(sessionId))
+    .replace('{autoplayRun}', drivenRoute(demoConfig.autoplaySessionId, demoConfig.autoplayAnswerKey, sessionId))
+    .replace('{autoplay}', drivenRoute(demoConfig.soloSessionId, demoConfig.soloAnswerKey, sessionId))
 }
 
-function autoplayRoute(sessionId: string): string {
-  const { autoplaySessionId, autoplayAnswerKey } = demoConfig
-  if (!autoplaySessionId || !autoplayAnswerKey) return `/cases/${sessionId}`
-  return `/cases/${autoplaySessionId}?autoplay=${encodeURIComponent(autoplayAnswerKey)}`
+function drivenRoute(driven: string, answers: string, fallback: string): string {
+  if (!driven || !answers) return `/cases/${fallback}`
+  return `/cases/${driven}?autoplay=${encodeURIComponent(answers)}`
 }
 
 /** What a demo slide is actually going to show, right now. */
