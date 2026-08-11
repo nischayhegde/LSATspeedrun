@@ -147,7 +147,7 @@ STRATEGIES = {
             "Translate only the operative sufficient and necessary conditions, then use the contrapositive lawfully.",
             "Translate the if-then statements, connect the shared terms, and flip them correctly.",
             ("Mark sufficient → necessary", "Link only shared terms", "Test the contrapositive; reject reversals"),
-            "Must-be-true, parallel, inference, and principle questions",
+            "Must-be-true, parallel, inference, principle, and sufficient-assumption questions",
             ("lsac_lr", "powerscore_lr"),
         ),
         _strategy(
@@ -337,48 +337,361 @@ def is_comparative(question: Question) -> bool:
     return bool(question.passage and question.passage.comparative)
 
 
-def _candidate_keys(question: Question) -> list[str]:
-    question_type = (question.question_type or "").lower()
-    stem = (question.stem or "").lower()
-    if question.section == "Reading Comprehension":
-        passage_text = (question.passage.canonical_text or "").lower() if question.passage else ""
-        candidates = ["passage_map", "textual_proof"]
-        if is_comparative(question):
-            candidates.insert(0, "comparative_matrix")
-        if any(token in f"{question_type} {stem}" for token in ("purpose", "function", "organization", "method")):
-            candidates.insert(0, "paragraph_function")
-        if any(token in f"{question_type} {stem}" for token in ("main", "primary purpose", "title", "central point")):
-            candidates.insert(0, "main_point_synthesis")
-        if any(token in f"{question_type} {stem}" for token in ("attitude", "viewpoint", "perspective", "agree", "author most likely")) or any(
-            token in passage_text for token in ("some scholars", "critics", "proponents", "one view", "another view")
-        ):
-            candidates.insert(0, "viewpoint_ledger")
-        return list(dict.fromkeys(candidates))
+# ---------------------------------------------------------------------------
+# What the question is asking
+#
+# Matching reads the stem, and reads it with word boundaries. Both halves of
+# that sentence were bought expensively.
+#
+# The stem, because `question_type` is not a description of the task on most of
+# this bank. `seed._question_type` derives it from ten regexes and falls back to
+# the section's own name, and it falls back on 3,157 of 6,886 questions — 46% of
+# the bank carries a "type" that only repeats what section it is in. A matcher
+# keyed on that field is blind on half the bank, which is why 45% of questions
+# were eligible for exactly two approaches and a student practising a lot met
+# the same two generic cards over and over.
+#
+# Word boundaries, because substring matching on English is a false-positive
+# machine and every measured failure in the matching audit was one instance of
+# it. `"cause" in stem` fires on "because", so "Antoine's response is
+# ineffective because" was offered a strategy whose first step is "Name cause
+# and effect" — 287 of the 426 questions that offered it had no cause in them.
+# `" all "` and `" no "` in the stimulus made a conditional-logic strategy a
+# candidate on 189 questions with no conditional in them, and that one carries a
+# gate demanding two if-then rules sharing a term. `"main" in stem` matches
+# "remain", "mainly" and "domain".
+#
+# So every pattern below is anchored, and every one of them is measured over the
+# whole bank by `backend/scripts/audit_strategy_matching.py` before and after
+# any change to this section. A rule that removes false positives while quietly
+# dropping true matches looks like a fix on one question card and is a
+# regression across the bank; that script is how the difference is told.
+# ---------------------------------------------------------------------------
 
+# -- Logical Reasoning tasks ------------------------------------------------
+
+# Must-be-true and its relatives. What these have in common is that the answer
+# has to be *proved* by the stimulus, which is what makes quantifier and force
+# discipline pay.
+_TASK_INFERENCE = re.compile(
+    r"\bmust (?:also )?be true\b|\bmust be false\b|\bcannot be true\b"
+    r"|\bproperly (?:be )?(?:inferred|drawn|concluded)\b|\bfollows? logically\b"
+    r"|\bcan be (?:properly )?inferred\b|\bcan(?:not)? be inferred\b|\binferred from\b"
+    r"|\bmost strongly supported\b|\bbest supported\b"
+    r"|\bsupported by the (?:statements|information|passage|claims|evidence)\b"
+    r"|\bproper inference\b|\blogically completes\b"
+)
+_TASK_PRINCIPLE = re.compile(r"\bprinciple\b|\bproposition\b|\bgeneralization\b")
+_TASK_PARALLEL = re.compile(
+    r"\bparallel\w*\b|\bmost (?:closely )?similar\b|\bsimilar to (?:that|the)\b"
+    r"|\breasoning (?:above |in the argument )?is most\b|\bflawed in a way most similar\b"
+    r"|\bmost closely resembles\b"
+)
+_TASK_STRENGTHEN = re.compile(
+    r"\bstrengthens?\b|\bstrengthening\b|\bjustif\w+\b|\bmost helps? to (?:support|justify)\b"
+    r"|\bprovides? (?:the )?(?:most|best|strongest) support\b|\bsupports? the (?:argument|conclusion|claim)\b"
+)
+_TASK_WEAKEN = re.compile(
+    r"\bweaken\w*\b|\bcasts? doubt\b|\bundermin\w+\b|\bcalls? into question\b"
+    r"|\bmost damaging\b|\bchalleng\w+\b|\bcounters? the argument\b"
+)
+_TASK_EXPLAIN = re.compile(
+    r"\bexplain\w*\b|\bexplanation\b|\bresolv\w+\b|\breconcil\w+\b|\bparadox\w*\b"
+    r"|\bdiscrepanc\w+\b|\baccounts? for\b|\bapparent conflict\b|\bsurprising\b"
+)
+_TASK_EVALUATE = re.compile(
+    r"\bevaluat\w+\b|\bmost (?:useful|helpful|important) to (?:know|determine|establish)\b"
+)
+_TASK_EXCEPT = re.compile(r"\bexcept\b")
+_TASK_ROLE = re.compile(
+    r"\brole\b|\bfigures? in\b|\bmethod\b|\btechnique\b|\bstrateg\w+\b"
+    r"|\bargument proceeds\b|\bproceeds by\b|\bresponds? to\b|\bresponse to\b"
+    r"|\bin which one of the following ways\b|\bfunction of\b|\bpart of the argument\b"
+)
+_TASK_MAIN_CONCLUSION = re.compile(
+    r"\bmain (?:conclusion|point)\b|\bconclusion (?:drawn|of the argument)\b"
+    r"|\bmost accurately (?:expresses|states|describes) the conclusion\b|\boverall conclusion\b"
+)
+
+# The flaw family, which the word "flaw" covers less than half of. The LSAT's
+# most common phrasing is "most vulnerable to criticism", and "an error in
+# reasoning", "a major weakness" and "questionable because" are all standard.
+# Keying on the literal word left 65 flaw questions with no flaw strategy.
+_TASK_FLAW = re.compile(
+    r"\bflaw\w*\b|\bvulnerable to\b|\berrors? (?:of|in) reasoning\b|\breasoning errors?\b"
+    r"|\bquestionable\b|\bweakness\b|\bcriticiz\w+\b|\bcriticism\w*\b|\bfallac\w+\b"
+    r"|\bfails? to (?:consider|establish|address|rule out|take into account|account for)\b"
+    r"|\breasoning is (?:most )?(?:unsound|not sound|flawed|questionable)\b"
+    r"|\bis (?:not sound|unsound)\b|\bdoes not follow\b|\bmistakes? \w+ for\b"
+    r"|\bconfuses?\b|\btreats?\b.{0,40}\bas (?:if|though)\b"
+)
+
+# The necessary-assumption family. Two shapes: an assumption named alongside a
+# necessity word, in either order, and the two fixed idioms. This is where the
+# literal "depends on" was costing the most — the LSAT's single most common
+# phrasing is "an assumption on which the argument depends", where the
+# preposition is at the front, so the substring never appeared and 169
+# textbook questions never met the negation test.
+_TASK_NECESSARY_ASSUMPTION = re.compile(
+    r"assum\w*[^.?]{0,120}?\b(?:depends?|depended|requir\w+|necessary|presuppos\w+|relies|rests?|based)\b"
+    r"|\b(?:depends?|depended|requir\w+|necessary|presuppos\w+|relies|rests?|based on)\b[^.?]{0,120}?assum\w*"
+    r"|\bdepends? (?:on|upon) which one of the following\b"
+    r"|\bmust be assumed\b|\btakes? for granted\b"
+)
+# Sufficient assumption, held apart on purpose. "Which one of the following, if
+# assumed, allows the conclusion to be properly drawn" is a different question,
+# and the negation test is the wrong tool on it: denying a merely sufficient
+# assumption need not break the argument, so the procedure's own ruling —
+# "keep it only if the argument collapses" — throws away the credited answer.
+_TASK_SUFFICIENT_ASSUMPTION = re.compile(
+    r"\bif assumed\b|\bif (?:it is )?assumed\b|\ballows? the conclusion\b|\benables? the conclusion\b"
+)
+
+# A causal claim, as opposed to the word "cause" appearing somewhere. Read on
+# the stimulus, where the claim lives, and on the stem, where the task
+# sometimes names it outright.
+_CAUSAL_CLAIM = re.compile(
+    r"\bcaus(?:e|es|ed|ing|al|ally|ation)\b"
+    r"|\bdue to\b|\bbecause of\b|\bowing to\b"
+    r"|\bleads? to\b|\bleading to\b|\bled to\b"
+    r"|\bresults? (?:in|from)\b|\bresulted (?:in|from)\b|\bresulting (?:in|from)\b"
+    r"|\bresponsible for\b|\bbrought about\b|\bbrings? about\b"
+    r"|\battributable to\b|\battribut(?:e|es|ed) \w+ to\b"
+    r"|\bstems? from\b|\bstemmed from\b|\barises? from\b|\barising from\b"
+    r"|\bgives? rise to\b|\bcontribut(?:e|es|ed) to\b"
+    r"|\beffects? (?:of|on)\b|\bno effect\b"
+    r"|\bexplains? why\b|\bexplanation for\b|\breason (?:for|why)\b"
+)
+
+# Conditional operators, and deliberately not bare "all" or "no". A universal
+# claim does translate to a conditional, so the quantified forms are kept — but
+# as quantifiers with something quantified ("all X are Y", "no X is Y"), not as
+# the two commonest words in English. "all the evidence", "no doubt" and "not
+# all of them" are not rules, and a strategy whose gate demands two if-then
+# rules that share a term cannot be offered on a question that has none.
+_CONDITIONAL_OPERATOR = re.compile(
+    r"\bif\b|\bunless\b|\bwhenever\b|\bprovided that\b|\bas long as\b"
+    r"|\brequir(?:e|es|ed|ement)\b|\bnecessary\b|\bsufficient\b|\bprerequisite\b"
+    r"|\ball\s+(?:\w+\s+){0,2}?(?:are|is|was|were|have|has|must|will|can|do|does)\b"
+    r"|\bno\s+\w+\s+(?:is|are|was|were|can|will|has|have|ever|may|would|could)\b"
+    r"|\bevery\b|\ban(?:y|yone|ything|body)\s+(?:who|that|which)\b|\bnone of\b"
+    r"|\bonly\s+(?:if|those|when|by|a\s+person|people\s+who)\b|\bin order (?:to|for)\b"
+)
+
+# -- Reading Comprehension tasks -------------------------------------------
+
+# Why something is where it is: the passage's organisation, or one paragraph's
+# or line's job in it. Deliberately the purpose sense only — a bare "the author
+# mentions" is a detail question, and "in order to" is what turns it into a
+# question about function.
+_RC_PURPOSE = re.compile(
+    r"\bpurpose\b|\bfunction\b|\bin order to\b|\bserves? (?:primarily )?to\b"
+    r"|\borganiz\w+\b|\bstructure(?:d)?\b|\brole\b|\bwhy the author\b"
+    r"|\bprimarily (?:in order )?to\b|\bmost probably (?:in order )?to\b"
+)
+_RC_MAIN_POINT = re.compile(
+    r"\bmain (?:point|idea|concern|focus)\b|\bprimary purpose\b|\bcentral (?:point|idea|claim|thesis|argument)\b"
+    r"|\bprimarily concerned\b|\bbest title\b|\btitle for the passage\b"
+    r"|\bmost accurately (?:expresses|states|summarizes) the\b|\bpassage as a whole\b"
+)
+# The author's or a party's stance, asked about by the question. This is the
+# trigger that used to be read off the passage: a passage containing the word
+# "critics" made a viewpoint strategy a candidate on every question printed
+# with it, so 344 plain detail questions were offered a strategy about
+# competing viewpoints. The passage is still consulted, but only as a
+# precondition below — never as the trigger.
+_RC_VIEWPOINT = re.compile(
+    r"\battitude\b|\bviewpoint\b|\bpoint of view\b|\bperspective\b"
+    # An opinion someone holds, not a judicial opinion or a juror's dissenting
+    # one. Three of the bank's ten "opinion" stems are the legal sense.
+    r"|\bopinions? (?:of|about|on|regarding|with)\b|\b(?:author|critic|writer|scholar)(?:'s|s')? opinion\b"
+    r"|\bagree\w*\b|\bdisagree\w*\b|\bstance\b|\btone\b"
+    r"|\bwould (?:most likely|probably|be most likely|most probably|consider|regard)\b"
+    r"|\bregards?\b|\bregarded\b|\bcharacteriz\w+\b|\bendorse\w*\b|\bsympath\w+\b"
+)
+# A claim the question attributes to somebody. On its own this is too broad to
+# trigger on — "the passage suggests that Posner argues" and "the author
+# mentions" are the same shape — so it only counts where the passage actually
+# stages more than one position.
+_RC_ATTRIBUTION = re.compile(
+    r"\bcritics?\b|\bproponents?\b|\bopponents?\b|\badvocates?\b|\bsupporters?\b"
+    r"|\bdetractors?\b|\bscholars?\b|\btheorists?\b|\bcommentators?\b|\bhistorians?\b"
+    r"|\bdefenders?\b|\bskeptics?\b|\bsceptics?\b|\bauthorities\b"
+    r"|\bargues?\b|\bclaims?\b|\bmaintains?\b|\bcontends?\b|\basserts?\b|\bbelieves?\b"
+    r"|\bholds that\b|\bposition\b|\bconcedes?\b|\bobjects?\b"
+)
+# A passage that stages a debate: two or more distinct parties or attributed
+# positions. Counted distinctly, so one word repeated is one party.
+_PASSAGE_PARTIES = re.compile(
+    r"\bcritics?\b|\bproponents?\b|\bopponents?\b|\badvocates?\b|\bsupporters?\b"
+    r"|\bdetractors?\b|\bscholars?\b|\btheorists?\b|\bcommentators?\b|\bhistorians?\b"
+    r"|\bdefenders?\b|\bskeptics?\b|\bsceptics?\b"
+    r"|\bsome (?:\w+ )?(?:argue|believe|claim|maintain|contend|hold|say|assert|suggest)\b"
+    r"|\bothers? (?:argue|believe|claim|maintain|contend|hold|say|assert|suggest)\b"
+    r"|\bone view\b|\banother view\b|\btraditional view\b|\bconventional view\b"
+    r"|\bit (?:has been|is often) (?:argued|claimed|held|assumed)\b"
+)
+# How many distinct parties make a passage a debate rather than a passage that
+# happens to mention somebody. Two, because the strategy's own gate refuses a
+# ledger with fewer than two rows in it.
+_MIN_PASSAGE_PARTIES = 2
+
+
+def _stored_type(question: Question) -> str:
+    """The bank's own label for the task, where it has one.
+
+    Consulted alongside the stem for the same reason `detect_comparative`
+    consults `passage_type` first: a bank that labels the task should be
+    believed rather than re-derived. This one labels it on 54% of questions and
+    repeats the section name on the rest, so the stem is the primary signal and
+    this is corroboration.
+    """
+    stored = (question.question_type or "").strip().lower()
+    return "" if stored in ("logical reasoning", "reading comprehension") else stored
+
+
+def _task_tags(question: Question) -> frozenset[str]:
+    """What this question asks the student to do.
+
+    Derived from the stem, corroborated by `question_type`. Everything that
+    decides an approach's appropriateness below reads these tags rather than
+    searching raw text, so a phrasing is added in one place and every approach
+    that depends on it picks it up.
+    """
+    stem = (question.stem or "").lower()
+    stored = _stored_type(question)
+    labelled = f"{stored} {stem}"
+    tags: set[str] = set()
+    if question.section == "Reading Comprehension":
+        if _RC_MAIN_POINT.search(labelled) or stored in ("main point", "main idea"):
+            tags.add("main_point")
+        if _RC_PURPOSE.search(labelled) or stored in ("function", "purpose"):
+            tags.add("purpose")
+        if _RC_VIEWPOINT.search(labelled) or stored == "author's perspective":
+            tags.add("viewpoint")
+        if _RC_ATTRIBUTION.search(stem):
+            tags.add("attribution")
+        return frozenset(tags)
+
+    if _TASK_INFERENCE.search(labelled) or stored == "inference":
+        tags.add("inference")
+    if _TASK_PRINCIPLE.search(labelled) or stored == "principle":
+        tags.add("principle")
+    if _TASK_PARALLEL.search(labelled) or stored == "parallel reasoning":
+        tags.add("parallel")
+    if _TASK_STRENGTHEN.search(labelled) or stored == "strengthen":
+        tags.add("strengthen")
+    if _TASK_WEAKEN.search(labelled) or stored == "weaken":
+        tags.add("weaken")
+    if _TASK_EXPLAIN.search(labelled) or stored == "resolve the paradox":
+        tags.add("explain")
+    if _TASK_EVALUATE.search(labelled):
+        tags.add("evaluate")
+    if _TASK_EXCEPT.search(stem):
+        tags.add("except")
+    if _TASK_ROLE.search(labelled) or stored == "argument structure":
+        tags.add("role")
+    if _TASK_MAIN_CONCLUSION.search(labelled) or stored == "main conclusion":
+        tags.add("main_conclusion")
+    if _TASK_FLAW.search(labelled) or stored == "flaw":
+        tags.add("flaw")
+    if _TASK_NECESSARY_ASSUMPTION.search(stem):
+        tags.add("necessary_assumption")
+    elif _TASK_SUFFICIENT_ASSUMPTION.search(stem):
+        tags.add("sufficient_assumption")
+    if _CAUSAL_CLAIM.search(stem):
+        tags.add("causal_stem")
+    return frozenset(tags)
+
+
+def _reading_candidates(question: Question, tags: frozenset[str]) -> list[str]:
+    """Approaches for one Reading Comprehension question.
+
+    `passage_map` and `textual_proof` are unconditional, which is what
+    guarantees every Reading Comprehension question has at least two eligible
+    approaches and never falls back.
+    """
+    candidates = ["passage_map", "textual_proof"]
+    if is_comparative(question):
+        candidates.insert(0, "comparative_matrix")
+    if "purpose" in tags:
+        candidates.insert(0, "paragraph_function")
+    if "main_point" in tags:
+        candidates.insert(0, "main_point_synthesis")
+    # An explicit question about somebody's stance always earns the ledger. An
+    # attributed claim earns it only on a passage that actually stages two or
+    # more positions, because a ledger of one view is not a ledger and the gate
+    # will refuse it.
+    if "viewpoint" in tags or ("attribution" in tags and _passage_stages_a_debate(question)):
+        candidates.insert(0, "viewpoint_ledger")
+    return list(dict.fromkeys(candidates))
+
+
+def _passage_stages_a_debate(question: Question) -> bool:
+    text = question.passage.canonical_text if question.passage else ""
+    if not text:
+        return False
+    return len({match.group(0).lower() for match in _PASSAGE_PARTIES.finditer(text)}) >= _MIN_PASSAGE_PARTIES
+
+
+def _reasoning_candidates(question: Question, tags: frozenset[str]) -> list[str]:
+    """Approaches for one Logical Reasoning question.
+
+    `argument_core` and `prephrase` are unconditional — every Logical Reasoning
+    question has an argument to split and an answer worth predicting — which is
+    what guarantees a non-empty candidate set here.
+    """
     stimulus = (question.stimulus or "").lower()
-    task_language = f"{question_type} {stem}"
     candidates = ["argument_core", "prephrase"]
-    if any(token in task_language for token in ("must", "infer", "strongly supported", "except", "principle")):
+    if tags & {"inference", "principle", "except"}:
         candidates.insert(0, "scope_precision")
-    if "assumption" in question_type and any(token in stem for token in ("required", "depends on", "necessary", "must be assumed")):
+    if "necessary_assumption" in tags:
         candidates.insert(0, "negation_test")
-    causal_stimulus = any(
-        token in stimulus
-        for token in ("cause", "caused", "causal", "resulted in", "led to", "leads to", "due to", "responsible for")
-    )
-    if "cause" in task_language or (causal_stimulus and any(token in task_language for token in ("strengthen", "weaken", "flaw", "explain"))):
+    # Either the task names causation, or the stimulus makes a causal claim and
+    # the task is one that acts on it. A causal stimulus under a "must be true"
+    # stem is not a causal question.
+    if "causal_stem" in tags or (
+        _CAUSAL_CLAIM.search(stimulus)
+        and tags & {"strengthen", "weaken", "flaw", "explain", "evaluate", "necessary_assumption"}
+    ):
         candidates.insert(0, "causal_audit")
-    conditional_stimulus = any(
-        token in f" {stimulus} "
-        for token in (" if ", " only if ", " unless ", " whenever ", " requires ", " all ", " no ")
-    )
-    if "conditional" in task_language or (conditional_stimulus and any(token in task_language for token in ("must", "parallel", "principle", "infer"))):
+    # Sufficient assumption belongs here rather than with the negation test.
+    # "Which one of the following, if assumed, allows the conclusion to be
+    # properly drawn" is asking for the missing link in a chain, which is what
+    # this approach builds; denying it, which is what the negation test does,
+    # answers a different question.
+    if _CONDITIONAL_OPERATOR.search(stimulus) and tags & {
+        "inference",
+        "parallel",
+        "principle",
+        "sufficient_assumption",
+    }:
         candidates.insert(0, "conditional_chain")
-    if "flaw" in task_language:
+    if "flaw" in tags:
         candidates.insert(0, "flaw_abstraction")
-    if any(token in task_language for token in ("role", "method", "conclusion")):
+    if tags & {"role", "main_conclusion"}:
         candidates.insert(0, "role_map")
     return list(dict.fromkeys(candidates))
+
+
+def _candidate_keys(question: Question) -> list[str]:
+    """Every approach eligible for one question, most specific first.
+
+    Two invariants hold by construction and are asserted over the whole bank by
+    `backend/scripts/audit_strategy_matching.py`:
+
+    * The section guarantee. A Reading Comprehension question only ever gets
+      Reading Comprehension approaches and a Logical Reasoning question only
+      ever gets Logical Reasoning ones, because the two branches below share no
+      keys.
+    * Never empty. Each branch opens with two unconditional approaches, so
+      `assign_strategy_trial` can never be handed an empty candidate list and
+      no fallback is ever needed.
+    """
+    tags = _task_tags(question)
+    if question.section == "Reading Comprehension":
+        return _reading_candidates(question, tags)
+    return _reasoning_candidates(question, tags)
 
 
 CONTROL_PROBABILITY = 0.25
