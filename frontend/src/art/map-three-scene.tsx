@@ -117,6 +117,8 @@ type ArcDefinition = {
    * lose in the first place, and the strength drops accordingly.
    */
   occlusion: { strength: number; tint: number }
+  /** How much aerial glare this district's atmosphere puts around its sun. */
+  sky: { halo: number }
 }
 
 const ARC: Record<MapRegionKey, ArcDefinition> = {
@@ -142,6 +144,7 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     fill: { color: 0x8bb6c1, intensity: .54, position: [20, 13, -18] },
     rim: { color: 0xffd69a, intensity: .76, position: [7, 15, -25] },
     occlusion: { strength: .78, tint: 0x8a7a66 },
+    sky: { halo: 1 },
   },
   nation: {
     title: 'The Circuit', subtitle: 'Appellate route · regional courts',
@@ -172,6 +175,7 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     // Open country. Hedge bottoms and the shaded side of a barn are the only
     // real crevices out here, and the grass bounces a lot of green back up.
     occlusion: { strength: .62, tint: 0x8c8a6e },
+    sky: { halo: 1 },
   },
   ocean: {
     title: 'Treaty Sea', subtitle: 'Maritime counsel · diplomatic harbor',
@@ -188,6 +192,9 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     // Water is a second sky. Held down because a harbour under an overcast has
     // very little directionality left to take away.
     occlusion: { strength: .5, tint: 0x7d8b8d },
+    // Overcast. The disc is behind cloud, so the glare is spread rather than
+    // concentrated: the tight term still lands where the sun is, but softly.
+    sky: { halo: .72 },
   },
   continent: {
     title: 'Sovereign Arc', subtitle: 'Continental chamber · civic axis',
@@ -224,6 +231,7 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     // Masonry, colonnades and a deep cornice: the district with the most
     // genuine self-shadowing in the game, and the palette carries the range.
     occlusion: { strength: .85, tint: 0x8b7a67 },
+    sky: { halo: 1.08 },
   },
   orbit: {
     title: 'Global Compact', subtitle: 'International assembly · final jurisdiction',
@@ -240,6 +248,9 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     // Night, and an ambient floor of .18. There is almost no wide light here
     // to be blocked, and pretending otherwise would only sink the district.
     occlusion: { strength: .34, tint: 0x4a5766 },
+    // Orbit. The key is a star at a distance and there is no atmosphere to
+    // scatter it, so there is no halo at all — only the disc's own glint.
+    sky: { halo: .18 },
   },
 }
 
@@ -7440,11 +7451,38 @@ function createWindTurbine(scale = 1) {
   return group
 }
 
+/**
+ * The dome, anchored to the same sun the district is lit by.
+ *
+ * It used to be a vertical gradient plus `.035 * sin(time * .08 + x * 4)`: a
+ * band of extra brightness that drifted slowly sideways across the whole sky,
+ * unrelated to anything. That is the single detail that stopped these
+ * districts reading as being at a time of day. A sky is not a gradient with a
+ * wandering bright patch in it; it is brightest around the sun, and the
+ * brightness falls off from there — steeply for the first few degrees, then
+ * very gradually across the rest of the hemisphere. Every scene here has a
+ * strong, low, warm key placed with some care, and the sky behind it was
+ * pointing somewhere else.
+ *
+ * Two powers of the cosine do the whole job: a tight one for the glare around
+ * the disc, a wide one for the general lift on the sun's side of the sky. The
+ * halo is tinted with the sun's own colour, so a warm afternoon key gives a
+ * warm sky beside it and the Global Compact's cold white one does not.
+ *
+ * Costs nothing. It is the same single dome, the same one draw call and the
+ * same one program; only the arithmetic inside the fragment changed, and it
+ * lost a `sin` in the exchange.
+ */
 function createSky(definition: ArcDefinition) {
+  const sunDirection = new THREE.Vector3(...definition.sun.position).normalize()
   const uniforms = {
     uTop: { value: new THREE.Color(definition.skyTop) },
     uBottom: { value: new THREE.Color(definition.skyBottom) },
-    uTime: { value: 0 },
+    uSun: { value: sunDirection },
+    uSunColour: { value: new THREE.Color(definition.sun.color) },
+    // Night has no aerial glare to speak of: the Global Compact's sky should
+    // stay black beside its key, not grow a daylight halo around it.
+    uHalo: { value: definition.sky.halo },
   }
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(170, 56, 28),
@@ -7452,10 +7490,24 @@ function createSky(definition: ArcDefinition) {
       uniforms,
       side: THREE.BackSide,
       vertexShader: 'varying vec3 vWorld; void main(){vWorld=(modelMatrix*vec4(position,1.)).xyz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader: 'uniform vec3 uTop; uniform vec3 uBottom; uniform float uTime; varying vec3 vWorld; void main(){float h=clamp(normalize(vWorld).y*.72+.38,0.,1.);float glow=.035*sin(uTime*.08+normalize(vWorld).x*4.);gl_FragColor=vec4(mix(uBottom,uTop,h)+glow,1.);}',
+      fragmentShader: `
+        uniform vec3 uTop; uniform vec3 uBottom; uniform vec3 uSun; uniform vec3 uSunColour; uniform float uHalo;
+        varying vec3 vWorld;
+        void main() {
+          vec3 view = normalize(vWorld);
+          float height = clamp(view.y * .72 + .38, 0., 1.);
+          vec3 base = mix(uBottom, uTop, height);
+          float toSun = max(dot(view, uSun), 0.);
+          // The tight term is the glare immediately around the disc; the wide
+          // one is the whole sun-side half of the sky sitting a little above
+          // the other half, which is most of what tells a viewer where the
+          // light is coming from.
+          float halo = pow(toSun, 26.) * .5 + pow(toSun, 3.) * .16;
+          gl_FragColor = vec4(base + uSunColour * halo * uHalo, 1.);
+        }
+      `,
     }),
   )
-  sky.userData.skyUniforms = uniforms
   return sky
 }
 
@@ -7887,6 +7939,21 @@ export function MapThreeScene({
     sun.shadow.camera.left = -52; sun.shadow.camera.right = 52; sun.shadow.camera.top = 44; sun.shadow.camera.bottom = -44
     sun.shadow.camera.far = 260
     sun.shadow.bias = -.0006
+    // A sun shadow has an edge, not a border. The one thing that gives away a
+    // shadow map as a shadow map is a razor-sharp boundary running across a
+    // pavement, and this one was razor-sharp: 2048 texels over a 104-unit
+    // frustum is one texel every five centimetres, so the transition was two
+    // or three centimetres wide on the ground.
+    //
+    // Real penumbra widens with the distance from whatever is casting, which a
+    // single map cannot reproduce. What it can do is stop pretending the sun
+    // is a point. Three's PCF filter already takes nine taps and `radius`
+    // scales how far apart it spreads them, so a wider edge costs exactly
+    // nothing — no extra samples, no second map, no change to the one static
+    // render the map does at build time. Held to two: past about three the
+    // nine taps stop overlapping and the soft edge turns into nine ghosts of
+    // the hard one.
+    sun.shadow.radius = 2
     scene.add(sun)
     const fill = new THREE.DirectionalLight(definition.fill.color, definition.fill.intensity)
     fill.position.set(...definition.fill.position)
@@ -9305,7 +9372,7 @@ export function MapThreeScene({
       if (
         data.cloud || data.tree || data.fountainSpray || data.crane || data.lighthouse || data.lighthouseBeam
         || data.turbine || data.orbitalRing || data.radarDish || data.planet || data.signal || data.atmosphere
-        || data.waterUniforms || data.skyUniforms || data.auroraUniforms || data.flagUniforms || data.mapLabelKind
+        || data.waterUniforms || data.auroraUniforms || data.flagUniforms || data.mapLabelKind
         || data.mapObjectKind || data.mapEmphasisKind || data.lawyerBeacon || data.playerMarker || data.destinationMarker
         || data.buoy || data.marshBlade || data.ambientActor || data.ambientWing
       ) animatedObjects.push(object)
@@ -10259,7 +10326,6 @@ export function MapThreeScene({
           object.position.x = Math.sin(elapsed * .035) * .4
         }
         if (object.userData.waterUniforms) object.userData.waterUniforms.uTime.value = elapsed
-        if (object.userData.skyUniforms) object.userData.skyUniforms.uTime.value = elapsed
         if (object.userData.auroraUniforms) object.userData.auroraUniforms.uTime.value = elapsed
         if (object.userData.flagUniforms) object.userData.flagUniforms.uTime.value = elapsed
         // A contact's shingle is always in the world; the card naming the
