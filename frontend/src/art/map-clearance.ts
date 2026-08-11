@@ -44,6 +44,8 @@ type Segment = {
   dx: number; dz: number
   length: number
   halfWidth: number
+  /** The corridor's `label`, carried through so an intrusion can name it. */
+  label?: string
 }
 
 export type ClearanceField = {
@@ -79,7 +81,7 @@ export function prepareClearance(corridors: ClearanceCorridor[], cellSize = 4): 
       const dz = z1 - z0
       const length = Math.hypot(dx, dz)
       if (length < 1e-4) continue
-      segments.push({ x0, z0, dx: dx / length, dz: dz / length, length, halfWidth: corridor.halfWidth })
+      segments.push({ x0, z0, dx: dx / length, dz: dz / length, length, halfWidth: corridor.halfWidth, label: corridor.label })
     }
   }
   const field: ClearanceField = {
@@ -133,6 +135,19 @@ export type Intrusion = {
   /** Unit direction to push along to get out, away from the centreline. */
   x: number
   z: number
+  /**
+   * Which corridor it is standing in, when the caller labelled it.
+   *
+   * A parcel that cannot be sited is the hardest thing in this area to debug —
+   * the ground looks empty, and the audit tools each answer a different
+   * question — so the field is asked to name the offender rather than leaving
+   * the next person to bisect it.
+   */
+  label?: string
+  /** The point on that corridor's centreline, and the width it is keeping. */
+  atX?: number
+  atZ?: number
+  halfWidth?: number
 }
 
 /**
@@ -225,8 +240,8 @@ export function clearanceIntrusion(
         // a side, and either side is equally correct.
         const scale = distance > 1e-4 ? 1 / distance : 0
         deepest = scale
-          ? { depth, x: awayX * scale, z: awayZ * scale }
-          : { depth, x: -segment.dz, z: segment.dx }
+          ? { depth, x: awayX * scale, z: awayZ * scale, label: segment.label, atX: nearestX, atZ: nearestZ, halfWidth: segment.halfWidth }
+          : { depth, x: -segment.dz, z: segment.dx, label: segment.label, atX: nearestX, atZ: nearestZ, halfWidth: segment.halfWidth }
       }
     }
   }

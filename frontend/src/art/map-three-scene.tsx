@@ -882,7 +882,7 @@ function plannedGround(root: THREE.Group): ClearanceCorridor[] {
 }
 
 /** Where a landmark ended up, and how far the plan had to move it to get there. */
-type PlanSite = { x: number; z: number; moved: number; cleared: boolean }
+type PlanSite = { x: number; z: number; moved: number; cleared: boolean; blockedBy?: string; depth?: number }
 
 /**
  * Site an authored landmark on the street plan instead of on its own table.
@@ -938,13 +938,20 @@ function siteOnPlan(
 ): PlanSite {
   const footprint = { hx, hz, cos: Math.cos(rotationY), sin: Math.sin(rotationY) }
   const radius = Math.hypot(hx, hz)
-  const free = (atX: number, atZ: number) => !clearanceIntrusion(ground, atX, atZ, radius, footprint)
-  if (free(x, z)) return { x, z, moved: 0, cleared: true }
+  const at = (atX: number, atZ: number) => clearanceIntrusion(ground, atX, atZ, radius, footprint)
+  const free = (atX: number, atZ: number) => !at(atX, atZ)
+  const asked = at(x, z)
+  if (!asked) return { x, z, moved: 0, cleared: true }
   // Fine enough to find the gap between two village lanes, which is the
   // tightest thing being searched: The Circuit's alleys are .52 apart at their
   // closest and the free strip between their pavements is about a third of a
   // unit wide.
-  const step = .15
+  // Fine enough to land in the middle of a block rather than beside it. At .15
+  // the Old Quarter's tier-three parcel missed a gap it fitted in by a
+  // centimetre: the only position that cleared was the exact centre of a 1.95 m
+  // block, and the grid stepped over it. A few thousand candidates per parcel
+  // is nothing against a scene build.
+  const step = .05
   const candidates: Array<{ along: number; lateral: number; cost: number }> = []
   for (let a = -Math.round(reach.along / step); a <= Math.round(reach.along / step); a += 1) {
     for (let l = -Math.round(reach.lateral / step); l <= Math.round(reach.lateral / step); l += 1) {
@@ -964,7 +971,17 @@ function siteOnPlan(
     const atZ = z + reach.alongZ * candidate.along + acrossZ * candidate.lateral
     if (free(atX, atZ)) return { x: atX, z: atZ, moved: Math.hypot(atX - x, atZ - z), cleared: true }
   }
-  return { x, z, moved: 0, cleared: false }
+  // What was standing on the ground it asked for, and how deep into it the
+  // parcel reached. Without this a stuck parcel is a dead end for whoever picks
+  // it up: the ground looks empty and every audit answers a different question.
+  return {
+    x,
+    z,
+    moved: 0,
+    cleared: false,
+    blockedBy: `${asked.label ?? 'unlabelled'}@${(asked.atX ?? 0).toFixed(2)},${(asked.atZ ?? 0).toFixed(2)}±${(asked.halfWidth ?? 0).toFixed(2)}`,
+    depth: +asked.depth.toFixed(2),
+  }
 }
 
 /** Book one siting decision for `tools/map-qa/authored.mjs`. */
@@ -1192,8 +1209,18 @@ const TIER_PLINTH_HALF_DEPTH = 1.275
  * have no such list, so they get an empty one and keep the position they have
  * always had.
  */
-function crossStreetLines(region: MapRegionKey): number[] {
-  return region === 'city' ? OLD_QUARTER_AVENUES.map((line) => line.position) : []
+function crossStreetLines(region: MapRegionKey): Array<{ position: number; clearance: number }> {
+  if (region !== 'city') return []
+  return OLD_QUARTER_AVENUES.map((line) => {
+    const half = streetWidth(line.streetClass) / 2
+    // What the pedestrian field will keep clear of this line once it is built:
+    // the carriageway, its pavement if the class has one, and a walker's beam.
+    // An arterial keeps 1.50 and an alley .42, and a parcel that treats them
+    // alike will be sited in a gap that cannot hold it — which is exactly what
+    // was happening while this returned bare positions.
+    const paved = STREET_PAVEMENT_WEIGHT[line.streetClass] ? KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF : 0
+    return { position: line.position, clearance: half + paved + WALKER_HALF_BEAM }
+  })
 }
 
 /**
@@ -1216,19 +1243,33 @@ function crossStreetLines(region: MapRegionKey): number[] {
  * siting search: that would move a finished building off the street it belongs
  * to, which is the failure `authored.mjs` exists to catch.
  */
-function tierParcelSite(region: MapRegionKey, route: THREE.Curve<THREE.Vector3>, index: number, count: number) {
+function tierParcelSite(
+  region: MapRegionKey,
+  route: THREE.Curve<THREE.Vector3>,
+  index: number,
+  count: number,
+  halfDepth = TIER_PLINTH_HALF_DEPTH,
+  halfWidth = 0,
+) {
   const wanted = count <= 1 ? .5 : .12 + index / (count - 1) * .76
   const lines = crossStreetLines(region)
   let t = wanted
   if (lines.length) {
     let best = Number.NEGATIVE_INFINITY
-    for (let step = -12; step <= 12; step += 1) {
+    // About one block either way, which is what the comment above promises and
+    // what half of the Old Quarter needs: the lattice is 4.08 apart at the ends
+    // and 3.69 in the middle, and a townhouse fits the first and not the second.
+    for (let step = -24; step <= 24; step += 1) {
       const candidate = Math.min(.94, Math.max(.06, wanted + step * .005))
       const at = route.getPointAt(candidate)
-      const clear = Math.min(...lines.map((line) => Math.abs(at.x - line)))
-      // Clearance first, and the authored spacing as the tie-break, so a parcel
-      // that is already mid-block does not wander looking for a wider one.
-      const score = clear - Math.abs(step) * .012
+      // Room left over once this block's own streets have taken what they keep
+      // and the parcel has taken its width: positive means it fits here. Scored
+      // rather than filtered, so a district with no block wide enough still
+      // lands its headquarters in the widest one instead of the first.
+      const room = Math.min(...lines.map((line) => Math.abs(at.x - line.position) - line.clearance)) - halfWidth
+      // Fit first, and the authored spacing as the tie-break, so a parcel that
+      // is already mid-block does not wander looking for a wider one.
+      const score = room - Math.abs(step) * .012
       if (score > best) { best = score; t = candidate }
     }
   }
@@ -1237,7 +1278,7 @@ function tierParcelSite(region: MapRegionKey, route: THREE.Curve<THREE.Vector3>,
   const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
   side.multiplyScalar(TIER_SIDES[region][index] ?? 1)
   const line = CORRIDOR_BUILDING_LINE[region]
-  const behindTheLine = line === undefined ? 0 : line + TIER_PLINTH_HALF_DEPTH + WALKER_HALF_BEAM
+  const behindTheLine = line === undefined ? 0 : line + halfDepth + WALKER_HALF_BEAM
   const asked = roadPoint.clone().add(side.clone().multiplyScalar(Math.max(TIER_SETBACK[region], behindTheLine)))
   return { asked, roadPoint, side, tangent }
 }
@@ -1246,9 +1287,10 @@ function authoredParcelReserve(region: MapRegionKey, route: THREE.Curve<THREE.Ve
   const reserve: ReservedSite[] = []
   const tiers = points.filter((point): point is MapSceneTier => point.kind === 'tier')
   tiers.forEach((point, index) => {
-    const { asked } = tierParcelSite(region, route, index, tiers.length)
-    const plinthHalf = (2.25 + Math.min(1.7, point.data.tier * .105) + .65) / 2
-    reserve.push({ x: asked.x, z: asked.z, radius: Math.hypot(plinthHalf, TIER_PLINTH_HALF_DEPTH) })
+    const halfDepth = tierPlinthHalfDepth(point.data.tier)
+    const halfWidth = tierPlinthHalf(point.data.tier)
+    const { asked } = tierParcelSite(region, route, index, tiers.length, halfDepth, halfWidth)
+    reserve.push({ x: asked.x, z: asked.z, radius: Math.hypot(halfWidth, halfDepth) })
   })
   const rivals = points.filter((point) => point.kind === 'rival')
   const sites = RIVAL_SITES[region]
@@ -1507,12 +1549,31 @@ function windowBand(width: number, count: number, y: number, depth: number, lit:
  * more increment.
  */
 function tierFrontage(tier: number) {
-  return tier < 5 ? 1.55 + tier * .07 : 2.25 + Math.min(1.7, tier * .105)
+  return tier < 5 ? 1.5 + tier * .05 : 2.25 + Math.min(1.7, tier * .105)
+}
+
+/**
+ * How far the plinth oversails the frontage, each side doubled.
+ *
+ * The wide offices stand on a civic skirt .325 proud of the wall. A townhouse
+ * has a doorstep, and here that is worth more than the look of it: the Old
+ * Quarter's lanes run 4.08 apart and each keeps .99 clear of its centreline, so
+ * a block between two of them offers 2.10 m and the skirt was eating a third of
+ * it. This is the difference between a headquarters that can be sited and one
+ * that cannot.
+ */
+function tierPlinthOversail(tier: number) {
+  return tier < 5 ? .25 : .65
 }
 
 /** The half-extent of the plinth, which is what siting and the router see. */
 function tierPlinthHalf(tier: number) {
-  return (tierFrontage(tier) + .65) / 2
+  return (tierFrontage(tier) + tierPlinthOversail(tier)) / 2
+}
+
+/** And its depth, which on the Old Quarter is a doorstep rather than a forecourt. */
+function tierPlinthHalfDepth(tier: number) {
+  return tier < 5 ? 1 : TIER_PLINTH_HALF_DEPTH
 }
 
 function createLevelBuilding(point: MapSceneTier, definition: ArcDefinition) {
@@ -1572,10 +1633,18 @@ function createLevelBuilding(point: MapSceneTier, definition: ArcDefinition) {
   const dark = material(0x293234, .8)
   const stone = material(0x6d6b60, .95)
 
-  group.add(box([width + .65, .2, 2.55], stone, [0, .1, 0]))
-  group.add(box([width + .35, .18, 2.3], trim, [0, .28, 0]))
-  group.add(box([width, height, 1.75], facade, [0, .38 + height / 2, 0]))
-  group.add(box([width + .16, .15, 1.94], trim, [0, .42 + height, 0]))
+  // A townhouse has a doorstep, not a forecourt. The 2.55-deep plinth is the
+  // civic frontage the wide offices want, and on the Old Quarter it was the
+  // second reason siting failed: the corridor's pavement and the street behind
+  // the block leave 2.94 m of depth, and 2.55 plus a walker's beam either side
+  // needs 2.87 of it, which is a five-millimetre fit no search will find.
+  const plinthDepth = isOldQuarter ? 2 : 2.55
+  const bodyDepth = plinthDepth - .8
+  const oversail = tierPlinthOversail(tier)
+  group.add(box([width + oversail, .2, plinthDepth], stone, [0, .1, 0]))
+  group.add(box([width + oversail * .54, .18, plinthDepth - .25], trim, [0, .28, 0]))
+  group.add(box([width, height, bodyDepth], facade, [0, .38 + height / 2, 0]))
+  group.add(box([width + .16, .15, bodyDepth + .19], trim, [0, .42 + height, 0]))
   // The plan, declared, because the office the player is walking to was the
   // largest thing on the map that routing could not see.
   //
@@ -1590,17 +1659,17 @@ function createLevelBuilding(point: MapSceneTier, definition: ArcDefinition) {
   // The plinth, on `createCourthouse`'s precedent: it is the widest course and
   // it is the one at ankle height, so it is what a walker on the pavement
   // actually meets.
-  markSolidBox(group, (width + .65) / 2, 1.275)
-  group.userData.footprintRadius = (width + .65) / 2
+  markSolidBox(group, tierPlinthHalf(tier), tierPlinthHalfDepth(tier))
+  group.userData.footprintRadius = tierPlinthHalf(tier)
 
   const columns = Math.max(3, Math.min(6, floors))
   for (let floor = 0; floor < floors; floor += 1) {
     const band = windowBand(width - .38, columns, .72 + floor * floorHeight, .89, current || ((floor + tier) % 3 === 0))
     group.add(band)
-    if (floor > 0 && isOldQuarter) group.add(box([width + .03, .055, 1.82], trim, [0, .48 + floor * floorHeight, 0]))
+    if (floor > 0 && isOldQuarter) group.add(box([width + .03, .055, bodyDepth + .07], trim, [0, .48 + floor * floorHeight, 0]))
   }
 
-  const entrance = box([.58, .95, .09], dark, [0, .84, .91])
+  const entrance = box([.58, .95, .09], dark, [0, .84, bodyDepth / 2 + .04])
   group.add(entrance)
   if (tier >= 5) {
     for (const x of [-width * .34, width * .34]) group.add(cylinder(.1, 1.25, trim, [x, 1.02, 1.02], 12))
@@ -1620,10 +1689,11 @@ function createLevelBuilding(point: MapSceneTier, definition: ArcDefinition) {
 
   if (point.state === 'locked') {
     const scaffold = material(0x6d6658, .9)
+    const face = bodyDepth / 2 + .23
     for (const x of [-width / 2 - .25, width / 2 + .25]) {
-      group.add(box([.07, height + .8, .07], scaffold, [x, (height + .8) / 2, 1.08]))
+      group.add(box([.07, height + .8, .07], scaffold, [x, (height + .8) / 2, face]))
     }
-    for (let y = .8; y < height + .6; y += .8) group.add(box([width + .65, .055, .055], scaffold, [0, y, 1.08]))
+    for (let y = .8; y < height + .6; y += .8) group.add(box([width + .5, .055, .055], scaffold, [0, y, face]))
   }
   setSelectable(group, { key: point.key, kind: 'tier', locked: point.state === 'locked' })
   return { group, height }
@@ -8197,7 +8267,7 @@ export function MapThreeScene({
       // The same call the reservation above was built from, so the parcel the
       // streets were kept off is the parcel this asks for. See
       // `authoredParcelReserve`.
-      const { asked, roadPoint, side, tangent } = tierParcelSite(region, routeCurve, index, tiers.length)
+      const { asked, roadPoint, side, tangent } = tierParcelSite(region, routeCurve, index, tiers.length, tierPlinthHalfDepth(point.data.tier), tierPlinthHalf(point.data.tier))
       /*
        * The setback the table asks for is a request, not an instruction: it is
        * the distance at which a headquarters *would* front this stretch of
@@ -8214,10 +8284,11 @@ export function MapThreeScene({
        */
       const frontage = Math.atan2(roadPoint.x - asked.x, roadPoint.z - asked.z)
       const plinthHalf = tierPlinthHalf(point.data.tier)
+      const plinthDepth = tierPlinthHalfDepth(point.data.tier)
       const planned = recordSiting(
         world,
         `tier-${point.key}`,
-        siteOnPlan(planGround, asked.x, asked.z, plinthHalf, 1.275, frontage, {
+        siteOnPlan(planGround, asked.x, asked.z, plinthHalf, plinthDepth, frontage, {
           // The setback's own direction: a deeper forecourt on the same street
           // is a cheap correction, a slide up the road is an expensive one, and
           // moving towards the route is bounded by the carriageway itself,
@@ -8230,7 +8301,7 @@ export function MapThreeScene({
         }),
       )
       const site = new THREE.Vector3(planned.x, asked.y, planned.z)
-      authoredFootprints.push(footprintCorridor(site.x, site.z, plinthHalf, 1.275, frontage, 'tier'))
+      authoredFootprints.push(footprintCorridor(site.x, site.z, plinthHalf, plinthDepth, frontage, 'tier'))
       const parcelRadius = region === 'orbit' ? 2.5 : region === 'ocean' ? 2.2 : 2.05
       // Both the ground the plan gave it and the ground the table asked for.
       // The district reserved the asked-for parcel before it laid a street and
