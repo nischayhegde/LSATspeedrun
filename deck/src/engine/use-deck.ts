@@ -325,12 +325,27 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
   }, [goto, slides])
 
   // --- the presenter clock -------------------------------------------------
+  //
+  // Only while somebody is looking at it. `elapsed` has exactly one reader, the
+  // presenter overlay, and it is a piece of *state on the root component* — so
+  // running the interval unconditionally re-rendered the entire deck once a
+  // second for the length of the talk: both slide layers, every figure, the
+  // demo stage, the app-scene layer and twenty-four progress ticks, to move a
+  // number nobody had asked to see. React bails out of nothing here, because
+  // the layers are rebuilt inline in `deck.tsx` rather than memoised.
+  //
+  // It is also a clock rather than an accumulator — the elapsed value is
+  // computed from `timerStart`, not counted up — so nothing is lost by not
+  // running it. Reopening the overlay reads the true time immediately, which
+  // is why the first read is taken before the interval rather than a second
+  // later.
   useEffect(() => {
-    const tick = window.setInterval(() => {
-      setElapsed(Math.floor((Date.now() - timerStart.current) / 1000))
-    }, 1000)
+    if (!presenterOpen) return
+    const read = () => setElapsed(Math.floor((Date.now() - timerStart.current) / 1000))
+    read()
+    const tick = window.setInterval(read, 1000)
     return () => window.clearInterval(tick)
-  }, [])
+  }, [presenterOpen])
 
   // --- the URL on first load ----------------------------------------------
   useEffect(() => {
