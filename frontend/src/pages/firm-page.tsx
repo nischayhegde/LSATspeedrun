@@ -109,6 +109,19 @@ function ClientShape({ client }: { client: GameClient }) {
    the card names them and marks the ones already signed. Three chips is also
    the shortest honest answer to "what does this actually get me", which the
    payout clause beside it cannot give. */
+/* The clause the chips below are about to say properly.
+   A network's server-side `benefit` reads "+2% case payout · Counsel opens in
+   2 districts", and directly under it the card now lists those two districts by
+   name and ticks the signed ones. Printing the count twice, once as a number
+   and once as the thing itself, makes the pill look like it is describing a
+   second effect. What is kept is the payout clause, which the chips cannot say.
+   Left alone when there are no chips to replace it. */
+function benefitWithoutDistrictCount(benefit: string, hasChips: boolean) {
+  if (!hasChips) return benefit
+  const kept = benefit.split(' · ').filter((clause) => !/counsel opens in/i.test(clause))
+  return kept.length ? kept.join(' · ') : benefit
+}
+
 function ConnectionDistricts({ asset }: { asset: GameAsset }) {
   const districts = asset.districts ?? []
   if (!districts.length) return null
@@ -524,27 +537,41 @@ export function FirmPage() {
             <article key={item.key} id={`asset-${item.key}`} tabIndex={-1} className={`management-card asset-card asset-card-${item.type} ${item.owned ? 'owned' : ''} ${!item.available && !item.owned ? 'locked' : ''} ${justBought === item.key ? 'just-bought' : ''}`}>
               <PixelAssetArtwork asset={item} />
               <div className="card-status">{item.owned ? <><Check size={13} /> OWNED</> : item.available ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
-              <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{item.benefit}</span></div>
+              <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{benefitWithoutDistrictCount(item.benefit, item.type === 'connection' && Boolean(item.districts?.length))}</span></div>
               {item.type === 'connection' && <ConnectionDistricts asset={item} />}
               <RequirementLine asset={item} game={game} />
               {/* Locked is named before cost, because an unmet requirement is the
                   blocker that earning more cannot clear. Leaving it out labelled a
                   disabled button 'Purchase', which reads as an unresponsive click. */}
               <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : !item.available ? 'Locked' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
-              {/* A connection's whole effect is the counsel board it opens, and
-                  that board is on the map. Same hand-off the rivals tab already
-                  makes, so owning one is something you can go and look at. */}
-              {item.type === 'connection' && <button type="button" className="asset-locate" onClick={() => navigate(`/map?connection=${item.key}`)}>Show on the map</button>}
-              {/* Every asset class that changes the room now has a route to its
-                  own payoff, not just decor: you could buy a rug and never be
-                  sent to look at it, and you could hire five people and buy
-                  eleven workstations and never be sent to look at those either.
-                  Where the manifest knows the spot, the button says the spot —
-                  a forty-object room needs the address, not the postcode. */}
-              {item.owned && (item.type === 'cosmetic' || officeDestination(item)) && (
-                <button type="button" className="asset-locate" onClick={() => navigate('/office')}>
-                  See it in the office{officeDestination(item) && <em> · {officeDestination(item)}</em>}
-                </button>
+              {/* Where to go and look at what you bought.
+                  Every asset class that changes the room now has one, not just
+                  decor: you could buy a rug and never be sent to look at it,
+                  and you could hire five people and buy eleven workstations and
+                  never be sent to look at those either. Where the manifest
+                  knows the spot, the button says the spot — a room with forty
+                  objects in it needs the address, not the postcode.
+                  A connection has two places, because it is a crest on the wall
+                  and a board on the map, and they sit side by side rather than
+                  stacked: two full-width buttons at the foot of a card read as
+                  a form, and the card already ends in a purchase row. */}
+              {(item.type === 'connection' || (item.owned && (item.type === 'cosmetic' || officeDestination(item)))) && (
+                <div className={`asset-handoffs${item.type === 'connection' && item.owned ? ' is-pair' : ''}`}>
+                  {item.type === 'connection' && (
+                    <button type="button" className="asset-locate" onClick={() => navigate(`/map?connection=${item.key}`)}>
+                      Show on the map
+                    </button>
+                  )}
+                  {item.owned && (item.type === 'cosmetic' || officeDestination(item)) && (
+                    <button type="button" className="asset-locate" onClick={() => navigate('/office')}>
+                      {/* The place is dropped when the pair is on one row. Every
+                          connection hangs on the same relationship wall, so on
+                          this tab the suffix is the same eleven characters on
+                          every card and it costs the button a second line. */}
+                      See it in the office{item.type !== 'connection' && officeDestination(item) && <em> · {officeDestination(item)}</em>}
+                    </button>
+                  )}
+                </div>
               )}
               {/* A stamp on the deed rather than a curtain over it. The old
                   confirmation covered the whole card for its whole life, so

@@ -314,9 +314,16 @@
 /* A connection's effect is a retainer board on the map, so the card offers the
    same hand-off the rivals tab does. Quiet, under the price row: it is a place
    to go and look, not the purchase. */
+/* One row, so a connection's two destinations sit beside each other. Stacked,
+   they read as a form at the foot of a card that already ends in a purchase
+   row; the pair only splits back onto two lines when the column is too narrow
+   to hold both labels. */
+.asset-handoffs { display: grid; gap: 7px; }
+.asset-handoffs.is-pair { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
 /* 40px tall, not 34: it is the last control on a card, it is now on four of the
    six tabs rather than one, and a thumb is 40. */
 .asset-locate { width: 100%; min-height: 40px; margin-top: 9px; padding: 8px 12px; cursor: pointer; font: inherit; font-size: .82rem; color: #55606b; border: 1px solid #d8cfc1; border-radius: 9px; background: #fffdf8; }
+.asset-handoffs.is-pair .asset-locate { padding-inline: 8px; }
 .asset-locate:hover { color: var(--ink); border-color: #bfb4a3; }
 /* The place, in the same line and a lighter ink, so the control still reads as
    one sentence rather than a button with a caption. */
