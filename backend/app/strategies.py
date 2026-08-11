@@ -374,10 +374,16 @@ def is_comparative(question: Question) -> bool:
 # has to be *proved* by the stimulus, which is what makes quantifier and force
 # discipline pay.
 _TASK_INFERENCE = re.compile(
-    r"\bmust (?:also )?be true\b|\bmust be false\b|\bcannot be true\b"
+    # "Must on the basis of them also be true" is the same question as "must
+    # also be true", with the basis spelled out in the middle.
+    r"\bmust\b[^.?]{0,40}\bbe true\b|\bmust be false\b|\bcannot be true\b"
     r"|\bproperly (?:be )?(?:inferred|drawn|concluded)\b|\bfollows? logically\b"
-    r"|\bcan be (?:properly )?inferred\b|\bcan(?:not)? be inferred\b|\binferred from\b"
-    r"|\blogically (?:concluded|inferred)\b"
+    r"|\bcan (?:be )?(?:most )?(?:reasonably |properly )?(?:inferred|concluded|deduced|expected)\b"
+    r"|\bcannot be inferred\b|\binferred from\b|\blogically (?:concluded|inferred)\b"
+    # Squaring an answer with what the stimulus says, in either direction. The
+    # copula is required: "explains the discovery in a way most consistent with
+    # the hypothesis" is an explain question that happens to use the word.
+    r"|\b(?:is|are|would be) (?:in)?consistent with\b|\bconflicts? with\b|\breason for accepting\b"
     r"|\bproper inference\b|\b(?:logically|best) completes\b"
 )
 # "Support" points both ways, and which way it points is the difference between
@@ -431,6 +437,7 @@ _TASK_WEAKEN = re.compile(
     # "by" — "the pilot counters the conservationist by" wants the technique
     # named, which is a method question and is claimed as one just below.
     r"|\bcounters?\b(?![^.?]*\bby\s*$)"
+    r"|\b(?:strongest|most serious|best|gravest) objection\b|\breconsider\w*\b"
 )
 _TASK_EXPLAIN = re.compile(
     r"\bexplain\w*\b|\bexplanation\b|\bresolv\w+\b|\breconcil\w+\b|\bparadox\w*\b"
@@ -454,9 +461,12 @@ _TASK_ROLE = re.compile(
     # commonest phrasings of exactly this question.
     r"\broles?\b|\bfigures? in\b|\bmethods?\b|\btechniques?\b|\bstrateg\w+\b"
     r"|\bargument proceeds\b|\bproceeds by\b|\bresponds? to\b|\bresponse to\b"
-    # "Debbie attempts to counter Carl's argument by": the answer names the
-    # move, so this is the same question as "responds to ... by".
-    r"|\bcounters?\b(?=[^.?]*\bby\s*$)"
+    # A stem that trails off in "by" wants the move named, which is this
+    # question whichever verb it used: "Debbie attempts to counter Carl's
+    # argument by", "Maria objects to Pedro's argument by".
+    r"|\b(?:counters?|objects?|replies|repl(?:y|ies)|answers?|rebuts?|attacks?)\b(?=[^.?]*\bby\s*$)"
+    # And the shapes that ask what somebody did without naming a verb at all.
+    r"|\bdoes which one of the following\b|\bin advancing\b"
     r"|\bin which one of the following ways\b|\bfunction of\b|\bpart of the argument\b"
 )
 _TASK_MAIN_CONCLUSION = re.compile(
@@ -496,7 +506,15 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
     # it is taught and how the credited answers behave — the sufficient version
     # of the question always says so ("if assumed", "allows the conclusion"),
     # and that phrasing is held apart just below.
-    r"|\bassumes which\b|\bis assumed (?:in|by) the\b|\bmust make which\b"
+    r"|\bassumes which\b|\bis assumed (?:in|by) the\b"
+    # Spelled out, because "makes which one of the following errors of
+    # reasoning" is the same shape and is a flaw question.
+    # The repeated "of the" is not a typo here: one stem in the bank reads
+    # "must make which of the of the following assumptions".
+    r"|\b(?:must )?makes? which (?:one )?(?:of the )+following assumptions?\b"
+    # "Anson bases his conclusion about Dr. Ladlow on which one of the
+    # following?" — the answer is the premise the argument needs.
+    r"|\bbases? (?:his|her|its|their|the) conclusion\b[^?]{0,40}\bon which\b"
 )
 # Sufficient assumption, held apart on purpose. "Which one of the following, if
 # assumed, allows the conclusion to be properly drawn" is a different question,

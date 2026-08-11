@@ -555,6 +555,61 @@ def test_an_error_in_the_reasoning_is_a_flaw_question(stem):
     assert "flaw_abstraction" in _candidate_keys(lr(stem))
 
 
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        # "Makes which one of the following assumptions" is a necessary
+        # assumption question. "Makes which one of the following errors of
+        # reasoning" is the same shape and is a flaw question, which is why the
+        # noun is spelled out rather than matched loosely.
+        ("The argument above makes which one of the following assumptions?", True),
+        ("For the argument to be logically correct, it must make which one of the following assumptions?", True),
+        ("Anson bases his conclusion about Dr. Ladlow on which one of the following?", True),
+        ("The argument makes which one of the following errors of reasoning?", False),
+        ("The reviewer makes which one of the following criticisms of a claim in the book?", False),
+    ],
+)
+def test_what_an_argument_makes_is_not_always_an_assumption(stem, expected):
+    keys = _candidate_keys(lr(stem))
+    assert ("negation_test" in keys) is expected
+    if not expected:
+        assert "flaw_abstraction" in keys
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # What somebody did, with no verb of method in the stem at all.
+        "In the passage, the author does which one of the following?",
+        "Gregory does which one of the following in responding to Sasha's argument?",
+        "Which one of the following accurately describes something Senator Strongwood does in advancing his argument?",
+        "Maria objects to Pedro's argument by",
+    ],
+)
+def test_asking_what_somebody_did_is_a_method_question(stem):
+    assert "role_map" in _candidate_keys(lr(stem))
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("If the statements above are true, which one of the following must on the basis of them also be true?", True),
+        ("Which one of the following can be concluded from the passage?", True),
+        ("Which one of the following conflicts with information in the passage?", True),
+        ("Which one of the following statements is consistent with the biologist's claim but not the politician's?", True),
+        # An explain question that happens to use the word, which is why the
+        # copula is required.
+        (
+            "Which one of the following, if true, explains the surprising discovery in a way most "
+            "consistent with the scientists' hypothesis?",
+            False,
+        ),
+    ],
+)
+def test_squaring_an_answer_with_the_stimulus_is_an_inference_question(stem, expected):
+    assert ("scope_precision" in _candidate_keys(lr(stem))) is expected
+
+
 def test_countering_somebody_by_doing_something_is_a_method_question():
     """The one place "counters" is not an attack on the argument.
 
@@ -643,8 +698,11 @@ def test_every_question_in_the_bank_has_an_in_section_approach(bank_audit):
     assert bank_audit["comparative_passages"] == 32
     # Not a guarantee, a measurement: before the stem was read, 44.8% of the
     # bank was eligible for exactly two approaches and nothing else, so a
-    # student practising a lot met the same two generic cards constantly.
-    assert bank_audit["exactly_two_share"] < 40
+    # student practising a lot met the same two generic cards constantly. It is
+    # 31.4% now, and the residue is structural rather than a matching failure —
+    # 666 of them are strengthen, weaken and explain questions on stimuli that
+    # make no causal claim, for which the catalogue holds no third card.
+    assert bank_audit["exactly_two_share"] < 35
 
 
 def test_no_cohort_of_named_phrasings_regresses(bank_audit):
