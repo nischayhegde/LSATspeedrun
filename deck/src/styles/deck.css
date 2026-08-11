@@ -560,6 +560,19 @@
 
    Held for the whole Q&A, so it is also the frame that has to survive
    the most looking at.
+
+   ## What is bespoke here, for whoever is passing over the deck's
+   ## spacing
+
+   Four numbers, and every one of them is in `--u` or in a percentage,
+   so nothing on this slide is pinned to a 1920 projector. Against the
+   statement defaults: the column is 46% rather than 56% (the figure
+   stands at about 55% across and the copy has to finish clear of her);
+   the plate's padding is 0 rather than `3.4u 3.6u 3.6u` (there is no
+   card to pad); the rule carries `2.4u 0 1.8u` rather than `2u 0 0`
+   (it now has something under it); and `.statement-pull` sits on
+   `2.6u` of air. The type sizes are all `--t-*` tokens. If the deck's
+   rhythm moves, these should move with it rather than be defended.
    ---------------------------------------------------------------- */
 
 /* A gentler scrim than the statement default, which runs to 90% black at
@@ -603,9 +616,14 @@
 
 /* `Questions?` — the Q&A prompt, and the last thing the deck says.
    Set at headline weight but a step down in size, in gold rather than beige,
-   with air above it. It is not a fourth reason and must not read as the
-   bottom of the list; it is the sentence the founders stop talking on and
-   the room answers. */
+   with air above it. Since the close's ledger was cut it is the only thing
+   under the rule, which is the weight it wants: it is the sentence the
+   founders stop talking on and the room answers.
+
+   Not scoped to the close, because `layouts.tsx` renders it for any statement
+   slide carrying a `pull` — but the close is the only one today, and the gold
+   is picked against the close's beige-on-blue. A second one on the paper plate
+   would want `--gold-dark`. */
 .statement-pull {
   margin: calc(2.6 * var(--u)) 0 0;
   font-family: var(--font-display);
