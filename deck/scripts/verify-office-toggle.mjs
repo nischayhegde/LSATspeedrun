@@ -348,12 +348,20 @@ if (before && after) {
   }
 }
 
+// The caption used to be asserted to *carry* `officeTier=14`, on the reasoning
+// that a caption contradicting the picture below it is the deck arguing with
+// itself. It is now asserted not to carry it, for a reason that outranks the
+// first: the caption is read by the room, and this slide's whole argument is
+// that the firm was earned. A title bar reading `?officeTier=14&officeAll=1`
+// over it says the room was set with a URL. Both states caption as `/office`,
+// so nothing contradicts anything; the picture and the embed's real route
+// still have to move, and both are checked above.
 const toggled = await readSlide()
-if (toggled.caption && !/officeTier=14/.test(toggled.caption)) {
-  fail(`the frame's title bar still reads "${toggled.caption}" while the embed is on the tier-14 office. `
-    + 'That caption sits directly above the picture, so it would be the deck contradicting itself.')
+if (toggled.caption && /officeTier|officeAll/.test(toggled.caption)) {
+  fail(`the frame's title bar reads "${toggled.caption}", which shows the room the tier override. `
+    + 'See `DemoSurface.caption` — the query is meant to be dropped before it is displayed.')
 } else if (toggled.caption) {
-  ok(`the title-bar caption followed the toggle ("${toggled.caption}")`)
+  ok(`the title bar reads "${toggled.caption}" and does not show the room the override`)
 }
 await page.screenshot({ path: resolve(OUT, '2-live-tier14.png') })
 
@@ -423,10 +431,10 @@ if (stillAfter.still !== '/stills/demo-office-tier14.png') {
   ok(`${KEY} swaps the still to demo-office-tier14.png with no app running`)
 }
 if (stillAfter.present) fail('the toggle mounted a live embed on the stills path')
-if (stillAfter.caption && !/officeTier=14/.test(stillAfter.caption)) {
-  fail(`on stills the caption reads "${stillAfter.caption}" over the tier-14 picture`)
+if (stillAfter.caption && /officeTier|officeAll/.test(stillAfter.caption)) {
+  fail(`on stills the caption reads "${stillAfter.caption}", which shows the room the tier override`)
 } else if (stillAfter.caption) {
-  ok(`the caption follows the still ("${stillAfter.caption}")`)
+  ok(`on stills the caption reads "${stillAfter.caption}" and still hides the override`)
 }
 await page.screenshot({ path: resolve(OUT, '4-stills-tier14.png') })
 

@@ -171,7 +171,14 @@ async function frameOn(page, selectors, margin) {
  * because the focus-mode gate only renders for an account that has it on.
  */
 const STILLS = [
-  { key: 'case', file: 'demo-case.png', route: '/cases/{session}' },
+  // There is no `case` entry, and there is no `demo-case.png`. It was the
+  // *opening* frame of the case — partner tip up, choices not yet shown — and
+  // it stopped being anything's fallback when `demo-case-answer` moved to the
+  // driven session below. It sat in `public/` for a while afterwards, loaded by
+  // nothing and copied into every build, and the reason it survived being
+  // noticed is that this table kept writing it: an unused entry here is not
+  // inert, it is a generator that puts the orphan back on the next full run.
+  // A future cut that wants the opening frame adds one line.
   {
     key: 'case-answered',
     file: 'demo-case-answered.png',
@@ -278,7 +285,9 @@ const STILLS = [
   { key: 'office-tier0', file: 'demo-office-tier0.png', route: '/office?officeTier=0' },
   { key: 'office-tier14', file: 'demo-office-tier14.png', route: '/office?officeTier=14&officeAll=1' },
   { key: 'map', file: 'demo-map.png', route: '/map' },
-  { key: 'firm-upgrades', file: 'demo-firm-upgrades.png', route: '/firm?tab=upgrades' },
+  // `firm-upgrades` / `demo-firm-upgrades.png` was removed with `case`, above,
+  // and for the same reason: no slide has ever named it. `/firm?tab=upgrades`
+  // is the route to put back if one does.
   {
     key: 'focus-mode',
     file: 'demo-focus-mode.png',

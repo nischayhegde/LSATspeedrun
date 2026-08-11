@@ -493,14 +493,18 @@ copy is documented as a copy in [`src/app-art/PORT.md`](./src/app-art/PORT.md),
 and `diff -r public/art ../frontend/public/art` should always be silent. Run the
 `cp` after a fresh clone, and again whenever the app's catalog art changes.
 
-**`public/stills/` is tracked, deliberately, at 16 MB across 12 files.** There
-is a generator — `node scripts/recapture-stills.mjs`, ten of the twelve, keyed
-by `--only` and listed in `DEMO-NOTES.md` — but it is not a reason to ignore
-them. It reproduces the *shape* of each frame and not the state inside it: the
-captures are of a seeded account at one moment (a $6.66M treasury, a tier-4
-office with 35 staff, 922 answered), and re-seeding produces a different account,
-not those numbers. The two `scene-office-*` files are deck art and have no
-generator at all.
+**`public/stills/` is tracked, deliberately, at 12 MB across 8 files.** There is
+a generator — `node scripts/recapture-stills.mjs`, all eight, keyed by `--only`
+and listed in `DEMO-NOTES.md` — but it is not a reason to ignore them. It
+reproduces the *shape* of each frame and not the state inside it: the captures
+are of a seeded account at one moment (a $6.66M treasury, a tier-4 office with
+35 staff, 922 answered), and re-seeding produces a different account, not those
+numbers.
+
+It was 16 MB across 12 files until 2026-08-11, when four that no slide named
+were deleted. `public/` is copied into `dist/` unread, so an unreferenced still
+is not clutter, it is payload. Keep the invariant: every file here is named by a
+slide's `still:`, and `DEMO-NOTES.md` lists the whole directory.
 
 These are the fallback the whole talk leans on when a demo dies on stage, and
 they are the images the slides were composed against. Do not add them to

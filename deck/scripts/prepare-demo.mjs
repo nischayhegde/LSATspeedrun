@@ -388,7 +388,7 @@ if (!sessionId) {
     skipSeed
       ? 'Run without --skip-seed so the seeder can stage one.'
       : 'The seeder did not leave a resumable run. Read its output above; the demo\n'
-        + 'slide will fall back to deck/public/stills/demo-case.png until this is fixed.',
+        + 'slides that need a session fall back to their stills until this is fixed.',
   )
 }
 ok(`session ${sessionId} (from ${sessionSource})`)

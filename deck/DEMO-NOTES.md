@@ -358,9 +358,15 @@ still is worse than a visible failure, because it silently misleads the room.
 >   error card, a login screen, a spinner or an empty page — but that check is a
 >   list of known failures, not a proof, so the eyeball step stays.
 
+Every file in `public/stills/` is named by exactly one slide, and the table
+below is the whole directory. That is a property worth keeping rather than a
+coincidence: `public/` is copied into `dist/` verbatim, so a still no slide
+names is not merely untidy, it is downloaded by every machine that opens the
+deck. Four files failed that test and were deleted on 2026-08-11 — see
+[Four stills that were not fallbacks](#four-stills-that-were-not-fallbacks).
+
 | Still | `--only` key | Stands in for | Used by |
 | --- | --- | --- | --- |
-| `demo-case.png` | `case` | `/cases/{session}` | (unused by the current cut — the *opening* frame) |
 | `demo-case-answered.png` | `case-answered` | `{autoplay}` at rest: (C) credited, stamp down, coach's reading in shot | `demo-case-answer` — see below |
 | `demo-answer-log.png` | `answer-log` | `/progress?tab=answers`, first tile open | `demo-case-verdict-review` — see below |
 | `demo-progress.png` | `progress` | `/progress` | `demo-mega-litigation` |
@@ -368,9 +374,33 @@ still is worse than a visible failure, because it silently misleads the room.
 | `demo-office-tier0.png` | `office-tier0` | `/office?officeTier=0` | `demo-office-transformation` |
 | `demo-map.png` | `map` | `/map` | `demo-map-and-firm` |
 | `demo-focus-mode.png` | `focus-mode` | `/office` **with Focus Mode on** | `demo-focus-mode` — its only content |
-| `demo-firm-upgrades.png` | `firm-upgrades` | `/firm?tab=upgrades` | (unused by the current cut) |
 | `demo-office-tier14.png` | `office-tier14` | `/office?officeTier=14&officeAll=1` | `demo-office-transformation` — the *after* half of its toggle |
-| `scene-office-tier0.png`, `scene-office-tier14.png` | — | Deck art, not fallbacks | — |
+
+#### Four stills that were not fallbacks
+
+3.8 MB of the directory was reachable from no slide, and had been shipped in
+every build since the deck was first tracked. A deployment audit found it; this
+note is here because two of the four were documented as deliberate and were not.
+
+- **`scene-office-tier0.png`, `scene-office-tier14.png`** (2.4 MB). This table
+  used to call them "deck art, not fallbacks". They were neither. `73e9f3e`
+  committed them as byte-identical copies of `demo-office-tier0.png` and
+  `demo-office-tier14.png` — its own manifest says so — and `54d0356` then
+  recaptured the originals, leaving these two as stale duplicates of an earlier
+  capture of a still that is in use. Nothing has ever loaded them.
+- **`demo-case.png`** (810 KB). The opening frame of the case: partner tip up,
+  choices dimmed. `demo-case-answer` used to fall back to it and moved to
+  `demo-case-answered.png` when the slide became the driven one, because the
+  opening frame stops three seconds into a thirty-second story.
+  `verify-demo-continuity.mjs` still asserts the slide does not name it.
+- **`demo-firm-upgrades.png`** (533 KB). `/firm?tab=upgrades`. No slide has ever
+  named it.
+
+The last two were also entries in `recapture-stills.mjs`, which is how they
+survived being noticed: an unused row in that table is not inert, it is a
+generator that writes the orphan back on the next full run. The rows went with
+the files, and each leaves a comment naming the route to restore if a future cut
+wants the frame.
 
 ### Recapturing them
 

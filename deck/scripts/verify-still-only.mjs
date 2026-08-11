@@ -21,7 +21,7 @@
  *   cd deck && node scripts/verify-still-only.mjs
  */
 
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -103,6 +103,47 @@ async function gotoSlide(page, slide, query = '') {
     waitUntil: 'domcontentloaded', timeout: 60_000,
   })
   await page.waitForTimeout(4500)
+}
+
+// ---------------------------------------------------------------------------
+// 0. the directory matches the slides, in both directions
+// ---------------------------------------------------------------------------
+//
+// Cheap, needs no browser, and is here because the two failures it catches are
+// the two ways the panic button breaks.
+//
+// A slide naming a file that is not on disk shows the room an empty frame at
+// the moment the presenter reached for the still — the one moment there is no
+// recovery from. A file on disk that no slide names is the quieter one: it is
+// invisible, so it survives, and `public/` is copied into `dist/` unread, so
+// every machine that opens the deck downloads it. Four such files had
+// accumulated to 3.8 MB by 2026-08-11, two of them stale byte-copies of stills
+// that *are* in use and both documented in DEMO-NOTES.md as deliberate. Prose
+// did not hold the line, so this does.
+console.log('\n\u2022 public/stills matches the slides that name it')
+{
+  const source = readFileSync(resolve(DECK_DIR, 'src/slides/index.ts'), 'utf8')
+  const named = new Set([...source.matchAll(/\bstill:\s*'([^']+)'/g)].map((match) => match[1]))
+  const onDisk = new Set(readdirSync(resolve(DECK_DIR, 'public/stills')).filter((name) => /\.png$/.test(name)))
+
+  const missing = [...named].filter((file) => !onDisk.has(file))
+  const orphans = [...onDisk].filter((file) => !named.has(file))
+
+  if (missing.length) {
+    fail(`slides name ${missing.length} still(s) that are not in public/stills: ${missing.join(', ')}. `
+      + 'Pressing S on those slides shows an empty frame. Recapture them: node scripts/recapture-stills.mjs')
+  } else {
+    ok(`all ${named.size} stills named by a slide are present`)
+  }
+
+  if (orphans.length) {
+    const kb = orphans.reduce((sum, file) => sum + statSync(resolve(DECK_DIR, 'public/stills', file)).size, 0) / 1024
+    fail(`public/stills carries ${orphans.length} file(s) no slide names, ${Math.round(kb)} KB shipped in every `
+      + `build for nothing: ${orphans.join(', ')}. Delete them, and delete any row that regenerates them from `
+      + 'the STILLS table in recapture-stills.mjs, or the next full run writes them back.')
+  } else {
+    ok(`no file in public/stills is unreferenced (${onDisk.size} files, all named by a slide)`)
+  }
 }
 
 try {
