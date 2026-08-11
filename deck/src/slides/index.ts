@@ -323,7 +323,14 @@ export const SLIDES: readonly SlideSpec[] = [
       + 'the governing bodies describing their own rules, which is why this one is not arguable.',
     speaker: 'Nischay',
     budgetSeconds: 12,
-    scene: { id: 'hero', framing: 'beam' },
+    // No stage scene. This used to name the hero city at its `beam` framing,
+    // which is a night exterior, under a slide that paints an opaque beige
+    // field — so it was never once on screen. What it did instead was build and
+    // cache a second copy of the deck's heaviest scene for a slide that cannot
+    // show it, and flash a dark cityscape through the crossfade into slide 5,
+    // where the two beige layers are briefly part-transparent at the same time.
+    // The `0.22` is this slide's object and the comment above says so.
+    scene: { id: 'none', framing: 'still' },
     // The full inversion — royal blue to beige — and the only one in the first
     // half of the deck. It is an act break and it should feel like a light
     // coming on, so it gets the shutter.
@@ -1235,7 +1242,14 @@ export const SLIDES: readonly SlideSpec[] = [
     budgetSeconds: 8,
     // 2D over the blue field, no WebGL: this lands directly after a live demo and
     // the frame rate is worth protecting.
-    scene: { id: 'metrics', framing: 'panel' },
+    //
+    // That is what the line above has always said and it is right; what was
+    // written underneath it was `{ id: 'metrics', framing: 'panel' }`, which is
+    // a WebGL scene, built and rendered and post-processed every frame behind
+    // an opaque royal blue rectangle for the whole of the slide. Nobody saw it,
+    // including whoever wrote the comment. Now the declaration agrees with the
+    // intent.
+    scene: { id: 'none', framing: 'still' },
     transition: 'ink-bleed',
   },
 
@@ -1643,7 +1657,21 @@ export const SLIDES: readonly SlideSpec[] = [
       + 'never a replacement. A student who never opens the office loses nothing except the office.',
     speaker: 'Alan',
     budgetSeconds: 11,
-    scene: { id: 'tiers', framing: 'nexus' },
+    // No stage scene, and this one was doing active harm rather than merely
+    // costing frames.
+    //
+    // It named `tiers` at the `nexus` framing — the top of the ladder — behind
+    // an opaque royal blue field, so it was never seen. But it was also the
+    // only `camera` transition in the deck that *changes* the stage scene, and
+    // `transitionBlendsScene` deliberately returns `none` for `camera` on the
+    // assumption that a camera move shares its scene. The slide before this one
+    // is a demo, which paints no field at all, so the audience is genuinely
+    // looking at the stage when the swap happens: the background hard-cut from
+    // the backdrop to a night helix, unblended, in the middle of a crossfade.
+    //
+    // The ladder gets its one showing on the way into `game-by-design`, where
+    // the camera actually flies; see the `tier-fly` kernel.
+    scene: { id: 'none', framing: 'still' },
     transition: 'camera',
   },
 
