@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import type { CharacterGender, FirmTier, GameAsset } from '../types'
-import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
+import { COUNSEL_RIG_HEIGHT, buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
 import {
   blockCourtyard,
   blocksFromGrid,
@@ -1798,7 +1798,12 @@ function createBuoy(color = 0xb47b45, scale = 1) {
  * deep with a .07 bevel at each end, so it spans .41 above its own origin, and
  * the origin is sunk .22 to put the coast under the swell. The buildings that
  * stand on one are plinthed and can afford to be set at .04 and buried; a
- * person is .49 units tall at `CROWD_RENDER_SCALE` and cannot.
+ * person is under a unit tall at `CROWD_RENDER_SCALE` and cannot.
+ *
+ * That sentence used to read ".49 units tall", which was wrong and was quoted
+ * from here into two measurement harnesses before anybody measured a body:
+ * `COUNSEL_RIG_HEIGHT` is 5.558, so the figure is .77 at the shipped scale and
+ * was 1.54 before it. The conclusion is unchanged in the safe direction.
  */
 const OCEAN_LANDFORM_TOP = .34 + .07 - .22
 
@@ -7289,11 +7294,26 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
     }
   })
   root.add(rig.root)
+  /*
+   * How tall this person actually is, because everything below stands on it.
+   *
+   * The ring, the ground shadow, the presence light, the diamond and the name
+   * plate were all authored as world offsets against the figure the crowd was
+   * drawn at, and the moment that figure changed size they stopped fitting:
+   * halving the scale left a hoop wider than the counsel was tall, a shadow
+   * pooling a body's width past her feet, and a name plate floating at nearly
+   * three times her height with a gap under it. Derived from the drawn body
+   * rather than restated, so the next arm on `CROWD_RENDER_SCALE` cannot
+   * separate them again. The fractions are the shipped values over the 1.5413
+   * the .278 figure measured, so at that scale this is the same furniture to
+   * four decimals.
+   */
+  const figureHeight = COUNSEL_RIG_HEIGHT * crowdRenderScale()
   const presenceLight = new THREE.PointLight(0xffd189, 2.05, 6.5, 2)
-  presenceLight.position.set(0, 1.55, .86)
+  presenceLight.position.set(0, figureHeight * 1.005, .86)
   root.add(presenceLight)
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(.45, 40),
+    new THREE.CircleGeometry(figureHeight * .292, 40),
     new THREE.MeshBasicMaterial({ color: 0x071015, transparent: true, opacity: .32, depthWrite: false }),
   )
   shadow.rotation.x = -Math.PI / 2
@@ -7301,7 +7321,7 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   shadow.position.y = .028
   root.add(shadow)
   const beacon = new THREE.Mesh(
-    new THREE.RingGeometry(.48, .55, 56),
+    new THREE.RingGeometry(figureHeight * .311, figureHeight * .357, 56),
     new THREE.MeshBasicMaterial({ color: 0xe1bd67, transparent: true, opacity: .72, side: THREE.DoubleSide, depthWrite: false }),
   )
   beacon.rotation.x = -Math.PI / 2
@@ -7311,13 +7331,17 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   beacon.userData.lawyerBeacon = true
   root.add(beacon)
   const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xf3d082, transparent: true, opacity: .96, depthTest: false, depthWrite: false })
-  const marker = mesh(new THREE.OctahedronGeometry(.11, 0), markerMaterial, [0, 1.82, 0])
+  // The diamond and the name plate keep their authored size and only drop to
+  // meet the head: both are read as labels rather than as objects in the world,
+  // and a smaller counsel needs her marker *more*, not less.
+  const markerY = figureHeight * 1.181
+  const marker = mesh(new THREE.OctahedronGeometry(.11, 0), markerMaterial, [0, markerY, 0])
   marker.renderOrder = 52
   marker.userData.playerMarker = true
-  marker.userData.playerMarkerBaseY = 1.82
+  marker.userData.playerMarkerBaseY = markerY
   root.add(marker)
   const playerLabel = labelSprite(['YOU', playerName], 1.28, '#f0cf7c')
-  playerLabel.position.set(0, 2.12, 0)
+  playerLabel.position.set(0, figureHeight * 1.376, 0)
   playerLabel.userData.mapLabelAlways = true
   root.add(playerLabel)
   root.userData.lawyer = true

@@ -109,6 +109,24 @@ type BuildOptions = {
 export type CounselInsignia = 'none' | 'headset' | 'lanyard' | 'stole' | 'coat'
 
 /**
+ * How tall a body this file builds is, at `renderScale` 1, sole to crown.
+ *
+ * Measured rather than asserted: `tools/map-qa/yardstick.mjs` builds a rig and
+ * takes its world box, and reports 5.558 with the crown at 5.768 (the extra is
+ * hair). It varies by well under a percent with gender, tier and seed, because
+ * the stature variation the cast uses is applied by the caller as a root scale.
+ *
+ * Exported because every surface that draws this body at architectural size has
+ * to place things *around* it — a selection ring, a ground shadow, a name plate
+ * — and those offsets have to be fractions of the figure rather than constants,
+ * or the next change to a render scale silently detaches them. It is also worth
+ * having written down: the map notes claimed for months that a crowd body is
+ * ".49 units tall at `CROWD_RENDER_SCALE`", which is the height of the capsule
+ * proxy this cast replaced, and a render scale was argued about on that basis.
+ */
+export const COUNSEL_RIG_HEIGHT = 5.558
+
+/**
  * The signed-in player's wardrobe.
  *
  * Held in a module variable rather than threaded through every call site

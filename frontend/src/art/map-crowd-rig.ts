@@ -75,8 +75,32 @@ function hashUnit(seed: number) {
  * The crowd multiplies this by a per-walker height of .93-1.09, which
  * `setRenderScale` quantises back onto the same rung, so every pedestrian
  * shares one set of geometry however tall they are.
+ *
+ * ## Why .139 and not the .278 this shipped at
+ *
+ * Because a person was two storeys tall. A counsel rig is **5.558 units** from
+ * sole to crown (`tools/map-qa/yardstick.mjs`), so .278 of one is 1.54 units,
+ * and the Old Quarter's own architecture — derived from the measured facades
+ * through `createBlockBuilding`'s authoring rules — puts a storey at .795 and a
+ * doorway at .82. The figure came to **1.93 storeys and 1.87 doorways**. Halved
+ * it comes to 0.96 of a storey and 0.93 of a doorway, and a doorway is the
+ * yardstick to trust here: it is authored as `min(.82, height * .38)` for the
+ * express purpose of being a door a person walks through.
+ *
+ * Free, in the two ways that matter. `setRenderScale` quantises onto quarter
+ * rungs, and both .278 and .139 land on `.25`, so every district's mesh, batch,
+ * instance and triangle counts came back **byte-identical** across the arm —
+ * this is a transform, not a level of detail. And the pavement network is
+ * untouched: `crowd-drift.mjs` fingerprints all 804 of the Old Quarter's ways
+ * and their half widths, and the digest matches.
+ *
+ * What it costs is on-screen size: at the district's default zoom the crowd is
+ * half as tall as it was, and reverting is this constant. The stills either side
+ * are in `.maps/crowd-framed/`, and `.map-crossing-notes.md` records the
+ * containment numbers, which improve — but for the arithmetic reason that a
+ * narrower body clears more, not because the plan got better.
  */
-export const CROWD_RENDER_SCALE = .278
+export const CROWD_RENDER_SCALE = .139
 
 /**
  * The same figure, read through a development-only override.
