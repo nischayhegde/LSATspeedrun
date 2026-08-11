@@ -388,6 +388,13 @@
 .retainer-plot.is-locked { background: #182530; }
 .retainer-plot.is-locked strong { color: #a9b6b8; }
 
+/* The plot the map is looking at. Selection gold, matching the wash the scene
+   lays over the chosen district and the marked row on the map's own board, so
+   selection reads as one state across all three surfaces; green stays held and
+   the pin above stays the "show it elsewhere" affordance it is on every other
+   card in this tab. */
+.retainer-plot.is-asked-for { border-color: #e4c36e; box-shadow: 0 0 0 3px rgba(228,195,110,.22), inset 0 0 0 1px rgba(228,195,110,.3); }
+
 /* The signature. The row turns held, the seal presses on, and the three
    figures above it travel to their new values -- so what a retainer is worth
    is legible at the moment it is bought rather than in a panel somewhere. */

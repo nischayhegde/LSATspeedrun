@@ -268,7 +268,13 @@ export function FirmPage() {
         {/* Retainers are a firm interaction, so they are in the firm tab. The
             ledger leads the panel and the connection catalog that gates it
             follows, which is the order the decision is actually made in. */}
-        {tab === 'connections' && <RetainerLedger game={game} onShowOnMap={(district) => navigate(`/map?district=${district.key}`)} />}
+        {tab === 'connections' && (
+          <RetainerLedger
+            game={game}
+            highlightKey={searchParams.get('district')}
+            onShowOnMap={(district) => navigate(`/map?district=${district.key}`)}
+          />
+        )}
         <div className="catalog-toolbar">
           <div><span>CATALOG VIEW</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
           <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">

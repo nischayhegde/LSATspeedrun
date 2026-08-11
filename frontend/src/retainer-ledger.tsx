@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { MapPin, Stamp } from 'lucide-react'
 
@@ -41,16 +41,26 @@ function reliefPercent(bps: number) {
   return (bps / 100).toFixed(bps >= 1000 ? 0 : 1)
 }
 
-function DistrictPlot({ district, signing, justSigned, onSign, onShowOnMap }: {
+function DistrictPlot({ district, signing, justSigned, asked, onSign, onShowOnMap }: {
   district: TerritoryDistrict
   signing: boolean
   justSigned: boolean
+  /** The map is looking at this one. Marked in the same selection gold the
+      scene washes the chosen district with, so the two surfaces name the same
+      row in the same colour. */
+  asked: boolean
   onSign: (district: TerritoryDistrict) => void
   onShowOnMap: (district: TerritoryDistrict) => void
 }) {
   const state = district.owned ? 'held' : district.available ? 'open' : 'locked'
+  const card = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    // Eleven plots in a region, and on a phone they are a horizontal scroller,
+    // so the asked-for one is routinely off screen when the map hands it over.
+    if (asked) card.current?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  }, [asked])
   return (
-    <article className={`retainer-plot is-${state}${justSigned ? ' just-signed' : ''}`}>
+    <article ref={card} className={`retainer-plot is-${state}${justSigned ? ' just-signed' : ''}${asked ? ' is-asked-for' : ''}`}>
       <div className="retainer-plot-head">
         <strong>{district.name}</strong>
         {district.landmark_key && (
@@ -85,8 +95,12 @@ function DistrictPlot({ district, signing, justSigned, onSign, onShowOnMap }: {
   )
 }
 
-export function RetainerLedger({ game, onShowOnMap }: {
+export function RetainerLedger({ game, highlightKey, onShowOnMap }: {
   game: GameState
+  /** A district the map named on the way here, by selecting it on the ground.
+      The other half of `onShowOnMap`: that sends a row to the map, this is the
+      map sending a place back, and both land on the same marked row. */
+  highlightKey?: string | null
   onShowOnMap: (district: TerritoryDistrict) => void
 }) {
   const queryClient = useQueryClient()
@@ -102,11 +116,24 @@ export function RetainerLedger({ game, onShowOnMap }: {
      signing changes what is affordable, and re-deriving it would move the
      reader to another region between one click and the next. */
   const [regionKey, setRegionKey] = useState(() => {
+    const asked = highlightKey && territory.districts.find((district) => district.key === highlightKey)
+    if (asked) return asked.region
     const canSign = territory.districts.find((district) => district.available && district.affordable)
     if (canSign) return canSign.region
     const partial = territory.regions.find((entry) => entry.held > 0 && entry.held < entry.total)
     return partial?.key ?? territory.regions.find((entry) => entry.held > 0)?.key ?? territory.regions[0]?.key ?? ''
   })
+
+  /* The reader chooses the region above, except when the map asks for one.
+     Distinct from re-deriving the opening region, which the comment above
+     rules out: this only moves on an explicit hand-off, and only when the
+     district asked for is somewhere else. */
+  const askedRegion = highlightKey
+    ? territory.districts.find((district) => district.key === highlightKey)?.region
+    : undefined
+  useEffect(() => {
+    if (askedRegion) setRegionKey(askedRegion)
+  }, [askedRegion, highlightKey])
 
   const secure = useMutation({
     mutationFn: (districtKey: string) => api.secureDistrict(districtKey),
@@ -188,6 +215,7 @@ export function RetainerLedger({ game, onShowOnMap }: {
             district={district}
             signing={pendingKey === district.key && secure.isPending}
             justSigned={justSigned === district.key}
+            asked={district.key === highlightKey}
             onSign={sign}
             onShowOnMap={onShowOnMap}
           />

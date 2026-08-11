@@ -208,7 +208,15 @@ function tierState(tier: number, officeTier: number): MapSceneTier['state'] {
  * than the catalog retains — falls back to the scene's own description, which
  * is what this line has always shown.
  */
-function DistrictBrief({ landmark, game, chosen }: { landmark: MapLandmark; game: GameState; chosen: boolean }) {
+function DistrictBrief({ landmark, game, chosen, onOpenLedger }: {
+  landmark: MapLandmark
+  game: GameState
+  chosen: boolean
+  /** Hands this district on to the Firm tab's ledger, which arrives on the
+      region holding it with the same row marked. The reverse trip already
+      exists as the pin on a ledger row, so the pair is a round trip. */
+  onOpenLedger: (districtKey: string) => void
+}) {
   const district = game.territory.districts.find((entry) => entry.landmark_key === landmark.key)
   if (!district) return <p className="uw-district-guide-detail">{landmark.detail}</p>
   // Which network opened it, named whether or not it is held: an unheld gate
@@ -251,6 +259,9 @@ function DistrictBrief({ landmark, game, chosen }: { landmark: MapLandmark; game
         </p>
       )}
       {otherLocks.length > 0 && <p className="uw-district-brief-gate">{otherLocks.join(' · ')}</p>}
+      <button type="button" className="uw-district-brief-ledger" onClick={() => onOpenLedger(district.key)}>
+        {district.owned ? 'This retainer in the ledger' : 'Sign it in the ledger'} <i aria-hidden="true"><ChevronMark /></i>
+      </button>
     </div>
   )
 }
@@ -270,7 +281,10 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
       where is it. Lands on the region, opens the board with the row marked,
       and flies to the landmark as soon as the scene reports one. */
   focusDistrict?: string | null
-  onManage: (tab: 'upgrades' | 'rivals' | 'connections') => void
+  /** Hand-off to the Firm tab. A district key travels with it when the map has
+      one selected, so the ledger opens on that region with that row marked —
+      the return leg of the trip `focusDistrict` makes. */
+  onManage: (tab: 'upgrades' | 'rivals' | 'connections', districtKey?: string) => void
   empireValueLabel: string
 }) {
   const { play } = useSound()
@@ -388,6 +402,28 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
     [contactKey],
   )
 
+  /*
+   * The district behind whatever the player has selected on the ground, which
+   * is the join between this map and the Firm tab's retainer ledger.
+   *
+   * The two surfaces were built separately and each already knew half of it:
+   * the ledger can name a district to the map (`focusDistrict`, arriving as a
+   * marked row and a camera flight), and the scene knows which landmark is
+   * chosen. Running the landmark back through `landmark_key` gives the map the
+   * ledger's own vocabulary, so a selection made out in the world marks the
+   * same row a selection made in the ledger does. Most landmarks are places
+   * the planner laid out with no retainer over them, and those simply yield
+   * nothing to highlight.
+   */
+  const selectedPlot = selectedDistrict
+    ? game.territory.districts.find((district) => district.landmark_key === selectedDistrict.key)
+    : undefined
+  // What the player asked for last wins: arriving from the ledger names a
+  // district before anything is selected, and selecting one afterwards is a
+  // newer answer to the same question.
+  const highlightedPlotKey = selectedPlot?.key ?? focusPlot?.key ?? null
+  const openLedgerAt = (districtKey?: string | null) => onManage('connections', districtKey ?? undefined)
+
   const selected = points.find((point) => point.key === selectedKey)
   const established = game.catalog.tiers.filter((tier) => tier.tier <= game.office_tier).length
   // Empire-wide, not per-region: this is the count the page header used to
@@ -453,6 +489,10 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
   const handleLandmarkSelect = useCallback((landmark: MapLandmark) => {
     setActiveLandmark(landmark)
     setSelectedDistrict(landmark)
+    // Clicking a place in the world is a question, and the brief in the guide
+    // is the answer to it; with the rail shut the click would otherwise only
+    // light the ground and say nothing about what holding it is worth.
+    setGuideOpen(true)
     void play('select', { seed: `landmark:${landmark.key}`, intensity: .4 })
   }, [play])
   const travelToLandmark = (landmark: MapLandmark) => {
@@ -635,8 +675,8 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
               regionKey={activeRegionKey}
               regionName={activeRegion.name}
               onTravel={(key) => { travelToLandmarkKey(key); setMobileControlsOpen(false) }}
-              onOpenLedger={() => onManage('connections')}
-              highlightKey={focusPlot?.key}
+              onOpenLedger={() => openLedgerAt(highlightedPlotKey)}
+              highlightKey={highlightedPlotKey}
               defaultOpen={Boolean(focusNetwork || focusPlot)}
             />
             <div className="uw-mobile-camera-actions">
@@ -749,6 +789,7 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
                       landmark={(activeLandmark ?? selectedDistrict)!}
                       game={game}
                       chosen={selectedDistrict?.key === (activeLandmark ?? selectedDistrict)!.key}
+                      onOpenLedger={openLedgerAt}
                     />
                   )}
                 </>
@@ -760,8 +801,8 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
             regionKey={activeRegionKey}
             regionName={activeRegion.name}
             onTravel={travelToLandmarkKey}
-            onOpenLedger={() => onManage('connections')}
-            highlightKey={focusPlot?.key}
+            onOpenLedger={() => openLedgerAt(highlightedPlotKey)}
+            highlightKey={highlightedPlotKey}
             defaultOpen={Boolean(focusNetwork || focusPlot)}
           />
         </div>

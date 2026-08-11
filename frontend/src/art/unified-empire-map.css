@@ -355,8 +355,16 @@
 .uw-retainer-row button:disabled { border-color: rgba(150, 161, 159, .3); color: #8b9795; background: transparent; }
 .uw-retainer-foot { margin: 0; padding: 7px 9px 9px; border-top: 1px solid rgba(220, 199, 145, .16); color: #93a59f; font-size: 9.5px; line-height: 1.45; }
 .uw-retainer-error { margin: 0; padding: 0 9px 9px; color: #e39b8f; font-size: 9.5px; }
-/* The row the Firm tab's ledger asked for, so it is findable among ten. */
-.uw-retainer-row.is-asked-for { border-left-color: #6fd0c5; background: rgba(111, 208, 197, .12); box-shadow: inset 0 0 0 1px rgba(111, 208, 197, .35); }
+/* The district being pointed at, whether the ledger named it on the way here
+   or the player picked it up off the ground. Selection gold, the same
+   `#e4c36e` the scene washes the chosen district with and the same the
+   selection ring is drawn in, because a row and a place lighting up in two
+   different colours would read as two different states. Teal stays what it is
+   everywhere else on this map: held. */
+.uw-retainer-row.is-asked-for { border-left-color: #e4c36e; background: rgba(228, 195, 110, .14); box-shadow: inset 0 0 0 1px rgba(228, 195, 110, .38); }
+/* Except when it is held as well, where the ground reads teal under a gold
+   outline and the row should say the same thing in the same order. */
+.uw-retainer-row.is-held.is-asked-for { border-left-color: #7fd0ac; }
 /* Back to the ledger, which is where the firm-wide totals this foot used to
    restate now live. */
 .uw-retainer-ledger-link { width: calc(100% - 18px); min-height: 28px; margin: 0 9px 9px; padding: 4px 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px; border: 1px solid rgba(229, 197, 117, .32); border-radius: 5px; color: #e7cf95; background: rgba(224, 195, 119, .08); font-family: var(--font-pixel); font-size: 7px; letter-spacing: .06em; }
@@ -401,3 +409,9 @@
 .uw-district-brief-terms dd { margin: 2px 0 0; color: #e7e0cc; font-family: var(--font-display); font-size: 11px; }
 .uw-district-brief-gate { margin: 0; color: #a8b3ac; font-size: 9px; line-height: 1.35; }
 .uw-district-brief-gate b { color: #d9bd77; font-weight: 400; }
+/* Not a second buy button: signing is the board's job, and this only carries
+   the place over to where the money for it is kept. */
+.uw-district-brief-ledger { min-height: 26px; padding: 4px 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px; border: 1px solid rgba(228, 195, 110, .32); border-radius: 5px; color: #e7cf95; background: rgba(228, 195, 110, .08); font-family: var(--font-pixel); font-size: 7px; letter-spacing: .06em; }
+.uw-district-brief-ledger:hover { color: #fff4d6; border-color: rgba(228, 195, 110, .6); background: rgba(228, 195, 110, .18); }
+.uw-district-brief-ledger i { display: grid; place-items: center; }
+.uw-district-brief-ledger svg { width: 11px; height: 11px; }
