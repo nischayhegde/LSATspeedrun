@@ -943,6 +943,35 @@ function renderThumbnail(asset: RenderAsset) {
   return dataUrl
 }
 
+/* Hand the frame back before the next thumbnail.
+ *
+ * The queue below is a promise chain, and a promise chain whose links are all
+ * already resolved is not a queue at all — every `.then` is a microtask, and
+ * the browser drains the whole microtask queue inside the task that scheduled
+ * it. So a scroll that brings eleven cards into view builds eleven scenes,
+ * renders eleven WebGL frames and encodes eleven WebPs back to back without
+ * ever yielding, and the page cannot paint, scroll or answer a click until the
+ * last one is done.
+ *
+ * Measured on the Firm tab's connections catalog at 1280x860, scrolling to the
+ * end of the list: two long tasks of 699ms and 1521ms, unthrottled. That is the
+ * main thread frozen for a second and a half on a desktop, and the sibling of
+ * the same defect on a phone is much worse.
+ *
+ * One real task between renders is the whole fix. `requestIdleCallback` puts
+ * each thumbnail in the gap after a frame is presented rather than in front of
+ * one, and the timeout stops a busy page from starving the queue outright —
+ * without it, a card that is on screen might never render at all. The renders
+ * themselves are untouched: same scenes, same geometry, same cache, same
+ * order, and the total work is identical. It is only spread across frames
+ * instead of stacked inside one. */
+function nextFrameGap() {
+  return new Promise<void>((resolve) => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 250 })
+    else setTimeout(resolve, 0)
+  })
+}
+
 function requestThumbnail(asset: RenderAsset) {
   const cacheKey = `catalog-3d-v3:${asset.type}:${asset.key}:${asset.tier}`
   const cached = renderCache.get(cacheKey)
@@ -951,6 +980,7 @@ function requestThumbnail(asset: RenderAsset) {
   if (pending) return pending
   const task = renderQueue
     .catch(() => undefined)
+    .then(() => nextFrameGap())
     .then(() => renderThumbnail(asset))
     .then((dataUrl) => {
       renderCache.set(cacheKey, dataUrl)
