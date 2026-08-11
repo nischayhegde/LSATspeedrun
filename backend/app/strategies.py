@@ -376,15 +376,17 @@ def is_comparative(question: Question) -> bool:
 _TASK_INFERENCE = re.compile(
     # "Must on the basis of them also be true" is the same question as "must
     # also be true", with the basis spelled out in the middle.
-    r"\bmust\b[^.?]{0,40}\bbe true\b|\bmust be false\b|\bcannot be true\b"
+    r"\bmust\b[^.?]{0,40}\bbe true\b|\bmust be false\b|\bcannot be (?:true|which)\b"
+    r"|\bmust also\b|\bcompatible with\b|\bconsequence of\b"
     r"|\bproperly (?:be )?(?:inferred|drawn|concluded)\b|\bvalidly (?:be )?(?:inferred|drawn|concluded)\b"
     # Either order: "follows logically" and "logically follows" are the same
     # question, and the adverb-last version was the only one being read.
     r"|\bfollows? logically\b|\blogically follows?\b"
     # "Can most reasonably be concluded" puts three words between the modal and
     # the verb, in an order the fixed slots could not take.
-    r"|\bcan(?:not)?\b[^.?]{0,30}\b(?:inferred|concluded|deduced|expected)\b"
+    r"|\bcan(?:not)?\b[^.?]{0,30}\b(?:infer|inferred|conclude|concluded|deduce|deduced|expected|drawn)\b"
     r"|\binferred from\b|\blogically (?:concluded|inferred)\b|\bstrictly implied\b"
+    r"|\binference\b[^.?]{0,25}\b(?:drawn|made)\b"
     # Squaring an answer with what the stimulus says, in either direction. The
     # copula is required: "explains the discovery in a way most consistent with
     # the hypothesis" is an explain question that happens to use the word.
@@ -415,7 +417,11 @@ _SUPPORT_PASSIVE = re.compile(r"\bsupported\b")
 # representative's position" are the same words in the same order, and only
 # word order says that the first is asking what the stimulus proves while the
 # second is asking what would help an argument.
-_SUPPORT_ACTIVE = re.compile(r"\bsupports?\b|\bsupport (?:for|to)\b")
+# "Evidence for" runs the same way and is decided the same way: "the
+# observations above provide most evidence for the conclusion that" is an
+# inference stem, and "which one of the following provides the strongest
+# evidence for the conclusion" is a strengthen stem.
+_SUPPORT_ACTIVE = re.compile(r"\bsupports?\b|\bsupport (?:for|to)\b|\bevidence for\b")
 # The answer choices, as the subject of a sentence. The lookbehinds keep out
 # the prepositional uses — "in which one of the following instances does the
 # lease support" is not the choices doing the supporting.
@@ -431,7 +437,20 @@ _TASK_PRINCIPLE = re.compile(
     r"\bprinciples?\b|\bpropositions?\b|\bgeneraliz\w+\b"
     # "Conforms most closely to" is the commonest form and the adjacent-words
     # version could not read it.
-    r"|\bbest illustrat\w+\b|\billustrated by\b|\bconform\w*\b[^.?]{0,20}\bto\b"
+    r"|\billustrat\w+\b|\bconform\w*\b[^.?]{0,20}\bto\b"
+    # A standard set out in the stimulus and applied to cases: "an example of
+    # efficiency as described above", "the most advanced kind of moral
+    # motivation, as described by the ethicist". Attributed or named as an
+    # example, because a bare "as described above" is how a great many stems
+    # point back at the stimulus without setting out any standard at all.
+    r"|\bas described by\b|\bis an example of\b"
+    # A rule invoked to settle a case, in either order: "which university
+    # policies most justifies the decision", "justifies the above application of
+    # the policy". Paired with the verb, because "the difference in fuel
+    # requirements" names a quantity.
+    r"|\b(?:polic(?:y|ies)|regulations?|guidelines?|codes?)\b[^.?]{0,30}"
+    r"\b(?:justif\w+|appl\w+|permits?|prohibits?|requires?|allows?)\b"
+    r"|\b(?:justif\w+|appl\w+)\b[^.?]{0,30}\b(?:polic(?:y|ies)|regulations?|guidelines?|codes?)\b"
     # Applying a stated rule to cases, which is the same work under another
     # name: which situation breaks the regulation, which applicant fails the
     # requirement. The rule has to be paired with a verb of conformance, because
@@ -444,6 +463,7 @@ _TASK_PARALLEL = re.compile(
     r"\bparallel\w*\b|\bmost (?:closely )?similar\b|\bsimilar to (?:that|the)\b"
     r"|\breasoning (?:above |in the argument )?is most\b|\bflawed in a way most similar\b"
     r"|\bmost (?:closely )?resembles\b|\banalog(?:y|ies|ous)\b"
+    r"|\bmost appropriate (?:for|in) which\b"
 )
 _TASK_STRENGTHEN = re.compile(
     r"\bstrengthens?\b|\bstrengthening\b|\bjustif\w+\b|\bmost helps? to (?:support|justify)\b"
@@ -451,6 +471,9 @@ _TASK_STRENGTHEN = re.compile(
     # Both are strengthen questions wearing other vocabulary.
     r"|\b(?:strongest|best|most convincing) (?:evidence|defense)\b"
     r"|\bbest evidence (?:that|for|of)\b|\bevidence \w+ would (?:strongly )?favor\b"
+    # Arguing for something, and defending it. The against-facing mirrors are
+    # weaken and are read there.
+    r"|\bargues?\b[^.?]{0,25}\b(?:for|in favor of)\b|\bin favor of\b|\bdefense of\b"
 )
 _TASK_WEAKEN = re.compile(
     # "Calls the conclusion above into question" and "would be most seriously
@@ -465,18 +488,28 @@ _TASK_WEAKEN = re.compile(
     # Countering something is weakening it, except where the stem trails off in
     # "by" — "the pilot counters the conservationist by" wants the technique
     # named, which is a method question and is claimed as one just below.
-    r"|\bcounters?\b(?![^.?]*\bby\s*$)"
+    r"|\bcounter(?:s|ing)?\b(?![^.?]*\bby\s*$)"
     r"|\b(?:strongest|most serious|best|gravest) objection\b|\breconsider\w*\b"
-    # Arguing or evidencing against something, and rejecting it. The mirror
-    # phrasings ("argues most strongly for") are strengthen and are not read
-    # here, so the direction has to be named rather than assumed.
-    r"|\bargues?\b[^.?]{0,25}\bagainst\b|\bevidence against\b"
+    # Arguing or evidencing against something, and rejecting or refuting it. The
+    # mirror phrasings ("argues most strongly for") are strengthen and are read
+    # there, so the direction has to be named rather than assumed.
+    r"|\bargues?\b[^.?]{0,25}\bagainst\b|\bevidence against\b|\brefut\w+\b"
     r"|\b(?:reason|reasons|basis|grounds)\b[^.?]{0,20}\brejecting\b"
-    r"|\blimits? the effectiveness\b"
+    r"|\blimits? the effectiveness\b|\bineffective\b|\bnot be effective\b"
+    # A stem that says the answer shows something falling short is a weaken
+    # stem: "most strongly indicates that the theory is at least incomplete",
+    # "indicates that the precaution might not have the result".
+    r"|\bindicat\w+\b[^.?]{0,80}\b(?:not|never|incomplete|inaccurate|unreliable|fails?)\b"
 )
 _TASK_EXPLAIN = re.compile(
-    r"\bexplain\w*\b|\bexplanation\b|\bresolv\w+\b|\breconcil\w+\b|\bparadox\w*\b"
+    # "Resolution" as well as "resolve": the stem that asks for "a resolution to
+    # the apparent inconsistency" is the plainest form of this question and the
+    # verb-only pattern could not read the noun.
+    r"\bexplain\w*\b|\bexplanation\b|\bresol(?:v\w+|ution)\b|\breconcil\w+\b|\bparadox\w*\b"
     r"|\bdiscrepanc\w+\b|\baccounts? for\b|\bapparent conflict\b|\bsurprising\b"
+    # The noun only. "A view that is inconsistent with the principle stated in
+    # the editorial" is not a question about reconciling two facts.
+    r"|\binconsistenc\w+\b|\bboth be (?:correct|true)\b"
 )
 _TASK_EVALUATE = re.compile(
     r"\bevaluat\w+\b|\bmost (?:useful|helpful|important) (?:to|in|for) "
@@ -491,7 +524,11 @@ _TASK_EVALUATE = re.compile(
 # them actually said.
 _TASK_POINT_AT_ISSUE = re.compile(
     r"\bdisagree\w*\b|\bagree with each other\b|\bpoint at issue\b|\bat issue\b"
-    r"|\bcommitted to (?:disagreeing|agreeing)\b|\bin dispute\b|\bdispute between\b"
+    # "In dispute" and "the dispute", not any inflection: "the traditional
+    # attribution of a disputed painting" is subject matter, not a disagreement
+    # between two speakers.
+    r"|\bcommitted to (?:disagreeing|agreeing)\b|\b(?:in|the) dispute\b|\bdispute between\b"
+    r"|\bissue between\b"
     r"|\bviews? differ\b|\bdiffers? (?:on|about|over) whether\b"
 )
 _TASK_EXCEPT = re.compile(r"\bexcept\b")
@@ -504,10 +541,15 @@ _TASK_ROLE = re.compile(
     # A stem that trails off in "by" wants the move named, which is this
     # question whichever verb it used: "Debbie attempts to counter Carl's
     # argument by", "Maria objects to Pedro's argument by".
-    r"|\b(?:counters?|objects?|repl(?:y|ies)|answers?|rebuts?|attacks?|argues?|derives?)\b"
+    r"|\b(?:counters?|objects?|repl(?:y|ies)|answers?|rebuts?|attacks?|argues?|derives?|advances?)\b"
     r"(?=[^.?]*\bby\s*$)"
     # And the shapes that ask what somebody did without naming a verb at all.
-    r"|\bdoes which one of the following\b|\bin advancing\b"
+    r"|\bdoes which one of the following\b|\bin advancing\b|^in responding to\b"
+    # "Mentions" and "mentioning", but not "mentioned": the gerund is the thing
+    # being asked about, while "the increase mentioned above" is only a pointer
+    # back to the stimulus.
+    r"|\bseeks to do\b|\bas an objection to\b|\butiliz\w+\b|\bmention(?:s|ing)\b"
+    r"|\bis used to\s*$"
     r"|\bin which one of the following ways\b|\bpart of the argument\b"
     # What a named statement is doing where it sits. "Serves which one of the
     # following functions in the argument" and "functions primarily in the
@@ -519,7 +561,7 @@ _TASK_ROLE = re.compile(
     r"|\boffered in\b[^.?]{0,25}\bargument\b"
     # How one statement stands to another, which is this question asked about a
     # pair: "how is Judy's response related to John's argument".
-    r"|\brelationship (?:of|between)\b|\bis related to\b"
+    r"|\brelationship (?:of|between)\b|\brelated to\b[^.?]{0,30}\bargument\b"
 )
 # One speaker answering another, which is nearly always a question about how the
 # answer was made: "Smith responds to Jones by", "characterizes David's response
@@ -552,7 +594,11 @@ _TASK_MAIN_CONCLUSION = re.compile(
 _TASK_FLAW = re.compile(
     # "An error in reasoning" and "an error in the author's reasoning" are the
     # same question, and only the first had the two words adjacent.
+    # Either order: "an error in the author's reasoning" and "the senator's
+    # reasoning contains which one of the following errors" are the same
+    # question.
     r"\bflaw\w*\b|\bvulnerable to\b|\berrors? (?:of|in)\b[^.?]{0,25}\breasoning\b|\breasoning errors?\b"
+    r"|\breasoning\b[^.?]{0,40}\berrors?\b"
     r"|\bidentifies a problem\b|\bproblem with (?:the|his|her|their)\b"
     r"|\bquestionable\b|\bweakness\b|\bcriticiz\w+\b|\bcriticism\w*\b|\bfallac\w+\b"
     r"|\bfails? to (?:consider|establish|address|rule out|take into account|account for)\b"
@@ -565,7 +611,11 @@ _TASK_FLAW = re.compile(
     # "the inference drawn above is unwarranted".
     r"|\bin error\b|\bfaulty\b|\bunwarranted\b|\bincorrectly (?:drawn|concluded|inferred)\b"
     r"|\bmistake in\b|\bmisleading\b|\binadequate\b|\bignores? the possibility\b"
-    r"|\boverlooks?\b|\bambiguity\b|\bequivocat\w+\b|\bmisinterpret\w+\b"
+    r"|\boverlooks?\b|\bambiguity\b|\bequivocat\w+\b|\bmisinterpret\w+\b|\bfalls? short\b"
+    # What one speaker took another to mean. The credited answer is the reading
+    # that went wrong, which is this approach's work: name the misstep, then
+    # find the choice that commits it.
+    r"|\binterpret\w+\b[^.?]{0,40}\bto (?:mean|imply|be)\b"
 )
 
 # The necessary-assumption family. Two shapes: an assumption named alongside a
@@ -588,7 +638,7 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
     # of the question always says so ("if assumed", "allows the conclusion"),
     # and that phrasing is held apart just below.
     r"|\bassumes which\b|\bassumes that\b|\bis assumed (?:in|by) the\b"
-    r"|\bassumptions? (?:made )?(?:in|of|by) (?:the|this|his|her|their)\b"
+    r"|\bassumptions? (?:made )?(?:in|of|by) (?:the|this|his|her|their|\w+'s)\b"
     r"|\bassumptions? would have to be made\b"
     # "Makes which one of the following assumptions", with the noun spelled out
     # because "makes which one of the following errors of reasoning" is the same
@@ -603,6 +653,10 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
     # assumption that".
     r"|\bassumptions?\b[^.?]{0,30}\bmakes?\b|\bmakes? (?:the|an) assumption\b"
     r"|\bwould have to be assumed\b|\bmust\b[^.?]{0,30}\bassume\b"
+    # "Unless which one of the following is true" and "would not follow if the"
+    # both name what the argument cannot do without, which is what the negation
+    # test is for.
+    r"|\bunless which one of the following\b|\bwould not follow if\b"
 )
 # Sufficient assumption, held apart on purpose. "Which one of the following, if
 # assumed, allows the conclusion to be properly drawn" is a different question,
