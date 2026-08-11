@@ -32,12 +32,20 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => {
 const THROTTLE = Number(args.throttle ?? 4)
 const SAMPLE_MS = Number(args.ms ?? 4000)
 
-/** Every HUD surface on the map that composites against the scene. */
-const HUD = [
-  '.uw-scene-title', '.uw-scene-view-tabs', '.uw-map-toolbar button', '.uw-map-instructions',
-  '.uw-district-guide', '.uw-level-navigator', '.uw-location-card', '.uw-retainer-board',
-  '.uw-mobile-scene-summary', '.uw-mobile-scene-menu-toggle', '.uw-mobile-scene-menu',
-]
+/** Every HUD surface that composites against a scene canvas, by route. */
+const SCENES = {
+  '/map': [
+    '.uw-scene-title', '.uw-scene-view-tabs', '.uw-map-toolbar button', '.uw-map-instructions',
+    '.uw-district-guide', '.uw-level-navigator', '.uw-location-card', '.uw-retainer-board',
+    '.uw-mobile-scene-summary', '.uw-mobile-scene-menu-toggle', '.uw-mobile-scene-menu',
+  ],
+  '/office': [
+    '.office-view-rail', '.office-inventory-panel', '.office-mobile-brief',
+    '.office-inventory-toggle', '.office-brief-card',
+  ],
+}
+const ROUTE = args.route ?? '/map'
+const HUD = SCENES[ROUTE] ?? SCENES['/map']
 
 const SAMPLE = (ms) => `new Promise((resolve) => {
   const frames = []
@@ -97,9 +105,17 @@ const page = await context.newPage()
 const cdp = await context.newCDPSession(page)
 if (THROTTLE > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE })
 
-await page.goto(`${APP}/map`, { waitUntil: 'domcontentloaded' })
+await page.goto(`${APP}${ROUTE}`, { waitUntil: "domcontentloaded" })
 await page.waitForSelector('canvas', { timeout: 40000 })
 await page.waitForTimeout(9000)
+
+/* The office keeps its heaviest panel behind a toggle, and a blur that is not
+   on screen composites nothing. Open it, or the measurement is of the office
+   without the thing being measured. */
+if (ROUTE === '/office') {
+  const toggle = page.locator('.office-inventory-toggle').first()
+  if (await toggle.count()) { await toggle.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(1200) }
+}
 
 const present = await page.evaluate((sel) => sel.filter((s) => {
   const el = document.querySelector(s)
