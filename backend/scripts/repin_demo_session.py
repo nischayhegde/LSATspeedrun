@@ -184,7 +184,14 @@ def check(pins: dict[str, str], backend: dict) -> list[tuple[str, bool, str]]:
     run_key = pins["autoplayAnswerKey"]
     if not re.fullmatch(r"[A-E]+", run_key or ""):
         rows.append(("autoplayAnswerKey", False, f"{run_key!r} is not A-E letters"))
-    elif run is not None and len(run_key) != (run.get("total_items") or 0):
+    elif run is None:
+        # Well-formed, and there is nothing for it to be well-formed *against*.
+        # Saying "matching the run" here — which this used to — reads as a pass
+        # on the line directly under a dead session id.
+        rows.append(("autoplayAnswerKey", True,
+                     f"{len(run_key)} letters, but the run above is gone, so there is "
+                     "nothing to check them against"))
+    elif len(run_key) != (run.get("total_items") or 0):
         # A key of the wrong length is a key from a *previous* run, which is the
         # failure that answers every question wrong in front of an audience.
         rows.append(("autoplayAnswerKey", False,
