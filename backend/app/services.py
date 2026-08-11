@@ -778,20 +778,24 @@ def _passage_blocks(pool: list[QuestionFact]) -> list[list[QuestionFact]]:
 # Comprehension is budgeted at 330s for the first question on a passage against
 # 150s for a Logical Reasoning question (`_target_time_seconds`), so squeezing RC
 # out of the mix makes the average question cheaper in wall-clock time and the
-# whole campaign quietly shorter. Measured over 6,000 generated runs against the
-# real bank:
+# whole campaign quietly shorter. Reproduce the table below with
+# `scripts/measure_served_section_mix.py` at its defaults (4,000 generated runs
+# per setting against the real bank, seed 20260811):
 #
-#     target 10, no allowance (shipped)   10.00 q/run   17.7% RC   152.6 s/q
-#     target  6, no allowance              6.00 q/run    3.9% RC   150.8 s/q
-#     target  5, no allowance              5.00 q/run    1.0% RC   150.2 s/q
-#     target  6, allowance 2               6.18 q/run   15.8% RC   152.5 s/q
-#     target  5, allowance 3               5.34 q/run   18.8% RC   153.0 s/q
-#     target  6, allowance 4               6.60 q/run   26.5% RC   153.9 s/q
+#     target 10, no allowance (was)   10.00 q/run   18.2% RC   152.7 s/q   25.5 min
+#     target  6, no allowance          6.00 q/run    3.4% RC   150.7 s/q   15.1 min
+#     target  5, no allowance          5.00 q/run    0.9% RC   150.2 s/q   12.5 min
+#     target  5, allowance 3           5.32 q/run   18.0% RC   152.8 s/q   13.6 min
+#     target  6, allowance 2           6.20 q/run   16.7% RC   152.6 s/q   15.8 min
+#     target  6, allowance 4           6.59 q/run   26.5% RC   153.9 s/q   16.9 min
 #
 # Six with an allowance of two is the setting that holds the served mix, and so
-# the campaign's wall-clock length, closest to what ships: 152.5s against 152.6s,
+# the campaign's wall-clock length, closest to what ships: 152.6s against 152.7s,
 # a difference of 0.1%. It also keeps the run tight, 6 to 8 questions, where a
 # five-question target puts a 5-question run beside an 8-question one.
+#
+# And it does the thing this change exists to do: the run goes from 25.5 budgeted
+# minutes to 15.8.
 #
 # The four passages longer than eight questions (one of 9, one of 10, two of 16;
 # 51 questions, 2.2% of the RC bank) are not reachable at this target and were

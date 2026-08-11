@@ -18,8 +18,8 @@ RC passage and 135s for each follow-up on the same passage. The average over a
 run therefore depends entirely on the served mix -- which is *not* the catalog
 mix. The catalog is 66% LR and 34% RC by question count, but blocks are what get
 drawn and there are 4,520 single-question LR blocks against 349 RC blocks, so a
-shuffled draw is overwhelmingly LR. Measured, a ten-question run serves 17.7% RC,
-not 34%.
+shuffled draw is overwhelmingly LR. Measured, a ten-question run serves about
+17.8% RC, not 34%.
 
 That gap matters beyond this script: `simulate_economy_curve.py` converts played
 cases to hours at 210.5s, which is `.66 * 150 + .34 * 328` -- the *catalog* mix.
