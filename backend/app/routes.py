@@ -797,6 +797,10 @@ def active_study_sessions():
         {
             "sessions": [serialize_session(session, False) for session in sessions],
             "queue_cap": int(current_app.config["PRACTICE_QUEUE_MAX"]),
+            # The run size the Practice tab promises in its own copy. Served
+            # rather than repeated in the client, because it is configurable per
+            # deployment and because it moved once already.
+            "session_size": int(current_app.config["PRACTICE_SESSION_SIZE"]),
         }
     )
 

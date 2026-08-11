@@ -437,8 +437,9 @@ def test_daily_rewards_escalate_in_the_authored_ratio_and_track_the_tier():
             assert _daily_reward_amount(walk_in, milestone) == daily_reward_for_tier(tier, milestone)
 
     # Climbing an office is a visible raise on the daily board, every time.
+    top_goal = max(DAILY_REWARD_MULTIPLIERS)
     for tier in range(1, len(FIRM_TIERS)):
-        assert daily_reward_for_tier(tier, 20) > daily_reward_for_tier(tier - 1, 20)
+        assert daily_reward_for_tier(tier, top_goal) > daily_reward_for_tier(tier - 1, top_goal)
 
 
 def _expected_solid_case_value(client: dict) -> float:

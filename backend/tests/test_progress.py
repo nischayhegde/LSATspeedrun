@@ -895,10 +895,17 @@ def test_practice_never_serves_a_lone_reading_comprehension_question(app):
     the session's real length and corrupts the pace metrics the same session
     records, because the target times assume the first question on a passage
     pays for the reading and the rest do not.
+
+    A run may finish up to `PASSAGE_OVERSHOOT_ALLOWANCE` questions past the size
+    it was asked for, and only for this reason. Without that allowance a block
+    can never be served unless it is shorter than the whole run, which at the
+    six-question run this app now serves would put two thirds of the Reading
+    Comprehension bank permanently out of reach — see
+    `test_a_short_run_can_still_reach_the_reading_comprehension_bank`.
     """
     import random as random_module
 
-    from app.services import select_random_questions
+    from app.services import PASSAGE_OVERSHOOT_ALLOWANCE, select_random_questions
 
     with app.app_context():
         passage_sizes: dict[str, int] = defaultdict(int)
@@ -911,7 +918,10 @@ def test_practice_never_serves_a_lone_reading_comprehension_question(app):
             random_module.seed(seed)
             for requested in (4, 6, 10):
                 selected = select_random_questions(requested)
-                assert len(selected) == requested, (seed, requested)
+                assert requested <= len(selected) <= requested + PASSAGE_OVERSHOOT_ALLOWANCE, (
+                    seed,
+                    requested,
+                )
                 grouped: dict[str, int] = defaultdict(int)
                 for question in selected:
                     if question.passage_id:

@@ -18,11 +18,17 @@ from sqlalchemy.engine import Engine
 from .auth import init_auth
 from .db_secret import DatabaseSecret, attach_rotation_recovery
 from .extensions import db
+from .game import SITTING_QUESTIONS
 from .routes import api
 from .scoring import FORM_ITEMS
 from .seed import seed_questions
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
+
+# How much unfinished practice a student may have queued at once, in questions.
+# Eighty is the eight ten-question runs the queue used to allow; see
+# PRACTICE_QUEUE_MAX for why the cap converts rather than staying at eight.
+PRACTICE_QUEUE_QUESTIONS = 80
 
 
 @event.listens_for(Engine, "connect")
@@ -151,12 +157,31 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         # must be enabled explicitly and can never run in production.
         DEV_AUTH_ENABLED=dev_auth_requested and not is_production,
         AUTO_SEED=os.getenv("AUTO_SEED", auto_seed_default).lower() == "true",
-        PRACTICE_SESSION_SIZE=max(1, int(os.getenv("PRACTICE_SESSION_SIZE", "10"))),
+        # How many questions one practice run asks for. Defaulted from
+        # `game.SITTING_QUESTIONS` rather than repeated as a literal here,
+        # because the economy counts contract lengths and daily goals in
+        # sittings and the two must not be able to disagree. A run may finish
+        # slightly over this to serve a Reading Comprehension passage whole —
+        # see `services.PASSAGE_OVERSHOOT_ALLOWANCE`.
+        PRACTICE_SESSION_SIZE=max(1, int(os.getenv("PRACTICE_SESSION_SIZE", str(SITTING_QUESTIONS)))),
         # A student may keep this many practice runs (Sprint/Infinite/Method Lab/
         # Review) queued at once — paused or in progress — before another start
         # request is rejected with "queue_full". Diagnostics are unaffected;
         # they keep the single-active-run rule enforced separately.
-        PRACTICE_QUEUE_MAX=max(1, int(os.getenv("PRACTICE_QUEUE_MAX", "8"))),
+        #
+        # The cap is a limit on *queued work*, not on how many times the student
+        # has pressed start, so it is quoted in questions and converted. Eight
+        # ten-question runs was eighty questions of unfinished work; leaving the
+        # cap at eight while the run shortens would silently cut that to
+        # forty-eight and would bite precisely the student a shorter run is meant
+        # to help — the one who picks a case up often.
+        PRACTICE_QUEUE_MAX=max(
+            1,
+            int(
+                os.getenv("PRACTICE_QUEUE_MAX")
+                or round(PRACTICE_QUEUE_QUESTIONS / SITTING_QUESTIONS)
+            ),
+        ),
         # Whether choosing a suggested approach also commits the student to
         # doing it (see app/enforcement.py). On by default. This is a kill
         # switch rather than an experiment knob: enforcement changes what the

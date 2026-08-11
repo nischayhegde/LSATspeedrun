@@ -763,19 +763,69 @@ def _passage_blocks(pool: list[QuestionFact]) -> list[list[QuestionFact]]:
     return [sorted(block, key=lambda question: question.id) for block in grouped.values()]
 
 
-def _fill_blocks(blocks: list[list[QuestionFact]], budget: int, selected: list[list[QuestionFact]]) -> None:
+# How far past its target a run may run to finish a Reading Comprehension
+# passage whole.
+#
+# A block is indivisible and RC passages in this bank are 4 to 16 questions with
+# a median of 7, so a run that may never exceed its target can only ever serve a
+# passage shorter than the target. At the ten-question runs this app used to
+# serve that cost nothing visible: 98.6% of the RC bank fitted. At six it is
+# ruinous — a flat six-question run can reach 33.5% of the RC bank, and a flat
+# five-question run 8.6%. The rest of Reading Comprehension simply stops being
+# served.
+#
+# That is not only a content problem, it moves the campaign's length. Reading
+# Comprehension is budgeted at 330s for the first question on a passage against
+# 150s for a Logical Reasoning question (`_target_time_seconds`), so squeezing RC
+# out of the mix makes the average question cheaper in wall-clock time and the
+# whole campaign quietly shorter. Measured over 6,000 generated runs against the
+# real bank:
+#
+#     target 10, no allowance (shipped)   10.00 q/run   17.7% RC   152.6 s/q
+#     target  6, no allowance              6.00 q/run    3.9% RC   150.8 s/q
+#     target  5, no allowance              5.00 q/run    1.0% RC   150.2 s/q
+#     target  6, allowance 2               6.18 q/run   15.8% RC   152.5 s/q
+#     target  5, allowance 3               5.34 q/run   18.8% RC   153.0 s/q
+#     target  6, allowance 4               6.60 q/run   26.5% RC   153.9 s/q
+#
+# Six with an allowance of two is the setting that holds the served mix, and so
+# the campaign's wall-clock length, closest to what ships: 152.5s against 152.6s,
+# a difference of 0.1%. It also keeps the run tight, 6 to 8 questions, where a
+# five-question target puts a 5-question run beside an 8-question one.
+#
+# The four passages longer than eight questions (one of 9, one of 10, two of 16;
+# 51 questions, 2.2% of the RC bank) are not reachable at this target and were
+# reachable at ten. That is the price of the shorter run and it is paid
+# knowingly: a sixteen-question passage is not a six-question case under any
+# allowance that leaves the run short.
+PASSAGE_OVERSHOOT_ALLOWANCE = 2
+
+
+def _fill_blocks(
+    blocks: list[list[QuestionFact]],
+    budget: int,
+    selected: list[list[QuestionFact]],
+    *,
+    ceiling: int | None = None,
+) -> None:
     """Add whole blocks to `selected` until `budget` questions are chosen.
 
-    Never overshoots and never splits a block, so a run comes out at the
-    requested size whenever the pool contains any single-question material to
-    round it out — which, with an LR bank in the thousands, is always.
+    Never splits a block. Stops as soon as the budget is met, and never admits a
+    block that would take the run past `ceiling` — which defaults to the budget,
+    the no-overshoot rule this had before, and is raised by
+    PASSAGE_OVERSHOOT_ALLOWANCE on the practice path so a passage can be served
+    whole. A run therefore comes out at exactly the requested size whenever the
+    pool contains single-question material to round it out — which, with an LR
+    bank in the thousands, is always — or a little over it when the block that
+    reached the budget was a passage.
     """
+    limit = budget if ceiling is None else max(budget, ceiling)
     chosen = {id(block) for block in selected}
     total = sum(len(block) for block in selected)
     for block in blocks:
         if total >= budget:
             return
-        if id(block) in chosen or total + len(block) > budget:
+        if id(block) in chosen or total + len(block) > limit:
             continue
         selected.append(block)
         total += len(block)
@@ -796,23 +846,29 @@ def _weight_toward_focus(
     focus bias can never separate passage-mates. A block counts as focus
     material if any of its questions is a focus type, which is the only sensible
     reading for a passage whose questions are of several types.
+
+    Every fill shares one ceiling — `count` plus the whole-passage allowance —
+    rather than each stage carrying its own. The focus stage's budget is a share
+    of the run, but the *run* is what may not overrun, so a passage admitted to
+    satisfy the focus quota still has to fit the run it is being built for.
     """
     if count <= 0:
         return []
     blocks = _passage_blocks(pool)
     random.shuffle(blocks)
     wanted = set(focus_types or ())
+    ceiling = count + PASSAGE_OVERSHOOT_ALLOWANCE
     selected: list[list[QuestionFact]] = []
     if wanted:
         preferred = [block for block in blocks if any(question.question_type in wanted for question in block)]
         preferred_ids = {id(block) for block in preferred}
         others = [block for block in blocks if id(block) not in preferred_ids]
-        _fill_blocks(preferred, round(count * FOCUS_FILL_RATIO), selected)
-        _fill_blocks(others, count, selected)
+        _fill_blocks(preferred, round(count * FOCUS_FILL_RATIO), selected, ceiling=ceiling)
+        _fill_blocks(others, count, selected, ceiling=ceiling)
         # Not enough off-focus material to round the run out; top up from focus.
-        _fill_blocks(preferred, count, selected)
+        _fill_blocks(preferred, count, selected, ceiling=ceiling)
     else:
-        _fill_blocks(blocks, count, selected)
+        _fill_blocks(blocks, count, selected, ceiling=ceiling)
     if not selected and blocks:
         # The only material left is a passage longer than the whole run. Serving
         # it whole and slightly long beats serving a fragment of it, and beats
@@ -1461,8 +1517,13 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
         .order_by(StudySession.completed_at.desc())
         .all()
     )
+    session_size = int(current_app.config["PRACTICE_SESSION_SIZE"])
+    # "A real run rather than a one-off", expressed as most of a run rather than
+    # as a literal five, which was most of a ten-question run and is more than
+    # one of six.
+    substantial_run = max(2, round(session_size / 2))
     completed_cases = next(
-        (item for item in completed_today if item.mode == "practice" and item.total_items >= 5),
+        (item for item in completed_today if item.mode == "practice" and item.total_items >= substantial_run),
         None,
     )
     active = find_resumable_session(user)
@@ -1483,7 +1544,7 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
     elif brief_state == "ready":
         next_action = {"kind": "open_brief", "session_id": completed_cases.id, "label": "Open Deep Brief"}
     elif cases_state == "ready":
-        next_action = {"kind": "start_cases", "label": "Start 10 cases"}
+        next_action = {"kind": "start_cases", "label": f"Start {session_size} cases"}
     else:
         next_action = {"kind": "done", "label": "Daily docket complete"}
 
@@ -1493,7 +1554,7 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
         "active_session": serialize_session(active, False) if active else None,
         "cases": {
             "state": cases_state,
-            "target": 10,
+            "target": session_size,
             "repairs_due": queue["due"],
             "session_id": (active.id if active else completed_cases.id if completed_cases else None),
             "summary": completed_cases.summary_json if completed_cases else None,

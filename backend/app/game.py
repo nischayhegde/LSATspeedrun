@@ -53,9 +53,85 @@ from .story import (
 # is here is v7: putting daily claims into the income model showed the band had
 # been measured against a player who ignores a tenth of their income, and the
 # base is what puts a daily-claiming player back inside one-to-two hours.
-RULE_VERSION = "lsat-tycoon-v8"
+#
+# v9 does not move the settlement formula either. A case pays exactly what it
+# paid under v8, because every price in this module is quoted per *question*
+# and v9 only changes how many questions a sitting contains (SITTING_QUESTIONS,
+# 10 -> 6). What it does move is everything that was counted in whole sittings:
+# client contract lengths fell by the same ratio and the daily goal milestones
+# were rebased onto the new sitting. Neither changes what a day or a contract is
+# worth -- both are re-derived so the money lands where it did -- but the
+# *counts* stamped on a contract and on a daily goal are not comparable across
+# this label, so anything reading `cases_remaining` or a claimed milestone out
+# of history has to split on it.
+RULE_VERSION = "lsat-tycoon-v9"
 STARTING_CASH = 250
-DAILY_REWARD_MULTIPLIERS = {5: 1, 10: 3, 20: 8}
+
+# How many questions the player sits down to answer in one go.
+#
+# This is the only place in the app where "case" means a *sitting* rather than
+# one question, and the distinction is load-bearing enough that it has burned a
+# previous session (see TIER_EFFORT_BASE). Everywhere else in this module -- and
+# in `scripts/simulate_economy_curve.py`, and in `profile.total_cases` -- a
+# "case" is one attempted question, because that is the unit `settle_attempt`
+# pays out on. The interface uses the other sense: "Start 6 cases" starts one
+# run of six questions. Getting the two the wrong way round is a factor-of-six
+# error in every price in the game.
+#
+# 10 -> 6 because a ten-question run with a strategy prompt and a written
+# argument on each question runs past half an hour, which is long enough that
+# players do not start one. Six is a nearer reward for the same work: the
+# campaign still asks for the same ~2,090 questions and the same wall-clock
+# time, in 338 sittings instead of 209.
+#
+# Six rather than five is a measurement, not a preference. A Reading
+# Comprehension passage in this bank runs 4 to 16 questions (median 7) and must
+# be served whole, so the run target and the passage allowance together decide
+# how much of the RC bank can ever be reached and therefore what the average
+# question costs in wall-clock time. See `services.PASSAGE_OVERSHOOT_ALLOWANCE`
+# for the measured comparison; six with a two-question allowance holds the
+# served section mix, and so the campaign's length, to within 0.1%.
+SITTING_QUESTIONS = 6
+# The sitting length everything counted in whole sittings was authored against.
+# Contract lengths and daily goals were both written when a sitting was ten
+# questions, so they are re-expressed against SITTING_QUESTIONS rather than
+# retyped: a contract that closed in about one sitting still closes in about one
+# sitting, and a daily goal that landed on a sitting boundary still lands on one.
+# Keeping the reference explicit is what lets the sitting move again later
+# without a second round of hand-edited literals.
+LEGACY_SITTING_QUESTIONS = 10
+
+
+def _in_sittings(legacy_questions: float, *, minimum: int = 1) -> int:
+    """Re-express a count authored in ten-question sittings against today's."""
+    scaled = legacy_questions * SITTING_QUESTIONS / LEGACY_SITTING_QUESTIONS
+    return max(minimum, round(scaled))
+
+
+# The daily goals, in questions, and what each is worth relative to the others.
+#
+# One, two and three sittings, rather than the 5/10/20 they were authored as.
+# The point of a daily goal is that finishing a run finishes a goal, and 5/10/20
+# was half a ten-question sitting, one, and two. At six questions a sitting the
+# same goals land at 6/12/18: the three goals now close at the end of the first,
+# second and third run of the day instead of two of them landing mid-run.
+#
+# Deliberately NOT `_in_sittings`, which would give 3/6/12 and hold the goals at
+# half, one and two sittings. That preserves the wrong quantity. The day's ask
+# is what keeps question volume up, and cutting the top goal from twenty
+# questions to twelve would tell the player to stop at twelve. 18 holds the ask
+# where it was while moving it onto a run boundary.
+#
+# None of this changes what a day is worth. DAILY_REWARD_CASE_BUDGET fixes the
+# whole day's cash at two nominal cases and the 1:3:8 ratio splits it, so a
+# player working twenty questions a day claims exactly what they claimed before
+# and the pace band does not move -- which matters, because TIER_EFFORT_BASE has
+# 0.2% of clearance at its floor.
+DAILY_REWARD_MULTIPLIERS = {
+    SITTING_QUESTIONS: 1,
+    SITTING_QUESTIONS * 2: 3,
+    SITTING_QUESTIONS * 3: 8,
+}
 # What a full day of daily-goal claims is worth, quoted in cases like every
 # other price here, and split between the three milestones in the 1:3:8 ratio
 # above so the twenty-case claim is still the one worth staying for.
@@ -1025,6 +1101,77 @@ def _shape_client_contracts() -> None:
             client["close_share_bps"] = round(per_close / (per_case + per_close) * 10_000)
 
 
+def _rescale_contract_lengths() -> None:
+    """Re-express every contract in sittings rather than in ten-question runs.
+
+    `length` counts decisive wins, so it is denominated in questions and nothing
+    about it is wrong when the sitting shortens -- which is exactly why it has to
+    move. A walk-in closing in eight wins was a little over one ten-question
+    sitting; left alone at a six-question sitting it becomes nearly two, and the
+    progress bar on the client card advances half as far per run. The player
+    reads that as the contract having got longer, because from where they are
+    sitting it has.
+
+    So the authored lengths are treated as what they were authored as -- a
+    fraction of a sitting -- and re-expressed against the sitting the game
+    actually serves. A contract that used to take about one run still takes about
+    one run. It moves *down*, never up: shortening the run must not turn a
+    three-win contract into six chores.
+
+    This cannot move the pace band, and that is by construction rather than by
+    luck. `length` is an input to `average_value_factor`, so `_rebalance_client_
+    catalog` re-derives `base_fee` against whatever this writes and expected
+    value per case lands back on `_case_target_for_tier`. It must therefore run
+    before `_shape_client_contracts`, which reads `length` to decide the close
+    share, and before the rebalance, which reads both.
+
+    The floor is three wins. Below that the hardcoded `+2` base contract
+    multiplier is a large enough share of a short contract's value that
+    `_shape_client_contracts` clamps its bonus to zero at the low tiers and the
+    close share stops tracking the target -- a distortion the catalog already
+    has at length four and which gets worse the shorter contracts get.
+    """
+    for client in CLIENTS:
+        client["length"] = _in_sittings(client["length"], minimum=3)
+
+
+_CONTRACT_LENGTH_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "thirteen": 13, "fourteen": 14, "fifteen": 15,
+}
+# "Rapid-fire 4-case contract", "Long 9-file mystery docket". The count and the
+# noun it counts, in the two spellings the catalog uses.
+_CONTRACT_LENGTH_CLAIM = re.compile(
+    r"\b(\d+|" + "|".join(_CONTRACT_LENGTH_WORDS) + r")(-)(case|file)\b",
+    re.IGNORECASE,
+)
+
+
+def _restate_contract_length_copy() -> None:
+    """Rewrite the client-card copy that quotes a contract length in words.
+
+    Four clients describe themselves by their length -- "Fast 5-case
+    confidentiality sprint", "Loyalty-heavy 8-case docket", "Long 9-file mystery
+    docket", "Five-case licensing blitz" -- and none of them contains any of the
+    words `_drop_stale_contract_copy` looks for, so they survive it and would
+    quietly start lying the moment `_rescale_contract_lengths` moves the number.
+
+    Restated rather than deleted, unlike the contract-bonus claims. Those quoted
+    a multiplier the card draws as a bar anyway; these carry the client's whole
+    character ("rapid-fire", "loyalty-heavy", "long"), and a docket that says it
+    is long should still say so with the right number beside it.
+    """
+    for client in CLIENTS:
+        special = str(client.get("special", ""))
+        if not special:
+            continue
+        client["special"] = _CONTRACT_LENGTH_CLAIM.sub(
+            lambda match: f"{client['length']}{match.group(2)}{match.group(3)}",
+            special,
+        )
+
+
 def _drop_stale_contract_copy() -> None:
     """Strip the hand-written contract-close claims that `_shape_client_contracts` invalidates.
 
@@ -1052,6 +1199,11 @@ def _drop_stale_contract_copy() -> None:
 
 
 _rebalance_asset_catalog()
+# Order matters and is asserted by test_game_catalog: lengths are re-expressed
+# first, then the copy that quotes them, then the close shape that reads them,
+# then the fees that are solved against all three.
+_rescale_contract_lengths()
+_restate_contract_length_copy()
 _shape_client_contracts()
 _drop_stale_contract_copy()
 _rebalance_client_catalog()
