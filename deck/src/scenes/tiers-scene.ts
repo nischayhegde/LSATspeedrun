@@ -32,17 +32,34 @@ const FINISH_LOOK: Record<string, { body: number; trim: number; glass: number; s
 }
 
 export function createTiersScene(context: SceneContext): DeckScene {
+  // A royal blue night rather than a black one.
+  //
+  // This scene was authored against `0x060a12`, which is very nearly black, and
+  // with a key light that a projector cannot find: photographed at 1440×810 the
+  // whole ladder came out as dark grey silhouettes on dark grey, with only the
+  // glass bands and the billboard labels above the noise floor. That is fine on
+  // a laptop panel in a dark room and it is nothing at all on a projector in a
+  // lit one — which is the only place this deck is ever shown.
+  //
+  // The colour is not arbitrary either: the ladder is only ever seen between
+  // two slides of the deck's own royal blue, so a blue night makes the reveal
+  // read as the field opening onto something rather than as the frame going out.
+  const NIGHT = 0x0c1734
   const scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x060a12)
-  scene.fog = new THREE.FogExp2(0x060a12, .0092)
+  scene.background = new THREE.Color(NIGHT)
+  scene.fog = new THREE.FogExp2(NIGHT, .0062)
 
   const rig = new CameraRig(
     {
       // Eye level with the shack, so tier 0 is the whole frame and the ladder
       // above it is only implied.
       shack: { position: [7.2, 3.1, 13.4], target: [0, 2.4, 0], fov: 36, parallax: .9 },
-      // Halfway up, angled so both ends of the ladder are in shot.
-      climb: { position: [17.5, 26, 26], target: [0, 24, 0], fov: 44, parallax: .7 },
+      // Halfway up and further out than it used to be. At `[17.5, 26, 26]` the
+      // straight line the rig flies between here and the shack passed close
+      // enough to the spine that the middle of the move — which is now the part
+      // the audience actually sees — was a wide dark column across the frame
+      // with the ladder behind it.
+      climb: { position: [25, 23, 35], target: [0, 20, 0], fov: 42, parallax: .7 },
       // Above the top, looking back down the whole helix.
       nexus: { position: [11, 62, 21], target: [0, 54, 0], fov: 40, parallax: .5 },
       // The full object, small, from a distance. The act's closing frame.
@@ -52,12 +69,17 @@ export function createTiersScene(context: SceneContext): DeckScene {
     context.width / Math.max(1, context.height),
   )
 
-  scene.add(new THREE.HemisphereLight(0x3c5f7c, 0x090d14, 1.1))
-  const key = new THREE.DirectionalLight(0xffeccd, 2.2)
+  scene.add(new THREE.HemisphereLight(0x6d8fc0, 0x101a30, 2.3))
+  const key = new THREE.DirectionalLight(0xffeccd, 3.6)
   key.position.set(-14, 40, 18)
   scene.add(key)
-  const under = new THREE.PointLight(PALETTE.pixelGold, 40, 40, 2)
-  under.position.set(0, 4, 4)
+  // From the camera's side of the ladder. Without it every framing is looking
+  // at the shadowed face of fifteen buildings, because the key is behind them.
+  const fill = new THREE.DirectionalLight(0x9dc0f2, 1.35)
+  fill.position.set(26, 14, 30)
+  scene.add(fill)
+  const under = new THREE.PointLight(PALETTE.pixelGold, 90, 70, 2)
+  under.position.set(0, 6, 5)
   scene.add(under)
 
   const random = seededRandom(1451)
@@ -102,7 +124,11 @@ export function createTiersScene(context: SceneContext): DeckScene {
 
     if (!bodyMaterials.has(look.body)) bodyMaterials.set(look.body, material(look.body, .72, .06))
     if (!trimMaterials.has(look.trim)) trimMaterials.set(look.trim, material(look.trim, .3, .8))
-    if (!glassMaterials.has(look.glass)) glassMaterials.set(look.glass, material(look.glass, .18, .3, 0x0a1418))
+    // Emissive, and much more than it was: at night the thing that tells you a
+    // tower is a place of work is that its windows are on. It is also the only
+    // cue that separates tier 4 from tier 9 at a glance, since both are the
+    // same silhouette at different heights.
+    if (!glassMaterials.has(look.glass)) glassMaterials.set(look.glass, material(look.glass, .18, .3, 0x1b4c66))
     const body = bodyMaterials.get(look.body)!
     const trim = trimMaterials.get(look.trim)!
     const glass = glassMaterials.get(look.glass)!
@@ -166,25 +192,39 @@ export function createTiersScene(context: SceneContext): DeckScene {
       station.add(core)
     }
 
-    // The tier's name, set in the display face and floated beside its platform.
-    const name = labelPlane(environment.name, .58, {
-      pixels: 72,
-      weight: 700,
-      font: 'Archivo, Inter, sans-serif',
-      color: tier === 14 ? '#f2c75b' : '#e4dbc4',
-    })
-    name.position.set(3.1, .9, 0)
-    name.userData.billboard = true
-    station.add(name)
-    labelMaterials.push(name.material as THREE.Material)
+    // Three named rungs, not fifteen.
+    //
+    // Every station used to carry its name and its ordinal, and a helix means
+    // the stations behind the spine project onto the same part of the screen as
+    // the ones in front of it: photographed, the ladder read as eight pieces of
+    // white type overlapping each other and clipping off both edges. It is the
+    // same defect the founders named on the slides — text that has to be parsed
+    // twice — and a label nobody can read is worse than no label, because the
+    // eye stops to try.
+    //
+    // The bottom, the middle and the top are the whole claim ("a weathered
+    // one-room practice, and above the atmosphere a planetary nexus"); the
+    // twelve between them are shape, and the shape is legible without captions.
+    if (tier === 0 || tier === 7 || tier === 14) {
+      const name = labelPlane(environment.name, .72, {
+        pixels: 72,
+        weight: 700,
+        font: 'Archivo, Inter, sans-serif',
+        color: tier === 14 ? '#f2c75b' : '#e4dbc4',
+      })
+      name.position.set(3.4, 1, 0)
+      name.userData.billboard = true
+      station.add(name)
+      labelMaterials.push(name.material as THREE.Material)
 
-    const ordinal = labelPlane(`TIER ${String(tier).padStart(2, '0')}`, .26, {
-      pixels: 44, weight: 700, font: '"Courier New", monospace', letterSpacing: 3, color: 'rgba(101,201,194,.85)',
-    })
-    ordinal.position.set(3.1, .42, 0)
-    ordinal.userData.billboard = true
-    station.add(ordinal)
-    labelMaterials.push(ordinal.material as THREE.Material)
+      const ordinal = labelPlane(`TIER ${String(tier).padStart(2, '0')}`, .32, {
+        pixels: 44, weight: 700, font: '"Courier New", monospace', letterSpacing: 3, color: 'rgba(101,201,194,.85)',
+      })
+      ordinal.position.set(3.4, .44, 0)
+      ordinal.userData.billboard = true
+      station.add(ordinal)
+      labelMaterials.push(ordinal.material as THREE.Material)
+    }
   }
 
   // The spine: a column through the middle of the helix, so the ladder is one
@@ -210,7 +250,10 @@ export function createTiersScene(context: SceneContext): DeckScene {
 
   // Ground, and a starfield above it. The ladder leaves the atmosphere at tier
   // twelve, so the field only begins there — below it, fog.
-  const groundMaterial = material(0x101a1a, .95)
+  // Blue-grey earth, not the green-grey it was. Under the warmer key the old
+  // colour photographed as olive, which is the one hue the deck's palette does
+  // not contain, and it sat across the bottom third of every revealed frame.
+  const groundMaterial = material(0x141d33, .95)
   const ground = new THREE.Mesh(new THREE.CircleGeometry(120, 64), groundMaterial)
   ground.rotation.x = -Math.PI / 2
   ground.position.y = -1
@@ -265,10 +308,20 @@ export function createTiersScene(context: SceneContext): DeckScene {
     },
 
     setFraming(name, immediate) {
-      // Deliberately long. This is the deck's showcase camera move, and the
-      // distance between `shack` and `nexus` is sixty units of climb — anything
-      // brisk here loses the sense of scale that is the entire point of the shot.
-      rig.go(name, immediate, 3.2)
+      // Timed against the window it is seen through, which is the only honest
+      // way to time it.
+      //
+      // This was 3.2 seconds — "deliberately long… anything brisk here loses
+      // the sense of scale that is the entire point of the shot" — and that was
+      // written when the move played behind two opaque slide fields and could
+      // not be seen at all, so the number was answering to nothing. The
+      // `tier-fly` transition in `engine/transitions.ts` now takes the field off
+      // for a little under a second in the middle of the move; a 3.2s tween put
+      // eight per cent of the climb inside that window and the audience saw a
+      // near-static frame of the spine. At 1.25 the camera is arriving at its
+      // framing as the incoming slide closes over it, which is the sense of
+      // scale actually being paid for.
+      rig.go(name, immediate, 1.25)
     },
 
     dispose() {
