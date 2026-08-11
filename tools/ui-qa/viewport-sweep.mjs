@@ -84,7 +84,7 @@ const widths = args.widths
 
 const AUDIT = `(() => {
   const vw = document.documentElement.clientWidth
-  const findings = { overflow: null, offRight: [], offLeft: [], overlaps: [], hudOverlaps: [], smallTargets: [] }
+  const findings = { overflow: null, offRight: [], offLeft: [], clipped: [], overlaps: [], hudOverlaps: [], smallTargets: [] }
 
   const hasFixedAncestor = (el) => {
     for (let node = el; node && node !== document.body; node = node.parentElement) {
@@ -103,6 +103,25 @@ const AUDIT = `(() => {
       if (style.overflowX !== 'visible' || style.overflowY !== 'visible') return true
     }
     return false
+  }
+
+  // The other half of the same question. A rail that scrolls is doing its job
+  // when its twenty-ninth card is off screen; a box that only *clips* is
+  // cutting text off, and the reader has no way to bring it back. Both were
+  // being skipped by the rule above, which is how a "GENERAL COUNSEL" caption
+  // sitting 21px off the left edge of every phone survived a full sweep: an
+  // ancestor with overflow: hidden excused it.
+  const clippedBy = (el, rect) => {
+    for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+      const style = getComputedStyle(node)
+      const scrolls = /auto|scroll/.test(style.overflowX) || /auto|scroll/.test(style.overflowY)
+      if (scrolls) return null
+      if (style.overflowX !== 'hidden' && style.overflowY !== 'hidden' && style.overflow !== 'clip') continue
+      const box = node.getBoundingClientRect()
+      const over = Math.max(box.left - rect.left, rect.right - box.right, box.top - rect.top, rect.bottom - box.bottom)
+      if (over > 2) return { by: describe(node), over: Math.round(over) }
+    }
+    return null
   }
 
   const scroller = document.scrollingElement || document.documentElement
@@ -141,6 +160,13 @@ const AUDIT = `(() => {
     if (style.transform && style.transform !== 'none' && /matrix/.test(style.transform)) {
       const tx = Number(style.transform.split('(')[1]?.split(',')[4] ?? 0)
       if (Math.abs(tx) > vw / 2) continue
+    }
+    // Only text: a decorative layer reaching past its own frame is usually the
+    // frame doing its job, and a caption cut in half is not.
+    const ownsText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim().length > 1)
+    if (ownsText) {
+      const cut = clippedBy(el, rect)
+      if (cut) findings.clipped.push({ sel: describe(el), text: el.textContent.trim().slice(0, 34), ...cut })
     }
     if (isContained(el)) continue
     if (rect.right > vw + 1) {
@@ -255,7 +281,8 @@ try {
         }
         const findings = await page.evaluate(AUDIT)
         const flagged = findings.overflow || findings.offRight.length || findings.offLeft.length
-          || findings.overlaps.length || findings.hudOverlaps.length || findings.smallTargets.length
+          || findings.clipped.length || findings.overlaps.length || findings.hudOverlaps.length
+          || findings.smallTargets.length
         report.push({ route: name, width: size.name, ...findings, errors: errors.splice(0) })
         if (args.shots || flagged) {
           mkdirSync(`${OUT}/${name}`, { recursive: true })
@@ -281,6 +308,7 @@ for (const row of report) {
   if (row.overflow) bits.push(`overflow ${row.overflow.scrollWidth}>${row.overflow.clientWidth}`)
   for (const o of row.offRight ?? []) bits.push(`offRight ${o.sel} right=${o.right}`)
   for (const o of row.offLeft ?? []) bits.push(`offLeft ${o.sel} left=${o.left}`)
+  for (const o of row.clipped ?? []) bits.push(`clipped ${o.over}px by ${o.by} — "${o.text}"`)
   for (const o of (row.overlaps ?? []).slice(0, 6)) bits.push(`overlap ${o.a} x ${o.b} (${o.ox}x${o.oy})`)
   for (const o of (row.hudOverlaps ?? []).slice(0, 4)) bits.push(`hud-over-page [${o.hud}] ${o.a} x ${o.b} (${o.ox}x${o.oy})`)
   for (const o of (row.smallTargets ?? []).slice(0, 6)) bits.push(`small ${o.sel} ${o.w}x${o.h}`)
