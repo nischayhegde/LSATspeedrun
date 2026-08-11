@@ -84,7 +84,26 @@ const widths = args.widths
 
 const AUDIT = `(() => {
   const vw = document.documentElement.clientWidth
+  const vh = window.innerHeight
   const findings = { overflow: null, offRight: [], offLeft: [], clipped: [], overlaps: [], hudOverlaps: [], smallTargets: [] }
+
+  // Where a fixed overlay is anchored, which decides whether a reader can get
+  // out from under it. A bar docked to the bottom edge covers whatever the
+  // page happens to have at that height and the reader scrolls it clear; the
+  // same bar covering the last row when the page will not scroll any further
+  // has taken that row away. A panel docked to neither edge floats over the
+  // page at a fixed spot and no amount of scrolling helps.
+  const dockOf = (el) => {
+    const r = el.getBoundingClientRect()
+    // Docked means spanning the edge, not merely resting near it: the mobile
+    // nav is a pill inset 8px on both sides and 6px off the bottom, and the
+    // economy ledger is a 214px card 14px off the same corner. One is a bar and
+    // the other is a panel over the page.
+    const spans = r.width >= vw - 40
+    if (spans && vh - r.bottom <= 24 && r.top > vh / 2) return 'bottom'
+    if (spans && r.top <= 24 && r.bottom < vh / 2) return 'top'
+    return 'float'
+  }
 
   const hasFixedAncestor = (el) => {
     for (let node = el; node && node !== document.body; node = node.parentElement) {
@@ -208,11 +227,12 @@ const AUDIT = `(() => {
         const hudOf = (leaf) => {
           if (!leaf.fixed) return null
           for (let node = leaf.el; node && node !== document.body; node = node.parentElement) {
-            if (getComputedStyle(node).position === 'fixed') return describe(node)
+            if (getComputedStyle(node).position === 'fixed') return node
           }
           return null
         }
-        const row = { a: describe(a.el), b: describe(b.el), ox: Math.round(ox), oy: Math.round(oy), hud: hudOf(a) || hudOf(b) }
+        const hud = hudOf(a) || hudOf(b)
+        const row = { a: describe(a.el), b: describe(b.el), ox: Math.round(ox), oy: Math.round(oy), hud: hud ? describe(hud) : null, dock: hud ? dockOf(hud) : null }
         // A fixed overlay lying on the page is a different defect from two
         // parts of the page lying on each other: it is always going to sit over
         // *something*, so it is only worth reporting when it sits over words.
@@ -280,6 +300,48 @@ try {
           break
         }
         const findings = await page.evaluate(AUDIT)
+        /* A fixed bar is always over *something*, so asking once, at rest, only
+           establishes that it exists. The question worth answering is whether
+           the reader can get the covered words back. Coverage by a top bar is
+           unavoidable at the top of the page, coverage by a bottom bar is
+           unavoidable at the end of it, and coverage by a panel docked to
+           neither is unavoidable everywhere. So the sweep asks at both ends and
+           keeps only what the reader is stuck with. Without this, the bottom
+           nav reported five collisions on the Firm tab at 320px for content
+           that scrolls out from under it in one flick. */
+        findings.hudOverlaps = findings.hudOverlaps.filter((row) => row.dock !== 'bottom')
+        /* Settle, rather than jump once. These routes render more of themselves
+           as you approach the end of them, so one scrollTo lands in the middle
+           of a page that has since grown and everything the bar covers there
+           gets reported as the end of the page. */
+        let scrollable = false
+        for (let i = 0; i < 12; i += 1) {
+          const state = await page.evaluate(() => {
+            const s = document.scrollingElement
+            const max = s.scrollHeight - s.clientHeight
+            if (max <= 1) return { done: true, scrollable: false }
+            const was = s.scrollTop
+            s.scrollTop = s.scrollHeight
+            return { done: was >= max - 2 && s.scrollTop >= max - 2, scrollable: true }
+          })
+          scrollable = state.scrollable
+          if (!state.scrollable || state.done) break
+          await page.waitForTimeout(400)
+        }
+        if (scrollable) {
+          await page.waitForTimeout(500)
+          const atEnd = await page.evaluate(AUDIT)
+          const seen = new Set(findings.hudOverlaps.map((r) => `${r.a}|${r.b}|${r.hud}`))
+          for (const row of atEnd.hudOverlaps) {
+            if (row.dock === 'top') continue
+            const key = `${row.a}|${row.b}|${row.hud}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            findings.hudOverlaps.push({ ...row, at: 'page end' })
+          }
+          await page.evaluate(() => document.scrollingElement.scrollTo(0, 0))
+          await page.waitForTimeout(250)
+        }
         const flagged = findings.overflow || findings.offRight.length || findings.offLeft.length
           || findings.clipped.length || findings.overlaps.length || findings.hudOverlaps.length
           || findings.smallTargets.length
@@ -310,7 +372,7 @@ for (const row of report) {
   for (const o of row.offLeft ?? []) bits.push(`offLeft ${o.sel} left=${o.left}`)
   for (const o of row.clipped ?? []) bits.push(`clipped ${o.over}px by ${o.by} — "${o.text}"`)
   for (const o of (row.overlaps ?? []).slice(0, 6)) bits.push(`overlap ${o.a} x ${o.b} (${o.ox}x${o.oy})`)
-  for (const o of (row.hudOverlaps ?? []).slice(0, 4)) bits.push(`hud-over-page [${o.hud}] ${o.a} x ${o.b} (${o.ox}x${o.oy})`)
+  for (const o of (row.hudOverlaps ?? []).slice(0, 4)) bits.push(`hud-over-page [${o.hud} ${o.dock}${o.at ? ', ' + o.at : ''}] ${o.a} x ${o.b} (${o.ox}x${o.oy})`)
   for (const o of (row.smallTargets ?? []).slice(0, 6)) bits.push(`small ${o.sel} ${o.w}x${o.h}`)
   for (const e of row.errors ?? []) bits.push(`pageerror ${e.slice(0, 120)}`)
   if (!bits.length) continue
