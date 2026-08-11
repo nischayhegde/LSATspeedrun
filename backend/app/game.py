@@ -255,7 +255,7 @@ UPGRADES = [
         "reputation": 20, "tier": 1, "benefit": "+8% active case payout", "payout_mult": .08, "region": "Old Quarter", "art": "library",
         "description": "A wall of references that changes the room—and client confidence.",
     },
-    _asset("secure_client_portal", "upgrade", "Secure client portal", 8_000, 24, 1, "+7% payout · +2h retainer storage", "Encrypted intake, instant signatures, and a client experience far beyond the old shack.", requires=("case_management",), art="tech", payout_mult=.07, storage_hours=2),
+    _asset("secure_client_portal", "upgrade", "Secure client portal", 8_000, 24, 1, "+7% payout · +2h safe storage", "Encrypted intake, instant signatures, and a client experience far beyond the old shack.", requires=("case_management",), art="tech", payout_mult=.07, storage_hours=2),
     _asset("deposition_studio", "upgrade", "Deposition studio", 11_000, 28, 1, "+9% active case payout", "Broadcast-grade recording catches the pause, contradiction, and detail that decide a matter.", requires=("legal_library",), art="courtroom", payout_mult=.09),
     {
         "key": "conference_room", "type": "upgrade", "name": "Conference room", "cost": 16_000,
@@ -278,26 +278,26 @@ UPGRADES = [
     },
     _asset("litigation_war_room", "upgrade", "Litigation war room", 620_000, 52, 4, "+18% payout · +1× contract bonus", "A wall-sized living case map keeps every team on the same decisive theory.", requires=("trial_analytics_lab",), art="command", payout_mult=.18, contract_bonus_mult=1),
     _asset("jury_simulator", "upgrade", "Predictive jury theater", 950_000, 54, 4, "+20% payout · streak cap +10%", "An immersive jury simulator stress-tests narrative, sequence, and every vulnerable assumption.", requires=("litigation_war_room",), art="hologram", payout_mult=.20, streak_bonus_cap=.10),
-    _asset("branch_command", "upgrade", "Branch command center", 1_600_000, 56, 5, "+20% payout · +4h retainer storage", "Coordinate the whole region from a luminous operations table.", requires=("executive_suite",), art="command", payout_mult=.20, storage_hours=4),
+    _asset("branch_command", "upgrade", "Branch command center", 1_600_000, 56, 5, "+20% payout · +4h safe storage", "Coordinate the whole region from a luminous operations table.", requires=("executive_suite",), art="command", payout_mult=.20, storage_hours=4),
     _asset("legal_airship", "upgrade", "Counsel airship", 3_200_000, 58, 5, "+25% active case payout", "A mobile office crosses the region overnight with a courtroom-ready team aboard.", requires=("branch_command",), art="transit", payout_mult=.25),
     _asset("ai_brief_foundry", "upgrade", "AI brief foundry", 7_000_000, 62, 6, "+28% payout · +1× contract bonus", "A supervised research foundry assembles authorities at national scale while counsel makes every judgment.", requires=("trial_analytics_lab",), art="tech", payout_mult=.28, contract_bonus_mult=1),
-    _asset("national_litigation_grid", "upgrade", "National litigation grid", 12_000_000, 64, 6, "+30% payout · +6h retainer storage", "Every branch shares live arguments, evidence, and expert capacity.", requires=("ai_brief_foundry",), art="network", payout_mult=.30, storage_hours=6),
+    _asset("national_litigation_grid", "upgrade", "National litigation grid", 12_000_000, 64, 6, "+30% payout · +6h safe storage", "Every branch shares live arguments, evidence, and expert capacity.", requires=("ai_brief_foundry",), art="network", payout_mult=.30, storage_hours=6),
     _asset("translation_cloud", "upgrade", "Live translation cloud", 28_000_000, 68, 7, "+32% active case payout", "Cross-border teams hear nuance, not delay, in every negotiation.", requires=("national_litigation_grid",), art="network", payout_mult=.32),
     _asset("satellite_docket", "upgrade", "Satellite docket array", 55_000_000, 70, 7, "+35% payout · streak cap +10%", "Secure satellite links put a command-quality hearing room anywhere on Earth.", requires=("translation_cloud",), art="space", payout_mult=.35, streak_bonus_cap=.10),
     _asset("global_crisis_center", "upgrade", "Global crisis command", 130_000_000, 74, 8, "+38% payout · reputation shield", "A twenty-four-hour command floor stabilizes matters that cross markets and borders in minutes.", requires=("satellite_docket",), art="command", payout_mult=.38, reputation_guard=1.5),
-    _asset("vault_archive", "upgrade", "Subterranean precedent vault", 240_000_000, 76, 8, "+40% payout · +8h retainer storage", "A climate-sealed archive preserves the arguments that built the empire.", requires=("global_crisis_center",), art="library", payout_mult=.40, storage_hours=8),
+    _asset("vault_archive", "upgrade", "Subterranean precedent vault", 240_000_000, 76, 8, "+40% payout · +8h safe storage", "A climate-sealed archive preserves the arguments that built the empire.", requires=("global_crisis_center",), art="library", payout_mult=.40, storage_hours=8),
     _asset("treaty_chamber", "upgrade", "Holographic treaty chamber", 520_000_000, 79, 9, "+45% payout · +1× contract bonus", "Delegations negotiate around a living model of every border, resource, and obligation.", requires=("vault_archive",), art="hologram", payout_mult=.45, contract_bonus_mult=1),
     _asset("prediction_engine", "upgrade", "Precedent prediction engine", 900_000_000, 81, 9, "+48% payout · streak cap +15%", "A transparent simulation reveals which theory survives every likely counterargument.", requires=("treaty_chamber",), art="analytics", payout_mult=.48, streak_bonus_cap=.15),
     _asset("autonomous_case_campus", "upgrade", "Autonomous case campus", 1_700_000_000, 83, 10, "+50% payout · $80M/hour", "Robotic archives, hearing halls, and research wings keep major matters moving continuously.", requires=("prediction_engine",), art="future", payout_mult=.50, passive_hourly=80_000_000),
     _asset("supersonic_courier", "upgrade", "Supersonic counsel shuttle", 3_200_000_000, 85, 10, "+55% active case payout", "Counsel and evidence cross a continent between filing and argument.", requires=("autonomous_case_campus",), art="transit", payout_mult=.55),
-    _asset("oceanic_campus", "upgrade", "Floating arbitration forum", 5_000_000_000, 86, 11, "+60% payout · +12h retainer storage", "A neutral, self-sustaining forum hosts the world's largest commercial disputes offshore.", requires=("supersonic_courier",), art="ocean", payout_mult=.60, storage_hours=12),
+    _asset("oceanic_campus", "upgrade", "Floating arbitration forum", 5_000_000_000, 86, 11, "+60% payout · +12h safe storage", "A neutral, self-sustaining forum hosts the world's largest commercial disputes offshore.", requires=("supersonic_courier",), art="ocean", payout_mult=.60, storage_hours=12),
     _asset("digital_twin_court", "upgrade", "Digital-twin courtroom", 8_500_000_000, 87, 11, "+65% payout · +2× contract bonus", "Reconstruct systems, cities, and events in a courtroom-scale interactive twin.", requires=("oceanic_campus",), art="hologram", payout_mult=.65, contract_bonus_mult=2),
     _asset("orbital_hearing_ring", "upgrade", "Zero-gravity hearing ring", 13_000_000_000, 89, 12, "+70% payout · streak cap +20%", "An orbital forum built for disputes no terrestrial venue can fairly contain.", requires=("digital_twin_court",), art="space", payout_mult=.70, streak_bonus_cap=.20),
     _asset("precedent_supercomputer", "upgrade", "Precedent supercomputer", 19_000_000_000, 90, 12, "+75% payout · $400M/hour", "A moon-cold legal computer models centuries of doctrine while preserving a human decision trail.", requires=("orbital_hearing_ring",), art="future", payout_mult=.75, passive_hourly=400_000_000),
     _asset("lunar_embassy", "upgrade", "Lunar treaty embassy", 30_000_000_000, 92, 13, "+80% payout · reputation shield", "A permanent embassy gives new settlements a trusted neutral table.", requires=("precedent_supercomputer",), art="space", payout_mult=.80, reputation_guard=2.0),
-    _asset("chronicle_vault", "upgrade", "Civilization chronicle vault", 48_000_000_000, 93, 13, "+90% payout · +24h retainer storage", "The definitive record of laws, promises, and judgments is mirrored beyond Earth.", requires=("lunar_embassy",), art="library", payout_mult=.90, storage_hours=24),
+    _asset("chronicle_vault", "upgrade", "Civilization chronicle vault", 48_000_000_000, 93, 13, "+90% payout · +24h safe storage", "The definitive record of laws, promises, and judgments is mirrored beyond Earth.", requires=("lunar_embassy",), art="library", payout_mult=.90, storage_hours=24),
     _asset("planetary_command", "upgrade", "Planetary justice command", 72_000_000_000, 94, 14, "+100% payout · +3× contract bonus", "A planet-wide legal operations center routes the right advocate to any crisis in moments.", requires=("chronicle_vault",), art="command", payout_mult=1.0, contract_bonus_mult=3),
-    _asset("justice_constellation", "upgrade", "Justice constellation", 120_000_000_000, 96, 14, "+125% payout · unlimited-scale retainers", "A constellation of courts, archives, and advocates turns the firm's final crest into civic infrastructure.", requires=("planetary_command",), art="space", payout_mult=1.25, storage_hours=48, streak_bonus_cap=.25),
+    _asset("justice_constellation", "upgrade", "Justice constellation", 120_000_000_000, 96, 14, "+125% payout · streak cap +25% · +48h safe storage", "A constellation of courts, archives, and advocates turns the firm's final crest into civic infrastructure.", requires=("planetary_command",), art="space", payout_mult=1.25, storage_hours=48, streak_bonus_cap=.25),
 ]
 
 STAFF = [
@@ -1062,21 +1062,33 @@ CLIENT_BY_KEY = {item["key"]: item for item in CLIENTS}
 
 
 # ---------------------------------------------------------------------------
-# Standing retainers (map districts)
+# Standing counsel (map districts)
 # ---------------------------------------------------------------------------
 #
-# A firm does not buy land, it buys a book of business. Taking a district means
-# signing its institutions -- the courthouse's duty roster, a market's traders,
-# a port authority -- to a standing retainer, so every routine matter in that
-# district arrives at your door by default. That is a real thing law firms
-# compete over and it explains both benefits below without inventing physics:
-# being the district's default counsel is what a reputation floor *is*, and a
-# branch presence you are already paid to keep is what offsets the lease.
+# A firm does not buy land, it buys standing. Taking a district means signing
+# its institutions -- the courthouse's duty roster, a market's traders, a port
+# authority -- to a standing appointment: the firm is who they call first.
+#
+# What that is worth, exactly, is the two effects below and nothing else: being
+# a district's default counsel is what a reputation floor *is*, and a branch
+# presence you are already paid to keep is what offsets the lease. It used to
+# say here, and on screen, that every routine matter in the district then
+# arrives at your door. It does not. Districts appear nowhere in the session or
+# story code, no docket is district-flavoured, and the copy has been corrected
+# rather than the mechanic invented: the economy is tuned so that three to six
+# cases buy one upgrade, and a second source of matters is not a wording fix.
+# If it is ever built, this is the comment to come back to.
+#
+# The word is "counsel" throughout, never "retainer". A *client* retainer is a
+# different thing in this game and pays the per-case fee; a district
+# appointment pays no fee at all. The two were both called retainers, in the
+# same tab, which is the likeliest source of the "am I taking up cases or
+# receiving them?" confusion.
 #
 # This deliberately does not overlap the rival system. A rival acquisition is a
 # discrete, story-gated move against a *named competitor* that transfers their
 # payout multiplier and passive income to you and is priced at a full five
-# cases. A retainer is ambient, cheap, and buys no payout at all: it buys
+# cases. An appointment is ambient, cheap, and buys no payout at all: it buys
 # standing and overhead relief. One is conquest, the other is coverage.
 
 TERRITORY_REGIONS: list[dict] = [
@@ -1103,7 +1115,7 @@ TERRITORY_STANDING_FLOOR_CEILING = 90.0
 # than an economic lever.
 TERRITORY_RENT_RELIEF_POOL_BPS = 10_000
 
-# What the entire retainer board costs, in successful cases, and therefore the
+# What the entire counsel board costs, in successful cases, and therefore the
 # only number that decides how much this mechanic lengthens the campaign.
 # Districts are priced *out* of this budget rather than each being priced on
 # its own, so the mechanic's total cost cannot drift as districts are added.
@@ -1274,16 +1286,16 @@ def _district_connection_gate() -> dict[str, str]:
 
     Rather than inflate them into a better upgrade -- the catalog has thirty-five
     of those already -- they now gate the mechanic they read like: a standing
-    retainer over a whole district. That is what a professional network is for,
-    it is the only Firm-tab purchase whose effect lands on the map, and it moves
-    no money: districts already carry their own price, standing, and rent
+    appointment over a whole district. That is what a professional network is
+    for, it is the only Firm-tab purchase whose effect lands on the map, and it
+    moves no money: districts already carry their own price, standing, and rent
     relief, all apportioned by `_price_district_catalog`.
 
     A district asks for the most developed network that is no more advanced than
     the district itself, so the requirement always sits at or below the tier the
     player has already reached. The two tier-0 districts stay ungated, which
-    keeps a new player's first retainer and the onboarding path exactly as they
-    were.
+    keeps a new player's first appointment and the onboarding path exactly as
+    they were.
     """
     ladder = sorted(
         (item for item in ASSETS if item["type"] == "connection"),
@@ -1426,7 +1438,7 @@ def _district_locks(profile: PlayerProfile, district: dict, owned: set[str] | No
 
 
 def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dict:
-    """The full retainer board: every district, its gate, and what it is worth."""
+    """The full counsel board: every district, its gate, and what it is worth."""
     held = held if held is not None else _held_district_keys(profile)
     totals = _territory_totals(held)
     daily_rent = int(FIRM_TIERS[profile.office_tier]["rent_daily"])
@@ -1662,7 +1674,7 @@ def _pay_rent_arrears(
 # It is also a floor and never a credit: it stops reputation falling, it never
 # pushes it up. Farming a streak cannot buy a tier. It shares the standing
 # argument -- and therefore TERRITORY_STANDING_FLOOR_CEILING -- with district
-# retainers, so the two compose by addition under one shared cap instead of
+# counsel seats, so the two compose by addition under one shared cap instead of
 # being two separate ladders racing each other to the top of the game.
 STREAK_STANDING_LADDER: tuple[tuple[int, float], ...] = (
     (3, 1.0), (6, 2.0), (10, 3.0), (15, 4.0), (21, 5.0),
@@ -2343,7 +2355,12 @@ def purchase_asset(profile: PlayerProfile, asset_key: str) -> PlayerAsset:
 
 
 def secure_district(profile: PlayerProfile, district_key: str) -> dict:
-    """Sign a district's institutions to a standing retainer."""
+    """Sign a district's institutions to a standing counsel appointment.
+
+    The payload field and the event key still say "retainer" (`district_retainer`,
+    `district["retainer"]`); both are stored data and renaming them is a
+    migration, not a wording fix. Every string a player reads says counsel.
+    """
     district = DISTRICT_BY_KEY.get(district_key)
     if not district:
         raise ValueError("district_not_found")

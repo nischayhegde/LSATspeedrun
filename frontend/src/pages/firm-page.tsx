@@ -385,9 +385,9 @@ export function FirmPage() {
             because weakening a firm and then buying it is one move: the grid
             below is only ever the raw price list. */}
         {tab === 'rivals' && <RivalWarRoom game={game} onShowOnMap={(asset) => navigate(`/map?rival=${asset.key}`)} />}
-        {/* Retainers are a firm interaction, so they are in the firm tab. The
-            ledger leads the panel and the connection catalog that gates it
-            follows, which is the order the decision is actually made in. */}
+        {/* Signing a district is a firm interaction, so the counsel ledger is in
+            the firm tab. It leads the panel and the connection catalog that
+            gates it follows, which is the order the decision is made in. */}
         {tab === 'connections' && (
           <RetainerLedger
             game={game}
@@ -503,7 +503,7 @@ export function FirmPage() {
                   blocker that earning more cannot clear. Leaving it out labelled a
                   disabled button 'Purchase', which reads as an unresponsive click. */}
               <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : !item.available ? 'Locked' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
-              {/* A connection's whole effect is the retainer board it opens, and
+              {/* A connection's whole effect is the counsel board it opens, and
                   that board is on the map. Same hand-off the rivals tab already
                   makes, so owning one is something you can go and look at. */}
               {item.type === 'connection' && <button type="button" className="asset-locate" onClick={() => navigate(`/map?connection=${item.key}`)}>Show on the map</button>}
