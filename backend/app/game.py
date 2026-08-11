@@ -1465,6 +1465,15 @@ def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dic
                 "key": region["key"],
                 "name": region["name"],
                 "seat": region["seat"],
+                # The tiers this region spans, which is the join between the two
+                # geographies the Firm tab shows side by side. A catalog asset's
+                # `region` is the *address* the firm occupied at its tier (Market
+                # Ward, Civic Center, Harbor Exchange...); a territory region is
+                # an area of the map holding a run of tiers. Every address
+                # therefore sits inside exactly one region, and publishing the
+                # range is what lets the catalog filter say so instead of looking
+                # like a second, contradictory set of place names.
+                "tier_range": list(region["tiers"]),
                 "total": len(keys),
                 "held": sum(1 for key in keys if key in held),
                 "swept": region["key"] in totals["swept_regions"],

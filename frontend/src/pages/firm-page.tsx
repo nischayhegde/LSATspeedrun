@@ -176,10 +176,38 @@ export function FirmPage() {
   const typeMap: Record<FirmTab, GameAsset['type'] | null> = { upgrades: 'upgrade', decor: 'cosmetic', staff: 'staff', clients: null, connections: 'connection', rivals: 'rival' }
   const achieved = game.achievements.filter((item) => item.unlocked).length
   const assets = game.catalog.assets.filter((item) => item.type === typeMap[tab])
-  const regions = Array.from(new Set([
-    ...game.catalog.tiers.map((tier) => tier.region),
-    ...game.catalog.assets.map((asset) => asset.region).filter((region): region is string => Boolean(region)),
-  ]))
+  /* The catalog's `region` is not the map's region, and the Districts tab shows
+     both within a hundred pixels of each other: the ledger's rail reads Old
+     Quarter / The Circuit / Treaty Sea / Sovereign Arc / Global Compact, and
+     this filter reads Market Ward / Civic Center / Financial District and
+     eleven more. Only one name appears in both, so side by side they look like
+     two naming systems that were never reconciled.
+
+     They are two axes, and they nest. A catalog region is the street address
+     the firm occupied at one tier -- `_asset()` defaults it to
+     `FIRM_TIERS[tier]["region"]` -- and a map region is an area covering a run
+     of tiers. So every address sits inside exactly one region, and the fix is
+     to show that rather than to rename either set: the addresses are grouped
+     under the region that contains them, in tier order. */
+  const tierForAddress = new Map<string, number>()
+  for (const tier of game.catalog.tiers) {
+    if (!tierForAddress.has(tier.region)) tierForAddress.set(tier.region, tier.tier)
+  }
+  for (const asset of game.catalog.assets) {
+    // A handful of assets override the region their tier would give them.
+    if (asset.region && !tierForAddress.has(asset.region)) tierForAddress.set(asset.region, asset.tier)
+  }
+  const addressGroups = game.territory.regions.map((region) => ({
+    key: region.key,
+    name: region.name,
+    addresses: Array.from(tierForAddress.entries())
+      .filter(([, tier]) => tier >= region.tier_range[0] && tier <= region.tier_range[1])
+      .sort((left, right) => left[1] - right[1])
+      .map(([address]) => address),
+  })).filter((group) => group.addresses.length > 0)
+  // Anything the tier ranges do not claim still has to be selectable.
+  const groupedAddresses = new Set(addressGroups.flatMap((group) => group.addresses))
+  const looseAddresses = Array.from(tierForAddress.keys()).filter((address) => !groupedAddresses.has(address))
   const visibleAssets = assets.filter((item) =>
     (catalogRegion === 'all' || item.region === catalogRegion)
     && (catalogView === 'all' || (catalogView === 'ready' ? item.available : item.owned)),
@@ -280,12 +308,31 @@ export function FirmPage() {
           <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">
             {(['all', 'ready', 'owned'] as const).map((view) => <button key={view} className={catalogView === view ? 'active' : ''} onClick={() => selectCatalogView(view)}>{view === 'owned' && tab === 'clients' ? 'Active' : view}</button>)}
           </div>
-          <label><span>CITY REGION</span><select value={catalogRegion} onChange={(event) => {
+          {/* Was "CITY REGION · All districts", which is what made this read as
+              a rival geography to the ledger's five regions -- and "districts"
+              is flatly the wrong noun, since these are the firm's own past
+              addresses and the districts are the thing on the board above. */}
+          <label><span>FIRM ADDRESS</span><select value={catalogRegion} onChange={(event) => {
             const nextRegion = event.target.value
             if (nextRegion !== catalogRegion) void play('select', { seed: nextRegion, intensity: .25 })
             setCatalogRegion(nextRegion)
-          }}><option value="all">All districts</option>{regions.map((region) => <option key={region} value={region}>{region}</option>)}</select></label>
+          }}>
+            <option value="all">Every address</option>
+            {addressGroups.map((group) => (
+              <optgroup key={group.key} label={group.name} >
+                {group.addresses.map((address) => <option key={address} value={address}>{address}</option>)}
+              </optgroup>
+            ))}
+            {looseAddresses.map((address) => <option key={address} value={address}>{address}</option>)}
+          </select></label>
         </div>
+        {/* Said once, on the one tab where the two are adjacent. */}
+        {tab === 'connections' && (
+          <p className="catalog-axis-note">
+            Above: the five <b>regions</b> of the map, and the districts your firm is counsel to.
+            Here: the <b>address</b> the firm held at each tier. Every address sits inside one region.
+          </p>
+        )}
         {tab === 'upgrades' && nextTier && (
           <section className="tier-upgrade-banner">
           <div className="tier-preview"><Building2 /><span>TIER {nextTier.tier}</span></div>

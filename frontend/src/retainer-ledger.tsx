@@ -226,6 +226,14 @@ export function RetainerLedger({ game, highlightKey, onShowOnMap }: {
         </div>
       </div>
 
+      {/* Each region names the tiers it covers. Directly beneath this rail sits
+          the catalog's own region filter, listing Market Ward, Civic Center,
+          Harbor Exchange and eleven more -- a completely different set of place
+          names, which reads as a bug when the two are adjacent. They are in fact
+          nested: a catalog region is the street address the firm held at one
+          tier, and every one of them falls inside one of these five. Printing
+          the tier span here, and grouping the filter below by region, is what
+          turns the adjacency from a contradiction into a hierarchy. */}
       <nav className="retainer-regions" aria-label="Map regions">
         {territory.regions.map((entry) => (
           <button
@@ -235,7 +243,7 @@ export function RetainerLedger({ game, highlightKey, onShowOnMap }: {
             aria-pressed={entry.key === region.key}
             onClick={() => chooseRegion(entry.key)}
           >
-            <span>{entry.name}</span>
+            <span>{entry.name}<em>TIERS {entry.tier_range[0]}–{entry.tier_range[1]}</em></span>
             <b>{entry.held}/{entry.total}</b>
             <i aria-hidden="true" style={{ width: `${entry.held / Math.max(1, entry.total) * 100}%` }} />
           </button>

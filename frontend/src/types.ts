@@ -302,6 +302,11 @@ export type TerritoryState = {
     key: string
     name: string
     seat: string
+    /** Inclusive first and last firm tier this region covers. The catalog's own
+     *  `region` field is a different axis -- the street address the firm held at
+     *  one tier -- and this range is what nests one inside the other, so the two
+     *  can be shown on the same screen without reading as a contradiction. */
+    tier_range: [number, number]
     total: number
     held: number
     swept: boolean
