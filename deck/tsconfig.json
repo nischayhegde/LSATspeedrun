@@ -15,6 +15,14 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // Never reached while `noEmit` holds, and that is the point: without an
+    // `outDir`, a run that loses `noEmit` writes a compiled `.js` next to every
+    // one of the sources under `src/`. Naming a throwaway directory means the
+    // worst such a run can do is fill a cache that is already ignored.
+    "outDir": "node_modules/.cache/tsc",
+    // An `outDir` would otherwise take the build log with it; keep it where
+    // `.gitignore` and README.md already say it lives.
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "useDefineForClassFields": true
