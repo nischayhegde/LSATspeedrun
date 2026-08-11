@@ -610,6 +610,30 @@ def test_squaring_an_answer_with_the_stimulus_is_an_inference_question(stem, exp
     assert ("scope_precision" in _candidate_keys(lr(stem))) is expected
 
 
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("Smith responds to Jones by", True),
+        ("Which one of the following most accurately characterizes David's response to Alice's statement?", True),
+        ("Dr. Nash responds to Dr. Godfrey's argument by doing which one of the following?", True),
+        ("The critic's response to the historian is flawed because it", True),
+        # A reply named only to say whose statements to reason from. The question
+        # is what follows from the reply, not how the reply was made.
+        (
+            "The art critic's response to the curator would provide the strongest support for "
+            "which one of the following conclusions?",
+            False,
+        ),
+        ("Stephen's response to Zachary, if true, most strongly supports which one of the following?", False),
+    ],
+)
+def test_a_reply_is_a_method_question_unless_the_stem_reasons_from_it(stem, expected):
+    keys = _candidate_keys(lr(stem))
+    assert ("role_map" in keys) is expected
+    if not expected:
+        assert "scope_precision" in keys
+
+
 def test_countering_somebody_by_doing_something_is_a_method_question():
     """The one place "counters" is not an attack on the argument.
 

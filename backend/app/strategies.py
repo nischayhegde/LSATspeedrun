@@ -460,7 +460,7 @@ _TASK_ROLE = re.compile(
     # argument" and "uses which one of the following techniques" are the two
     # commonest phrasings of exactly this question.
     r"\broles?\b|\bfigures? in\b|\bmethods?\b|\btechniques?\b|\bstrateg\w+\b"
-    r"|\bargument proceeds\b|\bproceeds by\b|\bresponds? to\b|\bresponse to\b"
+    r"|\bargument proceeds\b|\bproceeds by\b"
     # A stem that trails off in "by" wants the move named, which is this
     # question whichever verb it used: "Debbie attempts to counter Carl's
     # argument by", "Maria objects to Pedro's argument by".
@@ -469,6 +469,14 @@ _TASK_ROLE = re.compile(
     r"|\bdoes which one of the following\b|\bin advancing\b"
     r"|\bin which one of the following ways\b|\bfunction of\b|\bpart of the argument\b"
 )
+# One speaker answering another, which is nearly always a question about how the
+# answer was made: "Smith responds to Jones by", "characterizes David's response
+# to Alice's statement". Held apart from the rest of the family because it is the
+# one role phrasing that also appears in questions about something else — "the
+# art critic's response to the curator would provide the strongest support for
+# which one of the following" names whose statements to reason from, and the
+# question is what follows from them.
+_ROLE_RESPONSE = re.compile(r"\bresponds? to\b|\bresponse to\b")
 _TASK_MAIN_CONCLUSION = re.compile(
     r"\bmain (?:conclusion|point)\b|\bconclusion (?:drawn|of the argument)\b"
     r"|\bmost accurately (?:expresses|states|describes) the conclusion\b|\boverall conclusion\b"
@@ -506,7 +514,9 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
     # it is taught and how the credited answers behave — the sufficient version
     # of the question always says so ("if assumed", "allows the conclusion"),
     # and that phrasing is held apart just below.
-    r"|\bassumes which\b|\bis assumed (?:in|by) the\b"
+    r"|\bassumes which\b|\bassumes that\b|\bis assumed (?:in|by) the\b"
+    r"|\bassumptions? (?:made )?(?:in|of|by) (?:the|this|his|her|their)\b"
+    r"|\bassumptions? would have to be made\b"
     # "Makes which one of the following assumptions", with the noun spelled out
     # because "makes which one of the following errors of reasoning" is the same
     # shape and is a flaw question. The repeated "of the" is not a typo: one
@@ -524,7 +534,7 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
 _TASK_SUFFICIENT_ASSUMPTION = re.compile(
     r"\bif assumed\b|\bif (?:it is )?assumed\b|\ballows? the conclusion\b|\benables? the conclusion\b"
     r"|\bfollows? logically if\b|\bproperly (?:drawn|inferred|concluded) if\b"
-    r"|\bassumption that would (?:permit|allow|enable)\b"
+    r"|\bassumption that would (?:permit|allow|enable|(?:serve to )?justify)\b"
     r"|\bif which one of the following is assumed\b"
 )
 
@@ -721,15 +731,19 @@ def _task_tags(question: Question) -> frozenset[str]:
         tags.add("evaluate")
     if _TASK_EXCEPT.search(stem):
         tags.add("except")
-    if _TASK_ROLE.search(labelled) or stored == "argument structure":
+    # A reply is being asked about, unless the stem asks what follows from it.
+    replied = _ROLE_RESPONSE.search(labelled) and support != "stimulus"
+    if _TASK_ROLE.search(labelled) or replied or stored == "argument structure":
         tags.add("role")
     if _TASK_MAIN_CONCLUSION.search(labelled) or stored == "main conclusion":
         tags.add("main_conclusion")
     if _TASK_FLAW.search(labelled) or stored == "flaw":
         tags.add("flaw")
-    if _TASK_NECESSARY_ASSUMPTION.search(stem):
-        tags.add("necessary_assumption")
-    elif _TASK_SUFFICIENT_ASSUMPTION.search(stem):
+    # Sufficient first, because its phrasings are the explicit ones. "The
+    # farmer's conclusion is properly drawn if the argument assumes that" says
+    # both — "properly drawn if" and a bare "assumes that" — and it is the
+    # marker rather than the bare form that knows which question this is.
+    if _TASK_SUFFICIENT_ASSUMPTION.search(stem):
         tags.add("sufficient_assumption")
         # Supplying the missing premise is not inferring from the premises
         # given, and "the conclusion follows logically if which one of the
@@ -737,6 +751,8 @@ def _task_tags(question: Question) -> frozenset[str]:
         # written for proving an answer from the stimulus, so the chain gets
         # this question and the proof reading does not.
         tags.discard("inference")
+    elif _TASK_NECESSARY_ASSUMPTION.search(stem):
+        tags.add("necessary_assumption")
     if _CAUSAL_TASK.search(stem):
         tags.add("causal_stem")
     return frozenset(tags)
