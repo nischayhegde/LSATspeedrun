@@ -1108,14 +1108,22 @@ function recordStreetNetwork(root: THREE.Group, streets: PlannedStreet[]) {
       const lateral = street.position + side * offset
       // Every run this street would lay, minus the parts of it standing on a
       // parcel the plan has already promised to a landmark. See `parcelReserve`.
-      for (const [from, to] of spanOutsideReserved(street.from, street.to, lateral, horizontal, reserved, STREET_PAVEMENT_HALF)) {
+      const pieces = spanOutsideReserved(street.from, street.to, lateral, horizontal, reserved, STREET_PAVEMENT_HALF)
+      pieces.forEach(([from, to], piece) => {
         walks.push({
           points: [at(from, side * offset), at(to, side * offset)],
           halfWidth: STREET_PAVEMENT_HALF,
           weight,
-          street: id,
+          // Only the two sides of an *uninterrupted* street share an id. Where
+          // a parcel has been cut out of this run, the piece before it and the
+          // piece after it are given ids of their own: two pavement ends facing
+          // each other across open ground with a shared id are what the crowd
+          // reads as the two kerbs of a street, and it would cheerfully pair
+          // them into a crossing straight through the building standing in the
+          // gap. Which is the whole thing this reservation exists to prevent.
+          street: piece === 0 ? id : nextStreetId(root),
         })
-      }
+      })
     }
   })
 }
