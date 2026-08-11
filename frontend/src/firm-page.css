@@ -314,12 +314,16 @@
 /* A connection's effect is a retainer board on the map, so the card offers the
    same hand-off the rivals tab does. Quiet, under the price row: it is a place
    to go and look, not the purchase. */
-.asset-locate { width: 100%; margin-top: 9px; padding: 8px 12px; cursor: pointer; font: inherit; font-size: .82rem; color: #55606b; border: 1px solid #d8cfc1; border-radius: 9px; background: #fffdf8; }
+/* 40px tall, not 34: it is the last control on a card, it is now on four of the
+   six tabs rather than one, and a thumb is 40. */
+.asset-locate { width: 100%; min-height: 40px; margin-top: 9px; padding: 8px 12px; cursor: pointer; font: inherit; font-size: .82rem; color: #55606b; border: 1px solid #d8cfc1; border-radius: 9px; background: #fffdf8; }
 .asset-locate:hover { color: var(--ink); border-color: #bfb4a3; }
 /* The place, in the same line and a lighter ink, so the control still reads as
    one sentence rather than a button with a caption. */
-.asset-locate em { color: #8b8477; font-style: normal; }
-.asset-locate:hover em { color: #6d6759; }
+/* 4.6:1 against the button's #fffdf8, not the 3.6:1 a lighter grey gave: this
+   is the half of the sentence that says which of forty objects to look for. */
+.asset-locate em { color: #7a7466; font-style: normal; }
+.asset-locate:hover em { color: #5f5a4d; }
 
 /* ---------------------------------------------------------------------------
    Acting on something, and seeing that it happened.
@@ -481,7 +485,10 @@
 .retainer-plot-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .retainer-plot strong { color: #f4e4b7; font-family: var(--font-pixel); font-size: 10.5px; line-height: 1.35; }
 .retainer-plot em { color: #8fadb5; font-size: 10.5px; font-style: normal; line-height: 1.35; }
-.retainer-plot-map { width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(111,208,197,.35); color: #6fd0c5; background: transparent; }
+/* 22px was a target you had to aim at. The pin still draws at 22, but the
+   button it lives in is 30 with the extra taken as padding, so the hit area
+   grows without the row growing — and mobile.css takes it to 40 for a thumb. */
+.retainer-plot-map { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(111,208,197,.35); color: #6fd0c5; background: transparent; }
 .retainer-plot-map:hover { color: #16232b; background: #6fd0c5; }
 .retainer-plot-yield { margin: auto 0 0; padding-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 8px; color: #8fd2a8; font-family: var(--font-pixel); font-size: 9px; }
 .retainer-plot-lock { margin: auto 0 0; padding-top: 6px; color: #e0a184; font-family: var(--font-pixel); font-size: 9px; line-height: 1.5; }
@@ -556,7 +563,7 @@
   .retainer-plots::-webkit-scrollbar { display: none; }
   .retainer-plot { flex: 0 0 min(72vw, 250px); scroll-snap-align: start; }
   .retainer-plot-buy button { min-height: 40px; }
-  .retainer-plot-map { width: 30px; height: 30px; }
+  .retainer-plot-map { width: 40px; height: 40px; }
   .retainer-ledger-head { margin-bottom: 11px; padding-bottom: 10px; }
   .retainer-ledger-head h2 { font-size: 12.5px; }
   .retainer-ledger-head p { font-size: 11.5px; line-height: 1.55; }
