@@ -204,7 +204,7 @@
      clearing the floating nav dock however that token gets tuned. */
   .uw-district-guide { width: calc(100% - 18px); left: 9px; top: auto; bottom: var(--mobile-dock-clearance, 9px); }
   .uw-district-guide-list { max-height: 108px; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
-  .uw-district-guide-detail { display: none; }
+  .uw-district-guide-detail, .uw-district-brief { display: none; }
   .uw-location-card { right: 8px; bottom: 8px; }
   .uw-mobile-scene-summary {
     padding: 8px 10px;
@@ -374,3 +374,22 @@
 .uw-card-close .mark { width: 11px; height: 11px; }
 .uw-card-action i .mark { width: 12px; height: 12px; }
 .uw-mobile-scene-menu-toggle b .mark { width: 13px; height: 13px; }
+
+/* The district brief: what holding this ground would do for the firm, shown
+   beside the place itself rather than in the ledger below. Keyed to the same
+   three states the retainer rows use, so a colour means the same thing in
+   both. */
+.uw-district-brief { padding: 7px 9px 9px; border-top: 1px solid rgba(220, 199, 145, .16); display: grid; gap: 6px; }
+.uw-district-brief > p { margin: 0; color: #93a59f; font-size: 10px; line-height: 1.4; }
+.uw-district-brief-head { display: flex; align-items: baseline; gap: 6px; }
+.uw-district-brief-head b { font-family: var(--font-pixel); font-size: 7px; letter-spacing: .08em; }
+.uw-district-brief.is-held .uw-district-brief-head b { color: #6cae98; }
+.uw-district-brief.is-open .uw-district-brief-head b { color: #e0bd69; }
+.uw-district-brief.is-locked .uw-district-brief-head b { color: #8d8b83; }
+.uw-district-brief-head span { min-width: 0; overflow: hidden; color: #c8d1cc; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.uw-district-brief-terms { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.uw-district-brief-terms > div { padding: 4px 5px; border: 1px solid rgba(192, 177, 139, .18); border-radius: 5px; background: rgba(255, 255, 255, .03); }
+.uw-district-brief-terms dt { color: #8b9c97; font-family: var(--font-pixel); font-size: 6px; letter-spacing: .06em; }
+.uw-district-brief-terms dd { margin: 2px 0 0; color: #e7e0cc; font-family: var(--font-display); font-size: 11px; }
+.uw-district-brief-gate { margin: 0; color: #a8b3ac; font-size: 9px; line-height: 1.35; }
+.uw-district-brief-gate b { color: #d9bd77; font-weight: 400; }
