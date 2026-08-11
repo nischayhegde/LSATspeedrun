@@ -84,6 +84,36 @@ const SETTLE = Number(flags.get('settle') || 3500)
 const STILLS = [
   { key: 'case', file: 'demo-case.png', route: '/cases/{session}' },
   { key: 'progress', file: 'demo-progress.png', route: '/progress' },
+  {
+    key: 'answer-log',
+    file: 'demo-answer-log.png',
+    // `?tab=` picks the panel and scrolls to it; the answer wall is behind a
+    // dashboard tab rather than below the fold, so a bare `/progress` lands two
+    // clicks away on the skills matrix and photographs the wrong screen.
+    route: '/progress?tab=answers',
+    // The drawer has no URL of its own — the router carries no per-attempt
+    // route and the panel takes no parameter — so the one state this still
+    // exists to show can only be reached by clicking a tile. Hence a `prepare`
+    // step rather than a cleverer route.
+    prepare: async (page) => {
+      await page.click('.answer-log-grid .answer-tile', { timeout: 30_000 })
+      await page.waitForSelector('.answer-log-coaching', { timeout: 30_000 })
+      // Opening a tile scrolls the drawer to the top of the viewport by itself,
+      // and matching the live embed's framing would be the better instinct —
+      // but it cannot be had here. These stills are shot at 1152x648 logical
+      // while the embed gives the app 826 of height, and the drawer runs 852
+      // tall: live, the top of the drawer and both headings fit; at 648 they
+      // cannot, and the app's own framing puts the coaching a screen below the
+      // shutter. So the still is aimed at the pair of headings the slide's copy
+      // points at and gives up the question above them, which is the right
+      // thing to lose — the tile has already been established live.
+      await page.evaluate(() => document.querySelector('.answer-log-reasoning')?.scrollIntoView({ block: 'start' }))
+      await page.waitForTimeout(1_200)
+    },
+    // What the capture has to contain to be worth keeping. Checked against the
+    // rendered frame below, because "it wrote a PNG" has never been the bar.
+    require: ['.answer-log-reasoning', '.answer-log-coaching'],
+  },
   { key: 'office', file: 'demo-office.png', route: '/office' },
   { key: 'office-tier0', file: 'demo-office-tier0.png', route: '/office?officeTier=0' },
   { key: 'office-tier14', file: 'demo-office-tier14.png', route: '/office?officeTier=14&officeAll=1' },
@@ -257,6 +287,15 @@ try {
     await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => undefined)
     await page.waitForTimeout(SETTLE)
 
+    if (still.prepare) {
+      try {
+        await still.prepare(page)
+      } catch (error) {
+        fail(`${still.file}: NOT written — the setup step failed (${String(error.message).slice(0, 120)})`)
+        continue
+      }
+    }
+
     const verdict = await inspect(page)
     if (verdict.reject) {
       // Refusing to write is the whole point. An earlier version of this script
@@ -266,6 +305,24 @@ try {
       // fallback that shows an error screen to the room is not.
       fail(`${still.file}: NOT written — ${verdict.reject}`)
       continue
+    }
+
+    // A still that renders but shows the wrong thing is the failure mode these
+    // files have, not a still that fails to render: `demo-progress.png` stood in
+    // for the review slide for a while and looked entirely fine while making
+    // none of its point. So a still may name what it has to contain, and the
+    // frame is checked for it before the bytes are kept.
+    if (still.require) {
+      const missing = await page.evaluate((selectors) => selectors.filter((selector) => {
+        const element = document.querySelector(selector)
+        if (!element) return true
+        const box = element.getBoundingClientRect()
+        return box.bottom <= 0 || box.top >= innerHeight || box.width === 0
+      }), still.require)
+      if (missing.length) {
+        fail(`${still.file}: NOT written — not in frame: ${missing.join(', ')}`)
+        continue
+      }
     }
 
     // Write beside the target and move into place only once the bytes exist, so

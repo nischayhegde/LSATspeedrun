@@ -307,7 +307,8 @@ still is worse than a visible failure, because it silently misleads the room.
 
 | Still | `--only` key | Stands in for | Used by |
 | --- | --- | --- | --- |
-| `demo-case.png` | `case` | `/cases/{session}` | `demo-case-answer`, `demo-case-verdict-review` |
+| `demo-case.png` | `case` | `/cases/{session}` | `demo-case-answer` |
+| `demo-answer-log.png` | `answer-log` | `/progress?tab=answers`, first tile open | `demo-case-verdict-review` — see below |
 | `demo-progress.png` | `progress` | `/progress` | `demo-mega-litigation` |
 | `demo-office.png` | `office` | `/office` | `demo-clients-walk-in` |
 | `demo-office-tier0.png` | `office-tier0` | `/office?officeTier=0` | `demo-office-transformation` |
@@ -360,6 +361,20 @@ node scripts/shoot.mjs --stills --out=.deck-shots/canned # forced to stills
 Check `demo-case.png` after any change to the case UI, and the office and map
 stills after any change to a game scene — those are the ones under active
 development.
+
+> `demo-answer-log.png` is the one still that needs a click to exist. The
+> attempt drawer has no URL — the router has no per-attempt route and the panel
+> takes no parameter — so its entry in `recapture-stills.mjs` carries a
+> `prepare` step that opens the first tile and scrolls to the pair of headings
+> the slide points at, and a `require` list the frame is checked against before
+> the bytes are kept. That check exists because this file's predecessor on that
+> slide, `demo-progress.png`, rendered perfectly and showed the top of the
+> dashboard instead of the review drawer: a still can be wrong without being
+> broken, and a fallback that quietly stops making the slide's point is the
+> worst of the three states it can be in.
+>
+> **`demo-case-verdict-review` still names `demo-progress.png`.** Changing that
+> is a one-line edit in `src/slides/index.ts`, which the demo work does not own.
 
 > All eight stills were regenerated on 2026-08-10 and each was eyeballed. Two
 > were materially wrong before that: `demo-progress.png` was not the dashboard at

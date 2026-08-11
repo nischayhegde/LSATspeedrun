@@ -926,6 +926,38 @@ def _park_driven_run(session_id: str, behind: StudySession, *, minutes: int) -> 
     db.session.commit()
 
 
+def _surface_in_answer_log(attempt_id: str) -> None:
+    """Make the driven case the newest answer this account has.
+
+    The review slide's whole beat is "that same question, waiting in review",
+    and the way it gets there is the presenter clicking the FIRST tile in the
+    Answer Log. The log is newest-first by `Attempt.created_at`, so being first
+    is the requirement, not a nicety.
+
+    Left alone, it is not first. Two attempts on the pinned question are staged
+    — the driven case and the graded twin — and the twin is rebuilt on every
+    run while the driven case's attempt is kept once it has a grade worth
+    keeping. So each `stage-demo:fast` pushes the twin above the case the room
+    is about to watch. Both tiles are the same question, both are correct, and
+    both open on a real reasoning-and-coaching pair: the wrong one is not
+    detectable by looking at it, only by reading the reasoning and noticing it
+    is not the text that was on screen thirty seconds ago. Measured, not
+    theorised — the twin was on top on a live stack.
+
+    The submit on the slide before cannot fix this, and this is the part that
+    is easy to get wrong: the attempt is replayed through an idempotency key,
+    so no row is written and no timestamp moves. Nothing about playing the demo
+    changes the log's order. It has to be correct before the talk starts.
+
+    Stamped explicitly rather than by shuffling the staging order, because an
+    ordering that is only correct while three calls stay in one sequence is an
+    ordering that breaks silently the first time somebody reorders them.
+    """
+    attempt = Attempt.query.get(attempt_id)
+    attempt.created_at = utcnow()
+    db.session.commit()
+
+
 def _aware(value):
     return value if value.tzinfo else value.replace(tzinfo=utcnow().tzinfo)
 
@@ -1010,6 +1042,7 @@ def main() -> int:
         anchor = StudySession.query.get(open_case["session_id"])
         _park_driven_run(autoplay["session_id"], behind=anchor, minutes=30)
         _park_driven_run(solo["session_id"], behind=anchor, minutes=45)
+        _surface_in_answer_log(solo["attempt_id"])
         current = find_resumable_session(user)
         if current is None or current.id != open_case["session_id"]:
             raise SystemExit(

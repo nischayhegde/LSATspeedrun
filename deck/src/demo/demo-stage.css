@@ -154,13 +154,67 @@
      — an auto inline margin switches off the grid's stretch, which leaves the
      element shrink-to-fit and it collapsed to the 845px its caption text wanted. */
   width: min(100%, calc((100dvh - 150px) * 16 / 10));
-  justify-self: center;
+  /* Off centre, by exactly the width the copy plate needs and no more.
+     
+     Centred, the frame leaves a 219px margin either side and the plate wants
+     349, so it laps 130px onto the app — and loses, because the plate is inside
+     `.deck-layers` (a stacking context at `z-index: 3`) while the hoisted stage
+     carrying the embed is a sibling of that layer at 4. Nothing inside the layer
+     can paint over the app. Measured on all seven demo slides, live and stills
+     alike: the app won every pixel of the shared band, which is what turned a
+     long headline into a truncated one — 81 of its last pixels were painted over
+     on `demo-case-answer`.
+
+     Shifted, the margins are 349 and 89 and the plate has the room it was drawn
+     for. Nothing about the embed changes: same width, same height, same logical
+     viewport, same 66.2% of the projector. The alternatives both cost more than
+     an off-centre frame — clipping the app out of the corner crashed the
+     renderer mid-sequence, and sizing the plate to a centred frame's margin
+     wrapped a five-word headline onto nine lines. */
+  justify-self: start;
+  margin-left: min(
+    /* Never more than the margin there is; at a viewport with no margin to
+       give, this is 0 and the frame stays where it was. */
+    calc(100% - min(100%, calc((100dvh - 150px) * 16 / 10))),
+    /* 38ch is the plate's own max-width, plus the hairline it sits against. */
+    calc(38ch + 2px)
+  );
 }
 
 .body.body-demo .demo-chrome { min-height: 0; }
 .body.body-demo .demo-screen { min-height: 0; }
 
-/* --- the copy, now a plate over the app ---------------------------- */
+/* --- the copy, a plate in the margin the frame leaves ---------------
+   Written here as "a plate over the app", which is what it was designed to be
+   and is not. It cannot be: this plate is inside `.deck-layers`, a stacking
+   context at `z-index: 3`, and the hoisted stage that carries the embed is a
+   sibling of that layer at 4. Its own `z-index: 4` below only orders it within
+   its slide. Measured on all seven demo slides, in stills mode and live alike:
+   the app wins every pixel the two share.
+
+   Both ways out are shut. The plate cannot be raised, because the layer it
+   lives in is owned elsewhere and the stage has to stay above that layer's
+   scrim. The frame cannot be moved off it, because that is the embed's viewport
+   share and it is not for sale. Cutting the app out of the corner with a
+   `clip-path` on the stage was tried and reverted: it crashed the renderer
+   partway through the autoplay sequence while the framed app was scrolling.
+
+   What is left is to stop the plate from claiming width it does not have. The
+   frame is centred with a real margin either side — 219px of a 1920 projector —
+   and the plate used to run 130px past that, so a headline long enough to reach
+   the frame had its last 81px painted over by the app. It looked like a
+   truncated line, which is worse than a short one. `--demo-frame-left` is
+   published by the stage from the same measurement it positions the embed with,
+   so the plate ends exactly where the app begins, at every viewport, without
+   the two having to agree on an expression.
+
+   The floor matters, and it is absolute rather than a percentage: on a viewport
+   short and wide enough that the frame leaves almost no margin, sizing to the
+   margin would leave a plate a few characters wide. Below 18ch it stops
+   shrinking and goes back to lapping over the app, which is the old behaviour
+   on a shape the talk is not given on. A percentage floor would be no floor at
+   all here — 22% of a 1920 screen is 417px, wider than the margin it is meant
+   to protect, so it would simply cancel the whole rule. */
 
 .body.body-demo .demo-copy {
   position: absolute;
