@@ -33,6 +33,7 @@ const dir = `${OUT}/landmarks-${tag}`
 const { browser, page, errors } = await open()
 const report = { base: BASE, email: EMAIL, regions: {} }
 const failures = []
+const warnings = []
 try {
   report.account = await page.evaluate(async () => {
     const game = (await (await fetch('/v1/game', { credentials: 'include' })).json()).game
@@ -127,8 +128,31 @@ try {
         siting: (world.userData.landmarkSiting ?? [])
           .filter((row) => row.label.startsWith('contact-'))
           .map((row) => ({ label: row.label, cleared: row.cleared, x: round(row.x), z: round(row.z) })),
-        triangles: window.__mapScene.renderer.info.render.triangles,
-        calls: window.__mapScene.renderer.info.render.calls,
+        /*
+         * The scene graph's own census, not `renderer.info.render`.
+         *
+         * That counter reports 1 call and 1 triangle here however much is on
+         * screen, because the style pass composites last and resets it: what
+         * survives the read is the final fullscreen pass. The question this
+         * probe has to answer is "how much did naming six places cost the
+         * region the user asked to stay sparse", and a graph census answers it
+         * exactly and without a frame.
+         */
+        cost: (() => {
+          let meshes = 0
+          let instanced = 0
+          let triangles = 0
+          world.traverse((child) => {
+            if (!child.isMesh) return
+            const index = child.geometry?.index
+            const position = child.geometry?.attributes?.position
+            const faces = ((index ? index.count : position?.count ?? 0) / 3) * (child.isInstancedMesh ? child.count : 1)
+            triangles += faces
+            if (child.isInstancedMesh) instanced += 1
+            else meshes += 1
+          })
+          return { meshes, instanced, triangles: Math.round(triangles) }
+        })(),
       }
     })
 
@@ -146,7 +170,13 @@ try {
     }
     if (found.scene.duplicates.length) failures.push(`${key}: duplicate landmark keys ${found.scene.duplicates.join(', ')}`)
     for (const row of found.scene.overlaps) {
+      // Overlap is the defect: a district whose pick disc covers a rival's
+      // compound or the player's own office steals the click from it.
       if (row.into > 0) failures.push(`${key}/${row.key}: reaches ${row.into} into standing ground at ${row.at}`)
+      // Touching distance is not a defect, but it is one lattice change away
+      // from being one, which is the trap `.map-generator-notes.md` records
+      // civic set-pieces falling into every time the plan moves under them.
+      else if (row.into > -.25) warnings.push(`${key}/${row.key}: only ${-row.into} clear of ground at ${row.at}`)
     }
     for (const row of found.scene.inLane) {
       if (row.clear !== null && row.clear < 0) failures.push(`${key}/${row.key}: ${-row.clear} inside a traffic lane`)
@@ -287,14 +317,16 @@ try {
       console.log(`  ${row.district} -> ${row.landmark} ${row.brief?.head ?? 'NO BRIEF'} · framed ${row.flight.from} -> ${row.flight.to} off centre`)
     }
     console.log(` pin: ${found.pin.plot} hasPin=${found.pin.hasPin} back to ${found.returned.region} marked ${found.returned.row}`)
-    console.log(` cost: ${found.scene.calls} calls, ${found.scene.triangles} triangles`)
+    console.log(` cost: ${found.scene.cost.meshes} meshes + ${found.scene.cost.instanced} batches, ${found.scene.cost.triangles} triangles`)
   }
 
   report.failures = failures
+  report.warnings = warnings
   report.errors = errors.slice(0, 10)
   save(`${dir}/report.json`, report)
   console.log(`\n${failures.length ? `FAILED (${failures.length})` : 'PASSED'}`)
   for (const line of failures) console.log(`  ! ${line}`)
+  for (const line of warnings) console.log(`  ~ ${line}`)
   console.log('wrote', dir)
 } finally {
   await browser.close().catch(() => {})
