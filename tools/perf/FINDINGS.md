@@ -153,3 +153,57 @@ own chunk and the `me` request that decides where the visitor goes. The hints
 this directory measures are taken from `ROUTE_ENTRY_CHUNKS`, which is a route's
 own page chunk and its *static* imports; the scene modules are dynamic imports
 and are not in that closure. Verified in the emitted `index.html`, not assumed.
+
+---
+
+## `/v1/game` and its catalog — measured, then left alone
+
+Recorded because it looked like the next obvious win and is not, and the next
+person to read the waterfall will have the same idea.
+
+**What it is.** `GET /v1/game` returns 164,857 bytes of JSON. Two thirds of that
+is one key:
+
+| key | bytes | share |
+|---|---:|---:|
+| `catalog` | 109,855 | 66.6% |
+| `story` | 30,851 | 18.7% |
+| `territory` | 18,723 | 11.4% |
+| everything else (11 keys) | 5,428 | 3.3% |
+
+The catalog is 107 assets, 69 clients and 15 office tiers, and `serialize_game`
+already takes an `include_catalog` flag that no caller passes. All **18**
+`serialize_game(...)` call sites in `routes.py` therefore ship it — so a
+purchase, a settled case, a story choice and a daily-reward claim each resend
+the whole thing.
+
+**Why it was left.** Two measurements killed it.
+
+1. *It is not slow to produce.* 12 ms server-side, steady over 10 calls, on a
+   warm SQLite. There is no N+1 to find here.
+2. *It is not large on the wire.* `compress_response` gzips it to **29,826
+   bytes**. On the 1.6 Mbps link the harness models that is ~150 ms, and the
+   route-script work above moved more than that for less risk.
+
+**Why the obvious fix is not obviously correct.** Dropping the catalog from
+mutation responses needs the client to merge rather than replace, and
+`applyGame` in `frontend/src/pages/shared.tsx` replaces:
+`setQueryData(['game'], { game, pending_reviews })`. The merge itself is three
+lines, but the catalog's `owned`, `available`, `missing_assets` and the tiers'
+`next` are all *profile-derived* — buying an asset changes them across the whole
+catalog. So the flag cannot be set per-response without deciding, endpoint by
+endpoint, whether that endpoint can have changed them, and getting one wrong
+leaves the firm and office screens showing an item as unowned after it was
+bought. That is a judgement call on the screens a sibling worker is rebuilding.
+
+**What is worth doing, when someone owns both halves.** Split the response:
+a `catalog` that is static content (`name`, `description`, `benefit`, `art`,
+`region`, `cost`, `tier`, `requirements` — 79 kB of the 110 kB, identical for
+every account) served once behind a long cache, and a small per-profile overlay
+of `owned`/`available`/`missing_assets` sent with every game payload. That is an
+API change with a client change attached, not a flag.
+
+Two fields in `catalog.clients` — `contract_bonus_mult` and
+`minimum_score_multiplier` — have no reader anywhere in `frontend/src`. Left in
+place: together they are under 1 kB gzipped, and a serializer field is exactly
+the kind of thing a screen starts reading next week.
