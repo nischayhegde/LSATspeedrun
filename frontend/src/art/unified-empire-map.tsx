@@ -416,7 +416,11 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
         .map((entry) => game.territory.districts.find((district) => district.key === entry.key))
         .filter((district): district is TerritoryDistrict => Boolean(district?.landmark_key) && district?.region === activeRegionKey)
       if (!opens.length) return ''
-      const role = opens.length === 1 ? `Opens ${opens[0].name}` : `Opens ${opens.length} retainers here`
+      // "Retainers" was the last player-facing survivor of the word's old
+      // second meaning: this label is on a contact standing in a district, and
+      // a district seat is standing counsel, not a retainer. A retainer is the
+      // client relationship three tabs away that pays the per-case fee.
+      const role = opens.length === 1 ? `Opens ${opens[0].name}` : `Opens ${opens.length} districts here`
       return [asset.key, asset.name, role, opens.map((district) => district.landmark_key).join('~')].join('|')
     })
     .filter(Boolean)
