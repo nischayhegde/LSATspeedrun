@@ -523,6 +523,46 @@ def _target_seconds(question: Question, previous_passage_id: str | None) -> int:
 # --------------------------------------------------------------------------
 
 
+def _repair_question(
+    review_pool: list[tuple[str, str]],
+    trial: dict | None,
+    salt: object,
+    candidates: dict[str, list[str]],
+) -> Question | None:
+    """A review-queue question this run's planned approach genuinely fits.
+
+    The bug this closes. A trial token is drawn first and a question is then
+    chosen for it, but a repair *replaced* that question without the token being
+    reconsidered — so an approach picked for a Logical Reasoning question landed
+    on whatever the review queue happened to offer, and "Compare the two
+    passages" ended up recorded against a Logical Reasoning question. It made 85
+    such rows on the demo account, and they show in the Methods panel.
+
+    The live path cannot do this: `services.create_study_session` settles the
+    whole question list first and only then calls `assign_strategy_trial` on
+    each question. This restores the same ordering the only way a script that
+    plans its arms in advance can — by keeping the plan and moving the question,
+    scanning the pool from a stable offset for one the approach is a candidate
+    for. Returns None when the pool holds none, which leaves the position as
+    fresh material rather than as a mismatch.
+    """
+    if not review_pool:
+        return None
+    start = int(_fraction(SEED_VERSION, "review", salt) * len(review_pool))
+    for offset in range(len(review_pool)):
+        question_id, _reason = review_pool[(start + offset) % len(review_pool)]
+        question = db.session.get(Question, question_id)
+        if question is None:
+            continue
+        if trial is None:
+            return question
+        if question_id not in candidates:
+            candidates[question_id] = _candidate_keys(question)
+        if trial["key"] in candidates[question_id]:
+            return question
+    return None
+
+
 def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
     calendar = _study_calendar(now)
     plan = _session_plan(len(calendar))
@@ -531,12 +571,19 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
     type_cycle = pool.type_cycle()
     type_cursor = 0
     review_pool: list[tuple[str, str]] = []  # (question_id, reason_code)
+    # Candidate approaches per question, for the repair scan below. The pool's
+    # own index cannot answer this: it is keyed the other way round, approach to
+    # questions, and it only holds unspent questions.
+    candidates: dict[str, list[str]] = {}
     stats = {
         "sessions": 0,
         "attempts": 0,
         "trials": 0,
         "controls": 0,
         "skips": 0,
+        "repairs": 0,
+        "repairs_declined": 0,
+        "mismatched": 0,
         "by_style": defaultdict(int),
     }
 
@@ -605,10 +652,8 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
             )
             repair_question = None
             if is_repair:
-                question_id, _reason = review_pool[
-                    int(_fraction(SEED_VERSION, "review", salt) * len(review_pool))
-                ]
-                repair_question = db.session.get(Question, question_id)
+                repair_question = _repair_question(review_pool, trial, salt, candidates)
+                stats["repairs" if repair_question is not None else "repairs_declined"] += 1
             if repair_question is not None:
                 question = repair_question
             elif trial:
@@ -627,6 +672,12 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
             section_index = 0
             if style == "diagnostic":
                 section_index = 0 if position < 25 else 1 if position < 52 else 2
+
+            # Counted rather than asserted, so one stale row cannot stop a seed
+            # that takes minutes — but `_verify` refuses to report success while
+            # it is non-zero, which is what makes this a check.
+            if trial and STRATEGIES[trial["key"]]["section"] != question.section:
+                stats["mismatched"] += 1
 
             item = SessionItem(
                 session_id=session.id,
@@ -1170,6 +1221,28 @@ def _lab_status(result: dict) -> str:
     return "forming"
 
 
+def _cross_section_rows(user: User) -> int:
+    """Rows recording an approach against a question from the other section.
+
+    Read back off the database rather than trusted from the writer, because the
+    thing being checked is what a student would see in the Methods panel. The
+    live path cannot produce one of these — it picks the question first — so any
+    count above zero is this script having put it there.
+    """
+    rows = (
+        SessionItem.query.with_entities(SessionItem.strategy_key, Question.section)
+        .join(Question, Question.id == SessionItem.question_id)
+        .join(StudySession, SessionItem.session_id == StudySession.id)
+        .filter(StudySession.user_id == user.id, SessionItem.strategy_key.isnot(None))
+        .all()
+    )
+    return sum(
+        1
+        for key, section in rows
+        if key in STRATEGIES and STRATEGIES[key]["section"] != section
+    )
+
+
 def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
     performance = performance_snapshot(user)
     game = serialize_game(user.game_profile, include_catalog=True)
@@ -1196,6 +1269,12 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
         problems.append("no skipped strategy prompts")
     if unplaced:
         problems.append(f"{unplaced} planned strategy trials had no eligible session slot")
+    mismatched = _cross_section_rows(user)
+    if mismatched:
+        problems.append(
+            f"{mismatched} questions carry an approach from the other section — "
+            "a Reading Comprehension approach on a Logical Reasoning question, or the reverse"
+        )
     if len(performance["skills"]) < 12:
         problems.append(f"only {len(performance['skills'])} skills in the breakdown")
     thin = [skill["name"] for skill in performance["skills"] if skill["attempts"] < 5]
@@ -1243,6 +1322,7 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
         "strategy_lab": {
             "trials_completed": lab["trials_completed"],
             "strategies_tested": lab["strategies_tested"],
+            "cross_section_rows": mismatched,
             "supported": [
                 {
                     "title": result["title"],
