@@ -23,12 +23,26 @@
       is `currentColor` at low opacity, which tints whatever is behind it
       instead of replacing it.
 
-   3. Nothing is sized in pixels. Type is `clamp()` between two `rem`
-      bounds so it tracks the deck's root font size, geometry is in
-      percentages or `em`, and every SVG has a `viewBox`. The container
-      these sit in is about 60% of the frame, but the frame is whatever
-      the room's projector is, and the set has to survive 4:3 through
-      21:9 without a media query.
+   3. Nothing is sized in pixels, and nothing is sized against the
+      browser either. Type comes off the seven-step figure scale declared
+      on `.fig` below, geometry is in percentages or `em`, and every SVG
+      has a `viewBox`. The container these sit in is about 60% of the
+      frame, but the frame is whatever the room's projector is, and the
+      set has to survive 4:3 through 21:9 without a media query.
+
+      This used to read "`clamp()` between two `rem` bounds", and that
+      rule is what the founders were looking at when they said the deck
+      was unfinished. A `var(--fig-label)` resolves to
+      18.9px on a 1920-wide stage, because the `rem` ceiling binds long
+      before the viewport term does — so every label in every figure was
+      pinned to roughly the size of the hairline credit, no matter how
+      large the projected image was. Twelve figures' worth of chart
+      labels were being set at the deck's smallest available size, which
+      is why the charts read as grey furniture rather than as the
+      argument. `rem` is the wrong unit here for a second reason: it
+      tracks the *browser's* root size, which does not move when the
+      stage does, so the figures drifted out of proportion with the
+      headline above them at every resolution but one.
 
    ENTRANCE. Each figure's component sets inline styles from a phase
    number and this file supplies the transition that carries them there,
@@ -56,6 +70,31 @@
   font-family: var(--font-ui);
   /* Declared once so no element has to guard its own `var()` fallback. */
   --fig-delay: 0ms;
+
+  /* --- the figure type scale ---------------------------------------
+     Seven steps in `--u`, the stage unit `deck.css` derives everything
+     else from, so a chart label holds its size relative to the headline
+     it sits under at every projector resolution.
+
+     The bottom step is the legibility floor and is set deliberately
+     rather than found: at 1920 wide `--fig-micro` is 20px, which is
+     about what a room can read off a projected chart from the back row.
+     Nothing in a figure may be set smaller than it. Anything that
+     genuinely will not fit at 20px is too much information for a slide
+     and belongs in the speaker notes.
+
+     The steps are the deck's own type scale continued downward rather
+     than a second scale invented here — `--fig-label` and `--t-dense`
+     are within a hair of each other, and `--fig-lead` lands between
+     `--t-body` and `--t-sm`. */
+  --fig-micro: calc(1.05 * var(--u));
+  --fig-note: calc(1.2 * var(--u));
+  --fig-label: calc(1.4 * var(--u));
+  --fig-strong: calc(1.68 * var(--u));
+  --fig-lead: calc(2.1 * var(--u));
+  --fig-num-sm: calc(2.8 * var(--u));
+  --fig-num: calc(3.8 * var(--u));
+  --fig-num-lg: calc(5 * var(--u));
 }
 
 .fig * {
@@ -97,9 +136,12 @@
   /* The gutter is derived from the numeral, not guessed. `+2.77` is five
      glyphs of a display face, which is a little over three ems of its own
      size — set it in absolute terms and the numerals overflow the moment
-     the deck's root size changes. */
-  --fig-bp-numeral: clamp(2rem, 3.4vw, 3.5rem);
-  --fig-bp-height: clamp(1.1rem, 2.4vh, 2rem);
+     the stage changes size. */
+  --fig-bp-numeral: var(--fig-num);
+  /* The bar is the slide. It was 32px tall on a 1080p stage — a hairline
+     under a headline six times its height — which is most of why this
+     slide read as an empty frame with a rule in it. */
+  --fig-bp-height: calc(3.4 * var(--u));
   /* 3.2 ems of the numeral was measured against flat type. The extruded object
      carries its own depth off the right of the last glyph and its faces are
      set at a heavier weight, so the gutter buys a little more room — without
@@ -108,7 +150,7 @@
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: clamp(.5rem, 1.4vh, 1.2rem);
+  gap: var(--s-3);
 }
 
 /* Left, against the start of the bar it names. The slide body centres its
@@ -119,7 +161,7 @@
 .fig-bp-name {
   text-align: left;
   margin: 0 0 .4em;
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
   line-height: 1.2;
   color: var(--on-field-dim);
 }
@@ -224,18 +266,18 @@
   position: relative;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(1.35rem, 2.1vw, 2.1rem);
+  font-size: var(--fig-num-sm);
   line-height: 1;
 }
 
 .fig-bp-share span {
-  font-size: clamp(.92rem, 1.08vw, 1.08rem);
+  font-size: var(--fig-note);
   color: var(--on-field-dim);
 }
 
 .fig-bp-gapstrip {
   position: relative;
-  height: clamp(2.2rem, 4.6vh, 3.2rem);
+  height: var(--s-6);
 }
 
 .fig-bp-gap {
@@ -260,7 +302,7 @@
 
 .fig-bp-gap-note {
   font-family: var(--font-pixel);
-  font-size: clamp(.88rem, 1.02vw, 1.02rem);
+  font-size: var(--fig-micro);
   letter-spacing: .03em;
   color: var(--on-field-dim);
   white-space: nowrap;
@@ -275,17 +317,17 @@
 }
 
 .fig-hb {
-  --fig-hb-height: clamp(1.6rem, 3.6vh, 2.8rem);
+  --fig-hb-height: calc(3.6 * var(--u));
   --fig-hb-pad: 2.9em;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: clamp(.7rem, 1.8vh, 1.5rem);
+  gap: var(--s-4);
 }
 
 .fig-hb-label {
   margin: 0;
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
   color: var(--on-field-dim);
 }
 
@@ -353,7 +395,7 @@
 }
 
 .fig-hb-outcome-name {
-  font-size: clamp(.92rem, 1.1vw, 1.12rem);
+  font-size: var(--fig-note);
 }
 
 .fig-hb-outcome-lead {
@@ -413,14 +455,14 @@
 }
 
 .fig-hb-source {
-  font-size: clamp(.9rem, 1.05vw, 1.06rem);
+  font-size: var(--fig-note);
   line-height: 1.15;
   color: var(--on-field-dim);
 }
 
 .fig-hb-range {
   font-family: var(--font-pixel);
-  font-size: clamp(.95rem, 1.15vw, 1.15rem);
+  font-size: var(--fig-label);
   letter-spacing: .02em;
 }
 
@@ -446,14 +488,14 @@
 .fig-hb-curriculum {
   display: flex;
   flex-wrap: wrap;
-  gap: clamp(1rem, 2.4vw, 2.6rem);
+  gap: var(--s-4);
 }
 
 .fig-hb-quote {
   margin: 0;
   padding-left: .7em;
   border-left: 2px solid currentColor;
-  font-size: clamp(.92rem, 1.12vw, 1.14rem);
+  font-size: var(--fig-note);
   line-height: 1.3;
   color: var(--on-field-dim);
   transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
@@ -474,7 +516,7 @@
   background: var(--on-field);
   color: var(--field);
   font-weight: 600;
-  font-size: clamp(1rem, 1.32vw, 1.32rem);
+  font-size: var(--fig-strong);
   line-height: 1.25;
   transition: transform var(--mo-4) var(--ease-out);
 }
@@ -486,7 +528,7 @@
   align-items: center;
   gap: .6em;
   font-family: var(--font-pixel);
-  font-size: clamp(.88rem, 1.02vw, 1.04rem);
+  font-size: var(--fig-micro);
   color: var(--on-field-dim);
   transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
 }
@@ -551,14 +593,14 @@
 }
 
 .fig-rt-hud-label {
-  font-size: clamp(.86rem, 1vw, 1rem);
+  font-size: var(--fig-micro);
   letter-spacing: .1em;
   text-transform: uppercase;
   color: var(--on-field-dim);
 }
 
 .fig-rt-hud-clock {
-  font-size: clamp(1.25rem, 2vw, 1.9rem);
+  font-size: var(--fig-lead);
   font-variant-numeric: tabular-nums;
   /* The readout changes 25 times a second; a proportional monospace would
      still reflow on the `1` glyph without this. */
@@ -671,7 +713,7 @@
 }
 
 .fig-rt-node-label {
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
   text-align: center;
   white-space: nowrap;
   transition: color var(--mo-3) var(--ease-out);
@@ -689,7 +731,7 @@
 .fig-rt-node[data-taken='true'] .fig-rt-node-label {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(1.2rem, 1.85vw, 1.85rem);
+  font-size: var(--fig-lead);
 }
 
 /* Beside the dot, not above it: above is where the label went. To the right
@@ -720,7 +762,7 @@
 .fig-rc {
   display: flex;
   align-items: stretch;
-  gap: clamp(1rem, 2.4vw, 2.6rem);
+  gap: var(--s-4);
   width: 100%;
   height: 100%;
 }
@@ -731,7 +773,7 @@
   display: flex;
   flex-direction: column;
   gap: .7em;
-  padding: clamp(.7rem, 1.5vh, 1.2rem);
+  padding: var(--s-3);
   border: 1px solid var(--on-field-dim);
   /* Clips the coaching panel while it is still below the card, which is what
      makes it rise rather than fade. */
@@ -741,7 +783,7 @@
 
 .fig-rc-stem {
   margin: 0;
-  font-size: clamp(.9rem, 1.05vw, 1.06rem);
+  font-size: var(--fig-note);
   line-height: 1.35;
   color: var(--on-field-dim);
   transition: opacity var(--mo-4) var(--ease-in-out);
@@ -760,7 +802,7 @@
   display: flex;
   flex-direction: column;
   gap: .42em;
-  font-size: clamp(.95rem, 1.15vw, 1.15rem);
+  font-size: var(--fig-label);
   /* Receding by type size rather than by `transform: scale()`. A scale would
      leave the choices' layout box at full height, so the reasoning box would
      have nothing to grow into — the emphasis would move visually and not
@@ -852,7 +894,7 @@
 
 .fig-rc-written {
   margin: 0;
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
   line-height: 1.5;
 }
 
@@ -920,7 +962,7 @@
 
 .fig-rc-coach-clause {
   margin: 0;
-  font-size: clamp(.92rem, 1.12vw, 1.14rem);
+  font-size: var(--fig-note);
   line-height: 1.35;
 }
 
@@ -932,7 +974,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: clamp(1rem, 2.6vh, 2.2rem);
+  gap: var(--s-4);
 }
 
 .fig-rc-effect-head {
@@ -945,19 +987,19 @@
 .fig-rc-effect-head b {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(1.55rem, 2.5vw, 2.5rem);
+  font-size: var(--fig-num-sm);
   line-height: 1;
 }
 
 .fig-rc-effect-head span {
-  font-size: clamp(.9rem, 1.05vw, 1.06rem);
+  font-size: var(--fig-note);
   line-height: 1.2;
   color: var(--on-field-dim);
 }
 
 .fig-rc-effect-track {
   display: block;
-  height: clamp(.55rem, 1.3vh, .95rem);
+  height: var(--s-2);
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
 }
 
@@ -986,7 +1028,7 @@
 
 .fig-ct-row {
   position: relative;
-  height: clamp(9rem, 32vh, 16rem);
+  height: calc(17 * var(--u));
 }
 
 /* ================================================================
@@ -1094,7 +1136,7 @@
 .fig-num .num3d {
   /* Deliberately enormous. This is the only object on the slide and the
      narrative wants it to be the only thing in frame with weight. */
-  font-size: clamp(6rem, 26vw, 22rem);
+  font-size: calc(24 * var(--u));
   will-change: transform, opacity;
 }
 
@@ -1199,7 +1241,7 @@
 .fig-ct-confidence {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(2.1rem, 3.6vw, 3.4rem);
+  font-size: var(--fig-num);
   line-height: 1;
   transition:
     opacity var(--mo-3) var(--ease-spring),
@@ -1207,7 +1249,7 @@
 }
 
 .fig-ct-category {
-  font-size: clamp(.92rem, 1.1vw, 1.12rem);
+  font-size: var(--fig-note);
   line-height: 1.2;
   text-align: center;
   transition: opacity var(--mo-3) var(--ease-out) 220ms;
@@ -1290,7 +1332,7 @@
   position: absolute;
   max-width: 25%;
   transform: translateY(-50%);
-  font-size: clamp(.95rem, 1.18vw, 1.2rem);
+  font-size: var(--fig-label);
   line-height: 1.2;
   transition: opacity var(--mo-3) var(--ease-out) 720ms;
 }
@@ -1303,7 +1345,7 @@
      label inside the fan the moment the first trace drew. */
   transform: translateY(-250%);
   font-family: var(--font-pixel);
-  font-size: clamp(.88rem, 1.02vw, 1.04rem);
+  font-size: var(--fig-micro);
   letter-spacing: .02em;
   color: var(--on-field-dim);
   transition: opacity var(--mo-4) var(--ease-out);
@@ -1427,7 +1469,7 @@
   max-width: 10em;
   padding: .42em .75em;
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
-  font-size: clamp(.88rem, 1.02vw, 1.04rem);
+  font-size: var(--fig-micro);
   line-height: 1.2;
   text-align: center;
   color: var(--on-field-dim);
@@ -1451,7 +1493,7 @@
 
 .fig-mf-card[data-docked='true'] {
   max-width: 11em;
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
 }
 
 .fig-mf-sweep {
@@ -1496,7 +1538,7 @@
 }
 
 .fig-mf-lift-name {
-  font-size: clamp(.9rem, 1.05vw, 1.08rem);
+  font-size: var(--fig-note);
   line-height: 1.2;
   color: var(--on-field-dim);
 }
@@ -1527,14 +1569,14 @@
 .fig-mf-lift-value {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(1.5rem, 2.4vw, 2.3rem);
+  font-size: var(--fig-num-sm);
   line-height: 1;
 }
 
 .fig-mf-lift-note {
   margin: -.7em 0 0;
   font-family: var(--font-pixel);
-  font-size: clamp(.85rem, .98vw, .98rem);
+  font-size: var(--fig-micro);
   line-height: 1.25;
   color: var(--on-field-dim);
 }
@@ -1604,7 +1646,7 @@
   width: max-content;
   max-width: 11em;
   padding: .25em .5em;
-  font-size: clamp(.92rem, 1.12vw, 1.14rem);
+  font-size: var(--fig-note);
   line-height: 1.25;
   /* A halo in the field's own colour. The label belongs at the ring's open
      end — that is the whole point of it — and the ring runs through where it
@@ -1733,7 +1775,7 @@
 
 .fig-cr-inner-label {
   margin: .45em 0 0;
-  font-size: clamp(.9rem, 1.08vw, 1.1rem);
+  font-size: var(--fig-note);
   line-height: 1.25;
 }
 
@@ -1862,7 +1904,7 @@
 .fig-rd-label {
   display: block;
   max-width: 12em;
-  font-size: clamp(.9rem, 1.08vw, 1.1rem);
+  font-size: var(--fig-note);
   line-height: 1.18;
   color: var(--on-field-dim);
 }
@@ -1882,7 +1924,7 @@
   display: block;
   margin-top: .18em;
   font-family: var(--font-pixel);
-  font-size: clamp(.85rem, .98vw, .98rem);
+  font-size: var(--fig-micro);
   letter-spacing: .04em;
   color: var(--on-field-dim);
   transition: opacity var(--mo-3) var(--ease-out);
@@ -1904,14 +1946,14 @@
 .fig-rd-centre b {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(2.4rem, 4.6vw, 4.6rem);
+  font-size: var(--fig-num-lg);
   line-height: .95;
   letter-spacing: -.02em;
 }
 
 .fig-rd-centre span {
   max-width: 8.5em;
-  font-size: clamp(.9rem, 1.08vw, 1.1rem);
+  font-size: var(--fig-note);
   line-height: 1.2;
   color: var(--on-field-dim);
 }
@@ -1923,7 +1965,7 @@
 .fig-sp {
   display: flex;
   align-items: center;
-  gap: clamp(1rem, 2.6vw, 2.8rem);
+  gap: var(--s-5);
   width: 100%;
   height: 100%;
 }
@@ -1986,7 +2028,7 @@
 
 .fig-sp-label {
   position: absolute;
-  font-size: clamp(.9rem, 1.1vw, 1.12rem);
+  font-size: var(--fig-note);
   white-space: nowrap;
   color: var(--on-field-dim);
   transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
@@ -2011,7 +2053,7 @@
   display: flex;
   align-items: center;
   gap: .6em;
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
   color: var(--on-field-dim);
   transition: opacity var(--mo-3) var(--ease-out);
 }
@@ -2053,7 +2095,7 @@
 }
 
 .fig-pb {
-  --fig-pb-gap: clamp(.9rem, 2.6vw, 2.8rem);
+  --fig-pb-gap: var(--s-5);
   display: flex;
   flex-direction: column;
   gap: .7em;
@@ -2131,7 +2173,7 @@
   transform: translateX(-50%);
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(1.1rem, 1.85vw, 1.85rem);
+  font-size: var(--fig-lead);
   line-height: 1;
   white-space: nowrap;
   transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
@@ -2171,7 +2213,7 @@
   overflow: hidden;
   text-align: center;
   font-family: var(--font-pixel);
-  font-size: clamp(.85rem, .98vw, .98rem);
+  font-size: var(--fig-micro);
   line-height: 1.2;
   color: var(--on-field-dim);
 }
@@ -2184,7 +2226,7 @@
   margin: 0;
   text-align: center;
   font-weight: 600;
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
   line-height: 1.2;
 }
 
@@ -2192,7 +2234,7 @@
   margin: 0;
   text-align: center;
   font-family: var(--font-pixel);
-  font-size: clamp(.85rem, .98vw, .98rem);
+  font-size: var(--fig-micro);
   color: var(--on-field-dim);
   transition: opacity var(--mo-4) var(--ease-out);
 }
@@ -2208,7 +2250,7 @@
 .fig-gt {
   display: flex;
   flex-direction: column;
-  gap: clamp(.8rem, 2vh, 1.8rem);
+  gap: var(--s-4);
   width: 100%;
   height: 100%;
 }
@@ -2230,7 +2272,7 @@
   margin: 0;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(1.6rem, 3.2vw, 3.2rem);
+  font-size: var(--fig-num);
   line-height: 1.05;
   transition: opacity var(--mo-4) var(--ease-out);
 }
@@ -2335,7 +2377,7 @@
    from the end the pen would start at instead of unfolding from its middle. */
 .fig-gt-strike {
   position: absolute;
-  width: clamp(2.4rem, 4.4vw, 4rem);
+  width: calc(4.4 * var(--u));
   height: 4px;
   transform: translate(-50%, -50%) rotate(-56deg);
   background: currentColor;
@@ -2353,7 +2395,7 @@
   margin: 0;
   max-width: 46%;
   text-align: center;
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
   line-height: 1.25;
   color: var(--on-field-dim);
   /* No line through it. The slash above is the refusal; striking the caption
@@ -2377,7 +2419,7 @@
   display: flex;
   align-items: center;
   gap: .6em;
-  font-size: clamp(.95rem, 1.15vw, 1.18rem);
+  font-size: var(--fig-label);
   line-height: 1.2;
   transition:
     opacity var(--mo-3) var(--ease-out) var(--fig-delay),
