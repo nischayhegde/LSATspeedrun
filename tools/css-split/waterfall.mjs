@@ -33,17 +33,8 @@
  */
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { homedir } from 'node:os'
 import { compressionFromOpts, describeCompression, serveLikeProd } from './prod-serve.mjs'
-const PW = process.env.LSAT_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-const { chromium } = await import(PW)
-/**
- * This copy of Playwright resolves the host as `mac-x64` and looks for a binary
- * that was never downloaded, so the browser is named rather than discovered.
- * The rest of the repo's capture scripts already do this.
- */
-const CHROME = process.env.LSAT_CHROME
-  || `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+import { launchChromium } from '../playwright-env.mjs'
 
 const argv = process.argv.slice(2)
 const takes = new Set(['--route', '--shot'])
@@ -69,7 +60,7 @@ const short = (url) => {
 }
 
 const a = await serveLikeProd(dist, { compress, api: fakeApi })
-const browser = await chromium.launch({ executablePath: CHROME })
+const browser = await launchChromium({ args: [] })
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   const client = await page.context().newCDPSession(page)

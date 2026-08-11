@@ -30,13 +30,9 @@
  *   ... --no-compress             the raw bytes every number before this was taken on
  *   ... --offline-fonts           refuse the third-party font origins
  */
-import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { compressionFromOpts, describeCompression, serveLikeProd } from './prod-serve.mjs'
-const PW = process.env.LSAT_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-const { chromium } = await import(PW)
-const CHROME = process.env.LSAT_CHROME
-  || `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+import { launchChromium } from '../playwright-env.mjs'
 
 const argv = process.argv.slice(2)
 const takes = new Set(['--sessions', '--pairs', '--route'])
@@ -56,7 +52,7 @@ const [baseDist, headDist] = positional.map((p) => resolve(p))
 
 const a = await serveLikeProd(baseDist, { compress })
 const b = await serveLikeProd(headDist, { compress })
-const browser = await chromium.launch({ executablePath: CHROME })
+const browser = await launchChromium({ args: [] })
 
 /** One cold load. Returns first and largest contentful paint in ms. */
 const run = async (port) => {

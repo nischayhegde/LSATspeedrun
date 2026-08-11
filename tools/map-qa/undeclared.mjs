@@ -13,7 +13,7 @@
  *
  * Runs no frames.
  */
-import { open, region, save, TABS } from './lib.mjs'
+import { TABS, open, region, save, scratch } from './lib.mjs'
 
 const key = process.argv[2] ?? 'nation'
 const LIMIT = Number(process.env.MAPS_LIMIT ?? 24)
@@ -181,7 +181,7 @@ try {
       + `  building~${row.declaredBuilding} prop~${row.declaredProp.distance === Infinity ? 'none' : `${row.declaredProp.name}@${row.declaredProp.distance.toFixed(2)}`}`)
     console.log(`          ${row.what}`)
   }
-  save(`/Users/alan/LSATspeedrun/.maps/undeclared-${key}.json`, { ...report, errors })
+  save(scratch(`undeclared-${key}.json`), { ...report, errors })
 } finally {
   await browser.close().catch(() => {})
 }
