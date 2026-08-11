@@ -48,7 +48,7 @@ import {
   type RoadGraph,
   type RoadGraphSpec,
 } from './map-agents'
-import { CROWD_RENDER_SCALE, CrowdRenderer, buildCrowdWalker, type CrowdWalker } from './map-crowd-rig'
+import { CrowdRenderer, buildCrowdWalker, crowdRenderScale, type CrowdWalker } from './map-crowd-rig'
 import { createRiverBed, createRiverSurface, createSeaSurface, setSeaWake, type RiverOptions } from './map-water'
 import { clearObjects, clearanceIntrusion, escapeCorridors, keepRecordsClear, prepareClearance, type ClearanceCorridor, type ClearanceField } from './map-clearance'
 import { IllustratedRenderPass } from './render-style'
@@ -7277,8 +7277,11 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   const root = new THREE.Group()
   const rig = buildStylizedCounsel(gender, tier)
   // Architectural scale: counsel should read as a person in the district,
-  // not as a figure nearly as tall as a multi-storey headquarters.
-  rig.root.scale.setScalar(.278)
+  // not as a figure nearly as tall as a multi-storey headquarters. The same
+  // figure the crowd is drawn at, and read through the same function — it was
+  // the same number written twice, which meant an arm that changed how big a
+  // person is left the player the only giant on the pavement.
+  rig.root.scale.setScalar(crowdRenderScale())
   rig.root.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.castShadow = true
@@ -8507,7 +8510,7 @@ export function MapThreeScene({
         // `index * 7.31 + 3.7` so a guard never happens to roll the exact
         // same build, colouring and satchel as a passer-by.
         const guard = buildCrowdWalker(index * 13.7 + 101.3)
-        guard.root.scale.setScalar(CROWD_RENDER_SCALE)
+        guard.root.scale.setScalar(crowdRenderScale())
         const faceSign = z < 0 ? 1 : -1
         // A step further out than the travel anchor (1.45), and shifted to
         // one side, so the figure stands beside the door the player travels
@@ -8622,7 +8625,7 @@ export function MapThreeScene({
       // on `index * 13.7 + 101.3`; a third namespace keeps a contact from
       // rolling the same build and colouring as either.
       const figure = buildCrowdWalker(index * 9.13 + 517.7)
-      figure.root.scale.setScalar(CROWD_RENDER_SCALE)
+      figure.root.scale.setScalar(crowdRenderScale())
       // Opposite the bracket. The board hangs off the post's local +x, which is
       // `(cos, -sin)` in world for a `rotation.y`, so putting the figure on that
       // same side stands them underneath their own sign.
@@ -9186,7 +9189,7 @@ export function MapThreeScene({
       // a pedestrian and the lawyer read as the same species. It has to be
       // applied before the crowd is constructed, because the crowd reads it as
       // the scale its fade ramps towards.
-      walker.root.scale.setScalar(CROWD_RENDER_SCALE)
+      walker.root.scale.setScalar(crowdRenderScale())
       crowdWalkers.push(walker)
     }
     const crowdRenderer = crowdWalkers.length ? new CrowdRenderer(crowdWalkers) : null

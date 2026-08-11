@@ -78,6 +78,28 @@ function hashUnit(seed: number) {
  */
 export const CROWD_RENDER_SCALE = .278
 
+/**
+ * The same figure, read through a development-only override.
+ *
+ * How big a person is on the map cannot be judged across server lifetimes: the
+ * crowd's population is not reproducible between them and every containment
+ * number this map reports follows the population, so an arm taken in one
+ * lifetime and a control in another measure the world as much as the change.
+ * The override lets `tools/map-qa/crowd-arm.mjs` rebuild a district at another
+ * scale against the same crowd in the same page — the discipline
+ * `walkerHalfBeam` is written up for at length in `map-three-scene`.
+ *
+ * Stripped in a production build: `import.meta.env.DEV` is a compile-time
+ * constant, so the branch folds away and the call inlines to the constant.
+ */
+export function crowdRenderScale() {
+  if (import.meta.env.DEV) {
+    const override = (globalThis as { __mapCrowdScale?: unknown }).__mapCrowdScale
+    if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override
+  }
+  return CROWD_RENDER_SCALE
+}
+
 export type CrowdWalker = {
   root: THREE.Object3D
   rig: StylizedCounselRig
@@ -109,7 +131,7 @@ export function buildCrowdWalker(seed: number): CrowdWalker {
     // visitor palette is the eight-way one the office dresses its clients from.
     role: 'visitor',
     paletteSeed: Math.abs(Math.round(seed * 1000)),
-    renderScale: CROWD_RENDER_SCALE,
+    renderScale: crowdRenderScale(),
     // Never the signed-in player's wardrobe, whoever is walking past.
     cosmetics: null,
   })
