@@ -64,6 +64,12 @@ const firmTabs: Array<{ key: FirmTab; label: string; icon: typeof Wrench }> = [
  *  frame for the readers who asked for less motion. */
 const ACQUIRED_HOLD_MS = 2200
 
+/** How long the card the staff roster just found stays marked. Longer than a
+ *  purchase stamp: that one confirms something you did on the card you were
+ *  already looking at, and this one has to survive a smooth scroll across the
+ *  page and still be lit when the scroll stops. */
+const CALLED_HOLD_MS = 3200
+
 
 function RequirementLine({ asset, game }: { asset: GameAsset; game: GameState }) {
   const missing = [
@@ -117,6 +123,31 @@ function ConnectionDistricts({ asset }: { asset: GameAsset }) {
         ))}
       </ul>
     </div>
+  )
+}
+
+
+/* How close a locked honour is, from counters the server already keeps.
+   A padlock and a sentence describing something that has not happened is the
+   same card thirteen times over; a bar and a count make the cabinet worth
+   opening, and none of it changes what an honour is worth, which is nothing on
+   purpose. Money is abbreviated because a valuation target is eight digits and
+   the card is a hundred and sixty pixels wide. */
+function AchievementProgress({ progress }: { progress?: { current: number; target: number; unit: string } }) {
+  if (!progress) return null
+  const share = Math.max(0, Math.min(1, progress.current / progress.target))
+  const figure = progress.unit === 'money'
+    ? `${formatMoney(progress.current, true)} of ${formatMoney(progress.target, true)}`
+    : progress.unit === 'reputation'
+      ? `${progress.current.toFixed(1)} of ${progress.target} Reputation`
+      : progress.unit === 'tier'
+        ? `Tier ${Math.round(progress.current)} of ${progress.target}`
+        : `${Math.round(progress.current)} of ${Math.round(progress.target)} ${progress.unit}`
+  return (
+    <small className="achievement-progress">
+      <i aria-hidden="true"><b style={{ width: `${Math.round(share * 100)}%` }} /></i>
+      {figure}
+    </small>
   )
 }
 
@@ -268,6 +299,33 @@ export function FirmPage() {
     void play('tab', { seed: next, intensity: .32 })
     setTab(next)
   }
+  /* Take the player from a face on the firm floor to the card that hires them.
+     The two filters above the grid can both be hiding that card — a candidate
+     is not in the "owned" view, and nobody is in another region's — so they are
+     cleared first, and the trip waits a frame for the grid to contain the card
+     again.
+
+     Landing is three things, and only the first is the scroll. Focus moves to
+     the card, so a keyboard is where the eye is and the next Tab reaches the
+     hire button rather than starting again from the roster. The brass flash is
+     set on the element rather than rendered from state: it is a transient
+     "this one", like a focus ring, it has to survive whatever the page renders
+     in the next two seconds, and React does not manage `data-called`, so it
+     stays put until the timer takes it off. */
+  const callAssetCard = (asset: GameAsset) => {
+    if (catalogView === 'owned' && !asset.owned) setCatalogView('all')
+    if (catalogView === 'ready' && asset.owned) setCatalogView('all')
+    if (catalogRegion !== 'all' && asset.region !== catalogRegion) setCatalogRegion('all')
+    void play('select', { seed: asset.key, intensity: .3 })
+    window.requestAnimationFrame(() => {
+      const card = document.getElementById(`asset-${asset.key}`)
+      if (!card) return
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      card.focus({ preventScroll: true })
+      card.dataset.called = 'true'
+      window.setTimeout(() => { delete card.dataset.called }, CALLED_HOLD_MS)
+    })
+  }
   const selectCatalogView = (next: 'all' | 'ready' | 'owned') => {
     if (next === catalogView) return
     void play('select', { seed: next, intensity: .25 })
@@ -298,12 +356,19 @@ export function FirmPage() {
             {appearance.isPending ? 'Updating character…' : <>Character: {game.character_gender === 'female' ? 'Female' : 'Male'}<span>Switch</span></>}
           </button>
         </div>
+        {/* An honour grants nothing, on purpose: the economy is tuned around
+            three to six cases per upgrade, and a prize for reaching a hundred
+            of them would quietly retune it. What the locked ones were missing
+            was a reading, not a reward. Every one counts something the server
+            already tracks, so each now shows how far along it is rather than a
+            padlock and a sentence about a thing that has not happened. */}
         <details className="firm-trophies">
           <summary><Award size={14} /> Trophies <b>{achieved} of {game.achievements.length}</b></summary>
           <div className="achievement-grid">
             {game.achievements.map((item, index) => (
               <article key={item.key} className={item.unlocked ? 'unlocked' : ''}>
-                <div>{item.unlocked ? <Trophy /> : <Lock />}</div><span>{String(index + 1).padStart(2, '0')}</span><h3>{item.name}</h3><p>{item.description}</p>{item.unlocked && <small><Check /> ACHIEVED</small>}
+                <div>{item.unlocked ? <Trophy /> : <Lock />}</div><span>{String(index + 1).padStart(2, '0')}</span><h3>{item.name}</h3><p>{item.description}</p>
+                {item.unlocked ? <small><Check /> ACHIEVED</small> : <AchievementProgress progress={item.progress} />}
               </article>
             ))}
           </div>
@@ -315,7 +380,7 @@ export function FirmPage() {
 
       {firmTabs.filter(({ key }) => key !== tab).map(({ key }) => <div key={key} id={`firm-panel-${key}`} role="tabpanel" aria-labelledby={`firm-tab-${key}`} hidden />)}
       <div id={`firm-panel-${tab}`} className={`firm-panel firm-panel-${tab}`} role="tabpanel" aria-labelledby={`firm-tab-${tab}`} tabIndex={0}>
-        {tab === 'staff' && <StaffRoster staff={unlockedStaff} />}
+        {tab === 'staff' && <StaffRoster staff={unlockedStaff} onSelect={callAssetCard} />}
         {/* The rivals tab leads with the war room rather than the catalog grid,
             because weakening a firm and then buying it is one move: the grid
             below is only ever the raw price list. */}
@@ -424,8 +489,11 @@ export function FirmPage() {
           </>
       ) : (
         <div className="management-grid asset-management-grid">
+          {/* `tabIndex={-1}` on the card so the roster can put focus on the one
+              it just found. It stays out of the tab order; only the trip
+              lands there. */}
           {visibleAssets.map((item) => (
-            <article key={item.key} className={`management-card asset-card asset-card-${item.type} ${item.owned ? 'owned' : ''} ${!item.available && !item.owned ? 'locked' : ''} ${justBought === item.key ? 'just-bought' : ''}`}>
+            <article key={item.key} id={`asset-${item.key}`} tabIndex={-1} className={`management-card asset-card asset-card-${item.type} ${item.owned ? 'owned' : ''} ${!item.available && !item.owned ? 'locked' : ''} ${justBought === item.key ? 'just-bought' : ''}`}>
               <PixelAssetArtwork asset={item} />
               <div className="card-status">{item.owned ? <><Check size={13} /> OWNED</> : item.available ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
               <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{item.benefit}</span></div>

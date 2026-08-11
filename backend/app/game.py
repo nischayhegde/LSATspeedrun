@@ -1939,22 +1939,55 @@ def _valuation(profile: PlayerProfile) -> int:
 
 
 def _achievement_state(profile: PlayerProfile, owned: set[str]) -> list[dict]:
+    """The firm's honours, and how far off the ones it has not earned are.
+
+    These grant nothing, deliberately: the economy is tuned around three to six
+    cases per upgrade and a cash prize for reaching 100 cases would quietly
+    retune it. What they were missing is not a reward but a reading. Every one
+    of them counts something the profile already tracks, so a locked honour can
+    say "62 of 100 cases" instead of showing a padlock, which is the difference
+    between a trophy cabinet and a list of things that have not happened.
+
+    `progress` is a pair of plain numbers rather than a percentage so the client
+    can show the count itself, with the unit it is counted in, because "412,000
+    of 1,000,000" wants a dollar sign and "62 of 100" does not. Omitted for the
+    honours that are not a count -- joining one specific network is a yes or a
+    no, and "0 of 1" says less than the requirement line already does.
+    """
+    valuation = _valuation(profile)
+    staff_hired = sum(ASSET_BY_KEY[key]["type"] == "staff" for key in owned if key in ASSET_BY_KEY)
+    rivals_owned = sum(ASSET_BY_KEY[key]["type"] == "rival" for key in owned if key in ASSET_BY_KEY)
     values = [
-        ("first_verdict", "First verdict", "Complete your first case.", profile.total_cases >= 1),
-        ("ten_cases", "Docket regular", "Complete 10 cases.", profile.total_cases >= 10),
-        ("streak_five", "On a roll", "Reach a validated 5-case streak.", profile.best_streak >= 5),
-        ("established", "Established counsel", "Reach 60 Reputation.", profile.reputation >= 60),
-        ("first_hire", "A growing team", "Hire your first staff member.", any(ASSET_BY_KEY[key]["type"] == "staff" for key in owned if key in ASSET_BY_KEY)),
-        ("first_acquisition", "Name on the door", "Acquire a rival firm.", any(ASSET_BY_KEY[key]["type"] == "rival" for key in owned if key in ASSET_BY_KEY)),
-        ("million_value", "Seven-figure firm", "Reach a $1,000,000 valuation.", _valuation(profile) >= 1_000_000),
-        ("hundred_cases", "Century docket", "Complete 100 cases.", profile.total_cases >= 100),
-        ("global_counsel", "Global counsel", "Build an International Practice.", profile.office_tier >= 7),
-        ("billion_value", "Billion-dollar practice", "Reach a $1,000,000,000 valuation.", _valuation(profile) >= 1_000_000_000),
-        ("orbital_bar", "Beyond the atmosphere", "Join the Orbital Bar Association.", "orbital_bar" in owned),
-        ("planetary_nexus", "Justice constellation", "Build the Planetary Justice Nexus.", profile.office_tier >= 14),
-        ("rival_network", "Friendly competition", "Acquire five rival firms.", sum(ASSET_BY_KEY[key]["type"] == "rival" for key in owned if key in ASSET_BY_KEY) >= 5),
+        ("first_verdict", "First verdict", "Complete your first case.", profile.total_cases, 1, "cases"),
+        ("ten_cases", "Docket regular", "Complete 10 cases.", profile.total_cases, 10, "cases"),
+        ("streak_five", "On a roll", "Reach a validated 5-case streak.", profile.best_streak, 5, "streak"),
+        ("established", "Established counsel", "Reach 60 Reputation.", profile.reputation, 60, "reputation"),
+        ("first_hire", "A growing team", "Hire your first staff member.", staff_hired, 1, "hired"),
+        ("first_acquisition", "Name on the door", "Acquire a rival firm.", rivals_owned, 1, "firms"),
+        ("million_value", "Seven-figure firm", "Reach a $1,000,000 valuation.", valuation, 1_000_000, "money"),
+        ("hundred_cases", "Century docket", "Complete 100 cases.", profile.total_cases, 100, "cases"),
+        ("global_counsel", "Global counsel", "Build an International Practice.", profile.office_tier, 7, "tier"),
+        ("billion_value", "Billion-dollar practice", "Reach a $1,000,000,000 valuation.", valuation, 1_000_000_000, "money"),
+        ("orbital_bar", "Beyond the atmosphere", "Join the Orbital Bar Association.", 1 if "orbital_bar" in owned else 0, None, None),
+        ("planetary_nexus", "Justice constellation", "Build the Planetary Justice Nexus.", profile.office_tier, 14, "tier"),
+        ("rival_network", "Friendly competition", "Acquire five rival firms.", rivals_owned, 5, "firms"),
     ]
-    return [{"key": key, "name": name, "description": description, "unlocked": unlocked} for key, name, description, unlocked in values]
+    state = []
+    for key, name, description, current, target, unit in values:
+        entry = {
+            "key": key,
+            "name": name,
+            "description": description,
+            "unlocked": current >= (target if target is not None else 1),
+        }
+        if target is not None:
+            entry["progress"] = {
+                "current": round(float(current), 1),
+                "target": float(target),
+                "unit": unit,
+            }
+        state.append(entry)
+    return state
 
 
 def _public_asset(item: dict, profile: PlayerProfile, owned: set[str], held: set[str] | None = None) -> dict:

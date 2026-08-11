@@ -421,7 +421,15 @@ export type GameState = {
     claimed: number[]
     goals: Array<{ cases: number; reward: number; complete: boolean; claimed: boolean }>
   }
-  achievements: Array<{ key: string; name: string; description: string; unlocked: boolean }>
+  achievements: Array<{
+    key: string
+    name: string
+    description: string
+    unlocked: boolean
+    /** How far along a locked honour is, when it counts something. Absent on
+     *  the ones that are a yes or a no, like joining a named network. */
+    progress?: { current: number; target: number; unit: 'cases' | 'streak' | 'reputation' | 'hired' | 'firms' | 'money' | 'tier' }
+  }>
   next_milestone?: { kind: 'tier' | 'asset'; name: string; cost: number; reputation: number } | null
   territory: TerritoryState
   story: StoryState

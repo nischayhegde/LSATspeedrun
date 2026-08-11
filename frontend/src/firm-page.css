@@ -67,6 +67,22 @@
 .achievement-grid p { margin: 0; font-size: 11px; line-height: 1.5; }
 .achievement-grid small { margin-top: 25px; display: flex; align-items: center; gap: 4px; color: var(--green); font-size: 10.5px; font-weight: 900; letter-spacing: .1em; }
 .achievement-grid small svg { width: 13px; }
+/* How far along an unearned honour is. Sits where the ACHIEVED line sits on
+   the earned ones, so the cabinet reads as one column of outcomes rather than
+   a row of stamps and a row of blanks. Brass, not the green a win earns. */
+.achievement-grid small.achievement-progress {
+  margin-top: auto;
+  padding-top: 18px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  color: #8a7449;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+.achievement-grid small.achievement-progress i { height: 5px; display: block; overflow: hidden; border: 1px solid #c9b083; background: #ded5c4; }
+.achievement-grid small.achievement-progress b { height: 100%; display: block; background: #c9a153; }
+.achievement-grid article { display: flex; flex-direction: column; }
 
 .client-roster-status { margin-bottom: 16px; padding: 16px 19px; display: grid; grid-template-columns: 90px 1fr minmax(260px, .65fr); align-items: center; gap: 16px; overflow: hidden; border: 1px solid #c19a52; border-radius: 14px; color: white; background: radial-gradient(circle at 82% 10%, #315969, transparent 31%), var(--navy); box-shadow: 0 15px 34px rgba(15,35,45,.14); }
 .client-roster-status h2 { margin: 4px 0 3px; font-family: Georgia, serif; font-size: 26px; font-weight: 500; }
@@ -350,6 +366,21 @@
   70% { opacity: 1; scale: .94; }
 }
 .management-card.asset-card.just-bought { box-shadow: inset 0 0 0 3px #8ca070, 7px 8px #3a2a20, 0 0 0 4px rgba(114,161,120,.45); }
+
+/* "This one." The card the staff roster was asked to find, marked in brass
+   rather than the green a purchase earns, because arriving is not buying. It
+   comes off on a timer: a permanent ring would become another piece of card
+   furniture the next time you scrolled past. Set as a data attribute rather
+   than a class because it is applied to the element directly -- see
+   `callAssetCard`. */
+.management-card.asset-card[data-called] {
+  box-shadow: inset 0 0 0 3px #e8bf58, 7px 8px #3a2a20, 0 0 0 4px rgba(232,191,88,.4);
+}
+/* The card is only focusable so that the trip can land keyboard focus on it,
+   and the brass ring above already says where you are, so the browser's own
+   outline would be a second announcement of the same thing. */
+.management-card.asset-card:focus { outline: none; }
+.management-card.asset-card:focus-visible { outline: 3px solid #e8bf58; outline-offset: 3px; }
 /* A client card ends in a full-width button, so the stamp sits above it
    rather than over the control the reader might click again. */
 .client-card .asset-acquired { bottom: 74px; }

@@ -505,7 +505,13 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .firm-staff-roster > header p { margin: 0; color: #b8b4a7; font-size: 12px; line-height: 1.55; }
 .firm-staff-roster-stage { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(122px,1fr); align-items: end; gap: 3px; padding: 8px 12px 12px; overflow-x: auto; background: linear-gradient(180deg,rgba(113,157,167,.08),transparent 44%),linear-gradient(180deg,transparent 73%,rgba(5,10,16,.58) 73%); }
 .firm-staff-roster-stage::before { content: ""; position: absolute; inset: auto 0 27% 0; height: 1px; background: linear-gradient(90deg,transparent,rgba(224,193,119,.25),transparent); }
+.firm-staff-roster > header .firm-staff-roster-hint { margin-top: 10px; color: #e5bd69; font-size: 11.5px; }
 .firm-staff-roster-stage article { position: relative; min-width: 122px; height: 218px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+/* Each figure is the control that finds its own card in the grid below, so the
+   whole person is the hit area rather than a link tucked under the nameplate. */
+.firm-staff-pick { width: 100%; height: 100%; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; border: 0; border-radius: 11px; color: inherit; background: none; font: inherit; text-align: inherit; cursor: pointer; transition: background .2s ease; }
+.firm-staff-pick:hover { background: rgba(229,195,116,.07); }
+.firm-staff-pick:focus-visible { outline: 2px solid #e5bd69; outline-offset: 2px; }
 .firm-staff-model { width: 116px; height: 176px; transition: transform .25s ease,filter .25s ease; }
 .firm-staff-roster-stage article:hover .firm-staff-model { transform: translateY(-4px); }
 .firm-staff-roster-stage article.is-available .firm-staff-model { opacity: .68; filter: saturate(.68); }
@@ -514,6 +520,9 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
 .firm-staff-roster-stage article.is-available .firm-staff-nameplate small { color: #e5bd69; }
 .firm-staff-nameplate strong { display: block; margin-top: 2px; color: #f4ead4; font-size: 12px; line-height: 1.05; }
 .firm-staff-nameplate span { display: block; margin-top: 3px; overflow: hidden; color: #a9a99f; font-size: 8px; letter-spacing: .07em; text-overflow: ellipsis; white-space: nowrap; }
+/* Only on candidates: the fee is the fact that decides whether it is worth
+   walking down to the card, and a hired colleague has no price left to pay. */
+.firm-staff-nameplate em { display: block; margin-top: 4px; color: #f4d98c; font-family: var(--font-pixel); font-size: 8px; font-style: normal; letter-spacing: .06em; }
 .firm-staff-empty { min-width: 360px; align-self: center; justify-self: center; padding: 20px 24px; border: 1px dashed rgba(223,193,119,.3); border-radius: 12px; text-align: center; }
 .firm-staff-empty span { display: block; color: #74c7b8; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .16em; }
 .firm-staff-empty strong { display: block; margin-top: 7px; color: #d8cfb8; font-size: 12px; font-weight: 500; }
