@@ -19,7 +19,9 @@
   background: var(--surface); box-shadow: 0 6px 20px rgba(24,32,39,.06);
   position: sticky; top: 8px; z-index: 6;
 }
-.exam-bar-section span { display: block; font-size: 10.5px; letter-spacing: .13em; color: var(--muted); font-weight: 700; }
+/* Tracked caps, so the HUD face — this label and the paper's own "QUESTION 1"
+   350px below it do the same job and were set in two different typefaces. */
+.exam-bar-section span { display: block; font-family: var(--font-hud); font-size: 10.5px; letter-spacing: .13em; color: var(--muted); font-weight: 800; text-transform: uppercase; }
 .exam-bar-section strong { font-size: 16px; }
 .exam-bar-count { text-align: center; }
 .exam-bar-count strong { display: block; font-size: 15px; }
@@ -46,7 +48,7 @@
 }
 .exam-sheet-cell {
   position: relative; flex: 0 0 auto; min-width: 34px; height: 34px; padding: 0 6px;
-  border-radius: 8px; border: 1px solid var(--line); background: #fff;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
   font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted);
   transition: background .12s ease, border-color .12s ease, color .12s ease;
 }

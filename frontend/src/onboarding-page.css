@@ -105,4 +105,9 @@
   font-size: 13px;
 }
 .name-fields input:focus { border-color: var(--brass-deep); outline: 3px solid rgba(200, 155, 75, .25); }
+/* The date field's picker glyph is drawn by the browser in flat black, which
+   is the one pure black on a page inked entirely in warm brown. It cannot be
+   replaced, but it can be brought down to the weight of the label above it. */
+.name-fields input::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .5; }
+.name-fields input:hover::-webkit-calendar-picker-indicator { opacity: .75; }
 .field-error { color: #a84645; }
