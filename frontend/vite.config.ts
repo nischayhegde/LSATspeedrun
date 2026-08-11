@@ -148,7 +148,7 @@ for(var i=0;i<R.length;i++){if(!new RegExp(R[i][0]).test(p))continue;
 for(var j=0;j<R[i][1].length;j++){var e=document.createElement('link');
 e.rel='modulepreload';e.href=R[i][1][j];e.crossOrigin='anonymous';document.head.appendChild(e);}
 for(var k=0;k<R[i][2].length;k++){var c=document.createElement('link');
-c.rel='preload';c.as='style';c.href=R[i][2][k];document.head.appendChild(c);}
+c.rel='preload';c.as='style';c.href=R[i][2][k];c.crossOrigin='anonymous';document.head.appendChild(c);}
 return;}
 }catch(e){}};
 }catch(e){}})();`
@@ -302,6 +302,19 @@ function scenePreloadHints(): Plugin {
          * render-blocking would hand back the first-paint win that moving them
          * out of the entry bought. The runtime `<link>` Vite injects then
          * resolves from cache.
+         *
+         * `crossOrigin` is what makes that last sentence true. A preload is
+         * only reused if the real request matches it on URL, `as` *and
+         * credentials mode*, and Vite's `__vitePreload` sets `crossOrigin=""`
+         * on every link it creates — so a hint without it is discarded and the
+         * sheet is fetched a second time. `office-three`'s stylesheet was
+         * measured being requested twice on `/office` for exactly this reason:
+         * the hint meant to make the route faster was buying it an extra
+         * download. Every CSS hint and every stylesheet this config injects
+         * therefore declares the same anonymous mode Vite uses, so they all
+         * match each other. Same-origin requests pass the CORS check with no
+         * server change, and the entry `<script type="module" crossorigin>`
+         * Vite already emits puts the deployment under the same requirement.
          */
         const hints: Record<string, { js: string[]; css: string[] }> = {}
         for (const [route, names] of Object.entries(SCENE_ENTRY_CHUNKS)) {
@@ -316,7 +329,7 @@ var h=H[k];if(!h)return;
 for(var i=0;i<h.js.length;i++){var e=document.createElement('link');
 e.rel='modulepreload';e.href=h.js[i];e.crossOrigin='anonymous';document.head.appendChild(e);}
 for(var j=0;j<h.css.length;j++){var c=document.createElement('link');
-c.rel='preload';c.as='style';c.href=h.css[j];document.head.appendChild(c);}
+c.rel='preload';c.as='style';c.href=h.css[j];c.crossOrigin='anonymous';document.head.appendChild(c);}
 }catch(e){}})();`
         return {
           html,
@@ -556,11 +569,11 @@ var R=${JSON.stringify(byRoute)},B=${JSON.stringify(before)},A=${JSON.stringify(
 var p=location.pathname.replace(/\\/$/,'')||'/',own=[[],[]];
 for(var i=0;i<R.length;i++){if(new RegExp(R[i][0]).test(p)){own=[R[i][1],R[i][2]];break;}}
 for(var j=0;j<own[0].length;j++){var l=document.createElement('link');
-l.rel='stylesheet';l.href=own[0][j];document.head.appendChild(l);}
+l.rel='stylesheet';l.href=own[0][j];l.crossOrigin='anonymous';document.head.appendChild(l);}
 var waiting=[];
 for(var k=0;k<own[1].length;k++){var w=document.createElement('link');
-w.rel='preload';w.as='style';w.href=own[1][k];document.head.appendChild(w);
-var s=document.createElement('link');s.rel='stylesheet';s.href=own[1][k];waiting.push(s);}
+w.rel='preload';w.as='style';w.href=own[1][k];w.crossOrigin='anonymous';document.head.appendChild(w);
+var s=document.createElement('link');s.rel='stylesheet';s.href=own[1][k];s.crossOrigin='anonymous';waiting.push(s);}
 function entry(){return document.querySelector('link[rel="stylesheet"][href="'+E+'"]');}
 function place(e){if(!waiting.length)return;var host=e?e.parentNode:document.head,
 next=e?e.nextSibling:null;
