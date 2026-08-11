@@ -250,9 +250,10 @@ backend/app/game.py                            the economy: sitting, goals, cont
 backend/app/services.py                        run construction, passage allowance, daily docket
 backend/app/__init__.py                        PRACTICE_SESSION_SIZE / PRACTICE_QUEUE_MAX defaults
 backend/app/routes.py                          serves session_size on two endpoints
-backend/scripts/simulate_economy_curve.py      sittings in the report, the pace caveat
+backend/scripts/simulate_economy_curve.py      sittings in the report, the pace caveat, database fallback
 backend/scripts/measure_served_section_mix.py  new
 backend/tests/test_sitting_scale.py            new
+backend/tests/test_economy_simulation.py       new
 backend/tests/{test_flow,test_progress,test_game_catalog}.py   variable run length
 backend/.env.example                           stops pinning 10
 deploy/ec2/cloudformation.yaml                 stops pinning 10 (one deleted line)
@@ -285,9 +286,41 @@ frontend/src/guided-tour.tsx                   two sentences, numbers only
 3. Finish one run. The first daily goal should complete exactly as the run ends,
    not two questions before or after.
 4. Queue runs until it refuses. It should take 13, not 8.
-5. `backend/.venv/bin/python -m pytest` from the repo root: 389 pass. Note the
+5. `backend/.venv/bin/python -m pytest` from the repo root: 396 pass. Note the
    suite must run from the repo root, not from `backend/` — `pytest.ini` sets
    `pythonpath = backend` and two tests import `backend.app.game` directly.
+
+## One unrelated fix carried on this branch
+
+`simulate_economy_curve.py` reads the per-case time budget out of `instance/` at
+import, and its `try` guarded `connect` alone. sqlite3 opens lazily, so every
+real failure landed on the first `execute` unguarded — and because three test
+modules import the script, the result was an interrupted collection rather than
+a failed test:
+
+```
+before, with an unmigrated instance/lsat_sherlock.db
+  322 tests collected, 3 errors -- Interrupted
+after
+  396 tests collected
+```
+
+Five states of that path were checked: absent, present-but-empty, valid SQLite
+never migrated, migrated but never played against, and a file that is not a
+database. Only the fourth worked; three of the others raised.
+
+The judgement was that reading the database is an *optional refinement* —
+`FALLBACK_SECONDS_PER_CASE` is the shipped figure and the one the pace band was
+tuned against, and the query exists only so the conversion cannot drift away
+from `_target_time_seconds` unnoticed. So "I could not measure it" and "there is
+nothing to measure" get the same answer, and what differs is the provenance
+string the report already prints at the top of every run. A database that has
+merely not been migrated now reads differently from one that is unreadable,
+because the first is ordinary and the second is worth chasing.
+
+Covered by `backend/tests/test_economy_simulation.py`, which also asserts a
+populated database is still measured — otherwise the fallback could widen into
+one that swallows a working read.
 
 ## One decision worth a second opinion
 
