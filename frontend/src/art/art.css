@@ -3,15 +3,78 @@
    AI-painted raster art system, and the animation engine.
    ============================================================ */
 
+/* ------------------------------------------------------------------
+   The illustrated register, named.
+
+   This sheet is loaded on every route, after `styles.css`, so it is the
+   last word on what a token means. The values below are not new colours:
+   each one is the value some current surface already uses, promoted to a
+   name so the next surface does not invent a fourteenth near-identical
+   brass. `docs/visual-language.md` is the written rule set; this is the
+   machine-readable half of it.
+
+   Where a value came from, because a token nobody can trace gets ignored:
+
+   - `--ink` is `0x1b1a24`, the contour colour `IllustratedStyleOptions`
+     draws every 3D silhouette and crease in. The interface outlines
+     itself in the same ink the scenes are drawn in, which is the whole
+     point of having one; the twelve cold near-blacks scattered through
+     the sheets (#080c13, #171923, #10151e, #141721 …) are older hands.
+   - `--parchment` is `0xded1ad`, the paper the office scene's own desk
+     documents are made of.
+   - The brass ramp is the plate `art.css` already draws for the office
+     floor selector, the map's site marks and the judge's gavel:
+     `linear-gradient(170deg, #f2d791, #c89b4b)` inside a `#f0dcae`
+     hairline. `--brass` is the shadow end, `--brass-lit` the light end.
+   - `--verdigris` is `0x7bc8bd`, the office's own emissive glow, and the
+     nearest single value to the ~99 distinct mints in the sheets.
+   - `--panel` / `--hairline` are the existing `--av-panel` /
+     `--av-panel-line`, which the newest surfaces already use.
+
+   The `--av-*` names are kept as aliases: five files reference them and
+   renaming those is churn, not design.
+   ------------------------------------------------------------------ */
 :root {
   --font-display: "Fraunces", Georgia, "Times New Roman", serif;
-  --font-pixel: "Archivo", Inter, ui-sans-serif, system-ui, sans-serif;
+  /* The HUD face: small caps-tracked labels, control text, figures. It is a
+     grotesque, not a pixel font — `--font-pixel` is the name ~150 call sites
+     were written against before the illustrated direction landed, and it is
+     kept pointing here so those sites are correct rather than renamed. */
+  --font-hud: "Archivo", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-pixel: var(--font-hud);
   --muted: #5c635c;
-  --av-brass: #c89b4b;
-  --av-brass-bright: #e8c87c;
-  --av-night: #0e1521;
-  --av-panel: rgba(13, 20, 32, 0.88);
-  --av-panel-line: rgba(232, 200, 124, 0.32);
+
+  --ink: #1b1a24;
+  /* Outlines, not text. A drawn contour over a lit surface is never the flat
+     ink it is drawn with, so the border alpha is part of the token. */
+  --ink-line: rgba(27, 26, 36, .55);
+  --ink-line-strong: rgba(27, 26, 36, .82);
+
+  --parchment: #ded1ad;
+  --brass: #c89b4b;
+  --brass-lit: #f2d791;
+  --brass-bright: #e8c87c;
+  --brass-deep: #9a6c28;
+  --brass-plate: linear-gradient(170deg, #f2d791, #c89b4b);
+  --verdigris: #7bc8bd;
+  --verdigris-deep: #2f6f66;
+
+  --night: #0e1521;
+  --panel: rgba(13, 20, 32, .88);
+  --panel-lit: rgba(23, 37, 55, .92);
+  --hairline: rgba(232, 200, 124, .32);
+  --hairline-strong: rgba(232, 200, 124, .55);
+
+  /* Three radii and nothing between them. A card, a control, a chip. */
+  --r-card: 16px;
+  --r-control: 10px;
+  --r-chip: 999px;
+
+  --av-brass: var(--brass);
+  --av-brass-bright: var(--brass-bright);
+  --av-night: var(--night);
+  --av-panel: var(--panel);
+  --av-panel-line: var(--hairline);
 }
 
 h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.01em; }
