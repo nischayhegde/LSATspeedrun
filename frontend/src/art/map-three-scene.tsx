@@ -10410,7 +10410,13 @@ export function MapThreeScene({
       renderer.forceContextLoss()
       if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement)
     }
-  }, [activity, ownedLandmarks, playerGender, playerName, playerTier, points, region])
+    // `contacts` rides here beside `ownedLandmarks` and for the same reason:
+    // buying a network has to put its contact in the world without waiting for
+    // a region change, and the caller flattens both to a string before
+    // memoising them so a refetch on the timer cannot rebuild the district.
+    // `selectedLandmark` deliberately does *not*: it is read through a ref, so
+    // choosing a district lights it rather than rebuilding the world.
+  }, [activity, contacts, ownedLandmarks, playerGender, playerName, playerTier, points, region])
 
   const style = { '--arc-accent': `#${ARC[region].accent.toString(16).padStart(6, '0')}` } as CSSProperties
   return (
