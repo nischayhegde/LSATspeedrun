@@ -24,6 +24,7 @@ import { api } from '../api'
 import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
 import { ClientPortrait, PixelAssetArtwork, StaffRoster } from '../game-art'
 import { PixelStudyScenery } from '../art/pixel-scenery'
+import { officeStaffStationFor, officeVisualFor, type OfficeStaffStation } from '../art/office-manifest'
 import { RetainerLedger } from '../retainer-ledger'
 import { RivalWarRoom } from '../rival-war-room'
 import { useSound } from '../sound'
@@ -149,6 +150,33 @@ function AchievementProgress({ progress }: { progress?: { current: number; targe
       {figure}
     </small>
   )
+}
+
+
+/* Where in the office an owned asset actually turns up.
+ *
+ * Decor had a route to its own payoff and upgrades and staff did not, which is
+ * backwards: decor changes how the room looks, but an upgrade installs a
+ * workstation and a hire puts a person at a desk, and both are rendered in the
+ * scene by `office-three`. The manifest that scene reads from already carries
+ * the place — "Partner workspace", "Evidence wall" — so the hand-off can name
+ * it instead of saying "in the office" and leaving the reader to hunt a room
+ * that has forty things in it.
+ *
+ * Data-only import: `office-manifest` pulls in nothing but a type, so this
+ * costs the Firm route a table and not the renderer. */
+const STAFF_FLOORS: Record<OfficeStaffStation, string> = {
+  reception: 'Reception',
+  casework: 'Casework bay',
+  investigation: 'Investigations bay',
+  technology: 'Technology bay',
+  leadership: 'Leadership row',
+  diplomatic: 'Diplomatic bay',
+}
+
+function officeDestination(asset: GameAsset) {
+  if (asset.type === 'staff') return STAFF_FLOORS[officeStaffStationFor(asset.key)]
+  return officeVisualFor(asset.key)?.location ?? null
 }
 
 
@@ -507,13 +535,17 @@ export function FirmPage() {
                   that board is on the map. Same hand-off the rivals tab already
                   makes, so owning one is something you can go and look at. */}
               {item.type === 'connection' && <button type="button" className="asset-locate" onClick={() => navigate(`/map?connection=${item.key}`)}>Show on the map</button>}
-              {/* Decor is kept deliberately cosmetic: it is the one asset class
-                  whose entire value is the office view, and the one that already
-                  satisfied "look at the room and see what you bought" before any
-                  of this work. What it lacked was a route to its own payoff --
-                  you could buy a rug and never be sent to look at it. Same
-                  hand-off the connections above make to the map. */}
-              {item.type === 'cosmetic' && item.owned && <button type="button" className="asset-locate" onClick={() => navigate('/office')}>See it in the office</button>}
+              {/* Every asset class that changes the room now has a route to its
+                  own payoff, not just decor: you could buy a rug and never be
+                  sent to look at it, and you could hire five people and buy
+                  eleven workstations and never be sent to look at those either.
+                  Where the manifest knows the spot, the button says the spot —
+                  a forty-object room needs the address, not the postcode. */}
+              {item.owned && (item.type === 'cosmetic' || officeDestination(item)) && (
+                <button type="button" className="asset-locate" onClick={() => navigate('/office')}>
+                  See it in the office{officeDestination(item) && <em> · {officeDestination(item)}</em>}
+                </button>
+              )}
               {/* A stamp on the deed rather than a curtain over it. The old
                   confirmation covered the whole card for its whole life, so
                   the one thing it was confirming -- this item, now owned --

@@ -316,6 +316,10 @@
    to go and look, not the purchase. */
 .asset-locate { width: 100%; margin-top: 9px; padding: 8px 12px; cursor: pointer; font: inherit; font-size: .82rem; color: #55606b; border: 1px solid #d8cfc1; border-radius: 9px; background: #fffdf8; }
 .asset-locate:hover { color: var(--ink); border-color: #bfb4a3; }
+/* The place, in the same line and a lighter ink, so the control still reads as
+   one sentence rather than a button with a caption. */
+.asset-locate em { color: #8b8477; font-style: normal; }
+.asset-locate:hover em { color: #6d6759; }
 
 /* ---------------------------------------------------------------------------
    Acting on something, and seeing that it happened.
