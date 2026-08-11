@@ -23,6 +23,13 @@ what `settle_attempt` pays out on. "Cases per upgrade" is therefore how many
 questions the player works to afford one mandatory purchase — a tier-gated
 upgrade, hire, or acquisition — or the next headquarters.
 
+The interface uses the word the other way round: "Start 6 cases" starts one run
+of six questions, and `game.SITTING_QUESTIONS` is the only place in the app that
+means a sitting by it. Every figure below is per question. Sittings are reported
+alongside, because a per-sitting figure is six times a per-case one and the two
+are easy to swap by accident — that swap is what put an earlier revision of this
+script out by 8x.
+
 `UNGRADED_CREDIT` deliberately does not appear below. It is the standing credit
 an ungraded win earns, and standing gates *which* tier the player may enter, not
 how much cash a case pays; only `UNGRADED_MULTIPLIER` moves money.
@@ -48,6 +55,7 @@ from app.game import (  # noqa: E402
     EFFORT_MISS_MULTIPLIER,
     FIRM_TIERS,
     PRO_BONO_FEE_SHARE,
+    SITTING_QUESTIONS,
     TERRITORY_RENT_RELIEF_POOL_BPS,
     TIER_GATED_ASSET_TYPES,
     UNBALANCED_ASSET_TYPES,
@@ -110,6 +118,34 @@ DEFAULT_DB = Path(__file__).resolve().parents[1] / "instance" / "lsat_sherlock.d
 # 2026-08-06), RC averaging 328s once same-passage follow-ups are counted:
 # .66 * 150 + .34 * 328 = 210.5s.
 FALLBACK_SECONDS_PER_CASE = 210.5
+
+# KNOWN WRONG, DELIBERATELY NOT CHANGED. Read this before quoting an hour.
+#
+# The blend above is the *catalog* mix. It is not the mix the selector serves,
+# and the comment two paragraphs up claiming it is "blended over the section mix
+# the selector actually serves" was never true. Selection draws indivisible
+# blocks, and the bank has 4,520 single-question Logical Reasoning blocks against
+# 349 Reading Comprehension passages, so a shuffled draw is overwhelmingly LR. A
+# ten-question run measures 17.8% RC, not 34%, and 152.7 s/q, not 210.5.
+# Reproduce with `scripts/measure_served_section_mix.py`.
+#
+# So every hour this script prints is about 38% high, and the campaign it calls
+# 122 hours is nearer 88 hours of question time.
+#
+# It is left alone anyway, and the reason is not inertia. 210.5s is the constant
+# the shipped pace band was tuned against: TIER_EFFORT_BASE was moved 5.16 ->
+# 5.33 to hold one-to-two hours *measured this way*, and the band has 0.2% of
+# clearance at its floor. Correcting the conversion would not measure the ladder
+# more accurately, it would repace it — the one-to-two-hour band would become
+# 23.6-47.2 cases and today's 17.3-29.2 would fall straight through the floor,
+# requiring a fresh TIER_EFFORT_BASE and a fresh set of prices. That is a
+# deliberate retune and needs to be asked for, not smuggled in under a
+# measurement fix.
+#
+# What follows from that: this script's hours are a *unit of comparison*, not a
+# claim about a clock. Two curves measured in it can be compared to each other.
+# Neither can be quoted to a player.
+SERVED_SECONDS_PER_CASE = 152.7
 
 
 def seconds_per_case(db_path: Path = DEFAULT_DB) -> tuple[float, str]:
@@ -439,10 +475,23 @@ def _print_curve(label: str, player: Player) -> list[dict]:
         f"target {TARGET_BAND[0]:.1f}-{TARGET_BAND[1]:.1f} cases = "
         f"{TARGET_HOURS_PER_UPGRADE[0]:.0f}-{TARGET_HOURS_PER_UPGRADE[1]:.0f}h) -> {verdict}"
     )
+    # The same band in the unit the player experiences it in. An upgrade is a
+    # number of *sittings* to somebody who plays the game; it is a number of
+    # cases only to this script.
+    print(
+        f"    which is {low / SITTING_QUESTIONS:.1f} - {high / SITTING_QUESTIONS:.1f} sittings "
+        f"of {SITTING_QUESTIONS} questions"
+    )
     cases, hours = total_campaign(player)
     print(
         f"whole campaign: {cases:,.0f} played cases, {hours:,.1f} hours on cases "
         f"at {player.minutes_per_case:.2f} min/case"
+    )
+    print(
+        f"    = {cases / SITTING_QUESTIONS:,.0f} sittings; "
+        f"{cases * SERVED_SECONDS_PER_CASE / 3600:,.1f} hours at the pace the selector "
+        f"actually serves ({SERVED_SECONDS_PER_CASE:.1f} s/question, see "
+        f"SERVED_SECONDS_PER_CASE)"
     )
     for per_day in (1, 2, 3):
         print(f"    at {per_day}h/day: {hours / per_day:,.0f} days ({hours / per_day / 30.4:.1f} months)")
