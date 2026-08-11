@@ -76,27 +76,41 @@ function SceneBooting({ label }: { label: string }) {
  * The divider drifts on its own, so the slide is alive if the presenter never
  * touches it, and drag takes over the moment they do.
  */
-function OfficeTransform({ floor }: { floor: 'practice' | 'chambers' }) {
+function OfficeTransform({ floor, live }: { floor: 'practice' | 'chambers'; live: boolean }) {
   const [split, setSplit] = useState(.5)
   const dragging = useRef(false)
   const host = useRef<HTMLDivElement | null>(null)
-  const drifting = useRef(true)
+  const [drifting, setDrifting] = useState(true)
 
+  // Only while this slot is the slide, and only until the presenter takes the
+  // divider off it.
+  //
+  // The loop used to reschedule unconditionally for as long as the component
+  // was mounted, which is two slides longer than it is on screen: a warm slot
+  // is built one slide early and an outgoing slot is held through the
+  // transition, and both of them would have gone on calling `setSplit` sixty
+  // times a second — re-rendering two lazily-loaded WebGL scene components
+  // apiece to move a divider nobody could see. It also kept rescheduling after
+  // a drag had turned the drift off, so a presenter who touched the slider once
+  // left a frame callback running for the rest of the talk to do nothing.
+  //
+  // No slide asks for this scene today, so neither of those was ever paid. That
+  // is exactly why it is worth closing now rather than when one does.
   useEffect(() => {
+    if (!live || !drifting) return
     let frame = 0
     const started = performance.now()
     const tick = (now: number) => {
-      frame = requestAnimationFrame(tick)
-      if (!drifting.current) return
       // A slow, wide sweep. Period chosen so a presenter talking for seventy
       // seconds sees it cross the frame twice and never sees it turn around at
       // the same moment twice.
       const t = (now - started) / 1000
       setSplit(.5 + Math.sin(t * .16) * .3)
+      frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [])
+  }, [live, drifting])
 
   const move = useCallback((clientX: number) => {
     const box = host.current?.getBoundingClientRect()
@@ -110,7 +124,7 @@ function OfficeTransform({ floor }: { floor: 'practice' | 'chambers' }) {
       ref={host}
       onPointerDown={(event) => {
         dragging.current = true
-        drifting.current = false
+        setDrifting(false)
         move(event.clientX)
         event.currentTarget.setPointerCapture(event.pointerId)
       }}
@@ -143,7 +157,12 @@ function OfficeTransform({ floor }: { floor: 'practice' | 'chambers' }) {
 function Slot({ slot }: { slot: AppSceneSlot }) {
   const params = slot.params
   if (slot.scene === 'office-transform') {
-    return <OfficeTransform floor={params.floor === 'chambers' ? 'chambers' : 'practice'} />
+    return (
+      <OfficeTransform
+        floor={params.floor === 'chambers' ? 'chambers' : 'practice'}
+        live={slot.role === 'current'}
+      />
+    )
   }
   if (slot.scene === 'office') {
     return (
