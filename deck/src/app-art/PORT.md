@@ -10,9 +10,27 @@ re-copied and the fix-ups below are re-applied.
 
 - `frontend/src/art/**` → `deck/src/app-art/**` (including `rig/`), wholesale.
 - `frontend/src/types.ts` → `deck/src/app-art/types.ts`.
-- `frontend/public/art/**` → `deck/public/art/**` (218 files, ~18 MB of `.webp`
-  catalog card art). Untouched; the paths the art modules build are relative to
-  the site root, so they resolve identically under the deck's Vite server.
+- ~~`frontend/public/art/**` → `deck/public/art/**`~~ — **no longer copied, and
+  do not restore it.** This was 218 files and about 18 MB of `.webp` catalog card
+  art, and across a full 24-slide walk plus every presenter-only key it was
+  requested exactly zero times. The reason is that the only module which builds
+  those URLs is `assets.ts`, and nothing reachable from the deck's entry point
+  calls the functions that do:
+
+  - `structures.tsx` imports `tierSiteArt` and `rivalSiteArt`, and **nothing
+    imports `structures.tsx`**.
+  - `office-three.tsx` does import `assets.ts`, but only `clientCastSeed`, which
+    is an FNV-1a hash over a name and never touches `BASE`.
+
+  So every URL builder is tree-shaken, and a production bundle contains no `art/`
+  path template at all — the only `/art` substring left in it is `/article/`,
+  inside a citation URL on slide 2. There is also no `import.meta.glob`, no
+  dynamic import built from a string, and no CSS `url()` anywhere in the deck
+  that could reach the directory at runtime.
+
+  The copy was never what made the demo slides work: those are iframes onto
+  `demoConfig.appOrigin`, so the app serves its own art from its own origin.
+  `frontend/public/art/**` is untouched and must stay that way.
 
 Copied from the working tree at commit `0f47beb5` ("Read a wrapped pavement
 round the seam in order, not backwards and then forwards"), **including

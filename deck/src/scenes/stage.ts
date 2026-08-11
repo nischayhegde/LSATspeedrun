@@ -168,6 +168,44 @@ export class DeckStage {
   }
 
   /**
+   * Link a scene's shader programs before anything asks to see it.
+   *
+   * Building a scene is not the same as being ready to draw it, and `warm` was
+   * only doing the first half. Constructing geometry and materials costs
+   * nothing on the GPU; the expensive step is the driver compiling and linking
+   * a program per distinct material, and three.js defers that to the first
+   * `render()` that encounters each one. So the whole point of warming — pay
+   * the cost on a slide nobody is waiting on, so the arrow key costs a camera
+   * tween — was being defeated for the one part of it that stalls the main
+   * thread. What the room saw was a hitch the *first* time each 3D slide
+   * appeared and never again, which is the signature of exactly this and is
+   * easy to misread as a slow scene.
+   *
+   * `compileAsync` links the set in parallel and resolves when they are ready,
+   * rather than making the main thread wait on each in turn inside a frame.
+   * `map-three-scene.tsx` already does this for the ported city, which is where
+   * the pattern comes from.
+   *
+   * ORDERING CONSTRAINT, and it is easy to break by accident: a program's cache
+   * key includes renderer state — `shadowMap.enabled` among it. Anything that
+   * changes such state must be set on the renderer in the constructor, before
+   * any scene is warmed. Flip one afterwards and every program compiled here is
+   * invalidated, so this work is thrown away and the hitch comes back on the
+   * keystroke that flipped it.
+   *
+   * Failure is swallowed on purpose. A scene that cannot precompile is a scene
+   * that will compile on its first frame, which is merely the old behaviour;
+   * it is not a reason to drop the scene from the cache or to fail the warm.
+   */
+  private async precompile(scene: DeckScene) {
+    try {
+      await this.renderer.compileAsync(scene.scene, scene.camera)
+    } catch {
+      /* falls back to compiling on first render */
+    }
+  }
+
+  /**
    * Build a scene now and keep it, without showing it.
    *
    * Called for the slide either side of the current one. This is the whole
@@ -189,6 +227,12 @@ export class DeckStage {
       // cached the same scene; keep the one that is in use.
       if (this.cache.has(id)) { scene.dispose(); return }
       scene.resize(this.width, this.height)
+      await this.precompile(scene)
+      // Re-checked after the compile, which is a second await and therefore a
+      // second window in which the stage can be disposed or the same scene can
+      // be built and cached by a `show` that raced past this warm.
+      if (this.disposed) { scene.dispose(); return }
+      if (this.cache.has(id)) { scene.dispose(); return }
       this.remember(id, scene)
     } catch (error) {
       console.error(`deck: scene "${id}" failed to build`, error)
@@ -235,6 +279,14 @@ export class DeckStage {
         console.error(`deck: scene "${id}" failed to build`, error)
         return
       }
+      if (this.disposed) { next.dispose(); return }
+      // Compiled here too, for the same reason as in `warm` and at a better
+      // price than it looks. This branch is the cache miss — the warm never ran
+      // or was evicted — so the alternative is not "show it sooner", it is
+      // showing it and hitching on the first frame. The old scene is still
+      // rendering throughout, so the cost lands as a slightly longer held frame,
+      // which nobody can see, instead of as a stutter, which everybody can.
+      await this.precompile(next)
       if (this.disposed) { next.dispose(); return }
       if (mine !== this.token) {
         // Superseded. Keep it — it is built and correct, and the presenter is
