@@ -75,6 +75,36 @@
   --av-night: var(--night);
   --av-panel: var(--panel);
   --av-panel-line: var(--hairline);
+
+  /* ----------------------------------------------------------------
+     The `--pixel-*` names, repointed rather than renamed.
+
+     `styles.css` defines these for the Pixel Empire pass and 62 rules
+     across nine sheets still read them, most of them in surfaces that
+     are otherwise fine — the war room, the wardrobe, the rival capture
+     cutscene, the map HUD. Renaming those call sites is 62 edits in
+     files three other branches are working in; repointing the names is
+     one edit here, and every one of those surfaces moves onto the
+     illustrated palette at once.
+
+     Chosen so the shift is a correction rather than a redesign:
+     `#171923` and `#090d15` are cold near-blacks and become the warm
+     ink; `#f2c75b` is the thirteenth brass and becomes the one brass;
+     `#65c9c2` is one of ~99 mints and becomes the one mint. The paper,
+     green and red are left where they are — the first is already on the
+     parchment ramp, and the other two carry meaning (bought, blocked)
+     that a palette change should not quietly re-tune.
+
+     `--pixel-shadow` keeps an alpha because it is used as the colour of
+     hard offset shadows: flat ink at full strength is what made those
+     read as printed-on rather than cast. */
+  --pixel-ink: var(--ink);
+  --pixel-shadow: rgba(27, 26, 36, .8);
+  --pixel-night: var(--night);
+  --pixel-gold: var(--brass-bright);
+  --pixel-gold-dark: var(--brass-deep);
+  --pixel-cyan: var(--verdigris);
+  --pixel-border: 1px solid var(--ink-line-strong);
 }
 
 h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.01em; }
