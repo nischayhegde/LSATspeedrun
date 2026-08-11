@@ -18,31 +18,16 @@
  * was alone on screen only by accident, because the positioning effect happened
  * to return before updating the host.
  *
- *   node scripts/verify-still-only.mjs --base=http://localhost:5185
+ *   cd deck && node scripts/verify-still-only.mjs
  */
 
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
+import { launchChromium } from './playwright-env.mjs'
 
-function findChrome() {
-  if (process.env.DECK_CHROME) return process.env.DECK_CHROME
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  let builds = []
-  try {
-    builds = readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  } catch { /* fall through */ }
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  return `${cache}/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-}
+const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const flags = new Map(process.argv.slice(2).map((raw) => {
   const match = /^--([a-z][a-z0-9-]*)(?:=(.*))?$/.exec(raw)
@@ -50,7 +35,12 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
   return [match[1], match[2] ?? '']
 }))
 
-const BASE = (flags.get('base') || 'http://localhost:5185').replace(/\/$/, '')
+// 5180, which is `server.port` in vite.config.ts and what every other harness
+// here defaults to. This defaulted to 5185, which is not the dev server and not
+// the preview server (5181) either, so the script died on a connection refusal
+// before its first check unless `--base` was passed — and the thing it checks
+// is the `stillOnly` unmount guard, which has no other test.
+const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
 const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
 const EMAIL = flags.get('email') || 'student@localhost.test'
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots/still-only')
@@ -64,11 +54,7 @@ const problems = []
 const fail = (text) => { problems.push(text); console.error(`  \u2717 ${text}`) }
 const ok = (text) => console.log(`  \u2713 ${text}`)
 
-const { chromium } = await import(PLAYWRIGHT)
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+const browser = await launchChromium()
 
 /**
  * What is on screen for the current slide: is there a live embed, is a still
@@ -117,6 +103,47 @@ async function gotoSlide(page, slide, query = '') {
     waitUntil: 'domcontentloaded', timeout: 60_000,
   })
   await page.waitForTimeout(4500)
+}
+
+// ---------------------------------------------------------------------------
+// 0. the directory matches the slides, in both directions
+// ---------------------------------------------------------------------------
+//
+// Cheap, needs no browser, and is here because the two failures it catches are
+// the two ways the panic button breaks.
+//
+// A slide naming a file that is not on disk shows the room an empty frame at
+// the moment the presenter reached for the still — the one moment there is no
+// recovery from. A file on disk that no slide names is the quieter one: it is
+// invisible, so it survives, and `public/` is copied into `dist/` unread, so
+// every machine that opens the deck downloads it. Four such files had
+// accumulated to 3.8 MB by 2026-08-11, two of them stale byte-copies of stills
+// that *are* in use and both documented in DEMO-NOTES.md as deliberate. Prose
+// did not hold the line, so this does.
+console.log('\n\u2022 public/stills matches the slides that name it')
+{
+  const source = readFileSync(resolve(DECK_DIR, 'src/slides/index.ts'), 'utf8')
+  const named = new Set([...source.matchAll(/\bstill:\s*'([^']+)'/g)].map((match) => match[1]))
+  const onDisk = new Set(readdirSync(resolve(DECK_DIR, 'public/stills')).filter((name) => /\.png$/.test(name)))
+
+  const missing = [...named].filter((file) => !onDisk.has(file))
+  const orphans = [...onDisk].filter((file) => !named.has(file))
+
+  if (missing.length) {
+    fail(`slides name ${missing.length} still(s) that are not in public/stills: ${missing.join(', ')}. `
+      + 'Pressing S on those slides shows an empty frame. Recapture them: node scripts/recapture-stills.mjs')
+  } else {
+    ok(`all ${named.size} stills named by a slide are present`)
+  }
+
+  if (orphans.length) {
+    const kb = orphans.reduce((sum, file) => sum + statSync(resolve(DECK_DIR, 'public/stills', file)).size, 0) / 1024
+    fail(`public/stills carries ${orphans.length} file(s) no slide names, ${Math.round(kb)} KB shipped in every `
+      + `build for nothing: ${orphans.join(', ')}. Delete them, and delete any row that regenerates them from `
+      + 'the STILLS table in recapture-stills.mjs, or the next full run writes them back.')
+  } else {
+    ok(`no file in public/stills is unreferenced (${onDisk.size} files, all named by a slide)`)
+  }
 }
 
 try {

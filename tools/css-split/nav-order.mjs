@@ -26,17 +26,8 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
-import { homedir } from 'node:os'
 
-const PW = process.env.LSAT_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-const { chromium } = await import(PW)
-/**
- * This copy of Playwright resolves the host as `mac-x64` and looks for a binary
- * that was never downloaded, so the browser is named rather than discovered.
- * The rest of the repo's capture scripts already do this.
- */
-const CHROME = process.env.LSAT_CHROME
-  || `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+import { launchChromium } from '../playwright-env.mjs'
 
 const dist = resolve(process.argv[2])
 const html = readFileSync(join(dist, 'index.html'), 'utf8')
@@ -76,7 +67,7 @@ const APPEND = (hrefs) => {
   }
 }
 
-const browser = await chromium.launch({ executablePath: CHROME })
+const browser = await launchChromium({ args: [] })
 let bad = 0
 try {
   for (const [pattern, before, after] of byRoute) {

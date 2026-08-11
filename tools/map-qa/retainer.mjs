@@ -14,11 +14,11 @@
 //      use `depthTest: false` at renderOrder 40-44, which is what forced labels
 //      to renderOrder 70; a new ground overlay is exactly the kind of thing
 //      that breaks that again.
-import { open, region, save, TABS } from './lib.mjs'
+import { TABS, open, region, save, scratch } from './lib.mjs'
 import { mkdirSync, writeFileSync } from 'node:fs'
 
 const tag = process.argv[2] ?? 'after'
-const dir = `/Users/alan/LSATspeedrun/.maps/retainer-${tag}`
+const dir = scratch(`retainer-${tag}`)
 mkdirSync(dir, { recursive: true })
 const report = {}
 const flush = () => save(`${dir}/report.json`, report)

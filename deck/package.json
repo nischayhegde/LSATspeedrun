@@ -11,6 +11,7 @@
     "prepare-demo": "node scripts/prepare-demo.mjs",
     "stage-demo": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply",
     "stage-demo:fast": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply --no-model",
+    "capture-coaching": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply --capture-coaching",
     "reset-demo": "npm run stage-demo && npm run prepare-demo -- --skip-seed",
     "shoot": "node scripts/shoot.mjs",
     "verify:cold-start": "node scripts/verify-cold-start.mjs",

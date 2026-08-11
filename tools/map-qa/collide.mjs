@@ -12,7 +12,7 @@
 // that makes the whole simulation a pure function of the code. Verified by
 // running the same arm twice and comparing the JSON byte for byte (see
 // `--repeat`).
-import { open, region, save, TABS } from './lib.mjs'
+import { TABS, open, region, save, scratch } from './lib.mjs'
 import { mkdirSync } from 'node:fs'
 
 const tag = process.argv[2] ?? 'before'
@@ -20,7 +20,7 @@ const only = process.argv.slice(3).filter((a) => !a.startsWith('--'))
 const keys = only.length ? only : ['city', 'nation', 'continent', 'ocean']
 const FRAMES = Number(process.env.MAPS_FRAMES ?? 900)
 
-const dir = `/Users/alan/LSATspeedrun/.maps/collide-${tag}`
+const dir = scratch(`collide-${tag}`)
 mkdirSync(dir, { recursive: true })
 
 /**

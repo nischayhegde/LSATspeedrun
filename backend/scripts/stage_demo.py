@@ -40,6 +40,7 @@ the open case, the solo case and the autoplay run to their pre-answer state.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -54,7 +55,12 @@ sys.path.insert(0, str(BACKEND_DIR))
 from sqlalchemy import func  # noqa: E402
 
 from app import create_app  # noqa: E402
-from app.coaching import CoachingProviderError, generate_attempt_coaching  # noqa: E402
+from app.coaching import (  # noqa: E402
+    PROMPT_VERSION,
+    CoachingProviderError,
+    generate_attempt_coaching,
+    provider_ready,
+)
 from app.extensions import db  # noqa: E402
 from app.models import (  # noqa: E402
     Attempt,
@@ -143,6 +149,133 @@ DEMO_REASONING = (
     "be trusted, not whether they hurt anyone. E felt close too, but it's a comparison "
     "between two societies and I don't think the author needs one."
 )
+
+
+# ---------------------------------------------------------------------------
+# the captured grade
+# ---------------------------------------------------------------------------
+#
+# Why a fixture exists at all.
+#
+# The coaching call is made by the *backend* to an LLM gateway, authenticated
+# with `TFY_API_KEY` against `TFY_URL` (see `app/coaching.py::_chat`). It has
+# nothing to do with who is signed in, so no account credential can make it work
+# on a machine that has no gateway — and the machines that have no gateway are
+# every machine but the one laptop. On those, the centrepiece slide reaches its
+# SUSTAINED stamp and then has nothing to say about *why*, which is the only
+# thing that slide is arguing.
+#
+# The grade is already a stored read at presentation time: `run_attempt_coaching`
+# returns `feedback_json["coaching"]` verbatim when `coaching_status` is
+# `completed`, without calling anything. So the beat does not need a gateway, it
+# needs *a stored grade*. This captures one and commits it.
+#
+# That also removes a live dependency from the highest-stakes beat on the
+# presenting machine, which is the better half of the argument: today, a gateway
+# that is down, rate-limited or unbilled on presentation morning means a
+# `reset-demo` — the command every recovery path points at — silently restages
+# the case ungraded.
+#
+# ## What makes this honest, and what makes it refuse
+#
+# It is a real grade the model actually produced, captured from a live run with
+# `--capture-coaching`, and stored verbatim. Nothing here writes coaching text;
+# there is no template and no fallback prose. If no capture matches, the case
+# stays ungraded and says so, exactly as it does now.
+#
+# It can be honest because the grade turns out to be a pure function of things
+# this repository tracks. `DEMO_QUESTION_ID` is a stable id from the question
+# bank, not a uuid; `SOLO_REASONING` and `DEMO_REASONING` are constants; the
+# selected label is the bank's own answer key; and the payload `_validate_coaching`
+# returns carries no session id, attempt id or user id — only the choice labels.
+# So unlike the six values `reset-demo` re-pins, there is nothing here to
+# re-point after a re-seed: a rebuilt database produces the same inputs and the
+# capture still describes them.
+#
+# The match is checked rather than assumed, on all four of those inputs, because
+# a grade shown against reasoning it was not given is a fabricated grade however
+# real its words are. `prompt_version` is in the fingerprint too: a rubric change
+# makes an old grade a grade under different rules.
+#
+# One input is *not* repo-tracked, and it is recorded rather than hidden: the
+# prompt includes up to five of the account's other written explanations, as
+# anti-reuse samples. So re-capturing on a different database can produce
+# different words. It does not make a capture untrue — it is still this model's
+# real grade of this reasoning on this question — but it is why this is a
+# capture rather than something anyone should expect to reproduce byte for byte.
+FIXTURE_PATH = Path(__file__).resolve().parent / "demo_fixtures" / "coaching.json"
+FIXTURE_SCHEMA = 1
+
+
+def _fingerprint(question: Question, selected_label: str, reasoning: str) -> dict:
+    """What a stored grade is a grade *of*."""
+    return {
+        "question_id": question.id,
+        "selected_label": selected_label,
+        "reasoning_sha256": hashlib.sha256((reasoning or "").encode("utf-8")).hexdigest(),
+        "prompt_version": PROMPT_VERSION,
+    }
+
+
+def _load_fixture() -> dict:
+    try:
+        loaded = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"schema": FIXTURE_SCHEMA, "captures": []}
+    except (OSError, json.JSONDecodeError) as failure:
+        print(f"  ! {FIXTURE_PATH.name} could not be read ({failure}); continuing without it", file=sys.stderr)
+        return {"schema": FIXTURE_SCHEMA, "captures": []}
+    if not isinstance(loaded, dict) or loaded.get("schema") != FIXTURE_SCHEMA:
+        print(f"  ! {FIXTURE_PATH.name} is not schema {FIXTURE_SCHEMA}; continuing without it", file=sys.stderr)
+        return {"schema": FIXTURE_SCHEMA, "captures": []}
+    if not isinstance(loaded.get("captures"), list):
+        loaded["captures"] = []
+    return loaded
+
+
+def _fixture_lookup(question: Question, selected_label: str, reasoning: str) -> dict | None:
+    """The captured grade for exactly these inputs, or nothing."""
+    wanted = _fingerprint(question, selected_label, reasoning)
+    for capture in _load_fixture()["captures"]:
+        if not isinstance(capture, dict):
+            continue
+        if all(capture.get(key) == value for key, value in wanted.items()):
+            coaching = capture.get("coaching")
+            if isinstance(coaching, dict) and coaching.get("answer_analysis"):
+                return capture
+    return None
+
+
+def _fixture_store(question: Question, selected_label: str, reasoning: str, coaching: dict, label: str) -> str:
+    """Pin a live grade so a machine with no gateway can stage this beat.
+
+    Stored verbatim. The payload the app serves is the payload the model
+    produced, so the provenance lives in the fields around it rather than in
+    edits to it — a marker added to the coaching dict would be a difference
+    between what the model said and what the room reads, which is the thing
+    being avoided.
+    """
+    document = _load_fixture()
+    entry = {
+        **_fingerprint(question, selected_label, reasoning),
+        "beat": label,
+        "captured_at": utcnow().isoformat(),
+        "model": coaching.get("model"),
+        "reasoning_preview": (reasoning or "")[:110] + "...",
+        "coaching": coaching,
+    }
+    kept = [
+        capture for capture in document["captures"]
+        if not (isinstance(capture, dict) and all(
+            capture.get(key) == entry[key]
+            for key in ("question_id", "selected_label", "reasoning_sha256", "prompt_version")
+        ))
+    ]
+    replaced = len(kept) != len(document["captures"])
+    document["captures"] = sorted([*kept, entry], key=lambda capture: capture.get("beat") or "")
+    FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FIXTURE_PATH.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return f"{'replaced' if replaced else 'added'} the {label} capture in {FIXTURE_PATH.name}"
 
 
 def _assert_local_only(app) -> None:
@@ -306,7 +439,7 @@ def _stage_open_case(user: User, question: Question, *, avoid_ids: set[str] | No
     }
 
 
-def _stage_graded_twin(user: User, question: Question, *, live_model: bool) -> dict:
+def _stage_graded_twin(user: User, question: Question, *, live_model: bool, capture_coaching: bool = False) -> dict:
     """A completed session whose verdict is already in the database.
 
     The verdict beat is the deck's payoff and its biggest latency risk. Rather
@@ -343,15 +476,26 @@ def _stage_graded_twin(user: User, question: Question, *, live_model: bool) -> d
 
     # StudySession carries no free-text marker, so previous twins are found by
     # the idempotency key their attempt was written with.
+    #
+    # Whatever the last staging managed to have graded is copied out before the
+    # rows go, because it is the only grade that will exist if the gateway is
+    # down. It is a real grade — the same pipeline produced it, for this same
+    # question — so reusing it is not a weaker grading path, it is the previous
+    # run of the same one.
+    salvaged: dict | None = None
     for stale_attempt in Attempt.query.filter(
         Attempt.user_id == user.id,
         Attempt.idempotency_key.like(f"{STAGE_VERDICT_KEY}%"),
     ).all():
         stale_item = stale_attempt.session_item
-        if stale_item is not None:
-            stale_session = StudySession.query.get(stale_item.session_id)
-            if stale_session is not None:
-                db.session.delete(stale_session)
+        if stale_item is None:
+            continue
+        stored = (stale_attempt.feedback_json or {}).get("coaching")
+        if stored and stale_item.question_id == question.id and salvaged is None:
+            salvaged = {"coaching": stored, "model": stale_attempt.coaching_model}
+        stale_session = StudySession.query.get(stale_item.session_id)
+        if stale_session is not None:
+            db.session.delete(stale_session)
     db.session.commit()
 
     session = create_study_session(user, count=1, practice_style="cases")
@@ -387,8 +531,57 @@ def _stage_graded_twin(user: User, question: Question, *, live_model: bool) -> d
     db.session.commit()
 
     graded = {"mechanism": "skipped", "grade": None}
+    capture_note = None
+    payload, model = None, None
+    failure_text = ""
+    replayed = None
     if live_model:
-        payload, meta = generate_attempt_coaching(attempt)
+        # Survivable, the way `_stage_solo_case` below already makes it. This
+        # call was bare, and it is the *first* of the four stagings to run, so
+        # one refusal from the gateway took the whole script down before the
+        # solo case, the open case or any of the parking had happened — and it
+        # took it down having already deleted the previous twin and committed
+        # an ungraded replacement. `npm run reset-demo` on a machine with no
+        # TFY_API_KEY therefore left the demo strictly worse than it found it
+        # and exited non-zero halfway, which is a poor thing to have happen to
+        # the command every other recovery path points at.
+        #
+        # Four tries and the same two-second spacing as the solo case: this is
+        # one network call to a model that intermittently answers prose where
+        # the schema wants JSON.
+        for remaining in (3, 2, 1, 0):
+            try:
+                payload, meta = generate_attempt_coaching(attempt)
+                model = meta.get("model") or "stage-pregrade"
+                break
+            except CoachingProviderError as failure:
+                failure_text = str(failure)
+                if not remaining:
+                    break
+                time.sleep(2)
+
+        if payload is not None and capture_coaching:
+            capture_note = _fixture_store(question, attempt.selected_label, DEMO_REASONING, payload, "verdict-twin")
+
+        if payload is None and salvaged is not None:
+            payload, model = salvaged["coaching"], salvaged["model"]
+
+    # Outside the `live_model` guard on purpose. That flag means "do not spend
+    # 20-40 seconds on the model", and reading a committed grade off disk costs
+    # neither the seconds nor the call — so gating this on it would only mean
+    # `stage-demo:fast` rebuilding an ungraded twin it had a real grade for.
+    #
+    # After the salvage rather than before it: a grade already in this database
+    # is the tighter match, and it got there the same way this one did.
+    if payload is None:
+        captured = _fixture_lookup(question, attempt.selected_label, DEMO_REASONING)
+        if captured is not None:
+            payload = captured["coaching"]
+            model = payload.get("model") or captured.get("model")
+            failure_text = ""
+            replayed = captured.get("captured_at", "earlier")
+
+    if payload is not None:
         attempt.feedback_json = {
             "correct_answer": question.correct_answer,
             "selected_answer": attempt.selected_label,
@@ -396,13 +589,36 @@ def _stage_graded_twin(user: User, question: Question, *, live_model: bool) -> d
             "coaching": payload,
         }
         attempt.coaching_status = "completed"
-        attempt.coaching_model = meta.get("model") or "stage-pregrade"
+        attempt.coaching_model = model or "stage-pregrade"
         attempt.coached_at = utcnow()
         graded = {
-            "mechanism": "pre-generated by the real coaching pipeline, stored on the attempt",
+            "mechanism": (
+                f"reused the previous staging's grade — the coach refused ({failure_text})"
+                if failure_text
+                else f"replayed the committed capture from {replayed}, because the coach is not configured here"
+                if replayed
+                else "pre-generated by the real coaching pipeline, stored on the attempt"
+            ),
             "grade": payload.get("explanation_grade"),
             "verdict": payload.get("reasoning_verdict"),
             "model": attempt.coaching_model,
+            "capture": capture_note,
+        }
+    elif live_model:
+        # No slide requests `{verdictSession}` as things stand, so this
+        # costs nothing on stage today and the note says so rather than
+        # crying wolf. What it would cost if one did is worth stating,
+        # because it is silent: the attempt stays `pending`, the review
+        # screen polls a grade that is never coming, and the beat plays as
+        # a thinking judge over an empty panel rather than as any kind of
+        # error a presenter could recognise from the front of a room.
+        graded = {
+            "mechanism": f"ungraded — the coach refused four times ({failure_text})",
+            "grade": None,
+            "presenter_note": (
+                "No slide points at {verdictSession} today, so nothing on stage changes. "
+                "Configure TFY_API_KEY and TFY_URL and re-run before pointing one at it."
+            ),
         }
 
     # Not "completed": a completed session serves no item, so opening its URL
@@ -497,7 +713,7 @@ def _release_attempt(attempt: Attempt) -> None:
             stale.source_attempt_id = None
 
 
-def _stage_solo_case(user: User, question: Question) -> dict:
+def _stage_solo_case(user: User, question: Question, *, capture_coaching: bool = False) -> dict:
     """One case, staged so it can be played end to end with no model on stage.
 
     ## What the slide has to show
@@ -599,6 +815,7 @@ def _stage_solo_case(user: User, question: Question) -> dict:
     coaching = (attempt.feedback_json or {}).get("coaching")
     mechanism = "kept — already graded, and a staged grade outlives a rehearsal"
     model = attempt.coaching_model
+    capture_note = None
     if coaching is None:
         # Graded even under `--no-model`, which the twin above does not do, and
         # the difference is deliberate. `--no-model` exists so `stage-demo:fast`
@@ -631,6 +848,23 @@ def _stage_solo_case(user: User, question: Question) -> dict:
                 if not remaining:
                     break
                 time.sleep(2)
+
+        if coaching is not None and capture_coaching:
+            capture_note = _fixture_store(question, attempt.selected_label, SOLO_REASONING, coaching, "solo")
+
+        # No gateway, so no new grade. Fall back to one the model produced
+        # earlier for this exact question, reasoning and answer — the only kind
+        # there is here. See the fixture note above for why this is a real grade
+        # rather than a stand-in for one, and why it refuses when it is not.
+        if coaching is None:
+            captured = _fixture_lookup(question, attempt.selected_label, SOLO_REASONING)
+            if captured is not None:
+                coaching = captured["coaching"]
+                model = coaching.get("model") or captured.get("model") or "stage-pregrade"
+                mechanism = (
+                    f"replayed the committed capture — a real {model} grade of this exact reasoning, "
+                    f"taken {captured.get('captured_at', 'earlier')}, because the coach is not configured here"
+                )
 
     # Rebuilt through the app's own writer rather than assembled here, so the
     # staged attempt is shaped exactly like a live one — the choice marks and
@@ -687,6 +921,7 @@ def _stage_solo_case(user: User, question: Question) -> dict:
             "grade": (coaching or {}).get("explanation_grade"),
             "verdict": (coaching or {}).get("reasoning_verdict"),
             "model": model,
+            "capture": capture_note,
         },
         "settled_payout": attempt.settlement.payout if attempt.settlement else None,
     }
@@ -988,12 +1223,29 @@ def main() -> int:
         action="store_true",
         help="Skip the one-time coaching call (leaves the verdict ungraded).",
     )
+    parser.add_argument(
+        "--capture-coaching",
+        action="store_true",
+        help=(
+            "Pin the grades this run produces into scripts/demo_fixtures/coaching.json, so a "
+            "machine with no TFY_API_KEY can stage the same beat. Needs a working gateway; "
+            "commit the result. Off by default so rehearsals do not rewrite a tracked file."
+        ),
+    )
     parser.add_argument("--apply", action="store_true", help="Write the changes.")
     args = parser.parse_args()
+    if args.capture_coaching and args.no_model:
+        raise SystemExit("--capture-coaching has nothing to capture under --no-model.")
 
     app = create_app({"AUTO_SEED": False})
     with app.app_context():
         _assert_local_only(app)
+        if args.capture_coaching and not provider_ready():
+            raise SystemExit(
+                "--capture-coaching needs a working coach: set TFY_API_KEY and TFY_URL. "
+                "It pins a grade the model actually produces, so there is nothing it can "
+                "write without one."
+            )
         user = User.query.filter_by(email=args.email).first()
         if user is None:
             raise SystemExit(f"No local demo user {args.email!r}. Run seed_demo.py --apply.")
@@ -1026,8 +1278,10 @@ def main() -> int:
             count=AUTOPLAY_ITEM_COUNT,
             exclude_ids={question.id},
         )
-        twin = _stage_graded_twin(user, question, live_model=not args.no_model)
-        solo = _stage_solo_case(user, question)
+        twin = _stage_graded_twin(
+            user, question, live_model=not args.no_model, capture_coaching=args.capture_coaching
+        )
+        solo = _stage_solo_case(user, question, capture_coaching=args.capture_coaching)
         open_case = _stage_open_case(
             user,
             question,

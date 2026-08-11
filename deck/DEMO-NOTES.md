@@ -21,19 +21,40 @@ That runs, in order:
 | Step | What it does | Time |
 | --- | --- | --- |
 | `stage_demo.py --apply` | Pins the question, pre-pastes the reasoning, rewinds the question timer, silences the guided tour server-side (§10), re-grades the verdict twin through the real model | ~20-40s |
-| `prepare-demo.mjs --skip-seed` | Resolves **both** session ids and writes them into `demo.config.ts`, then proves a framed page stays signed in | ~10-20s |
+| `prepare-demo.mjs --skip-seed` | Resolves **all six** pinned values and writes them into `demo.config.ts`, then proves a framed page stays signed in | ~10-20s |
 
 `--skip-seed` is not optional. `prepare-demo.mjs` runs the seeder by default, and
 the seeder builds fresh practice runs — so the previous ordering staged the demo
 and then immediately replaced the sessions it had just staged. Run the seeder on
 its own if the database is empty.
 
-Both ids are resolved, which is also new. `stage_demo.py` rebuilds the graded
+All six are resolved, which is also new. `stage_demo.py` rebuilds the graded
 verdict twin under a new id every time it grades, and `prepare-demo.mjs` used to
 pin only `liveSessionId` — so `reset-demo` reliably left `verdictSessionId`
 pointing at a session it had just deleted, breaking the payoff beat with the
 command whose job is to make the demo work. The twin is now found by what it is
 rather than by its id: the paused run holding an already-graded attempt.
+
+`backend/scripts/repin_demo_session.py` is the check for all six, and it is a
+check only. It used to take `--write` and re-pin `liveSessionId` alone, which is
+the worst of the six to fix in isolation: the ordinary case slide comes back, so
+the command appears to have worked, while the centrepiece keeps pointing at a
+deleted session and silently plays an undriven case instead. It now reads all six
+back, names the dead ones, exits non-zero, and prints `reset-demo`.
+
+**It cannot be made to re-pin, and that is worth knowing before you try.** Four of
+the six are not pins that drifted but staging that no longer exists — after a
+re-seed there is no solo case carrying pre-written reasoning and no
+fifteen-question driven run to point at — and the two answer keys cannot be read
+back over the API by anything, because `serialize_question` omits
+`correct_answer` on purpose.
+
+**Without a coaching gateway** (`TFY_API_KEY`, `TFY_URL`) `reset-demo` still runs
+to completion and still pins all six. Whether the driven case comes back *graded*
+depends on whether anyone has captured a grade — see §3a. If nobody has, it stages
+ungraded and says so. It used to raise `CoachingProviderError` partway through,
+*after* deleting the previous verdict — leaving the demo worse than it found it,
+from the command every other recovery path points at.
 
 Between rehearsals, when the verdict text has not changed and you only need the
 case rewound:
@@ -197,6 +218,53 @@ already stored and there is nothing to fetch.
 
 ---
 
+## 3a. The coach on a machine with no gateway
+
+**What blocks the coach is not a login.** `app/coaching.py::_chat` posts to
+`TFY_URL` with `Authorization: Bearer <TFY_API_KEY>`, both read from
+`current_app.config` in the Flask process. It is a server-to-server call made by
+the backend; the signed-in account only decides *which attempt* gets graded.
+Handing over an account, or seeding one harder, changes nothing — a VM without
+those two variables cannot grade, and a laptop with them grades whoever is
+signed in.
+
+**What the beat actually needs is a stored grade, not a live one.** By
+presentation time it is already a read: `run_attempt_coaching` returns
+`feedback_json["coaching"]` verbatim once `coaching_status` is `completed`,
+calling nothing (§5). So `stage_demo.py --capture-coaching` pins a grade that a
+real run produced, into `backend/scripts/demo_fixtures/coaching.json`, and
+staging replays it whenever the coach refuses.
+
+```bash
+cd deck && npm run capture-coaching     # needs a working gateway, once
+git add backend/scripts/demo_fixtures/coaching.json && git commit
+```
+
+After that, any machine — no key, no network to the gateway — stages
+`demo-case-answer` with the same coached text, in about a second.
+
+**On the presenting machine this is worth having for a different reason.** With
+a gateway configured nothing changes: the live call still runs first and its
+result still wins. The capture is what stands behind it if the gateway is down,
+rate-limited or unbilled on presentation morning, which today means `reset-demo`
+quietly restages the centrepiece ungraded.
+
+**Nothing in the staging path composes coaching text.** A capture is replayed
+only when the question id, the selected label, the sha256 of the reasoning and
+the prompt version all still match, because a grade shown against reasoning it
+was not given is fabricated whatever its words are. `--capture-coaching` refuses
+to run without a working coach rather than inventing something. If no capture
+matches, the case stages ungraded and says so, exactly as before. The folder's
+`README.md` carries the rules.
+
+Nothing in the payload is keyed to a session, attempt or user id — only to
+choice labels — so unlike the six values in §1 there is nothing to re-point
+after a re-seed. The question is pinned by a stable bank id and both reasoning
+texts are constants in `stage_demo.py`, so a database rebuilt from nothing
+presents the capture with the same inputs it was taken against.
+
+---
+
 ## 4. What is deterministic, and what is not
 
 **Pinned and safe:**
@@ -338,9 +406,15 @@ still is worse than a visible failure, because it silently misleads the room.
 >   error card, a login screen, a spinner or an empty page — but that check is a
 >   list of known failures, not a proof, so the eyeball step stays.
 
+Every file in `public/stills/` is named by exactly one slide, and the table
+below is the whole directory. That is a property worth keeping rather than a
+coincidence: `public/` is copied into `dist/` verbatim, so a still no slide
+names is not merely untidy, it is downloaded by every machine that opens the
+deck. Four files failed that test and were deleted on 2026-08-11 — see
+[Four stills that were not fallbacks](#four-stills-that-were-not-fallbacks).
+
 | Still | `--only` key | Stands in for | Used by |
 | --- | --- | --- | --- |
-| `demo-case.png` | `case` | `/cases/{session}` | (unused by the current cut — the *opening* frame) |
 | `demo-case-answered.png` | `case-answered` | `{autoplay}` at rest: (C) credited, stamp down, coach's reading in shot | `demo-case-answer` — see below |
 | `demo-answer-log.png` | `answer-log` | `/progress?tab=answers`, first tile open | `demo-case-verdict-review` — see below |
 | `demo-progress.png` | `progress` | `/progress` | `demo-mega-litigation` |
@@ -348,9 +422,33 @@ still is worse than a visible failure, because it silently misleads the room.
 | `demo-office-tier0.png` | `office-tier0` | `/office?officeTier=0` | `demo-office-transformation` |
 | `demo-map.png` | `map` | `/map` | `demo-map-and-firm` |
 | `demo-focus-mode.png` | `focus-mode` | `/office` **with Focus Mode on** | `demo-focus-mode` — its only content |
-| `demo-firm-upgrades.png` | `firm-upgrades` | `/firm?tab=upgrades` | (unused by the current cut) |
-| `demo-office-tier14.png` | `office-tier14` | `/office?officeTier=14&officeAll=1` | (unused by the current cut) |
-| `scene-office-tier0.png`, `scene-office-tier14.png` | — | Deck art, not fallbacks | — |
+| `demo-office-tier14.png` | `office-tier14` | `/office?officeTier=14&officeAll=1` | `demo-office-transformation` — the *after* half of its toggle |
+
+#### Four stills that were not fallbacks
+
+3.8 MB of the directory was reachable from no slide, and had been shipped in
+every build since the deck was first tracked. A deployment audit found it; this
+note is here because two of the four were documented as deliberate and were not.
+
+- **`scene-office-tier0.png`, `scene-office-tier14.png`** (2.4 MB). This table
+  used to call them "deck art, not fallbacks". They were neither. `73e9f3e`
+  committed them as byte-identical copies of `demo-office-tier0.png` and
+  `demo-office-tier14.png` — its own manifest says so — and `54d0356` then
+  recaptured the originals, leaving these two as stale duplicates of an earlier
+  capture of a still that is in use. Nothing has ever loaded them.
+- **`demo-case.png`** (810 KB). The opening frame of the case: partner tip up,
+  choices dimmed. `demo-case-answer` used to fall back to it and moved to
+  `demo-case-answered.png` when the slide became the driven one, because the
+  opening frame stops three seconds into a thirty-second story.
+  `verify-demo-continuity.mjs` still asserts the slide does not name it.
+- **`demo-firm-upgrades.png`** (533 KB). `/firm?tab=upgrades`. No slide has ever
+  named it.
+
+The last two were also entries in `recapture-stills.mjs`, which is how they
+survived being noticed: an unused row in that table is not inert, it is a
+generator that writes the orphan back on the next full run. The rows went with
+the files, and each leaves a comment naming the route to restore if a future cut
+wants the frame.
 
 ### Recapturing them
 
@@ -470,13 +568,20 @@ show the dashboard before it was recaptured.
 ### Verifying it, and one loose end
 
 ```bash
-node scripts/verify-still-only.mjs --base=http://localhost:5185
+node scripts/verify-still-only.mjs
 ```
 
 That advances into the slide from the live demo run — not by deep link, which
 would miss the defect — and asserts the still is alone on screen, that a real
 live demo slide still embeds, that `?stills=1` still wins, and that the
-unreachable-origin fallback still engages.
+unreachable-origin fallback still engages. It also compares `public/stills/`
+against every slide's `still:` in both directions, before opening a browser.
+
+It defaults to `http://localhost:5180`, the dev server. It used to be written
+here with `--base=http://localhost:5185`, which is neither the dev server nor
+the preview server (5181) — and the script's own default was the same 5185, so
+following this line and ignoring it failed identically, on a connection refusal,
+before the first check.
 
 It exists because `stillOnly` needs **two** things to be true, and only one of
 them is obvious. `demo-frame.tsx` withholds the slot so the stage cannot position
@@ -541,6 +646,15 @@ the same test after §10, and it is the one that matters now:
    `shoot.mjs` refuses to run against any other host and prints the corrected
    command, and the deck's dev server now binds the name `localhost`, so the wrong
    spelling refuses the connection instead of serving a broken deck.
+
+   The four `/login` rows are what the *old* behaviour measured. Since
+   2026-08-11 a hostname mismatch pins every demo to its still rather than
+   framing a page that will bounce: `demo.config.ts` computes `useStills` from
+   the same host comparison the table is about, so the rows now read "still"
+   wherever they read `/login` for an origin reason. That is a better failure,
+   not a fixed one — the room sees photographs of the product instead of the
+   product — and it exists mainly to stop a deck opened anywhere else from
+   embedding whatever answers on that machine's 5173.
 2. **Nothing has to sign in any more.** This was the second necessary condition and
    the actual cause of the false alarm: Playwright starts with an empty cookie jar,
    so every ad-hoc harness in that run was signed out. It is no longer a condition
@@ -584,8 +698,18 @@ screenshot pass failed honestly — both reports were true.
 One thing to know: the start card warms the app's `/office` and `/map` routes in
 hidden iframes, tagged `?deck-warm=1`. A harness that finds the embed by origin
 alone can pick one of those up and measure it instead of the slide's embed, so
-exclude any frame whose URL contains `deck-warm`. All four scripts in `scripts/`
-do.
+exclude any frame whose URL contains `deck-warm`. Every script here that finds a
+frame by origin does. The ones that find it by selector — `.demo-stage-frame` is
+only ever the slide's embed — are immune by construction and do not need the
+guard.
+
+The other rule, which used to be undocumented because it was never true anywhere
+but one laptop: get Playwright from `scripts/playwright-env.mjs`. Each harness
+carried its own hardcoded module path under `/private/tmp` and its own macOS-only
+Chromium lookup, so none of them ran on anything else. `launchChromium()` resolves
+both, preferring the repository's own `node_modules/playwright` and letting
+Playwright find the browser it downloaded. `DECK_PLAYWRIGHT` and `DECK_CHROME`
+still override, as overrides rather than as the only way through.
 
 ---
 
@@ -726,3 +850,75 @@ step without replacing that would have moved the stall onto the office slide.
 card is up and discards them immediately; only the dev server's transform cache is
 wanted. They are tagged `?deck-warm=1` so harnesses can tell them from a real
 embed, and the queue is abandoned the moment Start is pressed.
+
+---
+
+## 11. Verified on Linux, 2026-08-11
+
+Everything below was run against the full stack in a Linux VM — backend on 5001
+with `AUTO_SEED=true`, the app on 5173, the deck on 5180, opened as `localhost`
+throughout. It is recorded because most of it had never been run anywhere but
+one laptop: until `scripts/playwright-env.mjs`, every harness in `scripts/`
+imported Playwright from an absolute path under `/private/tmp` and looked for a
+macOS arm64 app bundle, so on any other machine they did not fail, they asked to
+be configured.
+
+**No coaching gateway was available** (`TFY_API_KEY` and `TFY_URL` are empty), so
+one thing below is a known red and one claim is untested. Both are named.
+
+| Harness | Result |
+| --- | --- |
+| `verify-demo-continuity.mjs` | 27 pass, 1 fail — the fail is the gateway, below |
+| `verify-demo-sizing.mjs` | all 7 demo slides, no problems |
+| `verify-demo-proportion.mjs` | centred and uncut on all 7, at all 4 sizes |
+| `verify-cold-start.mjs` | all green from an empty cookie jar |
+| `verify-still-only.mjs` | all green |
+| `verify-office-toggle.mjs` | all green, both live and stills, plus an eyeball on the four frames |
+| `walk.mjs` (forward, backward, 25-press mash) | no problems, renderer memory plateaus |
+| Arrow-key walk of the whole deck, three times | all 7 demo slides on their routes, nothing blank, no embed outliving its slide |
+
+### Proportion, since it was asked about specifically
+
+Share of the viewport taken by the painted embed, measured rather than estimated.
+The founders asked for "half, if not more".
+
+| | 1366x768 | 1600x900 | 1920x1080 | 2560x1440 |
+| --- | ---: | ---: | ---: | ---: |
+| the six live slides | 57.5% | 61.9% | 66.2% | 71.8% |
+| `demo-focus-mode` (still) | 63.1% | 65.8% | 68.6% | 72.0% |
+
+The copy plate is 342px wide and the embed starts at x=359 at every size, so
+there is 17px of clearance and the headline cannot overlap the frame. The plate's
+own height varies with its copy and its bottom sits flush to the viewport edge by
+design; nothing overflows.
+
+### What the gateway would have proved, and what stands in its place
+
+`demo-case-answer` plays itself correctly and ends wrong. The driver engages, runs
+the sequence in 19.8s against a 30s budget, selects **C** — the letter pinned as
+`soloAnswerKey` — and lands the SUSTAINED stamp with no grading spinner at any
+point. Then the judge says *"The answer key decides correctness. The judge coaches
+your explanation"* and there is no coaching, because there is no model to have
+produced it.
+
+That is worse than an empty panel. The slide's headline claim is that the grade is
+about the reasoning rather than the letter, and what it currently demonstrates is
+a tick beside a letter, immediately after promising otherwise. **With a gateway
+configured this is a staging artefact and not a defect** — `stage_demo.py` grades
+the case once, stores it on the attempt, and the beat becomes a read.
+
+**§3a now closes this without a gateway**, and the closing was tested here even
+though the grading itself could not be: on a database rebuilt from nothing with
+no `TFY_*` set, `stage_demo.py` replayed a committed capture and the slide
+rendered its full coached panel — verdict line, badge and all three bench notes.
+The mechanism is verified end to end. What could not be produced here is the
+*text*, since capturing a real grade needs the gateway once; the run above used
+a local stub standing in for it, and deliberately shipped no fixture.
+
+So the remaining gap is one command on the laptop that already has the key:
+`npm run capture-coaching`, commit the result. Until someone runs it, the
+paragraph above still describes what a keyless machine shows.
+
+If you are ever in a room without the gateway *and* without a capture:
+`FORCE_STILLS = true` in `demo.config.ts`, and `demo-case-answered.png` carries
+the coached frame.

@@ -85,11 +85,12 @@
  * renders over a dead black stage is *not* flagged, because the frame as a
  * whole is not flat.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inflateSync } from 'node:zlib'
+
+import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -100,48 +101,10 @@ const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /**
  * Playwright is not a dependency of the deck and is deliberately not being made
  * one: the deck ships three runtime packages and adding a browser automation
- * stack to its lockfile to take screenshots would be a poor trade. It is taken
- * from the same out-of-tree install the map harnesses use.
+ * stack to its lockfile to take screenshots would be a poor trade. It comes from
+ * the repository's own git-ignored root manifest, which exists for exactly these
+ * harnesses. `scripts/playwright-env.mjs` does the looking, on every platform.
  */
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-
-/**
- * Named outright rather than through `channel: 'chromium'`, for the reason
- * given in `tools/map-qa/lib.mjs`: on this machine the channel lookup resolves
- * to the x64 build and then reports the browser as *not installed*, which reads
- * like a missing download rather than an architecture mismatch and costs a run
- * to work out.
- *
- * The build number is discovered rather than hardcoded — `lib.mjs` pins
- * `chromium-1234` and will need editing the first time Playwright is updated.
- */
-function findChrome() {
-  if (process.env.DECK_CHROME) return process.env.DECK_CHROME
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  let builds = []
-  try {
-    builds = readdirSync(cache)
-      .filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  } catch {
-    /* fall through to the pinned path, which will produce a clearer error */
-  }
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  return `${cache}/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-}
-
-/**
- * Software rendering, explicitly. A headless Chromium on a machine with no
- * attached display will otherwise decide it has no usable GPU and hand back a
- * context that fails on the first shader compile — which surfaces as a scene
- * that is simply absent, with nothing in the console. `--use-gl=angle` plus
- * SwiftShader is the combination the map harness settled on and it is the one
- * that produces pixels here too.
- */
-const GL_ARGS = ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 
 // ---------------------------------------------------------------------------
 // arguments
@@ -763,16 +726,6 @@ async function captureGrid(context, options) {
 // run
 // ---------------------------------------------------------------------------
 
-let chromium
-try {
-  ;({ chromium } = await import(PLAYWRIGHT))
-} catch (error) {
-  console.error(`shoot: no Playwright at ${PLAYWRIGHT}\n`
-    + `Set DECK_PLAYWRIGHT to an install that has it, e.g.\n`
-    + `  DECK_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs node scripts/shoot.mjs\n\n${error}`)
-  process.exit(2)
-}
-
 // Reachability first, and with a real message. A run that goes straight to
 // Playwright reports a dead dev server as ERR_CONNECTION_REFUSED sixty seconds
 // later, buried in a browser stack trace.
@@ -789,17 +742,17 @@ if (!reachable) {
 
 mkdirSync(OUT, { recursive: true })
 
-const executablePath = findChrome()
 let browser
 try {
-  browser = await chromium.launch({ executablePath, args: GL_ARGS })
+  browser = await launchChromium()
 } catch (error) {
   // Almost always one of two things, and the raw Playwright error — several
   // hundred characters of command line followed by `kill EPERM` — names
   // neither of them.
-  console.error(`shoot: could not launch Chromium at\n  ${executablePath}\n\n`
-    + `If that path does not exist, set DECK_CHROME to one that does.\n`
-    + `If it does exist, the browser was most likely killed on launch by a\n`
+  console.error(`shoot: could not launch Chromium.\n\n`
+    + `If no browser is installed, download one:\n`
+    + `  npx playwright install chromium\n`
+    + `If one is installed, the browser was most likely killed on launch by a\n`
     + `sandbox: run this outside one, or grant it process-spawning rights.\n\n${error}`)
   process.exit(2)
 }

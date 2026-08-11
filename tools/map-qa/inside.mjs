@@ -7,12 +7,12 @@
 //
 // This keeps every solid as a named box instead. Slower, and it only has to run
 // when a number needs explaining rather than on every arm.
-import { open, region, save, TABS } from './lib.mjs'
+import { TABS, open, region, save, scratch } from './lib.mjs'
 
 const tag = process.argv[2] ?? 'inside'
 const keys = process.argv.slice(3).filter((argument) => !argument.startsWith('--'))
 const FRAMES = Number(process.env.MAPS_FRAMES ?? 900)
-const dir = `/Users/alan/LSATspeedrun/.maps/inside-${tag}`
+const dir = scratch(`inside-${tag}`)
 
 async function attribute(settings) {
   const { frames, floorY, rideOver } = settings

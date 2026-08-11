@@ -32,28 +32,12 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-/** Playwright is not a deck dependency; the other harnesses share this install. */
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
+import { launchChromium } from './playwright-env.mjs'
 
-function findChrome() {
-  if (process.env.DECK_CHROME) return process.env.DECK_CHROME
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  let builds = []
-  try {
-    builds = readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  } catch { /* fall through to the guess below */ }
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  return `${cache}/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-}
+const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const flags = new Map(process.argv.slice(2).map((raw) => {
   const match = /^--([a-z][a-z0-9-]*)(?:=(.*))?$/.exec(raw)
@@ -187,7 +171,14 @@ async function frameOn(page, selectors, margin) {
  * because the focus-mode gate only renders for an account that has it on.
  */
 const STILLS = [
-  { key: 'case', file: 'demo-case.png', route: '/cases/{session}' },
+  // There is no `case` entry, and there is no `demo-case.png`. It was the
+  // *opening* frame of the case — partner tip up, choices not yet shown — and
+  // it stopped being anything's fallback when `demo-case-answer` moved to the
+  // driven session below. It sat in `public/` for a while afterwards, loaded by
+  // nothing and copied into every build, and the reason it survived being
+  // noticed is that this table kept writing it: an unused entry here is not
+  // inert, it is a generator that puts the orphan back on the next full run.
+  // A future cut that wants the opening frame adds one line.
   {
     key: 'case-answered',
     file: 'demo-case-answered.png',
@@ -294,7 +285,9 @@ const STILLS = [
   { key: 'office-tier0', file: 'demo-office-tier0.png', route: '/office?officeTier=0' },
   { key: 'office-tier14', file: 'demo-office-tier14.png', route: '/office?officeTier=14&officeAll=1' },
   { key: 'map', file: 'demo-map.png', route: '/map' },
-  { key: 'firm-upgrades', file: 'demo-firm-upgrades.png', route: '/firm?tab=upgrades' },
+  // `firm-upgrades` / `demo-firm-upgrades.png` was removed with `case`, above,
+  // and for the same reason: no slide has ever named it. `/firm?tab=upgrades`
+  // is the route to put back if one does.
   {
     key: 'focus-mode',
     file: 'demo-focus-mode.png',
@@ -326,13 +319,10 @@ const problems = []
 const fail = (text) => { problems.push(text); console.error(`  \u2717 ${text}`) }
 const ok = (text) => console.log(`  \u2713 ${text}`)
 
-const { chromium } = await import(PLAYWRIGHT)
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  // The office and map are Three.js scenes; without a GL backend they render
-  // empty and the still would be a blank frame that looks fine in a file list.
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+// The office and map are Three.js scenes; without a GL backend they render
+// empty and the still would be a blank frame that looks fine in a file list.
+// `launchChromium` passes the SwiftShader flags by default.
+const browser = await launchChromium()
 const context = await browser.newContext({
   viewport: LOGICAL,
   deviceScaleFactor: SCALE,

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 
-import { demoConfig } from '../../demo.config'
 import type { DemoSpec } from '../slides/types'
 import { describeSurface, presenterChrome, registerSlot, runtimeVersion, subscribeRuntime } from './demo-runtime'
 
@@ -77,7 +76,7 @@ export function DemoFrame({ demo, stills, active }: Props) {
   useSyncExternalStore(subscribeRuntime, runtimeVersion)
   const slot = useRef<HTMLDivElement | null>(null)
 
-  const { showStill, label, route, still } = describeSurface(demo, stills)
+  const { showStill, label, caption, still } = describeSurface(demo, stills)
 
   /**
    * Published under this slide's own `DemoSpec`, and only while this layer is the
@@ -113,7 +112,9 @@ export function DemoFrame({ demo, stills, active }: Props) {
               />
             </svg>
           </span>
-          <code>{demoConfig.appOrigin.replace(/^https?:\/\//, '')}{route}</code>
+          {/* `caption`, never `route`: the route is a dev URL and one of them
+              carries the answer key. See `DemoSurface.caption`. */}
+          <code>{caption}</code>
           {/* Presenter-only: see `presenterChrome`. The audience has no use for
               "live" versus "stills" and reads the chip as a debug badge. */}
           {presenterChrome ? (
@@ -130,7 +131,7 @@ export function DemoFrame({ demo, stills, active }: Props) {
             // and the fallback has to follow the toggle or the before/after
             // collapses to "before" twice over — which is the state this slide
             // was in, and the reason it could not perform its own script.
-            <img className="demo-still" src={`/stills/${still}`} alt={demo.caption ?? route} />
+            <img className="demo-still" src={`/stills/${still}`} alt={demo.caption ?? caption} />
           ) : null}
         </div>
       </div>

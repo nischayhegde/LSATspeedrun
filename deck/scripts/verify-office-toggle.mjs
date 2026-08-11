@@ -48,29 +48,14 @@
  * is opened as `localhost` — never `127.0.0.1`, whose cookies are withheld from
  * the framed app. See `DEMO-NOTES.md` §8.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { cpus, homedir, loadavg } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { cpus, loadavg } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-/** Playwright is not a deck dependency; the other harnesses share this install. */
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
+import { launchChromium } from './playwright-env.mjs'
 
-function findChrome() {
-  if (process.env.DECK_CHROME) return process.env.DECK_CHROME
-  const cache = `${homedir()}/Library/Caches/ms-playwright`
-  let builds = []
-  try {
-    builds = readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  } catch { /* fall through to the guess below */ }
-  for (const build of builds) {
-    const path = `${cache}/${build}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-    if (existsSync(path)) return path
-  }
-  return `${cache}/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
-}
+const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const flags = new Map(process.argv.slice(2).map((raw) => {
   const match = /^--([a-z][a-z0-9-]*)(?:=(.*))?$/.exec(raw)
@@ -190,13 +175,10 @@ for (const file of ['demo-office-tier0.png', 'demo-office-tier14.png']) {
   }
 }
 
-const { chromium } = await import(PLAYWRIGHT)
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  // The office is a Three.js scene; with no GL backend it renders empty and
-  // every frame below would be a blank rectangle that looks fine in a file list.
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+// The office is a Three.js scene; with no GL backend it renders empty and every
+// frame below would be a blank rectangle that looks fine in a file list.
+// `launchChromium` passes the SwiftShader flags by default.
+const browser = await launchChromium()
 const context = await browser.newContext({
   viewport: { width: 1920, height: 1080 },
   deviceScaleFactor: 1,
@@ -366,12 +348,20 @@ if (before && after) {
   }
 }
 
+// The caption used to be asserted to *carry* `officeTier=14`, on the reasoning
+// that a caption contradicting the picture below it is the deck arguing with
+// itself. It is now asserted not to carry it, for a reason that outranks the
+// first: the caption is read by the room, and this slide's whole argument is
+// that the firm was earned. A title bar reading `?officeTier=14&officeAll=1`
+// over it says the room was set with a URL. Both states caption as `/office`,
+// so nothing contradicts anything; the picture and the embed's real route
+// still have to move, and both are checked above.
 const toggled = await readSlide()
-if (toggled.caption && !/officeTier=14/.test(toggled.caption)) {
-  fail(`the frame's title bar still reads "${toggled.caption}" while the embed is on the tier-14 office. `
-    + 'That caption sits directly above the picture, so it would be the deck contradicting itself.')
+if (toggled.caption && /officeTier|officeAll/.test(toggled.caption)) {
+  fail(`the frame's title bar reads "${toggled.caption}", which shows the room the tier override. `
+    + 'See `DemoSurface.caption` — the query is meant to be dropped before it is displayed.')
 } else if (toggled.caption) {
-  ok(`the title-bar caption followed the toggle ("${toggled.caption}")`)
+  ok(`the title bar reads "${toggled.caption}" and does not show the room the override`)
 }
 await page.screenshot({ path: resolve(OUT, '2-live-tier14.png') })
 
@@ -441,10 +431,10 @@ if (stillAfter.still !== '/stills/demo-office-tier14.png') {
   ok(`${KEY} swaps the still to demo-office-tier14.png with no app running`)
 }
 if (stillAfter.present) fail('the toggle mounted a live embed on the stills path')
-if (stillAfter.caption && !/officeTier=14/.test(stillAfter.caption)) {
-  fail(`on stills the caption reads "${stillAfter.caption}" over the tier-14 picture`)
+if (stillAfter.caption && /officeTier|officeAll/.test(stillAfter.caption)) {
+  fail(`on stills the caption reads "${stillAfter.caption}", which shows the room the tier override`)
 } else if (stillAfter.caption) {
-  ok(`the caption follows the still ("${stillAfter.caption}")`)
+  ok(`on stills the caption reads "${stillAfter.caption}" and still hides the override`)
 }
 await page.screenshot({ path: resolve(OUT, '4-stills-tier14.png') })
 

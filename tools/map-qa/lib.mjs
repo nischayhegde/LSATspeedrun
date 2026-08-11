@@ -13,19 +13,43 @@
  *   __clock   — a synthetic frame clock, so a measurement is a pure function of
  *               the code rather than of how loaded the machine was.
  */
-import { chromium } from '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { GL_ARGS, findChrome, launchChromium } from '../playwright-env.mjs'
 
 export const BASE = process.env.MAPS_BASE || 'http://127.0.0.1:5173'
 
-// Named outright rather than through `channel: 'chromium'`. The channel lookup
-// resolves to the x64 build on this machine and then reports the browser as not
-// installed, which reads like a missing download rather than an architecture
-// mismatch and costs a run to work out.
-export const CHROME = process.env.MAPS_CHROME
-  || `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+
+/**
+ * Where a run leaves its output: `<repo>/.maps/<name>`, both git-ignored.
+ *
+ * Every harness here wrote to `/Users/alan/LSATspeedrun/.maps/…` — the same
+ * directory, named through one particular home directory — so all nine died on
+ * `EACCES: mkdir '/Users/alan/…'` before their first frame anywhere else. Same
+ * defect as the hardcoded browser path above and worth fixing in the same pass:
+ * a harness that cannot start is not a harness. `MAPS_OUT` relocates it.
+ */
+export const scratch = (name) => resolve(process.env.MAPS_OUT || resolve(REPO_ROOT, '.maps'), name)
+export const SHOTS_DIR = process.env.MAPS_SHOTS || resolve(REPO_ROOT, '.map-shots')
+
+/**
+ * The browser used to be named outright rather than discovered, because
+ * `channel: 'chromium'` resolved to the x64 build on the machine this was
+ * written on and then reported it as not installed — which reads like a missing
+ * download rather than an architecture mismatch and costs a run to work out.
+ *
+ * The name it was given was an Apple-silicon app bundle under a literal
+ * `chromium-1234`, so the fix for one machine was a hard failure on every other
+ * one. `tools/playwright-env.mjs` lets Playwright's own registry answer first
+ * and only scans the disk — every platform's layout, newest build first — when
+ * that throws, which handles the original case without hardcoding its answer.
+ * `MAPS_CHROME` still overrides.
+ */
+export { findChrome as resolveChrome }
+export const CHROME_ARGS = GL_ARGS
 
 /** Region key to the label its navigation button carries. */
 export const TABS = {
@@ -202,10 +226,7 @@ async function dismissOverlays(page) {
 
 /** Signs in, opens the map, and waits for a scene to exist. */
 export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
-  const browser = await chromium.launch({
-    executablePath: CHROME,
-    args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-  })
+  const browser = await launchChromium({ args: GL_ARGS })
   const page = await browser.newPage({ viewport })
   await page.addInitScript(CLOCK_SCRIPT)
   const errors = []

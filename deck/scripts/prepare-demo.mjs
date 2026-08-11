@@ -20,9 +20,10 @@
  *      driven run's credited answers, and writes all of them into
  *      `demo.config.ts`.
  *   4. Proves, in a headless browser, that a localhost page can frame the
- *      signed-in app — and then tells the presenter the two things they must
- *      still do by hand in their *own* browser, because a Playwright profile
- *      is not the profile that will be on the projector.
+ *      signed-in app — and then reminds the presenter of the one thing a
+ *      Playwright profile cannot do for them: open the deck on the `localhost`
+ *      spelling. Nothing else is manual; the deck signs itself in and the tour
+ *      is silenced server-side (`DEMO-NOTES.md` §10).
  *
  * Flags: --help, --skip-seed, --skip-stage, --email <address>.
  */
@@ -32,6 +33,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO_ROOT = resolve(DECK_DIR, '..')
@@ -43,10 +46,6 @@ const APP_ORIGIN = 'http://localhost:5173'
 const HARNESS_PORT = 5179
 /** `TOUR_STORAGE_KEY` in frontend/src/guided-tour.tsx. Verified 2026-08-10. */
 const TOUR_KEY = 'lsat-tycoon:guided-tour:v6'
-/** Where `tools/map-qa/lib.mjs` finds Playwright and the arm64 Chromium. */
-const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-const CHROME = process.env.DECK_CHROME
-  || `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
 
 const HELP = `
 prepare-demo — seed the demo account and wire the deck to it.
@@ -77,6 +76,15 @@ const step = (text) => console.log(`\n\u2022 ${text}`)
 const ok = (text) => console.log(`  \u2713 ${text}`)
 const warn = (text, hint) => {
   console.log(`  ! ${text}`)
+  if (hint) console.log(hint.replace(/^/gm, '    '))
+}
+/**
+ * Below `warn`: something is not as intended, but nothing on stage changes
+ * today. Separate from `warn` so that the `!` marks stay worth reading — a
+ * report where everything is a warning is a report nobody reads to the end.
+ */
+const note = (text, hint) => {
+  console.log(`  \u00b7 ${text}`)
   if (hint) console.log(hint.replace(/^/gm, '    '))
 }
 
@@ -302,12 +310,57 @@ if (skipStage) {
         `solo case ${solo.session_id} is staged but ungraded`,
         `${solo.coaching?.mechanism || 'no grade was produced'}\n`
         + 'The sequence will play and submit, but the feedback beat will show the\n'
-        + 'grading placeholder instead of the coach. Re-run to try the call again.',
+        + 'grading placeholder instead of the coach. Re-run to try the call again.\n'
+        + '\n'
+        + 'If this machine has no TFY_API_KEY / TFY_URL it never will, and no login\n'
+        + 'changes that — the coach is called by the backend, not by the browser. Run\n'
+        + '`npm run capture-coaching` once on a machine where the gateway works and\n'
+        + 'commit backend/scripts/demo_fixtures/coaching.json; every machine then\n'
+        + 'stages this beat from that captured grade. See that folder\'s README.',
       )
     } else {
       ok(`solo case ${solo.session_id}: answer ${solo.answer_key}, `
         + `graded ${solo.coaching.grade}, fee ${solo.settled_payout ?? '?'}`)
+      // Say so when the payoff beat is running on the committed capture rather
+      // than on a grade this machine just produced. Both are real output from
+      // the same model on the same reasoning, so neither is a problem — but a
+      // presenter who does not know which one is on screen cannot tell that
+      // their gateway went down, and this is the one beat where that matters.
+      if (/^replayed the committed capture/.test(solo.coaching.mechanism || '')) {
+        note(`solo case grade came from ${'scripts/demo_fixtures/coaching.json'}`,
+          `${solo.coaching.mechanism}\n`
+          + 'This is the intended fallback and the slide is fine. If you expected a live\n'
+          + 'grade, your TFY_API_KEY / TFY_URL are not reaching the coach from here.')
+      }
     }
+    if (solo.coaching?.capture) note('coaching capture updated', `${solo.coaching.capture}\nCommit it.`)
+  }
+  // The same check for the verdict twin, which was not being made at all.
+  //
+  // Reported rather than warned, and the distinction is deliberate: no slide
+  // requests `{verdictSession}` today — `demo-case-verdict-review` goes to the
+  // answer wall at /progress?tab=answers — so an ungraded twin currently costs
+  // nothing on stage. It stays staged and pinned because it is what a slide
+  // would point back at to show the post-submit verdict screen without waiting
+  // on a live model call, and it would fail badly if it did: the screen's whole
+  // content is the stored grade, so with none it renders a thinking judge over
+  // an empty panel and polls a result that never arrives.
+  //
+  // Saying "the verdict slide will break" when there is no such slide is how a
+  // presenter learns to scroll past this whole section.
+  const verdict = stagedReport?.verdict
+  if (verdict?.session_id) {
+    if (verdict.coaching?.grade == null) {
+      note(`verdict twin ${verdict.session_id} is staged but ungraded`,
+        `${verdict.coaching?.mechanism || 'no grade was produced'}\n`
+        + 'No slide requests it today, so nothing on stage changes. It is pinned for a\n'
+        + 'slide that wants the post-submit verdict screen as a read; point one at\n'
+        + '{verdictSession} and this becomes a grading spinner that never resolves.')
+    } else {
+      ok(`verdict twin ${verdict.session_id}: graded ${verdict.coaching.grade}`
+        + ` (${verdict.coaching.model || 'model unrecorded'})`)
+    }
+    if (verdict.coaching?.capture) note('coaching capture updated', `${verdict.coaching.capture}\nCommit it.`)
   }
 }
 
@@ -354,7 +407,7 @@ if (!sessionId) {
     skipSeed
       ? 'Run without --skip-seed so the seeder can stage one.'
       : 'The seeder did not leave a resumable run. Read its output above; the demo\n'
-        + 'slide will fall back to deck/public/stills/demo-case.png until this is fixed.',
+        + 'slides that need a session fall back to their stills until this is fixed.',
   )
 }
 ok(`session ${sessionId} (from ${sessionSource})`)
@@ -460,14 +513,7 @@ if (!appAnswered) {
   framed.note = `skipped: ${APP_ORIGIN} is not up`
   warn(framed.note)
 } else {
-  let chromium = null
-  try {
-    ;({ chromium } = await import(PLAYWRIGHT))
-  } catch {
-    framed.note = `skipped: no Playwright at ${PLAYWRIGHT} (set DECK_PLAYWRIGHT to override)`
-    warn(framed.note)
-  }
-  if (chromium) {
+  {
     framed.attempted = true
     // Served without a host argument so the socket is dual-stack: whichever of
     // ::1 / 127.0.0.1 the browser picks for `localhost`, it lands here. The
@@ -480,10 +526,7 @@ if (!appAnswered) {
     await new Promise((resolveListen) => server.listen(HARNESS_PORT, resolveListen))
     let browser = null
     try {
-      browser = await chromium.launch({
-        executablePath: CHROME,
-        args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-      })
+      browser = await launchChromium()
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
       await page.goto(`${APP_ORIGIN}/login`, { waitUntil: 'domcontentloaded' })
       await page.locator('button', { hasText: 'Enter local development firm' }).click()
@@ -523,26 +566,26 @@ if (!appAnswered) {
 
 console.log(`
 ${'-'.repeat(72)}
-DO THIS IN THE BROWSER YOU WILL PRESENT FROM
+IN THE BROWSER YOU WILL PRESENT FROM
 
-The check above ran in a throwaway Playwright profile. It proves the path
-works; it cannot sign in your Chrome. Two manual steps, once per machine:
+One thing, and it is about the address bar rather than about signing in:
 
-  1. Open  ${APP_ORIGIN}/login  and click "Enter local development firm".
-     That sets the lsat_session / lsat_csrf cookies the framed pages need.
+  Open the deck at  http://localhost:5180  — spelled "localhost".
+  http://127.0.0.1:5180 renders identically and will silently sign the
+  iframes out: the browser treats 127.0.0.1 and localhost as different
+  sites, and the app's cookies are SameSite=Lax.
 
-  2. Still on that tab, open devtools (Cmd-Opt-J) and paste:
+There is deliberately no sign-in step and no devtools paste any more. Both
+were invisible per-profile state that worked on the machine they were set up
+on and failed on a fresh profile, in a guest window, or on a borrowed laptop
+— which is a fair description of presentation morning. The deck signs itself
+in during preflight through /v1/auth/dev, and stage_demo.py marks the demo
+account as already oriented server-side, so the 21-step guided tour is
+silenced for every browser at once. See DEMO-NOTES.md §10.
 
-       localStorage.setItem('${TOUR_KEY}', 'complete')
-
-     That stops the 21-step guided tour from opening inside a slide's iframe.
-     localStorage is per-origin, so it has to be run on ${APP_ORIGIN},
-     not on the deck's own origin.
-
-  3. Open the deck at  http://localhost:5180  — spelled "localhost".
-     http://127.0.0.1:5180 renders identically and will silently sign the
-     iframes out: the browser treats 127.0.0.1 and localhost as different
-     sites, and the app's cookies are SameSite=Lax.
+(The check above still signs in and sets '${TOUR_KEY}'
+in its own throwaway Playwright profile. That is the harness proving the
+framed path works, not a step anybody has to repeat by hand.)
 ${'-'.repeat(72)}`)
 
 // ---------------------------------------------------------------------------

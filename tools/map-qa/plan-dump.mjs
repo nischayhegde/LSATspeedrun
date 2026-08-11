@@ -12,7 +12,7 @@
  *
  * Usage: node tools/map-qa/plan-dump.mjs <region> [<region> ...]
  */
-import { open, region, save, TABS } from './lib.mjs'
+import { TABS, open, region, save, scratch } from './lib.mjs'
 
 const keys = process.argv.slice(2).filter((a) => !a.startsWith('--'))
 const REGIONS = keys.length ? keys : ['nation']
@@ -61,7 +61,7 @@ try {
   for (const key of REGIONS) {
     await region(page, TABS[key], { key, warmup: 0 })
     const plan = await page.evaluate(dump)
-    save(`/Users/alan/LSATspeedrun/.maps/plan-${key}.json`, plan)
+    save(scratch(`plan-${key}.json`), plan)
     console.log(key, {
       roads: plan.roadWays.length,
       foots: plan.footWays.length,

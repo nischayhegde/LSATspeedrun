@@ -263,6 +263,21 @@ export type DemoSurface = {
   /** The route with placeholders filled from the resolved session. */
   route: string
   /**
+   * What the *room* is shown in the title bar. Not `route`, and the difference
+   * is not cosmetic on one slide.
+   *
+   * `route` is a real URL against a dev server and it was printed verbatim, so
+   * the audience read `localhost:5173` on all six demo slides — and, on the
+   * centrepiece, `?autoplay=C`: the credited answer to the question they were
+   * about to watch the app reason its way to, on screen for the whole beat,
+   * above the app pretending not to know it. Query strings are dropped whole
+   * rather than filtered, because there is no version of that rule with an
+   * exception in it that stays right. `?officeTier=14&officeAll=1` goes the
+   * same way and for the same reason: it says the firm was forced with a URL,
+   * on the slide whose argument is that the firm was earned.
+   */
+  caption: string
+  /**
    * The still to paint, which is not always `demo.still`: a toggled slide has a
    * second one. Returned from here rather than read off the spec by whoever is
    * painting, so the picture and the route in the title bar above it are decided
@@ -271,6 +286,27 @@ export type DemoSurface = {
   still: string
   /** True when this slide is showing its toggled-to state. Presenter-facing only. */
   toggled: boolean
+}
+
+/**
+ * The title bar's text: the product where the dev origin was, and the path
+ * without its query.
+ *
+ * `displayOrigin` is joined straight onto the path when it looks like a host,
+ * so a real domain reads as one URL, and separated when it has a space in it,
+ * because the default is the product's name and `Lawyer Tycoon/cases` is not a
+ * thing anyone would write.
+ */
+function captionFor(route: string): string {
+  // Session ids are `uuid.uuid4()`, so leaving them in prints 36 characters of
+  // hex on the projector under a title bar whose whole job is to read as the
+  // product. The path segment they sit in is the part that means anything.
+  const path = route
+    .split('?')[0]
+    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '')
+  const origin = demoConfig.displayOrigin
+  if (!origin) return path || '/'
+  return /\s/.test(origin) ? `${origin} · ${path}` : `${origin}${path}`
 }
 
 /**
@@ -304,6 +340,7 @@ export function describeSurface(demo: DemoSpec, forceStills: boolean): DemoSurfa
             ? 'connecting'
             : 'app not running',
     route: resolveRoute(state.route, sessionId),
+    caption: captionFor(resolveRoute(state.route, sessionId)),
     still: state.still,
     toggled: isToggled(demo),
   }
