@@ -62,11 +62,56 @@ const MAX_BYTES = 10_000_000
  * `index.html` back for `/v1/me`, which is a 200 with an HTML body — the app
  * reads that as a signed-in reader whose game state is an empty object and
  * renders a screen no real visitor ever sees.
+ *
+ * `api` may instead be the origin of a real backend, in which case `/v1/*` is
+ * proxied there and the harness can measure a route a signed-out visitor never
+ * sees. `tools/perf/harness-backend.sh` is the backend to point it at: a 401 is
+ * the honest answer for an unauthenticated rig, but it is also the reason every
+ * number this repository has recorded describes `/login`.
+ *
+ * Note `getSetCookie()` below rather than a header copy. `POST /v1/auth/dev`
+ * answers with two `Set-Cookie` headers and collapsing them into one object key
+ * drops the `HttpOnly` session — sign-in then appears to succeed and every
+ * route quietly bounces to `/login`. `.qa-report.md` S4-7 is the full account.
  */
 export function serveLikeProd(root, { compress = 'auto', api = true } = {}) {
   const cache = new Map()
+  const proxyTo = typeof api === 'string' ? api.replace(/\/$/, '') : null
   const server = createServer(async (req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0])
+    if (proxyTo && url.startsWith('/v1/')) {
+      const chunks = []
+      for await (const c of req) chunks.push(c)
+      const headers = { ...req.headers }
+      delete headers.host
+      delete headers['content-length']
+      // Asking for a compressed API response and then handing the browser the
+      // decoded bytes under the original header is a decoding error, and the
+      // app's own gzip means it happens on the larger payloads.
+      headers['accept-encoding'] = 'identity'
+      try {
+        const upstream = await fetch(proxyTo + req.url, {
+          method: req.method,
+          headers,
+          body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks),
+          redirect: 'manual',
+        })
+        const body = Buffer.from(await upstream.arrayBuffer())
+        const out = {}
+        upstream.headers.forEach((v, k) => {
+          if (['content-encoding', 'content-length', 'transfer-encoding', 'set-cookie'].includes(k)) return
+          out[k] = v
+        })
+        const cookies = upstream.headers.getSetCookie?.() ?? []
+        if (cookies.length) out['set-cookie'] = cookies
+        res.writeHead(upstream.status, out)
+        res.end(body)
+      } catch (e) {
+        res.writeHead(502, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { code: 'harness_proxy_failed', message: String(e) } }))
+      }
+      return
+    }
     if (api && url.startsWith('/v1/')) {
       res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify({ detail: 'unauthorized', code: 'unauthorized' }))

@@ -28,13 +28,22 @@
  *   ... --shot out.jpg      also write the frame that covers the first paint
  *   ... --api               answer /v1/* as the real server would, rather than
  *                           letting index.html fall through to every unknown path
+ *   ... --auth              proxy /v1/* to the harness backend and load the route
+ *                           with a real session, so a protected route is the route
+ *                           and not the sign-in screen it redirects to
  *   ... --gzip              gzip everywhere, as prod would for a viewer with no brotli
  *   ... --no-compress       the raw bytes the numbers before this change were taken on
+ *
+ * Without `--auth`, every protected route in this app measures `/login`. The
+ * tool will not stop you, but `tools/perf/` exists so that it does not have to
+ * be that way — and with `--auth` the run refuses to print a waterfall it
+ * cannot prove was the route asked for.
  */
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { compressionFromOpts, describeCompression, serveLikeProd } from './prod-serve.mjs'
+import { API, authedContext, describeProof, load, proveSignedIn, resolveRoutes, signIn } from '../perf/authed.mjs'
 const PW = process.env.LSAT_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 const { chromium } = await import(PW)
 /**
@@ -54,11 +63,16 @@ for (let i = 0; i < argv.length; i += 1) {
   else if (argv[i].startsWith('--')) opts[argv[i]] = true
   else positional.push(argv[i])
 }
-const route = opts['--route'] || '/'
 const shot = typeof opts['--shot'] === 'string' ? opts['--shot'] : null
 const fakeApi = Boolean(opts['--api'])
+const authed = Boolean(opts['--auth'])
 const compress = compressionFromOpts(opts)
 const dist = resolve(positional[0])
+
+const session = authed ? await signIn() : null
+// `/cases/:id` is a literal the tools accept; only the harness account knows
+// which practice run it stands for.
+const [route] = authed ? await resolveRoutes([opts['--route'] || '/'], session) : [opts['--route'] || '/']
 
 const short = (url) => {
   try {
@@ -68,11 +82,14 @@ const short = (url) => {
   } catch { return url.slice(0, 40) }
 }
 
-const a = await serveLikeProd(dist, { compress, api: fakeApi })
+const a = await serveLikeProd(dist, { compress, api: authed ? API : fakeApi })
 const browser = await chromium.launch({ executablePath: CHROME })
 try {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
-  const client = await page.context().newCDPSession(page)
+  const context = authed
+    ? await authedContext(browser, { port: a.port, session })
+    : await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const page = await context.newPage()
+  const client = await context.newCDPSession(page)
   const reqs = new Map()
   const frames = []
   client.on('Network.requestWillBeSent', (e) => {
@@ -164,6 +181,9 @@ try {
   await page.waitForTimeout(6000)
   const lcp = await page.evaluate(() => window.__lcp || [])
   if (shot) { try { await client.send('Page.stopScreencast') } catch { /* already gone */ } }
+  // Before anything is printed. A waterfall for the wrong screen is worse than
+  // no waterfall, because it looks like data.
+  const proof = authed ? await proveSignedIn(page, route, session) : null
 
   const nav = [...reqs.values()].find((r) => r.type === 'Document')
   const t0 = nav ? nav.start : Math.min(...[...reqs.values()].map((r) => r.start))
@@ -190,6 +210,7 @@ try {
   const width = 64
   const span = Math.max(...rows.map((r) => (r.end || r.start))) - t0
   console.log(`\n${dist}  ${route}   390px, 4x CPU, 1.6 Mbps / 150 ms rtt, ${describeCompression(compress)}`)
+  if (proof) console.log(`${describeProof(proof)}; load ${load()}`)
   console.log(`first contentful paint ${paint.fcp == null ? 'never' : `${Math.round(paint.fcp)} ms`}\n`)
   console.log(`  ${'start'.padStart(6)} ${'end'.padStart(6)} ${'kB'.padStart(7)}  ${'enc'.padEnd(4)} ${'pri'.padEnd(6)} ${'asset'.padEnd(30)} discovered by`)
   for (const r of rows) {
@@ -242,6 +263,7 @@ try {
     console.log(`  ${frames.length} frames from ${at(frames[0])} to ${at(frames[frames.length - 1])} ms; wrote ${written.length} either side of the paint as ${base}-<ms>.jpg`)
   }
   await page.close()
+  await context.close()
 } finally {
   await browser.close()
   a.server.close()
