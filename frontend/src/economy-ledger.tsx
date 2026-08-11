@@ -111,6 +111,28 @@ function coveringText(element: HTMLElement) {
      runs when scrolling settles and on resize, never per frame. */
   let budget = 600
   for (const candidate of candidates) {
+    /* Not the card's own ancestors. Pass one skips anything inside the card;
+       this pass walked subtrees and did not, and every ancestor of the card is
+       in its own hit stack — whenever the corner is *empty*, the only things
+       under it are `main`, `.app-shell` and the shell's wrapper div. Walking
+       those reaches the card's own "CASH" label, which intersects the card's
+       own rect by definition, so an empty corner answered "covering text" and
+       the readout hid itself permanently.
+
+       That is why the live ledger was invisible on Progress at 1920 and 2560
+       with a 300px empty gutter beside it, and on Story, Progress and Practice
+       at every laptop width: measured over fourteen seconds, shown for none of
+       them. The only time it ever appeared was the announcement after a figure
+       moved, which used to clear the flag outright — so the one moment the
+       card was on screen was the one moment it was not allowed to check, which
+       is what the visual language sweep caught it doing on Story at 1440.
+
+       An ancestor cannot be what this card is lying across in any case: pass
+       one already tested its own text, and the local containers pass two
+       exists for -- a paragraph whose words are all in child spans -- are
+       never ancestors of a fixed element parked in the corner. Skipping them
+       also keeps the walk local, which is what the budget below assumes. */
+    if (candidate.contains(element)) continue
     for (const leaf of candidate.querySelectorAll('*')) {
       if (budget-- <= 0) return false
       if (!hasOwnText(leaf)) continue
@@ -251,9 +273,23 @@ function useYieldWhileReading(node: React.RefObject<HTMLElement | null>, figures
       }
     }
 
+    /* A figure moved. Come back and say so — but only where there is room to.
+       This used to set `covering = false` and show the card for ANNOUNCE_MS
+       whatever was underneath, on the reasoning that movement outranks
+       reading. It does not: the card is click-through and permanent, and the
+       one hard rule it has is that it never takes a word off the screen. What
+       the override actually produced was the worst of both, because the
+       covering test was broken above — the card was hidden whenever the corner
+       was clear and shown, over text, for three and a half seconds whenever a
+       refetch landed.
+
+       So an announcement re-measures rather than overrides. Where the corner
+       is clear the card is already up and the delta is seen; where it is not,
+       the badge still carries `role="status"`, so the movement is announced to
+       a screen reader either way, and a fine pointer reaching for the corner
+       still brings the card back on demand. */
     announce.current = () => {
-      covering = false
-      apply()
+      remeasure()
       window.clearTimeout(announcing)
       announcing = window.setTimeout(remeasure, ANNOUNCE_MS)
     }
