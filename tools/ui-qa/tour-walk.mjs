@@ -25,7 +25,16 @@ const API = args.get('api') ?? 'http://127.0.0.1:5001'
 const EMAIL = args.get('email') ?? 'ui-qa@localhost.test'
 const OUT = args.get('out') ?? '.qa-run/tour'
 const WIDTHS = (args.get('widths') ?? '390,768,1180,1440').split(',').map(Number)
-const HEIGHTS = { 390: 844, 414: 896, 768: 1024, 820: 1180, 1024: 768, 1180: 820, 1280: 800, 1440: 900, 1920: 1080 }
+/* Height matters more here than anywhere else in the app: the card is fixed,
+   centred and scrolls internally, so the viewport it has to fit inside is the
+   short dimension. 844 and 932 are the two landscape phones — 390 and 430 tall,
+   which is less than the card's natural height and the case the tour has
+   actually failed at. */
+const HEIGHTS = { 320: 720, 390: 844, 414: 896, 768: 1024, 820: 1180, 844: 390, 932: 430, 1024: 768, 1180: 820, 1280: 800, 1440: 900, 1920: 1080 }
+/* Declared, not inferred from the width. Both landscape phones are wider than
+   the 900px cutover, and a tour audited there with a mouse cannot see the
+   rules written for a finger. */
+const TOUCH = new Set([320, 390, 414, 768, 820, 844, 932])
 const FOCUS = args.get('focus') === 'true'
 
 /** Everything one step can be wrong about, measured in the page. */
@@ -115,7 +124,7 @@ const report = { widths: {}, problems: [] }
 const browser = await chromium.launch()
 for (const width of WIDTHS) {
   const height = HEIGHTS[width] ?? 900
-  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 })
+  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, hasTouch: TOUCH.has(width) })
   await context.request.post(`${API}/v1/auth/dev`, { data: { email: EMAIL, display_name: 'UI QA' } })
   const page = await context.newPage()
   await page.goto(`${WEB}/progress`, { waitUntil: 'domcontentloaded' })

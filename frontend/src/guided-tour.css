@@ -99,11 +99,19 @@
   padding: 14px var(--tour-pad-x) var(--tour-pad-bottom);
   background: linear-gradient(to top, #f1e8cf 76%, rgba(241, 232, 207, 0));
 }
-.tour-card-actions { display: flex; justify-content: space-between; gap: 10px; }
+/* Wraps rather than overflows, and the threshold is the button's own content
+   rather than a breakpoint. Next carries the name of the step it goes to —
+   "Next · Connections" — so how much room the row needs changes from step to
+   step, and a width-based rule fixes the steps it was written against and
+   misses the rest: at 320px it was exactly two of twenty-eight, the two with
+   the longest cue, running 19px past the card's edge. Given a floor wide
+   enough for the longest cue, the row keeps all three on one line whenever
+   they fit and drops Next onto its own full-width line when they do not. */
+.tour-card-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
 .tour-card-actions button { min-height: 46px; border-radius: 7px; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .05em; cursor: pointer; }
 .tour-back { min-width: 80px; border: 1px solid rgba(52, 75, 73, .3); color: #4b625e; background: rgba(255,255,255,.25); }
 .tour-back:disabled { visibility: hidden; }
-.tour-next { flex: 1; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #244c4b; color: #fff9e9; background: linear-gradient(180deg, #337e76, #235e5a); box-shadow: 0 5px 0 #153d3b, 0 10px 22px rgba(31, 74, 70, .2); }
+.tour-next { flex: 1 1 190px; padding: 0 17px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #244c4b; color: #fff9e9; background: linear-gradient(180deg, #337e76, #235e5a); box-shadow: 0 5px 0 #153d3b, 0 10px 22px rgba(31, 74, 70, .2); }
 .tour-next:hover { filter: brightness(1.09); translate: 0 -1px; }
 .tour-next:active { translate: 0 3px; box-shadow: 0 2px 0 #153d3b; }
 .tour-next:disabled { cursor: not-allowed; opacity: .48; filter: grayscale(.3); translate: none; box-shadow: 0 3px 0 #435a56; }
@@ -366,6 +374,46 @@
   .guided-tour-card h2 { font-size: 27px; }
   .guided-tour-card > p { font-size: 14px; line-height: 1.52; }
   .tour-chapters button { min-height: 30px; }
+}
+
+/* A short viewport that is not a narrow one: a phone held sideways, and a
+   desktop window dragged down to a strip.
+   
+   Above 760px the card hangs from a ceiling of `clamp(104px, 16vh, 170px)` and
+   takes whatever is left below it. At 390px tall that leaves 266px, which is
+   correct — the card scrolls and the footer is sticky, so Next stays reachable
+   inside it. What went wrong at 844x390 is that a second sheet was still
+   sizing the card and won on specificity, giving it 366px of height under a
+   104px ceiling: 80px of card, including Next, below the bottom of the screen
+   with nothing to scroll. That copy is gone.
+   
+   The ceiling is still the wrong shape for a landscape phone, though. It puts
+   two thirds of the height above the card and none below, so the card is
+   anchored to the bottom here instead, clearing whatever dock the width
+   implies — the tokens fall back to zero above the dock's own cutover, so one
+   rule covers 844x390, where there is a dock, and 932x430, where there is not.
+   Horizontal placement is left alone: `place-left` and `place-right` are how
+   the card stays off the thing it is pointing at, and that still works. */
+@media (min-width: 761px) and (max-height: 560px) {
+  .guided-tour-card,
+  .guided-tour-card.place-left,
+  .guided-tour-card.place-right,
+  .guided-tour-mode-premise .guided-tour-card,
+  .guided-tour-mode-practice .guided-tour-card,
+  .guided-tour-mode-feature .guided-tour-card,
+  .guided-tour-mode-finish .guided-tour-card {
+    top: auto;
+    bottom: calc(12px + var(--mobile-dock-height, 0px) + var(--mobile-safe-bottom, 0px));
+    max-height: calc(100dvh - 24px - var(--mobile-dock-height, 0px) - var(--mobile-safe-bottom, 0px));
+  }
+  /* The three centred modes keep their horizontal centring and give up the
+     vertical half of the translate, which was pairing with a `top` that no
+     longer exists. */
+  .guided-tour-mode-practice .guided-tour-card,
+  .guided-tour-mode-feature .guided-tour-card,
+  .guided-tour-mode-finish .guided-tour-card { translate: -50% 0; }
+  .guided-tour-mode-premise .guided-tour-card { translate: none; }
+  .guided-tour-card { --tour-pad-top: 20px; --tour-pad-bottom: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

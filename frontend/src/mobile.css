@@ -325,18 +325,14 @@ body {
   .firm-page { max-width: 760px; }
   .cutscene-overlay { min-height: 100dvh; }
 
-  /* The tour remains a focused foreground layer and does not collide with the
-     persistent navigation beneath it. */
-  .guided-tour-card,
-  .guided-tour-card.place-left,
-  .guided-tour-card.place-right,
-  .guided-tour-mode-premise .guided-tour-card,
-  .guided-tour-mode-practice .guided-tour-card,
-  .guided-tour-mode-finish .guided-tour-card {
-    max-height: min(620px, calc(100dvh - 24px));
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-  }
+  /* The tour card is not sized or placed from here. guided-tour.css is the
+     only sheet that positions it, at any width — see the note over its 760px
+     block. A copy lived here and quietly won: `.guided-tour-card.place-right`
+     in this list is two classes deep, the tour's own rule is one, and this
+     sheet's max-height therefore beat it while the tour's `top` stayed in
+     force. On a phone held sideways that produced a card 366px tall pinned
+     104px down a 390px viewport, with Next 80px below the fold and no way to
+     reach it. */
 }
 
 @media (max-width: 640px) {
@@ -404,23 +400,10 @@ body {
 
   .firm-page { width: calc(100% - 14px); padding-inline: 11px; }
 
-  .guided-tour-card,
-  .guided-tour-card.place-left,
-  .guided-tour-card.place-right,
-  .guided-tour-mode-premise .guided-tour-card,
-  .guided-tour-mode-practice .guided-tour-card,
-  .guided-tour-mode-finish .guided-tour-card {
-    width: auto;
-    left: max(8px, env(safe-area-inset-left));
-    right: max(8px, env(safe-area-inset-right));
-    bottom: 8px;
-    max-height: calc(100vh - 16px);
-    max-height: calc(100dvh - 16px);
-    padding: 20px 16px 16px;
-  }
-  .tour-card-progress { margin: -20px -16px 17px; }
-  .guided-tour-card h2 { font-size: 27px; }
-  .guided-tour-card > p { font-size: 14px; line-height: 1.52; }
+  /* The phone geometry for the tour card is in guided-tour.css too, and for
+     the same reason. The copy that was here also set the progress bar's bleed
+     margins in raw pixels beside a padding this sheet owned, which is the
+     coupling `--tour-pad-x` was introduced to remove. */
   .tour-card-actions { margin-top: 18px; }
 }
 
