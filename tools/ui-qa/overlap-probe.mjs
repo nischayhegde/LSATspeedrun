@@ -75,7 +75,10 @@ const PROBE = `(() => {
 mkdirSync(`${OUT}/probe`, { recursive: true })
 const browser = await chromium.launch()
 try {
-  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 })
+  // Touch below the cutover, so `(pointer: coarse)` rules are live. See shot.mjs.
+  const context = await browser.newContext({
+    viewport: { width, height }, deviceScaleFactor: 1, hasTouch: width <= 900,
+  })
   await context.request.post(`${API}/v1/auth/dev`, { data: { email: EMAIL, display_name: 'UI QA' } })
   const page = await context.newPage()
   await page.goto(`${APP}${path}`, { waitUntil: 'domcontentloaded' })

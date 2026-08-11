@@ -25,7 +25,15 @@ mkdirSync(`${OUT}/${label}`, { recursive: true })
 const browser = await chromium.launch()
 try {
   for (const size of widths) {
-    const context = await browser.newContext({ viewport: size, deviceScaleFactor: 1 })
+    /* Touch below the cutover, the same rule the sweep uses.
+       Without it a 390px screenshot is desktop CSS rendered in a narrow
+       window: every `(pointer: coarse)` rule is inactive, so the 44px tap
+       floors are missing, the toolbar keeps the blur that is dropped on touch,
+       and the dock rules never apply. Evidence taken that way shows a page
+       that no phone renders. */
+    const context = await browser.newContext({
+      viewport: size, deviceScaleFactor: 1, hasTouch: size.width <= 900, isMobile: size.width <= 900,
+    })
     await context.request.post(`${API}/v1/auth/dev`, { data: { email: EMAIL, display_name: 'UI QA' } })
     const page = await context.newPage()
     await page.goto(`${APP}${path}`, { waitUntil: 'domcontentloaded' })
