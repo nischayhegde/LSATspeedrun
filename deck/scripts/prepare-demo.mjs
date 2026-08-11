@@ -308,6 +308,26 @@ if (skipStage) {
         + `graded ${solo.coaching.grade}, fee ${solo.settled_payout ?? '?'}`)
     }
   }
+  // The same check for the verdict twin, which was not being made. An ungraded
+  // twin is the worse of the two: the solo sequence at least plays and shows a
+  // placeholder, whereas the verdict slide's whole content is the stored grade,
+  // so with none it renders a thinking judge over an empty panel and polls a
+  // result that is never coming. Silence here is how that reaches the room.
+  const verdict = stagedReport?.verdict
+  if (verdict?.session_id) {
+    if (verdict.coaching?.grade == null) {
+      warn(
+        `verdict session ${verdict.session_id} is staged but ungraded`,
+        `${verdict.coaching?.mechanism || 'no grade was produced'}\n`
+        + (verdict.coaching?.presenter_warning
+          ? `${verdict.coaching.presenter_warning}\n`
+          : 'The verdict slide will show the grading spinner and never resolve.\n'),
+      )
+    } else {
+      ok(`verdict session ${verdict.session_id}: graded ${verdict.coaching.grade}`
+        + ` (${verdict.coaching.model || 'model unrecorded'})`)
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
