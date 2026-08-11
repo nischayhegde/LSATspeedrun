@@ -1,5 +1,49 @@
-import { defineConfig } from 'vite'
+import { rmSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+/**
+ * Keep `public/art/` out of a release, if a working tree still has one.
+ *
+ * Those 218 `.webp` were copied in alongside `src/app-art/` on the assumption
+ * that the ported art modules would read them. Nothing does. `assets.ts` is the
+ * only module that builds an `/art/…` URL and the only module that calls it,
+ * `structures.tsx`, is imported by nothing — so every one of those path
+ * templates is shaken out of the bundle, and a full 24-slide walk with both
+ * ported scene chunks executing requests none of the files. It was 18 MB of a
+ * 37 MB payload, or very nearly half, for a directory the deck cannot ask for.
+ *
+ * Deleted from the repository rather than merely stopped here, so this exists
+ * only for the stale copies the old `cp -R` recipe left behind. It logs when it
+ * fires, because a build that silently drops 18 MB is its own kind of surprise.
+ *
+ * Both orphaned modules stay exactly where they are: `src/app-art/` is a
+ * verbatim port of `frontend/src/art/` and `PORT.md` says not to edit it so that
+ * `diff -r` stays silent. That argument covers the code. It does not extend to
+ * data the code never reads.
+ */
+function dropUnreachableArt(): Plugin {
+  let outDir = 'dist'
+  return {
+    name: 'deck-drop-unreachable-art',
+    apply: 'build',
+    configResolved(config) {
+      outDir = config.build.outDir
+    },
+    closeBundle() {
+      const stale = resolve(outDir, 'art')
+      try {
+        if (!statSync(stale).isDirectory()) return
+      } catch {
+        return
+      }
+      rmSync(stale, { recursive: true, force: true })
+      this.warn('dropped public/art/ from the build: no reachable module requests it (see the note in vite.config.ts)')
+    },
+  }
+}
 
 /**
  * The deck is a standalone client-only site. It shares nothing with
@@ -40,7 +84,7 @@ import react from '@vitejs/plugin-react'
 const API_PROXY_PREFIX = '/demo-api'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), dropUnreachableArt()],
   server: {
     port: 5180,
     strictPort: true,

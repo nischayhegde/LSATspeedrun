@@ -4,7 +4,12 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["vite/client"],
+    // `node` is here for `vite.config.ts`, which reads the filesystem to keep a
+    // stale `public/art/` out of a build. Global type packages are program-wide,
+    // so this is visible to `src/` as well; splitting the config into app and
+    // build-tool projects would scope it properly and is worth doing if client
+    // code ever starts reaching for `process`.
+    "types": ["vite/client", "node"],
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,

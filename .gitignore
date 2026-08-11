@@ -143,16 +143,26 @@ deck/demo.config.js.map
 # time does not stop the deploy from sweeping it into a release.
 deck/.deck-qa/
 
-# `deck/public/art/` is a byte-identical copy of `frontend/public/art/` (218
-# .webp, 18 MB), which is already tracked — see `deck/src/app-art/PORT.md`. One
-# `cp -R` rebuilds it exactly, and deck/README.md records the command.
+# `deck/public/art/` used to be ignored here, as a copy of `frontend/public/art/`
+# rebuilt by a hand-run `cp -R`. It is gone rather than ignored: no reachable code
+# path in the deck asks for a single one of those 218 files. `assets.ts` is what
+# builds `/art/*.webp` URLs, and the only module that calls it — `structures.tsx` —
+# is imported by nothing, so the bundle contains none of the path templates and a
+# full 24-slide walk requested none of the files. Both orphans stay in
+# `src/app-art/` because that folder is a verbatim port and `PORT.md` forbids
+# editing it; the 18 MB of data it never reads does not have to come along.
 #
+# The rule is still worth keeping as an ignore because the recipe existed for a
+# while and a stale copy may be sitting in a working tree — but `vite.config.ts`
+# now refuses to copy `public/art/` into a build, so a leftover cannot reach a
+# release either way.
+deck/public/art/
+
 # `deck/public/stills/` is NOT ignored, despite being 26 MB of PNG. Nothing in
 # the repo regenerates it: the route stills were captured by hand against a
 # seeded account that no longer exists in that state, and the two office-tier
 # stills came from `.shots-keep/`, which is ignored two blocks up. They are the
 # deck's on-stage fallback, so losing them costs more than carrying them.
-deck/public/art/
 
 # Root-level harness dependencies (playwright, pngjs, gifenc) used by the
 # scratch probes above. The application's own manifests live in frontend/.
