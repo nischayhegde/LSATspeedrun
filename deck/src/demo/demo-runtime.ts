@@ -298,9 +298,14 @@ export type DemoSurface = {
  * thing anyone would write.
  */
 function captionFor(route: string): string {
-  const path = route.split('?')[0]
+  // Session ids are `uuid.uuid4()`, so leaving them in prints 36 characters of
+  // hex on the projector under a title bar whose whole job is to read as the
+  // product. The path segment they sit in is the part that means anything.
+  const path = route
+    .split('?')[0]
+    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '')
   const origin = demoConfig.displayOrigin
-  if (!origin) return path
+  if (!origin) return path || '/'
   return /\s/.test(origin) ? `${origin} · ${path}` : `${origin}${path}`
 }
 
