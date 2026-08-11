@@ -55,32 +55,52 @@ async function measure(frames) {
     })
     return box
   }
+  const register = (object, label, kind, agent) => {
+    const box = localExtent(object)
+    if (!Number.isFinite(box.min.x)) return
+    movers.push({
+      object,
+      agent,
+      kind,
+      label,
+      cx: (box.min.x + box.max.x) / 2,
+      cz: (box.min.z + box.max.z) / 2,
+      hx: (box.max.x - box.min.x) / 2,
+      hz: (box.max.z - box.min.z) / 2,
+    })
+  }
   sims.forEach((sim, simIndex) => {
     sim.agents.forEach((agent, agentIndex) => {
-      const box = localExtent(agent.object)
-      if (!Number.isFinite(box.min.x)) return
-      movers.push({
-        object: agent.object,
-        agent,
-        kind: sim.kind,
-        label: `${sim.kind}-${simIndex}-${agentIndex}`,
-        cx: (box.min.x + box.max.x) / 2,
-        cz: (box.min.z + box.max.z) / 2,
-        hx: (box.max.x - box.min.x) / 2,
-        hz: (box.max.z - box.min.z) / 2,
-      })
+      register(agent.object, `${sim.kind}-${simIndex}-${agentIndex}`, sim.kind, agent)
     })
   })
+  // Trams and trains, which `collide.mjs` counts and an earlier crossing fix
+  // drove from 117 frames to none. A probe that watched only the road traffic
+  // would report that win as still holding whether it did or not.
+  ;(scene.transports ?? []).forEach((path, index) => {
+    register(path.object, `transport-${index}`, 'transport', null)
+  })
 
-  // Read off a live rig, as `collide.mjs` does, so the disc is the same body.
+  // Read off a live rig by exactly the arithmetic `collide.mjs` uses, so this
+  // probe's contacts are the same contacts. A guessed .12 is less than half the
+  // real .28 and silently reports a fraction of them, which reads as a quiet
+  // district rather than as the wrong body.
   let walkerRadius = .12
-  if (crowd?.walkers?.length) {
+  {
     const radii = []
-    for (const walker of crowd.walkers) {
-      const scale = walker.root?.scale?.x
-      if (scale > 0) radii.push(.12 * (scale / (walker.baseScale || scale)))
+    for (const walker of crowd?.walkers ?? []) {
+      if (!walker.active) continue
+      const root = walker.rig?.root ?? walker.root
+      if (!root || !root.visible) continue
+      const box = new THREE.Box3().setFromObject(root)
+      if (box.isEmpty()) continue
+      if (box.max.y - box.min.y < .5) continue
+      radii.push(Math.min(box.max.x - box.min.x, box.max.z - box.min.z) / 2)
     }
-    if (radii.length) walkerRadius = .12
+    if (radii.length) {
+      radii.sort((a, b) => a - b)
+      walkerRadius = Math.max(.06, radii[radii.length >> 1])
+    }
   }
 
   const buckets = {}
@@ -188,6 +208,7 @@ async function measure(frames) {
           key = 'pavement'
           extra = { obstructedWay: Boolean(crowd.ways?.[walker.way]?.obstructed) }
         }
+        key = `${key}/${mover.kind}`
         bump(key, inside, root.position.x, root.position.z, extra)
       }
     }
@@ -209,6 +230,7 @@ async function measure(frames) {
     region: scene.region,
     frames,
     vehicles: movers.length,
+    walkerRadius: +walkerRadius.toFixed(4),
     // Non-zero is the evidence the probe is reading a live scene rather than
     // failing open: a run with no vehicle-frames and no walker-frames reports
     // zero contacts for the same reason a broken probe does.
