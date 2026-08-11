@@ -21,19 +21,39 @@ That runs, in order:
 | Step | What it does | Time |
 | --- | --- | --- |
 | `stage_demo.py --apply` | Pins the question, pre-pastes the reasoning, rewinds the question timer, silences the guided tour server-side (§10), re-grades the verdict twin through the real model | ~20-40s |
-| `prepare-demo.mjs --skip-seed` | Resolves **both** session ids and writes them into `demo.config.ts`, then proves a framed page stays signed in | ~10-20s |
+| `prepare-demo.mjs --skip-seed` | Resolves **all six** pinned values and writes them into `demo.config.ts`, then proves a framed page stays signed in | ~10-20s |
 
 `--skip-seed` is not optional. `prepare-demo.mjs` runs the seeder by default, and
 the seeder builds fresh practice runs — so the previous ordering staged the demo
 and then immediately replaced the sessions it had just staged. Run the seeder on
 its own if the database is empty.
 
-Both ids are resolved, which is also new. `stage_demo.py` rebuilds the graded
+All six are resolved, which is also new. `stage_demo.py` rebuilds the graded
 verdict twin under a new id every time it grades, and `prepare-demo.mjs` used to
 pin only `liveSessionId` — so `reset-demo` reliably left `verdictSessionId`
 pointing at a session it had just deleted, breaking the payoff beat with the
 command whose job is to make the demo work. The twin is now found by what it is
 rather than by its id: the paused run holding an already-graded attempt.
+
+`backend/scripts/repin_demo_session.py` is the check for all six, and it is a
+check only. It used to take `--write` and re-pin `liveSessionId` alone, which is
+the worst of the six to fix in isolation: the ordinary case slide comes back, so
+the command appears to have worked, while the centrepiece keeps pointing at a
+deleted session and silently plays an undriven case instead. It now reads all six
+back, names the dead ones, exits non-zero, and prints `reset-demo`.
+
+**It cannot be made to re-pin, and that is worth knowing before you try.** Four of
+the six are not pins that drifted but staging that no longer exists — after a
+re-seed there is no solo case carrying pre-written reasoning and no
+fifteen-question driven run to point at — and the two answer keys cannot be read
+back over the API by anything, because `serialize_question` omits
+`correct_answer` on purpose.
+
+**Without a coaching gateway** (`TFY_API_KEY`, `TFY_URL`) `reset-demo` still runs
+to completion and still pins all six; it stages the driven case ungraded and says
+so. It used to raise `CoachingProviderError` partway through, *after* deleting the
+previous verdict — leaving the demo worse than it found it, from the command every
+other recovery path points at.
 
 Between rehearsals, when the verdict text has not changed and you only need the
 case rewound:
@@ -584,8 +604,18 @@ screenshot pass failed honestly — both reports were true.
 One thing to know: the start card warms the app's `/office` and `/map` routes in
 hidden iframes, tagged `?deck-warm=1`. A harness that finds the embed by origin
 alone can pick one of those up and measure it instead of the slide's embed, so
-exclude any frame whose URL contains `deck-warm`. All four scripts in `scripts/`
-do.
+exclude any frame whose URL contains `deck-warm`. Every script here that finds a
+frame by origin does. The ones that find it by selector — `.demo-stage-frame` is
+only ever the slide's embed — are immune by construction and do not need the
+guard.
+
+The other rule, which used to be undocumented because it was never true anywhere
+but one laptop: get Playwright from `scripts/playwright-env.mjs`. Each harness
+carried its own hardcoded module path under `/private/tmp` and its own macOS-only
+Chromium lookup, so none of them ran on anything else. `launchChromium()` resolves
+both, preferring the repository's own `node_modules/playwright` and letting
+Playwright find the browser it downloaded. `DECK_PLAYWRIGHT` and `DECK_CHROME`
+still override, as overrides rather than as the only way through.
 
 ---
 

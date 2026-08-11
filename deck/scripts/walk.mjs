@@ -32,7 +32,12 @@ const flags = new Map(
     return match ? [match[1], match[2] ?? 'true'] : ['', '']
   }),
 )
-const BASE = flags.get('base') || 'http://127.0.0.1:5181'
+// `localhost`, never `127.0.0.1`, even though this walk is mostly about
+// transitions rather than demos. The two loopback spellings are different sites
+// to a browser and the app's auth cookies are `SameSite=Lax`, so a pass driven
+// against 127.0.0.1 signs every demo embed out and walks six slides of login
+// screen without noticing — the deck itself is fine, so nothing here fails.
+const BASE = flags.get('base') || 'http://localhost:5181'
 const MASH = Number(flags.get('mash') || 40)
 /** Where to write one screenshot per slide during the forward pass. */
 const SHOTS = flags.get('shots') || ''

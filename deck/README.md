@@ -73,6 +73,23 @@ demo will work. Press <kbd>Enter</kbd> to begin.
 That is the whole sequence. Nothing to sign into, nothing to paste into a devtools
 console, no browser profile that has to be the same one as last time.
 
+### The one-minute pre-flight
+
+The start card's five dots cover the three processes and the session. This covers
+the thing they cannot see — whether the six ids in `demo.config.ts` still describe
+the database underneath. Run it before a rehearsal and again before the talk.
+
+```bash
+curl -s -o /dev/null -w "backend  5001 %{http_code}\n" http://127.0.0.1:5001/v1/health
+curl -s -o /dev/null -w "frontend 5173 %{http_code}\n" http://localhost:5173/
+curl -s -o /dev/null -w "deck     5180 %{http_code}\n" http://localhost:5180/
+.venv/bin/python backend/scripts/repin_demo_session.py
+```
+
+Three `200`s and `OK — all six pinned values match this backend.` Anything else
+names itself; the recovery for a stale pin is always `cd deck && npm run reset-demo`
+and never a hand-edit. Run it from the repository root.
+
 ### Why there is no sign-in step
 
 It used to be step 4 of six: open the app's login page, click **Enter local
@@ -109,36 +126,72 @@ cd deck
 npm run reset-demo
 ```
 
-That stages a fresh open case with the timer at zero, keeps the pre-graded verdict
-so the review slide never waits on a model call, silences the guided tour, and
-rewrites both session ids in `demo.config.ts`. It takes a few seconds and is safe
-to run repeatedly. Run it once the night before and once again if you rehearse.
+That stages a fresh open case with the timer at zero, stages the driven case the
+centrepiece slide plays, keeps the pre-graded verdict so a review beat never
+waits on a model call, silences the guided tour, and rewrites all six pinned
+values in `demo.config.ts`. It takes about twenty seconds and is safe to run
+repeatedly. Run it once the night before and once again if you rehearse.
+
+Without a coaching gateway configured (`TFY_API_KEY`, `TFY_URL`) it still
+completes and still pins all six, but it stages the driven case **ungraded** and
+says so — the sequence plays and submits, and the feedback beat it exists for
+shows a placeholder instead of the coach.
 
 Useful flags on `npm run prepare-demo`: `--skip-seed` (re-resolve the session and
 rewrite the config without re-seeding), `--email <address>`, `--help`.
 
-### If `prepare-demo` cannot find the session
+### What `reset-demo` pins, and why you cannot hand-edit your way out
 
-Paste it in by hand. Get the id from the app: open
-`http://localhost:5173/progress`, click **Resume current run**, and read the id out
-of the URL — `/cases/<this-part>`. Then edit
-[`demo.config.ts`](./demo.config.ts):
+Six values in [`demo.config.ts`](./demo.config.ts) point at rows in the demo
+database, and they go stale together — session ids are `uuid.uuid4()`, so a
+re-seed invalidates all six at once:
 
 ```ts
 export const demoConfig: DemoConfig = {
   appOrigin: 'http://localhost:5173',
-  liveSessionId: '69bb283e-9312-41bd-ae44-837ea1751e3b', // ← paste here
-  verdictSessionId: '...',
+  liveSessionId: '56e1702b-bf3c-4b79-8547-096db203f564',
+  verdictSessionId: '4a6daa51-92bf-4b9c-aea9-9b580f389aa3',
+  soloSessionId: '74a87e68-501f-426d-bc47-b1c3056d23e4',
+  soloAnswerKey: 'C',
+  autoplaySessionId: '52a727b5-b2aa-413c-bde4-310583e81df2',
+  autoplayAnswerKey: 'ACEBACAEBEAADBD',
   demoEmail: 'student@localhost.test',
   useStills: false,
 }
 ```
 
-Only `demo-case-answer` needs `liveSessionId` — it is the one route with
-`{session}` in it — and only `demo-verdict` needs `verdictSessionId`. An empty
-string is handled: those slides fall back to their still images rather than framing
-a broken URL. `demoEmail` is the account the deck signs itself in as, and it has to
-match the one the demo data is seeded under.
+| Value | What it is |
+| --- | --- |
+| `liveSessionId` | The open case. Re-resolved at runtime by preflight, so the pinned value is only a fallback, and it is what `{autoplay}` degrades to if the driven run is missing. |
+| `verdictSessionId` | The pre-graded twin behind `{verdictSession}`, so a verdict screen is a read rather than a model call. No slide asks for it today. |
+| `soloSessionId` + `soloAnswerKey` | The driven case — `demo-case-answer`, the centrepiece. Together they expand `{autoplay}` to `/cases/<id>?autoplay=C`. |
+| `autoplaySessionId` + `autoplayAnswerKey` | The fifteen-question run behind `{autoplayRun}`. Kept because it works; nothing requests it. |
+
+The two answer keys are the reason hand-editing does not work. Every other value
+can be re-derived from a running backend, because the API will tell you what
+sessions exist — but it will never tell you which answer is credited, because
+`serialize_question` omits `correct_answer` on purpose. The keys have to be
+carried out of the database by the script that stages the run, which is
+`stage_demo.py`, which is what `npm run reset-demo` runs. So:
+
+```bash
+# is the config still describing this database?
+.venv/bin/python backend/scripts/repin_demo_session.py
+
+# it is not
+cd deck && npm run reset-demo
+```
+
+The check reads all six back and names the dead ones; it exits non-zero when any
+are stale, which makes it a pre-flight worth running before a rehearsal and again
+before the talk. It deliberately does not repair anything. It used to, and it
+re-pinned `liveSessionId` alone — which brought the ordinary case back, looked
+like it had worked, and left the centrepiece pointing at a deleted session.
+
+An empty string is handled everywhere: `{autoplay}` falls back to the ordinary
+live case, and a slide with no session at all shows its still rather than framing
+a broken URL. `demoEmail` is the account the deck signs itself in as, and it has
+to match the one the data is seeded under.
 
 ---
 
@@ -218,9 +271,16 @@ designed to be presentable that way. Fix it between acts, not on stage.
 
 **The session expired, or the case shows a wrong timer.** Re-run
 `npm run reset-demo` in `deck/`. It stages a fresh case at zero, keeps the
-pre-graded verdict, and rewrites both session ids in `demo.config.ts`. If the
-backend is up but the seeder is being difficult,
+pre-graded verdict, and rewrites all six pinned values in `demo.config.ts`. If
+the backend is up but the seeder is being difficult,
 `npm run prepare-demo -- --skip-seed` will at least re-resolve the session id.
+
+**The centrepiece slide shows an ordinary case and never plays itself.**
+`soloSessionId` or `soloAnswerKey` is stale, so `{autoplay}` fell back to the
+live case — deliberately, because the alternative is an error page, but it is
+silent. `.venv/bin/python backend/scripts/repin_demo_session.py` names it in a
+second. The fix is `npm run reset-demo`; do not hand-edit one id, because the
+credited answer cannot be read back over the API at all.
 
 **"WebGL context lost", or a scene renders black.** The deck keeps at most three
 app scenes plus its own stage alive, but a projector switch or a GPU hiccup can
@@ -433,12 +493,15 @@ copy is documented as a copy in [`src/app-art/PORT.md`](./src/app-art/PORT.md),
 and `diff -r public/art ../frontend/public/art` should always be silent. Run the
 `cp` after a fresh clone, and again whenever the app's catalog art changes.
 
-**`public/stills/` is tracked, deliberately, at 26 MB.** Nothing in this
-repository regenerates it. The five route stills were captured by hand against a
-seeded account in one specific state — a case 3 of 8 at 1:14, a $6.66M treasury,
-a tier-4 office with 35 staff — and re-seeding produces a different state, not
-those frames. The two office-tier stills were lifted from `.shots-keep/`, which
-is git-ignored, so their originals are not in the repository either. They are
-the fallback the whole talk leans on when a demo dies on stage, and they are the
-images the slides were composed against. Do not add them to `.gitignore` on the
-grounds that they are big. If they ever do get a generator, ignore them then.
+**`public/stills/` is tracked, deliberately, at 16 MB across 12 files.** There
+is a generator — `node scripts/recapture-stills.mjs`, ten of the twelve, keyed
+by `--only` and listed in `DEMO-NOTES.md` — but it is not a reason to ignore
+them. It reproduces the *shape* of each frame and not the state inside it: the
+captures are of a seeded account at one moment (a $6.66M treasury, a tier-4
+office with 35 staff, 922 answered), and re-seeding produces a different account,
+not those numbers. The two `scene-office-*` files are deck art and have no
+generator at all.
+
+These are the fallback the whole talk leans on when a demo dies on stage, and
+they are the images the slides were composed against. Do not add them to
+`.gitignore` on the grounds that they are big.
