@@ -117,6 +117,21 @@
 .client-roster-go:active { translate: 0 1px; }
 .client-card { padding-top: 17px; }
 .client-card-portrait { width: 86px; height: 92px; margin: -3px 0 -4px; }
+/* The archetype pill, cut off by its own card.
+   `art.css` hangs it under the bust with `left: 50%; translateX(-50%)`, and the
+   bust sits 24px in from the card's edge — so any pill wider than 134px leaves
+   the card, and the card clips. "LEAGUE COMMISSIONER" was 162 wide and lost
+   14px of itself at every width from 320 to 1440; "SOVEREIGN DIRECTOR" lost 8.
+   It cannot be centred any further left, so it wraps instead: two short lines
+   of a name are readable and "LEAGUE COMMISSION…" is not. The card carries a
+   little more room under the bust so the second line has somewhere to go. */
+.client-card-portrait { margin-bottom: 8px; }
+.client-card-portrait.av-portrait > small {
+  max-width: 132px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+}
 .client-card.selected { box-shadow: inset 0 0 0 3px rgba(200,155,75,.12), 0 13px 28px rgba(117,78,25,.1); }
 .client-card.just-activated { animation: client-card-activate .55s cubic-bezier(.2,1.4,.4,1); }
 @media (max-width: 1120px) {.management-grid { grid-template-columns: repeat(2, 1fr); }

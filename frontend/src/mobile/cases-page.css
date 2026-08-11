@@ -63,6 +63,17 @@
   }
   .case-lobby .practice-action-client { gap: 13px; }
   .case-lobby .practice-action-client .lobby-client-portrait { width: 54px; height: 62px; }
+  /* The archetype pill, off the left edge of every phone.
+     `art.css` centres it under the bust with `left: 50%; translateX(-50%)`,
+     and at 131px wide under a 54px bust sitting 17px from the card's edge it
+     starts at -21 and gets cut in half by the section's `overflow: hidden`.
+     Any centred pill wider than 88px does, so shrinking it is not a fix; it
+     has nowhere to go, because the copy column starts at 84 and the chips run
+     down the same rows. Hidden here, the same call the client roster on the
+     Firm tab already made for the same pill for the same reason. The rule
+     lives in this route's mobile sheet rather than in mobile.css because
+     `art.css` is injected after the shared sheet and would otherwise win. */
+  .case-lobby .practice-action-client .lobby-client-portrait.av-portrait > small { display: none; }
   .case-lobby .practice-action-client > div > strong { font-size: 20px; }
   .case-lobby .practice-run { padding: 18px 16px 22px; }
   .case-lobby .practice-run-alt { grid-template-columns: 1fr; gap: 8px; justify-items: center; }
