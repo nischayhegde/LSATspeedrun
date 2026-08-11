@@ -36,6 +36,15 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app import create_app
+from app.enforcement import (
+    ENFORCEMENT_VERSION,
+    LEVEL_FULL,
+    MASTERY_MIN_SATISFIED,
+    STAND_DOWN_AFTER_REJECTIONS,
+    STATUS_SATISFIED,
+    STATUS_SKIPPED,
+    STATUS_STOOD_DOWN,
+)
 from app.extensions import db
 from app.game import (
     ASSET_BY_KEY,
@@ -74,7 +83,14 @@ from app.services import (
     serialize_item,
 )
 from app.story import QUEST_BY_KEY, ensure_story_state
-from app.strategies import STRATEGIES, _candidate_keys, strategy_performance
+from app.strategies import (
+    SESSION_FORCED_CAP,
+    STRATEGIES,
+    VARIANT_PROMPT_REQUIRED,
+    _candidate_keys,
+    strategy_performance,
+    stratum_key,
+)
 
 SEED_VERSION = "demo-seed-v2"
 DEFAULT_EMAIL = "student@localhost.test"
@@ -153,6 +169,22 @@ STRATEGY_PLAN = (
 # "cases" run and every question in one carries a strategy trial. The sizes
 # still vary so the demo history does not look mechanically uniform.
 CASES_SIZES = (12, 16, 10, 8)
+
+# How often a seeded run deals mandatory approaches, and how wide the pool it
+# draws them from.
+#
+# The history writer lays its own rows down rather than calling
+# `create_study_session`, so nothing here ever went past `plan_forced_arms` and
+# the mandatory sub-arm was absent from the account entirely: not a thin sample
+# but no rows at all, which left the panel that contrasts insisted-upon
+# approaches against merely offered ones with nothing to draw and the whole
+# read path unexercised. These deal it at roughly the rate the planner does —
+# `SESSION_FORCED_CAP` of a three-question pool, in one run out of five, which
+# stays inside the daily cap even on the two-sitting days.
+FORCED_EVERY_NTH_RUN = 5
+FORCED_POOL = 3
+# How often a mandatory approach is taken as far as the way out of it.
+FORCED_STAND_DOWN_EVERY = 4
 
 
 def _fraction(*parts: object) -> float:
@@ -563,6 +595,85 @@ def _repair_question(
     return None
 
 
+def _stage_forced_arms(
+    rows: list[tuple[SessionItem, Attempt, Question, dict]],
+    salt: object,
+    satisfied_by_key: dict[str, int],
+    stats: dict,
+) -> None:
+    """Make some of a run's approaches mandatory, the way the planner would.
+
+    Takes `FORCED_POOL` of the run's prompted questions as the pool, gives every
+    member of it the one inclusion probability the pool had, and draws
+    `SESSION_FORCED_CAP` of them on a hash of the run — the same shape as
+    `plan_forced_arms`, so the rows support the same weighted contrast rather
+    than merely carrying its column names.
+
+    One drawn question in every `FORCED_STAND_DOWN_EVERY` staged run is let out
+    of the approach instead of working it, which is the only part of this that
+    overrides the A/B plan: that attempt's takeup flips to declined. It has to,
+    because a stand-down *is* a declined offer — the student met the gate, was
+    refused twice, and took the way out — and a mandatory arm in which nobody
+    ever reaches the exit would leave the one path here that cannot be tested by
+    inspection looking like it works.
+
+    Every other gate outcome follows from what the token already says the learner
+    did, so the takeup and accuracy the A/B plan fixes stay as written: a
+    question they worked is `satisfied` and one they declined is `skipped`.
+
+    Runs are skipped rather than trimmed when a member would carry an approach
+    past `MASTERY_MIN_SATISFIED` cleared gates, because that is the point at
+    which the live gate relaxes to an attestation. Leaving the demo below it
+    keeps the operations on screen where they can be shown.
+    """
+    if len(rows) < FORCED_POOL:
+        return
+    pool = rows[:FORCED_POOL]
+    would_satisfy: dict[str, int] = defaultdict(int)
+    for item, _attempt, _question, trial in pool:
+        if trial["applied"] is not False:
+            would_satisfy[item.strategy_key] += 1
+    if any(
+        satisfied_by_key.get(key, 0) + count >= MASTERY_MIN_SATISFIED
+        for key, count in would_satisfy.items()
+    ):
+        return
+
+    propensity = SESSION_FORCED_CAP / len(pool)
+    drawn = sorted(
+        range(len(pool)), key=lambda index: _fraction(SEED_VERSION, "force", salt, index)
+    )[:SESSION_FORCED_CAP]
+    stands_down = drawn[0] if stats["forced_runs"] % FORCED_STAND_DOWN_EVERY == 0 else None
+    stats["forced_runs"] += 1
+
+    for index, (item, attempt, question, trial) in enumerate(pool):
+        required = index in set(drawn)
+        item.strategy_stratum = attempt.strategy_stratum = stratum_key(item.strategy_key, question)
+        item.strategy_forcing_propensity = attempt.strategy_forcing_propensity = propensity
+        item.strategy_enforcement_level = attempt.strategy_enforcement_level = LEVEL_FULL
+        attempt.strategy_enforcement_version = ENFORCEMENT_VERSION
+        if required:
+            item.strategy_variant = attempt.strategy_variant = VARIANT_PROMPT_REQUIRED
+        # Time inside the panel is part of the question's recorded time, not
+        # added to it, because pace scoring subtracts it back out.
+        gate_ms = min(50_000, int(attempt.server_elapsed_ms * .34))
+        if index == stands_down:
+            attempt.strategy_applied = False
+            attempt.strategy_gate_status = STATUS_STOOD_DOWN
+            attempt.strategy_gate_ms = gate_ms
+            item.strategy_gate_rejections = attempt.strategy_gate_rejections = (
+                STAND_DOWN_AFTER_REJECTIONS
+            )
+            stats["stood_down"] += 1
+        elif trial["applied"] is not False:
+            attempt.strategy_gate_status = STATUS_SATISFIED
+            attempt.strategy_gate_ms = gate_ms
+            satisfied_by_key[item.strategy_key] = satisfied_by_key.get(item.strategy_key, 0) + 1
+        else:
+            attempt.strategy_gate_status = STATUS_SKIPPED
+        stats["forced" if required else "forced_pool"] += 1
+
+
 def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
     calendar = _study_calendar(now)
     plan = _session_plan(len(calendar))
@@ -584,8 +695,13 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
         "repairs": 0,
         "repairs_declined": 0,
         "mismatched": 0,
+        "forced": 0,
+        "forced_pool": 0,
+        "forced_runs": 0,
+        "stood_down": 0,
         "by_style": defaultdict(int),
     }
+    satisfied_by_key: dict[str, int] = {}
 
     # Count eligible slots up front so the trial plan can be stretched to fill
     # every one of them; every question in a cases run carries a trial in the
@@ -638,6 +754,7 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
 
         cursor = started_at
         previous_passage_id: str | None = None
+        prompted_rows: list[tuple[SessionItem, Attempt, Question, dict]] = []
         for position in range(size):
             salt = (slot_index, position)
             trial: dict | None = None
@@ -763,6 +880,8 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
                 stats["trials"] += trial["variant"] == "prompt" and trial["applied"] is True
                 stats["controls"] += trial["variant"] == "control"
                 stats["skips"] += trial["applied"] is False
+                if trial["variant"] == "prompt":
+                    prompted_rows.append((item, attempt, question, trial))
 
             # Mirror _schedule_review's reason codes so the queue looks earned.
             if not (is_repair and repair_question is not None):
@@ -778,6 +897,9 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
 
             cursor = completed_at
             stats["attempts"] += 1
+
+        if style == "cases" and slot_index % FORCED_EVERY_NTH_RUN == 0:
+            _stage_forced_arms(prompted_rows, slot_index, satisfied_by_key, stats)
 
         session.completed_at = cursor
         session.current_index = size
@@ -1243,6 +1365,28 @@ def _cross_section_rows(user: User) -> int:
     )
 
 
+def _forced_arm_rows(user: User) -> dict:
+    """What the mandatory sub-arm looks like on the record, read back.
+
+    The sub-arm had no rows anywhere before this seed wrote them, so the panel
+    that contrasts insisted-upon approaches against offered ones has never been
+    seen with data in it. These counts are checked rather than reported so an
+    empty one is a seeding failure instead of an empty panel in a demo.
+    """
+    rows = (
+        Attempt.query.with_entities(
+            Attempt.strategy_variant, Attempt.strategy_gate_status, Attempt.strategy_forcing_propensity
+        )
+        .filter(Attempt.user_id == user.id, Attempt.strategy_key.isnot(None))
+        .all()
+    )
+    return {
+        "required": sum(variant == VARIANT_PROMPT_REQUIRED for variant, _status, _p in rows),
+        "stood_down": sum(status == STATUS_STOOD_DOWN for _variant, status, _p in rows),
+        "pooled": sum(propensity is not None for _variant, _status, propensity in rows),
+    }
+
+
 def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
     performance = performance_snapshot(user)
     game = serialize_game(user.game_profile, include_catalog=True)
@@ -1275,6 +1419,13 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
             f"{mismatched} questions carry an approach from the other section — "
             "a Reading Comprehension approach on a Logical Reasoning question, or the reverse"
         )
+    forced = _forced_arm_rows(user)
+    if not forced["required"]:
+        problems.append("no mandatory approaches on the record")
+    elif forced["pooled"] <= forced["required"]:
+        problems.append("mandatory approaches with nothing in their pool to compare against")
+    if not forced["stood_down"]:
+        problems.append("nobody was ever let out of a mandatory approach")
     if len(performance["skills"]) < 12:
         problems.append(f"only {len(performance['skills'])} skills in the breakdown")
     thin = [skill["name"] for skill in performance["skills"] if skill["attempts"] < 5]
@@ -1323,6 +1474,7 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
             "trials_completed": lab["trials_completed"],
             "strategies_tested": lab["strategies_tested"],
             "cross_section_rows": mismatched,
+            "mandatory": forced,
             "supported": [
                 {
                     "title": result["title"],
