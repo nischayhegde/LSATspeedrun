@@ -150,9 +150,33 @@ values in `demo.config.ts`. It takes about twenty seconds and is safe to run
 repeatedly. Run it once the night before and once again if you rehearse.
 
 Without a coaching gateway configured (`TFY_API_KEY`, `TFY_URL`) it still
-completes and still pins all six, but it stages the driven case **ungraded** and
-says so — the sequence plays and submits, and the feedback beat it exists for
-shows a placeholder instead of the coach.
+completes and still pins all six. Whether the driven case comes back **graded**
+then depends on whether a grade has been captured — see below. If none has, it
+stages ungraded and says so: the sequence plays and submits, and the feedback
+beat it exists for shows a placeholder instead of the coach.
+
+### If the coach is missing, it is not a login
+
+The coaching call is made by the *backend* to an LLM gateway
+(`app/coaching.py::_chat`, `Authorization: Bearer $TFY_API_KEY` against
+`$TFY_URL`). Who is signed in only decides which attempt gets graded, so no
+account credential makes it work on a machine without those two variables.
+
+What the beat needs is a *stored* grade, which is what it reads at presentation
+time anyway. So capture one, once, on a machine where the coach works:
+
+```bash
+cd deck && npm run capture-coaching
+git add backend/scripts/demo_fixtures/coaching.json && git commit
+```
+
+Every machine then stages `demo-case-answer` with that coached text, with no key
+and no wait. With a gateway present nothing changes — the live call runs first
+and its result wins; the capture is only what stands behind it if the gateway is
+down on the morning. Grades are replayed only against the exact question,
+answer, reasoning and prompt version they were produced for, and nothing in the
+staging path ever writes coaching text; see
+`backend/scripts/demo_fixtures/README.md`.
 
 Useful flags on `npm run prepare-demo`: `--skip-seed` (re-resolve the session and
 rewrite the config without re-seeding), `--email <address>`, `--help`.

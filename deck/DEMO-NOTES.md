@@ -50,10 +50,11 @@ back over the API by anything, because `serialize_question` omits
 `correct_answer` on purpose.
 
 **Without a coaching gateway** (`TFY_API_KEY`, `TFY_URL`) `reset-demo` still runs
-to completion and still pins all six; it stages the driven case ungraded and says
-so. It used to raise `CoachingProviderError` partway through, *after* deleting the
-previous verdict — leaving the demo worse than it found it, from the command every
-other recovery path points at.
+to completion and still pins all six. Whether the driven case comes back *graded*
+depends on whether anyone has captured a grade — see §3a. If nobody has, it stages
+ungraded and says so. It used to raise `CoachingProviderError` partway through,
+*after* deleting the previous verdict — leaving the demo worse than it found it,
+from the command every other recovery path points at.
 
 Between rehearsals, when the verdict text has not changed and you only need the
 case rewound:
@@ -214,6 +215,53 @@ already stored and there is nothing to fetch.
 | 0-4 | Read the verdict line in one sentence. Do not itemize answer, explanation and time points. |
 | 4-10 | Open the coaching panel. Point at the **95** and read one clause of the "got right" line. |
 | 10-14 | Click **Dashboard**. Land on the history with the reasoning attached. Do not scroll. |
+
+---
+
+## 3a. The coach on a machine with no gateway
+
+**What blocks the coach is not a login.** `app/coaching.py::_chat` posts to
+`TFY_URL` with `Authorization: Bearer <TFY_API_KEY>`, both read from
+`current_app.config` in the Flask process. It is a server-to-server call made by
+the backend; the signed-in account only decides *which attempt* gets graded.
+Handing over an account, or seeding one harder, changes nothing — a VM without
+those two variables cannot grade, and a laptop with them grades whoever is
+signed in.
+
+**What the beat actually needs is a stored grade, not a live one.** By
+presentation time it is already a read: `run_attempt_coaching` returns
+`feedback_json["coaching"]` verbatim once `coaching_status` is `completed`,
+calling nothing (§5). So `stage_demo.py --capture-coaching` pins a grade that a
+real run produced, into `backend/scripts/demo_fixtures/coaching.json`, and
+staging replays it whenever the coach refuses.
+
+```bash
+cd deck && npm run capture-coaching     # needs a working gateway, once
+git add backend/scripts/demo_fixtures/coaching.json && git commit
+```
+
+After that, any machine — no key, no network to the gateway — stages
+`demo-case-answer` with the same coached text, in about a second.
+
+**On the presenting machine this is worth having for a different reason.** With
+a gateway configured nothing changes: the live call still runs first and its
+result still wins. The capture is what stands behind it if the gateway is down,
+rate-limited or unbilled on presentation morning, which today means `reset-demo`
+quietly restages the centrepiece ungraded.
+
+**Nothing in the staging path composes coaching text.** A capture is replayed
+only when the question id, the selected label, the sha256 of the reasoning and
+the prompt version all still match, because a grade shown against reasoning it
+was not given is fabricated whatever its words are. `--capture-coaching` refuses
+to run without a working coach rather than inventing something. If no capture
+matches, the case stages ungraded and says so, exactly as before. The folder's
+`README.md` carries the rules.
+
+Nothing in the payload is keyed to a session, attempt or user id — only to
+choice labels — so unlike the six values in §1 there is nothing to re-point
+after a re-seed. The question is pinned by a stable bank id and both reasoning
+texts are constants in `stage_demo.py`, so a database rebuilt from nothing
+presents the capture with the same inputs it was taken against.
 
 ---
 
@@ -857,8 +905,20 @@ That is worse than an empty panel. The slide's headline claim is that the grade 
 about the reasoning rather than the letter, and what it currently demonstrates is
 a tick beside a letter, immediately after promising otherwise. **With a gateway
 configured this is a staging artefact and not a defect** — `stage_demo.py` grades
-the case once, stores it on the attempt, and the beat becomes a read. Untested
-here, for the obvious reason.
+the case once, stores it on the attempt, and the beat becomes a read.
 
-If you are ever in a room without the gateway: `useStills: true` in
-`demo.config.ts`, and `demo-case-answered.png` carries the coached frame.
+**§3a now closes this without a gateway**, and the closing was tested here even
+though the grading itself could not be: on a database rebuilt from nothing with
+no `TFY_*` set, `stage_demo.py` replayed a committed capture and the slide
+rendered its full coached panel — verdict line, badge and all three bench notes.
+The mechanism is verified end to end. What could not be produced here is the
+*text*, since capturing a real grade needs the gateway once; the run above used
+a local stub standing in for it, and deliberately shipped no fixture.
+
+So the remaining gap is one command on the laptop that already has the key:
+`npm run capture-coaching`, commit the result. Until someone runs it, the
+paragraph above still describes what a keyless machine shows.
+
+If you are ever in a room without the gateway *and* without a capture:
+`FORCE_STILLS = true` in `demo.config.ts`, and `demo-case-answered.png` carries
+the coached frame.
