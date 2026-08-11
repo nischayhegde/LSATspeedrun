@@ -42,20 +42,41 @@ export const CHROME = process.env.LSAT_CHROME || null
 export const launch = () => chromium.launch(CHROME ? { executablePath: CHROME } : {})
 
 /**
- * The emulation every number in `FINDINGS.md` was taken under: a 390px phone,
- * 4x CPU throttle, and a 1.6 Mbps / 150 ms link. It is deliberately the same
- * profile `tools/css-split` uses, so a number from either side is comparable
- * with a number from the other.
+ * The emulation the numbers in `FINDINGS.md` are taken under: a 390px phone,
+ * 4x CPU throttle, and by default a 1.6 Mbps / 150 ms link. That default is
+ * deliberately the profile `tools/css-split` uses, so a number from either
+ * side is comparable with a number from the other.
+ *
+ * The link is a parameter and not a constant because it turned out to decide
+ * the answer. At 1.6 Mbps the pipe is the bottleneck and moving a download
+ * earlier only takes bandwidth from something the page needs first; at 12 Mbps
+ * the round trip is the bottleneck and the same move is free. A conclusion
+ * drawn at one of those speeds does not hold at the other, so the speed is
+ * stated in every result.
  */
+export const LINKS = {
+  /** Chrome's own "Slow 4G", and the profile every earlier number here used. */
+  'slow-4g': { label: '1.6 Mbps / 150 ms', mbps: 1.6, rtt: 150, up: 750 },
+  /** A good mobile connection: bandwidth stops being the binding constraint. */
+  '4g': { label: '9 Mbps / 85 ms', mbps: 9, rtt: 85, up: 3000 },
+  /** Home broadband over a distant edge — latency-bound, not bandwidth-bound. */
+  cable: { label: '24 Mbps / 60 ms', mbps: 24, rtt: 60, up: 6000 },
+}
+
+export const netConditions = (name = 'slow-4g') => {
+  const link = LINKS[name]
+  if (!link) throw new Error(`unknown link "${name}"; try ${Object.keys(LINKS).join(', ')}`)
+  return {
+    offline: false,
+    latency: link.rtt,
+    downloadThroughput: (link.mbps * 1024 * 1024) / 8,
+    uploadThroughput: (link.up * 1024) / 8,
+  }
+}
+
 export const EMULATION = {
   viewport: { width: 390, height: 844 },
   cpuThrottle: 4,
-  network: {
-    offline: false,
-    latency: 150,
-    downloadThroughput: (1.6 * 1024 * 1024) / 8,
-    uploadThroughput: (750 * 1024) / 8,
-  },
 }
 
 /**
@@ -134,19 +155,26 @@ export async function nextRouteFor(apiOrigin, cookies) {
  * hint did nothing" from "the hint worked and the screen is gated on something
  * else".
  */
-export async function measureRoute(browser, { origin, route, cookies = null, routeChunk = null }) {
+export async function measureRoute(browser, { origin, route, cookies = null, routeChunk = null, link = 'slow-4g' }) {
   const context = await browser.newContext({ viewport: EMULATION.viewport })
   if (cookies?.length) await context.addCookies(cookies)
   const page = await context.newPage()
   const client = await page.context().newCDPSession(page)
 
   const requests = []
+  const byId = new Map()
   client.on('Network.requestWillBeSent', (e) => {
-    requests.push({ url: e.request.url, at: e.timestamp, type: e.type })
+    const row = { url: e.request.url, at: e.timestamp, type: e.type, initiator: e.initiator, priority: e.request.initialPriority }
+    requests.push(row)
+    byId.set(e.requestId, row)
+  })
+  client.on('Network.loadingFinished', (e) => {
+    const row = byId.get(e.requestId)
+    if (row) { row.end = e.timestamp; row.bytes = e.encodedDataLength }
   })
   await client.send('Network.enable')
   await client.send('Emulation.setCPUThrottlingRate', { rate: EMULATION.cpuThrottle })
-  await client.send('Network.emulateNetworkConditions', EMULATION.network)
+  await client.send('Network.emulateNetworkConditions', netConditions(link))
 
   const marker = markerFor(route)
   await page.addInitScript((sel) => {
@@ -219,7 +247,42 @@ export async function measureRoute(browser, { origin, route, cookies = null, rou
     chunkAt: chunk ? ms(chunk.at) : null,
     requests: requests.length,
     wall: Date.now() - t0,
+    /**
+     * The whole waterfall, relative to the navigation, for `--trace`. A
+     * request whose initiator is another request is a serialised hop, and
+     * those are the only things worth trying to remove — but see `FINDINGS.md`
+     * on why a hop being serial does not mean it is costing what it looks
+     * like it costs.
+     */
+    trace: requests.map((r) => ({
+      url: r.url,
+      start: ms(r.at),
+      end: r.end ? ms(r.end) : null,
+      bytes: r.bytes ?? null,
+      priority: r.priority || '',
+      cause: describeInitiator(r.initiator),
+    })).sort((x, y) => x.start - y.start),
   }
+}
+
+/** What discovered a request: the parser, the preload scanner, or a script. */
+function describeInitiator(initiator) {
+  const i = initiator || {}
+  if (i.type === 'parser') return `parser ${short(i.url || '')}`
+  if (i.type === 'preload') return 'preload scanner'
+  if (i.type === 'script') {
+    const top = (i.stack?.callFrames || [])[0]
+    return top ? `script ${short(top.url)}${top.functionName ? ` (${top.functionName})` : ''}` : 'script'
+  }
+  return i.type || '?'
+}
+
+export const short = (url) => {
+  try {
+    const u = new URL(url)
+    const name = u.pathname.split('/').pop() || u.pathname
+    return u.hostname === '127.0.0.1' ? name || '/' : `${u.hostname}${u.pathname}`
+  } catch { return String(url).slice(0, 40) }
 }
 
 /** Serves a built `dist` the way production does, with `/v1` going to a real API. */

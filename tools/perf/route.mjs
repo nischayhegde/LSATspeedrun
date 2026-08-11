@@ -17,11 +17,12 @@ import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { compressionFromOpts } from '../css-split/prod-serve.mjs'
 import {
-  describeCompression, devAuthCookies, launch, loadLine, measureRoute, median, serveApp,
+  LINKS, describeCompression, devAuthCookies, launch, loadLine, measureRoute, median, serveApp,
+  short as shortUrl,
 } from './lib.mjs'
 
 const argv = process.argv.slice(2)
-const takes = new Set(['--route', '--runs', '--api', '--email'])
+const takes = new Set(['--route', '--runs', '--api', '--email', '--link'])
 const opts = {}
 const routes = []
 const positional = []
@@ -36,6 +37,7 @@ const runs = Number(opts['--runs'] || 5)
 const apiOrigin = opts['--api'] || 'http://127.0.0.1:5001'
 const email = opts['--email'] || 'perf@localhost.test'
 const compress = compressionFromOpts(opts)
+const link = opts['--link'] || 'slow-4g'
 if (!routes.length) routes.push('/firm')
 
 /**
@@ -71,7 +73,7 @@ const origin = `http://127.0.0.1:${app.port}`
 const browser = await launch()
 
 console.log(`\n${dist}   ${describeCompression(compress)}`)
-console.log(`390px, 4x CPU, 1.6 Mbps / 150 ms rtt; signed in as ${email}; ${loadLine()}`)
+console.log(`390px, 4x CPU, ${LINKS[link].label} (${link}); signed in as ${email}; ${loadLine()}`)
 
 let anyVoid = false
 try {
@@ -79,12 +81,12 @@ try {
     const routeChunk = chunkFor(route)
     const rows = []
     for (let i = 0; i < runs; i += 1) {
-      rows.push(await measureRoute(browser, { origin, route, cookies, routeChunk }))
+      rows.push(await measureRoute(browser, { origin, route, cookies, routeChunk, link }))
     }
     const good = rows.filter((r) => r.valid)
     const control = opts['--no-control']
       ? null
-      : await measureRoute(browser, { origin, route, cookies: null, routeChunk })
+      : await measureRoute(browser, { origin, route, cookies: null, routeChunk, link })
 
     console.log(`\n  ${route}   chunk ${routeChunk || '(none)'}`)
     if (!good.length) {
@@ -98,6 +100,17 @@ try {
       console.log(`      first paint            ${show('fcp')}`)
       console.log(`      route on the glass     ${show('contentAt')}`)
       console.log(`      largest paint          ${show('lcp')}`)
+    }
+    if (opts['--trace'] && good.length) {
+      const pick = good[good.length - 1]
+      console.log(`\n    waterfall of the last valid run  (content at ${pick.contentAt} ms)`)
+      console.log(`      ${'start'.padStart(6)} ${'end'.padStart(6)} ${'kB'.padStart(7)}  ${'pri'.padEnd(8)} ${'asset'.padEnd(32)} discovered by`)
+      for (const r of pick.trace) {
+        console.log(
+          `      ${String(r.start).padStart(6)} ${String(r.end ?? '').padStart(6)} ${(r.bytes == null ? '—' : (r.bytes / 1000).toFixed(1)).padStart(7)}`
+          + `  ${String(r.priority).padEnd(8)} ${shortUrl(r.url).padEnd(32)} ${r.cause}`,
+        )
+      }
     }
     if (control) {
       /**

@@ -76,7 +76,7 @@ export function serveLikeProd(root, { compress = 'auto', api = true, apiOrigin =
   const server = createServer(async (req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0])
     if (apiOrigin && url.startsWith('/v1/')) {
-      await proxy(req, res, apiOrigin)
+      await proxy(req, res, apiOrigin, compress)
       return
     }
     if (api && url.startsWith('/v1/')) {
@@ -123,12 +123,15 @@ export function serveLikeProd(root, { compress = 'auto', api = true, apiOrigin =
  * hop-by-hop headers are dropped because they describe this connection rather
  * than the message.
  */
+/** What CloudFront compresses, of the things a `/v1` answer can be. */
+const PROXY_COMPRESSIBLE = new Set(['application/json', 'text/plain', 'text/html'])
+
 const HOP_BY_HOP = new Set([
   'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
   'te', 'trailer', 'transfer-encoding', 'upgrade', 'host',
 ])
 
-async function proxy(req, res, origin) {
+async function proxy(req, res, origin, compress) {
   const chunks = []
   for await (const chunk of req) chunks.push(chunk)
   const headers = {}
@@ -152,8 +155,30 @@ async function proxy(req, res, origin) {
     })
     const setCookie = upstream.headers.getSetCookie?.() ?? []
     if (setCookie.length) out['set-cookie'] = setCookie
+    /**
+     * The API answer is compressed on the way out for the same reason the
+     * assets are, and it matters more here than anywhere else. `application/json`
+     * is on CloudFront's compressible list and `/v1/game` is 165 kB raw against
+     * 26 kB brotli — so a proxy that forwards it raw spends 6.4x the real
+     * bandwidth on the single largest response in the load, on the same 1.6 Mbps
+     * pipe as everything else, and every conclusion drawn from that waterfall is
+     * about a link that does not exist. This is the uncompressed-assets trap from
+     * `tools/perf/FINDINGS.md` wearing a different hat.
+     */
+    let body = Buffer.from(await upstream.arrayBuffer())
+    const type = (out['content-type'] || '').split(';')[0].trim()
+    const offered = req.headers['accept-encoding'] || ''
+    const wants = compress === false ? null
+      : compress === 'gzip' ? (/gzip/.test(offered) ? 'gzip' : null)
+        : /\bbr\b/.test(offered) ? 'br' : /gzip/.test(offered) ? 'gzip' : null
+    if (wants && PROXY_COMPRESSIBLE.has(type) && body.length >= MIN_BYTES && body.length <= MAX_BYTES) {
+      body = wants === 'br'
+        ? brotliCompressSync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 5, [constants.BROTLI_PARAM_SIZE_HINT]: body.length } })
+        : gzipSync(body, { level: 6 })
+      out['content-encoding'] = wants
+    }
     res.writeHead(upstream.status, out)
-    res.end(Buffer.from(await upstream.arrayBuffer()))
+    res.end(body)
   } catch (err) {
     res.writeHead(502, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ detail: `api proxy failed: ${err.message}`, code: 'proxy_failed' }))
