@@ -1286,13 +1286,44 @@ function windowBand(width: number, count: number, y: number, depth: number, lit:
   return group
 }
 
+/**
+ * How wide the office standing at a tier is, and therefore how much street
+ * frontage it needs.
+ *
+ * The Old Quarter's five are townhouses, and that is a measured necessity as
+ * well as the right architecture. Its avenues sit 4.08 apart and their kerbs
+ * leave 2.94 m of clear ground between them; the declared plinth is the
+ * frontage plus .65, and siting needs a walker's half beam either side, so
+ * anything above about 2.62 m of plinth cannot be placed between two avenues at
+ * all. On the old flat 2.25 the plinth was 2.9 and needed 3.22, which is why
+ * every one of the five headquarters was unsitable — not a search failure, a
+ * building wider than the street it stands on.
+ *
+ * A first office on a historic high street *is* a narrow-fronted townhouse, so
+ * the district reads better for it: the progression through the Old Quarter is
+ * now storeys and stonework rather than sprawl, and the step out to the wide
+ * Sovereign Arc frontage at tier five is a visible promotion rather than one
+ * more increment.
+ */
+function tierFrontage(tier: number) {
+  return tier < 5 ? 1.55 + tier * .07 : 2.25 + Math.min(1.7, tier * .105)
+}
+
+/** The half-extent of the plinth, which is what siting and the router see. */
+function tierPlinthHalf(tier: number) {
+  return (tierFrontage(tier) + .65) / 2
+}
+
 function createLevelBuilding(point: MapSceneTier, definition: ArcDefinition) {
   const group = new THREE.Group()
   group.userData.playerOccluder = true
   const tier = point.data.tier
   const isOldQuarter = tier < 5
-  const width = 2.25 + Math.min(1.7, tier * .105)
-  const floors = 2 + Math.min(6, Math.floor(tier / 2))
+  const width = tierFrontage(tier)
+  // A townhouse is tall for its width or it is a shed: the Old Quarter starts
+  // at three storeys and gains one every second tier, so a narrower frontage
+  // still reads as moving up in the world.
+  const floors = isOldQuarter ? 3 + Math.floor(tier / 2) : 2 + Math.min(6, Math.floor(tier / 2))
   const floorHeight = .72
   const height = floors * floorHeight
   const completed = point.state === 'complete'
@@ -7978,7 +8009,7 @@ export function MapThreeScene({
        * from, instead of skewing it a few degrees for every unit it slides.
        */
       const frontage = Math.atan2(roadPoint.x - asked.x, roadPoint.z - asked.z)
-      const plinthHalf = (2.25 + Math.min(1.7, point.data.tier * .105) + .65) / 2
+      const plinthHalf = tierPlinthHalf(point.data.tier)
       const planned = recordSiting(
         world,
         `tier-${point.key}`,
