@@ -806,6 +806,24 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .world-zone:hover > span { display: block; }
 .world-zone b, .world-zone small { display: block; }.world-zone b { color: #f2c75b; font-size: 10.5px; text-transform: uppercase; }.world-zone small { margin-top: 4px; color: #a9c0c7; font-size: 10px; }
 @keyframes zone-pulse { 50% { transform: scale(1.35); opacity: .5; } }
+
+/* Four 32px buttons float over the 3D office, and each one is 32px in which
+   the room behind it cannot be hovered, pointed at or dragged — the office's
+   own installations sit under two of them, which is why the chesterfield and
+   the grandfather clock could be hovered for a cursor but never picked up.
+   What is drawn is the 18x10 ring inside; the rest is transparent margin. On a
+   mouse the pointer is precise enough for the target to be the thing that is
+   visible, so the margin stops swallowing events and the room underneath comes
+   back. Coarse pointers keep the whole button — 32px, or 44px on the client
+   anchor per mobile.css — because there the margin *is* the target, and a
+   phone reaches the same installations by tapping them rather than by hovering
+   under a zone marker. */
+@media (hover: hover) and (pointer: fine) {
+  .world-zone { pointer-events: none; }
+  /* The ring and its tooltip stay clickable, and `:hover` still resolves on
+     the button itself, so the label opens exactly as before. */
+  .world-zone > i, .world-zone > span { pointer-events: auto; }
+}
 .zone-case { margin: 29px 0 0 -20px; }.zone-firm { margin: 6px 0 0 20px; }.zone-empire { margin: 19px 0 0 -12px; }@keyframes dust-float { from { transform: translate(0, 18px); opacity: 0; } 30% { opacity: .8; } to { transform: translate(17px, -45px); opacity: 0; } }
 /* The portrait track is intrinsic rather than a fixed 76px. The rendered
    portrait is `av-portrait`, which art.css sizes to 86px and wins on load

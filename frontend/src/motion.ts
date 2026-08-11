@@ -97,10 +97,31 @@ export type AccrualRate = {
   sinceIso: string
 }
 
+/** How closely a caller wants to watch an accrual. */
+export type AccrualWatch = {
+  /**
+   * How often to recompute, in milliseconds. Raise the resolution and this has
+   * to come down with it or the extra decimals never move: a figure only
+   * changes on a tick, so a cents figure on a 600ms tick advances in visible
+   * jumps of six-tenths of a second.
+   */
+  tickMs?: number
+  /**
+   * Decimal places to keep. 0, the default, reports whole dollars.
+   *
+   * Cents exist for the per-item office readout, where the rate is one item's
+   * share of the firm's and a whole-dollar counter can genuinely sit still for
+   * half a minute. They are not a rounding nicety: the pool really does hold a
+   * fractional amount between collections, and the server floors it only on
+   * collection, so the cents are as real as the dollars.
+   */
+  precision?: number
+}
+
 /**
- * The whole-dollar amount a confirmed hourly rate has added since `sinceIso`,
- * recomputed from that timestamp on a short interval rather than accumulated
- * in local state — so there is nothing here that can drift from the server.
+ * The amount a confirmed hourly rate has added since `sinceIso`, recomputed
+ * from that timestamp on a short interval rather than accumulated in local
+ * state — so there is nothing here that can drift from the server.
  * Every tick asks "what would a fetch report right now", using only inputs
  * the server already confirmed (the rate, the cap, and the settlement time),
  * the same way `_passive_state` computes it on the backend. Feed the next
@@ -109,16 +130,19 @@ export type AccrualRate = {
  * own to reconcile.
  *
  * Returns 0 — meaning "add nothing" — whenever there is nothing actually
- * accruing right now: no rate, an unparseable timestamp, the accrual has
- * already hit its cap, or the reader asked for reduced motion. Callers add
- * this on top of a confirmed base value; they should not treat 0 as "unknown".
+ * accruing right now: no rate, an unparseable timestamp, or the reader asked
+ * for reduced motion. Callers add this on top of a confirmed base value; they
+ * should not treat 0 as "unknown".
  *
- * The interval is deliberately coarse (600ms, not a `requestAnimationFrame`
- * loop): the figure only needs to advance in whole-dollar steps that read as
- * continuous at reading distance, not to redraw every frame.
+ * The default interval is deliberately coarse (600ms, not a
+ * `requestAnimationFrame` loop): a whole-dollar figure only needs to advance in
+ * steps that read as continuous at reading distance, not to redraw every frame.
+ * Callers that show cents pass a shorter `tickMs`; see `AccrualWatch`.
  */
-export function useLiveAccrual(rate: AccrualRate | null | undefined): number {
+export function useLiveAccrual(rate: AccrualRate | null | undefined, watch: AccrualWatch = {}): number {
   const [amount, setAmount] = useState(0)
+  const tickMs = watch.tickMs ?? ACCRUAL_TICK_MS
+  const precision = watch.precision ?? 0
 
   useEffect(() => {
     if (!rate || rate.hourlyRate <= 0 || prefersReducedMotion()) {
@@ -132,21 +156,22 @@ export function useLiveAccrual(rate: AccrualRate | null | undefined): number {
     }
     const capHours = Math.max(0, rate.capHours)
     const hourlyRate = rate.hourlyRate
+    const quantum = 10 ** precision
 
     let timer = 0
     const tick = () => {
       const elapsedHours = Math.max(0, (Date.now() - sinceMs) / 3_600_000)
       const cappedHours = Math.min(elapsedHours, capHours)
-      setAmount(Math.floor(hourlyRate * cappedHours))
+      setAmount(Math.floor(hourlyRate * cappedHours * quantum) / quantum)
       // Once the cap is reached the figure cannot move again until a refetch
       // brings a new `sinceIso` — stop polling rather than recompute the same
       // answer forever.
       if (elapsedHours >= capHours) window.clearInterval(timer)
     }
     tick()
-    timer = window.setInterval(tick, ACCRUAL_TICK_MS)
+    timer = window.setInterval(tick, tickMs)
     return () => window.clearInterval(timer)
-  }, [rate?.hourlyRate, rate?.capHours, rate?.sinceIso])
+  }, [rate?.hourlyRate, rate?.capHours, rate?.sinceIso, tickMs, precision])
 
   return amount
 }

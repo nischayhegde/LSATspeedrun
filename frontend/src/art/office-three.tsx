@@ -22,6 +22,7 @@ import {
   type OfficeVisualZone,
 } from './office-manifest'
 import { OfficeCastBatch } from './office-cast-batch'
+import { bayEntropy, officeSigned, seatEntropy, OFFICE_ENTROPY } from './office-entropy'
 import { OfficeRoomBatch } from './office-room-batch'
 import { buildOfficeWindowView } from './office-window-view'
 import { IllustratedRenderPass } from './render-style'
@@ -570,6 +571,17 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     const floorPlan = officeFloorFor(devQuery?.get('officeFloor') as OfficeFloorKey ?? floor)
     const practiceFloor = floorPlan.key === 'practice'
     const onThisFloor = (key: string) => officeAssetOnFloor(key, floorPlan.key)
+    /**
+     * The seed every displacement in `office-entropy` is drawn against.
+     *
+     * It is the firm, the floor and the tier and nothing else, so a player's
+     * office is untidy in exactly the same way every time they open it, and
+     * two firms are untidy differently. `officeEntropy=0` builds the room back
+     * on its grid, which is how the A/B in the layout audit is taken —
+     * same convention as `officeCastBatch=0` and `officeRoomBatch=0` below.
+     */
+    const layoutSeed = `${layoutKey ?? 'preview'}:${floorPlan.key}:${level}`
+    const entropy = devQuery?.get('officeEntropy') !== '0'
     // The firm entire, both floors, because the tier's capacity is counted
     // over the whole firm before this floor takes its share.
     const firmStaff = staffOverride?.length
@@ -834,6 +846,103 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       world: THREE.Vector3 | null
     }
     const pickTargets: PickTarget[] = []
+
+    /**
+     * The furniture the player is allowed to pick up and put somewhere else.
+     *
+     * This started as one chair, and one chair is not a room you can arrange.
+     * What is registered here instead is every free-standing thing that stands
+     * on the floor on its own feet: the partner's chair, and the cosmetics a
+     * player bought and placed — the rug, the fig, the chesterfield, the
+     * longcase clock downstairs; the globe bar, the bust and the charter case
+     * upstairs.
+     *
+     * The line is drawn there rather than at "everything", for three reasons
+     * that are each a different kind of breakage:
+     *
+     *  - Wall pieces are hung. A certificate or a seal taken off its wall and
+     *    dropped in the middle of the floor is not rearranging a room, and
+     *    the wall it left has a composed gap in it.
+     *  - Desk-top pieces — the banker's lamp, the mug — live on a surface a
+     *    metre and a half above the floor plane every one of these gestures
+     *    is projected onto. Dragging one is a different interaction, not this
+     *    one, and half-implementing it would be the worst of both.
+     *  - Benches, department signatures and the people at them are not
+     *    furniture, they are a workstation. The seat entropy already moves
+     *    what can be moved there, with the occupant carried along; letting a
+     *    player drag a desk out from under somebody typing on it is the exact
+     *    clipping failure this office has a history of.
+     */
+    type OfficeDraggable = {
+      /** Storage suffix, and what `office-furniture-moved` reports. */
+      key: string
+      group: THREE.Object3D
+      home: THREE.Vector3
+      homeRotation: number
+      /** The prop's own bounds in its own space, resolved once it is built. */
+      box: THREE.Box3
+      /** Plan half-extents, measured off the built prop at its home angle. */
+      half: THREE.Vector2
+      /**
+       * Obstacles this prop already stands against where it was authored.
+       *
+       * The room as designed is valid by definition — the partner's chair is
+       * tucked into the partner's desk, the fig stands in the window jamb —
+       * so a collision test run against the authored layout says no to
+       * everything and the piece cannot be picked up at all. What is being
+       * prevented is *new* interpenetration, so whatever a piece was already
+       * touching when it was built is not something it can be blamed for.
+       */
+      ignore: THREE.Box3[]
+      ignoreItems: Set<string>
+      /**
+       * How far from home it may be carried: `[-x, +x, -z, +z]`.
+       *
+       * Authored per item and asymmetric, because the floor a thing can
+       * plausibly go to is asymmetric. The partner's chair has four metres of
+       * open floor to its left and a desk immediately behind it, which is the
+       * box it has always had; a piece parked against the window wall has the
+       * whole room in front of it and a centimetre behind.
+       */
+      travel: [number, number, number, number]
+      /**
+       * Whether it takes up floor. A rug is floor covering: things stand on
+       * it, so it neither blocks anything nor is blocked by anything, and it
+       * is the one item here that can be dropped underneath the furniture.
+       */
+      solid: boolean
+      /** How far the prop turns as it is carried sideways, which is what made
+       *  the chair feel like a chair being pushed rather than slid. */
+      swivel: number
+      /** Restored on drop, after the pick-up grows the prop very slightly. */
+      scale: number
+      released: boolean
+    }
+    const draggables: OfficeDraggable[] = []
+    const registerDraggable = (
+      key: string,
+      group: THREE.Object3D,
+      options: { travel: [number, number, number, number]; solid?: boolean; swivel?: number },
+    ) => {
+      draggables.push({
+        key,
+        group,
+        home: group.position.clone(),
+        homeRotation: group.rotation.y,
+        box: new THREE.Box3(),
+        half: new THREE.Vector2(.3, .3),
+        ignore: [],
+        ignoreItems: new Set<string>(),
+        travel: options.travel,
+        solid: options.solid ?? true,
+        swivel: options.swivel ?? 0,
+        scale: group.scale.x,
+        released: false,
+      })
+      return draggables[draggables.length - 1]
+    }
+    /** Per-tier and per-firm, the way the chair's has always been. */
+    const layoutStorageKey = (item: string) => `lsat-tycoon:office-layout:${layoutKey ?? 'preview'}:${level}:${item}`
 
     phase('materials+textures')
     // The window opening, established before the wall it is cut out of.
@@ -1241,7 +1350,19 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         addMesh(desk, constantGeometry('PlaneGeometry:.46,.29', () => new THREE.PlaneGeometry(.46, .29)), screen, [x, 1.72, -.168], [-.055, .2 + monitor * .06, 0]).castShadow = false
       }
     }
-    for (let index = 0; index < (rustic ? 7 : 4); index += 1) addMesh(desk, roundedBox(1.05 - Math.min(index, 3) * .05, .025, .72, 2, .008), index % 2 ? paper : new THREE.MeshStandardMaterial({ color: rustic ? 0x81785e : 0xb6c8b9, roughness: .9 }), [.35 + index * .018, 1.39 + index * .027, .16], [0, -.16 + index * .025, (seeded(index) - .5) * .02])
+    // The stack of paper on the partner desk, which is the closest prop to the
+    // camera in the opening frame and so the one place a fanned-out pile earns
+    // the most. It used to fan by ±0.01 rad, which is not a fan.
+    for (let index = 0; index < (rustic ? 7 : 4); index += 1) {
+      const sheet = entropy ? officeSigned(`${layoutSeed}:deskpaper`, index) : 0
+      addMesh(
+        desk,
+        roundedBox(1.05 - Math.min(index, 3) * .05, .025, .72, 2, .008),
+        index % 2 ? paper : new THREE.MeshStandardMaterial({ color: rustic ? 0x81785e : 0xb6c8b9, roughness: .9 }),
+        [.35 + index * .018 + sheet * .045, 1.39 + index * .027, .16 + sheet * .03],
+        [0, -.16 + index * .025 + sheet * OFFICE_ENTROPY.propYaw, (seeded(index) - .5) * .02],
+      )
+    }
     const caseAnchor = new THREE.Object3D()
     caseAnchor.position.set(.38, 1.47, .2)
     if (!activeCase) desk.add(caseAnchor)
@@ -1292,29 +1413,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // upstairs and turns to face the glass.
     const chairHome = new THREE.Vector3(desk.position.x, 0, desk.position.z + (rustic ? 1.6 : 1.76))
     const chairHomeRotation = rustic ? .18 : -.05
-    const chairStorageKey = `lsat-tycoon:office-layout:${layoutKey ?? 'preview'}:${level}:chair-360-v2`
     chair.position.copy(chairHome)
     chair.rotation.y = chairHomeRotation
     chair.scale.setScalar(rustic ? .82 : .72)
     chair.userData.officeDraggable = 'chair'
-    // The one piece of furniture a player can pick up and put somewhere else,
-    // and the one the pointer raycasts against directly.
-    chair.userData.batchSkip = true
-    try {
-      const saved = window.localStorage.getItem(chairStorageKey)
-      if (saved) {
-        const layout = JSON.parse(saved) as { x?: number; z?: number; rotation?: number }
-        // Clamped around wherever this floor's desk is, rather than around the
-        // practice floor's coordinates, or a saved position drags the chambers
-        // chair back through the desk it belongs to.
-        chair.position.x = THREE.MathUtils.clamp(Number(layout.x ?? chairHome.x), chairHome.x - 4.33, chairHome.x + 2.02)
-        chair.position.z = THREE.MathUtils.clamp(Number(layout.z ?? chairHome.z), chairHome.z - .47, chairHome.z + .73)
-        chair.rotation.y = Number.isFinite(layout.rotation) ? Number(layout.rotation) : chairHomeRotation
-      }
-    } catch {
-      // A corrupt local layout should never prevent the office from opening.
-    }
     root.add(chair)
+    // The travel box is the one the chair has always had: a long reach to the
+    // left, where the floor in front of the desk actually is, and very little
+    // fore and aft, because the desk is behind it and the camera is in front.
+    registerDraggable('chair-360-v2', chair, { travel: [-4.33, 2.02, -.47, .73], swivel: .75 })
     if (rustic) {
       addMesh(chair, constantGeometry('BoxGeometry:1.15,.18,1.0', () => new THREE.BoxGeometry(1.15, .18, 1.0)), wood, [0, 1.02, 0], [-.025, 0, 0])
       for (const x of [-.47, .47]) for (const z of [-.38, .38]) addMesh(chair, constantGeometry('BoxGeometry:.13,1.1,.13', () => new THREE.BoxGeometry(.13, 1.1, .13)), darkWood, [x, .51, z], [z > 0 ? -.07 : .04, 0, x < 0 ? -.025 : .025])
@@ -2060,11 +2167,37 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         wall: boolean,
       ) => {
         const prop = new THREE.Group()
-        prop.position.set(...position)
-        prop.rotation.y = rotationY
+        // Nothing standing on a floor is ever quite where it was put, and
+        // nothing hung on a wall is ever crooked — a picture off level reads
+        // as a rendering fault where a sofa off square reads as a sofa. So
+        // the free-standing cosmetics get a seeded few degrees and a few
+        // centimetres, and the wall pieces get exactly the coordinate they
+        // were authored on.
+        const drift = entropy && !wall ? officeSigned(`${layoutSeed}:${asset.key}`, 1) : 0
+        prop.position.set(
+          position[0] + drift * .11,
+          position[1],
+          position[2] + (entropy && !wall ? officeSigned(`${layoutSeed}:${asset.key}`, 2) * .09 : 0),
+        )
+        prop.rotation.y = rotationY + drift * .1
         prop.userData.officeCosmetic = asset.key
         parent.add(prop)
         attachFocus([asset.key], prop, radius, wall ? 0 : .1, wall ? [0, 0, 0] : [Math.PI / 2, 0, 0])
+        // Anything standing on the floor on its own feet can be moved. Wall
+        // pieces and the desk-top lamp cannot; see the note on `draggables`.
+        // The travel box is generous — this is a whole room to rearrange, not
+        // a nudge — and the collision pass below is what actually decides
+        // where a piece is allowed to come to rest.
+        if (!wall && parent === root && position[1] === 0) {
+          prop.userData.officeDraggable = asset.key
+          registerDraggable(asset.key, prop, {
+            travel: [-5.5, 5.5, -3.2, 3.2],
+            // A rug is floor covering, not an obstacle: the point of moving
+            // one is to slide it under something.
+            solid: asset.key !== 'persian_rug',
+            swivel: asset.key === 'persian_rug' ? 0 : .18,
+          })
+        }
         return prop
       }
 
@@ -2547,20 +2680,29 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       const party = occupants.get(authored.station)
       if (!party?.length) return
       const count = Math.min(party.length, authored.capacity)
+      // Nobody set this run down on the coordinate it was measured to. The
+      // displacement is a few centimetres and a couple of degrees, seeded off
+      // the department so it is the same few centimetres every load, and it
+      // goes in *before* the run is fitted to the room below rather than
+      // after — a bay shifted after clamping is a bay shifted back through
+      // the wall it was just pulled out of.
+      const drift = bayEntropy(`${layoutSeed}:${authored.station}`, entropy)
+      const rotation = authored.rotation + drift.yaw
       // Slide the whole run inside the walls rather than clamping the seats
       // that fall outside them. Clamping per seat looks like it does the same
       // job and does not: it piles the outermost two chairs on top of each
       // other and leaves the rest of the run correctly spaced, so the failure
       // shows up as two people sharing a seat at one end of an otherwise tidy
       // department. Measured, that was a 0.48 cubic-metre interpenetration.
-      const reachX = Math.abs(Math.sin(authored.rotation)) < .5
-        ? (count - 1) / 2 * authored.seatPitch + .62
+      const reachX = Math.abs(Math.sin(rotation)) < .5
+        ? (count - 1) / 2 * authored.seatPitch + .62 + OFFICE_ENTROPY.seatSlide
         : 1.1
       const room = Math.max(0, seatLimit - reachX)
       const bay = {
         ...authored,
-        x: THREE.MathUtils.clamp(authored.x * planScale, -room, room),
-        z: authored.z * planScale - planPullback * authored.retreat,
+        rotation,
+        x: THREE.MathUtils.clamp(authored.x * planScale + drift.x, -room, room),
+        z: authored.z * planScale - planPullback * authored.retreat + drift.z,
       }
       const seats: StaffSeat[] = []
       for (let index = 0; index < count; index += 1) {
@@ -2593,6 +2735,24 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       departmentSeats.set(authored.station, seats)
     })
 
+    /**
+     * Every seat as three separate things: the bench it belongs to, the chair
+     * that has wandered off it, and the person in the chair.
+     *
+     * Kept apart rather than as one workstation group because that separation
+     * is exactly what `__officeLayoutAudit` has to be able to measure. The
+     * entropy above is only safe if a displaced chair is still clear of the
+     * next chair along and of everybody else's desk, and this office has a
+     * documented history of bodies inside furniture, so the claim is measured
+     * on the built scene rather than argued from the magnitudes.
+     */
+    const workstations: Array<{
+      key: string
+      station: OfficeStaffStation
+      place: THREE.Group
+      chair: THREE.Group
+      actor: THREE.Group
+    }> = []
     const seatCount = activeStaff.length
     /**
      * Which seats are built at full detail.
@@ -2681,15 +2841,29 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         addMesh(department, roundedBox(runLength + 1.5, .58, .3, 3, .035), darkWood, [0, .3, back])
         const books = Math.min(16, count * 4)
         for (let book = 0; book < books; book += 1) {
+          // Alternating every spine by the same 0.025 rad is a pattern, and a
+          // pattern reads as a texture rather than as a shelf people pull
+          // books off. Seeded lean is the same cost and does not repeat.
+          const lean = entropy
+            ? officeSigned(`${layoutSeed}:${station}:book`, book) * OFFICE_ENTROPY.leanYaw
+            : (book % 2 ? 1 : -1) * .025
           addMesh(department, new THREE.BoxGeometry(.15, .34 + (book % 3) * .035, .17), book % 3 === 0 ? leather : paper,
-            [-runLength / 2 - .58 + book * ((runLength + 1.2) / Math.max(1, books - 1)), .66, back], [0, 0, (book % 2 ? 1 : -1) * .025])
+            [-runLength / 2 - .58 + book * ((runLength + 1.2) / Math.max(1, books - 1)), .66, back], [0, 0, lean])
         }
       } else if (station === 'investigation') {
         addMesh(department, roundedBox(runLength + 1.5, .8, .06, 3, .025), sharedStandard({ color: 0x6b4a34, roughness: .94 }), [0, 1.5, back])
         const notes = Math.min(10, count * 3)
         for (let note = 0; note < notes; note += 1) {
+          // A pinboard is the one surface in an office nobody ever aligns.
+          const pinned = `${layoutSeed}:${station}:note`
+          const drift = entropy ? officeSigned(pinned, note) : 0
           addMesh(department, new THREE.PlaneGeometry(.26 + (note % 2) * .08, .2), paper,
-            [-runLength / 2 - .5 + note * ((runLength + 1) / Math.max(1, notes - 1)), 1.42 + (note % 2) * .24, back + .035], [0, 0, (note % 4 - 1.5) * .08])
+            [
+              -runLength / 2 - .5 + note * ((runLength + 1) / Math.max(1, notes - 1)) + drift * .06,
+              1.42 + (note % 2) * .24 + (entropy ? officeSigned(pinned, note + 40) * .05 : 0),
+              back + .035,
+            ],
+            [0, 0, (note % 4 - 1.5) * .08 + drift * .16])
         }
       } else if (station === 'technology') {
         addMesh(department, roundedBox(runLength + 1.4, .2, .12, 3, .03), charcoal, [0, .44, back])
@@ -2747,35 +2921,76 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
             addMesh(place, constantGeometry('BoxGeometry:.09,.76,.5', () => new THREE.BoxGeometry(.09, .76, .5)), station === 'leadership' ? darkWood : stationMetal, [side * (topWidth * .42), .4, .71])
           }
         }
-        addMesh(place, roundedBox(.7, .12, .32, 3, .04), leather, [0, .45, .14])
-        addMesh(place, roundedBox(.7, .62, .12, 3, .04), leather, [0, .75, -.01], [-.08, 0, 0])
+        // The chair, which is the one part of a workstation that is not
+        // attached to the run.
+        //
+        // It lives in its own group so it can leave the bench behind. The
+        // bench is a shared worktop and neighbouring segments abut into a
+        // continuous surface, so nudging *that* opens seams and overlaps
+        // between one desk and the next; the chair is free-standing and is
+        // exactly the thing people fail to push back in. The occupant is
+        // carried by the same displacement a few lines down, because a chair
+        // that moves out from under the person sitting in it is a worse
+        // artefact than a tidy room.
+        const nudge = seatEntropy(`${layoutSeed}:${asset.key}`, entropy)
+        const chairSeat = new THREE.Group()
+        chairSeat.position.set(nudge.slide, 0, nudge.back)
+        chairSeat.rotation.y = nudge.yaw
+        chairSeat.userData.seatChair = true
+        place.add(chairSeat)
+        addMesh(chairSeat, roundedBox(.7, .12, .32, 3, .04), leather, [0, .45, .14])
+        addMesh(chairSeat, roundedBox(.7, .62, .12, 3, .04), leather, [0, .75, -.01], [-.08, 0, 0])
         addMesh(place, roundedBox(.62, .12, .035, 2, .015), station === 'diplomatic' || station === 'leadership' ? brass : teal, [0, .73, 1.085])
+
+        /**
+         * A displacement for one object on this person's desk.
+         *
+         * Desk clutter gets the loosest entropy in the room because it is the
+         * only thing here with nothing to hit: a folio sits in clear space on
+         * a worktop, so the angle it was put down at is free.
+         */
+        const askew = (stream: number, magnitude: number) =>
+          entropy ? officeSigned(`${layoutSeed}:${asset.key}:desk`, stream) * magnitude : 0
+        const yaw = (stream: number) => askew(stream, OFFICE_ENTROPY.propYaw)
+        const shift = (stream: number) => askew(stream, OFFICE_ENTROPY.propShift)
 
         // What this person's own job puts on the desk in front of them.
         if (station === 'technology') {
           for (const monitor of [-1, 1]) {
-            addMesh(place, roundedBox(.5, .33, .05, 3, .022), charcoal, [monitor * .27, 1.25, .5], [-.07, monitor * -.16, 0])
-            addMesh(place, constantGeometry('PlaneGeometry:.42,.26', () => new THREE.PlaneGeometry(.42, .26)), stationScreen, [monitor * .27, 1.25, .53], [-.07, monitor * -.16, 0])
+            // A twin-monitor rig is never symmetric for long; one screen ends
+            // up turned further in than the other.
+            const x = monitor * .27 + shift(monitor + 2)
+            const turn = monitor * -.16 + yaw(monitor + 4) * .5
+            addMesh(place, roundedBox(.5, .33, .05, 3, .022), charcoal, [x, 1.25, .5], [-.07, turn, 0])
+            addMesh(place, constantGeometry('PlaneGeometry:.42,.26', () => new THREE.PlaneGeometry(.42, .26)), stationScreen, [x, 1.25, .53], [-.07, turn, 0])
           }
         } else if (station === 'casework') {
-          addMesh(place, roundedBox(.54, .34, .05, 3, .022), charcoal, [0, 1.23, .5], [-.08, 0, 0])
-          addMesh(place, constantGeometry('PlaneGeometry:.46,.27', () => new THREE.PlaneGeometry(.46, .27)), stationScreen, [0, 1.23, .532], [-.08, 0, 0])
-          addMesh(place, roundedBox(.66, .04, .27, 3, .016), charcoal, [0, .91, .82], [-.04, 0, 0])
+          const turn = yaw(7) * .45
+          addMesh(place, roundedBox(.54, .34, .05, 3, .022), charcoal, [shift(8), 1.23, .5], [-.08, turn, 0])
+          addMesh(place, constantGeometry('PlaneGeometry:.46,.27', () => new THREE.PlaneGeometry(.46, .27)), stationScreen, [shift(8), 1.23, .532], [-.08, turn, 0])
+          addMesh(place, roundedBox(.66, .04, .27, 3, .016), charcoal, [shift(9), .91, .82], [-.04, yaw(10), 0])
         } else if (station === 'investigation') {
           for (let file = 0; file < 3; file += 1) {
-            addMesh(place, new THREE.BoxGeometry(.12, .4 - file * .04, .23), file % 2 ? paper : leather, [-.3 + file * .15, 1.09, .68], [0, 0, (file - 1) * .03])
+            addMesh(place, new THREE.BoxGeometry(.12, .4 - file * .04, .23), file % 2 ? paper : leather,
+              [-.3 + file * .15 + shift(file + 11), 1.09, .68 + shift(file + 14) * .6],
+              [0, yaw(file + 17) * .6, (file - 1) * .03 + askew(file + 20, OFFICE_ENTROPY.leanYaw)])
           }
-          addMesh(place, constantGeometry('TorusGeometry:.15,.022,8,22', () => new THREE.TorusGeometry(.15, .022, 8, 22)), brass, [.34, .93, .66], [Math.PI / 2, 0, 0])
+          addMesh(place, constantGeometry('TorusGeometry:.15,.022,8,22', () => new THREE.TorusGeometry(.15, .022, 8, 22)), brass, [.34 + shift(23), .93, .66], [Math.PI / 2, 0, 0])
         } else if (station === 'reception') {
-          for (let tray = 0; tray < 3; tray += 1) addMesh(place, roundedBox(.44, .025, .3, 2, .008), tray % 2 ? paper : leather, [.1, .91 + tray * .035, .68])
+          // Three trays that have been squared up on and off for years and
+          // are not square now.
+          for (let tray = 0; tray < 3; tray += 1) {
+            addMesh(place, roundedBox(.44, .025, .3, 2, .008), tray % 2 ? paper : leather,
+              [.1 + shift(tray + 24), .91 + tray * .035, .68 + shift(tray + 27) * .5], [0, yaw(tray + 30), 0])
+          }
         } else if (station === 'leadership') {
-          addMesh(place, roundedBox(.88, .035, .52, 3, .012), leather, [0, .91, .68])
-          addMesh(place, roundedBox(.3, .022, .22, 2, .008), paper, [-.02, .93, .66], [0, .08, 0])
+          addMesh(place, roundedBox(.88, .035, .52, 3, .012), leather, [shift(33), .91, .68], [0, yaw(34) * .35, 0])
+          addMesh(place, roundedBox(.3, .022, .22, 2, .008), paper, [-.02 + shift(35), .93, .66 + shift(36)], [0, .08 + yaw(37), 0])
         } else {
           // Diplomatic: a folio and a water glass, which is what is actually
           // on a treaty table.
-          addMesh(place, roundedBox(.42, .03, .3, 2, .012), leather, [0, .90, .66])
-          addMesh(place, constantGeometry('CylinderGeometry:.055,.05,.16,14', () => new THREE.CylinderGeometry(.055, .05, .16, 14)), glow, [.31, .96, .62])
+          addMesh(place, roundedBox(.42, .03, .3, 2, .012), leather, [shift(38), .90, .66 + shift(39)], [0, yaw(40), 0])
+          addMesh(place, constantGeometry('CylinderGeometry:.055,.05,.16,14', () => new THREE.CylinderGeometry(.055, .05, .16, 14)), glow, [.31 + shift(41), .96, .62 + shift(42)])
         }
 
         const hash = castHash(asset.key)
@@ -2796,9 +3011,20 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         rig.root.scale.setScalar(staffScale)
         rig.root.userData.detail = foreground ? 'full' : 'reduced'
         const actor = new THREE.Group()
-        const home = new THREE.Vector3(seat.x, 0, seat.z)
+        // The occupant rides the chair's displacement, resolved out of the
+        // bay's frame into the room's. A seated pose is authored against the
+        // seat it is sitting on, so the two have to move as one thing or the
+        // entropy above turns into a room of people hovering beside their
+        // chairs.
+        const seatCos = Math.cos(seat.rotation)
+        const seatSin = Math.sin(seat.rotation)
+        const home = new THREE.Vector3(
+          seat.x + nudge.slide * seatCos + nudge.back * seatSin,
+          0,
+          seat.z - nudge.slide * seatSin + nudge.back * seatCos,
+        )
         actor.position.copy(home)
-        actor.rotation.y = seat.rotation
+        actor.rotation.y = seat.rotation + nudge.yaw
         // A character is not furniture. Excluding the actor subtree from the
         // obstacle scan below keeps a body from paving over the floor it is
         // standing on.
@@ -2823,6 +3049,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         // "eventually" is not good enough for the first thing a player sees.
         humanoid.advance(((hash % 97) / 97) * 9 + staffRigs.length * 1.7)
         staffDirector.add(humanoid, STATION_BEHAVIOR[station], hash)
+        workstations.push({ key: asset.key, station, place, chair: chairSeat, actor })
         staffRigs.push({
           key: asset.key,
           rig,
@@ -2832,7 +3059,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
           station,
           task,
           home,
-          homeRotation: seat.rotation,
+          homeRotation: seat.rotation + nudge.yaw,
           behaviorRole: STATION_BEHAVIOR[station],
           randomState: hash || 1,
         })
@@ -3024,6 +3251,144 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({ color: 0xe8d4a5, size: .025, transparent: true, opacity: .22, depthWrite: false }))
     root.add(dust)
 
+    /**
+     * Where the movable furniture is allowed to come to rest.
+     *
+     * Everything a piece could be dropped into, as a plan footprint: the
+     * workstations, the people at them, the partner desk, the consulting
+     * client. Resolved here, once, at the last moment the room is still
+     * mutable — the same line the batcher is built on, and for the same
+     * reason, which is that the graph is complete exactly here.
+     *
+     * Plan footprints rather than volumes, again, because everything involved
+     * stands on the one floor. A body has its arms out over its own desk, so
+     * an actor's box overlaps its own bench; that is why the two are separate
+     * entries rather than one workstation, and why a piece being carried is
+     * tested against both.
+     */
+    const obstacleBox = new THREE.Box3()
+    const obstaclePiece = new THREE.Box3()
+    const solidFootprint = (object: THREE.Object3D) => {
+      const box = new THREE.Box3()
+      object.updateWorldMatrix(true, true)
+      const walk = (node: THREE.Object3D) => {
+        if (node.userData.navIgnore) return
+        if (node instanceof THREE.Mesh) {
+          if (!node.geometry.boundingBox) node.geometry.computeBoundingBox()
+          if (node.geometry.boundingBox) box.union(obstaclePiece.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld))
+        }
+        for (const child of node.children) walk(child)
+      }
+      walk(object)
+      return box
+    }
+    root.updateWorldMatrix(true, true)
+    const obstacles: THREE.Box3[] = []
+    for (const station of workstations) {
+      obstacles.push(solidFootprint(station.place))
+      // The occupant, whose own box is the thing that stops a wardrobe being
+      // dropped on top of somebody who is typing.
+      obstacles.push(solidFootprint(station.actor))
+    }
+    obstacles.push(solidFootprint(desk))
+    if (activeClientActor) obstacles.push(solidFootprint(activeClientActor.rig.root))
+    // Degenerate boxes come back from groups that turned out to hold nothing
+    // the walk would accept, and an empty box tests as containing everything.
+    const solidObstacles = obstacles.filter((box) => !box.isEmpty())
+
+    /** A prop's own bounds, and the rectangle it occupies in plan. */
+    for (const item of draggables) {
+      const world = solidFootprint(item.group)
+      if (world.isEmpty()) continue
+      const size = world.getSize(new THREE.Vector3())
+      item.half.set(size.x / 2, size.z / 2)
+      // Held as an offset from the group's own origin rather than in world
+      // space, so the box travels with the prop: add the group's position
+      // back to get the box where it currently is. Given a little height,
+      // because the rug is two centimetres thick and a ray coming in at this
+      // camera's angle slips straight over a two-centimetre box.
+      item.box.set(
+        world.min.clone().sub(item.group.position),
+        world.max.clone().sub(item.group.position).setY(world.max.y - item.group.position.y + .12),
+      )
+    }
+
+    /** The plan rectangle a piece would occupy standing at `x, z`. */
+    const draggableFootprint = (item: OfficeDraggable, x: number, z: number, into: THREE.Box3) => into.set(
+      new THREE.Vector3(x - item.half.x, 0, z - item.half.y),
+      new THREE.Vector3(x + item.half.x, 1, z + item.half.y),
+    )
+    const overlapsInPlan = (left: THREE.Box3, right: THREE.Box3) =>
+      Math.min(left.max.x, right.max.x) > Math.max(left.min.x, right.min.x)
+      && Math.min(left.max.z, right.max.z) > Math.max(left.min.z, right.min.z)
+    // Whatever each piece is already standing against, so the authored room
+    // does not read as a room full of collisions.
+    for (const item of draggables) {
+      draggableFootprint(item, item.group.position.x, item.group.position.z, obstacleBox)
+      for (const box of solidObstacles) if (overlapsInPlan(obstacleBox, box)) item.ignore.push(box)
+      for (const other of draggables) {
+        if (other === item) continue
+        draggableFootprint(other, other.group.position.x, other.group.position.z, obstaclePiece)
+        if (overlapsInPlan(obstacleBox, obstaclePiece)) item.ignoreItems.add(other.key)
+      }
+    }
+
+    /**
+     * Whether a piece may stand here.
+     *
+     * Three ways to be told no, which are the three ways the request said a
+     * drop could break the scene: off the floor, inside another object, or on
+     * top of somebody who is sitting down. The first is the room's own walls;
+     * the second and third are one footprint test against the obstacle set
+     * and against the other movable pieces, because a seated person is in
+     * that set.
+     */
+    const canStandAt = (item: OfficeDraggable, x: number, z: number) => {
+      if (x < -roomHalf + item.half.x + .2 || x > roomHalf - item.half.x - .2) return false
+      if (z < -3.95 + item.half.y || z > 5.2 - item.half.y) return false
+      if (!item.solid) return true
+      draggableFootprint(item, x, z, obstacleBox)
+      for (const box of solidObstacles) {
+        if (item.ignore.includes(box)) continue
+        if (overlapsInPlan(obstacleBox, box)) return false
+      }
+      for (const other of draggables) {
+        if (other === item || !other.solid || item.ignoreItems.has(other.key)) continue
+        draggableFootprint(other, other.group.position.x, other.group.position.z, obstaclePiece)
+        if (overlapsInPlan(obstacleBox, obstaclePiece)) return false
+      }
+      return true
+    }
+
+    /**
+     * Put back whatever the player last did to this room.
+     *
+     * Restored before the batcher runs rather than after, which is what keeps
+     * a rearranged office as cheap as an untouched one: a piece standing at a
+     * saved position is still a piece that is not moving, so it batches like
+     * any other, and only picking it up again takes it out. A saved position
+     * that no longer works — the room shrank, the firm hired somebody into
+     * the space, the save is from a different tier — is dropped rather than
+     * honoured, because a piece inside a person is worse than a piece back
+     * where it started.
+     */
+    for (const item of draggables) {
+      try {
+        const saved = window.localStorage.getItem(layoutStorageKey(item.key))
+        if (!saved) continue
+        const layout = JSON.parse(saved) as { x?: number; z?: number; rotation?: number }
+        const x = THREE.MathUtils.clamp(Number(layout.x ?? item.home.x), item.home.x + item.travel[0], item.home.x + item.travel[1])
+        const z = THREE.MathUtils.clamp(Number(layout.z ?? item.home.z), item.home.z + item.travel[2], item.home.z + item.travel[3])
+        if (!Number.isFinite(x) || !Number.isFinite(z) || !canStandAt(item, x, z)) continue
+        item.group.position.x = x
+        item.group.position.z = z
+        if (Number.isFinite(layout.rotation)) item.group.rotation.y = Number(layout.rotation)
+      } catch {
+        // A corrupt local layout should never prevent the office from opening.
+      }
+    }
+    root.updateWorldMatrix(true, true)
+
     // The room, drawn from shared batches. Built here because this is the last
     // line at which anything is added to `root`, and a static batch is a
     // photograph of the graph: whatever is not in it yet is not in it at all.
@@ -3052,7 +3417,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), .08)
     const floorHit = new THREE.Vector3()
     const dragOffset = new THREE.Vector3()
-    let draggingChair = false
+    let draggedItem: OfficeDraggable | null = null
     let dragPointerId: number | null = null
     let lookingAround = false
     let lookPointerId: number | null = null
@@ -3077,21 +3442,37 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       })
       pickWorldReady = true
     }
+    /** How much better aimed one candidate has to be before it beats a nearer
+     *  one. Small: two items the pointer is genuinely between should go to the
+     *  nearer, and two items it is not between are usually an order of
+     *  magnitude apart on this measure. */
+    const PICK_TIE = .02
     const itemUnderPointer = (event: PointerEvent) => {
       resolvePickWorld()
       updateDragRay(event)
       let best: PickTarget | null = null
-      let bestDistance = Infinity
+      let bestAim = Infinity
+      let bestDepth = Infinity
       for (const target of pickTargets) {
         const world = target.world
         if (!world) continue
-        if (raycaster.ray.distanceSqToPoint(world) > target.radiusSq) continue
-        // Two forgiving spheres can overlap along the ray, so the nearer object
-        // wins — which is also what stops something behind a wall being reported
-        // in front of the thing actually being pointed at.
-        const distance = raycaster.ray.origin.distanceToSquared(world)
-        if (distance < bestDistance) {
-          bestDistance = distance
+        const miss = raycaster.ray.distanceSqToPoint(world)
+        if (miss > target.radiusSq) continue
+        // Two forgiving spheres overlap constantly in a room this dense, and
+        // depth alone is the wrong way to settle it: a partner desk's sphere is
+        // metres across and sits in front of half the room, so anything behind
+        // it was unhoverable however precisely it was pointed at — that is why
+        // three of the twenty-two installations could never be read. So how
+        // well an item is aimed at comes first, measured as how close the ray
+        // passes relative to that item's own size, and depth only settles a
+        // near-tie. Being dead-centre on a small thing beats grazing the edge
+        // of a large one; grazing both still gives the nearer, which is what
+        // keeps something behind a wall from being reported in front of it.
+        const aim = miss / target.radiusSq
+        const depth = raycaster.ray.origin.distanceToSquared(world)
+        if (best === null || aim < bestAim - PICK_TIE || (aim < bestAim + PICK_TIE && depth < bestDepth)) {
+          bestAim = aim
+          bestDepth = depth
           best = target
         }
       }
@@ -3117,8 +3498,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     const anchorFor = (target: PickTarget) => {
       const point = projectFor(target)
       if (!point) return null
+      // Half the widest the card can be, because it is centred on this anchor
+      // and the room clips its own overflow: an inset smaller than that loses
+      // the card's leading edge, which is where the item's name is. The two
+      // widths are `office-earnings.css`'s caps, 17.5rem and 15rem under the
+      // 620px breakpoint, and on a canvas too narrow for either the card is
+      // simply centred.
+      const inset = Math.min(point.width / 2, point.width < 620 ? 124 : 144)
       return {
-        x: THREE.MathUtils.clamp(point.x, 96, Math.max(96, point.width - 96)),
+        x: THREE.MathUtils.clamp(point.x, inset, Math.max(inset, point.width - inset)),
         y: THREE.MathUtils.clamp(point.y, 12, Math.max(12, point.height)),
       }
     }
@@ -3127,12 +3515,38 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // sweep the canvas hunting for hit spheres, which fights this scene's own
     // hover throttle and takes minutes per run. Compiled out of production
     // builds, exactly like the tier and asset overrides above.
+    /** Where in a patch around an item the hit test actually returns it, if
+     *  anywhere. DEV-only, and the honest form of "can this be hovered". */
+    const reachableAt = (
+      target: PickTarget,
+      point: { x: number; y: number },
+      bounds: DOMRect,
+    ): { x: number; y: number; blockedBy?: string } | null => {
+      const blockers = new Set<string>()
+      for (const radius of [0, 14, 28, 44]) {
+        for (const angle of radius === 0 ? [0] : [0, 45, 90, 135, 180, 225, 270, 315]) {
+          const radians = (angle * Math.PI) / 180
+          const x = THREE.MathUtils.clamp(point.x + Math.cos(radians) * radius, 2, bounds.width - 2)
+          const y = THREE.MathUtils.clamp(point.y + Math.sin(radians) * radius, 2, bounds.height - 2)
+          const hit = itemUnderPointer({ clientX: bounds.left + x, clientY: bounds.top + y } as PointerEvent)
+          if (hit?.economics.key === target.economics.key) {
+            return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) }
+          }
+          blockers.add(hit ? hit.economics.key : 'nothing')
+        }
+      }
+      // What the pointer found instead, which is the difference between an
+      // item that is off screen and one that is behind a neighbour.
+      return { x: -1, y: -1, blockedBy: [...blockers].join('/') }
+    }
     if (import.meta.env.DEV) {
       (canvas as unknown as Record<string, unknown>).__officeEarningsProbe = () => {
         resolvePickWorld()
         const bounds = canvas.getBoundingClientRect()
         return pickTargets.map((target) => {
           const point = projectFor(target)
+          const depth = point ? Number(pickProjection.z.toFixed(3)) : null
+          const spot = point ? reachableAt(target, point, bounds) : null
           return {
             key: target.economics.key,
             name: target.economics.name,
@@ -3141,10 +3555,29 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
             payoutMult: target.economics.payoutMult,
             // Viewport coordinates, so a harness can drive real pointer input
             // straight at the item without knowing where the canvas sits.
+            // `reachX`/`reachY` is where a pointer actually finds it, which is
+            // the point to aim at; the centre is where it is.
             clientX: point ? point.x + bounds.left : -1,
             clientY: point ? point.y + bounds.top : -1,
+            reachX: spot && !spot.blockedBy ? spot.x + bounds.left : -1,
+            reachY: spot && !spot.blockedBy ? spot.y + bounds.top : -1,
+            blockedBy: spot?.blockedBy ?? null,
             onScreen: Boolean(point) && point!.x > 0 && point!.y > 0
               && point!.x < bounds.width && point!.y < bounds.height,
+            // Whether a pointer can actually reach it, which is the claim that
+            // matters and is not the same as its centre being on screen. Two
+            // things break that equivalence and both are real: the hit test is
+            // a sphere, so something whose middle sits past the bottom edge —
+            // a rug — is still reachable across the part of it that is in
+            // frame, and spheres overlap, so an item can lose its own centre
+            // to a nearer neighbour and still be reachable a few pixels away.
+            // So the real pick is run over a small patch around the item
+            // rather than at one point, and the answer is where it landed.
+            reachable: Boolean(spot && !spot.blockedBy),
+            // Where the anchor sits in clip space. A point behind the camera
+            // projects mirrored into frame, so a plausible-looking screen
+            // position can belong to something nobody can see.
+            depth,
           }
         })
       }
@@ -3176,27 +3609,63 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       )
       raycaster.setFromCamera(dragPointer, camera)
     }
-    const chairUnderPointer = (event: PointerEvent) => {
+    const dragBox = new THREE.Box3()
+    const dragHit = new THREE.Vector3()
+    /**
+     * The movable piece under the pointer, if any.
+     *
+     * A ray against each piece's own bounds rather than a raycast against its
+     * meshes, and that is not an optimisation — it is the only test that
+     * works. A piece nobody has moved yet is still inside the room batch, so
+     * its meshes are switched off and `intersectObject` cannot see it at all.
+     * Testing the bounds instead is also what makes one gesture out of eight
+     * different props: a longcase clock and a rug are the same handful of
+     * arithmetic, and neither walks geometry, which is the same trade the
+     * earnings pick above already makes.
+     */
+    const itemToDrag = (event: PointerEvent) => {
       updateDragRay(event)
-      return raycaster.intersectObject(chair, true).length > 0
+      let best: OfficeDraggable | null = null
+      let bestDistance = Infinity
+      for (const item of draggables) {
+        dragBox.copy(item.box).translate(item.group.position)
+        if (!raycaster.ray.intersectBox(dragBox, dragHit)) continue
+        const distance = raycaster.ray.origin.distanceToSquared(dragHit)
+        if (distance < bestDistance) {
+          bestDistance = distance
+          best = item
+        }
+      }
+      return best
     }
     const onFurniturePointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || !chairUnderPointer(event) || !raycaster.ray.intersectPlane(floorPlane, floorHit)) return
+      if (event.button !== 0) return
+      const item = itemToDrag(event)
+      if (!item || !raycaster.ray.intersectPlane(floorPlane, floorHit)) return
       noteLook()
-      draggingChair = true
+      draggedItem = item
       dragPointerId = event.pointerId
-      dragOffset.set(chair.position.x - floorHit.x, 0, chair.position.z - floorHit.z)
-      chair.scale.setScalar((rustic ? .82 : .72) * 1.025)
+      dragOffset.set(item.group.position.x - floorHit.x, 0, item.group.position.z - floorHit.z)
+      item.group.scale.setScalar(item.scale * 1.025)
+      // Taken out of the room batch the first time it is actually picked up,
+      // and not before: see `OfficeRoomBatch.release`. Until this line the
+      // piece has cost exactly what a fixed prop costs.
+      if (!item.released) {
+        item.released = true
+        item.group.userData.batchSkip = true
+        roomBatch?.release(item.group)
+      }
       canvas.classList.add('is-dragging-furniture')
       canvas.setPointerCapture(event.pointerId)
       event.preventDefault()
       event.stopPropagation()
     }
     const onFurniturePointerMove = (event: PointerEvent) => {
-      if (!draggingChair) {
+      const dragged = draggedItem
+      if (!dragged) {
         if (lookingAround || event.timeStamp - lastChairHoverRaycast < 40) return
         lastChairHoverRaycast = event.timeStamp
-        const overChair = chairUnderPointer(event)
+        const overChair = Boolean(itemToDrag(event))
         canvas.style.cursor = overChair ? 'grab' : 'default'
         // Hover is the desktop half of the earnings readout. It is deliberately
         // not run for touch: a phone dispatches a single synthetic move at the
@@ -3224,45 +3693,85 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       }
       updateDragRay(event)
       if (!raycaster.ray.intersectPlane(floorPlane, floorHit)) return
-      const nextX = THREE.MathUtils.clamp(floorHit.x + dragOffset.x, chairHome.x - 4.33, chairHome.x + 2.02)
-      const nextZ = THREE.MathUtils.clamp(floorHit.z + dragOffset.z, chairHome.z - .47, chairHome.z + .73)
-      const lateral = nextX - chair.position.x
-      chair.position.x = nextX
-      chair.position.z = nextZ
-      chair.rotation.y = THREE.MathUtils.lerp(chair.rotation.y, chairHomeRotation - lateral * .75, .18)
+      const wantX = THREE.MathUtils.clamp(floorHit.x + dragOffset.x, dragged.home.x + dragged.travel[0], dragged.home.x + dragged.travel[1])
+      const wantZ = THREE.MathUtils.clamp(floorHit.z + dragOffset.z, dragged.home.z + dragged.travel[2], dragged.home.z + dragged.travel[3])
+      // Each axis on its own, so a piece pushed into the side of a desk
+      // carries on sliding along that desk rather than sticking to it. The
+      // piece never enters an illegal position even for a frame: what is
+      // rejected is the move, not the result of it.
+      const fromZ = dragged.group.position.z
+      const nextX = canStandAt(dragged, wantX, fromZ) ? wantX : dragged.group.position.x
+      const nextZ = canStandAt(dragged, nextX, wantZ) ? wantZ : fromZ
+      const lateral = nextX - dragged.group.position.x
+      dragged.group.position.x = nextX
+      dragged.group.position.z = nextZ
+      if (dragged.swivel) {
+        dragged.group.rotation.y = THREE.MathUtils.lerp(dragged.group.rotation.y, dragged.homeRotation - lateral * dragged.swivel, .18)
+      }
       canvas.style.cursor = 'grabbing'
       event.preventDefault()
       event.stopPropagation()
     }
     const finishFurnitureDrag = (event: PointerEvent) => {
-      if (!draggingChair || (dragPointerId !== null && event.pointerId !== dragPointerId)) return
-      draggingChair = false
+      const dragged = draggedItem
+      if (!dragged || (dragPointerId !== null && event.pointerId !== dragPointerId)) return
+      draggedItem = null
       dragPointerId = null
-      chair.scale.setScalar(rustic ? .82 : .72)
+      dragged.group.scale.setScalar(dragged.scale)
       canvas.classList.remove('is-dragging-furniture')
       canvas.style.cursor = 'grab'
       try {
-        window.localStorage.setItem(chairStorageKey, JSON.stringify({ x: chair.position.x, z: chair.position.z, rotation: chair.rotation.y }))
+        window.localStorage.setItem(layoutStorageKey(dragged.key), JSON.stringify({
+          x: dragged.group.position.x,
+          z: dragged.group.position.z,
+          rotation: dragged.group.rotation.y,
+        }))
       } catch {
         // The interaction still works when browser storage is unavailable.
       }
-      canvas.dispatchEvent(new CustomEvent('office-furniture-moved', { bubbles: true, detail: { item: 'chair', reset: false } }))
+      // Put back into the batch where it now stands. A dropped piece is
+      // furniture again — still, and staying that way — so the submissions it
+      // borrowed for the length of the gesture go back too, and a room the
+      // player has rearranged costs what an untouched one costs. Measured on
+      // the top-tier Practice Floor: three pieces carried across the room take
+      // the frame from 473 draws to 535 while they are in hand, and back to
+      // 473 the moment they are set down.
+      if (dragged.released && roomBatch) {
+        dragged.group.updateWorldMatrix(true, true)
+        roomBatch.reclaim(dragged.group)
+        dragged.released = false
+        dragged.group.userData.batchSkip = false
+      }
+      // The earnings readout anchors on world positions resolved once, and
+      // one of them has just changed.
+      pickWorldReady = false
+      canvas.dispatchEvent(new CustomEvent('office-furniture-moved', { bubbles: true, detail: { item: dragged.key, reset: false } }))
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
       event.preventDefault()
       event.stopPropagation()
     }
     const resetFurniture = (event: MouseEvent) => {
-      const pointerEvent = event as PointerEvent
-      if (!chairUnderPointer(pointerEvent)) return
-      chair.position.copy(chairHome)
-      chair.rotation.y = chairHomeRotation
-      try { window.localStorage.removeItem(chairStorageKey) } catch { /* no-op */ }
-      canvas.dispatchEvent(new CustomEvent('office-furniture-moved', { bubbles: true, detail: { item: 'chair', reset: true } }))
+      const item = itemToDrag(event as PointerEvent)
+      if (!item) return
+      item.group.position.copy(item.home)
+      item.group.rotation.y = item.homeRotation
+      // And back into the batch, the same as a drop. A piece sent home is as
+      // still as one that never moved, so there is nothing left for it to be
+      // out of the batch for.
+      if (item.released && roomBatch) {
+        item.group.updateWorldMatrix(true, true)
+        roomBatch.reclaim(item.group)
+        item.released = false
+        item.group.userData.batchSkip = false
+      }
+      try { window.localStorage.removeItem(layoutStorageKey(item.key)) } catch { /* no-op */ }
+      pickWorldReady = false
+      canvas.dispatchEvent(new CustomEvent('office-furniture-moved', { bubbles: true, detail: { item: item.key, reset: true } }))
       event.preventDefault()
       event.stopPropagation()
     }
     const onLookPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || draggingChair || chairUnderPointer(event)) return
+      if (event.button !== 0 || draggedItem || itemToDrag(event)) return
       noteLook()
       lookingAround = true
       lookPointerId = event.pointerId
@@ -3312,7 +3821,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       // selected in this scene and the halo, the camera framing and the look
       // below all read it from the same place.
       const travelled = Math.hypot(event.clientX - lookStartX, event.clientY - lookStartY)
-      if (travelled > 6 || draggingChair) return
+      if (travelled > 6 || draggedItem) return
       const bounds = canvas.getBoundingClientRect()
       dragPointer.set(
         (event.clientX - bounds.left) / bounds.width * 2 - 1,
@@ -3604,6 +4113,213 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
          * world matrix or visibility no longer matches what was captured.
          */
         roomDrift: () => roomBatch?.drift() ?? null,
+        roomBatchCensus: () => roomBatch?.census ?? null,
+        /**
+         * What the renderer was asked for on the frame just drawn.
+         *
+         * `__officeSceneStats` is written once, on the first frame, which is
+         * the right number for "what does this room cost to open" and the
+         * wrong one for "what does it cost after the player has rearranged
+         * it". Taking a prop out of the room batch to move it is precisely
+         * the change that would not show up in a first-frame snapshot.
+         */
+        frameStats: () => ({
+          calls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          geometries: renderer.info.memory.geometries,
+          /** Meshes currently drawing themselves because a piece is in hand. */
+          released: roomBatch?.releasedCount ?? 0,
+        }),
+        /** Which movable piece the real hit test finds under a viewport point,
+         *  so a harness can tell a pick that missed from a pointer that never
+         *  reached the canvas. Mirrors `__officeEarningsPick`. */
+        dragPick: (clientX: number, clientY: number) => itemToDrag({ clientX, clientY } as PointerEvent)?.key ?? null,
+        /**
+         * Every movable piece, and where to point at it.
+         *
+         * The drag gesture is a real pointer gesture on a canvas, so a
+         * harness that wants to prove a piece can be picked up has to know
+         * where on the screen it is. Reported in viewport coordinates for the
+         * same reason `__officeEarningsProbe` does: so the harness drives the
+         * input pipeline rather than reaching into the scene.
+         */
+        draggables: () => {
+          const bounds = canvas.getBoundingClientRect()
+          const world = new THREE.Vector3()
+          return draggables.map((item) => {
+            item.group.getWorldPosition(world)
+            // Aimed at the body of the piece rather than at the floor under
+            // it: the origin of a longcase clock is between its feet.
+            world.y += (item.box.max.y - Math.max(0, item.box.min.y)) * .45
+            const projected = world.clone().project(camera)
+            return {
+              key: item.key,
+              x: Number(item.group.position.x.toFixed(3)),
+              z: Number(item.group.position.z.toFixed(3)),
+              rotation: Number(item.group.rotation.y.toFixed(3)),
+              half: [Number(item.half.x.toFixed(3)), Number(item.half.y.toFixed(3))],
+              solid: item.solid,
+              released: item.released,
+              clientX: (projected.x * .5 + .5) * bounds.width + bounds.left,
+              clientY: (-projected.y * .5 + .5) * bounds.height + bounds.top,
+              onScreen: Math.abs(projected.x) < 1 && Math.abs(projected.y) < 1 && projected.z < 1,
+            }
+          })
+        },
+        /**
+         * Whether the seeded irregularity put anything inside anything else.
+         *
+         * The office plan is authored on a grid and `office-entropy` takes it
+         * off that grid on purpose. The failure mode that buys is a chair in a
+         * desk or a person in a cabinet, which is worse than the grid was, and
+         * which does not raise an error — it just renders. So this walks the
+         * built room and measures it: real geometry, world matrices, after the
+         * batcher has run, with the halos and the actors' own ignore flags
+         * respected. Run it with `officeEntropy=0` for the same numbers off
+         * the grid the plan was authored on.
+         *
+         * Footprints are compared in plan rather than in three dimensions.
+         * Everything being tested here stands on the same floor, so two things
+         * that share a patch of floor share a volume, and a plan test does not
+         * have to decide whether a forearm resting on a worktop counts.
+         */
+        layoutAudit: () => {
+          /**
+           * One object's footprint as a rectangle that turns with it.
+           *
+           * Not an axis-aligned box. Half the furniture in this room is
+           * canted — reception faces the floor at -0.5 rad and the entropy
+           * turns everything else a couple of degrees — and the axis-aligned
+           * box around a rectangle rotated 28 degrees is a fifth larger than
+           * the rectangle. Measured with boxes, this audit reported seventeen
+           * collisions in a room that has none, including fifteen in the
+           * rigid grid it was supposed to be the control for. An audit that
+           * cries wolf about the layout it is validating is worse than no
+           * audit, so the rectangle keeps its angle and the tests below are
+           * a separating-axis test rather than an interval overlap.
+           */
+          const planRect = (object: THREE.Object3D, skip?: (node: THREE.Object3D) => boolean) => {
+            object.updateWorldMatrix(true, true)
+            const toLocal = new THREE.Matrix4().copy(object.matrixWorld).invert()
+            const box = new THREE.Box3()
+            const piece = new THREE.Box3()
+            const matrix = new THREE.Matrix4()
+            const walk = (node: THREE.Object3D) => {
+              // `navIgnore` is on the focus halos and the actor groups, and a
+              // halo is a metre-wide torus that would swamp every number here.
+              if (node.userData.navIgnore || skip?.(node)) return
+              if (node instanceof THREE.Mesh) {
+                if (!node.geometry.boundingBox) node.geometry.computeBoundingBox()
+                if (node.geometry.boundingBox) {
+                  box.union(piece.copy(node.geometry.boundingBox).applyMatrix4(matrix.multiplyMatrices(toLocal, node.matrixWorld)))
+                }
+              }
+              for (const child of node.children) walk(child)
+            }
+            walk(object)
+            if (box.isEmpty()) return null
+            const scale = new THREE.Vector3()
+            const spin = new THREE.Quaternion()
+            object.matrixWorld.decompose(new THREE.Vector3(), spin, scale)
+            const centre = box.getCenter(new THREE.Vector3()).applyMatrix4(object.matrixWorld)
+            const size = box.getSize(new THREE.Vector3())
+            return {
+              x: centre.x,
+              z: centre.z,
+              hx: Math.abs(size.x * scale.x) / 2,
+              hz: Math.abs(size.z * scale.z) / 2,
+              angle: new THREE.Euler().setFromQuaternion(spin, 'YXZ').y,
+            }
+          }
+          type Rect = NonNullable<ReturnType<typeof planRect>>
+          /**
+           * How far two turned rectangles interpenetrate, in metres.
+           *
+           * Separating axis: two convex rectangles miss each other exactly
+           * when one of their four edge normals separates them, and the
+           * smallest overlap across those four axes is the depth. Zero or
+           * less is clear.
+           */
+          const overlap = (left: Rect, right: Rect) => {
+            const axes = [
+              [Math.cos(left.angle), -Math.sin(left.angle)],
+              [Math.sin(left.angle), Math.cos(left.angle)],
+              [Math.cos(right.angle), -Math.sin(right.angle)],
+              [Math.sin(right.angle), Math.cos(right.angle)],
+            ]
+            const spread = (rect: Rect, axis: number[]) =>
+              rect.hx * Math.abs(Math.cos(rect.angle) * axis[0] - Math.sin(rect.angle) * axis[1])
+              + rect.hz * Math.abs(Math.sin(rect.angle) * axis[0] + Math.cos(rect.angle) * axis[1])
+            let deepest = Infinity
+            for (const axis of axes) {
+              const gap = Math.abs((right.x - left.x) * axis[0] + (right.z - left.z) * axis[1])
+              deepest = Math.min(deepest, spread(left, axis) + spread(right, axis) - gap)
+            }
+            return deepest
+          }
+          const seats = workstations.map((station) => ({
+            key: station.key,
+            chair: planRect(station.chair),
+            // The bench and the desk clutter, with the chair taken back out:
+            // a tucked chair is *supposed* to sit under its own worktop.
+            bench: planRect(station.place, (node) => node.userData.seatChair === true),
+            body: planRect(station.actor),
+            x: Number(station.actor.position.x.toFixed(3)),
+            z: Number(station.actor.position.z.toFixed(3)),
+          }))
+          const faults: string[] = []
+          const check = (label: string, left: Rect | null, right: Rect | null) => {
+            if (!left || !right) return -Infinity
+            const depth = overlap(left, right)
+            if (depth > 0) faults.push(`${label} ${depth.toFixed(3)}`)
+            return depth
+          }
+          let closestChairs = Infinity
+          let closestBodies = Infinity
+          for (let left = 0; left < seats.length; left += 1) {
+            for (let right = left + 1; right < seats.length; right += 1) {
+              const a = seats[left]
+              const b = seats[right]
+              if (a.chair && b.chair) closestChairs = Math.min(closestChairs, -overlap(a.chair, b.chair))
+              closestBodies = Math.min(closestBodies, Math.hypot(a.x - b.x, a.z - b.z))
+              check(`chair/chair ${a.key}~${b.key}`, a.chair, b.chair)
+              check(`chair/bench ${a.key}~${b.key}`, a.chair, b.bench)
+              check(`chair/bench ${b.key}~${a.key}`, b.chair, a.bench)
+              check(`body/body ${a.key}~${b.key}`, a.body, b.body)
+              check(`body/bench ${a.key}~${b.key}`, a.body, b.bench)
+              check(`body/bench ${b.key}~${a.key}`, b.body, a.bench)
+            }
+          }
+          // A body against its *own* bench is the pose working rather than a
+          // fault: the hands are on the worktop. What is checked instead is
+          // that the chair has not been shoved into the desk it belongs to.
+          for (const seat of seats) check(`chair/own-bench ${seat.key}`, seat.chair, seat.bench)
+          const drags = draggables.map((item) => ({ key: item.key, rect: planRect(item.group), solid: item.solid }))
+          for (const item of drags) {
+            // The rug is floor covering: things stand on it, and it is not a
+            // fault for one to.
+            if (!item.solid) continue
+            for (const seat of seats) {
+              check(`${item.key}/body ${seat.key}`, item.rect, seat.body)
+              check(`${item.key}/chair ${seat.key}`, item.rect, seat.chair)
+              check(`${item.key}/bench ${seat.key}`, item.rect, seat.bench)
+            }
+            for (const other of drags) {
+              if (other === item || !other.solid || other.key < item.key) continue
+              check(`${item.key}/${other.key}`, item.rect, other.rect)
+            }
+          }
+          return {
+            entropy,
+            seats: seats.length,
+            draggables: drags.map((item) => item.key),
+            // Smallest gap between two chairs, and between two people, in
+            // metres. Negative would mean they interpenetrate.
+            chairGap: Number.isFinite(closestChairs) ? Number(closestChairs.toFixed(3)) : null,
+            bodyGap: Number.isFinite(closestBodies) ? Number(closestBodies.toFixed(3)) : null,
+            faults,
+          }
+        },
         // Where every body in the room is. This used to carry the crowd
         // state as well - pass radius, errand phase, measured speed, anchor
         // held, seconds stalled - all of which described a simulation that no
