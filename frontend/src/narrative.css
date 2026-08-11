@@ -5,18 +5,34 @@
    < epilogue (400) < guided tour (10000).
    ================================================================ */
 
+/* ---------------------------------------------------------------------------
+   A note on this sheet, because it is half legacy and half not.
+
+   The paper here is deliberate and stays: the chapter prompt is a card left on
+   the desk and the epilogue is a printed record, so both keep the heavier ink
+   and the real cast offset that `docs/visual-language.md` reserves for
+   diegetic paper. What was not deliberate is that every control on them was a
+   private re-implementation of `.primary-button` and `.secondary-button` in
+   the pixel hand — 3px black outlines, square corners, inner bevels — so the
+   story layer had seven buttons that agreed with each other and with nothing
+   else in the app. Those are now the same brass and slate plates the shared
+   controls are, at the sizes each surface already asked for.
+   --------------------------------------------------------------------------- */
+
 /* An escape hatch matters now that a chapter can open on any screen. */
 .cutscene-defer {
   margin-top: 18px;
-  padding: 9px 12px;
-  border: 2px solid #2b3a48;
+  padding: 9px 13px;
+  border: 1px solid rgba(148, 178, 196, .3);
+  border-radius: var(--r-control);
   color: #8ea6ad;
   background: transparent;
-  font-family: var(--font-pixel);
-  font-size: 9.5px;
+  font-family: var(--font-hud);
+  font-size: 10px;
   letter-spacing: .1em;
+  transition: color var(--mo-2) var(--mo-out), border-color var(--mo-2) var(--mo-out);
 }
-.cutscene-defer:hover { color: #f2d383; border-color: #6d5a30; }
+.cutscene-defer:hover { color: #f2d383; border-color: var(--hairline-strong); }
 
 /* ------------------------------------------------------ chapter prompt */
 
@@ -52,10 +68,12 @@
   z-index: 130;
   right: 24px;
   bottom: var(--chapter-prompt-bottom);
-  border: 3px solid #171d28;
+  /* Diegetic paper, so it keeps its weight and its cast offset. The ink is
+     the app's ink rather than the cold `#171d28` the pixel hand drew in. */
+  border: 3px solid var(--ink);
   color: #2a2418;
   background: linear-gradient(148deg, #f7ebc9, #eadcb4);
-  box-shadow: inset 0 0 0 2px #c9ad6e, 7px 8px 0 #14202b, 0 26px 60px rgba(6, 11, 18, .38);
+  box-shadow: inset 0 0 0 2px #c9ad6e, 7px 8px 0 rgba(27, 26, 36, .82), 0 26px 60px rgba(6, 11, 18, .38);
   animation: chapter-prompt-in .38s cubic-bezier(.2, 1.2, .4, 1) both;
 }
 /* A scene keeps its own controls in this corner and stands the economy strip
@@ -88,6 +106,9 @@ html:has([role="dialog"][aria-modal="true"]) .chapter-prompt {
   visibility: hidden;
   pointer-events: none;
 }
+/* A wax-and-brass seal pressed onto the corner of the card. It keeps its
+   weight — a seal is meant to be the heaviest thing on a document — but the
+   hard 3px offset it stood on is a drop now. */
 .chapter-prompt-seal {
   width: 38px;
   height: 38px;
@@ -96,11 +117,11 @@ html:has([role="dialog"][aria-modal="true"]) .chapter-prompt {
   position: absolute;
   left: -14px;
   top: -14px;
-  border: 3px solid #171d28;
+  border: 1px solid var(--ink-line-strong);
   border-radius: 50%;
-  color: #241c0e;
-  background: #e8bd51;
-  box-shadow: 3px 3px 0 #14202b;
+  color: #2a1e06;
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-2);
 }
 /* A glyph is not a target: at 23px square this used to be the smallest control
    in the app, and on the widths where the dock covered the other two buttons it
@@ -124,9 +145,10 @@ html:has([role="dialog"][aria-modal="true"]) .chapter-prompt {
   display: block;
   padding-right: 30px;
   color: #8a6c2b;
-  font-family: var(--font-pixel);
-  font-size: 9px;
-  letter-spacing: .1em;
+  font-family: var(--font-hud);
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: .14em;
 }
 .chapter-prompt h2 {
   margin: 9px 0 7px;
@@ -149,24 +171,28 @@ html:has([role="dialog"][aria-modal="true"]) .chapter-prompt {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 3px solid #161a1d;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-control);
   color: #f5dc92;
-  background: #294957;
-  box-shadow: inset -3px -3px #172c34;
-  font-family: var(--font-pixel);
-  font-size: 9.5px;
+  background: linear-gradient(170deg, #24404f, #172c3a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), var(--el-1);
+  font-family: var(--font-hud);
+  font-size: 10px;
+  transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
 }
-.chapter-prompt-open:hover { background: #33606f; }
+.chapter-prompt-open:hover { transform: translateY(-1px); background: linear-gradient(170deg, #2d4f61, #1d3849); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), var(--el-2); }
 .chapter-prompt-later {
   min-height: 39px;
-  padding: 0 13px;
-  border: 3px solid #a99873;
+  padding: 0 14px;
+  border: 1px solid rgba(27, 26, 36, .26);
+  border-radius: var(--r-control);
   color: #7a705c;
   background: transparent;
-  font-family: var(--font-pixel);
-  font-size: 9.5px;
+  font-family: var(--font-hud);
+  font-size: 10px;
+  transition: color var(--mo-2) var(--mo-out), border-color var(--mo-2) var(--mo-out);
 }
-.chapter-prompt-later:hover { color: #3d4a52; border-color: #6f7b7f; }
+.chapter-prompt-later:hover { color: #3d4a52; border-color: rgba(27, 26, 36, .5); }
 
 /* 39px is a cursor's size, not a finger's, and this card floats over a page:
    missing "Not now" means tapping whatever it is covering instead. Scoped on
@@ -270,14 +296,16 @@ html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > 
   width: 100%;
   min-height: 33px;
   margin-top: 11px;
-  border: 3px solid #161a1d;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-control);
   color: #f5dc92;
-  background: #294957;
-  box-shadow: inset -3px -3px #172c34;
-  font-family: var(--font-pixel);
-  font-size: 9px;
+  background: linear-gradient(170deg, #24404f, #172c3a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), var(--el-1);
+  font-family: var(--font-hud);
+  font-size: 9.5px;
+  transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
 }
-.chapter-play-button:hover { background: #33606f; }
+.chapter-play-button:hover { transform: translateY(-1px); background: linear-gradient(170deg, #2d4f61, #1d3849); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), var(--el-2); }
 
 .quest-sequence {
   display: flex !important;
@@ -291,18 +319,20 @@ html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > 
 .story-epilogue-link, .office-epilogue-button {
   min-height: 40px;
   margin-top: 18px;
-  padding: 0 16px;
+  padding: 0 17px;
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  border: 3px solid #161a1d;
-  color: #16222c;
-  background: #e8bd51;
-  box-shadow: inset -3px -3px #a1762f, 4px 4px 0 #0c1119;
-  font-family: var(--font-pixel);
-  font-size: 9.5px;
+  border: 1px solid var(--ink-line-strong);
+  border-radius: var(--r-control);
+  color: #2a1e06;
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1);
+  font-family: var(--font-hud);
+  font-size: 10px;
+  transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
 }
-.story-epilogue-link:hover, .office-epilogue-button:hover { background: #f4cf6c; }
+.story-epilogue-link:hover, .office-epilogue-button:hover { transform: translateY(-1px); background: linear-gradient(170deg, #f8e3ae, #d3a856); box-shadow: inset 0 1px 0 rgba(255, 250, 235, .72), var(--el-2); }
 .office-epilogue-button { margin-top: 12px; }
 
 /* ------------------------------------------------------ the ending */
@@ -339,10 +369,13 @@ html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > 
   margin: 0 auto;
   padding: 54px clamp(24px, 5vw, 62px) 46px;
   position: relative;
-  border: 4px solid #12171f;
+  /* The closing record: the one printed object in the app allowed to be this
+     heavy. Ink retuned to `--ink`; the 10px cast offset stays, because a
+     document this size genuinely sits above the desk. */
+  border: 4px solid var(--ink);
   color: #2b2a20;
   background: linear-gradient(168deg, #f8efd8, #ece0c0 78%);
-  box-shadow: inset 0 0 0 3px #cbb27e, 10px 12px 0 #0c1119, 0 40px 90px rgba(0, 0, 0, .55);
+  box-shadow: inset 0 0 0 3px #cbb27e, 10px 12px 0 rgba(27, 26, 36, .85), 0 40px 90px rgba(0, 0, 0, .55);
 }
 .epilogue-sheet::after {
   content: "";
@@ -429,11 +462,14 @@ html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > 
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
+/* An instrument panel laid on the record: one hairline and a top-edge
+   highlight, not the pixel hand's 3px outline doubled by a 2px inset. */
 .epilogue-ledger > div {
   padding: 17px 16px 14px;
-  border: 3px solid #1b2027;
-  background: #16283a;
-  box-shadow: inset 0 0 0 2px #38536a;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-control);
+  background: linear-gradient(170deg, #1b3145, #122334);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), var(--el-2);
 }
 .epilogue-ledger h2 {
   margin: 0 0 12px;
@@ -465,9 +501,13 @@ html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > 
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 12px;
 }
+/* Kept as a stacked sheet: the paper-coloured hard offset is the sheet behind
+   this one, which is diegetic and worth keeping. What changes is the ink —
+   `#21231d` was a cold olive-black, and the record's ink is `--ink`. */
 .epilogue-standing > div {
   padding: 16px;
-  border: 3px solid #21231d;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
   background: #e6d9b6;
   box-shadow: 4px 5px 0 #b09a6b;
 }
@@ -521,26 +561,30 @@ html:has(.chapter-prompt) .app-shell:not(.wide-scene-shell):not(.active-case) > 
 }
 .epilogue-primary, .epilogue-secondary {
   min-height: 44px;
-  padding: 0 20px;
+  padding: 0 21px;
   display: flex;
   align-items: center;
   gap: 9px;
-  border: 3px solid #161a1d;
-  font-family: var(--font-pixel);
-  font-size: 10px;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-control);
+  font-family: var(--font-hud);
+  font-size: 10.5px;
+  transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
 }
 .epilogue-primary {
-  color: #16222c;
-  background: #e8bd51;
-  box-shadow: inset -3px -3px #a1762f, 4px 4px 0 #0c1119;
+  color: #2a1e06;
+  border-color: var(--ink-line-strong);
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1);
 }
-.epilogue-primary:hover { background: #f4cf6c; }
+.epilogue-primary:hover { transform: translateY(-1px); background: linear-gradient(170deg, #f8e3ae, #d3a856); box-shadow: inset 0 1px 0 rgba(255, 250, 235, .72), var(--el-2); }
 .epilogue-secondary {
   color: #f5dc92;
-  background: #294957;
-  box-shadow: inset -3px -3px #172c34, 4px 4px 0 #0c1119;
+  border-color: var(--hairline);
+  background: linear-gradient(170deg, #24404f, #172c3a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), var(--el-1);
 }
-.epilogue-secondary:hover { background: #33606f; }
+.epilogue-secondary:hover { transform: translateY(-1px); background: linear-gradient(170deg, #2d4f61, #1d3849); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), var(--el-2); }
 
 @keyframes epilogue-in {
   from { opacity: 0; }
