@@ -187,7 +187,15 @@ async function attribute(settings) {
          */
         const scale = new THREE.Vector3().setFromMatrixScale(world)
         const wide = half.x * Math.abs(scale.x) > 2 || half.z * Math.abs(scale.z) > 2
-        if (wide) triangles(child.geometry, world, isFacade ? 'facade' : 'instanced', name)
+        /*
+         * A box's own bounding box is the box. Anything tapered — a hip roof, a
+         * tree crown, a horizon hill — fills a fraction of one, and the corners
+         * of that fraction are open air a walker is entitled to stand in. The
+         * Old Quarter's terraces read as 62 and 83 frames of walker-inside-roof
+         * on the strength of it.
+         */
+        const tapered = child.geometry.type !== 'BoxGeometry'
+        if (wide || tapered) triangles(child.geometry, world, isFacade ? 'facade' : 'instanced', name)
         else push(world, isFacade ? 'facade' : 'instanced')
       }
       return
