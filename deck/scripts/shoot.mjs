@@ -931,10 +931,12 @@ try {
         result.expected?.unauthorized ? `${result.expected.unauthorized} pre-sign-in 401` : '',
         result.expected?.aborted ? `${result.expected.aborted} cancelled nav` : '',
       ].filter(Boolean).join(', ')
+      const unlisted = result.notes.filter((note) => !result.problems.includes(note))
       console.log(`  ${mark.padEnd(6)} ${pad(slide.index)}-${slide.id}${pass.suffix}  ${result.ms}ms`
         + (result.stats ? `  sd ${result.stats.stdDev} colours ${result.stats.colours}` : '  (undecodable)')
         + (cold ? `  [${cold}]` : '')
-        + (result.notes.length ? `\n        ${result.notes.join('\n        ')}` : '')
+        // A note that is also a problem is printed once, as the problem.
+        + (unlisted.length ? `\n        ${unlisted.join('\n        ')}` : '')
         + (result.problems.length ? `\n        ${result.problems.join('\n        ')}` : ''))
     }
 
