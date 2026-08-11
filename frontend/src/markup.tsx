@@ -203,7 +203,7 @@ export function MarkupToolbar({ markup, seed }: { markup: CaseMarkup; seed: stri
             type="button"
             key={key}
             className={`markup-color ${color === key ? 'active' : ''}`}
-            style={{ '--ink': INK_HEX[key] } as React.CSSProperties}
+            style={{ '--markup-ink': INK_HEX[key] } as React.CSSProperties}
             aria-pressed={color === key}
             aria-label={INK_LABEL[key]}
             title={INK_LABEL[key]}

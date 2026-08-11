@@ -1,6 +1,12 @@
-/* The capture beat: a brief, skippable, comedic overlay, in the same pixel
-   vocabulary as the war room it fires from (hard ink borders, offset drop
-   shadows, the pixel face for labels) rather than a second visual language. */
+/* The capture beat: a brief, skippable, comedic overlay, in the same
+   vocabulary as the war room it fires from rather than a second visual
+   language. That used to mean hard ink borders and offset drop shadows,
+   because the war room was drawn in the pixel hand; the war room is now ink
+   outlines and lit plates, and so is this.
+   Two things here are deliberately not softened. The SOLD placard is a rubber
+   stamp and keeps its heavy outline and its cast edge, and the POW burst keeps
+   its two-frame pop — a comic sound effect that eases is not a comic sound
+   effect. */
 
 .rcc-backdrop {
   position: fixed;
@@ -27,10 +33,12 @@
   padding: 0 0 20px;
   position: relative;
   display: grid;
-  border: var(--pixel-border);
+  overflow: hidden;
+  border: 1px solid var(--ink-line-strong);
+  border-radius: var(--r-card);
   color: #d8dbd2;
   background: linear-gradient(170deg, var(--pixel-blue), var(--pixel-night) 68%);
-  box-shadow: inset 0 0 0 2px #2c4358, 7px 8px 0 var(--pixel-shadow), 0 30px 70px rgba(4, 8, 14, .5);
+  box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .22), var(--el-3);
   animation: rcc-frame-in .38s cubic-bezier(.2, 1.25, .4, 1) both;
 }
 
@@ -59,7 +67,7 @@
   height: 220px;
   position: relative;
   overflow: hidden;
-  border-bottom: 3px solid #0a121b;
+  border-bottom: 1px solid var(--ink-line-strong);
   background: #0d151d;
 }
 .rcc-stage-art, .rcc-art-fallback, .rcc-stage .av-card-render { position: absolute; inset: 0; }
@@ -83,11 +91,12 @@
   z-index: 3;
   padding: 7px 16px;
   transform: translateX(-50%) rotate(-7deg);
-  border: 3px solid var(--pixel-ink);
+  border: 3px solid var(--ink);
+  border-radius: 3px;
   color: #2a1210;
   background: var(--pixel-red);
-  box-shadow: 3px 4px 0 var(--pixel-shadow);
-  font: 800 20px var(--font-pixel);
+  box-shadow: 3px 4px 0 rgba(27, 26, 36, .3);
+  font: 800 20px var(--font-hud);
   letter-spacing: .1em;
   animation: rcc-sold-drop .5s .35s cubic-bezier(.28, .9, .3, 1.35) both;
 }
@@ -155,17 +164,19 @@
   min-height: 38px;
   padding: 0 16px;
   align-self: start;
-  border: 3px solid var(--pixel-ink);
-  color: #17222d;
-  background: var(--pixel-gold);
-  box-shadow: inset -3px -3px var(--pixel-gold-dark), 4px 4px var(--pixel-shadow);
-  font: 800 9.5px var(--font-pixel);
+  border: 1px solid var(--ink-line-strong);
+  border-radius: var(--r-control);
+  color: #2a1e06;
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1);
+  font: 800 9.5px var(--font-hud);
   letter-spacing: .06em;
   text-transform: uppercase;
   cursor: pointer;
+  transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
 }
-.rcc-continue:hover { background: #f8d97e; }
-.rcc-continue:active { transform: translate(2px, 2px); box-shadow: inset -3px -3px var(--pixel-gold-dark), 2px 2px var(--pixel-shadow); }
+.rcc-continue:hover { transform: translateY(-1px); background: linear-gradient(170deg, #f8e3ae, #d3a856); box-shadow: inset 0 1px 0 rgba(255, 250, 235, .72), var(--el-2); }
+.rcc-continue:active { transform: translateY(1px); box-shadow: inset 0 2px 5px rgba(74, 48, 8, .35); }
 
 @keyframes rcc-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rcc-frame-in { from { opacity: 0; transform: translateY(22px) scale(.96); } to { opacity: 1; transform: none; } }
