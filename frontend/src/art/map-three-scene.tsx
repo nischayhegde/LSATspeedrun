@@ -1103,15 +1103,216 @@ function recordStreetNetwork(root: THREE.Group, streets: PlannedStreet[]) {
     if (!weight) return
     const offset = width / 2 + KERB_TO_PAVEMENT
     const id = nextStreetId(root)
+    const reserved = parcelReserve(root)
     for (const side of [-1, 1]) {
-      walks.push({
-        points: [at(street.from, side * offset), at(street.to, side * offset)],
-        halfWidth: STREET_PAVEMENT_HALF,
-        weight,
-        street: id,
+      const lateral = street.position + side * offset
+      // Every run this street would lay, minus the parts of it standing on a
+      // parcel the plan has already promised to a landmark. See `parcelReserve`.
+      const pieces = spanOutsideReserved(street.from, street.to, lateral, horizontal, reserved, STREET_PAVEMENT_HALF)
+      pieces.forEach(([from, to], piece) => {
+        walks.push({
+          points: [at(from, side * offset), at(to, side * offset)],
+          halfWidth: STREET_PAVEMENT_HALF,
+          weight,
+          // Only the two sides of an *uninterrupted* street share an id. Where
+          // a parcel has been cut out of this run, the piece before it and the
+          // piece after it are given ids of their own: two pavement ends facing
+          // each other across open ground with a shared id are what the crowd
+          // reads as the two kerbs of a street, and it would cheerfully pair
+          // them into a crossing straight through the building standing in the
+          // gap. Which is the whole thing this reservation exists to prevent.
+          street: piece === 0 ? id : nextStreetId(root),
+        })
       })
     }
   })
+}
+
+/**
+ * Where the authored landmarks are going to want to stand, worked out before
+ * the district is built rather than asked for after it.
+ *
+ * The tier offices and the rival compounds are the two things on this map that
+ * are not procedural: a firm's headquarters belongs at its level's place on the
+ * career route, and a rival's premises at the coordinate the catalog gives it.
+ * Both were being computed *after* the environment builders had laid every
+ * street, both pavements of every street, and the corridor — and then handed to
+ * `siteOnPlan` to find a gap. Measured, there was no gap: all nine Old Quarter
+ * parcels were stuck, with the grid's north-south pavements running straight
+ * through them.
+ *
+ * The positions depend on nothing but the route curve and two tables, so there
+ * was never a reason to compute them late. Computing them first turns "find
+ * somewhere this will fit" into "do not pave here", which is the difference
+ * between validating a siting and making an invalid one impossible.
+ *
+ * The radii are the parcels' own footprints, not a comfort margin: a tier
+ * plinth is 1.275 deep and up to 1.6 wide half-extent, a compound 1.075 by
+ * 1.375, and the reservation has to be the circle that contains the rectangle
+ * the router will later see.
+ */
+const RIVAL_SITES: Record<MapRegionKey, XZ[]> = {
+  city: [[-14, -7], [-7, -7.6], [7, -7.6], [14, -7]],
+  nation: [[-11.5, -8], [11.5, -8]],
+  ocean: [[-12, -6.6], [0, 8.6], [12, -6.6]],
+  continent: [[-13, -7], [13, -7]],
+  orbit: [[-12, -6], [0, 8.7], [12, -6]],
+}
+/** Which side of the route each level's headquarters was authored to sit on. */
+const TIER_SIDES: Record<MapRegionKey, number[]> = {
+  city: [-1, -1, 1, 1, 1],
+  nation: [-1, 1],
+  ocean: [1, -1, 1],
+  continent: [-1, 1],
+  orbit: [-1, 1, 1],
+}
+/** The distance from the route each region's table asks for. A floor, now. */
+const TIER_SETBACK: Record<MapRegionKey, number> = { city: 2.8, nation: 3.05, ocean: 3.25, continent: 3.05, orbit: 3.65 }
+/**
+ * Where a corridor puts its shopfronts, for the regions that have one.
+ *
+ * A headquarters on the high street is a building on that street and belongs
+ * behind the same line as the shops either side of it. The Old Quarter's table
+ * asked for 2.80, and the corridor it fronts paves out to 1.89 and builds at
+ * 1.95 — so the plinth's near face was authored at 1.525, a third of a metre
+ * inside its own pavement, and no search radius finds ground that was never
+ * left. One number, read by the corridor that draws the paving and by the
+ * siting that has to clear it, so the two cannot drift apart.
+ */
+const CORRIDOR_BUILDING_LINE: Partial<Record<MapRegionKey, number>> = { city: 1.95 }
+/** Half the depth of a tier plinth, as `createLevelBuilding` marks it solid. */
+const TIER_PLINTH_HALF_DEPTH = 1.275
+
+/**
+ * The streets a parcel set back from this region's route would have to cross,
+ * as positions on the axis the route runs along.
+ *
+ * Only the districts laid out on a declared lattice can answer this. The
+ * Circuit and Sovereign Arc grow their towns procedurally around the route and
+ * have no such list, so they get an empty one and keep the position they have
+ * always had.
+ */
+function crossStreetLines(region: MapRegionKey): number[] {
+  return region === 'city' ? OLD_QUARTER_AVENUES.map((line) => line.position) : []
+}
+
+/**
+ * Where one level's headquarters is authored to stand, and facing which way.
+ *
+ * The distance along the route is a *preference*, not a coordinate. It used to
+ * be `.12 + i / (n - 1) * .76` outright — five headquarters spread evenly along
+ * the curve, a number with no relationship to where the streets are — and on
+ * the Old Quarter three of the five landed on an avenue. Nothing downstream can
+ * recover from that: the parcel is 3.2 m wide, the gap between an avenue's two
+ * pavements is 1.5, and clearing it needs a slide of 2.8 against a search
+ * budget of 1.2.
+ *
+ * So the even spread stays the thing it always was — an aesthetic wish about
+ * pacing along the route — and the plan gets to say which nearby stretch of it
+ * is actually a frontage. The search is over the *authored* position, before
+ * anything is built, and it is bounded to about one block either way, so a
+ * headquarters still arrives where the pacing wanted it and simply stands
+ * between two streets rather than across one. This is deliberately not a wider
+ * siting search: that would move a finished building off the street it belongs
+ * to, which is the failure `authored.mjs` exists to catch.
+ */
+function tierParcelSite(region: MapRegionKey, route: THREE.Curve<THREE.Vector3>, index: number, count: number) {
+  const wanted = count <= 1 ? .5 : .12 + index / (count - 1) * .76
+  const lines = crossStreetLines(region)
+  let t = wanted
+  if (lines.length) {
+    let best = Number.NEGATIVE_INFINITY
+    for (let step = -12; step <= 12; step += 1) {
+      const candidate = Math.min(.94, Math.max(.06, wanted + step * .005))
+      const at = route.getPointAt(candidate)
+      const clear = Math.min(...lines.map((line) => Math.abs(at.x - line)))
+      // Clearance first, and the authored spacing as the tie-break, so a parcel
+      // that is already mid-block does not wander looking for a wider one.
+      const score = clear - Math.abs(step) * .012
+      if (score > best) { best = score; t = candidate }
+    }
+  }
+  const roadPoint = route.getPointAt(t)
+  const tangent = route.getTangentAt(t).normalize()
+  const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
+  side.multiplyScalar(TIER_SIDES[region][index] ?? 1)
+  const line = CORRIDOR_BUILDING_LINE[region]
+  const behindTheLine = line === undefined ? 0 : line + TIER_PLINTH_HALF_DEPTH + WALKER_HALF_BEAM
+  const asked = roadPoint.clone().add(side.clone().multiplyScalar(Math.max(TIER_SETBACK[region], behindTheLine)))
+  return { asked, roadPoint, side, tangent }
+}
+
+function authoredParcelReserve(region: MapRegionKey, route: THREE.Curve<THREE.Vector3>, points: MapScenePoint[]): ReservedSite[] {
+  const reserve: ReservedSite[] = []
+  const tiers = points.filter((point): point is MapSceneTier => point.kind === 'tier')
+  tiers.forEach((point, index) => {
+    const { asked } = tierParcelSite(region, route, index, tiers.length)
+    const plinthHalf = (2.25 + Math.min(1.7, point.data.tier * .105) + .65) / 2
+    reserve.push({ x: asked.x, z: asked.z, radius: Math.hypot(plinthHalf, TIER_PLINTH_HALF_DEPTH) })
+  })
+  const rivals = points.filter((point) => point.kind === 'rival')
+  const sites = RIVAL_SITES[region]
+  rivals.forEach((_point, index) => {
+    const [x, z] = sites[index % sites.length]
+    reserve.push({ x, z, radius: Math.hypot((2.25 + (index % 2) * .45 + .5) / 2, 1.075) })
+  })
+  return reserve
+}
+
+/**
+ * The parcels the plan has promised to an authored landmark, in world units.
+ *
+ * Filled before any environment builder runs, which is the whole point of it:
+ * a headquarters or a rival compound is a fact about the district that the
+ * street grid needs to know *while it is being laid*, not a request made of it
+ * afterwards. See `authoredParcelReserve`.
+ */
+function parcelReserve(root: THREE.Group) {
+  return (root.userData.parcelReserve ?? []) as ReservedSite[]
+}
+
+/**
+ * The parts of an axis-aligned run that are not standing on a reserved parcel.
+ *
+ * Returns whole runs untouched when nothing is reserved, which is the common
+ * case and the one that has to stay free. A piece shorter than `MIN_RUN` is
+ * dropped rather than recorded: a 30 cm stub of pavement between a parcel and
+ * a junction is somewhere a walker can be sent and then cannot leave, and the
+ * network is measured on whether anyone strands.
+ */
+const MIN_RUN = .8
+function spanOutsideReserved(
+  from: number,
+  to: number,
+  lateral: number,
+  horizontal: boolean,
+  reserved: ReservedSite[],
+  halfWidth: number,
+): Array<[number, number]> {
+  if (!reserved.length) return [[from, to]]
+  // Each reserved circle, projected onto this run as the interval where the
+  // run's own paved width would touch it.
+  const cuts: Array<[number, number]> = []
+  for (const site of reserved) {
+    const across = horizontal ? lateral - site.z : lateral - site.x
+    const reach = site.radius + halfWidth
+    const half = Math.sqrt(Math.max(0, reach * reach - across * across))
+    if (half <= 0) continue
+    const centre = horizontal ? site.x : site.z
+    cuts.push([centre - half, centre + half])
+  }
+  if (!cuts.length) return [[from, to]]
+  cuts.sort((a, b) => a[0] - b[0])
+  const pieces: Array<[number, number]> = []
+  let head = from
+  for (const [start, end] of cuts) {
+    if (end <= head) continue
+    if (start - head >= MIN_RUN) pieces.push([head, Math.min(start, to)])
+    head = Math.max(head, end)
+    if (head >= to) break
+  }
+  if (to - head >= MIN_RUN) pieces.push([head, to])
+  return pieces.filter(([a, b]) => b - a >= MIN_RUN)
 }
 
 /**
@@ -2723,7 +2924,8 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
    *   4.46 – 5.80  arterial apron
    */
   const KERB_OFFSET = .9
-  const SETBACK = 1.95
+  // Shared with the landmark siting, which has to stand behind the same line.
+  const SETBACK = CORRIDOR_BUILDING_LINE.city!
   const UNIT_DEPTH = 1.45
   const REAR_LINE = SETBACK + UNIT_DEPTH
   const ALLEY_OFFSET = 4.03
@@ -7931,6 +8133,18 @@ export function MapThreeScene({
       world.add(railBed, railA, railB)
     }
 
+    /*
+     * Before a single street is laid, not after every one of them has been.
+     *
+     * This is the ordering the whole authored-parcel problem came down to. The
+     * district used to be built in full and the landmarks then asked to find a
+     * gap in it, and there was none: nine of the Old Quarter's nine parcels
+     * came back stuck, with grid pavements running through every one. The
+     * positions never depended on the district, so the district can be told
+     * about them instead.
+     */
+    world.userData.parcelReserve = authoredParcelReserve(region, routeCurve, points)
+
     if (region === 'city') { addCityEnvironment(world, definition); addCityCorridor(world, routeCurve, definition) }
     else if (region === 'nation') { addNationEnvironment(world, definition, routeCurve); addNationCorridor(world, routeCurve, definition) }
     else if (region === 'ocean') addOceanEnvironment(world)
@@ -7980,20 +8194,10 @@ export function MapThreeScene({
     const rivals = points.filter((point): point is MapSceneRival => point.kind === 'rival')
     const events = points.filter((point): point is MapSceneEvent => point.kind === 'event')
     tiers.forEach((point, index) => {
-      const t = tiers.length <= 1 ? .5 : .12 + index / (tiers.length - 1) * .76
-      const roadPoint = routeCurve.getPointAt(t)
-      const tangent = routeCurve.getTangentAt(t).normalize()
-      const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize()
-      const authoredSides: Record<MapRegionKey, number[]> = {
-        city: [-1, -1, 1, 1, 1],
-        nation: [-1, 1],
-        ocean: [1, -1, 1],
-        continent: [-1, 1],
-        orbit: [-1, 1, 1],
-      }
-      side.multiplyScalar(authoredSides[region][index] ?? 1)
-      const setback: Record<MapRegionKey, number> = { city: 2.8, nation: 3.05, ocean: 3.25, continent: 3.05, orbit: 3.65 }
-      const asked = roadPoint.clone().add(side.clone().multiplyScalar(setback[region]))
+      // The same call the reservation above was built from, so the parcel the
+      // streets were kept off is the parcel this asks for. See
+      // `authoredParcelReserve`.
+      const { asked, roadPoint, side, tangent } = tierParcelSite(region, routeCurve, index, tiers.length)
       /*
        * The setback the table asks for is a request, not an instruction: it is
        * the distance at which a headquarters *would* front this stretch of
@@ -8160,14 +8364,7 @@ export function MapThreeScene({
     }
     const clearanceField = prepareClearance(corridors)
 
-    const rivalSitesByRegion: Record<MapRegionKey, XZ[]> = {
-      city: [[-14, -7], [-7, -7.6], [7, -7.6], [14, -7]],
-      nation: [[-11.5, -8], [11.5, -8]],
-      ocean: [[-12, -6.6], [0, 8.6], [12, -6.6]],
-      continent: [[-13, -7], [13, -7]],
-      orbit: [[-12, -6], [0, 8.7], [12, -6]],
-    }
-    const rivalSites = rivalSitesByRegion[region]
+    const rivalSites = RIVAL_SITES[region]
     /**
      * Ground under a marker on the Treaty Sea.
      *
