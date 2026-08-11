@@ -1001,6 +1001,33 @@ def _rebalance_asset_catalog() -> None:
                 if "/hour" not in part.lower() and "per hour" not in part.lower()
             ]
             item["benefit"] = " · ".join([*parts, f"${_format_game_money(item['passive_hourly'])}/hour passive"])
+        if item.get("contract_bonus_mult"):
+            # A contract bonus is a flat multiple of the fee paid *once per
+            # contract*, so what it is worth per question is `bonus / length`.
+            # Shortening contracts with `_rescale_contract_lengths` therefore
+            # multiplies this asset's value by the same ratio it divides the
+            # length by -- and these assets are priced in cases below, at prices
+            # that did not move, so their value may not move either.
+            #
+            # This is not a rounding-order detail. It is the entire drift
+            # between the old ladder and the new one: with lengths rescaled and
+            # this left alone the campaign came out 2.2% shorter (2,041 played
+            # cases against 2,086), and it is the only thing in this change that
+            # moved money at all. Scaled with the sitting, it is 2,085.
+            #
+            # Eight assets carry it, one to three each, and at a six-question
+            # sitting they read 0.6 to 1.8. The decimal is the honest number: the
+            # bonus is smaller because contracts now close nearly twice as often.
+            item["contract_bonus_mult"] = round(
+                float(item["contract_bonus_mult"]) * SITTING_QUESTIONS / LEGACY_SITTING_QUESTIONS, 2
+            )
+            parts = [
+                part.strip()
+                for part in item["benefit"].split("·")
+                if "contract" not in part.lower()
+            ]
+            bonus = f"{item['contract_bonus_mult']:g}"
+            item["benefit"] = " · ".join([*parts, f"+{bonus}× contract bonus"])
 
         secondary_effects = sum(
             bool(item.get(key))

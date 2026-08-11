@@ -801,6 +801,22 @@ def _passage_blocks(pool: list[QuestionFact]) -> list[list[QuestionFact]]:
 PASSAGE_OVERSHOOT_ALLOWANCE = 2
 
 
+def passage_overshoot_allowance(count: int) -> int:
+    """How far past ``count`` a run of that size may go to finish a passage.
+
+    PASSAGE_OVERSHOOT_ALLOWANCE, but never more than a third of the run. The
+    flat allowance is sized for the run the app actually serves and is nonsense
+    applied to a small one: a caller asking for two questions and being handed
+    four has not had its run stretched, it has had a different run built. Runs
+    that small are only ever requested explicitly — by the queue-cap path and by
+    tests — and they must come back the length they asked for.
+
+    A third is exactly PASSAGE_OVERSHOOT_ALLOWANCE at the shipped six-question
+    run, so this bounds the small cases without changing the shipped one.
+    """
+    return max(0, min(PASSAGE_OVERSHOOT_ALLOWANCE, count // 3))
+
+
 def _fill_blocks(
     blocks: list[list[QuestionFact]],
     budget: int,
@@ -857,7 +873,7 @@ def _weight_toward_focus(
     blocks = _passage_blocks(pool)
     random.shuffle(blocks)
     wanted = set(focus_types or ())
-    ceiling = count + PASSAGE_OVERSHOOT_ALLOWANCE
+    ceiling = count + passage_overshoot_allowance(count)
     selected: list[list[QuestionFact]] = []
     if wanted:
         preferred = [block for block in blocks if any(question.question_type in wanted for question in block)]

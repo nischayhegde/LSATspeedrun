@@ -149,13 +149,21 @@ def run_session(
     correct: int = 2,
     confidence: int = 3,
 ) -> str:
-    """Play one practice run to completion, getting `correct` questions right."""
+    """Play one practice run to completion, getting `correct` questions right.
+
+    Loops over the run's actual `total_items` rather than over the size it asked
+    for. A run may come back a question or two longer than requested when the
+    selector had to serve a Reading Comprehension passage whole — see
+    `services.passage_overshoot_allowance` — and answering only `size` of them
+    leaves the run unfinished, which silently skips every on-completion effect
+    the caller is usually here to test.
+    """
     from app.models import Attempt
     from app.services import run_attempt_coaching
 
     session = client.post("/v1/study-sessions", json={"size": size}, headers=headers).json["session"]
     session_id = session["id"]
-    for position in range(size):
+    for position in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
         item = current.get("current_item")
         if not item:
@@ -178,6 +186,16 @@ def run_session(
     return session_id
 
 
+def served_items(client, headers, session_id: str) -> int:
+    """How long the run actually came out.
+
+    A run may exceed the size it asked for by up to
+    `services.passage_overshoot_allowance`, so a test that counts attempts has
+    to ask rather than assume.
+    """
+    return client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]["total_items"]
+
+
 # ---------------------------------------------------------------------------
 # 1. Attempt history
 # ---------------------------------------------------------------------------
@@ -196,9 +214,13 @@ def test_past_sessions_are_listable_with_their_counts(app):
     assert body["total"] == 2
     assert [row["id"] for row in body["sessions"]] == [second, first]
     newest = body["sessions"][0]
-    assert newest["answered"] == 4
+    # Every item in the run was answered, one of them correctly. The run's
+    # length is read back rather than assumed to be the 4 it asked for: a run
+    # that had to serve a passage whole comes back a question or two longer.
+    served = client.get(f"/v1/study-sessions/{second}", headers=headers).json["session"]["total_items"]
+    assert newest["answered"] == served
     assert newest["correct"] == 1
-    assert newest["accuracy"] == 25
+    assert newest["accuracy"] == round(100 / served)
     assert newest["reviewable"] is True
     assert body["has_more"] is False
 
@@ -226,22 +248,23 @@ def test_previously_answered_questions_are_browsable_and_filterable(app):
     headers = login(client, "history-attempts@example.test")
     create_game(client, headers)
     session_id = run_session(app, client, headers, "browse", size=4, correct=2)
+    served = served_items(client, headers, session_id)
 
     everything = client.get("/v1/history/attempts", headers=headers).json
-    assert everything["total"] == 4
-    assert len(everything["attempts"]) == 4
+    assert everything["total"] == served
+    assert len(everything["attempts"]) == served
     row = everything["attempts"][0]
     assert {"attempt_id", "question_type", "is_correct", "selected_label", "correct_label"} <= set(row)
     assert row["target_time_seconds"] > 0
     assert row["pace_ratio"] is not None
 
     misses = client.get("/v1/history/attempts?correct=false", headers=headers).json
-    assert misses["total"] == 2
+    assert misses["total"] == served - 2
     assert all(not attempt["is_correct"] for attempt in misses["attempts"])
     assert misses["filters"]["correct"] is False
 
     scoped = client.get(f"/v1/history/attempts?session_id={session_id}", headers=headers).json
-    assert scoped["total"] == 4
+    assert scoped["total"] == served
 
     by_type = client.get("/v1/history/attempts?question_type=Assumption", headers=headers).json
     assert all(attempt["question_type"] == "Assumption" for attempt in by_type["attempts"])
@@ -255,12 +278,12 @@ def test_attempt_history_pagination_and_detail_payload(app):
     client = app.test_client()
     headers = login(client, "history-detail@example.test")
     create_game(client, headers)
-    run_session(app, client, headers, "detail", size=4, correct=2)
+    session_id = run_session(app, client, headers, "detail", size=4, correct=2)
 
     page = client.get("/v1/history/attempts?limit=2", headers=headers).json
     assert len(page["attempts"]) == 2
     assert page["has_more"] is True
-    assert page["total"] == 4
+    assert page["total"] == served_items(client, headers, session_id)
 
     detailed = client.get("/v1/history/attempts?limit=2&detail=1", headers=headers).json
     first = detailed["attempts"][0]
@@ -300,14 +323,15 @@ def test_history_facets_describe_only_what_the_account_has_seen(app):
     client = app.test_client()
     headers = login(client, "history-facets@example.test")
     create_game(client, headers)
-    run_session(app, client, headers, "facets", size=4, correct=3)
+    session_id = run_session(app, client, headers, "facets", size=4, correct=3)
+    served = served_items(client, headers, session_id)
 
     facets = client.get("/v1/history/facets", headers=headers).json
-    assert facets["attempts"] == 4
+    assert facets["attempts"] == served
     assert facets["correct"] == 3
-    assert facets["incorrect"] == 1
+    assert facets["incorrect"] == served - 3
     assert facets["question_types"]
-    assert sum(row["attempts"] for row in facets["question_types"]) == 4
+    assert sum(row["attempts"] for row in facets["question_types"]) == served
     assert facets["first_attempt_at"] and facets["last_attempt_at"]
 
 
@@ -905,7 +929,7 @@ def test_practice_never_serves_a_lone_reading_comprehension_question(app):
     """
     import random as random_module
 
-    from app.services import PASSAGE_OVERSHOOT_ALLOWANCE, select_random_questions
+    from app.services import passage_overshoot_allowance, select_random_questions
 
     with app.app_context():
         passage_sizes: dict[str, int] = defaultdict(int)
@@ -916,12 +940,10 @@ def test_practice_never_serves_a_lone_reading_comprehension_question(app):
         seen_a_passage = False
         for seed in range(20):
             random_module.seed(seed)
-            for requested in (4, 6, 10):
+            for requested in (1, 2, 4, 6, 10):
                 selected = select_random_questions(requested)
-                assert requested <= len(selected) <= requested + PASSAGE_OVERSHOOT_ALLOWANCE, (
-                    seed,
-                    requested,
-                )
+                ceiling = requested + passage_overshoot_allowance(requested)
+                assert requested <= len(selected) <= ceiling, (seed, requested)
                 grouped: dict[str, int] = defaultdict(int)
                 for question in selected:
                     if question.passage_id:

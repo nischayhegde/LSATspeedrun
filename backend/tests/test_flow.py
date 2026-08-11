@@ -1125,7 +1125,10 @@ def test_daily_docket_drives_cases_into_priority_deep_brief(app, monkeypatch):
     assert docket["next_action"]["kind"] == "start_cases"
 
     session = client.post("/v1/study-sessions", json={"size": 5}, headers=headers).json["session"]
-    for index in range(5):
+    # `total_items`, not the 5 requested: a run that had to serve a Reading
+    # Comprehension passage whole comes back a question longer, and leaving the
+    # last one unanswered would leave the docket mid-run rather than complete.
+    for index in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
         answer = "A" if index == 0 else "C"
         response = client.post(
@@ -2990,8 +2993,11 @@ def test_every_case_carries_a_strategy_trial(app):
 
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        # Every position, not just the old position % 4 == 2 cadence.
-        assert [item.position for item in items if item.strategy_key] == [0, 1, 2, 3, 4, 5, 6]
+        # Every position, not just the old position % 4 == 2 cadence. Counted
+        # off the run rather than written out, because a run that served a
+        # Reading Comprehension passage whole is a question or two longer than
+        # the seven it asked for.
+        assert [item.position for item in items if item.strategy_key] == list(range(len(items)))
         assert all(item.strategy_variant in {"prompt", "control_visible"} for item in items)
 
 
@@ -3008,7 +3014,7 @@ def test_every_item_in_a_long_run_arrives_with_a_card(app):
     exercised and so that the fixture's smaller default runs are not what this
     is measured on.
     """
-    from app.services import PASSAGE_OVERSHOOT_ALLOWANCE, serialize_item
+    from app.services import passage_overshoot_allowance, serialize_item
 
     client = app.test_client()
     headers = login(client, "long-run-cards@example.test")
@@ -3017,7 +3023,7 @@ def test_every_item_in_a_long_run_arrives_with_a_card(app):
 
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        assert 10 <= len(items) <= 10 + PASSAGE_OVERSHOOT_ALLOWANCE
+        assert 10 <= len(items) <= 10 + passage_overshoot_allowance(10)
 
         cards = []
         for item in items:
@@ -4148,6 +4154,8 @@ def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
 
 
 def test_an_empty_review_queue_still_produces_a_full_run(app):
+    from app.services import passage_overshoot_allowance
+
     client = app.test_client()
     headers = login(client, "no-repairs@example.test")
     create_game(client, headers)
@@ -4155,7 +4163,7 @@ def test_an_empty_review_queue_still_produces_a_full_run(app):
     assert response.status_code == 201
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=response.json["session"]["id"]).all()
-        assert len(items) == 4
+        assert 4 <= len(items) <= 4 + passage_overshoot_allowance(4)
         assert not any(item.from_review_queue for item in items)
 
 
@@ -5490,7 +5498,7 @@ def test_a_focused_case_run_draws_most_of_its_questions_from_those_types(app):
 
         from app.services import (
             FOCUS_FILL_RATIO,
-            PASSAGE_OVERSHOOT_ALLOWANCE,
+            passage_overshoot_allowance,
             select_random_questions,
         )
 
@@ -5499,7 +5507,7 @@ def test_a_focused_case_run_draws_most_of_its_questions_from_those_types(app):
             picked = select_random_questions(size, focus_types=["Flaw"])
             # A run reaches its size and may pass it only far enough to finish a
             # Reading Comprehension passage, focus quota or no focus quota.
-            assert size <= len(picked) <= size + PASSAGE_OVERSHOOT_ALLOWANCE
+            assert size <= len(picked) <= size + passage_overshoot_allowance(size)
             focused = sum(question.question_type == "Flaw" for question in picked)
             assert focused >= round(size * FOCUS_FILL_RATIO)
             assert focused < len(picked)
