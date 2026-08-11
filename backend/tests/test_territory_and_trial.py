@@ -354,7 +354,7 @@ def test_a_streak_buys_reputation_standing_but_only_at_the_rate_days_allow():
     and since the working-day streak now needs a finished case, it cannot be
     idled either.
     """
-    from backend.app.game import STREAK_STANDING_CAP, STREAK_STANDING_LADDER, streak_standing
+    from app.game import STREAK_STANDING_CAP, STREAK_STANDING_LADDER, streak_standing
 
     class Fake:
         def __init__(self, wins, days):

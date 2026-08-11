@@ -92,7 +92,16 @@ export function StoryPage() {
             hold no control to tab to until one unlocks, so without this a
             keyboard can reach the track's contents only by scrolling past
             them. `role="group"` with a name keeps the focus stop announced as
-            something rather than as a bare div. */}
+            something rather than as a bare div.
+
+            The two checks disagree here and only one of them is describing a
+            user. `jsx-a11y/no-noninteractive-tabindex` objects to a focus stop
+            on a non-widget; axe's `scrollable-region-focusable` requires
+            exactly this on a scroll container whose contents hold no control,
+            and it is the one with a keyboard user behind it. Disabled on this
+            line rather than configured away, so the next non-interactive
+            `tabIndex` in this codebase still has to argue for itself. */}
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
         <div className="chapter-track" tabIndex={0} role="group" aria-label="Campaign chapters">
           {story.chapters.map((chapter, index) => (
             <article key={chapter.key} className={`${chapter.seen ? 'seen' : ''} ${story.pending_chapter?.key === chapter.key ? 'pending' : ''}`}>

@@ -30,7 +30,6 @@ from .models import (
     Question,
     ReviewQueueItem,
     SessionItem,
-    SessionSection,
     SkillProgress,
     StudySession,
     User,

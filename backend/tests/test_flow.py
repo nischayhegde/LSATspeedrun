@@ -583,7 +583,7 @@ def test_the_working_day_streak_counts_finished_cases_not_page_loads(app):
     which runs on every protected route, so simply loading a page kept it alive;
     this pins the fact that it no longer does.
     """
-    from backend.app.game import _touch_daily_streak
+    from app.game import _touch_daily_streak
 
     client = app.test_client()
     headers = login(client, "daily-streak@example.test")

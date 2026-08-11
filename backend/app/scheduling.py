@@ -368,29 +368,6 @@ def due_for_review(user_id: str, count: int, *, now: datetime | None = None) -> 
     return [by_id[card.question_id] for card in weakest if card.question_id in by_id]
 
 
-def queue_pressure(user_id: str, *, now: datetime | None = None) -> dict:
-    """How much of the queue has actually decayed below target retention.
-
-    This is the honest replacement for a "due today" count: a number the
-    student can read as "this much is slipping", not as a chore list with a
-    date attached.
-    """
-    now = now or utcnow()
-    cards = ReviewQueueItem.query.filter_by(user_id=user_id).all()
-    below = 0
-    weakest = 1.0
-    for card in cards:
-        value = card_retrievability(card, now)
-        below += value < DESIRED_RETENTION
-        weakest = min(weakest, value)
-    return {
-        "tracked": len(cards),
-        "below_target": below,
-        "weakest_retrievability": round(weakest, 3) if cards else None,
-        "desired_retention": DESIRED_RETENTION,
-    }
-
-
 # --- Interleaving -----------------------------------------------------------
 # Rohrer, Dedrick & Stershic, "Interleaved practice improves mathematics
 # learning", Journal of Educational Psychology 107(3), 900-908 (2015): 126

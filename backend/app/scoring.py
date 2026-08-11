@@ -105,7 +105,7 @@ from typing import NamedTuple
 from sqlalchemy import select
 
 from .extensions import db
-from .models import Attempt, Question, ScoreProjection, SessionItem, StudySession, User, utcnow
+from .models import Attempt, Question, ScoreProjection, SessionItem, User, utcnow
 
 
 # Bumped when the tables or the weighting change, so a stored snapshot always
@@ -721,10 +721,3 @@ def projection_snapshot(user: User, *, record: bool = False, attempts: list[Atte
         payload["target_gap"] = target - projection["scaled_score"]
         payload["target_within_band"] = projection["lower_bound"] <= target <= projection["upper_bound"]
     return payload
-
-
-def has_sat_a_form(user: User) -> bool:
-    """Whether any uncoached whole-form evidence exists behind the estimate."""
-    return bool(
-        StudySession.query.filter_by(user_id=user.id, mode="diagnostic", status="completed").first()
-    )
