@@ -24,9 +24,10 @@ from app.enforcement import (
     STATUS_STOOD_DOWN,
 )
 from app.extensions import db
-from app.models import Attempt, Question, SessionItem
+from app.models import Attempt, Question, SessionItem, StudySession, User
 from app.seed import SOURCE_PREFIX
 from app.strategies import SESSION_FORCED_CAP, STRATEGIES, VARIANT_PROMPT_REQUIRED, _candidate_keys
+from scripts.repair_strategy_rows import clear, mismatched_items
 from scripts.seed_demo import FORCED_POOL, _repair_question, _stage_forced_arms
 
 LR_STIMULUS = (
@@ -223,3 +224,59 @@ def test_a_run_too_short_to_hold_a_pool_forces_nothing():
     stats = counters()
     _stage_forced_arms(built, "short", {}, stats)
     assert stats == counters()
+
+
+# ---------------------------------------------------------------------------
+# Rows the old seeder already wrote
+# ---------------------------------------------------------------------------
+
+
+def test_a_row_already_written_wrong_is_found_and_cleared(app):
+    """Reseeding fixes the demo account. This is for every other database.
+
+    Cleared rather than corrected: putting a fitting approach on the row after
+    the fact would invent an observation the student was never shown, and the
+    Methods panel reads these rows as an experiment.
+    """
+    with app.app_context():
+        user = User(email="stale@localhost.test", display_name="Stale")
+        db.session.add(user)
+        question = Question.query.filter_by(section="Logical Reasoning").first()
+        session = StudySession(
+            user_id=user.id, mode="practice", practice_style="cases", target_minutes=20, total_items=1
+        )
+        db.session.add(session)
+        db.session.flush()
+        item = SessionItem(
+            session_id=session.id,
+            question_id=question.id,
+            position=0,
+            # A Reading Comprehension approach on a Logical Reasoning question:
+            # the card would ask for a passage that is not there.
+            strategy_key="comparative_matrix",
+            strategy_variant="prompt",
+        )
+        db.session.add(item)
+        db.session.flush()
+        db.session.add(
+            Attempt(
+                user_id=user.id,
+                session_item_id=item.id,
+                idempotency_key="stale-1",
+                selected_label="C",
+                is_correct=True,
+                server_elapsed_ms=90_000,
+                client_elapsed_ms=90_000,
+                strategy_key="comparative_matrix",
+                strategy_variant="prompt",
+                strategy_applied=True,
+            )
+        )
+        db.session.commit()
+
+        found = mismatched_items()
+        assert [entry[0].id for entry in found] == [item.id]
+        assert clear(found) == 1
+        assert mismatched_items() == []
+        assert db.session.get(SessionItem, item.id).strategy_key is None
+        assert Attempt.query.one().strategy_key is None
