@@ -1609,48 +1609,62 @@ export const SLIDES: readonly SlideSpec[] = [
     section: 'close',
     kind: 'statement',
     eyebrow: 'Act VI — the close',
-    headline: 'One place. Two doors.',
-    // `And`, not `Or`. The two doors are not alternatives: the firm only grows
-    // on questions answered, so the second clause is a consequence of the first
-    // and never a substitute for it. `Or` offered the room a choice between them
-    // and in doing so conceded that the game is severable — the exact framing
-    // `concept-lawyer-tycoon` was rewritten to stop making. The second half is
-    // also shorter now, because the mechanism it used to spell out is what the
-    // room has just watched the office do for four slides.
+    // "Two doors" named a visual that is no longer on screen — the close used
+    // to be a wall with two openings cut into it, and the founders replaced
+    // that with one figure in a bare room. A headline pointing at scenery the
+    // audience cannot see is worse than no headline. The count stays because
+    // the argument is the count; only the noun moves off the scenery.
+    //
+    // "Ways in" rather than "doors" also stops the headline fighting the deck
+    // line below it. Doors are things you pick between, and the line under it
+    // says you do both.
+    headline: 'One place. Two ways in.',
+    // `And`, not `Or`. The two ways in are not alternatives: the firm only
+    // grows on questions answered, so the second clause is a consequence of the
+    // first and never a substitute for it. `Or` offered the room a choice
+    // between them and in doing so conceded that the game is severable — the
+    // exact framing `concept-lawyer-tycoon` was rewritten to stop making. The
+    // second half is also shorter now, because the mechanism it used to spell
+    // out is what the room has just watched the office do for four slides.
     deck: 'Walk in and answer questions. And build the firm they pay for.',
+    // The Q&A prompt. This slide is held on screen for the entire question
+    // period, so the last line of the deck is an invitation rather than a
+    // sign-off. With the ledger gone it is the only thing under the rule, which
+    // is the right amount of weight for it: it is what the founders stop
+    // talking on, not a fourth claim.
+    pull: 'Questions?',
     // THE THREE-CLAUSE LEDGER IS GONE. It was the slide's third register of text
     // — under an eyebrow, a headline and a two-line deck — on the one frame that
     // is held for the whole question period, and it was the only one of the four
     // that argued rather than concluded: cheaper, narrower and harder to quit
     // re-litigate the pricing and coverage the deck already made its own acts
-    // about. The founders asked for less on this slide.
+    // about. The founders asked for less on this slide, and then asked for a
+    // much cleaner ending on top of that, so it does not come back with the new
+    // room.
     //
     // Nothing is lost from the talk. All three are still spoken in `notes`, and
     // all three are still claims a questioner can check — the cost structure,
     // the removed override from `concept-lawyer-tycoon`, and `game-never-gates`
     // restated. They are answers to hold, not a list to project behind them.
     //
-    // The stylesheet got there first and clipped `.ledger` on this slide to a
-    // screen-reader box, because the copy lived here and this file was held.
-    // This is the deletion that rule is waiting on; the rule and the close's
-    // other `.ledger` styling can go when whoever owns `deck.css` next passes.
+    // The `.ledger` rules this slide used to need are gone from `deck.css` with
+    // it, so nothing is left clipping a list that no longer exists.
     notes:
       'Three reasons we win. Cheaper — no video studio, no instructors. '
       + "Narrower — you can't drill only what you're good at. "
       + 'Harder to quit — the game runs on questions. One place instead of five. Thank you.',
     speaker: 'Nischay',
     budgetSeconds: 13,
-    // The built firm, not a diagram of it. This is the same room
-    // `concept-lawyer-tycoon` ships at tier 6, run to the top of the tree, so
-    // the close lands on the thing the student's answers actually produced
-    // rather than on an illustration of two choices. The counsel who stood
-    // between the doorways is not lost: `app-scene-layer` puts her in the
-    // foreground of this office, keyed on this slide id.
+    // A bare royal-blue room, the counsel stage right, lit from the right and
+    // throwing a real shadow across the floor. She folds her arms on arrival
+    // and holds that pose for the entire Q&A.
     //
-    // NOT `office-transform`, which is the tier-0-beside-tier-14 comparison
-    // with a drifting divider and its own two labels — a loop that never
-    // settles, behind copy that is held on screen for the entire Q&A.
-    scene: { id: 'office', params: { tier: 14, full: true, floor: 'practice' } },
+    // NOT the built office, which this replaced. Sixteen people at work is a
+    // *place*, and a place is not a thing an audience looks at for twenty
+    // minutes; the founders' word for it was "generic". Nor
+    // `office-transform`, which is a loop that never settles behind copy that
+    // is held for the entire Q&A.
+    scene: { id: 'close-room', framing: 'wide' },
     transition: 'foil-seal',
   },
 ]

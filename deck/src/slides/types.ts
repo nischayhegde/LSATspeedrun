@@ -52,8 +52,8 @@ export type SlideKind =
 export type SceneId =
   | 'hero'
   | 'cast'
-  /** The close: two open doorways with the app's own counsel between them. */
-  | 'doorways'
+  /** The close: a bare royal-blue room with the app's own counsel in it. */
+  | 'close-room'
   | 'office'
   | 'office-transform'
   | 'map'
