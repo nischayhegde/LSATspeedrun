@@ -377,11 +377,37 @@ _TASK_INFERENCE = re.compile(
     r"\bmust (?:also )?be true\b|\bmust be false\b|\bcannot be true\b"
     r"|\bproperly (?:be )?(?:inferred|drawn|concluded)\b|\bfollows? logically\b"
     r"|\bcan be (?:properly )?inferred\b|\bcan(?:not)? be inferred\b|\binferred from\b"
-    r"|\bmost strongly supported\b|\bbest supported\b"
-    r"|\bsupported by the (?:statements|information|passage|claims|evidence)\b"
-    r"|\bproper inference\b|\blogically completes\b"
+    r"|\blogically (?:concluded|inferred)\b"
+    r"|\bproper inference\b|\b(?:logically|best) completes\b"
 )
-_TASK_PRINCIPLE = re.compile(r"\bprinciple\b|\bproposition\b|\bgeneralization\b")
+# "Support" points both ways, and which way it points is the difference between
+# two questions that want opposite things. `_support_direction` below decides
+# it, and these are the three pieces it reads.
+#
+# The passive is unambiguous: whatever is "supported by" the stimulus is being
+# asked for, so the question is an inference question.
+_SUPPORT_PASSIVE = re.compile(r"\bsupported\b")
+# The active is not. "The statements above most strongly support which one of
+# the following" and "which one of the following most strongly supports the
+# representative's position" are the same words in the same order, and only
+# word order says that the first is asking what the stimulus proves while the
+# second is asking what would help an argument.
+_SUPPORT_ACTIVE = re.compile(r"\bsupports?\b|\bsupport (?:for|to)\b")
+# The answer choices, as the subject of a sentence. The lookbehinds keep out
+# the prepositional uses — "in which one of the following instances does the
+# lease support" is not the choices doing the supporting.
+_ANSWER_CHOICES = re.compile(
+    r"(?<!\bin )(?<!\bof )(?<!\bon )(?<!\bto )(?<!\bfor )"
+    r"\b(?:which|each|all|any|none) (?:one )?of the following\b"
+)
+# Principles, and the general statements that are principles under another
+# name. Plurals matter: "which one of the following propositions" and "which
+# one of the following generalizations" are how the bank asks this most often,
+# and the singular-only pattern read neither.
+_TASK_PRINCIPLE = re.compile(
+    r"\bprinciples?\b|\bpropositions?\b|\bgeneraliz\w+\b"
+    r"|\bbest illustrat\w+\b|\billustrated by\b|\bconforms? to\b"
+)
 _TASK_PARALLEL = re.compile(
     r"\bparallel\w*\b|\bmost (?:closely )?similar\b|\bsimilar to (?:that|the)\b"
     r"|\breasoning (?:above |in the argument )?is most\b|\bflawed in a way most similar\b"
@@ -389,18 +415,22 @@ _TASK_PARALLEL = re.compile(
 )
 _TASK_STRENGTHEN = re.compile(
     r"\bstrengthens?\b|\bstrengthening\b|\bjustif\w+\b|\bmost helps? to (?:support|justify)\b"
-    # What is being supported has to be the argument. "The statements above
-    # provide the most support for holding that Sandra would disagree with
-    # Taylor" is the standard point-at-issue stem, and reading it as a
-    # strengthen question put a causal approach on it whenever the stimulus
-    # happened to mention a cause.
-    r"|\b(?:provides?|lends?) (?:the )?(?:most|best|strongest|greatest)? ?support (?:for|to) "
-    r"(?:the |this )?(?:argument|conclusion|claim|hypothesis|position|prediction|proposal|view|theory|explanation)\b"
-    r"|\bsupports? the (?:argument|conclusion|claim)\b"
+    # Evidence for a position, and holding a position against an objection.
+    # Both are strengthen questions wearing other vocabulary.
+    r"|\b(?:strongest|best|most convincing) (?:evidence|defense)\b"
+    r"|\bbest evidence (?:that|for|of)\b|\bevidence \w+ would (?:strongly )?favor\b"
 )
 _TASK_WEAKEN = re.compile(
-    r"\bweaken\w*\b|\bcasts? doubt\b|\bundermin\w+\b|\bcalls? into question\b"
-    r"|\bmost damaging\b|\bchalleng\w+\b|\bcounters? the argument\b"
+    r"\bweaken\w*\b|\bundermin\w+\b|\bcalls? into question\b"
+    # "Casts the most doubt", "cast the most serious doubt", "casts
+    # considerable doubt on". The adjacent-words version read none of them and
+    # only matched the bare "casts doubt".
+    r"|\bcasts?\b[^.?]{0,25}\bdoubt\b"
+    r"|\bmost damaging\b|\bchalleng\w+\b|\binvalidat\w+\b|\brebut\w+\b"
+    # Countering something is weakening it, except where the stem trails off in
+    # "by" — "the pilot counters the conservationist by" wants the technique
+    # named, which is a method question and is claimed as one just below.
+    r"|\bcounters?\b(?![^.?]*\bby\s*$)"
 )
 _TASK_EXPLAIN = re.compile(
     r"\bexplain\w*\b|\bexplanation\b|\bresolv\w+\b|\breconcil\w+\b|\bparadox\w*\b"
@@ -424,6 +454,9 @@ _TASK_ROLE = re.compile(
     # commonest phrasings of exactly this question.
     r"\broles?\b|\bfigures? in\b|\bmethods?\b|\btechniques?\b|\bstrateg\w+\b"
     r"|\bargument proceeds\b|\bproceeds by\b|\bresponds? to\b|\bresponse to\b"
+    # "Debbie attempts to counter Carl's argument by": the answer names the
+    # move, so this is the same question as "responds to ... by".
+    r"|\bcounters?\b(?=[^.?]*\bby\s*$)"
     r"|\bin which one of the following ways\b|\bfunction of\b|\bpart of the argument\b"
 )
 _TASK_MAIN_CONCLUSION = re.compile(
@@ -436,7 +469,10 @@ _TASK_MAIN_CONCLUSION = re.compile(
 # reasoning", "a major weakness" and "questionable because" are all standard.
 # Keying on the literal word left 65 flaw questions with no flaw strategy.
 _TASK_FLAW = re.compile(
-    r"\bflaw\w*\b|\bvulnerable to\b|\berrors? (?:of|in) reasoning\b|\breasoning errors?\b"
+    # "An error in reasoning" and "an error in the author's reasoning" are the
+    # same question, and only the first had the two words adjacent.
+    r"\bflaw\w*\b|\bvulnerable to\b|\berrors? (?:of|in)\b[^.?]{0,25}\breasoning\b|\breasoning errors?\b"
+    r"|\bidentifies a problem\b|\bproblem with (?:the|his|her|their)\b"
     r"|\bquestionable\b|\bweakness\b|\bcriticiz\w+\b|\bcriticism\w*\b|\bfallac\w+\b"
     r"|\bfails? to (?:consider|establish|address|rule out|take into account|account for)\b"
     r"|\breasoning is (?:most )?(?:unsound|not sound|flawed|questionable)\b"
@@ -455,6 +491,12 @@ _TASK_NECESSARY_ASSUMPTION = re.compile(
     r"|\b(?:depends?|depended|requir\w+|necessary|presuppos\w+|relies|rests?|based on)\b[^.?]{0,120}?assum\w*"
     r"|\bdepends? (?:on|upon) which one of the following\b"
     r"|\bmust be assumed\b|\btakes? for granted\b|\bpresuppos\w+\b"
+    # The bare form, with no necessity word anywhere: "The argument assumes
+    # which one of the following?" Read as a necessary assumption, which is how
+    # it is taught and how the credited answers behave — the sufficient version
+    # of the question always says so ("if assumed", "allows the conclusion"),
+    # and that phrasing is held apart just below.
+    r"|\bassumes which\b|\bis assumed (?:in|by) the\b|\bmust make which\b"
 )
 # Sufficient assumption, held apart on purpose. "Which one of the following, if
 # assumed, allows the conclusion to be properly drawn" is a different question,
@@ -594,6 +636,28 @@ def _stored_type(question: Question) -> str:
     return "" if stored in ("logical reasoning", "reading comprehension") else stored
 
 
+def _support_direction(stem: str) -> str | None:
+    """Which way a stem's talk of support runs, or `None` if it has none.
+
+    `"stimulus"` — the stimulus does the supporting and the answer is what gets
+    supported, which is an inference question. `"answer"` — an answer choice
+    does the supporting, which is a strengthen question.
+
+    Decided by word order rather than by listing the nouns that can follow
+    "support for", because the list is open — argument, conclusion, claim,
+    contention, position, hypothesis, prediction, proposal, thesis, somebody's
+    name — while the grammar is not. Whichever side the answer choices sit on
+    is the side doing the supporting.
+    """
+    if _SUPPORT_PASSIVE.search(stem):
+        return "stimulus"
+    active = _SUPPORT_ACTIVE.search(stem)
+    if not active:
+        return None
+    choices = _ANSWER_CHOICES.search(stem)
+    return "answer" if choices and choices.start() < active.start() else "stimulus"
+
+
 def _task_tags(question: Question) -> frozenset[str]:
     """What this question asks the student to do.
 
@@ -618,13 +682,18 @@ def _task_tags(question: Question) -> frozenset[str]:
         return frozenset(tags)
 
     disputed = bool(_TASK_POINT_AT_ISSUE.search(stem))
-    if _TASK_INFERENCE.search(labelled) or stored == "inference":
+    attacked = bool(_TASK_WEAKEN.search(labelled) or _TASK_FLAW.search(labelled) or stored == "weaken")
+    # Consulted only where the stem does not already say it is an attack. "Most
+    # seriously weakens the support for the conclusion" puts the answer choices
+    # on the supporting side of the sentence and is still a weaken question.
+    support = None if attacked else _support_direction(stem)
+    if _TASK_INFERENCE.search(labelled) or stored == "inference" or support == "stimulus":
         tags.add("inference")
     if _TASK_PRINCIPLE.search(labelled) or stored == "principle":
         tags.add("principle")
     if _TASK_PARALLEL.search(labelled) or stored == "parallel reasoning":
         tags.add("parallel")
-    if (_TASK_STRENGTHEN.search(labelled) or stored == "strengthen") and not disputed:
+    if (_TASK_STRENGTHEN.search(labelled) or stored == "strengthen" or support == "answer") and not disputed:
         tags.add("strengthen")
     if _TASK_WEAKEN.search(labelled) or stored == "weaken":
         tags.add("weaken")

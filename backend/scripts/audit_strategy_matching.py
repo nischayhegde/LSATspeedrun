@@ -285,7 +285,10 @@ COHORTS: tuple[dict, ...] = (
             r"main (?:conclusion|point)|overall conclusion|conclusion (?:drawn|of the argument)"
             r"|most accurately (?:expresses|states|describes)[^.?]{0,40}conclusion"
             r"|conclusion of (?:the|this)\b|\broles?\b|\bmethods?\b|argument proceeds|\btechniques?\b"
-            r"|in which one of the following ways|conclusion of \w+(?:'s|s')\b",
+            r"|in which one of the following ways|conclusion of \w+(?:'s|s')\b"
+            # "Frank's argument is an attempt to counter Lance's conclusion by"
+            # is a method question that happens to use the word.
+            r"|\bcounters?\b[^.?]*\bby\s*$",
             (q.stem or "").lower(),
         ),
     },

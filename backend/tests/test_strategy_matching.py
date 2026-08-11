@@ -418,6 +418,169 @@ def test_supplying_the_missing_premise_is_not_proving_an_answer(stem):
 
 
 # ---------------------------------------------------------------------------
+# Which way the support runs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # The stimulus does the supporting and the answer is what gets
+        # supported: an inference question, and the scope-and-force procedure is
+        # the one that fits it.
+        "The statements above, if true, most strongly support which one of the following?",
+        "The information above provides the most support for which one of the following conclusions?",
+        "Which one of the following is most strongly supported by the information above?",
+        "The passage provides the most support for which one of the following?",
+        "If the statements above are true, they provide the most support for which one of the following?",
+        "The statements above, if true, support the view that",
+        "Which one of the following can be logically concluded from the information above?",
+        "Which one of the following best completes the argument?",
+    ],
+)
+def test_a_stimulus_that_supports_the_answer_is_an_inference_question(stem):
+    keys = _candidate_keys(lr(stem, stimulus=CAUSAL_STIMULUS))
+    assert "scope_precision" in keys
+    # And it is not a causal question, however causal the stimulus is: nothing
+    # here asks whether the cause is the cause.
+    assert "causal_audit" not in keys
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # The answer does the supporting: a strengthen question, and on a causal
+        # stimulus the causal approach is exactly right.
+        "Which one of the following, if true, most strongly supports the industry representative's "
+        "position against the environmentalist's position?",
+        "Which one of the following, if true, most supports the scientists' hypothesis?",
+        "Which one of the following, if true, provides the strongest additional support for the conclusion above?",
+    ],
+)
+def test_an_answer_that_supports_the_stimulus_is_a_strengthen_question(stem):
+    keys = _candidate_keys(lr(stem, stimulus=CAUSAL_STIMULUS))
+    assert "causal_audit" in keys
+    # "Match every quantifier to what the stimulus proves" is the wrong
+    # instruction on a question whose answer is new information.
+    assert "scope_precision" not in keys
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # A strengthen question whose answers are principles, and one whose four
+        # wrong answers all strengthen. Both are strengthen questions, and both
+        # also reward force and scope discipline — a principle has to be stated
+        # narrowly enough to apply, and four answers have to be checked against
+        # what the stimulus actually says. So they carry the proof reading too,
+        # for a reason the plain strengthen stems above do not have.
+        "Which one of the following principles, if established, would provide the strongest support "
+        "for the town councillor's argument?",
+        "Each of the following, if true, would lend support to the climatologists' hypothesis EXCEPT:",
+    ],
+)
+def test_a_strengthen_question_can_still_want_the_wording_watched(stem):
+    keys = _candidate_keys(lr(stem, stimulus=CAUSAL_STIMULUS))
+    assert "causal_audit" in keys
+    assert "scope_precision" in keys
+
+
+def test_weakening_the_support_is_still_a_weaken_question():
+    """Word order says the answer supports, and the verb says it does not.
+
+    "Most seriously weakens the support for the conclusion" puts the answer
+    choices on the supporting side of the sentence, so the word-order rule on
+    its own would read this as a strengthen question. The stem saying "weakens"
+    settles it first.
+    """
+    keys = _candidate_keys(
+        lr(
+            "Which one of the following, if true, most seriously weakens the support for the conclusion above?",
+            stimulus=CAUSAL_STIMULUS,
+        )
+    )
+    assert "causal_audit" in keys
+    assert "scope_precision" not in keys
+
+
+# ---------------------------------------------------------------------------
+# The rest of each family the audit named, in the phrasings the bank uses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # No necessity word anywhere, and still the standard necessary
+        # assumption question. 20 of these were reaching nothing.
+        "The argument assumes which one of the following?",
+        "The reasoning in the passage assumes which one of the following?",
+        "Which one of the following is assumed in the passage?",
+        "Which one of the following is assumed by the mayor's argument?",
+        "For the argument to be logically correct, it must make which one of the following assumptions?",
+    ],
+)
+def test_a_bare_assumption_stem_is_a_necessary_assumption_stem(stem):
+    assert "negation_test" in _candidate_keys(lr(stem))
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # "Casts the most doubt" and "cast the most serious doubt". Only the
+        # adjacent "casts doubt" was being read.
+        "Which one of the following, if true, casts the most doubt on the author's hypothesis?",
+        "Which one of the following, if true, would cast the most serious doubt on the prediction above?",
+        "Which one of the following, if true, would tend to invalidate the use of the ratings?",
+        "Which one of the following, if true, most strongly counters the city official's response?",
+        "Which one of the following rejoinders, if true, most directly counters the legislator's objection?",
+    ],
+)
+def test_the_weaken_family_beyond_the_word_weaken(stem):
+    assert "causal_audit" in _candidate_keys(lr(stem, stimulus=CAUSAL_STIMULUS))
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # "An error in the reasoning" and "an error in the author's reasoning":
+        # the same question as "an error in reasoning", with a word in between.
+        "Which one of the following most clearly identifies an error in the author's reasoning?",
+        "Which one of the following indicates an error in the reasoning in the passage?",
+        "Which one of the following most accurately describes an error in the argument's reasoning?",
+        "Which one of the following identifies a problem with the programming director's decision process?",
+    ],
+)
+def test_an_error_in_the_reasoning_is_a_flaw_question(stem):
+    assert "flaw_abstraction" in _candidate_keys(lr(stem))
+
+
+def test_countering_somebody_by_doing_something_is_a_method_question():
+    """The one place "counters" is not an attack on the argument.
+
+    A stem trailing off in "by" is asking which move was made, so the answer
+    describes a technique. Read as a weaken question it would have offered a
+    causal audit on the strength of the stimulus alone.
+    """
+    keys = _candidate_keys(lr("The pilot counters the conservationist by", stimulus=CAUSAL_STIMULUS))
+    assert "role_map" in keys
+    assert "causal_audit" not in keys
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # Plurals, again, and the same fault as "role" and "technique".
+        "Which one of the following propositions is best illustrated by the example presented in the passage?",
+        "The situation described above most closely conforms to which one of the following generalizations?",
+        "The passage best illustrates which one of the following statements about science?",
+    ],
+)
+def test_a_general_statement_is_a_principle_question(stem):
+    assert "scope_precision" in _candidate_keys(lr(stem))
+
+
+# ---------------------------------------------------------------------------
 # Reading Comprehension: the passage's own furniture, and the whole passage
 # ---------------------------------------------------------------------------
 
