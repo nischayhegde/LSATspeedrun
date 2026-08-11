@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  ArrowRight,
   Award,
   BriefcaseBusiness,
   Building2,
@@ -357,10 +358,20 @@ export function FirmPage() {
             <section className="client-roster-status">
               <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
               <div><span className="eyebrow">ON RETAINER</span><h2>{workingClient.name}</h2><p>{game.active_client.on_hold ? `${game.active_client.name} is on hold until Reputation recovers, so ${workingClient.name} is billing for now.` : `${game.active_client.cases_remaining} more wins closes this retainer for a bonus, then it renews.`}</p></div>
+              {/* The one tab that set something and then said nothing about
+                  where it applies. Decor, districts and rivals all hand off to
+                  the surface their purchase shows up on; this screen sets the
+                  fee every case pays and never named the place cases are
+                  worked, which is the other half of the reported confusion
+                  about where work comes from. Cases are minted on Practice and
+                  nowhere else, so that is where this points. */}
               <aside>
                 <span>YOUR RATE</span>
                 <strong>{formatMoney(workingClient.base_fee)}</strong>
                 <small>per case, before firm and streak bonuses</small>
+                <button type="button" className="client-roster-go" onClick={() => navigate('/cases')}>
+                  Work a case at this rate <ArrowRight size={13} />
+                </button>
               </aside>
             </section>
             <div className="management-grid client-grid">

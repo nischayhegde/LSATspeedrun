@@ -76,6 +76,29 @@
 .client-roster-status aside span { display: block; color: #e7c77f; font-size: 10.5px; font-weight: 900; letter-spacing: .12em; }
 .client-roster-status aside strong { display: block; margin: 3px 0; font-family: Georgia, serif; font-size: 18px; font-weight: 500; }
 .client-roster-status aside small { display: block; color: #b8cbd2; font-size: 8.5px; line-height: 1.4; }
+/* The route out. A rate with no destination was the whole defect, so this is
+   sized as a real control rather than a footnote link. */
+.client-roster-go {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 10px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+  border: 1px solid rgba(228,193,117,.55);
+  border-radius: 8px;
+  color: #f3dda6;
+  background: rgba(228,193,117,.12);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: background var(--mo-2) var(--mo-out), translate var(--mo-2) var(--mo-out);
+}
+.client-roster-go:hover { color: #2a1f10; background: #e7c77f; }
+.client-roster-go:active { translate: 0 1px; }
 .client-card { padding-top: 17px; }
 .client-card-portrait { width: 86px; height: 92px; margin: -3px 0 -4px; }
 .client-card.selected { box-shadow: inset 0 0 0 3px rgba(200,155,75,.12), 0 13px 28px rgba(117,78,25,.1); }
@@ -93,6 +116,15 @@
   .page-heading { align-items: flex-start; flex-direction: column; }
   .firm-wallet { width: 100%; }
   .client-roster-status { grid-template-columns: 68px 1fr; padding: 14px; }
+  /* The portrait's caption is absolutely positioned, centred on an 86px bust
+     and set `white-space: nowrap`, so at this width "GENERAL COUNSEL" ran clean
+     across the sentence in the next column and took the first word of it with
+     the pill's background. The title is still on the portrait's aria-label, and
+     the panel spells the client out in the line beside it. */
+  .client-roster-status .client-portrait > small { display: none; }
+  /* And the bust itself is 86px in an 68px column, so it was overhanging the
+     sentence by the width of its first word. */
+  .client-roster-status .client-portrait { width: 68px; height: 73px; }
   .management-grid, .achievement-grid { grid-template-columns: 1fr; }
   .tier-upgrade-banner { grid-template-columns: 1fr; text-align: center; }
   .tier-preview { margin: auto; }
