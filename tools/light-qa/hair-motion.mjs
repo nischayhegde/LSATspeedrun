@@ -100,9 +100,17 @@ try {
     renderer.setSize(480, 600, false)
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x12161c)
-    // The portrait's own framing and lights, so what is judged here is what the
-    // portrait draws rather than a diagnostic view of it.
-    const camera = new THREE.OrthographicCamera(-.95, .95, 1.35, -1.05, .1, 40)
+    /*
+     * The portrait's own lights, and a camera on the head.
+     *
+     * It used to be the portrait's framing as well — an orthographic box around
+     * y 2.56, which is the portrait's own centre — and the first run of this
+     * probe therefore captured fifty-six pictures of a chest. The numbers were
+     * unaffected, since they are read off the hair node's quaternion, but the
+     * strips were worthless for the one thing a strip is for. The box is fitted
+     * to the head per arm below.
+     */
+    const camera = new THREE.OrthographicCamera(-.8, .8, 1, -1, .1, 40)
     camera.position.set(0, 2.62, 10.5)
     camera.lookAt(0, 2.56, .12)
     scene.add(new THREE.HemisphereLight(0xf5ecdf, 0x1b2631, 1.42))
@@ -128,7 +136,21 @@ try {
       const actor = new rig.HumanoidActor(body, { seed: 7.5, state: 'idle', reduced: false })
       if (spec.secondary !== undefined) actor.setSecondaryMotion(spec.secondary)
       actor.setLod('full')
-      window.__hair.current = { body, actor }
+      // On the head, at the height this figure's head actually is: the rig
+      // varies its own stature per seed, so a fixed y is not the same crop twice.
+      const headAt = new THREE.Vector3()
+      body.head.getWorldPosition(headAt)
+      window.__hair.current = { body, actor, headAt: headAt.clone() }
+      window.__hair.frame = (azimuth = 0) => {
+        camera.position.set(
+          headAt.x + Math.sin(azimuth) * 10.5,
+          headAt.y,
+          headAt.z + Math.cos(azimuth) * 10.5,
+        )
+        camera.lookAt(headAt)
+        camera.updateProjectionMatrix()
+      }
+      window.__hair.frame(0)
 
       /*
        * The hair-to-head angle, which is the whole measurement.
@@ -291,6 +313,24 @@ try {
       }, index === 0 ? 1 : 5)
       frames.push(await page.locator('canvas').last().screenshot({ path: `${SHOTS}/${arm.key}-turn-${index}.png` }))
     }
+
+    // Three views of the cut at rest, because a haircut is a silhouette and
+    // half of one is behind the head. This is what tells two cuts apart; the
+    // strip above only tells you whether one of them moves.
+    for (const [name, azimuth] of [['front', 0], ['profile', Math.PI / 2], ['rear', Math.PI]]) {
+      await page.evaluate((angle) => {
+        const { renderer, scene, camera, current, frame } = window.__hair
+        current.actor.setLookTarget(null)
+        for (let step = 0; step < 45; step += 1) {
+          current.actor.update(1 / 60)
+          current.body.root.updateWorldMatrix(true, true)
+        }
+        frame(angle)
+        renderer.render(scene, camera)
+      }, azimuth)
+      await page.locator('canvas').last().screenshot({ path: `${SHOTS}/${arm.key}-${name}.png` })
+    }
+    await page.evaluate(() => window.__hair.frame(0))
 
     report.arms[arm.key] = { ...arm, ...measured }
     const verdict = arm.expect === 'still'
