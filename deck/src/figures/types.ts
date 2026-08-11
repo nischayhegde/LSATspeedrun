@@ -172,13 +172,26 @@ export type TracesFigure = {
   baselineLabel: string
 }
 
-/** Slide 10 — fourteen methods, thirteen dismissed, one docked. */
-export type MethodFanFigure = {
-  kind: 'method-fan'
+/** Slide 10 — the catalogue, the one method handed over, and whether it worked. */
+export type MethodLabFigure = {
+  kind: 'method-lab'
+  /** The whole catalogue, in the app's own order. Drawn in full; none of it leaves. */
   methods: string[]
-  /** Which one survives the filter. Index into `methods`. */
+  /** Which one this question handed over. Index into `methods`. */
   keep: number
-  /** The inline lift bar beside the docked card: this student, prompted vs not. */
+  /**
+   * The card the student is actually given. Every string here is the app's own
+   * copy from `backend/app/strategies.py` — this figure must not paraphrase a
+   * method, because the room may go and look.
+   */
+  handed: {
+    name: string
+    /** What fired it: the question types this method is offered on. */
+    trigger: string
+    /** The three things it asks for, in order. */
+    steps: string[]
+  }
+  /** The verdict bars: this student, prompted vs. their own unprompted attempts. */
   lift: { prompted: number; baseline: number; note: string }
 }
 
@@ -296,7 +309,7 @@ export type FigureSpec =
   | ConfidenceTilesFigure
   | CohortSplitFigure
   | TracesFigure
-  | MethodFanFigure
+  | MethodLabFigure
   | ClockRingsFigure
   | SignalIndexFigure
   | SpokesFigure

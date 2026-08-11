@@ -122,9 +122,9 @@
    `confidence-tiles`, which are centred bands — say so in their own sections. */
 .fig-route,
 .fig-traces,
-.fig-method-fan,
+.fig-method-lab,
 .fig-clock-rings,
-.fig-radial,
+.fig-signal-index,
 .fig-reasoning-card,
 .fig-spokes {
   align-items: stretch;
@@ -1374,237 +1374,254 @@
 }
 
 /* ================================================================
-   10 · method-fan — fourteen methods, one docked
+   10 · method-lab — the catalogue, the one handed over, the verdict
    ================================================================ */
 
-.fig-mf {
+/* Three panes across a band that is 1674 by 430 at 1920 — very wide and not at
+   all tall. That shape is the whole reason this is columns rather than a card
+   with things stacked under it: the previous arrangement put the trigger, the
+   name, three steps and two bars in one column, came to 508px, and lost its
+   last 78px inside `.figure-stage`, which clips. The bottom bar and the note
+   under it were simply not on the slide.
+   
+   Left to right the panes are catalogue, method, verdict, which is the sentence
+   the slide is making: here is everything we have, here is the one this
+   question handed over, here is whether it worked.
+
+   `text-align: left` because the slide body is centred and three columns of
+   centred ragged text is the look of a page that has no grid. */
+.fig-ml {
   position: relative;
   width: 100%;
   height: 100%;
+  display: grid;
+  grid-template-columns: 31fr 37fr 25fr;
+  column-gap: 3.2em;
+  align-items: start;
+  text-align: left;
   overflow: hidden;
 }
 
-/* The box sits in the top two-thirds of the stage and stops short of it. The
-   lift readout goes underneath, and the two used to overlap: the box ran to
-   79% and the bars started at 60%, so the baseline bar was drawn straight
-   across the bottom rule of the question. */
-.fig-mf-question {
-  position: absolute;
-  left: 15%;
-  top: 8%;
-  width: 45%;
-  /* Sized by its contents. A fixed height left the rules stacked in the top
-     third of a tall empty rectangle, which reads as a box that failed to load
-     rather than as a question. */
-  height: auto;
+/* One heading treatment for all three panes, because three panes that label
+   themselves three different ways are three objects rather than one figure.
+   The rule under each runs the full width of its column, which is what makes
+   the columns read as columns without a single vertical line on the slide. */
+.fig-ml-pane-head {
   display: flex;
-  flex-direction: column;
-  /* The one gap in the box that carries meaning: the break between the stem
-     and the answers. It used to be an empty rule element in the middle of a
-     flat list of ten; now that the two groups are real elements it is simply
-     the gap between them.
-
-     These were tuned when `1em` inside a figure was the browser's 16px. It is
-     now a step of the figure scale, which is 44% larger, and at the old
-     numbers the card ran off the bottom of the stage and took its last two
-     answers with it. Retuned against the box they actually have to fit. */
-  gap: 1.3em;
-  padding: 1.5em 1.4em 1.5em 1.6em;
-  box-shadow: inset 0 0 0 1px var(--on-field-dim);
-  transition: opacity 240ms var(--ease-out);
-}
-
-.fig-mf-question-stem {
-  display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  justify-content: space-between;
   gap: .8em;
+  margin: 0 0 .8em;
+  padding-bottom: .45em;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
 }
 
-/* Five answers, lettered and hung.
-   The letters are the whole reason this box stopped reading as a skeleton: a
-   column of bars is a component that has not loaded, and the same column with
-   A–E down its left edge is a multiple-choice question. The rules are indented
-   past the letter rather than starting under it, which is how a real choice
-   list sets and what stops the letters reading as a separate column of marks. */
-.fig-mf-question-choices {
-  display: flex;
-  flex-direction: column;
-  gap: .62em;
+.fig-ml-pane-head b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fig-lead);
+  letter-spacing: 0;
+  line-height: 1;
+  color: var(--on-field);
+}
+
+/* ---- the catalogue --------------------------------------------------- */
+
+.fig-ml-catalog {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Column-major, so the names read top to bottom in catalogue order rather than
+   zig-zagging across two columns. `grid-auto-flow: column` against an explicit
+   row count is what makes that a property of the layout rather than a
+   re-sorted array. */
+.fig-ml-catalog-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--fig-rows), auto);
+  grid-auto-columns: 1fr;
+  column-gap: 1.1em;
+  row-gap: .3em;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.fig-mf-question-choices li {
-  display: grid;
-  grid-template-columns: 1.5em 1fr;
-  align-items: center;
-  gap: .3em;
-}
-
-/* Set at close to full strength, and deliberately stronger than the rules they
-   letter. These five glyphs are the only thing in the box carrying the message
-   "this is a question"; at the 58% they were first given they were present in
-   the DOM and absent on the projector, which is the same as not having done
-   it. The rules stay faint — the card is still subordinate to the method
-   docking against it — so the contrast between letter and rule is what does
-   the reading. */
-.fig-mf-question-choices i {
-  font-family: var(--font-pixel);
-  font-style: normal;
-  font-size: 1.02em;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: .04em;
-  color: color-mix(in srgb, currentColor 88%, transparent);
-}
-
-/* Tinted rather than faded. `opacity` composites the whole element including
-   its children, so the marker drawn inside a rule at .18 came out at a tenth
-   and was invisible; mixing the colour instead leaves the child at full
-   strength. */
-.fig-mf-question-rule {
-  position: relative;
-  display: block;
-  height: .62em;
-  background: color-mix(in srgb, currentColor 20%, transparent);
-}
-
-/* THE HIGHLIGHT DRAG.
-   Taller than the rule it covers and offset above it, the way a marker is
-   always slightly off the line it was aimed at — a highlight that fitted its
-   text exactly would read as a selection rectangle. It sits at full opacity
-   against a rule that is already at .18, so it reads as ink laid over ink. */
-.fig-mf-mark {
-  position: absolute;
-  left: -.25em;
-  top: -.22em;
-  height: calc(100% + .44em);
-  background: color-mix(in srgb, currentColor 46%, transparent);
-  /* A hand's speed. Slower than anything else on the slide, and eased out
-     rather than in, because a stroke decelerates at the end of a word. */
-  transition: width 520ms var(--ease-out) 120ms;
-}
-
-/* The break between the stem and the choices. It is the one piece of white
-   space in the box that means something, so it is a real element rather than a
-   larger gap on one rule. */
-.fig-mf-question-gap { display: block; height: .7em; }
-
-.fig-mf-card {
-  position: absolute;
-  max-width: 10em;
-  padding: .42em .75em;
-  box-shadow: inset 0 0 0 1px var(--on-field-dim);
-  font-size: var(--fig-micro);
-  line-height: 1.2;
-  text-align: center;
+.fig-ml-method {
+  font-size: var(--fig-note);
+  line-height: 1.3;
   color: var(--on-field-dim);
-  /* Deliberately off the motion scale. `--mo-4` is 900ms, and with a fourteen
-     card stagger on top of it the fan took over three seconds to resolve —
-     see the note on `MARKS` in `method-fan.tsx`. These are the durations that
-     let the whole figure settle inside 600ms. */
   transition:
-    left 300ms var(--ease-out),
-    top 300ms var(--ease-out),
-    transform 300ms var(--ease-out) var(--fig-delay),
-    opacity 220ms var(--ease-out) var(--fig-delay),
-    color 220ms var(--ease-out),
-    box-shadow 220ms var(--ease-out);
+    opacity 200ms var(--ease-out) var(--fig-delay),
+    color 260ms var(--ease-out);
 }
 
-.fig-mf-card[data-survivor='true'] {
+/* Thirteen go quiet; they do not leave. A catalogue that empties itself is a
+   catalogue the audience can no longer count, and the honest claim is that the
+   other thirteen are still in rotation — they lost this question, not their
+   place in the app. */
+.fig-ml[data-swept='true'] .fig-ml-method[data-kept='false'] {
+  color: color-mix(in srgb, currentColor 42%, transparent);
+}
+
+.fig-ml[data-swept='true'] .fig-ml-method[data-kept='true'] {
   color: var(--on-field);
-  box-shadow: inset 0 0 0 2px currentColor;
+  font-weight: 600;
 }
 
-.fig-mf-card[data-docked='true'] {
-  max-width: 11em;
-  font-size: var(--fig-label);
-}
-
-.fig-mf-sweep {
+/* The filter. Inside the catalogue pane, which is both where it belongs —
+   the catalogue is the thing being filtered — and what stops it contributing
+   its own off-frame width to the stage's scroll box. As a child of the figure
+   it was 250px of horizontal overflow for a decoration. */
+.fig-ml-sweep {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 14%;
+  width: 22%;
   transform: translateX(-50%);
   background: linear-gradient(90deg, transparent, currentColor, transparent);
-  transition: left 180ms linear, opacity 120ms linear;
+  pointer-events: none;
+  transition: left 200ms linear, opacity 140ms linear;
 }
 
-/* Beside the question box and centred on it, so the two read as one
-   composition rather than as two objects that happen to be near each other.
+/* ---- the one that was handed over ------------------------------------ */
 
-   Centred by its own middle rather than pinned by its top, because the card it
-   is balanced against is content-sized: give the question another choice and a
-   fixed top would leave the readout riding high against it. */
-.fig-mf-lift {
-  position: absolute;
-  left: 64%;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 31%;
-  display: flex;
-  flex-direction: column;
-  gap: 1.4em;
-  transition: opacity 220ms var(--ease-out);
+.fig-ml-handed {
+  transition: opacity 260ms var(--ease-out);
 }
 
-.fig-mf-lift-row {
+/* Why the method fired, above the method. This is the slide's "at the moment
+   you need it", and it is the app's own trigger list for `prephrase` rather
+   than a description of one. */
+.fig-ml-trigger {
+  margin: 0 0 .5em;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  line-height: 1.4;
+  letter-spacing: .01em;
+  color: var(--on-field-dim);
+}
+
+.fig-ml-name {
+  margin: 0 0 .6em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fig-lead);
+  line-height: 1.05;
+  letter-spacing: -.015em;
+  color: var(--on-field);
+}
+
+/* The three steps, numbered by the counter rather than by written digits, so
+   the numerals stay out of the text column and the steps hang under each
+   other. */
+.fig-ml-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: fig-ml-step;
   display: flex;
   flex-direction: column;
   gap: .45em;
 }
 
-.fig-mf-lift-head {
+.fig-ml-steps li {
+  counter-increment: fig-ml-step;
+  display: grid;
+  grid-template-columns: 1.5em 1fr;
+  align-items: baseline;
+  font-size: var(--fig-strong);
+  line-height: 1.28;
+  color: var(--on-field);
+  transition: opacity 220ms var(--ease-out) var(--fig-delay);
+}
+
+.fig-ml-steps li::before {
+  content: counter(fig-ml-step);
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  color: var(--on-field-dim);
+}
+
+/* ---- and whether it worked ------------------------------------------- */
+
+/* Its own pane, not a footnote under the method. This is the evidence for the
+   slide's competitive claim — "nobody else measures whether it worked" — and
+   under the steps it was a pair of bars in the gutter. */
+.fig-ml-lift {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1em;
+  transition: opacity 220ms var(--ease-out);
+}
+
+.fig-ml-lift-row {
+  display: flex;
+  flex-direction: column;
+  gap: .1em;
+}
+
+/* The numeral and its bar on one line, the bar taking whatever the numeral
+   leaves. Baseline-aligned rather than centred, so the bar sits on the
+   numeral's own baseline and the two read as one measurement. */
+.fig-ml-lift-head {
   display: flex;
   align-items: baseline;
   gap: .55em;
   margin: 0;
 }
 
-.fig-mf-lift-name {
-  font-size: var(--fig-note);
-  line-height: 1.2;
+/* At display scale. These two numbers are the evidence for the last fragment's
+   claim; set as a pixel-font caption they were a footnote to a diagram of a
+   filter, which inverts the slide's priorities. */
+.fig-ml-lift-value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fig-num);
+  line-height: 1;
+  color: var(--on-field);
+}
+
+.fig-ml-lift-name {
+  margin: 0;
+  font-size: var(--fig-label);
+  line-height: 1.25;
   color: var(--on-field-dim);
 }
 
-.fig-mf-lift-track {
+.fig-ml-lift-track {
   display: block;
-  height: .75em;
+  flex: 1;
+  min-width: 0;
+  height: .55em;
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
 }
 
-.fig-mf-lift-run {
+.fig-ml-lift-run {
   display: block;
   height: 100%;
   background: currentColor;
-  transition: width 260ms var(--ease-out) var(--fig-delay);
+  transition: width 300ms var(--ease-out) var(--fig-delay);
 }
 
-/* The control, at half weight. `--on-field-dim` is a hairline colour and over
-   a solid bar it read as an empty track — which put the comparison's second
+/* The control, at half weight. `--on-field-dim` is a hairline colour and over a
+   solid bar it read as an empty track — which put the comparison's second
    number on screen with nothing to compare against. */
-.fig-mf-lift-row[data-role='baseline'] .fig-mf-lift-run {
+.fig-ml-lift-row[data-role='baseline'] .fig-ml-lift-run {
   background: color-mix(in srgb, currentColor 40%, transparent);
 }
 
-/* At display scale. These two numbers are the evidence for the fourth
-   fragment's claim; set as a pixel-font caption they were a footnote to a
-   diagram of a filter, which inverts the slide's priorities. */
-.fig-mf-lift-value {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-num-sm);
-  line-height: 1;
-}
-
-.fig-mf-lift-note {
-  margin: -.7em 0 0;
+.fig-ml-lift-note {
+  margin: .2em 0 0;
   font-family: var(--font-pixel);
-  font-size: var(--fig-micro);
-  line-height: 1.25;
+  font-size: var(--fig-note);
+  line-height: 1.3;
   color: var(--on-field-dim);
 }
 

@@ -8,7 +8,7 @@ import { ConfidenceTiles } from './confidence-tiles'
 import { CurrencyLift } from './currency-lift'
 import { Gate } from './gate'
 import { HoursBar } from './hours-bar'
-import { MethodFan } from './method-fan'
+import { MethodLab } from './method-lab'
 import { Numeral } from './numeral'
 import { PairedBars } from './paired-bars'
 import { ReasoningCard } from './reasoning-card'
@@ -76,8 +76,8 @@ function body(spec: FigureSpec, active: boolean, reduced: boolean): ReactNode {
       return <CohortSplit spec={spec} active={active} reduced={reduced} />
     case 'traces':
       return <Traces spec={spec} active={active} reduced={reduced} />
-    case 'method-fan':
-      return <MethodFan spec={spec} active={active} reduced={reduced} />
+    case 'method-lab':
+      return <MethodLab spec={spec} active={active} reduced={reduced} />
     case 'clock-rings':
       return <ClockRings spec={spec} active={active} reduced={reduced} />
     case 'signal-index':

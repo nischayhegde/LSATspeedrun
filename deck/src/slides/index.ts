@@ -745,28 +745,50 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act III — Spiky POV 04',
     headline: 'Strategies get taught. They should get tested.',
     deck: 'One method, handed to you at the moment you need it, kept only if your own data says it works.',
-    // The fourth fragment is the deck's second competitive line, and it uses the
-    // same device as the one on `pov-reasoning-is-the-work`: a bare sentence,
-    // arriving last, naming nobody. It is deliberately a claim about
+    // Two of the four fragments went when the figure was rebuilt, because the
+    // rebuilt figure draws them. `14 in the catalog` is now the catalogue's own
+    // heading, set against the fourteen names it counts, which is a better
+    // place for it than a fragment eight lines below the list. `Tested against
+    // your own control` was always the figure's note word for word — the
+    // narrative flags it as the one line here available for cutting, and this
+    // is the pass that spends it.
+    //
+    // The fourth fragment is the deck's second competitive line, and it uses
+    // the same device as the one on `pov-reasoning-is-the-work`: a bare
+    // sentence, arriving last, naming nobody. It is deliberately a claim about
     // *measurement* rather than about method vocabulary, because `CITATIONS.md`
     // §4.2 establishes that Demon's Prediction Mode already prompts a technique
     // inside a question — so "nobody prompts a method" would be false, while
     // "nobody measures whether it worked for this student" is the finding §4
     // actually supports across all seven products.
     points: [
-      '14 in the catalog',
       'One per question',
-      'Tested against your own control',
       'Nobody else measures whether it worked',
     ],
     // The fourteen are the app's real catalog keys, in the app's own order.
     // `comparative_matrix` is in the catalog but unreachable today because the
     // dataset never marks comparative passages — say "fourteen in the catalog,
     // thirteen currently in rotation" if anyone presses, and never claim all
-    // fourteen are being trialed. The one that survives the filter is
-    // `prephrase`, which is also the method staged on the live demo case.
+    // fourteen are being trialed. The one handed over is `prephrase`, which is
+    // also the method staged on the live demo case.
+    //
+    // `handed` is `prephrase` as the app defines it in
+    // `backend/app/strategies.py`: the trigger is that strategy's `best_for`
+    // and the three steps are its `steps`, verbatim. They are quoted rather
+    // than written because the figure sets them as the card the student is
+    // handed, and a paraphrase of a real product string on a pitch slide is a
+    // thing somebody can walk into the app and catch.
     figure: {
-      kind: 'method-fan',
+      kind: 'method-lab',
+      handed: {
+        name: 'Prephrase Before Choices',
+        trigger: 'assumption · inference · strengthen · weaken · point-at-issue',
+        steps: [
+          'Name the question task',
+          'Predict the needed effect',
+          'Use choices to verify, not invent',
+        ],
+      },
       methods: [
         'Argument core',
         'Prephrase',
