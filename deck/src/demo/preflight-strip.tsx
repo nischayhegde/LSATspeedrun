@@ -54,6 +54,13 @@ export function PreflightStrip() {
     return <span className="pf-strip" aria-live="polite"><i className="pf-dot is-checking" />Checking the demo</span>
   }
 
+  // Not on the presenting machine, so there was nothing to check and there is
+  // nothing to fix. One line saying what the deck is, rather than five red dots
+  // and a repair plate addressed to someone who is not reading this.
+  if (result.mode === 'stills') {
+    return <span className="pf-strip" aria-live="polite"><i className="pf-dot is-ok" />Showing captured stills</span>
+  }
+
   const checks = ORDER
     .map((id) => result.checks.find((check) => check.id === id))
     .filter((check): check is Check => Boolean(check))

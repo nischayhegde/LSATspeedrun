@@ -25,6 +25,20 @@ export type DemoConfig = {
    */
   appOrigin: string
   /**
+   * What the room reads in the demo frame's title bar, in place of the dev
+   * origin above.
+   *
+   * The bar used to print `appOrigin` verbatim, so every demo slide showed an
+   * audience of investors the string `localhost:5173`. The frame is styled as
+   * the product's own chrome — engine-turned plate, gold mark, monospace — and
+   * the one piece of text in it said "this is a dev server on a laptop".
+   *
+   * Left as the product's name rather than defaulting to a domain, because a
+   * domain on a projector is a claim: someone in the room will type it. Put a
+   * real one here when there is one to put.
+   */
+  displayOrigin: string
+  /**
    * Session id of the case left open by `backend/scripts/seed_demo.py`, whose
    * third question renders a strategy prompt. The seeder reports it as
    * `live_demo.url`; `prepare-demo.mjs` writes just the id here.
@@ -92,14 +106,63 @@ export type DemoConfig = {
   demoEmail: string
   /**
    * Force every demo slide to its still image regardless of what the health
-   * check says. Flip this to `true` for a dry run on a machine with no stack
-   * running, or on stage if the app is misbehaving and you want no surprises.
+   * check says. Set `FORCE_STILLS` below for a dry run on a machine with no
+   * stack running, or on stage if the app is misbehaving and you want no
+   * surprises.
+   *
+   * Computed rather than written, because the wrong default here is not a
+   * degraded demo, it is the deck framing someone else's software. See
+   * `liveDemoIsPossibleHere` below.
    */
   useStills: boolean
 }
 
+/**
+ * Flip to `true` for a dry run: every demo slide shows its still and nothing is
+ * framed. This is the presenter's switch and it is the only one in this file
+ * that is a plain answer rather than a question about the machine.
+ */
+const FORCE_STILLS = false
+
+const APP_ORIGIN = 'http://localhost:5173'
+
+/**
+ * Whether framing the app can work *on the machine the deck is open on*, which
+ * is a narrower question than "is the app running" and is the one that has to
+ * be answered before the first render rather than after a probe.
+ *
+ * The rule is the `SameSite=Lax` rule documented on `appOrigin` above, applied
+ * instead of assumed: the app's session cookies ride along with a framed
+ * request only when the framing document and the frame are the same site, and
+ * site is compared by host. So the deck's own hostname has to *be* the app
+ * origin's hostname. On the presenting machine it is — `localhost:5180` frames
+ * `localhost:5173` — and nothing about the live demo changes.
+ *
+ * Everywhere else it is not, and the old answer was a hardcoded `useStills:
+ * false` that made the deck probe `localhost:5173` and embed whatever replied.
+ * A deck opened on a laptop that happened to be running an unrelated dev server
+ * on 5173 put that stranger's app on screen in place of the product, with no
+ * still. Even against a dead port the probe is asynchronous, so one iframe was
+ * dispatched at `localhost:5173/cases/…?autoplay=C` before the fallback won.
+ * Answering synchronously here means no such iframe is ever constructed.
+ *
+ * This also catches the footgun the runbook can only warn about: opening the
+ * deck as `127.0.0.1:5180` is cross-site to `localhost:5173`, so it used to
+ * frame six login screens. Now it shows six stills and the lamp reads `stills`.
+ *
+ * `?live=1` overrides it, for the case this cannot see: a host alias that is
+ * genuinely same-site both ways, reached under a name neither of us guessed.
+ */
+export function liveDemoIsPossibleHere(): boolean {
+  if (typeof window === 'undefined') return false
+  const here = window.location
+  if (new URLSearchParams(here.search).has('live')) return true
+  return here.hostname === new URL(APP_ORIGIN).hostname
+}
+
 export const demoConfig: DemoConfig = {
-  appOrigin: 'http://localhost:5173',
+  appOrigin: APP_ORIGIN,
+  displayOrigin: 'Lawyer Tycoon',
   liveSessionId: 'a91a19c4-d28f-4a01-80ab-641f27850002',
   verdictSessionId: '2bb4c733-3ee6-4f3e-bf71-dfb5fc473d94',
   soloSessionId: '38e2cbf5-763e-428e-99bb-ee9de02fb784',
@@ -107,5 +170,5 @@ export const demoConfig: DemoConfig = {
   autoplaySessionId: '6dc21ec7-446e-429c-8a9a-4682e6bb7601',
   autoplayAnswerKey: 'ACEBACAEBEAADBD',
   demoEmail: 'student@localhost.test',
-  useStills: false,
+  useStills: FORCE_STILLS || !liveDemoIsPossibleHere(),
 }

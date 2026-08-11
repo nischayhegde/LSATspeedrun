@@ -1,4 +1,4 @@
-import { demoConfig } from '../../demo.config'
+import { demoConfig, liveDemoIsPossibleHere } from '../../demo.config'
 import { getStatus, setStatus } from './demo-runtime'
 import { probeApp } from './health'
 
@@ -61,6 +61,12 @@ export type PreflightResult = {
   sessionSource: 'resolved' | 'pinned' | 'none'
   /** False when at least one check is `bad`. */
   ok: boolean
+  /**
+   * `'stills'` when nothing below was run because nothing below could help —
+   * see `runPreflight`. `checks` is empty and there is nothing to display but
+   * the fact itself.
+   */
+  mode: 'live' | 'stills'
 }
 
 /** GET as JSON with a hard timeout. Resolves `null` rather than throwing. */
@@ -156,7 +162,8 @@ function checkOrigin(): Check {
     label: 'Origin',
     state: 'bad',
     detail: `the deck is on ${deckHost} but the app is on ${appHost}. `
-      + `SameSite=Lax cookies will not ride, and every demo will show the login screen. `
+      + `SameSite=Lax cookies will not ride, so every demo is pinned to its still — `
+      + `see \`liveDemoIsPossibleHere\` in demo.config.ts, which reads the same two hosts. `
       + `Reopen the deck as http://${appHost}:${window.location.port}${window.location.search}`,
   }
 }
@@ -168,6 +175,29 @@ function checkOrigin(): Check {
  * what is broken, so it cannot be a thing that breaks.
  */
 export async function runPreflight(): Promise<PreflightResult> {
+  // Nothing below can help a deck that is not on the presenting machine, and
+  // all of it hurts there. Every check is a question about a laptop this page
+  // cannot reach, so each one fails, and the failures are rendered as a plate
+  // headed "the live demos will not work yet" over the founders' photographs,
+  // listing shell commands and a session UUID, on a build whose demos were
+  // never going to be live and are already showing their stills. Add three
+  // `/demo-api/v1` requests that 404 against the deck's own origin because the
+  // proxy that serves them only exists in the dev server.
+  //
+  // So the check is skipped rather than made to fail more quietly, and the
+  // condition is `liveDemoIsPossibleHere` — the same predicate `demo.config.ts`
+  // uses to decide `useStills`, imported rather than restated so the strip and
+  // the slides can never disagree about which of the two decks this is.
+  if (!liveDemoIsPossibleHere()) {
+    return {
+      checks: [],
+      sessionId: demoConfig.liveSessionId,
+      sessionSource: demoConfig.liveSessionId ? 'pinned' : 'none',
+      ok: true,
+      mode: 'stills',
+    }
+  }
+
   const origin = checkOrigin()
 
   const [appHealth, health, firstMe, firstCurrent] = await Promise.all([
@@ -309,5 +339,5 @@ export async function runPreflight(): Promise<PreflightResult> {
     ? { sessionId, authEpoch: getStatus().authEpoch + 1 }
     : { sessionId })
 
-  return { checks, sessionId, sessionSource, ok: !checks.some((check) => check.state === 'bad') }
+  return { checks, sessionId, sessionSource, ok: !checks.some((check) => check.state === 'bad'), mode: 'live' }
 }
