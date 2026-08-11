@@ -23,14 +23,24 @@ The app's session cookies (`lsat_session`, `lsat_csrf`) are `SameSite=Lax`, so
 they only ride along with a framed request when the framing document and the
 frame are the *same site* — and site is compared by host, not by port.
 `localhost:5180` framing `localhost:5173` is same-site and stays signed in.
-`127.0.0.1:5180` framing `localhost:5173` is cross-site, the cookie is withheld,
-and **every embedded demo silently lands on the login screen.** A `file://` page
-fails the same way.
+`127.0.0.1:5180` framing `localhost:5173` is cross-site and the cookie is
+withheld. A `file://` page fails the same way.
 
 The deck's dev server binds the name `localhost`, so `127.0.0.1:5180` will refuse
-the connection outright rather than serve you a deck whose demos are all login
-screens. If a link or a script gives you "connection refused" on 5180, that is
-this, and the fix is to type `localhost`.
+the connection outright. If a link or a script gives you "connection refused" on
+5180, that is this, and the fix is to type `localhost`.
+
+Getting it wrong no longer shows the room six login screens. `demo.config.ts`
+compares the deck's own hostname against `appOrigin`'s and, when they differ,
+pins every demo to its still before the first frame is painted — see
+`liveDemoIsPossibleHere` there. That is the same comparison the start card's
+Origin check makes, applied instead of only reported, and it is what stops a
+copy of this deck opened on any other machine from framing whatever happens to
+be answering on that machine's port 5173. **You still want the rule**: stills are
+the fallback, not the demo.
+
+If you have a setup where the two hosts genuinely are the same site under a name
+this cannot guess, `?live=1` overrides the check.
 
 ---
 
@@ -148,7 +158,8 @@ re-seed invalidates all six at once:
 
 ```ts
 export const demoConfig: DemoConfig = {
-  appOrigin: 'http://localhost:5173',
+  appOrigin: APP_ORIGIN,                  // 'http://localhost:5173'
+  displayOrigin: 'Lawyer Tycoon',          // what the room reads in the frame's title bar
   liveSessionId: '56e1702b-bf3c-4b79-8547-096db203f564',
   verdictSessionId: '4a6daa51-92bf-4b9c-aea9-9b580f389aa3',
   soloSessionId: '74a87e68-501f-426d-bc47-b1c3056d23e4',
@@ -156,9 +167,19 @@ export const demoConfig: DemoConfig = {
   autoplaySessionId: '52a727b5-b2aa-413c-bde4-310583e81df2',
   autoplayAnswerKey: 'ACEBACAEBEAADBD',
   demoEmail: 'student@localhost.test',
-  useStills: false,
+  useStills: FORCE_STILLS || !liveDemoIsPossibleHere(),
 }
 ```
+
+Two of those are not session ids and are worth knowing about before you need
+them. `displayOrigin` is what the demo frame's title bar shows the audience; it
+used to print `appOrigin` verbatim, so every demo slide put `localhost:5173` on
+the projector, and on the centrepiece it also put `?autoplay=C` — the credited
+answer — above the app that was about to reason its way to it. Query strings are
+now dropped before display; set `displayOrigin` to a real domain if there is one.
+`useStills` is computed, not written: set `FORCE_STILLS` at the top of the file
+for a dry run. See [The one rule](#the-one-rule) for what
+`liveDemoIsPossibleHere` is protecting against.
 
 | Value | What it is |
 | --- | --- |

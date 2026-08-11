@@ -591,6 +591,15 @@ the same test after §10, and it is the one that matters now:
    `shoot.mjs` refuses to run against any other host and prints the corrected
    command, and the deck's dev server now binds the name `localhost`, so the wrong
    spelling refuses the connection instead of serving a broken deck.
+
+   The four `/login` rows are what the *old* behaviour measured. Since
+   2026-08-11 a hostname mismatch pins every demo to its still rather than
+   framing a page that will bounce: `demo.config.ts` computes `useStills` from
+   the same host comparison the table is about, so the rows now read "still"
+   wherever they read `/login` for an origin reason. That is a better failure,
+   not a fixed one — the room sees photographs of the product instead of the
+   product — and it exists mainly to stop a deck opened anywhere else from
+   embedding whatever answers on that machine's 5173.
 2. **Nothing has to sign in any more.** This was the second necessary condition and
    the actual cause of the false alarm: Playwright starts with an empty cookie jar,
    so every ad-hoc harness in that run was signed out. It is no longer a condition
