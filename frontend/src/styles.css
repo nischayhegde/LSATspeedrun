@@ -750,6 +750,46 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .sound-volume-control input:disabled { cursor: default; opacity: .35; }
 
 .eyebrow, .pixel-kicker { font-family: var(--font-pixel); font-weight: 900; letter-spacing: .14em; }
+
+/* Disclosures, drawn once.
+
+   Ten `<details>` are open in the app and four of them suppress the platform's
+   marker and draw their own chevron. The other six — the answer log's passage,
+   the three strategy-lab notes, the case audit's source and the five-choice
+   audit — were left with the native ▶/▼: a glyph whose size, weight, colour
+   and baseline are decided by whichever face the platform substituted, sitting
+   a few hundred pixels from a chevron the app drew itself.
+
+   So the marker goes everywhere and the chevron is drawn everywhere, in the
+   summary's own colour and turning on the same easing the rest of the app
+   turns on. The four surfaces that draw their own are more specific and keep
+   theirs; `:has(svg)` steps aside for the two summaries that already carry a
+   real icon (the trophy case's award, the strategy row's lucide chevron), so
+   nothing ends up with two affordances for one action. */
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary:not(:has(svg)) {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+summary:not(:has(svg))::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin: -3px 2px 0 auto;
+  flex: 0 0 auto;
+  /* Subordinate to the label it belongs to, in the label's own colour. The
+     alpha is in the border rather than in `opacity` so that the four surfaces
+     which set their own `border-color` here are not quietly dimmed by it. */
+  border: 1.5px solid color-mix(in srgb, currentColor 62%, transparent);
+  border-width: 0 1.5px 1.5px 0;
+  rotate: 45deg;
+  transition: rotate var(--mo-2) var(--mo-out);
+}
+details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg; }
+
 /* The two buttons the whole app is built out of.
    They used to be pixel keys: a 3px pure-black outline, a 2px radius, an inner
    bevel and a 4px hard offset shadow. That was the Pixel Empire hand, and the
