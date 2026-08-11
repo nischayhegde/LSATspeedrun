@@ -269,7 +269,27 @@ export function insideMetric(settings) {
       foot: box.min.y,
     }
   }).filter(Boolean)
-  const radius = Math.max(.06, middle(bodies.map((body) => body.half)) ?? .12)
+  /*
+   * A fixed test body, when the caller supplies one.
+   *
+   * The median over the whole crowd is stable to the digit across lifetimes for
+   * one configuration, which is what it was introduced to fix. It is still the
+   * wrong body for an A/B, and `beam-arm.mjs` found out how: the median is taken
+   * over the poses the walkers happen to be in, two arms send them along
+   * different routes, and The Circuit was therefore measured with a body of
+   * radius .2514 in one arm and .2727 in the other. Eight percent more body is
+   * two centimetres more overlap at every solid in the district, and that alone
+   * can move a share concentrated on a handful of sites by a third — so the arm
+   * that widened the plan appeared to make containment worse partly because it
+   * was being tested with a fatter person.
+   *
+   * The drawn walker's width does not depend on how much ground the plan
+   * reserves for it, so for a comparison it should not be re-derived per arm.
+   * Passing a radius pins it; leaving it out keeps the measured median, which is
+   * what a single unpaired reading wants.
+   */
+  const measuredRadius = Math.max(.06, middle(bodies.map((body) => body.half)) ?? .12)
+  const radius = settings.radius ?? measuredRadius
   const height = Math.max(.1, middle(bodies.map((body) => body.height)) ?? .5)
   const foot = middle(bodies.map((body) => body.foot)) ?? 0
   const low = foot + height * .3
@@ -350,7 +370,15 @@ export function insideMetric(settings) {
     entry,
     solids: solids.length,
     facades: solids.filter((solid) => solid.kind === 'facade').length,
-    body: { radius: +radius.toFixed(4), low: +low.toFixed(4), high: +high.toFixed(4) },
+    body: {
+      radius: +radius.toFixed(4),
+      // Kept alongside, because a pinned radius hides the thing it was pinned to
+      // suppress and the size of that thing is itself a finding.
+      measuredRadius: +measuredRadius.toFixed(4),
+      pinned: settings.radius !== undefined,
+      low: +low.toFixed(4),
+      high: +high.toFixed(4),
+    },
     samples,
     hits,
     share: +(hits / Math.max(1, samples)).toFixed(4),

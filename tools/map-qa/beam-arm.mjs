@@ -35,6 +35,14 @@ const keys = process.argv.slice(4).filter((argument) => TABS[argument])
 const REGIONS = keys.length ? keys : ['city', 'nation', 'continent']
 const FRAMES = Number(process.env.MAPS_FRAMES ?? 900)
 const PARK_FRAMES = Number(process.env.MAPS_PARK_FRAMES ?? 900)
+/**
+ * The test body, pinned for every arm.
+ *
+ * How wide the drawn walker is has nothing to do with how much ground the plan
+ * reserves for it, so it must not be re-derived per arm — see the note in
+ * `metrics.mjs`. `.25` is the middle of the range the drawn figure measures.
+ */
+const RADIUS = Number(process.env.MAPS_RADIUS ?? .25)
 
 const report = { tag, beams, frames: FRAMES, at: new Date().toISOString(), arms: {} }
 const { browser, page, errors } = await open()
@@ -49,12 +57,12 @@ try {
       await region(page, TABS[key], { key })
       const applied = await page.evaluate(() => window.__mapWalkerBeam)
       if (applied !== beam) throw new Error(`beam override did not stick: asked ${beam}, page has ${applied}`)
-      const inside = await page.evaluate(insideMetric, { frames: FRAMES, ...INSIDE_SETTINGS })
+      const inside = await page.evaluate(insideMetric, { frames: FRAMES, radius: RADIUS, ...INSIDE_SETTINGS })
       const parked = await page.evaluate(strandedMetric, { frames: PARK_FRAMES })
       report.arms[beam][key] = { applied, inside, parked }
       console.log(
         `\n=== ${key} beam ${beam} === share ${inside.share} (${inside.hits}/${inside.samples})`,
-        `body r${inside.body.radius} solids ${inside.solids} (facade ${inside.facades})`,
+        `body r${inside.body.radius} (drawn ${inside.body.measuredRadius}) solids ${inside.solids} (facade ${inside.facades})`,
       )
       console.log(`    entry ${JSON.stringify(inside.entry)}`)
       console.log(
