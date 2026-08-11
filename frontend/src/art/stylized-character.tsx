@@ -767,6 +767,21 @@ function createEntry(
         flatten: .2,
         saturation: 1.12,
         grain: .012,
+        // Held far below the rooms', and for the same reason the contour is.
+        // A figure has almost nothing that genuinely occludes anything: a chin
+        // over a collar, an arm against a ribcage, the inside of a lapel. At
+        // the rooms' strength that short list turns into grime in every fold
+        // of the suit and a bruise under the jaw. At this strength it does the
+        // one thing worth having, which is to stop a head reading as a ball
+        // resting in front of a pair of shoulders.
+        occlusion: .42,
+        // A tenth of a world unit, where a figure is about three tall. Any
+        // wider and the reach spans the whole neck rather than the crease at
+        // the bottom of it.
+        occlusionRadius: .11,
+        // Warm, because the light that reaches the underside of a chin has
+        // bounced off a collar and a chest rather than come from the sky.
+        occlusionTint: 0x9a7f70,
       })
       : null,
     scene,

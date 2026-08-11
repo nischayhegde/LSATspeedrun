@@ -79,6 +79,9 @@ frontend/scratch-*
 .deck-gif/
 .lcp-evidence/
 .map-shots/
+# Lighting-pass scratch: bench reports and before/after stills.
+.light-run/
+.light-shots/
 .office-evidence/
 .qa-tmp/
 .room-evidence/

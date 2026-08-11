@@ -106,6 +106,19 @@ type ArcDefinition = {
   ambient: { sky: number; ground: number; intensity: number }
   fill: { color: number; intensity: number; position: [number, number, number] }
   rim: { color: number; intensity: number; position: [number, number, number] }
+  /**
+   * What a crevice in this district looks like.
+   *
+   * The tint is the colour light falls towards where the sky cannot reach, and
+   * it is a property of the place rather than a global constant: under a blue
+   * sky over warm stone, a gutter loses the blue and keeps the bounce, so it
+   * goes warm as it goes dark. Over water it loses far less, because the sea
+   * throws light back up. Under a night sky there is barely any wide light to
+   * lose in the first place, and the strength drops accordingly.
+   */
+  occlusion: { strength: number; tint: number }
+  /** How much aerial glare this district's atmosphere puts around its sun. */
+  sky: { halo: number }
 }
 
 const ARC: Record<MapRegionKey, ArcDefinition> = {
@@ -130,6 +143,8 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x9ebcc2, ground: 0x263631, intensity: .48 },
     fill: { color: 0x8bb6c1, intensity: .54, position: [20, 13, -18] },
     rim: { color: 0xffd69a, intensity: .76, position: [7, 15, -25] },
+    occlusion: { strength: .78, tint: 0x8a7a66 },
+    sky: { halo: 1 },
   },
   nation: {
     title: 'The Circuit', subtitle: 'Appellate route · regional courts',
@@ -157,6 +172,10 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0xa9c4c5, ground: 0x2b382d, intensity: .4 },
     fill: { color: 0x90b2bd, intensity: .36, position: [22, 12, -16] },
     rim: { color: 0xe8c98c, intensity: .7, position: [5, 14, -24] },
+    // Open country. Hedge bottoms and the shaded side of a barn are the only
+    // real crevices out here, and the grass bounces a lot of green back up.
+    occlusion: { strength: .62, tint: 0x8c8a6e },
+    sky: { halo: 1 },
   },
   ocean: {
     title: 'Treaty Sea', subtitle: 'Maritime counsel · diplomatic harbor',
@@ -170,6 +189,12 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0xaed2d3, ground: 0x193338, intensity: .62 },
     fill: { color: 0x69a9bb, intensity: .72, position: [23, 10, -19] },
     rim: { color: 0xffd18a, intensity: .88, position: [8, 13, -27] },
+    // Water is a second sky. Held down because a harbour under an overcast has
+    // very little directionality left to take away.
+    occlusion: { strength: .5, tint: 0x7d8b8d },
+    // Overcast. The disc is behind cloud, so the glare is spread rather than
+    // concentrated: the tight term still lands where the sun is, but softly.
+    sky: { halo: .72 },
   },
   continent: {
     title: 'Sovereign Arc', subtitle: 'Continental chamber · civic axis',
@@ -203,6 +228,10 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x93b3c4, ground: 0x33443f, intensity: .46 },
     fill: { color: 0xe8d3b4, intensity: .82, position: [16, 11, 20] },
     rim: { color: 0xffc38a, intensity: .92, position: [5, 15, -27] },
+    // Masonry, colonnades and a deep cornice: the district with the most
+    // genuine self-shadowing in the game, and the palette carries the range.
+    occlusion: { strength: .85, tint: 0x8b7a67 },
+    sky: { halo: 1.08 },
   },
   orbit: {
     title: 'Global Compact', subtitle: 'International assembly · final jurisdiction',
@@ -216,6 +245,12 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x18233d, ground: 0x060a12, intensity: .18 },
     fill: { color: 0x5ea6bd, intensity: .66, position: [24, 8, -19] },
     rim: { color: 0x79dbe3, intensity: 1.05, position: [4, 12, -28] },
+    // Night, and an ambient floor of .18. There is almost no wide light here
+    // to be blocked, and pretending otherwise would only sink the district.
+    occlusion: { strength: .34, tint: 0x4a5766 },
+    // Orbit. The key is a star at a distance and there is no atmosphere to
+    // scatter it, so there is no halo at all — only the disc's own glint.
+    sky: { halo: .18 },
   },
 }
 
@@ -7416,11 +7451,38 @@ function createWindTurbine(scale = 1) {
   return group
 }
 
+/**
+ * The dome, anchored to the same sun the district is lit by.
+ *
+ * It used to be a vertical gradient plus `.035 * sin(time * .08 + x * 4)`: a
+ * band of extra brightness that drifted slowly sideways across the whole sky,
+ * unrelated to anything. That is the single detail that stopped these
+ * districts reading as being at a time of day. A sky is not a gradient with a
+ * wandering bright patch in it; it is brightest around the sun, and the
+ * brightness falls off from there — steeply for the first few degrees, then
+ * very gradually across the rest of the hemisphere. Every scene here has a
+ * strong, low, warm key placed with some care, and the sky behind it was
+ * pointing somewhere else.
+ *
+ * Two powers of the cosine do the whole job: a tight one for the glare around
+ * the disc, a wide one for the general lift on the sun's side of the sky. The
+ * halo is tinted with the sun's own colour, so a warm afternoon key gives a
+ * warm sky beside it and the Global Compact's cold white one does not.
+ *
+ * Costs nothing. It is the same single dome, the same one draw call and the
+ * same one program; only the arithmetic inside the fragment changed, and it
+ * lost a `sin` in the exchange.
+ */
 function createSky(definition: ArcDefinition) {
+  const sunDirection = new THREE.Vector3(...definition.sun.position).normalize()
   const uniforms = {
     uTop: { value: new THREE.Color(definition.skyTop) },
     uBottom: { value: new THREE.Color(definition.skyBottom) },
-    uTime: { value: 0 },
+    uSun: { value: sunDirection },
+    uSunColour: { value: new THREE.Color(definition.sun.color) },
+    // Night has no aerial glare to speak of: the Global Compact's sky should
+    // stay black beside its key, not grow a daylight halo around it.
+    uHalo: { value: definition.sky.halo },
   }
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(170, 56, 28),
@@ -7428,10 +7490,24 @@ function createSky(definition: ArcDefinition) {
       uniforms,
       side: THREE.BackSide,
       vertexShader: 'varying vec3 vWorld; void main(){vWorld=(modelMatrix*vec4(position,1.)).xyz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader: 'uniform vec3 uTop; uniform vec3 uBottom; uniform float uTime; varying vec3 vWorld; void main(){float h=clamp(normalize(vWorld).y*.72+.38,0.,1.);float glow=.035*sin(uTime*.08+normalize(vWorld).x*4.);gl_FragColor=vec4(mix(uBottom,uTop,h)+glow,1.);}',
+      fragmentShader: `
+        uniform vec3 uTop; uniform vec3 uBottom; uniform vec3 uSun; uniform vec3 uSunColour; uniform float uHalo;
+        varying vec3 vWorld;
+        void main() {
+          vec3 view = normalize(vWorld);
+          float height = clamp(view.y * .72 + .38, 0., 1.);
+          vec3 base = mix(uBottom, uTop, height);
+          float toSun = max(dot(view, uSun), 0.);
+          // The tight term is the glare immediately around the disc; the wide
+          // one is the whole sun-side half of the sky sitting a little above
+          // the other half, which is most of what tells a viewer where the
+          // light is coming from.
+          float halo = pow(toSun, 26.) * .5 + pow(toSun, 3.) * .16;
+          gl_FragColor = vec4(base + uSunColour * halo * uHalo, 1.);
+        }
+      `,
     }),
   )
-  sky.userData.skyUniforms = uniforms
   return sky
 }
 
@@ -7820,6 +7896,21 @@ export function MapThreeScene({
       bands: 8,
       flatten: .52,
       saturation: 1.3,
+      // Contact shading, which outdoors is almost entirely about the ground.
+      // The sun casts one shadow map here and the hemisphere fills everything
+      // it misses, and a hemisphere cannot tell the strip of pavement in the
+      // angle of a wall from the middle of the road, so a district of a
+      // thousand objects all stood on the same evenly lit plane. Half a metre
+      // of reach is the width of the dark line that should be at the foot of a
+      // wall, under a parked car and in the gutter of a roof valley.
+      occlusion: definition.occlusion.strength,
+      // Wider than the office's, and deliberately so: the smallest thing worth
+      // seating out here is a kerb or a tree bole, and the district is read
+      // from twenty-five metres up. A furniture-sized reach at that distance
+      // resolves to a line too fine to survive the ink pass sitting on top of
+      // it, so the same cost buys nothing.
+      occlusionRadius: 1.15,
+      occlusionTint: definition.occlusion.tint,
     })
 
     const scene = new THREE.Scene()
@@ -7848,6 +7939,21 @@ export function MapThreeScene({
     sun.shadow.camera.left = -52; sun.shadow.camera.right = 52; sun.shadow.camera.top = 44; sun.shadow.camera.bottom = -44
     sun.shadow.camera.far = 260
     sun.shadow.bias = -.0006
+    // A sun shadow has an edge, not a border. The one thing that gives away a
+    // shadow map as a shadow map is a razor-sharp boundary running across a
+    // pavement, and this one was razor-sharp: 2048 texels over a 104-unit
+    // frustum is one texel every five centimetres, so the transition was two
+    // or three centimetres wide on the ground.
+    //
+    // Real penumbra widens with the distance from whatever is casting, which a
+    // single map cannot reproduce. What it can do is stop pretending the sun
+    // is a point. Three's PCF filter already takes nine taps and `radius`
+    // scales how far apart it spreads them, so a wider edge costs exactly
+    // nothing — no extra samples, no second map, no change to the one static
+    // render the map does at build time. Held to two: past about three the
+    // nine taps stop overlapping and the soft edge turns into nine ghosts of
+    // the hard one.
+    sun.shadow.radius = 2
     scene.add(sun)
     const fill = new THREE.DirectionalLight(definition.fill.color, definition.fill.intensity)
     fill.position.set(...definition.fill.position)
@@ -9266,7 +9372,7 @@ export function MapThreeScene({
       if (
         data.cloud || data.tree || data.fountainSpray || data.crane || data.lighthouse || data.lighthouseBeam
         || data.turbine || data.orbitalRing || data.radarDish || data.planet || data.signal || data.atmosphere
-        || data.waterUniforms || data.skyUniforms || data.auroraUniforms || data.flagUniforms || data.mapLabelKind
+        || data.waterUniforms || data.auroraUniforms || data.flagUniforms || data.mapLabelKind
         || data.mapObjectKind || data.mapEmphasisKind || data.lawyerBeacon || data.playerMarker || data.destinationMarker
         || data.buoy || data.marshBlade || data.ambientActor || data.ambientWing
       ) animatedObjects.push(object)
@@ -10220,7 +10326,6 @@ export function MapThreeScene({
           object.position.x = Math.sin(elapsed * .035) * .4
         }
         if (object.userData.waterUniforms) object.userData.waterUniforms.uTime.value = elapsed
-        if (object.userData.skyUniforms) object.userData.skyUniforms.uTime.value = elapsed
         if (object.userData.auroraUniforms) object.userData.auroraUniforms.uTime.value = elapsed
         if (object.userData.flagUniforms) object.userData.flagUniforms.uTime.value = elapsed
         // A contact's shingle is always in the world; the card naming the
@@ -10355,6 +10460,13 @@ export function MapThreeScene({
       ;(window as unknown as { __mapScene?: unknown; __mapThree?: unknown }).__mapThree = THREE
       ;(window as unknown as { __mapScene?: unknown }).__mapScene = {
         region, scene, world, camera, renderer, lawyer, transports, landmarks, buildStartedAt, firstRenderAt,
+        // The composite itself, so its settings can be changed on a live scene
+        // and the cost of a change measured against the same district, the
+        // same crowd and the same frame, rather than against a second run of
+        // the dev server. The map's crowd population is not reproducible
+        // across server lifetimes and its frame time follows the crowd, so an
+        // A/B taken any other way measures the population as much as the code.
+        stylePass,
         firstFrameMs: firstRenderAt - buildStartedAt,
         roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer: standingFigureRenderer, vehicleHulls,
         // The counsel's rig and its own feet, so "does the walk skate" can be
