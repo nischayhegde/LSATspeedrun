@@ -626,66 +626,6 @@
 
 .deck-layer[data-section='close'] .plate .rule { display: none; }
 
-/* The three words, along the bottom edge. Out of the plate's flow and
-   onto the frame, set as one small row — the narrative asks for words
-   rather than a ledger, and a numbered list of three reasons at the end
-   of a pitch reads as a summary slide, which is the one thing the close
-   is not. */
-.deck-layer[data-section='close'] .plate .ledger {
-  position: absolute;
-  /* Wider than the body's gutter, which is the whole reason this row can be
-     one line per clause. Inside the gutter each third is about 474px of text
-     at 1920 and the longest clause needs ~540, so all three wrapped to two
-     lines, doubled in height, and ran up into the character's feet. The row is
-     three short phrases along the bottom edge rather than a column of body
-     copy, so it is allowed the full frame. */
-  left: var(--s-4);
-  right: var(--s-4);
-  /* Clear of the progress rail below and of the character's boots above. Both
-     constraints are tight: the rail's ticks sit on the very bottom edge, and
-     the camera lands the soles at about 90% of frame height. */
-  bottom: var(--s-4);
-  display: flex;
-  justify-content: center;
-  margin: 0;
-  padding: 0;
-}
-
-/* Three equal columns, not `space-between`.
-   `space-between` pinned the outer two clauses to the gutters and left the
-   third floating in the middle, so the deck's last three words read as three
-   unrelated fragments that happened to land on the same line. Equal thirds
-   with a rule between them is the same information as one deliberate rhythm,
-   which is what "three closing words set small along the bottom edge" asks
-   for. Each clause centres inside its own third, so the row stays symmetric
-   about the character however long the clauses get. */
-.deck-layer[data-section='close'] .plate .ledger li {
-  flex: 1 1 0;
-  border-bottom: 0;
-  padding: 0 var(--s-2);
-  font-family: var(--font-display);
-  font-weight: 600;
-  /* On the scale. This was the only audience-facing size in the deck set in
-     `vw` and `rem` rather than in stage units, which meant the deck's closing
-     line was the one piece of type that did not scale with everything else
-     when the projector turned out not to be 1920 wide. */
-  font-size: var(--t-dense);
-  letter-spacing: var(--track-body);
-  line-height: 1.3;
-  text-align: center;
-  text-wrap: balance;
-  color: var(--navy);
-}
-
-/* A gold hairline between the beats, at the width of the type rather than of
-   the column, so the row is read as one object. */
-.deck-layer[data-section='close'] .plate .ledger li + li {
-  border-left: 1px solid rgba(154, 108, 40, .42);
-}
-
-/* The numerals go. Three closing words are a rhythm, not an inventory. */
-.deck-layer[data-section='close'] .plate .ledger i { display: none; }
-
 /* ----------------------------------------------------------------
    THE CLOSE, WHEN THE PRODUCT IS BEHIND IT
 

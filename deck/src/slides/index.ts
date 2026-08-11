@@ -1610,29 +1610,47 @@ export const SLIDES: readonly SlideSpec[] = [
     kind: 'statement',
     eyebrow: 'Act VI — the close',
     headline: 'One place. Two doors.',
-    deck: 'Walk in and answer questions. Or build a firm that only grows on thousands of them.',
-    // The three words are the founders' and they stay, because the triad is what
-    // the room repeats afterwards. What they did not have was a reason: three
-    // bare adjectives with no referent, on the one slide that is held on screen
-    // for the entire question period. Each now carries the mechanism that makes
-    // it true, and all three are claims a questioner can check — the first is a
-    // fact about our cost structure, the second is the removed override from
-    // `concept-lawyer-tycoon`, the third is `game-never-gates` restated. No
-    // price is named because we do not have one to name; see `CITATIONS.md` §7.
-    points: [
-      'Cheaper — no video studio, no live instructors',
-      'Narrower — no drilling only your best types',
-      'Harder to quit — the game runs on questions',
-    ],
+    // `And`, not `Or`. The two doors are not alternatives: the firm only grows
+    // on questions answered, so the second clause is a consequence of the first
+    // and never a substitute for it. `Or` offered the room a choice between them
+    // and in doing so conceded that the game is severable — the exact framing
+    // `concept-lawyer-tycoon` was rewritten to stop making. The second half is
+    // also shorter now, because the mechanism it used to spell out is what the
+    // room has just watched the office do for four slides.
+    deck: 'Walk in and answer questions. And build the firm they pay for.',
+    // THE THREE-CLAUSE LEDGER IS GONE. It was the slide's third register of text
+    // — under an eyebrow, a headline and a two-line deck — on the one frame that
+    // is held for the whole question period, and it was the only one of the four
+    // that argued rather than concluded: cheaper, narrower and harder to quit
+    // re-litigate the pricing and coverage the deck already made its own acts
+    // about. The founders asked for less on this slide.
+    //
+    // Nothing is lost from the talk. All three are still spoken in `notes`, and
+    // all three are still claims a questioner can check — the cost structure,
+    // the removed override from `concept-lawyer-tycoon`, and `game-never-gates`
+    // restated. They are answers to hold, not a list to project behind them.
+    //
+    // The stylesheet got there first and clipped `.ledger` on this slide to a
+    // screen-reader box, because the copy lived here and this file was held.
+    // This is the deletion that rule is waiting on; the rule and the close's
+    // other `.ledger` styling can go when whoever owns `deck.css` next passes.
     notes:
       'Three reasons we win. Cheaper — no video studio, no instructors. '
       + "Narrower — you can't drill only what you're good at. "
       + 'Harder to quit — the game runs on questions. One place instead of five. Thank you.',
     speaker: 'Nischay',
     budgetSeconds: 13,
-    // Two doorways, both open, the character between them facing the audience.
-    // Composed, not animated — and held for the entire Q&A.
-    scene: { id: 'doorways', framing: 'wide' },
+    // The built firm, not a diagram of it. This is the same room
+    // `concept-lawyer-tycoon` ships at tier 6, run to the top of the tree, so
+    // the close lands on the thing the student's answers actually produced
+    // rather than on an illustration of two choices. The counsel who stood
+    // between the doorways is not lost: `app-scene-layer` puts her in the
+    // foreground of this office, keyed on this slide id.
+    //
+    // NOT `office-transform`, which is the tier-0-beside-tier-14 comparison
+    // with a drifting divider and its own two labels — a loop that never
+    // settles, behind copy that is held on screen for the entire Q&A.
+    scene: { id: 'office', params: { tier: 14, full: true, floor: 'practice' } },
     transition: 'foil-seal',
   },
 ]
