@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import os
 import sys
+import textwrap
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
@@ -78,6 +79,7 @@ class Cost:
         eligible_share: float,
         draws_per_student: float,
         holdback_override: float | None = None,
+        cells: int = 1,
         note: str = "",
     ):
         self.layer = layer
@@ -89,6 +91,11 @@ class Cost:
         self.eligible_share = eligible_share
         self.draws_per_student = draws_per_student
         self.holdback_override = holdback_override
+        # How many independent comparisons the layer's question actually
+        # contains. One, for a layer that asks "does this help?". Twenty-eight
+        # for a layer that ranks fourteen approaches in two sections, and
+        # leaving that at one is how the strategy trial came to look affordable.
+        self.cells = cells
         self.note = note
 
     @property
@@ -129,14 +136,32 @@ class Cost:
 COSTS = [
     Cost(
         "weak_type_targeting",
-        outcome="accuracy inside the assigned run",
-        rate=0.60,
-        effect=0.03,
-        answers_per_draw=9,
+        outcome="accuracy on later first encounters with the targeted types",
+        # Weak types are below their section by construction — that is what
+        # being on the list means — so the base rate is not the bank's 60%.
+        rate=0.50,
+        # Bigger than the other layers' three points, and deliberately so. A
+        # targeted run gives up 60% of its fresh material to two or three
+        # types; a treatment that dear has to move them by four points to be
+        # worth the coverage it costs.
+        effect=0.04,
+        # Not the whole run. The reading is over answers on the targeted types
+        # in later runs, and a following run holds two or three of those.
+        answers_per_draw=3,
         icc=0.10,
-        eligible_share=0.5,  # only runs where the student has focus types
+        # Answers in the population over all answers filed: roughly a third of
+        # a run is a targeted type, and about seven students in ten have a
+        # weakness the rolling signal will name at any given time.
+        eligible_share=0.25,
         draws_per_student=40,
-        note="Runs, and only runs following a mega-litigation that named a weak type.",
+        note=(
+            "Cheaper since the signal changed. The old one read the last "
+            "mega-litigation, so a student who had never sat one was ineligible "
+            "forever and the rest were re-read only when they sat another; the "
+            "rolling signal makes almost every student with history eligible. "
+            "Interference is unpriced here and dilutes toward the null, so treat "
+            "this as the count for a positive finding rather than for a null one."
+        ),
     ),
     Cost(
         "run_ordering",
@@ -179,7 +204,14 @@ COSTS = [
         icc=0.0,
         eligible_share=1.0,
         draws_per_student=300,
-        note="Per approach and per section, so multiply by the number of cells to fill.",
+        cells=28,
+        note=(
+            "PER CELL. The trial does not ask whether prompting helps in general; it "
+            "ranks approaches, so the figure above has to be met for each of the 14 "
+            "approaches in each of the 2 sections. `strategies.strategy_population_"
+            "reading` is the pooled estimate that at least makes one cell fillable; "
+            "the per-student version needs it 28 times over, per student."
+        ),
     ),
     Cost(
         "review_scheduling",
@@ -232,8 +264,29 @@ def main() -> None:
         print(f"  answers to watch   {thousands(result['answers_to_watch'])}")
         print(f"  students needed    {thousands(result['students'])}")
         if cost.note:
-            print(f"  note               {cost.note}")
+            wrapped = textwrap.wrap(cost.note, width=76)
+            print(f"  note               {wrapped[0]}")
+            for line in wrapped[1:]:
+                print(f"                     {line}")
         print()
+
+    print("CHEAPEST FIRST, BY ANSWERS TO WATCH")
+    print(
+        "  Whose question gets answered first, if the app grows one bank of traffic\n"
+        "  and every layer draws from it at once. Multiplied by the number of cells the\n"
+        "  layer's question really contains, which is where the strategy trial's\n"
+        "  affordability went.\n"
+    )
+    ranked = sorted(COSTS, key=lambda cost: cost.report()["answers_to_watch"] * cost.cells)
+    for cost in ranked:
+        result = cost.report()
+        cells = f"   × {cost.cells} cells" if cost.cells > 1 else ""
+        print(
+            f"  {cost.layer:<22}"
+            f"{thousands(result['answers_to_watch'] * cost.cells):>10} answers"
+            f"{thousands(result['students'] * cost.cells):>8} students{cells}"
+        )
+    print()
 
     print("CALIBRATION, FOR THE LAYER THAT HAS NO HOLDOUT")
     print(

@@ -109,8 +109,11 @@ They are not excluded from *practice*, though, which is the other half. The
 targeted fill draws a bounded share of the fresh budget from weak types and the
 rest from the ordinary pool, where placeholders appear at whatever rate the bank
 gives them. So their share of a run falls by at most the targeted share and
-never to zero. `tools/audit/type_targeting.py` measures that number under both
-arms rather than leaving it to this paragraph.
+never to zero. `tools/audit/type_targeting.py` measures that under both arms
+rather than leaving it to this paragraph: on the shipped bank, targeting the two
+commonest Logical Reasoning types takes placeholders from 10.5% of an untargeted
+run to 4.6% of a targeted one, a 56% relative reduction against the 60% the fill
+ratio allows.
 
 
 ## Relationship to the layer already registered
@@ -127,6 +130,15 @@ window, weighted highest — so the trial would be spending the app's scarce
 observation budget discovering whether reading more evidence beats reading less.
 What is genuinely uncertain is whether type targeting helps at all, and that arm
 already exists.
+
+The change does cost the layer its history. `design_version` moves to
+`2026-08-12-rolling` and nothing pools the two, because runs before and after
+were treated on different signals. That is the honest bookkeeping and it is
+cheap here: `tools/audit/measurement_cost.py` puts this layer at roughly 47,000
+answers across about 100 students, against 469,000 for the strategy trial, which
+has to fill twenty-eight cells rather than one. The eligible population also got
+much larger — the old signal required a completed mega-litigation, so a student
+who had never sat one was ineligible forever.
 """
 
 from __future__ import annotations

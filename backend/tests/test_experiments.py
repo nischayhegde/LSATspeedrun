@@ -29,6 +29,7 @@ from app.experiments import (
     assignment_health,
     layer_reading,
     registry_reading,
+    signal_tokens,
 )
 from app.extensions import db
 from app.models import (
@@ -647,6 +648,316 @@ def test_a_returning_answer_is_credited_to_one_arm_only(app):
         assert reading["answers"] == 1
         credited = next(entry for entry in reading["arms"] if entry["answers"])
         assert credited["arm"] == "interleaved"
+
+
+# ---------------------------------------------------------------------------
+# weak_type_targeting: the later-encounters window and the population it names
+#
+# This layer is read on new questions of the types the run leaned into, and
+# both halves of that are load-bearing. Read in the run itself it reports a
+# working treatment as a harm, because a run full of your worst type is
+# harder. Read over every type, it dilutes the treatment with a bank neither
+# arm touched. Read through the review queue — the window interleaving uses —
+# it compares arms on cards the treated arm created more of.
+#
+# The population is only enforceable because the draw wrote the signal down.
+# By the time anyone reads the layer the signal has moved, and it moving is
+# the treatment working rather than a bookkeeping inconvenience.
+# ---------------------------------------------------------------------------
+
+
+def _type_bank() -> dict[str, list]:
+    """Two types in one section, so a type effect cannot be a section effect."""
+    made: dict[str, list] = {}
+    for kind in ("Flaw", "Strengthen"):
+        made[kind] = []
+        for index in range(6):
+            question = Question(
+                id=f"hf-lsat-type-{kind.lower()}-{index}",
+                section="Logical Reasoning",
+                question_type=kind,
+                difficulty=3,
+                stimulus=f"Stimulus {kind} {index}.",
+                stem=f"Stem {kind} {index}?",
+                correct_answer="C",
+                source=f"{SOURCE_PREFIX}lr · train",
+                license_status="upstream_terms_apply",
+                review_status="published",
+            )
+            db.session.add(question)
+            made[kind].append(question)
+    db.session.flush()
+    return made
+
+
+def _targeted_run(
+    user,
+    *,
+    questions,
+    started,
+    arm: str | None = None,
+    weak_types=(),
+    review=False,
+):
+    """One run, fully answered, optionally under a recorded targeting arm.
+
+    `arm=None` builds an unassigned run — a later sitting the student happens
+    to do, which is where this layer's outcomes come from. `weak_types` is what
+    the signal said when the assigned run was built, written to the row exactly
+    as the real call site writes it.
+    """
+    from app.models import Attempt, SessionItem
+    from app.models import StudySession as Run
+
+    run = Run(
+        user_id=user.id,
+        mode="practice",
+        practice_style="cases",
+        feedback_policy="immediate",
+        target_minutes=20,
+        total_items=len(questions),
+        started_at=started,
+    )
+    db.session.add(run)
+    db.session.flush()
+    if arm:
+        db.session.add(
+            LayerAssignment(
+                layer=LAYER,
+                subject_id=user.id,
+                unit="run",
+                exposure=run.id,
+                session_id=run.id,
+                arm=arm,
+                propensity=0.75 if arm == "targeted" else 0.25,
+                design_version=LAYERS[LAYER].design_version,
+                signal=signal_tokens(weak_types),
+            )
+        )
+    for position, (question, correct) in enumerate(questions):
+        item = SessionItem(
+            session_id=run.id,
+            question_id=question.id,
+            position=position,
+            from_review_queue=review,
+        )
+        db.session.add(item)
+        db.session.flush()
+        db.session.add(
+            Attempt(
+                user_id=user.id,
+                session_item_id=item.id,
+                idempotency_key=f"{item.id}-attempt",
+                selected_label="C",
+                is_correct=correct,
+                server_elapsed_ms=90_000,
+                created_at=started,
+            )
+        )
+    db.session.flush()
+    return run
+
+
+def test_the_draw_writes_down_the_signal_because_it_will_not_be_true_later(app, monkeypatch):
+    """The population is a fact on the row, not a sentence in the registry.
+
+    A student who improves stops being weak at the type, which is the outcome
+    this layer is trying to produce. So "the types this run targeted" is
+    unrecoverable a week later from anything except the row the draw wrote.
+    """
+    with app.app_context():
+        _stock_bank()
+        db.session.commit()
+        users, _served = _runs_with_focus(app, monkeypatch, holdback=0.0, runs=1)
+
+        row = LayerAssignment.query.filter_by(subject_id=users[0]).one()
+        assert row.signal == "Flaw"
+        assert LAYERS[LAYER].restricted_by_signal is True
+
+
+def test_targeting_is_read_on_new_questions_of_the_type_not_on_the_run_it_steered(app):
+    """The declared window, and the reading the immediate one would give.
+
+    History built to the shape the layer predicts: under the targeted arm the
+    student does badly in the steered run, because it is full of their worst
+    type, and well on fresh questions of that type a week later. Under the
+    untargeted arm, the reverse. Read immediately this is a harm with a
+    perfectly good sample.
+    """
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    with app.app_context():
+        bank = _type_bank()
+        start = utcnow() - timedelta(days=30)
+        for index in range(8):
+            user = make_user(f"later-{index}@example.test")
+            arm = "targeted" if index % 2 == 0 else "untargeted"
+            wrong_now = arm == "targeted"
+            _targeted_run(
+                user,
+                arm=arm,
+                weak_types=["Flaw"],
+                questions=[(question, not wrong_now) for question in bank["Flaw"][:3]],
+                started=start,
+            )
+            _targeted_run(
+                user,
+                questions=[(question, wrong_now) for question in bank["Flaw"][3:]],
+                started=start + timedelta(days=7),
+            )
+        db.session.commit()
+
+        later = layer_reading(LAYER)
+        immediate = layer_reading(LAYER, window="immediate")
+        assert later["window"] == "later_encounters"
+        assert later["population_enforced"] is True
+        assert "declares later_encounters" in immediate["window_note"]
+
+        assert later["adjusted_lift"] > 0
+        assert immediate["adjusted_lift"] < 0
+        # Eight students, three questions each side. The two windows read
+        # disjoint sets of answers, which is the whole distinction.
+        assert later["answers"] == 24
+        assert immediate["answers"] == 24
+
+
+def test_a_type_the_run_never_targeted_is_not_in_the_comparison(app):
+    """Restricting to the signal is what keeps the treatment out of the bank.
+
+    A targeted run leaned into Flaw questions. It did nothing whatever about
+    Strengthen questions, and the student answers plenty of those. Counting
+    them would dilute the arms with answers on which the treatment is a no-op,
+    which is the same dilution the eligibility check avoids at the draw.
+    """
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    with app.app_context():
+        bank = _type_bank()
+        start = utcnow() - timedelta(days=30)
+        user = make_user("offtype@example.test")
+        _targeted_run(
+            user,
+            arm="targeted",
+            weak_types=["Flaw"],
+            questions=[(bank["Flaw"][0], False)],
+            started=start,
+        )
+        _targeted_run(
+            user,
+            questions=[(bank["Flaw"][1], True)]
+            + [(question, False) for question in bank["Strengthen"][:4]],
+            started=start + timedelta(days=7),
+        )
+        db.session.commit()
+
+        reading = layer_reading(LAYER)
+        assert reading["answers"] == 1
+        targeted = next(entry for entry in reading["arms"] if entry["arm"] == "targeted")
+        assert (targeted["answers"], targeted["accuracy"]) == (1, 100.0)
+
+
+def test_the_card_the_treated_arm_created_is_not_the_outcome(app):
+    """Why this is a third window rather than `delayed` with a filter.
+
+    A run that serves more of your weakest type produces more wrong answers
+    and therefore more review cards, so the returning material is itself an
+    outcome of the arm. Reading the layer there would compare two
+    differently-composed sets. The delayed window does find those answers,
+    which is what makes the mistake available and worth pinning against.
+    """
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    with app.app_context():
+        bank = _type_bank()
+        start = utcnow() - timedelta(days=30)
+        user = make_user("returns@example.test")
+        _targeted_run(
+            user,
+            arm="targeted",
+            weak_types=["Flaw"],
+            questions=[(bank["Flaw"][0], False)],
+            started=start,
+        )
+        _targeted_run(
+            user,
+            questions=[(bank["Flaw"][0], True)],
+            started=start + timedelta(days=7),
+            review=True,
+        )
+        db.session.commit()
+
+        assert layer_reading(LAYER)["answers"] == 0
+        assert layer_reading(LAYER, window="delayed")["answers"] == 1
+
+
+def test_the_answer_is_credited_to_the_last_run_that_named_the_type(app):
+    """One credit per answer, and only runs the type was in the population of.
+
+    Three assigned runs and one later encounter. The middle run named a
+    different type, so for a Flaw answer it neither targeted nor withheld
+    anything and is not a candidate to credit — skipping it is not selection on
+    an outcome, because which arm a run draws is independent of which types its
+    signal held.
+    """
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    with app.app_context():
+        bank = _type_bank()
+        start = utcnow() - timedelta(days=30)
+        user = make_user("credit-type@example.test")
+        _targeted_run(
+            user,
+            arm="targeted",
+            weak_types=["Flaw"],
+            questions=[(bank["Flaw"][0], True)],
+            started=start,
+        )
+        _targeted_run(
+            user,
+            arm="untargeted",
+            weak_types=["Flaw"],
+            questions=[(bank["Strengthen"][1], True)],
+            started=start + timedelta(days=2),
+        )
+        _targeted_run(
+            user,
+            arm="targeted",
+            weak_types=["Strengthen"],
+            questions=[(bank["Strengthen"][0], True)],
+            started=start + timedelta(days=4),
+        )
+        _targeted_run(
+            user,
+            questions=[(bank["Flaw"][2], True)],
+            started=start + timedelta(days=9),
+        )
+        db.session.commit()
+
+        reading = layer_reading(LAYER)
+        credited = [entry for entry in reading["arms"] if entry["answers"]]
+        assert reading["answers"] == 1
+        assert [entry["arm"] for entry in credited] == ["untargeted"]
+
+
+def test_a_signal_too_long_for_the_column_loses_whole_types_not_half_of_one(app):
+    """Truncation has to leave a set the reading can still trust.
+
+    A signal clipped mid-token would name a type that does not exist and
+    silently empty that part of the population. Dropping whole tokens leaves a
+    subset: the reading is narrower than intended, never wrong.
+    """
+    packed = signal_tokens(f"question_type_number_{index:03d}" for index in range(40))
+    assert len(packed) <= 240
+    assert all(token.startswith("question_type_number_") for token in packed.split("|"))
+    assert len(packed.split("|")) < 40
 
 
 def test_the_registry_describes_every_layer_including_the_ones_it_does_not_draw(app):

@@ -1004,6 +1004,16 @@ def _later_encounter_rows(spec: Layer, user_id: str | None) -> list[tuple]:
 
     **One credit per answer**, as in `_delayed_rows`, so no outcome is counted
     twice under two arms.
+
+    A later run that is itself assigned still supplies outcomes for the run
+    before it, and that is where most of the observations come from rather than
+    an edge case: a student's sittings are the only place fresh questions of
+    the type appear. It costs nothing in bias. The later run's own arm changes
+    *how many* questions of the type it serves, not which of them the student
+    gets right — the fill biases composition and draws from the same pool — so
+    the arms end up with unequal sample sizes and unbiased rates. Interference
+    from that run's own treatment is the separate problem the registry entry
+    states plainly and does not solve; it dilutes toward the null.
     """
     served = (
         db.session.query(

@@ -795,7 +795,7 @@ def _fill_blocks(blocks: list[list[QuestionFact]], budget: int, selected: list[l
 def _weight_toward_focus(
     pool: list[QuestionFact], count: int, focus_types: list[str] | None
 ) -> list[QuestionFact]:
-    """Fill most of a run from the mega-litigation's weak types, the rest at random.
+    """Fill most of a run from the student's weak types, the rest at random.
 
     Deliberately a bias and not a filter. Drilling only the weak types would
     stop measuring everything else and would make one bad run self-reinforcing;
