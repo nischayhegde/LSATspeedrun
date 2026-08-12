@@ -44,6 +44,7 @@ from .scoring import projection_snapshot
 from .seed import SOURCE_PREFIX
 from .story import ensure_story_state
 from .services import (
+    RC_CASE_MIN_SITTING,
     abandon_study_session,
     answers_available,
     UNGRADED_COACHING_NOTICE,
@@ -752,6 +753,27 @@ def start_practice_session():
     if requested_size < 1 or requested_size > 50:
         return error("invalid_session_size", "Choose a run between 1 and 50 questions.")
     question_type = str(payload.get("question_type") or "").strip()[:100] or None
+    # A general run has to be long enough to hold a reading case, or it silently
+    # becomes a Logical Reasoning run — which is not a smaller version of
+    # practice, it is practice with a third of the exam removed. An audit
+    # measured exactly that at sizes 3 and 5: 0% Reading Comprehension across
+    # every session started.
+    #
+    # Refused rather than quietly rounded up. A caller that asked for three
+    # questions and was handed six has been overruled without being told, and
+    # the next person to read the code has no way to discover that the number
+    # they passed was ignored.
+    #
+    # A type-filtered drill is exempt at any length. It has already declared its
+    # scope, so there is no section for it to drop: a drill on an argument type
+    # contains no reading because that is what was asked for, not because the
+    # selector could not reach it.
+    if not question_type and requested_size < RC_CASE_MIN_SITTING:
+        return error(
+            "invalid_session_size",
+            f"A run needs at least {RC_CASE_MIN_SITTING} questions to hold a reading passage. "
+            "Ask for a question type if you want a shorter drill.",
+        )
     try:
         session = create_study_session(
             g.current_user,

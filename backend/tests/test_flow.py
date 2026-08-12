@@ -108,7 +108,7 @@ def app():
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "AUTO_SEED": False,
             "DEV_AUTH_ENABLED": True,
-            "PRACTICE_SESSION_SIZE": 3,
+            "PRACTICE_SESSION_SIZE": 4,
             "TFY_URL": "",
             "TFY_API_KEY": "",
             # Tests drive the worker directly rather than through a background
@@ -218,6 +218,51 @@ def test_custom_instance_path_supports_read_only_deployment_layout(tmp_path):
 
     assert application.instance_path == str(instance_path)
     assert instance_path.is_dir()
+
+
+def answer_rest_of_run(app, client, headers, session_id: str, marker: str) -> dict:
+    """Answer whatever is left of a run, and hand back the closing debrief.
+
+    A run is no longer as short as a test would like it to be. The API refuses a
+    general run below `services.RC_CASE_MIN_SITTING`, because one that short
+    cannot hold a reading passage and would quietly be Logical Reasoning only —
+    so a test that wants to reach the end of a run has to actually get there
+    rather than answering one question and asserting completion.
+
+    Coaches and acknowledges each debrief, because an unacknowledged debrief
+    holds the run on the item just answered and the loop would otherwise stop
+    one question in and report the run as unfinished.
+    """
+    from app.models import Attempt
+    from app.services import run_attempt_coaching
+
+    acknowledged: dict = {}
+    while True:
+        # Clear any debrief first, including one the caller left pending on the
+        # answer it came here to make. An unacknowledged debrief hides
+        # `current_item`, which is indistinguishable from "the run is over" and
+        # would make this return having answered nothing.
+        closing = client.post(f"/v1/study-sessions/{session_id}/debrief/acknowledge", headers=headers)
+        if closing.status_code == 200:
+            acknowledged = closing.json
+        current = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+        item = current.get("current_item")
+        if not item:
+            return acknowledged
+        answered = client.post(
+            f"/v1/study-sessions/{session_id}/attempts",
+            json={
+                "item_id": item["id"],
+                "selected_label": "C",
+                "strategy_applied": True,
+                "confidence": 4,
+                "reasoning": explanation(f"{marker} {item['position']}"),
+            },
+            headers={**headers, "Idempotency-Key": f"{marker}-rest-{item['position']}"},
+        )
+        assert answered.status_code == 200, answered.json
+        with app.app_context():
+            run_attempt_coaching(db.session.get(Attempt, answered.json["result"]["attempt_id"]))
 
 
 def create_game(client, headers, gender: str = "female"):
@@ -863,7 +908,13 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     assert response.status_code == 201
     session = response.json["session"]
     assert session["mode"] == "practice"
-    assert session["total_items"] == 3
+    # The configured size, or a little over it when the run came out a reading
+    # case and the passage ran past it. Pinning the literal would make this test
+    # a second, quieter definition of the run length.
+    from app.services import reading_case_ceiling
+
+    configured = app.config["PRACTICE_SESSION_SIZE"]
+    assert configured <= session["total_items"] <= reading_case_ceiling(configured)
     assert session["current_item"]["case_terms"] == {
         "client_key": "walk_in",
         "client_name": "Walk-in client",
@@ -872,10 +923,10 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
         chosen_ids = [item.question_id for item in items]
-        # The item served first is position 0, and the run is three distinct
-        # questions drawn from the seeded bank.
+        # The item served first is position 0, and every question in the run is
+        # a distinct one drawn from the seeded bank.
         assert session["current_item"]["question"]["id"] == chosen_ids[0]
-        assert len(set(chosen_ids)) == 3
+        assert len(set(chosen_ids)) == session["total_items"]
         assert all(item.question.source.startswith(SOURCE_PREFIX) for item in items)
         assert all(not hasattr(item, "story_json") for item in items)
         assert all(item.requires_reasoning is True for item in items)
@@ -921,11 +972,11 @@ def test_practice_queue_cap_and_single_active_timer(app):
     cap = app.config["PRACTICE_QUEUE_MAX"]
     started_ids = []
     for _ in range(cap):
-        response = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+        response = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
         assert response.status_code == 201
         started_ids.append(response.json["session"]["id"])
 
-    overflow = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+    overflow = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
     assert overflow.status_code == 409
     assert overflow.json["error"]["code"] == "queue_full"
 
@@ -964,7 +1015,7 @@ def test_practice_queue_cap_and_single_active_timer(app):
     assert discarded.status_code == 200
     assert discarded.json["session"]["status"] == "abandoned"
 
-    freed = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+    freed = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
     assert freed.status_code == 201
 
 
@@ -1052,7 +1103,7 @@ def test_a_case_run_releases_feedback_immediately_and_seeds_review(app, monkeypa
     headers = login(client, "answer-only-speedrun@example.test")
     create_game(client, headers)
 
-    started = client.post("/v1/study-sessions", json={"size": 2}, headers=headers)
+    started = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
     assert started.status_code == 201
     session = started.json["session"]
     assert session["practice_style"] == "cases"
@@ -1091,13 +1142,19 @@ def test_a_case_run_releases_feedback_immediately_and_seeds_review(app, monkeypa
     )
     assert second.status_code == 200
     assert second.json["result"]["feedback_released"] is True
-    assert second.json["result"]["session_complete"] is True
     coach_and_settle(app, monkeypatch, second.json["result"]["attempt_id"])
+
+    # The two answers above are what this test is about — one wrong, one right,
+    # both released immediately. The rest of the run is played out only so the
+    # run reaches "completed" and its review becomes readable.
+    answer_rest_of_run(app, client, headers, session["id"], "speedrun-tail")
+    finished = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
+    assert finished["status"] == "completed"
 
     review = client.get(f"/v1/study-sessions/{session['id']}/review", headers=headers)
     assert review.status_code == 200
-    assert review.json["review"]["summary"]["correct"] == 1
-    assert len(review.json["review"]["items"]) == 2
+    assert review.json["review"]["summary"]["correct"] >= 1
+    assert len(review.json["review"]["items"]) == session["total_items"]
     assert review.json["review"]["items"][0]["selected_label"] == "A"
     assert review.json["review"]["items"][0]["correct_label"] == "C"
     assert review.json["review"]["items"][0]["evidence_class"] == "coached_practice"
@@ -1193,7 +1250,7 @@ def test_scheduled_reviews_are_timezone_safe(app):
     headers = login(client, "infinite-review@example.test")
     created = create_game(client, headers)
 
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -1239,20 +1296,6 @@ def test_daily_docket_respects_the_requested_timezone(app):
 
 
 def test_completed_run_stops_at_training_lab_boundary(app, monkeypatch):
-    client = app.test_client()
-    headers = login(client, "completed-speedrun@example.test")
-    create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
-    answered = client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={
-            "item_id": session["current_item"]["id"],
-            "selected_label": "C",
-            "strategy_applied": True,
-            "reasoning": "C follows from the stated relationship; the alternatives add claims the stimulus does not support, which is why they fail even though they restate its vocabulary.",
-        },
-        headers={**headers, "Idempotency-Key": "one-question-speedrun"},
-    ).json["result"]
     monkeypatch.setattr(
         "app.services.generate_attempt_coaching",
         lambda _attempt: (
@@ -1265,15 +1308,17 @@ def test_completed_run_stops_at_training_lab_boundary(app, monkeypatch):
             {},
         ),
     )
-    with app.app_context():
-        from app.services import run_attempt_coaching
+    client = app.test_client()
+    headers = login(client, "completed-speedrun@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
 
-        run_attempt_coaching(db.session.get(Attempt, answered["attempt_id"]))
+    # Acknowledging the last debrief is what ends a run, so this has to be the
+    # last one rather than the only one — the run is played out in full.
+    completed = answer_rest_of_run(app, client, headers, session["id"], "completed-speedrun")
 
-    completed = client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
-    assert completed.status_code == 200
-    assert completed.json["run_complete"] is True
-    assert completed.json["session"]["status"] == "completed"
+    assert completed["run_complete"] is True
+    assert completed["session"]["status"] == "completed"
     assert client.get("/v1/study-sessions/current", headers=headers).json["session"] is None
 
 
@@ -3071,7 +3116,7 @@ def test_the_neutral_arm_needs_no_decision_and_records_no_self_report(app):
     client = app.test_client()
     headers = login(client, "neutral-no-decision@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 3}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
 
     with app.app_context():
         study = db.session.get(StudySession, session["id"])
@@ -3264,7 +3309,7 @@ def test_prompted_strategy_requires_a_decision_and_valid_prompt_time(app):
     client = app.test_client()
     headers = login(client, "strategy-submit@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     item_id = session["current_item"]["id"]
     # Deliberately omits strategy_applied: the first submission below must be
     # rejected for exactly that reason.
@@ -3884,7 +3929,7 @@ def test_every_case_requires_a_full_explanation(app):
     client = app.test_client()
     headers = login(client, "requires-cases@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     assert session["practice_style"] == "cases"
     assert session["feedback_policy"] == "immediate"
     assert session["current_item"]["requires_reasoning"] is True
@@ -3897,7 +3942,7 @@ def test_requested_practice_style_is_ignored(app):
     create_game(client, headers)
     response = client.post(
         "/v1/study-sessions",
-        json={"size": 1, "practice_style": "speedrun", "feedback_policy": "delayed"},
+        json={"size": 4, "practice_style": "speedrun", "feedback_policy": "delayed"},
         headers=headers,
     )
     assert response.status_code == 201
@@ -3920,7 +3965,7 @@ def test_missing_explanation_is_rejected(app):
     create_game(client, headers)
     session = client.post(
         "/v1/study-sessions",
-        json={"size": 1, "practice_style": "speedrun"},
+        json={"size": 4, "practice_style": "speedrun"},
         headers=headers,
     ).json["session"]
     response = client.post(
@@ -3938,7 +3983,7 @@ def test_short_explanation_is_rejected_with_its_own_code(app):
     create_game(client, headers)
     session = client.post(
         "/v1/study-sessions",
-        json={"size": 1, "practice_style": "speedrun"},
+        json={"size": 4, "practice_style": "speedrun"},
         headers=headers,
     ).json["session"]
     response = client.post(
@@ -3956,7 +4001,7 @@ def test_deep_practice_enforces_the_longer_floor(app):
     create_game(client, headers)
     session = client.post(
         "/v1/study-sessions",
-        json={"size": 1, "practice_style": "deep"},
+        json={"size": 4, "practice_style": "deep"},
         headers=headers,
     ).json["session"]
     # 60 characters clears the speedrun floor of 40 but not the deep floor of 120.
@@ -3990,7 +4035,7 @@ def test_correct_answer_with_invalid_explanation_enters_the_review_queue(app):
     client = app.test_client()
     headers = login(client, "unsupported-correct@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     answered = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -4026,7 +4071,7 @@ def test_good_explanation_on_a_confident_correct_answer_schedules_nothing(app):
     client = app.test_client()
     headers = login(client, "supported-correct@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     answered = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -4049,7 +4094,7 @@ def test_headline_counts_diagnostic_only_and_cases_get_their_own_panel(app):
     headers = login(client, "headline-split@example.test")
     create_game(client, headers)
 
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -4071,6 +4116,10 @@ def test_headline_counts_diagnostic_only_and_cases_get_their_own_panel(app):
 
 def test_review_recovery_reads_the_review_queue_flag(app, monkeypatch):
     """Recovery counts only the repaired item, wherever interleaving placed it."""
+    # An argument run, so the queued repair is actually served. A reading case
+    # is built from one passage and carries only that passage's review, which is
+    # the right behaviour and the wrong run for this test.
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
     client = app.test_client()
     headers = login(client, "recovery-flag@example.test")
     create_game(client, headers)
@@ -4080,8 +4129,11 @@ def test_review_recovery_reads_the_review_queue_flag(app, monkeypatch):
         _queue_due_question(user.id, repaired.id)
         repaired_id = repaired.id
 
-    session = client.post("/v1/study-sessions", json={"size": 2}, headers=headers).json["session"]
-    for index in range(2):
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
+    # Over the run's own length, not over the size it asked for: a reading case
+    # runs to whatever its passage is, and stopping early leaves the run
+    # unfinished so nothing that happens on completion happens.
+    for index in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
         item = current["current_item"]
         result = client.post(
@@ -4110,10 +4162,17 @@ def test_every_case_attaches_game_context_and_the_diagnostic_never_does(app):
     headers = login(client, "every-case-pays@example.test")
     create_game(client, headers)
 
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     with app.app_context():
-        item = SessionItem.query.filter_by(session_id=session["id"]).one()
-        assert item.game_context_json is not None
+        items = (
+            SessionItem.query.filter_by(session_id=session["id"])
+            .order_by(SessionItem.position)
+            .all()
+        )
+        # The case is the run, so the client and fee ride on the item that opens
+        # it and on no other.
+        assert items[0].game_context_json is not None
+        assert all(item.game_context_json is None for item in items[1:])
 
     diagnostic = client.post("/v1/diagnostics", json={}, headers=headers).json["session"]
     with app.app_context():
@@ -4234,6 +4293,9 @@ def test_question_selection_never_returns_an_excluded_question(app):
 
 
 def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeypatch):
+    # An argument run, so the run really is mixed: a reading case is built from
+    # one passage and carries only that passage's review.
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
     client = app.test_client()
     headers = login(client, "mixed-run@example.test")
     create_game(client, headers)
@@ -4243,7 +4305,7 @@ def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeyp
         _queue_due_question(user.id, repaired.id)
         repaired_id = repaired.id
 
-    session = client.post("/v1/study-sessions", json={"size": 2}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
         assert {item.from_review_queue for item in items} == {True, False}
@@ -4251,7 +4313,7 @@ def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeyp
 
     # The repair: a correct answer with a Good explanation advances its memory
     # state. The fresh item: a high-confidence miss must enter the queue.
-    for index in range(2):
+    for index in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
         item = current["current_item"]
         is_repair = item["position"] == repair_position
@@ -4404,7 +4466,7 @@ def test_landing_grade_revises_the_provisional_schedule(app, monkeypatch):
     client = app.test_client()
     headers = login(client, "backfill@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     answered = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -4645,7 +4707,7 @@ def test_explanation_floor_boundary_matches_the_published_minimum(app):
     client = app.test_client()
     headers = login(client, "boundary-cases@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     item_id = session["current_item"]["id"]
     assert session["current_item"]["reasoning_min_chars"] == floor
 
@@ -5689,7 +5751,7 @@ def test_draft_autosave_covers_every_openable_run_and_404s_only_once_the_run_is_
     create_game(client, headers)
 
     # A live practice run: the ordinary case page.
-    first = client.post("/v1/study-sessions", json={"size": 3}, headers=headers).json["session"]
+    first = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     first_item = _current_item(client, headers, first["id"])
     saved = _save_draft(client, headers, first["id"], first_item["id"], "The conclusion needs the missing link.")
     assert saved.status_code == 200
@@ -5703,7 +5765,7 @@ def test_draft_autosave_covers_every_openable_run_and_404s_only_once_the_run_is_
     # Opening a second run auto-pauses the first. A queued run is still on a
     # student's docket and still holds their typing, so it must keep accepting
     # drafts — scoping the lookup to `in_progress` alone would lose that work.
-    second = client.post("/v1/study-sessions", json={"size": 3}, headers=headers).json["session"]
+    second = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     with app.app_context():
         assert db.session.get(StudySession, first["id"]).status == "paused"
     paused_save = _save_draft(client, headers, first["id"], first_item["id"], "Still mine while it waits.")

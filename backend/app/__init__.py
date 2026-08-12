@@ -20,6 +20,7 @@ from .db_secret import DatabaseSecret, attach_rotation_recovery
 from .extensions import db
 from .game import SITTING_QUESTIONS
 from .routes import api
+from .services import RC_CASE_MIN_SITTING
 from .scoring import FORM_ITEMS
 from .seed import seed_questions
 
@@ -163,6 +164,10 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         # sittings and the two must not be able to disagree. A run may finish
         # slightly over this to serve a Reading Comprehension passage whole —
         # see `services.PASSAGE_OVERSHOOT_ALLOWANCE`.
+        #
+        # Checked against `services.RC_CASE_MIN_SITTING` below, after any test
+        # override, because a run too short to hold a reading case is a run with
+        # a third of the exam missing.
         PRACTICE_SESSION_SIZE=max(1, int(os.getenv("PRACTICE_SESSION_SIZE", str(SITTING_QUESTIONS)))),
         # A student may keep this many practice runs (Sprint/Infinite/Method Lab/
         # Review) queued at once — paused or in progress — before another start
@@ -238,6 +243,26 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
     )
     if test_config:
         app.config.update(test_config)
+
+    # Checked here rather than where the default is read, so that a test config
+    # and an environment variable are held to the same rule. A run shorter than
+    # this cannot hold a Reading Comprehension passage, so every general run in
+    # the deployment would come out Logical Reasoning only and a third of the
+    # exam would go unpractised with nothing logged. An audit measured exactly
+    # that at sizes 3 and 5: 0% Reading Comprehension across every session
+    # started, on a configuration nobody had thought of as a change to the
+    # curriculum.
+    #
+    # Loud rather than clamped, for the same reason the form-size check below is
+    # loud: a caller who asked for three questions and silently got six has been
+    # overruled without being told.
+    if app.config["PRACTICE_SESSION_SIZE"] < RC_CASE_MIN_SITTING:
+        raise RuntimeError(
+            f"PRACTICE_SESSION_SIZE={app.config['PRACTICE_SESSION_SIZE']} is shorter than the "
+            f"{RC_CASE_MIN_SITTING} questions a reading case needs, so practice would serve no "
+            "Reading Comprehension at all. Raise it, or lower services.RC_CASE_MIN_SITTING "
+            "deliberately and re-measure the section mix."
+        )
 
     if app.config["DIAGNOSTIC_SESSION_SIZE"] != FORM_ITEMS:
         # Deliberately loud rather than silent. A short form still scores
