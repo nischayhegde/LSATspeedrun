@@ -12,7 +12,7 @@ The audit measured 40 runs per budget and reported 0.0% at budget 5. Forty runs
 of a rate near a percent is not enough to tell a small number from zero, and
 which of those two it is matters: "Reading Comprehension is unreachable" and
 "Reading Comprehension is a rounding error" are different sentences, and the
-audit's own §8 leans on the first. So this sweeps more runs, and reports the
+audit's own summary leans on the first. So this sweeps more runs, and reports the
 run count behind every share rather than the share alone.
 
 No database. The bank is read from the JSONL files through
