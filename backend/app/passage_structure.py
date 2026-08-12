@@ -37,33 +37,45 @@ genuinely known. Stripping both headings and asking the segmenter to find the
 seam blind is a held-out test, and the seam is the *easiest* boundary in the
 bank — a whole new passage starts there — so this is an upper bound on accuracy
 rather than a typical case. `scripts/derive_passage_paragraphs.py --verify`
-re-runs it:
+re-runs all of it:
 
-| method                        | exact | within one sentence |
-|-------------------------------|------:|--------------------:|
-| lexical cohesion (this module)| 13/32 | 26/32               |
-| equal-sized chunks            |  8/32 | 18/32               |
-| discourse markers alone       |  2/32 | 19/32               |
-| random gaps                   |  2/32 |  8/32               |
+| method                          | exact  | within one sentence |
+|---------------------------------|-------:|--------------------:|
+| lexical cohesion (this module)  |  11/32 | 26/32               |
+| equal-sized chunks              |   7/32 | 17/32               |
+| discourse markers alone         |   0/32 |  7/32               |
+| chance, same budget and floors  | 7.9/32 | 18.9/32             |
 
-Two things follow, and both shaped the design.
+Chance is a chooser allowed exactly what this module is allowed: the same number
+of boundaries, in the same places the floors permit, averaged over 300 draws. Any
+weaker baseline flatters the result.
 
-**It is well above chance and well short of authored.** Four times chance on
-exact placement and three times chance on within-one is a real signal, and 41%
-exact is not a paragraph break. So the derived boundaries are stored with the
-provenance `derived_cohesion_v1`, never as authored, and the gate copy that used
-to say "paragraph" now says "part": a student is asked to name what each part of
-the passage is doing, which is the operation the technique is actually for, and
-is true of a topical segment. Naming the unit honestly is what makes a boundary
-that lands one sentence early cost a slightly odd cut instead of a lie.
+Three things follow, and all three shaped the design.
 
-**Discourse markers are not the answer, which is worth recording because they
-are the obvious guess.** "However", "By contrast", "Moreover" and their
-relatives open paragraphs, but they open sentences inside paragraphs far more
-often, and a segmenter driven by them placed the seam exactly twice in 32 — the
-same as random. Adding them as a bonus on top of the cohesion score made it
-worse at every weight tried (13 exact at no bonus, 10 at 0.10, 7 at 0.25), so
-there is no marker term here at all.
+**It finds the region and not the sentence.** Chance matched the within-one figure
+in 1 draw of 300 and matched the exact figure in 44 of 300. So there is a real
+signal about roughly where a passage turns, and no evidence at all that the exact
+sentence is better than a guess. That asymmetry is the whole basis for how this
+data is labelled: the offsets are stored as `derived_cohesion_v1` and never as
+authored, and the gate copy that used to say "paragraph" now says "part". A
+student is asked what each part of the passage is doing, which is the operation
+the technique is for and is true of a topical segment, so a boundary that lands a
+sentence early costs an odd division rather than a false claim about where the
+author broke the line.
+
+**Discourse markers are worse than nothing, which is worth recording because they
+are the obvious guess.** "However", "By contrast" and "Moreover" do open
+paragraphs, and they open sentences inside paragraphs far more often; driven by
+them alone the seam was never once placed exactly. Added as a bonus on top of the
+cohesion score they made it worse at every weight tried. There is no marker term
+here. The one place a marker gets a say is `_CONTINUATION` below, which asks the
+opposite and much safer question — where a boundary cannot be.
+
+**Reading the output found what the numbers could not.** A sample printed and read
+by hand turned up a division that had cut the case citation "Charrier v. Bell" in
+two, leaving a part that opened "Bell, a United States appellate court ruled" —
+not a debatable boundary but a broken one, and invisible to every aggregate above.
+`_ABBREVIATION_TAIL` is the fix.
 
 Where a boundary *is* authored it is used and not re-derived: the Passage A/B
 seam is a hard cut on the comparative sets, and cohesion runs inside each half.
@@ -149,6 +161,7 @@ def is_sentence_break(text: str, position: int) -> bool:
     """Whether the stop ending at `position` really ends a sentence."""
     return not _ABBREVIATION_TAIL.search(text[max(0, position - 12): position])
 
+
 _AUTHORED_BREAK = re.compile(r"\n\s*\n|\r\n\s*\r\n")
 
 # The comparative heading, matched exactly as `strategies.detect_comparative`
@@ -188,11 +201,12 @@ _BLOCK = 4
 # uniform one.
 #
 # This is what decides how many parts a passage gets, and it replaced asking for
-# one part per 110 words. Both score the same on the seam — 10 of 32 exact, 25 of
-# 32 within one sentence — but the length rule gave 4 parts to 346 of the 349
-# passages, which is a count read off a word total rather than found in a text.
-# Letting the depth decide gives 2 to 8 passages, 3 to 123, 4 to 166, 5 to 49 and
-# 6 to 2, which is the shape Reading Comprehension actually has.
+# one part per 110 words. The two scored the same on the seam, and the length rule
+# gave exactly 4 parts to 346 of the 349 passages — a count read off a word total
+# rather than found in a text. Letting the depth decide, with the ceiling below
+# dividing what is still too long, gives 3 parts to 6 passages, 4 to 124, 5 to 185,
+# 6 to 32 and 7 to 2. Run `--verify` for the current figures rather than trusting
+# these.
 _DEPTH_CUTOFF_SD = 0.0
 
 # A part shorter than this is not a part. Without a floor the deepest gaps cluster
