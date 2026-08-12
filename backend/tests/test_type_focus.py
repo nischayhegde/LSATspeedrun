@@ -97,7 +97,7 @@ def _answers(
     review: bool = False,
     evidence: str = "coached_practice",
     placeholder: bool = False,
-) -> None:
+) -> StudySession:
     when = utcnow() - timedelta(days=days_ago)
     run = StudySession(
         user_id=user.id,
@@ -106,6 +106,7 @@ def _answers(
         feedback_policy="immediate",
         target_minutes=10,
         total_items=correct + wrong,
+        started_at=when,
     )
     db.session.add(run)
     db.session.flush()
@@ -134,6 +135,7 @@ def _answers(
             )
         )
     db.session.commit()
+    return run
 
 
 def test_a_weakness_spread_across_ordinary_practice_is_noticed(app):
@@ -163,20 +165,41 @@ def test_a_weakness_spread_across_ordinary_practice_is_noticed(app):
 def test_a_student_who_has_improved_stops_being_fed_the_old_weakness(app):
     """Recent and total accuracy answer different questions.
 
-    This student was bad at Assumption four months ago and is fine at it now.
-    Under a total rate the old answers never leave and they would be served
-    Assumption questions forever. The 30-day half-life puts a four-month-old
-    answer at about a sixteenth of a fresh one, so the recent record wins.
+    This student was bad at Assumption a month ago and is fine at it now. Under
+    a total rate the old answers never leave and they would be served
+    Assumption questions forever. The 30-day half-life halves the old record's
+    say, and twenty fresh answers at 80% then outweigh it.
     """
     with app.app_context():
         user = _user("improved@example.test")
         _answers(user, "Flaw", correct=28, wrong=12)
-        _answers(user, "Assumption", correct=2, wrong=18, days_ago=120)
+        _answers(user, "Assumption", correct=2, wrong=18, days_ago=30)
 
         assert rolling_focus(user.id) == ["Assumption"]
 
         _answers(user, "Assumption", correct=16, wrong=4)
         assert rolling_focus(user.id) == []
+
+
+def test_a_record_old_enough_stops_being_a_record_at_all(app):
+    """The other end of the same decay, and it is not the same statement.
+
+    Above, fresh evidence outweighs stale evidence. Here there is no fresh
+    evidence: the student was terrible at Assumption four months ago and has
+    not met one since. The half-life puts twenty answers of that age at about
+    1.25 answers' worth, under `MIN_EFFECTIVE_SAMPLE`, so the type is not
+    considered — which is the right answer. "You were bad at this in April" is
+    not a reason to spend today's run on it; meeting one and missing it is,
+    and that is what would put the type back.
+    """
+    with app.app_context():
+        user = _user("stale@example.test")
+        _answers(user, "Flaw", correct=28, wrong=12)
+        _answers(user, "Assumption", correct=2, wrong=18, days_ago=120)
+
+        detail = rolling_focus_detail(user.id)
+        assert detail["types"] == []
+        assert [entry["type"] for entry in detail["considered"]] == ["Flaw"]
 
 
 def test_a_wrong_answer_is_not_counted_again_when_its_card_comes_back(app):
@@ -189,23 +212,31 @@ def test_a_wrong_answer_is_not_counted_again_when_its_card_comes_back(app):
     whole category permanently.
 
     Both students below have the same first-encounter record and differ only in
-    how much review the queue has sent them. They must get the same answer.
+    how much review the queue has sent them. They must get the same answer, and
+    the record is chosen so that they would not: on first encounters Assumption
+    sits 15 points under Flaw, which does not clear its interval, and with the
+    returns counted it sits 40 under, which comfortably would.
     """
     with app.app_context():
         quiet = _user("quiet@example.test")
         _answers(quiet, "Flaw", correct=28, wrong=12)
-        _answers(quiet, "Assumption", correct=9, wrong=11)
+        _answers(quiet, "Assumption", correct=11, wrong=9)
 
         busy = _user("busy@example.test")
         _answers(busy, "Flaw", correct=28, wrong=12)
-        _answers(busy, "Assumption", correct=9, wrong=11)
+        _answers(busy, "Assumption", correct=11, wrong=9)
         # The queue is doing its job: the same missed Assumption questions keep
         # coming back and keep being missed.
         _answers(busy, "Assumption", correct=1, wrong=19, review=True)
 
         assert rolling_focus(quiet.id) == rolling_focus(busy.id)
         assert rolling_focus(busy.id) == []
-        assert rolling_focus_detail(busy.id)["first_encounters"] == 60
+        detail = rolling_focus_detail(busy.id)
+        assert detail["first_encounters"] == 60
+        assumption = next(
+            entry for entry in detail["considered"] if entry["type"] == "Assumption"
+        )
+        assert (assumption["answers"], assumption["raw_accuracy"]) == (20, 55.0)
 
 
 def test_the_section_gradient_is_left_to_the_section_knob(app):
@@ -346,3 +377,166 @@ def test_the_list_is_capped_so_a_run_still_covers_the_rest_of_the_test(app):
         # worst rather than an arbitrary five.
         gaps = [entry["gap"] for entry in detail["weak"]]
         assert gaps == sorted(gaps, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# The cohort reading
+#
+# A per-student reading cannot answer whether this layer earns its holdback,
+# because the interesting behaviour is at the two ends of the history
+# distribution and no student is at both. A cold account has nothing to target
+# and must be reported as absent rather than as a null; a saturated one may
+# have improved past the weakness that first triggered targeting, and whether
+# it has is readable off the signals the draws wrote down.
+# ---------------------------------------------------------------------------
+
+
+def _assignment(user, run, *, arm: str, weak_types: list[str], days_ago: float = 0.0) -> None:
+    from app.experiments import LAYERS, signal_tokens
+    from app.models import LayerAssignment
+
+    db.session.add(
+        LayerAssignment(
+            layer="weak_type_targeting",
+            subject_id=user.id,
+            unit="run",
+            exposure=run.id,
+            session_id=run.id,
+            arm=arm,
+            propensity=0.75 if arm == "targeted" else 0.25,
+            design_version=LAYERS["weak_type_targeting"].design_version,
+            signal=signal_tokens(weak_types),
+            created_at=utcnow() - timedelta(days=days_ago),
+        )
+    )
+    db.session.commit()
+
+
+def test_a_cold_account_is_reported_as_absent_rather_than_as_a_null(app):
+    """The cost of the eligibility rule, in students.
+
+    A student with no per-type history has no weakness, draws no arm and is not
+    in the trial, which is right. It is also a cost: if most of the cohort is
+    cold, the layer is measuring a corner of the product and the comparison
+    will not fill. The band has to say which, in students, rather than leaving
+    an empty arm to be read as no effect.
+    """
+    from app.type_focus import rolling_population_reading
+
+    with app.app_context():
+        cold = _user("band-cold@example.test")
+        _answers(cold, "Flaw", correct=6, wrong=4)
+
+        warm = _user("band-warm@example.test")
+        _answers(warm, "Flaw", correct=42, wrong=18)
+        _answers(warm, "Assumption", correct=8, wrong=32)
+
+        reading = rolling_population_reading()
+        bands = {entry["band"]: entry for entry in reading["bands"]}
+        assert reading["students"] == 2
+
+        assert bands["cold"]["students"] == 1
+        assert bands["cold"]["with_weakness"] == 0
+        assert bands["cold"]["median_gap"] is None
+        assert bands["cold"]["trial"]["answers"] == 0
+
+        assert bands["warming"]["students"] == 1
+        assert bands["warming"]["share_with_weakness"] == 1.0
+        assert bands["warming"]["median_gap"] > 5
+        assert bands["established"]["students"] == 0
+
+
+def test_the_cohort_reading_is_the_same_arithmetic_the_selector_reads(app):
+    """One estimator, two groupings.
+
+    A cohort report that re-derived the signal would describe a mechanism the
+    app does not have, and would keep agreeing with itself while the selector
+    drifted away from it. The widest gap a band reports for one student must be
+    the widest gap that student's own reading carries.
+    """
+    from app.type_focus import rolling_population_reading
+
+    with app.app_context():
+        user = _user("band-same@example.test")
+        _answers(user, "Flaw", correct=42, wrong=18)
+        _answers(user, "Assumption", correct=8, wrong=32)
+
+        detail = rolling_focus_detail(user.id)
+        bands = {entry["band"]: entry for entry in rolling_population_reading()["bands"]}
+        assert bands["warming"]["median_gap"] == detail["weak"][0]["gap"]
+        assert bands["warming"]["median_weak_types"] == len(detail["weak"])
+
+
+def test_the_signals_say_whether_a_weakness_stayed_or_went(app):
+    """The saturated end, read off what the draws recorded.
+
+    A student who improved past the weakness that first triggered targeting is
+    the case this layer exists to produce, and the share of a student's first
+    named types still named on their last draw is the closest observable to it.
+    Descriptive rather than causal — types leave the list for reasons other
+    than the treatment — which is what the arm split is for, and the reading
+    says so in its own note rather than in this docstring alone.
+    """
+    from app.type_focus import rolling_population_reading
+
+    with app.app_context():
+        improved = _user("persist-improved@example.test")
+        first = _answers(improved, "Flaw", correct=5, wrong=15, days_ago=60)
+        last = _answers(improved, "Flaw", correct=15, wrong=5)
+        _assignment(improved, first, arm="targeted", weak_types=["Assumption", "Flaw"], days_ago=60)
+        _assignment(improved, last, arm="targeted", weak_types=["Assumption"], days_ago=1)
+
+        stuck = _user("persist-stuck@example.test")
+        early = _answers(stuck, "Flaw", correct=5, wrong=15, days_ago=60)
+        late = _answers(stuck, "Flaw", correct=5, wrong=15)
+        _assignment(stuck, early, arm="untargeted", weak_types=["Assumption"], days_ago=60)
+        _assignment(stuck, late, arm="untargeted", weak_types=["Assumption"], days_ago=1)
+
+        persistence = rolling_population_reading()["signal_persistence"]
+        assert persistence["students"] == 2
+        # One kept half its list, one kept all of it.
+        assert persistence["median_retained"] == 75.0
+        assert "Descriptive" in persistence["note"]
+
+
+def test_the_bands_split_the_trial_without_re_deriving_it(app):
+    """`experiments.summarise` over the same rows `layer_reading` uses.
+
+    Banding on a student's history *now* is banding on something the treatment
+    could have moved, so this is where the evidence is accumulating and not an
+    effect per band. That is exactly why it has to be the same rows: a second
+    implementation would let the two disagree and leave no way to tell which
+    was the mechanism.
+    """
+    from app.experiments import layer_reading
+    from app.type_focus import rolling_population_reading
+
+    with app.app_context():
+        user = _user("band-trial@example.test")
+        steered = _answers(user, "Assumption", correct=4, wrong=16, days_ago=30)
+        _assignment(user, steered, arm="targeted", weak_types=["Assumption"], days_ago=30)
+        _answers(user, "Assumption", correct=14, wrong=6, days_ago=5)
+        _answers(user, "Flaw", correct=40, wrong=20, days_ago=5)
+
+        whole = layer_reading("weak_type_targeting")
+        bands = {entry["band"]: entry for entry in rolling_population_reading()["bands"]}
+        # The twenty later Assumption answers, and neither the run they were
+        # steered by nor the sixty Flaw answers nobody targeted.
+        assert whole["answers"] == 20
+        # A hundred first encounters puts this student in `warming`.
+        assert bands["warming"]["trial"]["answers"] == 20
+        assert sum(entry["trial"]["answers"] for entry in bands.values()) == whole["answers"]
+
+
+def test_the_cohort_reading_changes_nothing_a_student_is_served(app):
+    """A query, not a mechanism."""
+    from app.type_focus import rolling_population_reading
+
+    with app.app_context():
+        user = _user("band-readonly@example.test")
+        _answers(user, "Flaw", correct=42, wrong=18)
+        _answers(user, "Assumption", correct=8, wrong=32)
+
+        before = rolling_focus(user.id)
+        rolling_population_reading()
+        assert rolling_focus(user.id) == before

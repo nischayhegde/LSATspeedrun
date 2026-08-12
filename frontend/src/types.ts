@@ -961,16 +961,22 @@ export type PerformanceSnapshot = {
     weak: {
       type: string
       section: string
-      /** Points below this student's own accuracy in that section, after shrinkage. */
+      /** Points below this student's own accuracy on the *rest* of that
+       * section, after shrinkage. The rest rather than the whole: a baseline
+       * containing the type's own answers is one the type moves. */
       gap: number
       shrunk_accuracy: number
       raw_accuracy: number
+      /** The rest of the section, which is what `gap` is measured against. */
       section_baseline: number
       effective_sample: number
       answers: number
       half_width: number
+      /** Whether the gap clears its own 95% interval. A gap that does not is
+       * reported and never acted on. */
       separates: boolean
     }[]
+    /** Whole-section accuracy, for display. Not what `gap` is measured against. */
     section_baselines: Record<string, number>
     first_encounters: number
     half_life_days: number

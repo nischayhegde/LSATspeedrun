@@ -9,6 +9,17 @@ measures exactly what a re-seed would write.
     python3 tools/audit/type_targeting.py
     python3 tools/audit/type_targeting.py --weak-type Assumption --runs 1000
 
+A third reading needs somebody's data and is worth more than either of the
+above once there is any: `--database-url` adds the cohort view — who the layer
+is actually aiming at, banded by how much history each student has, and what
+the trial has collected in each band. The two ends are the interesting ones. A
+cold account has no per-type history, draws no arm, and must show as absent
+rather than as a null result; a saturated one may have improved past the
+weakness that first triggered targeting, and the recorded signals say whether
+it has.
+
+    python3 tools/audit/type_targeting.py --database-url sqlite:///backend/instance/app.db
+
 **Is there anything to aim at.** Targeting a category needs the category to
 exist and to have enough material behind it that a run can lean into it.
 Before the type fix, 45.8% of the bank carried a `question_type` equal to its
@@ -177,9 +188,57 @@ def print_composition(facts, placeholders: set[str], *, runs: int, weak_types: l
     )
 
 
+def print_cohort(database_url: str) -> None:
+    """What the signal and the trial are doing across the students there are.
+
+    The bank tables above are about what the layer *could* aim at. This is
+    about who it is aiming at, and it needs somebody's data. Both ends of the
+    history distribution are the interesting ones: a cold account has nothing
+    to target and must show as absent rather than as a null, and a saturated
+    one may have improved past the weakness that first triggered targeting.
+    """
+    from app import create_app
+    from app.type_focus import rolling_population_reading
+
+    application = create_app({"SQLALCHEMY_DATABASE_URI": database_url, "AUTO_SEED": False})
+    with application.app_context():
+        reading = rolling_population_reading()
+
+    print(f"\nCOHORT: {reading['students']} students with any first encounters\n")
+    header = f"  {'band':<13}{'encounters':>12}{'students':>10}{'weak':>7}{'gap':>7}"
+    print(header + f"{'trial answers':>15}{'lift':>8}")
+    for entry in reading["bands"]:
+        gap = "—" if entry["median_gap"] is None else f"{entry['median_gap']:.1f}"
+        share = "—" if entry["share_with_weakness"] is None else f"{entry['share_with_weakness']:.0%}"
+        trial = entry["trial"]
+        lift = "—" if trial["adjusted_lift"] is None else f"{trial['adjusted_lift']:+.1f}"
+        print(
+            f"  {entry['band']:<13}{entry['first_encounters']:>12}{entry['students']:>10}"
+            f"{share:>7}{gap:>7}{trial['answers']:>15}{lift:>8}"
+        )
+
+    persistence = reading["signal_persistence"]
+    print(
+        f"\n  Of {persistence['students']} students with two or more draws, a median of "
+        f"{persistence['median_retained'] or 0:.0f}% of the\n  types named on their first "
+        "are still named on their last. Descriptive, not causal:\n  the arm split above is "
+        "what separates the treatment from everything else."
+    )
+    print(
+        "\n  A cold band that holds most of the cohort means the layer is measuring a\n"
+        "  corner of the product, whatever the lift says. The bands are grouped on "
+        "history\n  as it is now, which the treatment could have moved, so read them as "
+        "where the\n  evidence is accumulating rather than as an effect per band."
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs", type=int, default=400, help="runs to draw per arm")
+    parser.add_argument(
+        "--database-url",
+        help="also print the cohort reading: who the layer is aiming at, by history depth",
+    )
     parser.add_argument(
         "--weak-type",
         action="append",
@@ -205,6 +264,8 @@ def main() -> None:
         )
         weak_types = [question_type for question_type, _count in counts.most_common(2)]
     print_composition(facts, placeholders, runs=args.runs, weak_types=weak_types)
+    if args.database_url:
+        print_cohort(args.database_url)
     print()
 
 

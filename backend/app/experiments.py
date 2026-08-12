@@ -849,7 +849,8 @@ def signal_tokens(values) -> str:
     return text
 
 
-def _signal_set(value: str | None) -> frozenset[str]:
+def signal_set(value: str | None) -> frozenset[str]:
+    """`signal_tokens` read back. The only meaning the spine gives the column."""
     return frozenset(part for part in (value or "").split(SIGNAL_SEPARATOR) if part)
 
 
@@ -885,7 +886,7 @@ def _immediate_rows(spec: Layer, user_id: str | None) -> list[tuple]:
         query = query.filter(LayerAssignment.subject_id == user_id)
     rows = []
     for arm, propensity, subject, correct, section, question_type, signal in query.all():
-        if spec.restricted_by_signal and question_type not in _signal_set(signal):
+        if spec.restricted_by_signal and question_type not in signal_set(signal):
             continue
         rows.append((arm, propensity, subject, bool(correct), section))
     return rows
@@ -1036,7 +1037,7 @@ def _later_encounter_rows(spec: Layer, user_id: str | None) -> list[tuple]:
     # (student, type) -> the assignments that named that type, oldest first.
     targeted: dict[tuple[str, str], list[tuple]] = {}
     for subject, arm, propensity, run_id, signal, started in served.all():
-        for question_type in _signal_set(signal):
+        for question_type in signal_set(signal):
             targeted.setdefault((subject, question_type), []).append(
                 (_naive(started), run_id, arm, propensity)
             )
@@ -1079,6 +1080,34 @@ def _later_encounter_rows(spec: Layer, user_id: str | None) -> list[tuple]:
         _, _, arm, propensity = prior[-1]
         rows.append((arm, propensity, subject, bool(correct), section))
     return rows
+
+
+def outcome_rows(layer_key: str, *, window: str | None = None, user_id: str | None = None) -> list[tuple]:
+    """The answers a reading of this layer is over, one tuple each.
+
+    `(arm, propensity, subject, correct, section)`, which is everything an
+    estimate of this layer needs and nothing else. Public because a layer with
+    a question of its own regroups them: `type_focus.rolling_population_reading`
+    splits the same rows by how much history the student had, since a layer
+    whose treatment needs a weakness to act on behaves differently at the two
+    ends of that. Regrouping the spine's rows rather than re-deriving them is
+    what keeps the cohort view and the layer reading the same measurement.
+    """
+    spec = layer(layer_key)
+    window = window or spec.outcome_window
+    if window not in WINDOWS:
+        raise ValueError(f"unknown outcome window: {window!r}")
+    readers = {
+        WINDOW_IMMEDIATE: _immediate_rows,
+        WINDOW_DELAYED: _delayed_rows,
+        WINDOW_LATER_ENCOUNTERS: _later_encounter_rows,
+    }
+    return readers[window](spec, user_id)
+
+
+def summarise(layer_key: str, rows: list[tuple]) -> dict:
+    """`layer_reading`'s arithmetic over any subset of `outcome_rows`."""
+    return _summarise(layer(layer_key), rows)
 
 
 def _summarise(spec: Layer, rows: list[tuple]) -> dict:
@@ -1206,14 +1235,7 @@ def layer_reading(layer_key: str, *, user_id: str | None = None, window: str | N
         }
 
     window = window or spec.outcome_window
-    if window not in WINDOWS:
-        raise ValueError(f"unknown outcome window: {window!r}")
-    readers = {
-        WINDOW_IMMEDIATE: _immediate_rows,
-        WINDOW_DELAYED: _delayed_rows,
-        WINDOW_LATER_ENCOUNTERS: _later_encounter_rows,
-    }
-    rows = readers[window](spec, user_id)
+    rows = outcome_rows(spec.key, window=window, user_id=user_id)
     overall = _summarise(spec, rows)
 
     strata = []

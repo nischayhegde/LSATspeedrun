@@ -383,11 +383,13 @@ export function PerformancePage() {
         <p className="dash-focus-note">
           Practice is weighted {focus.types.length ? `toward ${focus.types.join(' · ')}` : 'evenly across the test'}.
           {focus.explanation ? ` ${focus.explanation}` : ''}
-          {/* The section baseline each weak type was measured against, rather
-              than the old "your own N% on that form" — the comparison is no
-              longer against one sitting. */}
+          {/* The baseline each weak type was measured against, rather than the
+              old "your own N% on that form" — the comparison is no longer
+              against one sitting. It is the rest of the section rather than
+              the whole of it, so the sentence is a comparison the student
+              could make by hand. */}
           {focus.weak.length
-            ? ` ${focus.weak[0].type} is running ${focus.weak[0].gap} points under your ${focus.weak[0].section_baseline}% in ${focus.weak[0].section}.`
+            ? ` ${focus.weak[0].type} is running ${focus.weak[0].gap} points under your ${focus.weak[0].section_baseline}% on the rest of ${focus.weak[0].section}.`
             : ''}
         </p>
         {activeRunChip}
