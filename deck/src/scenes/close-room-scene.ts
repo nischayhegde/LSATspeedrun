@@ -135,6 +135,37 @@ const COUNSEL = { x: 4.35, z: -1.1 } as const
  */
 const LETTERING = { x: -3.4, z: -4.6 } as const
 
+/** The framing's own vertical field of view, and the aspect it was set at. */
+const BASE_FOV = 33
+const BASE_ASPECT = 16 / 9
+
+/**
+ * The vertical fov that holds the *horizontal* one steady on a narrow panel.
+ *
+ * This is the price of world-space copy and it has to be paid somewhere. A
+ * `PerspectiveCamera` is specified vertically, so `CameraRig.resize` keeps the
+ * vertical angle and lets the horizontal one follow the aspect. Every other
+ * scene in the deck is fine with that, because their copy is DOM and reflows;
+ * here the copy is a rigid object standing at x −3.4, and on a panel narrower
+ * than 16:9 the frustum simply arrives in front of it. Rendered at 1024×648 —
+ * the window the founders' own screenshot was taken in — the headline lost its
+ * `O` and the eyebrow read "CT VI — THE CLOSE".
+ *
+ * So the horizontal angle is the one held fixed, at the value the framing has
+ * at 16:9, and the vertical is solved from it. `tan(v/2)·a` is the horizontal
+ * half-tangent, so holding it means `tan(v'/2) = tan(v/2)·a_ref/a`.
+ *
+ * Widen only. At exactly 16:9 this returns `BASE_FOV` to the last bit and the
+ * camera is untouched; on anything *wider* the vertical angle is left alone, so
+ * a cinema panel gains width rather than losing height off the top of her head.
+ * Only the narrow case moves, and only far enough to put the copy back.
+ */
+function fovFor(aspect: number): number {
+  if (aspect >= BASE_ASPECT) return BASE_FOV
+  const halfTangent = Math.tan(THREE.MathUtils.degToRad(BASE_FOV) / 2) * BASE_ASPECT
+  return THREE.MathUtils.radToDeg(2 * Math.atan(halfTangent / aspect))
+}
+
 /**
  * The shadow map, sized deliberately rather than left at the default.
  *
@@ -475,6 +506,19 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
     'wide',
     context.width / Math.max(1, context.height),
   )
+
+  // `CameraRig` owns `camera.fov`: it assigns it on `go` and lerps it on every
+  // frame of a move, so the correction cannot be applied once and left. It is
+  // re-asserted after each `rig.update` instead, which is close to free — the
+  // projection matrix is only rebuilt when the value actually moved, and on a
+  // 16:9 panel it never does.
+  const holdHorizontal = () => {
+    const wanted = fovFor(rig.camera.aspect)
+    if (Math.abs(rig.camera.fov - wanted) < 1e-6) return
+    rig.camera.fov = wanted
+    rig.camera.updateProjectionMatrix()
+  }
+  holdHorizontal()
 
   // --- the room ------------------------------------------------------------
   // One inverted box. A `BoxGeometry` carries six material groups, so the
@@ -872,6 +916,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
         actor.update(delta)
         applyFold(1)
         rig.update(delta, context.pointer)
+        holdHorizontal()
         return
       }
 
@@ -900,10 +945,12 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
       applyFold(foldWeight(foldClock))
 
       rig.update(delta, context.pointer)
+      holdHorizontal()
     },
 
     resize(width, height) {
       rig.resize(width, height)
+      holdHorizontal()
     },
 
     setFraming(name, immediate) {
