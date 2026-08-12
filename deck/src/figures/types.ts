@@ -56,11 +56,39 @@ export type HoursBarFigure = {
   lateLineItem: string
 }
 
-/** Slide 5 — the speedrun route: three nodes skipped, one taken. */
+/**
+ * Slide 5 — where the first question sits on a clock, on two paths.
+ *
+ * Rebuilt, because the old drawing argued the opposite of the slide. It ran a
+ * route left to right past three struck-out waypoints and landed `first real
+ * question` at the far right of the frame — so the one object the headline is
+ * about was drawn at the *end* of the picture, on a line whose horizontal axis
+ * was never named. "So skip to the questions" over a diagram whose question is
+ * furthest away is not a subtle failure, and the founder's note on it was that
+ * the whole slide is too abstract to read.
+ *
+ * What replaced it is the same claim with the geometry the claim implies: one
+ * horizontal axis, named out loud as time to the first question, and two lanes
+ * on it. The course path spends the axis and arrives at its question at the far
+ * right; ours is a single node at the origin. The distance between the two
+ * question markers is the argument, and it is drawn as a dimension line so that
+ * it is a measured distance rather than a slope.
+ */
 export type RouteFigure = {
   kind: 'route'
-  nodes: Array<{ label: string; skipped: boolean }>
-  /** Shown in the timer HUD pinned top-left. Counts up in real time. */
+  /** Printed under the shared axis. Names what the horizontal distance is. */
+  axisLabel: string
+  lanes: {
+    /**
+     * The dim lane. `stages` are what a curriculum puts in front of a student
+     * before the first question; `arrival` is the question at the end of them.
+     * Deliberately unattributed — see the note on the slide in the registry.
+     */
+    course: { label: string; stages: string[]; arrival: string }
+    /** The bright lane, which holds one node and holds it at the origin. */
+    ours: { label: string; arrival: string }
+  }
+  /** The chip on our node. Counts real time, because the clock is the point. */
   timerLabel: string
 }
 

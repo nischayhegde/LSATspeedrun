@@ -1,155 +1,177 @@
 import type { RouteFigure } from './types'
-import { DRAW, DRAW_PX, clockText, pct, usePhase, useStopwatch, vars, type FigureBody } from './kit'
+import { clockText, pct, usePhase, useStopwatch, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 5 — `route`. The speedrun route: three nodes skipped, one taken.
+ * SLIDE 5 — `route`. Where the first question sits on a named clock.
  *
- * Played straight as a speedrun graphic, because the metaphor is doing real work
- * here and a tasteful version of it would be a worse argument. A route in a
- * speedrun is a *committed* line: it does not visit and dismiss the intro course,
- * it never goes there, and the diagonal is hard-cornered for exactly that reason.
- * Curving it would read as a detour rather than a refusal.
+ * ## What was wrong with the drawing this replaces
+ *
+ * It ran a route left to right, greyed three waypoints out as it passed them,
+ * and put `first real question` at the far right of the frame. Every part of
+ * that is defensible in isolation and the composition says the wrong thing: the
+ * horizontal axis was never named, so the diagonal read as a generic decline
+ * rather than as distance; and the slide's own subject — the question — was
+ * drawn at the end of the longest journey on screen, under a headline that says
+ * to skip to it. The struck-out labels finished the job, because grey text with
+ * a rule through it reads as an error state before it reads as a refusal.
+ *
+ * ## What this draws instead
+ *
+ * One axis, named out loud. Two lanes on it. The course path spends the whole
+ * axis on three stages and arrives at a hollow question marker at the far
+ * right; ours is one solid marker at the origin with a clock running on it. The
+ * two markers are the same object at the same size on purpose, so the only
+ * difference between them is where they sit, and a dimension line under both
+ * makes that a measured distance rather than a slope.
+ *
+ * ## The order is the argument
+ *
+ * The eye is walked right along the course lane, stage by stage, until it
+ * reaches that lane's question at the far edge — and then the frame cuts back
+ * to zero and our marker lands there. Travel, then snap. That contrast is the
+ * beat, and it is why the stages arrive before our node does rather than both
+ * lanes drawing at once.
+ *
+ * Everything is DOM rather than SVG, which is unusual for this folder and is
+ * the right call for one reason: the course rail has to be *dashed* and has to
+ * *draw on*, and an SVG stroke cannot do both — the reveal is a dash pattern,
+ * so the pattern is spent. A rule with a `scaleX` from its left edge draws on
+ * just as well and keeps its dashes.
  *
  * Under two seconds end to end, and it never repeats. The one thing that keeps
- * moving is the HUD clock, which is the one thing a speedrun HUD is for.
+ * moving afterwards is the clock, which is what a clock is for.
  */
-
-/** Cumulative milliseconds. Skipped nodes stagger inside their own beat, so the count of nodes does not change the runtime. */
-const MARKS = [40, 420, 1000, 1500] as const
-
-/** How far apart the skip ticks land. Three nodes at 150ms is a rhythm; five is still under the budget. */
-const SKIP_STAGGER_MS = 150
 
 /**
- * The lane the curriculum sits on, and the lane the route ends on, in percent of
- * the frame. Pulled apart from 26/78 so the cut is steeper: at the old spacing
- * the diagonal fell about one unit in three across the whole frame, which reads
- * as a gentle decline rather than as a route leaving the curriculum.
+ * Cumulative milliseconds. Course stages stagger inside their own beat, so the
+ * number of stages does not change the runtime.
  */
-const SKIP_LANE = 22
-const TAKEN_LANE = 82
+const MARKS = [40, 400, 1000, 1360, 1680] as const
 
-/** Where the readout is held when motion is off: a plausible mid-run split rather than a row of zeroes. */
-const FROZEN_MS = 52_400
+/** How far apart the course stages land. Three at 160ms is a walk, not a list. */
+const STAGE_STAGGER_MS = 160
+
+/** The two lanes and the dimension line, in percent down the frame. */
+const COURSE_LANE = 24
+const OURS_LANE = 62
+const DIM_LINE = 90
+
+/** Where the lanes start and end, in percent across. */
+const ORIGIN = 6
+const END = 94
+
+/** Where the readout is held when motion is off — a plausible split, not zeroes. */
+const FROZEN_MS = 12_400
 
 export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
   const phase = usePhase(active, reduced, MARKS)
   const elapsed = useStopwatch(active, reduced, FROZEN_MS)
 
-  const nodes = spec.nodes
-  const count = Math.max(nodes.length, 2)
-  const left = 15
-  const right = 85
-  const step = (right - left) / (count - 1)
-  const xOf = (index: number) => left + index * step
-
-  // The route's destination is the first node it does not skip. Falling back to
-  // the last node keeps the figure drawable if a registry ever marks them all.
-  const takenIndex = nodes.findIndex((node) => !node.skipped)
-  const destination = takenIndex >= 0 ? takenIndex : nodes.length - 1
-
-  const lead = `M 3 ${SKIP_LANE} L ${xOf(0) - 5} ${SKIP_LANE}`
-  const cut = `M ${xOf(0) - 5} ${SKIP_LANE} L ${xOf(destination) - 5} ${TAKEN_LANE} L 97 ${TAKEN_LANE}`
-
-  let skipOrder = 0
+  const { course, ours } = spec.lanes
+  // Stages are spaced across the lane with the arrival marker holding the far
+  // end, so a registry that adds or removes one re-spaces rather than collides.
+  const stops = course.stages.length + 1
+  const xOf = (index: number) => ORIGIN + ((END - ORIGIN) / stops) * (index + 1)
 
   return (
     <div className="fig-rt">
-      {/* The track is the first child, on the HUD's leading edge, because the
-          transition in from slide 4 lands the collapsed numeral on it and a
-          target that moved with the label's width would be a target that
-          moved between projectors.
+      <p className="fig-rt-lane-name" style={vars({ left: pct(ORIGIN / 100), top: pct(COURSE_LANE / 100), opacity: phase >= 1 ? 1 : 0 })}>
+        {course.label}
+      </p>
+      <span
+        className="fig-rt-rail"
+        style={vars({
+          left: pct(ORIGIN / 100),
+          top: pct(COURSE_LANE / 100),
+          width: pct((END - ORIGIN) / 100),
+          transform: `scaleX(${phase >= 1 ? 1 : 0})`,
+        })}
+      />
 
-          IN THE CORNER, AND IT HAS TO BE. This sat on the skip lane, at the
-          start of the run, on the argument that a HUD pinned to a corner is a
-          badge while a HUD on the line is the run's origin. The argument was
-          right and the geometry was not: the node labels are stacked *above*
-          their lane — they have to be, or the route strikes through them — so
-          the chip and the first node's name were placed in the same band, and
-          `SPEEDRUN 0:07.41` printed straight across `intro course` on every
-          frame the deck has ever been shot at. The two cannot both be there:
-          the chip's width is set by its type and the node's position by a
-          percentage of the row, so no amount of nudging makes the clearance
-          hold from a 4:3 projector to a 21:9 one.
+      {course.stages.map((stage, index) => (
+        <div
+          className="fig-rt-stage"
+          key={stage}
+          style={vars({
+            left: pct(xOf(index) / 100),
+            top: pct(COURSE_LANE / 100),
+            opacity: phase >= 2 ? 1 : 0,
+            '--fig-delay': `${index * STAGE_STAGGER_MS}ms`,
+          })}
+        >
+          <span className="fig-rt-stage-plate" />
+          <span className="fig-rt-stage-label">{stage}</span>
+        </div>
+      ))}
 
-          The bottom-left corner is where it goes instead, and there are two
-          reasons it is not a consolation. It is where a speedrun timer
-          actually lives, in every run the metaphor is borrowed from. And it is
-          the one part of this frame that nothing else can ever occupy — the
-          route leaves the curriculum lane at the top left and lands at the
-          bottom right, so the triangle underneath its departure was the empty
-          quarter of the slide. */}
+      {/* The course path's question, hollow, at the far end of its own lane. */}
       <div
-        className="fig-rt-hud"
-        style={vars({ opacity: phase >= 1 ? 1 : 0 })}
+        className="fig-rt-node"
+        data-lane="course"
+        style={vars({ left: pct(END / 100), top: pct(COURSE_LANE / 100), opacity: phase >= 3 ? 1 : 0 })}
       >
-        <span
-          className="fig-rt-hud-track"
-          data-morph="timer-track"
-          style={vars({ '--rt-progress': pct(phase >= 3 ? 1 : phase >= 1 ? .18 : 0) })}
-        />
-        <span className="fig-rt-hud-label">{spec.timerLabel}</span>
-        <span className="fig-rt-hud-clock">{clockText(elapsed)}</span>
+        <span className="fig-rt-dot" />
+        <span className="fig-rt-node-label">{course.arrival}</span>
       </div>
 
-      <svg className="fig-rt-wires" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        {/* Non-scaling strokes with a screen-space dash — see `DRAW_PX`. The
-            viewBox has to stretch, because the route's node positions are
-            percentages of the frame and must stay under their labels at any
-            aspect; the stroke must not, because a route drawn three times
-            thicker on its diagonal than on its horizontals is a wedge. */}
-        <path
-          className="fig-rt-lead"
-          d={lead}
-          vectorEffect="non-scaling-stroke"
-          style={{ strokeDashoffset: phase >= 1 ? 0 : DRAW_PX }}
-        />
-        <path
-          className="fig-rt-cut"
-          d={cut}
-          vectorEffect="non-scaling-stroke"
-          style={{ strokeDashoffset: phase >= 3 ? 0 : DRAW_PX }}
-        />
-      </svg>
+      <p
+        className="fig-rt-lane-name"
+        data-ours="true"
+        style={vars({ left: pct(ORIGIN / 100), top: pct(OURS_LANE / 100), opacity: phase >= 4 ? 1 : 0 })}
+      >
+        {ours.label}
+      </p>
 
-      {nodes.map((node, index) => {
-        const skipped = index !== destination && node.skipped
-        const struck = skipped && phase >= 2
-        const delay = skipped ? `${(skipOrder++) * SKIP_STAGGER_MS}ms` : '0ms'
-        const arrived = index === destination && phase >= 3
-        return (
-          <div
-            className="fig-rt-node"
-            key={`${node.label}-${index}`}
-            data-skipped={skipped ? 'true' : 'false'}
-            data-struck={struck ? 'true' : 'false'}
-            data-taken={index === destination ? 'true' : 'false'}
-            data-arrived={arrived ? 'true' : 'false'}
-            style={vars({
-              left: pct(xOf(index) / 100),
-              top: pct((index === destination ? TAKEN_LANE : SKIP_LANE) / 100),
-              // A struck node greys out rather than disappearing: the audience has
-              // to see that the intro course still exists and is simply not on the
-              // route.
-              opacity: phase < 1 ? 0 : struck ? 0.62 : 1,
-              '--fig-delay': delay,
-            })}
-          >
-            <span className="fig-rt-dot">
-              <span className="fig-rt-ring" style={{ opacity: phase >= 4 && index === destination ? 1 : 0 }} />
-            </span>
-            <span className="fig-rt-node-label">{node.label}</span>
-            {skipped ? (
-              <svg className="fig-rt-tick" viewBox="0 0 14 14" aria-hidden="true">
-                <path
-                  d="M 2 7.6 L 5.4 11 L 12 3"
-                        style={{ strokeDashoffset: struck ? 0 : DRAW }}
-                />
-              </svg>
-            ) : null}
-          </div>
-        )
-      })}
+      {/* Ours, solid, at zero.
+          `transitions.ts` selects `.fig-rt-node[data-taken="true"]
+          .fig-rt-ring` and grows it into slide 6's question card. That file is
+          the engine's and not this pass's to re-aim, so both names and the
+          nesting between them are a contract: a marker is a `fig-rt-node`
+          whatever the rebuilt figure would rather have called it. */}
+      <div
+        className="fig-rt-node"
+        data-lane="ours"
+        data-taken="true"
+        data-arrived={phase >= 4 ? 'true' : 'false'}
+        style={vars({ left: pct(ORIGIN / 100), top: pct(OURS_LANE / 100), opacity: phase >= 4 ? 1 : 0 })}
+      >
+        <span className="fig-rt-dot">
+          <span className="fig-rt-ring" style={{ opacity: phase >= 4 ? 1 : 0 }} />
+        </span>
+        <span className="fig-rt-node-label">{ours.arrival}</span>
+        {/* The clock is the marker's second label rather than a HUD in a
+            corner. That is what makes the axis mean anything at this end: a
+            named distance needs a zero, and a readout running on the marker at
+            the origin is the most literal zero available. */}
+        <span className="fig-rt-clock">
+          <span className="fig-rt-clock-track" data-morph="timer-track" />
+          <span className="fig-rt-clock-name">{spec.timerLabel}</span>
+          <span className="fig-rt-clock-read">{clockText(elapsed)}</span>
+        </span>
+      </div>
+
+      {/* Two end ticks and a span, in the drafting convention. No arrowhead,
+          because an arrow would make it a journey, and no fill, because a fill
+          would make it a quantity. It is the distance between two markers,
+          drawn the way a distance is drawn — and the ticks are short rather
+          than run up to the markers they measure, because three long sides is a
+          box, and a box is a container rather than a measurement. The two
+          markers are directly above the two ticks, which is the only alignment
+          this needs to do its job. */}
+      <div className="fig-rt-dim" style={{ opacity: phase >= 5 ? 1 : 0 }}>
+        <span className="fig-rt-dim-tick" style={vars({ left: pct(ORIGIN / 100), top: pct(DIM_LINE / 100) })} />
+        <span className="fig-rt-dim-tick" style={vars({ left: pct(END / 100), top: pct(DIM_LINE / 100) })} />
+        <span
+          className="fig-rt-dim-span"
+          style={vars({
+            left: pct(ORIGIN / 100),
+            top: pct(DIM_LINE / 100),
+            width: pct((END - ORIGIN) / 100),
+            transform: `scaleX(${phase >= 5 ? 1 : 0})`,
+          })}
+        />
+        <p className="fig-rt-axis">{spec.axisLabel}</p>
+      </div>
     </div>
   )
 }

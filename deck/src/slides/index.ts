@@ -356,16 +356,40 @@ export const SLIDES: readonly SlideSpec[] = [
       'Rereading: rated lowest',
     ],
     credit: 'Dunlosky et al. (2013), ten techniques rated',
-    // The route ignores the first three nodes and cuts a hard diagonal to the
-    // fourth. Under two seconds, and it does not loop.
+    // REBUILT. The old figure ran a route left to right past three struck-out
+    // waypoints and landed `first real question` at the FAR RIGHT of the
+    // frame — the slide's own subject drawn at the end of the longest journey
+    // on screen, under a headline that says to skip to it, on a horizontal
+    // axis nothing named. The founder's note was that the slide is too
+    // abstract to understand, and the geometry is why.
+    //
+    // Same four objects, same claim, and the axis is now stated: `time to your
+    // first real question` runs under both lanes, the course path spends the
+    // whole of it, and ours is one marker at zero with a clock on it. The two
+    // question markers are drawn identically so the only difference between
+    // them is position, and a dimension line makes that a measured distance.
+    //
+    // THE THREE STAGES NAME NO PRODUCT, AND MUST NOT. `CITATIONS.md` §4.2 is
+    // explicit that LSAT Demon is question-first — "no complex diagramming or
+    // hours of lessons... just hit Drill" — so "everyone makes you watch first"
+    // is false and would be caught by anyone in the room who has used it. What
+    // is on the lane is the *course* model, which is a real product category
+    // the deck has already sourced on slide 3 out of the vendors' own pages:
+    // 7Sage's 900 lessons "from the ground up", LSAT Lab's "comprehensive
+    // 3-month courses", PowerScore's 2–3 month syllabus. The honest
+    // time-to-first-question comparison, with Demon credited on our side of it,
+    // is `market-what-you-do` in Act I.
     figure: {
       kind: 'route',
-      nodes: [
-        { label: 'intro course', skipped: true },
-        { label: 'concept videos', skipped: true },
-        { label: 'drill unlock', skipped: true },
-        { label: 'first real question', skipped: false },
-      ],
+      axisLabel: 'time to your first real question',
+      lanes: {
+        course: {
+          label: 'the course path',
+          stages: ['intro course', 'concept videos', 'drill unlock'],
+          arrival: 'first question',
+        },
+        ours: { label: 'ours', arrival: 'question one' },
+      },
       timerLabel: 'speedrun',
     },
     // ACTIVE-VS-PASSIVE, BEAT 2, and where "strip away the fluff" enters. This
