@@ -9,7 +9,7 @@
  * is a thing the game actually has.
  */
 
-import type { FirmTier, GameAsset } from '../app-art/types'
+import type { ActiveOfficeCase, FirmTier, GameAsset } from '../app-art/types'
 import type { MapRegionKey, MapScenePoint, MapSceneEvent, MapSceneRival, MapSceneTier } from '../app-art/map-three-scene'
 import { OFFICE_ASSET_MANIFEST, OFFICE_HIRE_ORDER } from '../app-art/office-manifest'
 
@@ -60,6 +60,49 @@ export function shackAssets(): GameAsset[] {
 export function fullEmpireAssets(): GameAsset[] {
   return Object.keys(OFFICE_ASSET_MANIFEST).map((key, index) => syntheticAsset(key, assetTypeFor(key), index))
 }
+
+/**
+ * A matter open on the partner's desk, so the office has a client in it.
+ *
+ * `OfficeThreeScene` treats a non-null `activeCase` as an instruction to build a
+ * consultation: a seated visitor in a chair beside the partner desk, a side table
+ * with a coffee on it, an open portfolio under their hands, the case card anchored
+ * to their head, and a selection halo. It is the most integrated character in
+ * either ported scene — it has a purpose-built seated arm chain because the
+ * standing rig's looked detached in a chair, and a `seatedGuest` behaviour
+ * repertoire with every arm-moving beat deliberately removed.
+ *
+ * The deck was passing `null` and getting none of it. What it showed instead was
+ * the staff floor: sixteen people at workstations, correct and completely
+ * decorative, which is the note the walkthrough returned. A client sitting across
+ * the desk is the same slide's own argument in the room — the deck's line for
+ * `demo-clients-walk-in` is "a client sits down; taking their case is starting a
+ * practice run" — so the character is doing the work of the sentence rather than
+ * standing near it.
+ *
+ * Fixed rather than random, because the figure's face, build, palette, glasses and
+ * satchel are all seeded from the client's *name* via `clientCastSeed`: a name
+ * chosen once is a person who looks the same in every rehearsal and in every
+ * screenshot taken of this slide.
+ */
+export function syntheticConsultation(): ActiveOfficeCase {
+  return {
+    sessionId: 'deck-consultation',
+    clientKey: DECK_CONSULTATION_CLIENT_KEY,
+    clientName: 'Marguerite Okonjo',
+    baseFee: 4_800,
+  }
+}
+
+/**
+ * The key the room files the consulting client under in its focus register.
+ *
+ * Exported because selecting her is how the deck composes the shot on her: the
+ * office turns its camera to whatever key arrives on an `office-focus-asset`
+ * event, and that is the app's own selection mechanism rather than a camera
+ * control invented for the deck. See `office-scene.tsx`.
+ */
+export const DECK_CONSULTATION_CLIENT_KEY = 'deck-consultation-client'
 
 /** The 15 firm tiers, as the backend's `FIRM_TIERS` names them. */
 const FIRM_TIERS: ReadonlyArray<Pick<FirmTier, 'tier' | 'name' | 'cost' | 'reputation' | 'region' | 'feature' | 'short'>> = [

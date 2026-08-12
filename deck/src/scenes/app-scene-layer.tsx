@@ -137,12 +137,12 @@ function OfficeTransform({ floor, live }: { floor: 'practice' | 'chambers'; live
           room. Both canvases stay at full size throughout. */}
       <div className="office-half is-full">
         <Suspense fallback={<SceneBooting label="Building the Planetary Justice Nexus" />}>
-          <DeckOfficeScene tier={14} full floor={floor} />
+          <DeckOfficeScene tier={14} full floor={floor} client={false} attend={false} />
         </Suspense>
       </div>
       <div className="office-half is-shack" style={{ clipPath: `inset(0 ${(1 - split) * 100}% 0 0)` }}>
         <Suspense fallback={<SceneBooting label="Building the Wooden Shack" />}>
-          <DeckOfficeScene tier={0} full={false} floor={floor} />
+          <DeckOfficeScene tier={0} full={false} floor={floor} client={false} attend={false} />
         </Suspense>
       </div>
       <div className="office-divider" style={{ left: `${split * 100}%` }}>
@@ -171,6 +171,15 @@ function Slot({ slot }: { slot: AppSceneSlot }) {
           tier={typeof params.tier === 'number' ? params.tier : 14}
           full={params.full !== false}
           floor={params.floor === 'chambers' ? 'chambers' : 'practice'}
+          // A slide may turn the consultation off with `client: false`; nothing
+          // needs to turn it on, because a room with a client in it is the shot
+          // this scene should have been giving all along. `attend: false` keeps
+          // her in the room but leaves the camera on its own opening framing,
+          // and `mood` picks up the app's own lighting states.
+          client={params.client !== false}
+          attend={params.attend !== false}
+          rake={typeof params.rake === 'number' ? params.rake : 0}
+          mood={params.mood === 'focus' ? 'focus' : params.mood === 'storm' ? 'storm' : undefined}
         />
       </Suspense>
     )
