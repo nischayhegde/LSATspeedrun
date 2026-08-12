@@ -81,32 +81,41 @@ weak evidence it is, because most of that 22% was the guess.
 
 K, and why the two sides differ
 -------------------------------
-K is the step size, scaled by how much is already known:
-
-    K(n) = K_min + (K_max − K_min) / (1 + n / shape)
-
-The item's K decays to nearly nothing, because an item's difficulty is a fixed
-property and a hundred responses in there is nothing left to learn from one
-more. The student's K floors out an order of magnitude higher, because ability
-is *not* fixed — the entire product is an attempt to change it — and a rating
-that stops moving stops tracking the person. That asymmetry is deliberate and is
-the one place this departs from symmetric Elo.
-
-Uncertainty, and what "calibrated" is allowed to mean
------------------------------------------------------
-Every response also contributes Fisher information about b:
+Every response also carries Fisher information about z:
 
     I = (1 − c) · q² · (1 − q) / p
 
-which is q(1−q) at c = 0, the Rasch case. Accumulating it gives a standard
-error, 1/√ΣI, that correctly discounts a response from a student so far above
-or below the item that the answer was a foregone conclusion. `status` is then a
-statement about evidence rather than a label: an item with four responses is
-`provisional` and no consumer may target on it; an item with fifty and an SE
-under 0.30 logits is `calibrated`. The SE is optimistic — it treats θ as known
-when θ is itself estimated, and Elo is noisier than maximum likelihood — so the
-thresholds below are set conservatively and the number is published rather than
-hidden.
+which is q(1−q) at c = 0, the Rasch case, and which correctly discounts a
+response from a student so far above or below the item that the answer was a
+foregone conclusion. Accumulating it gives both the standard error, 1/√ΣI, and
+the step size:
+
+    K = 1 / (prior precision + ΣI)
+
+That is the stochastic Newton step rather than a tuned constant, and it is the
+same idea Glicko adds to Elo: carry the uncertainty and let it set how far each
+response is allowed to move the rating. A brand-new item moves a long way on its
+first response and barely at all on its two-hundredth, without a hand-picked
+schedule deciding when that happens. Measured against a fixed-K schedule on the
+simulation in `scripts/calibration_lab.py` — 400 items, 9,600 responses, 2PL
+generator — it is worth 0.006 nats of held-out log loss and 0.010 of AUC, which
+is small but free.
+
+The two sides differ in one respect. The item's K decays without limit, because
+an item's difficulty is a fixed property and two hundred responses in there is
+nothing left to learn from one more. The student's information is **capped**, so
+their K never falls below 1/(1 + cap), because ability is *not* fixed — the
+entire product is an attempt to change it — and a rating that stops moving stops
+tracking the person. In Kalman terms the cap is standing in for process noise.
+
+What "calibrated" is allowed to mean
+------------------------------------
+`status` is a statement about evidence rather than a label: an item with four
+responses is `provisional` and no consumer may target on it; an item with fifty
+and an SE under 0.30 logits is `calibrated`. The SE is optimistic — it treats θ
+as known when θ is itself estimated, and Elo is noisier than maximum likelihood
+— so the thresholds below are set conservatively and the number is published
+rather than hidden.
 
 Selection bias, which is the failure mode that matters
 ------------------------------------------------------
@@ -150,16 +159,19 @@ DEFAULT_CHOICE_COUNT = 5
 # slow common-mode drift in the origin cannot move the bands.
 INITIAL_RATING = 0.0
 
-# An item's difficulty is fixed, so its step size decays to almost nothing.
-ITEM_K_MAX = 0.50
-ITEM_K_MIN = 0.03
-ITEM_K_SHAPE = 20.0
+# Prior precision, 1/σ₀². σ₀ = 1 logit on both sides: a published LSAT bank's
+# item difficulties span roughly ±2 logits, and an unseen student is assumed
+# no more than a standard deviation from the middle. Its only job is to keep the
+# first response's step finite, so it is not a sensitive constant.
+ITEM_PRIOR_PRECISION = 1.0
+LEARNER_PRIOR_PRECISION = 1.0
 
-# A student's ability is not fixed, so theirs floors out an order of magnitude
-# higher and never stops tracking.
-LEARNER_K_MAX = 0.60
-LEARNER_K_MIN = 0.10
-LEARNER_K_SHAPE = 30.0
+# The most information a student's ability rating is ever allowed to accumulate,
+# which floors their step size at 1/(1 + 9) = 0.1. An SE of 1/√10 ≈ 0.32 logits
+# is as well as this claims to know an ability that is genuinely moving; past
+# that point extra confidence would only make the rating slower to notice that
+# somebody has improved. Items have no such cap because they do not improve.
+LEARNER_INFORMATION_CAP = 9.0
 
 # Ratings are clamped well outside anything a real item reaches. This is a guard
 # against a pathological run of updates, not a modelling choice: a bank of LSAT
@@ -310,17 +322,14 @@ def response_information(theta: float, difficulty: float, guess: float = 0.0) ->
     return (1.0 - guess) * q * q * (1.0 - q) / p
 
 
-def step_size(responses: int, *, k_max: float, k_min: float, shape: float) -> float:
-    """K(n) — large while nothing is known, decaying toward k_min."""
-    return k_min + (k_max - k_min) / (1.0 + max(0, responses) / shape)
+def item_step_size(information: float) -> float:
+    """1/(precision so far) — the Newton step, not a tuned constant."""
+    return 1.0 / (ITEM_PRIOR_PRECISION + max(0.0, information))
 
 
-def item_step_size(responses: int) -> float:
-    return step_size(responses, k_max=ITEM_K_MAX, k_min=ITEM_K_MIN, shape=ITEM_K_SHAPE)
-
-
-def learner_step_size(responses: int) -> float:
-    return step_size(responses, k_max=LEARNER_K_MAX, k_min=LEARNER_K_MIN, shape=LEARNER_K_SHAPE)
+def learner_step_size(information: float) -> float:
+    """The same, floored, because the quantity being tracked keeps moving."""
+    return 1.0 / (LEARNER_PRIOR_PRECISION + min(max(0.0, information), LEARNER_INFORMATION_CAP))
 
 
 def _clamp_rating(value: float) -> float:
@@ -348,11 +357,13 @@ class Match:
     def _delta(self) -> float:
         return self.surprise * _gradient_factor(self.theta, self.difficulty, self.guess)
 
-    def next_theta(self, responses: int) -> float:
-        return _clamp_rating(self.theta + learner_step_size(responses) * self._delta())
+    def next_theta(self, information: float) -> float:
+        """The student's rating after this match. `information` is theirs, before it."""
+        return _clamp_rating(self.theta + learner_step_size(information) * self._delta())
 
-    def next_difficulty(self, responses: int) -> float:
-        return _clamp_rating(self.difficulty - item_step_size(responses) * self._delta())
+    def next_difficulty(self, information: float) -> float:
+        """The item's rating after this match. `information` is the item's, before it."""
+        return _clamp_rating(self.difficulty - item_step_size(information) * self._delta())
 
 
 def standard_error(information: float | None) -> float | None:
@@ -455,14 +466,15 @@ def record_response(
     item = question_calibration(question.id, create=True)
     guess = guess_floor(len(question.choices) if question.choices else None)
 
-    match = Match(learner.rating, item.rating, is_correct, guess)
-    learner.rating = match.next_theta(learner.responses or 0)
+    theta_before = learner.rating
+    match = Match(theta_before, item.rating, is_correct, guess)
+    learner.rating = match.next_theta(learner.information or 0.0)
     learner.information = (learner.information or 0.0) + match.information
     learner.responses = (learner.responses or 0) + 1
     learner.correct = (learner.correct or 0) + int(is_correct)
     learner.updated_at = moment
 
-    item.rating = match.next_difficulty(item.responses or 0)
+    item.rating = match.next_difficulty(item.information or 0.0)
     item.information = (item.information or 0.0) + match.information
     item.responses = (item.responses or 0) + 1
     item.correct = (item.correct or 0) + int(is_correct)
@@ -477,9 +489,11 @@ def record_response(
     if exposure in UNBIASED_EXPOSURES:
         # A second, independent rating fed only by exposure that could not have
         # depended on difficulty. The gap between the two is the read-out on how
-        # far a targeting selector has bent the naive estimate.
-        blind = Match(learner.rating, item.blind_rating, is_correct, guess)
-        item.blind_rating = blind.next_difficulty(item.blind_responses or 0)
+        # far a targeting selector has bent the naive estimate. Built from the
+        # student's rating *before* this match, exactly as the main one is, so
+        # the two differ only in which responses they saw.
+        blind = Match(theta_before, item.blind_rating, is_correct, guess)
+        item.blind_rating = blind.next_difficulty(item.blind_information or 0.0)
         item.blind_information = (item.blind_information or 0.0) + blind.information
         item.blind_responses = (item.blind_responses or 0) + 1
     else:
