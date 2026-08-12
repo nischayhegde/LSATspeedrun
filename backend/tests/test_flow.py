@@ -3266,8 +3266,7 @@ def test_the_diagnostic_still_has_no_strategy_trial(app):
 
         user = User.query.filter_by(email="diagnostic-no-trial@example.test").one()
         question = Question.query.order_by(Question.id).first()
-        assert assign_strategy_trial(user.id, question, "diagnostic", 2, exposure="run-1") is None
-        assert assign_strategy_trial(user.id, question, "cases", 1, exposure="run-1") is not None
+        assert assign_strategy_trial(user.id, question, 1, exposure="run-1") is not None
 
 
 def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
@@ -3288,17 +3287,32 @@ def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
         user = User.query.filter_by(email="strategy-stable@example.test").one()
         question = Question.query.order_by(Question.id).first()
         first = [
-            assign_strategy_trial(user.id, question, "cases", position, exposure="run-1")
+            assign_strategy_trial(user.id, question, position, exposure="run-1")
             for position in range(6)
         ]
         second = [
-            assign_strategy_trial(user.id, question, "cases", position, exposure="run-1")
+            assign_strategy_trial(user.id, question, position, exposure="run-1")
             for position in range(6)
         ]
         assert first == second
         # The control arm still exists alongside the prompts. It is visible now
         # rather than hidden, but it is still an arm that offers no technique.
         assert {trial["variant"] for trial in first} <= {"prompt", "control_visible"}
+
+        # Deterministic within a run, and *not* deterministic across runs.
+        # This is the whole exposure defect in two lines: the arm used to be a
+        # hash of student, question, slot and style, so the same question
+        # returning to the same slot re-drew the same arm forever and a heavy
+        # user's realised control share collapsed toward zero while the
+        # bank-wide figure stayed at a healthy quarter. One question in one
+        # slot across sixty runs has to produce both arms.
+        across = {
+            assign_strategy_trial(
+                user.id, question, 0, exposure=f"run-{index}"
+            )["variant"]
+            for index in range(60)
+        }
+        assert across == {"prompt", "control_visible"}
 
 
 def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monkeypatch):
@@ -3321,7 +3335,7 @@ def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monke
         user = User.query.filter_by(email="strategy-control@example.test").one()
         question = Question.query.order_by(Question.id).first()
         monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.0)
-        assigned = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
+        assigned = assign_strategy_trial(user.id, question, 2, exposure="run-1")
         assert assigned["variant"] == "control_visible"
         assert assigned["key"] in {"argument_core", "prephrase", "scope_precision", "conditional_chain"}
         # The arm's propensity is untouched by making it visible, so the
@@ -3331,7 +3345,7 @@ def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monke
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=35,
             total_items=1,
@@ -3448,7 +3462,7 @@ def test_strategy_dashboard_uses_intention_to_treat_and_hedges_language(app):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             status="completed",
             target_minutes=35,
@@ -3543,7 +3557,7 @@ def test_strategy_dashboard_shows_a_percentage_once_both_arms_are_large(app):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=35,
             total_items=64,
@@ -3618,7 +3632,7 @@ def _seed_strategy_trials(
     session = StudySession(
         user_id=user.id,
         mode="practice",
-        practice_style="deep",
+        practice_style="cases",
         feedback_policy="immediate",
         status="completed",
         target_minutes=35,
@@ -3993,10 +4007,21 @@ def test_review_queue_tracks_pending_grade_state(app):
         assert ReviewQueueItem.__table__.c.pre_grade_interval_index.nullable is True
 
 
-def test_cases_is_the_only_practice_style(app):
-    from app.services import PRACTICE_STYLES, REASONING_MIN_CHARS
+def test_a_practice_run_has_no_style_to_choose(app):
+    """There was a `PRACTICE_STYLES` set, and it held one value.
 
-    assert PRACTICE_STYLES == {"cases"}
+    This test used to assert that. A validation set with a single member does
+    not constrain anything — every call passed the only legal value — so it was
+    a configuration point in appearance and a constant in fact. It is gone,
+    along with the parameter it validated, and the assertion below is the one
+    that survives contact with that: a run is a "cases" run because there is
+    nothing else for it to be, not because a default said so.
+    """
+    import inspect
+
+    from app.services import REASONING_MIN_CHARS, create_study_session
+
+    assert "practice_style" not in inspect.signature(create_study_session).parameters
     assert REASONING_MIN_CHARS == 120
 
 
@@ -4277,6 +4302,34 @@ def _queue_due_question(user_id: str, question_id: str) -> None:
     db.session.commit()
 
 
+def _run_origins(app, email, *, holdback):
+    """Which positions of a six-question run came from the review queue.
+
+    `holdback` pins `run_ordering` to one arm, which these tests have to do now
+    that the ordering is drawn rather than fixed: at the shipped quarter, one
+    run in four is front-loaded on purpose and an unpinned assertion about the
+    order would fail on those. Pinning is not a workaround for the layer — it
+    is the only way to test either arm, and both are tested below.
+    """
+    client = app.test_client()
+    headers = login(client, email)
+    create_game(client, headers)
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
+    with app.app_context():
+        user = User.query.filter_by(email=email).one()
+        for question in Question.query.order_by(Question.id).limit(12).all():
+            _queue_due_question(user.id, question.id)
+
+    app.config["ADAPTIVE_LAYERS"] = {"run_ordering": {"holdback": holdback}}
+    try:
+        session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
+    finally:
+        app.config.pop("ADAPTIVE_LAYERS", None)
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        return [item.from_review_queue for item in items]
+
+
 def test_due_repairs_are_interleaved_through_a_run_and_never_fill_it(app):
     """Repairs are spread through a run and always leave fresh material in it.
 
@@ -4297,22 +4350,26 @@ def test_due_repairs_are_interleaved_through_a_run_and_never_fill_it(app):
     """
     from app.services import REVIEW_SHARE_CEILING
 
-    client = app.test_client()
-    headers = login(client, "folded-repairs@example.test")
-    create_game(client, headers)
-    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
-    with app.app_context():
-        user = User.query.filter_by(email="folded-repairs@example.test").one()
-        for question in Question.query.order_by(Question.id).limit(12).all():
-            _queue_due_question(user.id, question.id)
+    origins = _run_origins(app, "folded-repairs@example.test", holdback=0.0)
+    assert sum(origins) == int(6 * REVIEW_SHARE_CEILING)
+    assert sum(origins) < len(origins), "a run of nothing but repeats"
+    assert origins != [True, True, True, True, False, False]
 
-    session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
-    with app.app_context():
-        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        origins = [item.from_review_queue for item in items]
-        assert sum(origins) == int(6 * REVIEW_SHARE_CEILING)
-        assert sum(origins) < len(origins), "a run of nothing but repeats"
-        assert origins != [True, True, True, True, False, False]
+
+def test_the_front_loaded_arm_really_front_loads(app):
+    """The off arm of `run_ordering` has to actually be off.
+
+    An arm that is never off measures nothing, and an arm that is nominally off
+    while still receiving the treatment measures worse than nothing: the
+    comparison fills, reports a difference near zero, and reads as evidence
+    that interleaving does not work. This is the assertion that would catch the
+    off arm quietly still calling `interleave`.
+    """
+    from app.services import REVIEW_SHARE_CEILING
+
+    origins = _run_origins(app, "front-loaded-arm@example.test", holdback=1.0)
+    assert sum(origins) == int(6 * REVIEW_SHARE_CEILING)
+    assert origins == [True, True, True, True, False, False]
 
 
 def test_an_empty_review_queue_still_produces_a_full_run(app):
@@ -4608,7 +4665,7 @@ def test_strategy_scoring_weighs_explanation_quality(app, monkeypatch):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=10,
             total_items=len(candidates) * 3,
@@ -4649,13 +4706,19 @@ def test_strategy_scoring_weighs_explanation_quality(app, monkeypatch):
         db.session.commit()
 
         monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.5)
+        # Which approach the ranking picks is only defined on the ranked arm of
+        # `strategy_selection`; the uniform arm picks a candidate regardless of
+        # score, on purpose, and that is the comparison. Pinning the arm is how
+        # this test says which of the two it is about.
+        app.config["ADAPTIVE_LAYERS"] = {"strategy_selection": {"holdback": 0.0}}
 
         from app.strategies import assign_strategy_trial
 
-        trial = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
+        trial = assign_strategy_trial(user.id, question, 2, exposure="run-1")
         assert trial is not None
         assert trial["variant"] == "prompt"
         assert trial["key"] == best
+        assert trial["selection_arm"] == "ranked"
 
 
 def test_strategy_scoring_falls_back_without_graded_attempts(app):
@@ -4668,7 +4731,7 @@ def test_strategy_scoring_falls_back_without_graded_attempts(app):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=10,
             total_items=1,
@@ -4708,7 +4771,7 @@ def test_strategy_scoring_falls_back_without_graded_attempts(app):
         from app.strategies import assign_strategy_trial
 
         # Must not raise (a naive mean over None would) and must still assign.
-        trial = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
+        trial = assign_strategy_trial(user.id, question, 2, exposure="run-1")
         assert trial is not None
         assert trial["key"] in {"argument_core", "prephrase", "scope_precision", "role_map"}
 
@@ -4723,7 +4786,7 @@ def test_strategy_performance_reports_explanation_metrics(app):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=10,
             total_items=2,
@@ -5753,21 +5816,28 @@ def test_a_weak_type_keeps_exploring_strategies_after_others_have_settled(app):
         db.session.commit()
 
         assert BASE_COVERAGE_TRIALS < FOCUS_COVERAGE_TRIALS
-        # Off the focus list, coverage is satisfied and the exploit phase runs.
-        # It can still reach the worst performer on an explore draw, so the claim
-        # this test can make is about the coverage branch: the run of exposures
-        # below must contain at least one that is not the starved key, where a
-        # coverage-bound question would return it on every single one.
+        # Off the focus list, coverage is satisfied and the exploit phase runs,
+        # which is where `strategy_selection` has arms. Pinned to ranked,
+        # because "the settled leader is preferred over the starved candidate"
+        # is a statement about that arm; the uniform arm is deliberately not
+        # consulting the record and would reach the starved key by design.
+        app.config["ADAPTIVE_LAYERS"] = {"strategy_selection": {"holdback": 0.0}}
+        # Even pinned, the exploit phase can reach the worst performer on an
+        # explore draw, so the claim this test can make is about the coverage
+        # branch: the run of exposures below must contain at least one that is
+        # not the starved key, where a coverage-bound question would return it
+        # on every single one.
         unfocused = {
-            assign_strategy_trial(user.id, question, "cases", 1, exposure=f"run-{index}")["key"]
+            assign_strategy_trial(user.id, question, 1, exposure=f"run-{index}")["key"]
             for index in range(12)
         }
         assert unfocused - {starved}
         # On the focus list the bar is higher, the question is still covering,
-        # and the least-sampled candidate is the only one it can return.
+        # and the least-sampled candidate is the only one it can return. The
+        # coverage branch has no selection arm, so this holds either way.
         focused = {
             assign_strategy_trial(
-                user.id, question, "cases", 1, exposure=f"run-{index}",
+                user.id, question, 1, exposure=f"run-{index}",
                 focus_types=[question.question_type],
             )["key"]
             for index in range(12)
@@ -5776,12 +5846,13 @@ def test_a_weak_type_keeps_exploring_strategies_after_others_have_settled(app):
         # The focus list is read by question type, not applied to everything.
         elsewhere = {
             assign_strategy_trial(
-                user.id, question, "cases", 1, exposure=f"run-{index}",
+                user.id, question, 1, exposure=f"run-{index}",
                 focus_types=["Some Other Type"],
             )["key"]
             for index in range(12)
         }
         assert elsewhere - {starved}
+        app.config.pop("ADAPTIVE_LAYERS", None)
 
 
 def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
@@ -5791,7 +5862,13 @@ def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
 
     blank = client.get("/v1/performance", headers=headers).json["performance"]
     assert blank["focus"]["types"] == []
-    assert "Finish a mega-litigation" in blank["focus"]["explanation"]
+    # The empty state no longer says "finish a mega-litigation", because the
+    # signal underneath it no longer waits for one. A student's ordinary
+    # practice is now what the weak-type list is read from, so what an empty
+    # list means has changed too: not "we have not measured you yet" but
+    # "nothing you have done stands out below the rest of its section".
+    assert "Nothing stands out yet" in blank["focus"]["explanation"]
+    assert blank["focus"]["sitting"]["types"] == []
 
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     total = session["total_items"]
