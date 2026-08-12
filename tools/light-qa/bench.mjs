@@ -22,20 +22,22 @@
  * Usage: node tools/light-qa/bench.mjs <tag> [surface...]
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { chromium } from '/private/tmp/pwrt/node_modules/playwright/index.mjs'
-import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { launch } from './browser.mjs'
 
 const BASE = process.env.LIGHT_BASE || 'http://127.0.0.1:5411'
-const ROOT = '/private/tmp/lsat-light'
-const CHROME = process.env.LIGHT_CHROME
-  || `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+// This checkout's own scratch, not a worktree path typed out once on one
+// machine. `.light` is ignored, so nothing here can reach a commit.
+const ROOT = process.env.LIGHT_OUT || fileURLToPath(new URL('../../.light', import.meta.url))
 
 const tag = process.argv[2] ?? 'run'
 const only = new Set(process.argv.slice(3))
 const wanted = (name) => only.size === 0 || only.has(name)
 
 const SHOTS = `${ROOT}/.light-shots/${tag}`
+const REPORTS = `${ROOT}/.light-run`
 mkdirSync(SHOTS, { recursive: true })
+mkdirSync(REPORTS, { recursive: true })
 
 const REGIONS = [
   ['city', 'Old Quarter'],
@@ -45,8 +47,13 @@ const REGIONS = [
   ['orbit', 'Global Compact'],
 ]
 
-/** Office tiers to look at: the back room everyone starts in, and a tower. */
-const TIERS = [0, 11]
+/**
+ * Office tiers to look at: the back room everyone starts in, and a tower.
+ *
+ * Overridable, because "which tiers" is the question in some passes and not in
+ * others — a roof audit wants all fifteen and a lighting A/B wants two.
+ */
+const TIERS = (process.env.LIGHT_TIERS ?? '0,11').split(',').map(Number).filter((n) => Number.isFinite(n))
 
 /*
  * The synthetic frame clock, copied in from `tools/map-qa/lib.mjs`.
@@ -132,10 +139,7 @@ async function dismissOverlays(page) {
 
 const report = { tag, base: BASE, at: new Date().toISOString(), map: {}, office: {}, portrait: {}, errors: [] }
 
-const browser = await chromium.launch({
-  executablePath: CHROME,
-  args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-})
+const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
 await page.addInitScript(CLOCK_SCRIPT)
 page.on('pageerror', (error) => report.errors.push(String(error.message).slice(0, 200)))
@@ -155,7 +159,7 @@ try {
   for (const tier of TIERS) {
     if (!wanted(`office${tier}`)) continue
     await page.goto(`${BASE}/office?officeTier=${tier}`, { waitUntil: 'domcontentloaded' })
-    await page.waitForFunction(() => Boolean(window.__officeSceneStats && window.__officeDebug), { timeout: 180000, polling: 200 })
+    await page.waitForFunction(() => Boolean(window.__officeSceneStats && window.__officeDebug), null, { timeout: 180000, polling: 200 })
     // An account with no game profile bounces to `/onboarding`, whose opening
     // scene is a tier-0 office preview that publishes the same globals. It
     // renders and it measures, so the run comes back with confident numbers for
@@ -242,7 +246,7 @@ try {
   const mapWanted = REGIONS.filter(([key]) => wanted(key))
   if (mapWanted.length) {
     await page.goto(`${BASE}/map`, { waitUntil: 'domcontentloaded' })
-    await page.waitForFunction(() => Boolean(window.__mapScene), { timeout: 180000, polling: 100 })
+    await page.waitForFunction(() => Boolean(window.__mapScene), null, { timeout: 180000, polling: 100 })
     await dismissOverlays(page)
 
     for (const [key, label] of mapWanted) {
@@ -259,7 +263,7 @@ try {
         if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') await toggle.click()
       }
       await dismissOverlays(page)
-      await page.waitForFunction(() => window.__clock?.capturing() && window.__clock?.pending() > 0, { timeout: 60000, polling: 100 })
+      await page.waitForFunction(() => window.__clock?.capturing() && window.__clock?.pending() > 0, null, { timeout: 60000, polling: 100 })
       await page.evaluate(() => window.__clock.tick(600))
 
       report.map[key] = await page.evaluate(() => {
@@ -311,7 +315,7 @@ try {
     }
   }
 } finally {
-  writeFileSync(`${ROOT}/.light-run/bench-${tag}.json`, JSON.stringify(report, null, 2))
+  writeFileSync(`${REPORTS}/bench-${tag}.json`, JSON.stringify(report, null, 2))
   await browser.close().catch(() => {})
 }
-console.log(`\nwrote ${ROOT}/.light-run/bench-${tag}.json and ${SHOTS}`)
+console.log(`\nwrote ${REPORTS}/bench-${tag}.json and ${SHOTS}`)

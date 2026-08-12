@@ -13,12 +13,45 @@
  *   __clock   — a synthetic frame clock, so a measurement is a pure function of
  *               the code rather than of how loaded the machine was.
  */
-import { chromium } from '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+/*
+ * Playwright, wherever this machine happens to keep it.
+ *
+ * This used to be a hard-coded `/private/tmp/pwrt/...` import, which is one
+ * developer's scratch install on one macOS machine: every other checkout —
+ * including a Linux one — failed at parse time, before any of the discipline
+ * below could run. Resolution is now: `MAPS_PLAYWRIGHT` if set, then the usual
+ * candidates, and the error says what to install rather than naming a path
+ * nobody else has.
+ */
+const PLAYWRIGHT_CANDIDATES = [
+  process.env.MAPS_PLAYWRIGHT,
+  'playwright',
+  '/tmp/pwrt/node_modules/playwright/index.mjs',
+  '/private/tmp/pwrt/node_modules/playwright/index.mjs',
+].filter(Boolean)
+
+async function loadChromium() {
+  const failures = []
+  for (const candidate of PLAYWRIGHT_CANDIDATES) {
+    try {
+      const module = await import(candidate)
+      if (module.chromium) return module.chromium
+    } catch (error) {
+      failures.push(`${candidate}: ${String(error.message).split('\n')[0]}`)
+    }
+  }
+  throw new Error(
+    `playwright not found. Install it anywhere node can resolve it and set MAPS_PLAYWRIGHT, e.g.\n`
+    + `  mkdir -p /tmp/pwrt && cd /tmp/pwrt && npm init -y && npm install playwright\n`
+    + `Tried:\n  ${failures.join('\n  ')}`,
+  )
+}
 
 export const BASE = process.env.MAPS_BASE || 'http://127.0.0.1:5173'
 
@@ -44,8 +77,15 @@ const BUNDLED = `${homedir()}/Library/Caches/ms-playwright/chromium-1234/chrome-
  * broken harness rather than like the disk. Re-downloading it costs back the
  * space somebody deliberately freed, so prefer the browser already installed.
  */
+const STOCK = [
+  '/Applications/Google Chrome/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/local/bin/google-chrome',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+]
 export const CHROME = process.env.MAPS_CHROME
-  || (existsSync(BUNDLED) ? BUNDLED : '/Applications/Google Chrome/Google Chrome.app/Contents/MacOS/Google Chrome')
+  || (existsSync(BUNDLED) ? BUNDLED : STOCK.find((path) => existsSync(path)))
 
 /** Region key to the label its navigation button carries. */
 export const TABS = {
@@ -282,14 +322,27 @@ function serverWarmth(base) {
   }
 }
 
+/**
+ * Which development firm to sign in as.
+ *
+ * The button on the login page always signs in the one default profile, and
+ * most probes want that. The late-game map does not exist on it: districts in
+ * the Treaty Sea and the Global Compact only unlock at tier 7 and tier 12, and
+ * a contact figure is placed only for a connection the firm owns. Setting this
+ * signs in by email instead, so `tools/map-qa/late-firm.py` can stand a tier-14
+ * firm up beside the tier-0 one rather than on top of it.
+ */
+export const EMAIL = process.env.MAPS_EMAIL || null
+
 /** Signs in, opens the map, and waits for a scene to exist. */
-export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
+export async function open({ viewport = { width: 1440, height: 900 }, email = EMAIL } = {}) {
   const warmth = serverWarmth(BASE)
   if (warmth && !warmth.cold) {
     console.warn('\n!! HOT SERVER: a source file has changed since this dev server started.')
     console.warn('!! Restart it before measuring. An unmodified tree reads .0021 cold and .0109 hot.')
     console.warn(`!! (up ${(warmth.upMs / 1000).toFixed(0)}s, last edit ${(warmth.editedAgoMs / 1000).toFixed(0)}s ago)\n`)
   }
+  const chromium = await loadChromium()
   const browser = await chromium.launch({
     executablePath: CHROME,
     args: ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
@@ -310,19 +363,40 @@ export async function open({ viewport = { width: 1440, height: 900 } } = {}) {
   // way to fail.
   try {
     await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-    // Generous, because the first load of a cold dev server compiles the whole
-    // module graph before the page renders at all, and the default 30 s expires
-    // on a loaded machine while Vite is still optimising dependencies. That
-    // presents as "the dev-login button does not exist", which sends a reader
-    // looking at the backend's auth config instead of at the clock.
-    await page.locator('button', { hasText: 'Enter local development firm' }).click({ timeout: 180000 })
-    await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 })
+    if (email) {
+      // The same endpoint the button posts to, with a chosen firm. Done in the
+      // page so the auth cookies land on this context exactly as they would.
+      const signedIn = await page.evaluate(async (address) => {
+        const response = await fetch('/v1/auth/dev', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email: address, display_name: 'Late Firm' }),
+        })
+        return response.status
+      }, email)
+      if (signedIn !== 200) throw new Error(`dev sign-in for ${email} returned ${signedIn}`)
+    } else {
+      // Generous, because the first load of a cold dev server compiles the whole
+      // module graph before the page renders at all, and the default 30 s expires
+      // on a loaded machine while Vite is still optimising dependencies. That
+      // presents as "the dev-login button does not exist", which sends a reader
+      // looking at the backend's auth config instead of at the clock.
+      await page.locator('button', { hasText: 'Enter local development firm' }).click({ timeout: 180000 })
+      await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 40000 })
+    }
     await page.evaluate(() => localStorage.setItem('lsat-tour-v6', 'done')).catch(() => {})
 
     // Interval polling, not the default. The default polls on rAF, which this
     // document no longer services, so the wait would never resolve.
     await page.goto(`${BASE}/map`, { waitUntil: 'domcontentloaded' })
-    await page.waitForFunction(() => Boolean(window.__mapScene), { timeout: 120000, polling: 100 })
+    // Options are `waitForFunction`'s THIRD parameter; the second is the
+    // argument passed to the predicate. Written as two, the 120 s and the
+    // interval poll were being handed to the page as an unused argument while
+    // the wait ran on its rAF default and its own 30 s — which on a
+    // software-GL machine, where building a district takes longer than that,
+    // presents as "the scene never publishes".
+    await page.waitForFunction(() => Boolean(window.__mapScene), null, { timeout: 180000, polling: 100 })
     await dismissOverlays(page)
   } catch (error) {
     await browser.close().catch(() => {})

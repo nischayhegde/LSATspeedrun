@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import type { CharacterGender, FirmTier, GameAsset } from '../types'
-import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
+import { COUNSEL_RIG_HEIGHT, buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
 import {
   blockCourtyard,
   blocksFromGrid,
@@ -48,7 +48,7 @@ import {
   type RoadGraph,
   type RoadGraphSpec,
 } from './map-agents'
-import { CROWD_RENDER_SCALE, CrowdRenderer, buildCrowdWalker, type CrowdWalker } from './map-crowd-rig'
+import { CrowdRenderer, buildCrowdWalker, crowdRenderScale, type CrowdWalker } from './map-crowd-rig'
 import { createRiverBed, createRiverSurface, createSeaSurface, setSeaWake, type RiverOptions } from './map-water'
 import { clearObjects, clearanceIntrusion, escapeCorridors, keepRecordsClear, prepareClearance, type ClearanceCorridor, type ClearanceField } from './map-clearance'
 import { IllustratedRenderPass } from './render-style'
@@ -852,7 +852,7 @@ function pedestrianGround(root: THREE.Group): ClearanceCorridor[] {
     ground.push({
       points: way.points,
       closed: way.closed,
-      halfWidth: (way.width ?? 1.5) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM,
+      halfWidth: (way.width ?? 1.5) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + walkerHalfBeam(),
       label: 'walked',
     })
   }
@@ -860,7 +860,7 @@ function pedestrianGround(root: THREE.Group): ClearanceCorridor[] {
     ground.push({
       points: way.points,
       closed: way.closed,
-      halfWidth: (way.halfWidth ?? CROWD_FOOTWAY_HALF) + WALKER_HALF_BEAM,
+      halfWidth: (way.halfWidth ?? CROWD_FOOTWAY_HALF) + walkerHalfBeam(),
       label: 'walked',
     })
   }
@@ -1790,6 +1790,23 @@ function createBuoy(color = 0xb47b45, scale = 1) {
   return group
 }
 
+/**
+ * How high the deck of a Treaty Sea landform sits, at the `y = -.22` every
+ * caller places one at.
+ *
+ * Derived rather than measured off a screenshot: the extrusion below is .34
+ * deep with a .07 bevel at each end, so it spans .41 above its own origin, and
+ * the origin is sunk .22 to put the coast under the swell. The buildings that
+ * stand on one are plinthed and can afford to be set at .04 and buried; a
+ * person is under a unit tall at `CROWD_RENDER_SCALE` and cannot.
+ *
+ * That sentence used to read ".49 units tall", which was wrong and was quoted
+ * from here into two measurement harnesses before anybody measured a body:
+ * `COUNSEL_RIG_HEIGHT` is 5.558, so the figure is .77 at the shipped scale and
+ * was 1.54 before it. The conclusion is unchanged in the safe direction.
+ */
+const OCEAN_LANDFORM_TOP = .34 + .07 - .22
+
 function createIslandLandform(radius: number, seed: number, color = 0x66745f) {
   const shape = new THREE.Shape()
   const segments = 28
@@ -1931,6 +1948,27 @@ function tintForRegion(region: MapRegionKey, record: InstancedBlockRecord, index
 const WALKER_HALF_BEAM = .16
 
 /**
+ * The same figure, read through a development-only override.
+ *
+ * This constant decides how much ground every setback in every plan reserves,
+ * so it cannot be A/B'd by editing the file: the two arms would land in two
+ * server lifetimes, and two lifetimes are two different worlds — the whole
+ * reason this map's numbers were untrustworthy for a week. The override lets
+ * `tools/map-qa/beam-arm.mjs` rebuild a district with the other value against
+ * the same crowd in the same page, minutes apart.
+ *
+ * Stripped in a production build: `import.meta.env.DEV` is a compile-time
+ * constant, so the branch folds away and the call inlines to the constant.
+ */
+function walkerHalfBeam() {
+  if (import.meta.env.DEV) {
+    const override = (globalThis as { __mapWalkerBeam?: unknown }).__mapWalkerBeam
+    if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override
+  }
+  return WALKER_HALF_BEAM
+}
+
+/**
  * The village footway beside a country lane: the two edges of the paving, and
  * the line the crowd walks down the middle of it, as offsets from the lane.
  *
@@ -1988,7 +2026,7 @@ function buildingCorridors(root: THREE.Group): ClearanceCorridor[] {
     corridors.push({
       points: way.points,
       closed: way.closed,
-      halfWidth: (way.halfWidth ?? .65) + WALKER_HALF_BEAM,
+      halfWidth: (way.halfWidth ?? .65) + walkerHalfBeam(),
       label: 'footway',
     })
   }
@@ -2342,7 +2380,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
     // walkable half-width ends — so a walker at the outer edge of the paving
     // still had its body over the steps. Leaving the beam as well is what makes
     // the margin a margin for a person rather than for a line on a plan.
-    const courtMargin = .3 + WALKER_HALF_BEAM * 2
+    const courtMargin = .3 + walkerHalfBeam() * 2
     const courtScale = Math.min(.84, (court.width - courtMargin) / 5.2, (court.depth - courtMargin) / 3.5)
     const courtShift = Math.max(0, Math.min(.55, court.depth / 2 - 3.5 * courtScale / 2 - .15))
     const building = createCourthouse(courtScale, definition.stone)
@@ -2540,7 +2578,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
      * on a bridge, so a lamp in the walking line is worth more frames there
      * than the same lamp anywhere else in the district.
      */
-    const walk = streetWidth(street.streetClass) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + WALKER_HALF_BEAM
+    const walk = streetWidth(street.streetClass) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + walkerHalfBeam()
     const bridge = box([5.9, .2, (walk + .25) * 2], material(0x7b7770, .95), [CANAL_X, .13, street.position])
     root.add(bridge)
     if (index % 2 === 0) for (const side of [-1, 1]) {
@@ -4704,6 +4742,54 @@ function addOceanEnvironment(root: THREE.Group) {
   // Slow. A launch at road speed reads as a jet ski, and the wake shader's
   // strength saturates at .97 units per second anyway.
   roadWays(root).push({ points: passage, closed: true, kind: 'water', speed: 1.05 })
+
+  /*
+   * The six districts the catalog retains out here.
+   *
+   * Treaty Sea and Global Compact were both authored without any, which took
+   * the whole map half of the district mechanic away from tier 7 upwards: no
+   * pin on the ledger row, no flight, no brief, and — because five of the
+   * fourteen connections open districts *only* in these two regions — five
+   * networks that could never put their contact anywhere.
+   *
+   * Nothing is built for them, and that is the point rather than a shortcut. A
+   * landmark is a position and a pick radius (see `registerLandmark`); the ring,
+   * the wash and the label are all overlay. So six named places cost this
+   * region zero triangles and zero draw calls, which is what lets the sparse
+   * rebuild stand: it was five quay islands, thirty-two buoys and nine boats of
+   * scenery that had to go, not the sea's ability to have places in it.
+   *
+   * And naming water is what the sea is for. Four of the six *are* water in the
+   * catalog's own copy — roads, an anchorage, a light, an admiralty court whose
+   * whole point is that it has no permanent address — which is the same licence
+   * `city-canal` and `nation-pond` already take on land.
+   *
+   * Sited by hand, and against the eight landforms this region actually has
+   * (three career islands, three rival compounds, two docket islands), the
+   * shipping channel the counsel swims, and the launch's standing circuit. All
+   * three are measured rather than assumed: `tools/map-qa/sites.mjs` prints
+   * them, and `landmarks.mjs` fails the run if a district lands on any of them.
+   */
+  const sea: Array<[string, string, MapLandmarkKind, XZ, number, string]> = [
+    ['ocean-quay', 'The Diplomatic Quay', 'transit', [-16.2, 4.9], 2.5,
+      'The head of the channel, where a delegation comes ashore. Everything that goes wrong before the talks begin goes wrong here first.'],
+    ['ocean-roads', 'The Bonded Roads', 'industry', [-6, -7.6], 2.8,
+      'Deep water south of the fairway, where a hull lies at anchor with its cargo still legally nowhere. An entire practice lives in that gap.'],
+    // South and west of where this was first put: at `-5.8,3.3` its disc came
+    // within .12 of the western docket island's landform, which `landmarks.mjs`
+    // warns about and is one lattice change from being a real overlap. .82 now.
+    ['ocean-chandlers', 'Chandler\u2019s Row', 'market', [-5.4, 2.6], 2.3,
+      'The agents\u2019 water, north of the channel. Every master who refuses to sail is refusing to sail from somewhere on this reach.'],
+    ['ocean-anchorage', 'Treaty Anchorage', 'water', [1.6, 4], 2.4,
+      'The middle of the sea, and neutral only because everyone agreed it was. The agreement is the practice.'],
+    ['ocean-lantern', 'The Lantern Light', 'transit', [16.8, -1], 2.5,
+      'The seaward approach, where pilotage becomes compulsory. Compulsory means litigated, and the board has never had counsel who understood both.'],
+    ['ocean-court', 'Free Harbour Court', 'civic', [5, -8.6], 2.8,
+      'The sea\u2019s own courthouse sits wherever the roll is called. A place on it is the closest thing the Treaty Sea has to a permanent address.'],
+  ]
+  for (const [key, name, kind, position, radius, detail] of sea) {
+    registerLandmark(root, { key, name, kind, detail, position, radius })
+  }
 }
 
 /**
@@ -5122,6 +5208,38 @@ function addGlobalEnvironment(root: THREE.Group) {
     orbit.rotation.x = Math.PI / 2
     orbit.rotation.y = (radius - 8) * .035
     root.add(orbit)
+  }
+
+  /*
+   * The six districts the catalog retains up here — the other half of the gap
+   * described in `addOceanEnvironment`, and the easier half, because this region
+   * is a station with a continuous deck under all of it. A contact sited at any
+   * of these stands on the platform above, so none of them needs ground found
+   * for it the way a district on open water does.
+   *
+   * Placed on the deck rather than on the relay masts and orbital stations
+   * already standing there: those are five relays and two stations doing their
+   * own job, and hanging a retained district off one would say the district is
+   * that structure. `sites.mjs` prints where they all are, and each of these is
+   * clear of them, of the three career parcels, of the three rival compounds,
+   * of both docket sites and of the transfer corridor itself.
+   */
+  const compact: Array<[string, string, MapLandmarkKind, XZ, number, string]> = [
+    ['orbit-concourse', 'The Compact Concourse', 'transit', [4.2, -3.4], 2.9,
+      'The deck every signatory crosses to reach its own bench. Standing counsel to the desk is in the room before the room convenes.'],
+    ['orbit-chamber', 'Hearing Chamber One', 'civic', [-6.6, -5.4], 2.7,
+      'The first chamber, and the list that decides who is heard and in what order. Nothing here is worth more or costs less to hold.'],
+    ['orbit-registry', 'The Registry Vault', 'civic', [-6, -12], 2.4,
+      'Below the deck on the shadow side, where every treaty in force is actually kept. Custody is a duty, and duties are retained.'],
+    ['orbit-landing', 'Far-Side Landing', 'transit', [-16, 8.6], 2.8,
+      'The furthest pad from the planet, and the furthest place a writ has ever been served. The authority would rather it were served by you.'],
+    ['orbit-gallery', 'The Assembly Gallery', 'civic', [3.4, 12.4], 2.8,
+      'Public seats above a private negotiation. The secretariat needs someone who can tell the powerful no, in writing.'],
+    ['orbit-reading-room', 'The Founders\u2019 Reading Room', 'monument', [16.4, 4.6], 2.4,
+      'Nine chairs and the original charter, out past the last office. There is no larger room to be invited into.'],
+  ]
+  for (const [key, name, kind, position, radius, detail] of compact) {
+    registerLandmark(root, { key, name, kind, detail, position, radius })
   }
 }
 
@@ -7164,8 +7282,11 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   const root = new THREE.Group()
   const rig = buildStylizedCounsel(gender, tier)
   // Architectural scale: counsel should read as a person in the district,
-  // not as a figure nearly as tall as a multi-storey headquarters.
-  rig.root.scale.setScalar(.278)
+  // not as a figure nearly as tall as a multi-storey headquarters. The same
+  // figure the crowd is drawn at, and read through the same function — it was
+  // the same number written twice, which meant an arm that changed how big a
+  // person is left the player the only giant on the pavement.
+  rig.root.scale.setScalar(crowdRenderScale())
   rig.root.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.castShadow = true
@@ -7173,11 +7294,26 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
     }
   })
   root.add(rig.root)
+  /*
+   * How tall this person actually is, because everything below stands on it.
+   *
+   * The ring, the ground shadow, the presence light, the diamond and the name
+   * plate were all authored as world offsets against the figure the crowd was
+   * drawn at, and the moment that figure changed size they stopped fitting:
+   * halving the scale left a hoop wider than the counsel was tall, a shadow
+   * pooling a body's width past her feet, and a name plate floating at nearly
+   * three times her height with a gap under it. Derived from the drawn body
+   * rather than restated, so the next arm on `CROWD_RENDER_SCALE` cannot
+   * separate them again. The fractions are the shipped values over the 1.5413
+   * the .278 figure measured, so at that scale this is the same furniture to
+   * four decimals.
+   */
+  const figureHeight = COUNSEL_RIG_HEIGHT * crowdRenderScale()
   const presenceLight = new THREE.PointLight(0xffd189, 2.05, 6.5, 2)
-  presenceLight.position.set(0, 1.55, .86)
+  presenceLight.position.set(0, figureHeight * 1.005, .86)
   root.add(presenceLight)
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(.45, 40),
+    new THREE.CircleGeometry(figureHeight * .292, 40),
     new THREE.MeshBasicMaterial({ color: 0x071015, transparent: true, opacity: .32, depthWrite: false }),
   )
   shadow.rotation.x = -Math.PI / 2
@@ -7185,7 +7321,7 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   shadow.position.y = .028
   root.add(shadow)
   const beacon = new THREE.Mesh(
-    new THREE.RingGeometry(.48, .55, 56),
+    new THREE.RingGeometry(figureHeight * .311, figureHeight * .357, 56),
     new THREE.MeshBasicMaterial({ color: 0xe1bd67, transparent: true, opacity: .72, side: THREE.DoubleSide, depthWrite: false }),
   )
   beacon.rotation.x = -Math.PI / 2
@@ -7195,13 +7331,17 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   beacon.userData.lawyerBeacon = true
   root.add(beacon)
   const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xf3d082, transparent: true, opacity: .96, depthTest: false, depthWrite: false })
-  const marker = mesh(new THREE.OctahedronGeometry(.11, 0), markerMaterial, [0, 1.82, 0])
+  // The diamond and the name plate keep their authored size and only drop to
+  // meet the head: both are read as labels rather than as objects in the world,
+  // and a smaller counsel needs her marker *more*, not less.
+  const markerY = figureHeight * 1.181
+  const marker = mesh(new THREE.OctahedronGeometry(.11, 0), markerMaterial, [0, markerY, 0])
   marker.renderOrder = 52
   marker.userData.playerMarker = true
-  marker.userData.playerMarkerBaseY = 1.82
+  marker.userData.playerMarkerBaseY = markerY
   root.add(marker)
   const playerLabel = labelSprite(['YOU', playerName], 1.28, '#f0cf7c')
-  playerLabel.position.set(0, 2.12, 0)
+  playerLabel.position.set(0, figureHeight * 1.376, 0)
   playerLabel.userData.mapLabelAlways = true
   root.add(playerLabel)
   root.userData.lawyer = true
@@ -8321,10 +8461,14 @@ export function MapThreeScene({
      * with it, and a building on open water reads as a bug rather than as a
      * choice. Each keeps a landform of its own, sized to what stands on it.
      */
-    const groundMarker = (x: number, z: number, radius: number, seed: number) => {
+    const groundMarker = (x: number, z: number, radius: number, seed: number, forContact = false) => {
       if (region !== 'ocean') return
       const island = createIslandLandform(radius, seed, 0x66725e)
       island.position.set(x, -.22, z)
+      // Distinguishable from the landforms the region itself lays down, because
+      // a landmark audit has to be able to ask "is this district sitting on a
+      // rival's island" without its own contact's footing answering yes.
+      if (forContact) island.userData.contactLandform = true
       world.add(island)
     }
     // A standing rival reads as a building with a name on it; putting one
@@ -8390,7 +8534,7 @@ export function MapThreeScene({
         // `index * 7.31 + 3.7` so a guard never happens to roll the exact
         // same build, colouring and satchel as a passer-by.
         const guard = buildCrowdWalker(index * 13.7 + 101.3)
-        guard.root.scale.setScalar(CROWD_RENDER_SCALE)
+        guard.root.scale.setScalar(crowdRenderScale())
         const faceSign = z < 0 ? 1 : -1
         // A step further out than the travel anchor (1.45), and shifted to
         // one side, so the figure stands beside the door the player travels
@@ -8476,8 +8620,24 @@ export function MapThreeScene({
       // Facing the landmark they belong to, so the figure reads as standing
       // outside a place rather than pointing away from one.
       const facing = Math.atan2(post.position[0] - sited.x, post.position[1] - sited.z)
+      /*
+       * Four of the Treaty Sea's six districts are open water, so a contact
+       * belonging to one has nothing to stand on: `siteOnPlan` reports the
+       * centre already clear, correctly, because there is no obstacle out there
+       * to be clear of.
+       *
+       * They get the same answer the rivals and the dockets got when this
+       * region gave up its scenery — a landform of their own, sized to what
+       * stands on it — rather than a quay or a pontoon, which is furniture this
+       * region was deliberately emptied of. It is one mesh per contact, three at
+       * most, and only for a network the firm has actually bought, so an
+       * unbought Treaty Sea is triangle-for-triangle the region that was
+       * measured. See `groundMarker`.
+       */
+      groundMarker(sited.x, sited.z, .92, 860 + index * 41, true)
+      const standing = region === 'ocean' ? OCEAN_LANDFORM_TOP : .02
       const shingle = createContactShingle(0x6cae98)
-      shingle.position.set(sited.x, .02, sited.z)
+      shingle.position.set(sited.x, standing, sited.z)
       shingle.rotation.y = facing
       world.add(shingle)
       const label = labelSprite(['YOUR CONNECTION', contact.name, contact.role], 2.4, '#82c3ad')
@@ -8489,11 +8649,11 @@ export function MapThreeScene({
       // on `index * 13.7 + 101.3`; a third namespace keeps a contact from
       // rolling the same build and colouring as either.
       const figure = buildCrowdWalker(index * 9.13 + 517.7)
-      figure.root.scale.setScalar(CROWD_RENDER_SCALE)
+      figure.root.scale.setScalar(crowdRenderScale())
       // Opposite the bracket. The board hangs off the post's local +x, which is
       // `(cos, -sin)` in world for a `rotation.y`, so putting the figure on that
       // same side stands them underneath their own sign.
-      figure.root.position.set(sited.x - Math.cos(facing) * .58, .02, sited.z + Math.sin(facing) * .58)
+      figure.root.position.set(sited.x - Math.cos(facing) * .58, standing, sited.z + Math.sin(facing) * .58)
       figure.root.rotation.y = facing
       standingFigures.push({ walker: figure, baseHipsY: figure.rig.hips.position.y, phase: index * 2.7 + 5.3 })
     })
@@ -9053,7 +9213,7 @@ export function MapThreeScene({
       // a pedestrian and the lawyer read as the same species. It has to be
       // applied before the crowd is constructed, because the crowd reads it as
       // the scale its fade ramps towards.
-      walker.root.scale.setScalar(CROWD_RENDER_SCALE)
+      walker.root.scale.setScalar(crowdRenderScale())
       crowdWalkers.push(walker)
     }
     const crowdRenderer = crowdWalkers.length ? new CrowdRenderer(crowdWalkers) : null

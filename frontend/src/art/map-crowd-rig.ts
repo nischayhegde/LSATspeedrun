@@ -75,8 +75,71 @@ function hashUnit(seed: number) {
  * The crowd multiplies this by a per-walker height of .93-1.09, which
  * `setRenderScale` quantises back onto the same rung, so every pedestrian
  * shares one set of geometry however tall they are.
+ *
+ * ## Why .139 and not the .278 this shipped at
+ *
+ * Because a person was two storeys tall. A counsel rig is **5.558 units** from
+ * sole to crown (`tools/map-qa/yardstick.mjs`), so .278 of one is 1.54 units,
+ * and the Old Quarter's own architecture — derived from the measured facades
+ * through `createBlockBuilding`'s authoring rules — puts a storey at .795 and a
+ * doorway at .82. The figure came to **1.93 storeys and 1.87 doorways**. Halved
+ * it comes to 0.96 of a storey and 0.93 of a doorway, and a doorway is the
+ * yardstick to trust here: it is authored as `min(.82, height * .38)` for the
+ * express purpose of being a door a person walks through.
+ *
+ * Free, in the two ways that matter. `setRenderScale` quantises onto quarter
+ * rungs, and both .278 and .139 land on `.25`, so every district's mesh, batch,
+ * instance and triangle counts came back **byte-identical** across the arm —
+ * this is a transform, not a level of detail. And the pavement network is
+ * untouched: `crowd-drift.mjs` fingerprints all 804 of the Old Quarter's ways
+ * and their half widths, and the digest matches.
+ *
+ * What it costs is on-screen size: at the district's default zoom the crowd is
+ * half as tall as it was, and reverting is this constant. The stills either side
+ * are in `.maps/crowd-framed/`, and `.map-crossing-notes.md` records the
+ * containment numbers, which improve — but for the arithmetic reason that a
+ * narrower body clears more, not because the plan got better.
+ *
+ * ## Two things followed this figure, and will follow it again
+ *
+ * Neither was free, and both were authored against the old one as world
+ * constants that read as correct until the day this moved:
+ *
+ * - **The player's furniture.** The selection ring, ground shadow, presence
+ *   light, beacon and name plate are now fractions of `COUNSEL_RIG_HEIGHT *
+ *   crowdRenderScale()` in `map-three-scene`; before that the ring was wider
+ *   than the counsel was tall.
+ * - **The crowd's pace.** `PACE_MIN` and `PACE_SPAN` in `map-agents` are
+ *   multiples of a body's own `naturalWalkSpeed` for this reason. As world units
+ *   they made the halved crowd sprint at 3.4 steps a second.
+ *
+ * So a third arm on this constant should expect to find a third of these. The
+ * test for one is whether a number in world units was tuned while this figure
+ * held still.
  */
-export const CROWD_RENDER_SCALE = .278
+export const CROWD_RENDER_SCALE = .139
+
+/**
+ * The same figure, read through a development-only override.
+ *
+ * How big a person is on the map cannot be judged across server lifetimes: the
+ * crowd's population is not reproducible between them and every containment
+ * number this map reports follows the population, so an arm taken in one
+ * lifetime and a control in another measure the world as much as the change.
+ * The override lets `tools/map-qa/crowd-arm.mjs` rebuild a district at another
+ * scale against the same crowd in the same page — the discipline
+ * `walkerHalfBeam` is written up for at length in `map-three-scene`.
+ *
+ * Stripped in a production build: `import.meta.env.DEV` is a compile-time
+ * constant, so the branch folds away and the call inlines to the constant.
+ */
+export function crowdRenderScale() {
+  if (import.meta.env.DEV) {
+    const override = (globalThis as { __mapCrowdScale?: unknown }).__mapCrowdScale
+    if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override
+  }
+  return CROWD_RENDER_SCALE
+}
 
 export type CrowdWalker = {
   root: THREE.Object3D
@@ -109,7 +172,7 @@ export function buildCrowdWalker(seed: number): CrowdWalker {
     // visitor palette is the eight-way one the office dresses its clients from.
     role: 'visitor',
     paletteSeed: Math.abs(Math.round(seed * 1000)),
-    renderScale: CROWD_RENDER_SCALE,
+    renderScale: crowdRenderScale(),
     // Never the signed-in player's wardrobe, whoever is walking past.
     cosmetics: null,
   })

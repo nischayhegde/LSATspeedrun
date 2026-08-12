@@ -240,6 +240,16 @@ const SUN = new THREE.Vector3(.55, .74, .38).normalize()
  */
 const SKYLIGHT = .5
 const SUNLIGHT = .62
+/**
+ * How much darker the foot of a wall is than its head.
+ *
+ * Two true things at once: the bottom of a wall sees a smaller wedge of sky
+ * than the top does, and it wears the traffic film. Both are why a painted
+ * building is never one value from pavement to parapet, and one value is
+ * exactly what a flat-shaded mass gives — which is the single biggest reason
+ * this view read as cardboard.
+ */
+const FOOT_SHADE = .86
 
 const FORWARD = new THREE.Vector3(0, 0, 1)
 const BACKWARD = new THREE.Vector3(0, 0, -1)
@@ -332,16 +342,29 @@ class Sheet {
   /**
    * A rectangular mass, five faces. The underside is never visible from a
    * window and is the one face worth not paying for.
+   *
+   * The four uprights carry a value gradient from their base to their head, and
+   * that one line does more for this view than any amount of extra geometry
+   * would. A flat-shaded mass is exactly one value per face, so a district built
+   * out of them reads as cardboard however well the palette is chosen — the eye
+   * takes uniform fill as paint and graded fill as light. Outdoors the gradient
+   * is also true: the bottom of a wall sees less sky than the top of it, and it
+   * collects a century of traffic film on the way up. `.86` is enough to be
+   * read as shading and not enough to look like a spotlight on the roofline.
+   *
+   * It costs nothing. `gradedQuad` already emits the same six vertices with two
+   * colours instead of one, so the triangle count is identical.
    */
   box(x: number, y: number, z: number, width: number, height: number, depth: number, base: number, brightness = 1) {
     const hw = width / 2
     const hd = depth / 2
     const top = y + height
     const shade = (normal: THREE.Vector3) => tone(base, (SKYLIGHT + SUNLIGHT * Math.max(0, normal.dot(SUN))) * brightness)
-    this.quad([x - hw, y, z + hd], [x + hw, y, z + hd], [x + hw, top, z + hd], [x - hw, top, z + hd], shade(FORWARD))
-    this.quad([x + hw, y, z - hd], [x - hw, y, z - hd], [x - hw, top, z - hd], [x + hw, top, z - hd], shade(BACKWARD))
-    this.quad([x + hw, y, z + hd], [x + hw, y, z - hd], [x + hw, top, z - hd], [x + hw, top, z + hd], shade(RIGHT))
-    this.quad([x - hw, y, z - hd], [x - hw, y, z + hd], [x - hw, top, z + hd], [x - hw, top, z - hd], shade(LEFT))
+    const grimed = (normal: THREE.Vector3) => tone(base, (SKYLIGHT + SUNLIGHT * Math.max(0, normal.dot(SUN))) * brightness * FOOT_SHADE)
+    this.gradedQuad([x - hw, y, z + hd], [x + hw, y, z + hd], [x + hw, top, z + hd], [x - hw, top, z + hd], grimed(FORWARD), shade(FORWARD))
+    this.gradedQuad([x + hw, y, z - hd], [x - hw, y, z - hd], [x - hw, top, z - hd], [x + hw, top, z - hd], grimed(BACKWARD), shade(BACKWARD))
+    this.gradedQuad([x + hw, y, z + hd], [x + hw, y, z - hd], [x + hw, top, z - hd], [x + hw, top, z + hd], grimed(RIGHT), shade(RIGHT))
+    this.gradedQuad([x - hw, y, z - hd], [x - hw, y, z + hd], [x - hw, top, z + hd], [x - hw, top, z - hd], grimed(LEFT), shade(LEFT))
     this.quad([x - hw, top, z + hd], [x + hw, top, z + hd], [x + hw, top, z - hd], [x - hw, top, z - hd], shade(UP))
   }
 
@@ -425,26 +448,137 @@ class Sheet {
     this.quad([x - hw, y, z], [x + hw, y, z], [x + hw, y + height, z], [x - hw, y + height, z], colour)
   }
 
+  /**
+   * Storeys of windows on the face of a mass that turns toward the glass.
+   *
+   * This is the single thing that separates the one part of this view that
+   * already reads convincingly from every part that does not. The Old Quarter
+   * seen from inside the street has fenestration on its far bank and looks like
+   * a street; every other region is unglazed and looks like a massing model.
+   * Glass out of the sun is darker than any masonry, so a grid of dark reveals
+   * is what tells the eye "this is a building, and it is *this* many storeys
+   * tall" — which is also the only scale cue a distant mass has.
+   *
+   * Coplanar with the face by three centimetres, deliberately. The contour pass
+   * thresholds on depth difference relative to distance, so at twenty metres and
+   * beyond a step this small draws no ink: the windows arrive as value, which is
+   * how they are painted, rather than as a lattice of outlines.
+   *
+   * Cost is two triangles a window and it buys back its own overdraw, since a
+   * window is drawn over a wall that was going to be flat.
+   */
+  fenestrate(options: {
+    /** Centre of the face, at its base, and the z of the face itself. */
+    x: number
+    y: number
+    z: number
+    width: number
+    height: number
+    /** Metres per storey. Sets how many rows fit and how tall each opening is. */
+    storey: number
+    /** The dark reveal, and the warm interior a minority of them show. */
+    glass: number
+    lit?: number
+    /** Share of openings that are lit. Zero for daylight, high at night. */
+    litShare?: number
+    /** Pale course over each opening, where a region's masonry has one. */
+    lintel?: number
+    seed: number
+  }) {
+    const { x, y, z, width, height, storey, glass, lit, litShare = 0, lintel, seed } = options
+    // A building's storeys are its height divided by its storey, and the top
+    // opening then clears the parapet by the sill height it was given. The first
+    // version of this subtracted most of a storey before dividing, which put one
+    // row of windows on a six-metre-tall two-storey building and made every
+    // region read as a warehouse.
+    const rows = Math.max(1, Math.floor(height / storey))
+    // Openings are sized from the storey rather than from the bay, so a wide
+    // mass gets more windows and not wider ones. A window that scales with its
+    // building is the tell of a massing model with a texture on it.
+    const openWidth = Math.min(storey * .34, .95)
+    const openHeight = storey * .5
+    const columns = Math.max(1, Math.floor(width / (openWidth * 1.8)))
+    const pitch = width / columns
+    if (pitch < openWidth * 1.2) return
+    for (let row = 0; row < rows; row += 1) {
+      const wy = y + storey * .35 + row * storey
+      if (wy + openHeight > y + height) break
+      for (let column = 0; column < columns; column += 1) {
+        const wx = x - width / 2 + pitch * (column + .5)
+        const roll = hash(seed * 17.3 + row * 5.1 + column * 2.7)
+        if (roll > .94) continue
+        const warm = lit !== undefined && roll < litShare
+        this.plate(wx, wy, z, openWidth, openHeight, tone(warm ? lit : glass, warm ? 1.12 : 1))
+        if (lintel !== undefined) this.plate(wx, wy + openHeight, z + .01, openWidth * 1.24, openHeight * .16, tone(lintel, .92))
+      }
+    }
+  }
+
   /** A horizontal panel of ground, water, paving or roof. */
   panel(x0: number, x1: number, z0: number, z1: number, y: number, near: THREE.Color, far: THREE.Color) {
     this.gradedQuad([x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1], near, far)
   }
 
-  build(material: THREE.Material) {
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(this.position, 3))
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(this.colour, 3))
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.castShadow = false
-    mesh.receiveShadow = false
-    // Nothing out here is pickable, draggable or navigable, and the office's
-    // hover picking and furniture drag both walk the graph looking for exactly
-    // those flags.
-    mesh.userData.navIgnore = true
-    mesh.matrixAutoUpdate = false
-    mesh.updateMatrix()
-    return mesh
+  /**
+   * The vertices written so far, for `mergeSheets`.
+   *
+   * Handed out rather than copied: the caller reads them once, at the end of a
+   * build, into the one geometry the whole backdrop ships as.
+   */
+  get written() {
+    return { position: this.position, colour: this.colour }
   }
+
+  build(material: THREE.Material) {
+    return buildMesh(this.position, this.colour, material)
+  }
+}
+
+function buildMesh(position: number[], colour: number[], material: THREE.Material) {
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colour, 3))
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.castShadow = false
+  mesh.receiveShadow = false
+  // Nothing out here is pickable, draggable or navigable, and the office's
+  // hover picking and furniture drag both walk the graph looking for exactly
+  // those flags.
+  mesh.userData.navIgnore = true
+  mesh.matrixAutoUpdate = false
+  mesh.updateMatrix()
+  return mesh
+}
+
+/**
+ * Every static band, as one mesh.
+ *
+ * The bands exist so that each stretch of distance resolves its aerial
+ * perspective over the range it actually occupies — but that is a property of
+ * the *vertex colours*, which are computed as the vertices are written and are
+ * finished by the time a band is built. Nothing about a band survives into the
+ * draw call, so five of them was five draw calls buying nothing.
+ *
+ * This matters here more than the count suggests. The view is flagged
+ * `batchSkip` in the office, because a train on a viaduct cannot be frozen into
+ * a batch that is written once, and the flag is on the whole group — so unlike
+ * every other fixture in the room these meshes never got merged by the static
+ * batcher either. The movers still need their own meshes, and keep them.
+ */
+function mergeSheets(sheets: Sheet[], material: THREE.Material) {
+  const position: number[] = []
+  const colour: number[] = []
+  for (const sheet of sheets) {
+    if (sheet.triangles === 0) continue
+    // Appended element by element rather than by spreading. A spread passes
+    // every number as an argument, and a merged backdrop is tens of thousands
+    // of them — comfortably inside the range where an engine starts throwing
+    // instead of copying.
+    const written = sheet.written
+    for (let index = 0; index < written.position.length; index += 1) position.push(written.position[index])
+    for (let index = 0; index < written.colour.length; index += 1) colour.push(written.colour[index])
+  }
+  return position.length ? buildMesh(position, colour, material) : null
 }
 
 type Point = [number, number, number]
@@ -485,6 +619,27 @@ const NEAR_EDGE = 2.4
 /** How far out anything built stands. Nothing is modelled beyond this. */
 const FAR_EDGE = 76
 const SKY_DEPTH = 78
+/**
+ * Where the rest of the world stands: one band further out than anything the
+ * regions built before.
+ *
+ * The view ran from two metres to about sixty, and the frame showed it. Every
+ * region's composition put its subject at forty-five to fifty-five metres and
+ * nothing behind it, so the upper half of the opening was empty sky at every
+ * tier above the street and the lower half was a crowded frieze — read as "a
+ * diorama with a backdrop", which is what the user is describing.
+ *
+ * A window is not short of sky. What it is short of is the city *behind* the
+ * thing in front of it, and one further band supplies that for the price of a
+ * few dozen triangles: the far range of a quarter, the ministries beyond a
+ * ceremonial axis, the towers a night skyline is made of. At this distance
+ * nothing needs a side face or a detail — it needs a profile, a value and a
+ * height, and the haze ramp does the rest.
+ *
+ * Sixty-eight, because the sky plane is at seventy-eight and a mass has to sit
+ * clearly in front of it.
+ */
+const DISTANT_DEPTH = 68
 /**
  * How far the ground plane itself runs, which is much further than that.
  *
@@ -606,6 +761,11 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
   // that is true.
   const sky = new Sheet(look, SKY_DEPTH, SKY_DEPTH + 1, 0)
   const ground = new Sheet(look, 8, GROUND_EDGE * .72, look.groundHaze)
+  // The distant band is the one place a heavy ramp is right. It ends near the
+  // sky plane rather than well past it, so a mass out here arrives most of the
+  // way to the horizon value — which is what puts it *behind* the subject
+  // instead of beside it, and is the whole reason it can be this cheap.
+  const distant = new Sheet(look, 58, SKY_DEPTH + 22, Math.min(.86, look.hazeDepth + .3))
   const far = new Sheet(look, 34, 96)
   const mid = new Sheet(look, 30, 108)
   const close = new Sheet(look, 26, 120)
@@ -620,6 +780,7 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
     && new URLSearchParams(window.location.search).get('officeWindowDebugSheets') === '1') {
     sky.debugColour = [1, 0, 1]
     ground.debugColour = [1, 1, 0]
+    distant.debugColour = [1, .5, 0]
     far.debugColour = [1, 0, 0]
     mid.debugColour = [0, 1, 0]
     close.debugColour = [0, 0, 1]
@@ -629,9 +790,10 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
   buildGround(ground, look, region, grade, coverHalfWidth)
 
   const context: RegionContext = {
-    look, region, tier, grade, overStreet, coverHalfWidth,
+    look, region, tier, grade, eye, overStreet, coverHalfWidth,
     mover: (options, paint) => addMover(root, material, movers, look, options, paint),
   }
+  buildDistance(distant, context)
   if (region === 'city') buildOldQuarter(far, mid, close, context)
   else if (region === 'nation') buildCircuit(far, mid, close, context)
   else if (region === 'ocean') buildTreatySea(far, mid, close, context)
@@ -644,11 +806,10 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
   if (overStreet) buildOwnSetback(close, look, coverHalfWidth)
 
   let triangles = 0
-  for (const sheet of [sky, ground, far, mid, close]) {
-    if (sheet.triangles === 0) continue
-    triangles += sheet.triangles
-    root.add(sheet.build(material))
-  }
+  const bands = [sky, ground, distant, far, mid, close]
+  for (const sheet of bands) triangles += sheet.triangles
+  const merged = mergeSheets(bands, material)
+  if (merged) root.add(merged)
   for (const mover of movers) triangles += (mover.object.userData.triangles as number) ?? 0
   root.updateMatrix()
 
@@ -684,6 +845,8 @@ type RegionContext = {
   tier: number
   /** Exterior ground level, relative to the middle of the window. */
   grade: number
+  /** How high above that grade the middle of the window sits. */
+  eye: number
   /** True once the sightline clears the roofs opposite. */
   overStreet: boolean
   coverHalfWidth: (distance: number) => number
@@ -897,6 +1060,149 @@ function groundTint(region: OfficeWindowRegion, look: RegionLook) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The distance — what stands behind each region's own subject
+// ---------------------------------------------------------------------------
+
+/**
+ * The rest of the world, at sixty-eight metres.
+ *
+ * Everything here is a profile: a card or a box seen so nearly head-on, and so
+ * far into the haze, that a side face and a detail are both waste. What it has
+ * to get right is the *height*, because that is what decides whether the frame
+ * is a city or a strip of models under an empty sky.
+ *
+ * Height therefore scales with the eye. A window twenty-six metres up looks out
+ * across a cone that spans some seventy-five metres of world at this distance,
+ * so a twenty-metre building sits in the bottom quarter of it and reads as a
+ * kerb; the same building from the ground floor fills a third of the frame. A
+ * fixed skyline can satisfy one of those and not both, and the office climbs
+ * fifteen tiers. Scaling it is also the honest reading of the promotion: what
+ * changes when the firm takes the next floor is not that the city grew, but that
+ * more of it is in view.
+ */
+function buildDistance(sheet: Sheet, context: RegionContext) {
+  const { look, region, grade, eye, coverHalfWidth } = context
+  const half = coverHalfWidth(DISTANT_DEPTH) * .98
+  // The band's own headroom, as the frame sees it. Masses are authored as a
+  // fraction of this rather than in metres, which is what keeps a skyline
+  // filling the same share of the opening from the ground floor to the top.
+  const headroom = Math.max(16, eye * 1.5 + 14)
+
+  if (region === 'nation') {
+    // Open country keeps its distance empty of building. What it gets instead is
+    // a second, higher range behind the first: the one cue that says the land
+    // goes on, and the reason a hill range reads as a range rather than as a
+    // fence is that there is another one behind it.
+    // Ridges, not peaks. This is rolling farmed country, and a run of tall
+    // isosceles triangles on the skyline reads as alps — the shape has to be
+    // wide and shallow, each one overlapping its neighbour, so the line breaks
+    // without ever pointing. Kept pale on purpose: a far ridge that holds its
+    // colour comes forward and sits beside the near hills instead of behind
+    // them.
+    const ranges = spanCount(half * 2, half * .42, 5)
+    for (let index = 0; index <= ranges; index += 1) {
+      const x = -half + index * (half * 2 / ranges) + (hash(index * 4.3) - .5) * half * .24
+      const width = half * (.5 + hash(index * 6.1) * .34)
+      sheet.triangle(
+        [x - width, grade, -DISTANT_DEPTH], [x + width, grade, -DISTANT_DEPTH],
+        [x + (hash(index * 8.9) - .5) * width * .8, grade + headroom * (.13 + hash(index * 2.7) * .13), -DISTANT_DEPTH],
+        tone(mixHex(look.ground, 0xa3ab94, .68), .98),
+      )
+    }
+    return
+  }
+
+  if (region === 'ocean') {
+    // Treaty Sea stays sparse, which is a decision this project has already
+    // paid for once: the region was rebuilt as open water with a single launch,
+    // and repopulating it with props would undo that. So the distance is two
+    // headlands and a light, and nothing else — five masses, and the water in
+    // front of them is the subject exactly as before.
+    //
+    // They have to clear the eye to be seen at all, which is the part the first
+    // attempt got wrong: a headland eleven metres tall at sixty-eight metres,
+    // seen from an office fifteen metres up, has its summit four metres *below*
+    // the horizon and hides behind the far shore that is already there. Sited
+    // against `eye` rather than against the water, so the promontory rises out
+    // of the sea line at every tier the region covers.
+    const sea = grade + .25
+    // Just clearing the horizon, which is a narrow target and the whole problem.
+    // At sixty-eight metres a summit has to out-subtend the far shore already
+    // standing at sixty-two, which from an office fifteen metres up means it has
+    // to reach nearly the height of the eye itself before any of it appears; a
+    // little over that and it stops being a coast and becomes a mountain in the
+    // middle of a treaty port. `eye` sets it, so it lands in the same place from
+    // every floor the region covers.
+    const rise = Math.max(9, eye * .95)
+    const summits = [
+      [-.62, .42, 1],
+      [-.34, .3, .72],
+      [.52, .34, .84],
+      [.78, .26, .58],
+    ] as const
+    for (const [at, spread, scale] of summits) {
+      const centre = half * at
+      const width = half * spread
+      sheet.triangle(
+        [centre - width, sea, -DISTANT_DEPTH], [centre + width, sea, -DISTANT_DEPTH],
+        [centre + width * .2, sea + rise * scale, -DISTANT_DEPTH],
+        tone(mixHex(look.ground, 0x87968c, .62), .97),
+      )
+    }
+    // No light out here, and the version that had one is worth recording. A tower
+    // tall enough to clear the horizon at this distance is under a metre wide in
+    // the frame, so it renders as a bare vertical stroke with a box on top —
+    // read as a lamp standard floating in the sea rather than as a landfall. The
+    // harbour already has its light, on the mole, at a distance where it has a
+    // base and a mole to stand on. Four summits and open water is the whole of
+    // the distance here, which is also what the region asked to remain.
+    return
+  }
+
+  // The three built regions: a further quarter, in profile, with the tallest
+  // things in it standing where a real one puts them — the works and the
+  // steeples clear of the general roofline, not scattered through it.
+  const night = look.night
+  const glass = night ? mixHex(look.accent, 0xdff2f4, .35) : 0x1e242b
+  const blocks = spanCount(half * 2, half * .12, 9)
+  const pitch = half * 2 / blocks
+  for (let index = 0; index < blocks; index += 1) {
+    const x = -half + (index + .5) * pitch
+    const roll = hash(index * 3.9)
+    // A skyline is a run of ordinary height with a few things standing out of
+    // it. Authored as exactly that: most masses take the lower band, and one in
+    // five is allowed to be tall.
+    const tall = hash(index * 7.7) > .8
+    const rise = headroom * (tall ? .52 + roll * .34 : .17 + roll * .19)
+    const width = pitch * (.72 + hash(index * 5.3) * .5)
+    const depth = -DISTANT_DEPTH - hash(index * 2.1) * 5
+    sheet.box(x, grade, depth, width, rise, 3, mixHex(look.stone, night ? 0x38424c : look.roof, night ? .6 : .3), .99)
+    // Storeys, as value alone. At this range an opening is a fraction of a pixel
+    // across, so what is being drawn is the *banding* a glazed elevation has —
+    // and on a night skyline it is the only thing that is drawn at all.
+    if (tall || night) {
+      sheet.fenestrate({
+        x, y: grade, z: depth + 1.55, width: width * .82, height: rise,
+        storey: Math.max(2.4, headroom * .075),
+        glass, lit: night ? glass : undefined, litShare: night ? .5 : 0,
+        seed: index * 13.1,
+      })
+    }
+  }
+  // The works: two chimneys and, on the daylight regions, the drum of a
+  // gasholder. Industry on the skirt of a quarter is what stops a distance from
+  // reading as one more residential street repeated.
+  for (const side of [-1, 1]) {
+    const x = side * half * (.56 + hash(side * 3.3) * .2)
+    const rise = headroom * (.6 + hash(side * 5.7) * .2)
+    sheet.box(x, grade, -DISTANT_DEPTH + 1, 1.5, rise, 1.5, mixHex(look.stone, night ? 0x2c343c : 0x6b5b4c, .55), .98)
+    if (!night) {
+      sheet.box(x + side * 3.4, grade, -DISTANT_DEPTH + 1, 6.4, headroom * .2, 6.4, mixHex(look.stone, 0x6f7268, .5), .97)
+    }
+  }
+}
+
 /**
  * The roof of the storey below this one.
  *
@@ -943,12 +1249,17 @@ function buildOldQuarter(far: Sheet, mid: Sheet, close: Sheet, { look, tier, gra
   const farBlocks = spanCount(farHalf * 2, 2.7)
   for (let index = 0; index < farBlocks; index += 1) {
     const x = -farHalf + (index + hash(index * 3.1) * .7) * (farHalf * 2 / farBlocks)
-    far.plate(
-      x, grade, -50 - hash(index * 7.9) * 7,
-      farHalf * 2 / farBlocks * (1.1 + hash(index * 2.3) * .5),
-      7 + hash(index * 5.7) * 10 + tier * .5,
-      tone(mixHex(look.stone, brick[index % brick.length], .42), .98),
-    )
+    const z = -50 - hash(index * 7.9) * 7
+    const width = farHalf * 2 / farBlocks * (1.1 + hash(index * 2.3) * .5)
+    const height = 7 + hash(index * 5.7) * 10 + tier * .5
+    far.plate(x, grade, z, width, height, tone(mixHex(look.stone, brick[index % brick.length], .42), .98))
+    // Storeys on the far quarter as well. A card with no openings is a card;
+    // three courses of dark reveals on it is a street four blocks away, and the
+    // difference costs six triangles a building.
+    far.fenestrate({
+      x, y: grade, z: z + .04, width: width * .8, height,
+      storey: 3, glass: 0x1f252c, seed: index * 11.7,
+    })
   }
   far.box(-farHalf * .34, grade, -47, 12, 14, 9, look.stone, .98)
   far.dome(-farHalf * .34, grade + 14, -47, 5.6, 5, mixHex(look.roof, 0x8d9296, .55))
@@ -976,6 +1287,15 @@ function buildOldQuarter(far: Sheet, mid: Sheet, close: Sheet, { look, tier, gra
     const depth = 6 + hash(index) * 4
     mid.box(x, grade, z, width, height, depth, brick[index % brick.length])
     mid.gable(x, grade + height, z, width * 1.06, depth, 1.5 + hash(index * 9.1) * .9, look.roof)
+    // The block opposite, glazed. This is the one band that fills the middle of
+    // the frame from an elevated floor, and unglazed it was the largest flat
+    // area in the picture.
+    mid.fenestrate({
+      x, y: grade, z: z + depth / 2 + .03, width: width * .84, height,
+      storey: 2.7, glass: 0x1c2027,
+      lintel: mixHex(look.stone, 0xd8cdb4, .5),
+      seed: index * 6.7,
+    })
     // Stacks. The one silhouette detail that makes a brick roofline read as a
     // brick roofline rather than a row of wedges.
     if (hash(index * 11.3) > .32) {
@@ -1201,6 +1521,15 @@ function buildCircuit(far: Sheet, mid: Sheet, close: Sheet, { look, grade, overS
     // pale, broken roofline is most of what makes a country street read light.
     mid.gable(x, grade + height, -along, 4.3, 3.6, 1.7 + hash(index * 8.7) * .5, hash(index * 6.3) > .5 ? 0xb49c63 : 0x8d5638)
     mid.box(x + 1.2, grade + height + 1.7, -along, .42, 1.2, .42, 0x74604c)
+    // Two courses of small casements. A cottage wall is mostly wall, so the
+    // storey is set tall and the openings come out sparse, which is the
+    // difference between a village and a row of sheds.
+    mid.fenestrate({
+      x, y: grade, z: -along + 1.83, width: 3.2, height,
+      storey: 2.3, glass: 0x24282c,
+      lintel: mixHex(look.stone, 0xdcd2b8, .45),
+      seed: index * 4.9,
+    })
   }
   mid.box(-midHalf * .58, grade, -37, 8, 4.8, 5.4, 0x9c9268)
   mid.gable(-midHalf * .58, grade + 4.8, -37, 8.3, 5.4, 2.3, 0xb49c63)
@@ -1276,6 +1605,14 @@ function buildTreatySea(far: Sheet, mid: Sheet, close: Sheet, { look, tier, grad
   for (let index = 0; index < columns; index += 1) {
     mid.box(embassyX - embassyWidth * .4 + (index + .5) * (embassyWidth * .8 / columns), sea + 1.5, -21.8, .58, embassyHeight - .4, .58, mixHex(look.stone, 0xcdc4ab, .5))
   }
+  // Behind the colonnade, which is where a glazed elevation belongs on a
+  // building like this: the columns stand in front of the openings and break
+  // them up, and that interruption is most of what reads as a portico.
+  mid.fenestrate({
+    x: embassyX, y: sea + 1.5, z: -21.95, width: embassyWidth * .88, height: embassyHeight,
+    storey: 2.9, glass: 0x27302f,
+    seed: 21.3,
+  })
   mid.box(embassyX, sea + 1.5 + embassyHeight, -25.5, embassyWidth + 1, .9, 7.6, mixHex(look.stone, 0x8e8672, .5))
   for (let index = 0; index < Math.min(4, tier - 5); index += 1) {
     mid.box(embassyX - 4 + index * 2.7, sea + 2.4 + embassyHeight, -21.8, .18, 3.4, .18, look.stone)
@@ -1364,6 +1701,14 @@ function buildSovereignArc(far: Sheet, mid: Sheet, close: Sheet, { look, tier, g
       mid.box(side * offset, grade, z, 9, height, 7, index % 2 ? ashlar : mixHex(ashlar, shadowed, .32))
       mid.box(side * offset, grade + height, z, 9.7, 1, 7.6, shadowed)
       mid.box(side * offset, grade + height + 1, z, 8, 1.9, 6, mixHex(look.roof, 0x7d848a, .45))
+      // Windows first, then the colonnade over them. A formal wall is a grid of
+      // openings held to one cornice line, and with nothing but columns on it
+      // this avenue was two long pale slabs — the flattest thing in the frame at
+      // the tiers where it fills half of it.
+      mid.fenestrate({
+        x: side * offset, y: grade, z: z + 3.53, width: 7.4, height,
+        storey: 3, glass: 0x2a3134, seed: index * 8.3 + side,
+      })
       for (let column = 0; column < 4; column += 1) {
         mid.box(side * (offset - 3.3 + column * 2.2), grade, z + 3.6, .64, height - 1.5, .64, mixHex(ashlar, 0xffffff, .14))
       }

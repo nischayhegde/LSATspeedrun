@@ -2705,6 +2705,22 @@ const CROSS_ARRIVED = .1
  */
 const KERB_PATIENCE = 11
 
+/*
+ * The pace band, as a multiple of a walker's own natural walking speed.
+ *
+ * One is the rate the walk clip was authored at, so the whole band is "how much
+ * quicker or slower than an unhurried walk", and it means the same thing at
+ * every render scale. See the derivation where a walker is constructed: these
+ * are the world-unit `.44` and `.72` divided by the `.7837` a body's natural
+ * speed measured at the scale that band was tuned against, so the crowd is
+ * unchanged at `.278` and correct at any other size.
+ *
+ * The ceiling matters when changing these: `setGroundSpeed` clamps the clip rate
+ * to `2.2`, and a walker asked for more than that outruns its own legs.
+ */
+const PACE_MIN = .5615
+const PACE_SPAN = .9187
+
 /** An obstacle in one footway's own coordinates: along, across, and its size. */
 type WayObstacle = { s: number; d: number; radius: number }
 
@@ -3471,6 +3487,42 @@ export class Crowd {
         state: 'walk',
         reduced: this.reduced,
       })
+      /*
+       * Pace as a multiple of this body's own walking speed, not as a number of
+       * world units.
+       *
+       * `HumanoidActor.setGroundSpeed` time-scales the walk clip by
+       * `speed / naturalWalkSpeed` so that one stride covers exactly one step,
+       * and `naturalWalkSpeed` is `strideLength * hipHeight * worldScale /
+       * duration` — proportional to how big the body is drawn. A pace in world
+       * units therefore means something different at every render scale, and
+       * halving `CROWD_RENDER_SCALE` proved it: the same `.44 + hash * .72`
+       * band went from a median of 1.01 times the authored clip rate to 1.83,
+       * with four of the Old Quarter's eleven animating walkers past the `2.2`
+       * ceiling in `setGroundSpeed` — and past that ceiling the clip is as fast
+       * as it is allowed to go while the body keeps outrunning it, which is
+       * foot sliding by construction. `.maps/pace.json` is both arms.
+       *
+       * The band below is the old one converted rather than retuned: a walker
+       * measures `naturalWalkSpeed / worldScale` at 2.819 to four figures
+       * across every build and both regions, so at the `.278` this shipped at
+       * the old band worked out as `.44/.7837` to `1.16/.7837` of the authored
+       * rate. Preserving that keeps the crowd that shipped for months looking
+       * exactly as it did, at any scale, and leaves *how fast a person ought to
+       * walk* as a separate question with its own evidence — see
+       * `.map-crossing-notes.md`, which records this crowd as ambling at .51
+       * body-heights a second where a person manages .82.
+       *
+       * Falls back to the old world-unit band if the rig cannot report a
+       * natural speed, so a crowd whose clip library failed to load still
+       * walks rather than standing still.
+       */
+      const stroll = PACE_MIN + hashUnit(seed * 2.17) * PACE_SPAN
+      const natural = humanoid.naturalWalkSpeed
+      // Not multiplied by `height` again: `naturalWalkSpeed` reads the world
+      // scale off the root this constructor has just scaled, so the per-walker
+      // height variation is already in it. Doing both would square it.
+      const cruise = natural > 0 ? natural * stroll : (.44 + hashUnit(seed * 2.17) * .72) * height
       this.walkers.push({
         root: entry.root,
         rig: entry.rig,
@@ -3484,12 +3536,12 @@ export class Crowd {
         lateral: 0,
         targetLateral: 0,
         // Pace is drawn per walker from its own seed and spans a genuinely
-        // wide range: a pavement where everyone moves at .8 reads as a
+        // wide range: a pavement where everyone moves at one speed reads as a
         // conveyor no matter how good the gait is. The clip rate is driven
         // from measured ground speed further down, so a slow walker really
         // does take slower steps rather than sliding.
-        speed: (.44 + hashUnit(seed * 2.17) * .72) * height,
-        cruise: (.44 + hashUnit(seed * 2.17) * .72) * height,
+        speed: cruise,
+        cruise,
         errand: 'walk',
         errandTimer: 2 + hashUnit(seed * 5.09) * 9,
         pace: 1,

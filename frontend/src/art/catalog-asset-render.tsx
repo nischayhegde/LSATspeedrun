@@ -4,11 +4,53 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 
 import type { GameAsset } from '../types'
 import { IllustratedRenderPass } from './render-style'
+import { readThumbnail, writeThumbnail } from './thumbnail-store'
 
 type RenderAsset = Pick<GameAsset, 'art' | 'key' | 'name' | 'tier' | 'type'>
 
+/**
+ * The authored framing, as an aspect ratio rather than as a pixel count.
+ *
+ * Every camera and every shadow frustum in this file was composed against 640 x
+ * 384, so the ratio is load-bearing and the resolution is not: rendering the
+ * same scene at 384 x 230 is the same picture with fewer samples in it.
+ */
 const WIDTH = 640
 const HEIGHT = 384
+
+/**
+ * How wide to capture, and why it is not the width of the card.
+ *
+ * The grid never shows a card wider than 372 CSS pixels, measured at every
+ * viewport from a phone to 1920, so capturing 640 looks like 1.7x of waste —
+ * and it is not. Getting the pixels out of a WebGL canvas is most of what a
+ * thumbnail costs, so the temptation is real: at 384 a card is 150 ms instead of
+ * 200 and 28 kB instead of 98. It was tried, and it is visibly grainier at the
+ * size the player sees it, because the illustrated pass bands and inks
+ * per-pixel and the downsample from 640 is what smooths that. Not the codec:
+ * captured at 384 and encoded at quality 1.0, at 126 kB, the speckle is
+ * unchanged. The extra pixels are anti-aliasing, and the cards are the one
+ * surface where nothing else is.
+ *
+ * So this reproduces what the renderer already did — 640 scaled by the device
+ * pixel ratio, giving the same 1.7x on a 1x display and on a retina one — with
+ * the number named as a decision rather than left implicit in a `setPixelRatio`
+ * call, and with a hook the harness can pin so the comparison above can be
+ * taken again. It is a rung rather than an exact fit so the shared renderer
+ * resizes at most once in a session and every card lands on one cache key.
+ */
+let captured: { width: number; height: number; rung: number } | null = null
+
+function captureSize() {
+  if (captured) return captured
+  const override = import.meta.env.DEV && typeof window !== 'undefined'
+    ? (window as unknown as { __thumbWidth?: number }).__thumbWidth
+    : undefined
+  const dpr = typeof window === 'undefined' ? 1 : Math.min(2, window.devicePixelRatio || 1)
+  const rung = override ?? WIDTH * dpr
+  captured = { width: rung, height: Math.round(rung * HEIGHT / WIDTH), rung }
+  return captured
+}
 const renderCache = new Map<string, string>()
 const pendingRenders = new Map<string, Promise<string>>()
 let renderQueue: Promise<unknown> = Promise.resolve()
@@ -26,11 +68,13 @@ function renderer() {
   if (sharedRenderer) return sharedRenderer
   const canvas = document.createElement('canvas')
   const next = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: true })
-  next.setSize(WIDTH, HEIGHT, false)
-  // These thumbnails are captured once and cached as data URLs, then displayed
-  // in cards roughly as wide as WIDTH itself. Capturing at 1x meant every card
-  // was an upscale on a retina display.
-  next.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
+  const size = captureSize()
+  // The rung already accounts for the device pixel ratio, so the drawing buffer
+  // is exactly this and the renderer must not multiply it a second time. It used
+  // to `setSize(640, 384)` and then `setPixelRatio(dpr)`, which is where the
+  // megapixel-per-card readback on a retina display came from.
+  next.setPixelRatio(1)
+  next.setSize(size.width, size.height, false)
   next.outputColorSpace = THREE.SRGBColorSpace
   next.toneMapping = THREE.ACESFilmicToneMapping
   next.toneMappingExposure = 1.16
@@ -43,8 +87,8 @@ function renderer() {
 /**
  * The thumbnails have to carry the same contours as the rooms they depict,
  * because they sit in the catalog directly beside the office they are previews
- * of. One pass is enough: the renderer is shared and fixed at WIDTH x HEIGHT,
- * so the target never resizes.
+ * of. One pass is enough: the renderer is shared and every card in a session
+ * captures at the same rung, so the target is allocated once and never resizes.
  */
 function stylePass() {
   if (sharedStylePass) return sharedStylePass
@@ -882,7 +926,110 @@ function frameSubject(camera: THREE.PerspectiveCamera, subject: THREE.Object3D) 
   camera.updateProjectionMatrix()
 }
 
-function renderThumbnail(asset: RenderAsset) {
+/**
+ * Where a thumbnail's time goes, in development only.
+ *
+ * A card costs 170 to 300 ms and the catalog builds fourteen of them, so the
+ * question is which of the three phases to attack — building the scene, drawing
+ * it with a shadow map, or encoding a WebP — and that cannot be answered from
+ * the outside: all three happen inside one synchronous call, and the only thing
+ * observable from a harness is the total. `import.meta.env.DEV` is substituted
+ * at build time, so the production bundle carries neither the registry nor the
+ * three `now()` calls.
+ */
+type ThumbnailTiming = { key: string; type: string; build: number; draw: number; encode: number; blocked: number; bytes: number }
+
+function publishTiming(timing: ThumbnailTiming) {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return
+  const target = window as unknown as { __catalogThumbs?: ThumbnailTiming[] }
+  ;(target.__catalogThumbs ??= []).push(timing)
+}
+
+/**
+ * The drawn canvas to something a card can put in an `<img>`.
+ *
+ * This was `toDataURL('image/webp', .9)`, and it was 86% of what a thumbnail
+ * cost: measured over the whole catalog at 1x device pixel ratio, a card was
+ * 200 ms of which the encode was 172, the scene 19 and the draw — shadow map
+ * and all — 9. `toDataURL` is synchronous, so all 172 ms of libwebp ran on the
+ * main thread, and it also has to base64 the result, which is a third more
+ * bytes to allocate and parse.
+ *
+ * `toBlob` is the same encoder reached asynchronously: Chromium hands the
+ * compression to a worker thread and resolves later, so the main thread pays the
+ * readback and nothing else. That it yields is a second benefit rather than the
+ * point, and it does not replace the real task the interface pass inserted
+ * between renders — a resolved-promise chain would still drain as microtasks;
+ * this one genuinely waits on another thread.
+ *
+ * The fallback matters: `toBlob` can hand back `null`, and a card with no image
+ * is worse than a card that cost 170 ms.
+ */
+/**
+ * Which path to take out of the canvas, so the candidates can be compared in one
+ * server lifetime.
+ *
+ * A dev server keeps a module graph across an edit and does not come back the
+ * same — the map harness has that written down with numbers — so a timing
+ * comparison taken across two lifetimes is not a comparison. `window
+ * .__thumbEncode` selects an arm. `import.meta.env.DEV` is substituted at build
+ * time, so a production build folds this to the shipped path and the branch
+ * disappears.
+ */
+type EncodePath = 'blob' | 'dataurl'
+
+function encodePath(): EncodePath {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return 'blob'
+  return (window as unknown as { __thumbEncode?: EncodePath }).__thumbEncode ?? 'blob'
+}
+
+/**
+ * The drawn canvas to something a card can put in an `<img>`, plus the blob to
+ * keep, so a later session does not have to draw it again.
+ *
+ * Two things were tried here and neither earned its place, which is worth
+ * recording so they are not tried twice. Copying into a 2D canvas first and
+ * encoding from that: 170 ms against 174, no difference, even though `drawImage`
+ * off the WebGL canvas measures as free in isolation — the readback is deferred,
+ * not avoided. And JPEG instead of WebP: 145 ms against 170, a real 25 ms, but
+ * bought with ringing around exactly the ink contours the illustrated pass
+ * exists to draw, so it was not taken.
+ *
+ * `toBlob` is kept over `toDataURL` for the two things it does give: no base64,
+ * which is a third of the bytes and all of the string allocation, and a genuine
+ * task boundary between cards rather than a microtask.
+ */
+function quality() {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return .9
+  return (window as unknown as { __thumbQuality?: number }).__thumbQuality ?? .9
+}
+
+async function encode(canvas: HTMLCanvasElement) {
+  const started = performance.now()
+  const q = quality()
+  if (encodePath() === 'dataurl') {
+    const dataUrl = canvas.toDataURL('image/webp', q)
+    return { url: dataUrl, blob: null, bytes: dataUrl.length, blocked: performance.now() - started }
+  }
+  // `toBlob`'s own synchronous part, as distinct from the wall time it takes to
+  // come back: the executor runs before `new Promise` returns, so this closes
+  // over the moment the call itself is done.
+  let blocked = 0
+  const blob = await new Promise<Blob | null>((resolve) => {
+    try {
+      canvas.toBlob(resolve, 'image/webp', q)
+    } catch {
+      resolve(null)
+    }
+    blocked = performance.now() - started
+  })
+  if (blob) return { url: URL.createObjectURL(blob), blob, bytes: blob.size, blocked }
+  const dataUrl = canvas.toDataURL('image/webp', q)
+  return { url: dataUrl, blob: null, bytes: dataUrl.length, blocked: performance.now() - started }
+}
+
+async function renderThumbnail(asset: RenderAsset) {
+  const started = performance.now()
   const p = palettes[Math.min(palettes.length - 1, Math.floor(Math.max(0, asset.tier) / 4))]
   const rival = asset.type === 'rival'
   const scene = new THREE.Scene()
@@ -897,7 +1044,21 @@ function renderThumbnail(asset: RenderAsset) {
   const key = new THREE.DirectionalLight(0xffd9a0, 3.35)
   key.position.set(-4.5, 7.5, 7.5)
   key.castShadow = true
-  key.shadow.mapSize.set(1024, 1024)
+  /*
+   * 1024, and it is not where the time goes.
+   *
+   * A 1024 shadow map for a 372-pixel card looks disproportionate, which is why
+   * it was the first suspect. Measured over the whole catalog, drawing the scene
+   * — shadow map, illustrated pass and all — is 9 ms of a 200 ms card, against
+   * 19 ms to build the scene and 173 ms to get the pixels back out of the canvas.
+   * Halving the map could save single-digit milliseconds of a fifth of one
+   * phase, for softer contact shadows under every desk. `window.__thumbShadow`
+   * exists so the next reader can check that rather than take it on trust.
+   */
+  const shadowMap = import.meta.env.DEV && typeof window !== 'undefined'
+    ? (window as unknown as { __thumbShadow?: number }).__thumbShadow ?? 1024
+    : 1024
+  key.shadow.mapSize.set(shadowMap, shadowMap)
   key.shadow.camera.left = -7; key.shadow.camera.right = 7; key.shadow.camera.top = 6; key.shadow.camera.bottom = -2
   scene.add(key)
   const rim = new THREE.SpotLight(p.glow, 4.2, 16, .72, .55, 1.25)
@@ -931,8 +1092,30 @@ function renderThumbnail(asset: RenderAsset) {
     warm.position.set(-reach * .45, FRAME_CENTRE.y, reach * .4)
   }
   const webgl = renderer()
+  const built = performance.now()
   stylePass().render(scene, camera)
-  const dataUrl = webgl.domElement.toDataURL('image/webp', .9)
+  /*
+   * `render` only queues work, so on a machine whose GL is software the cost of
+   * actually rasterising the illustrated pass lands in whoever next asks for the
+   * pixels — which is the encode, and which made the encode look like libwebp
+   * being slow. `window.__thumbFinish = true` fences here so the three phases
+   * add up to something attributable. It is a measurement tool and stays off:
+   * a real fence per card would stall the pipeline for no benefit.
+   */
+  if (import.meta.env.DEV && (window as unknown as { __thumbFinish?: boolean }).__thumbFinish) {
+    webgl.getContext().finish()
+  }
+  const drawn = performance.now()
+  const url = await encode(webgl.domElement)
+  publishTiming({
+    key: asset.key,
+    type: asset.type,
+    build: Number((built - started).toFixed(1)),
+    draw: Number((drawn - built).toFixed(1)),
+    encode: Number((performance.now() - drawn).toFixed(1)),
+    blocked: Number(url.blocked.toFixed(1)),
+    bytes: url.bytes,
+  })
 
   scene.traverse((object) => {
     if (!(object instanceof THREE.Mesh || object instanceof THREE.Points || object instanceof THREE.LineSegments)) return
@@ -940,7 +1123,16 @@ function renderThumbnail(asset: RenderAsset) {
     const mats = Array.isArray(object.material) ? object.material : [object.material]
     mats.forEach((mat) => mat.dispose())
   })
-  return dataUrl
+  // Kept for the next session, after the card is already on screen and never in
+  // front of it: a store that is slow, full or blocked must cost a player
+  // nothing, so this is deliberately not awaited.
+  if (url.blob) void writeThumbnail(thumbnailKey(asset), url.blob)
+  return url.url
+}
+
+/** Identity of a rendered card: what it depicts, and at what resolution. */
+function thumbnailKey(asset: RenderAsset) {
+  return `catalog-3d-v4:${captureSize().rung}:${asset.type}:${asset.key}:${asset.tier}`
 }
 
 /* Hand the frame back before the next thumbnail.
@@ -973,7 +1165,7 @@ function nextFrameGap() {
 }
 
 function requestThumbnail(asset: RenderAsset) {
-  const cacheKey = `catalog-3d-v3:${asset.type}:${asset.key}:${asset.tier}`
+  const cacheKey = thumbnailKey(asset)
   const cached = renderCache.get(cacheKey)
   if (cached) return Promise.resolve(cached)
   const pending = pendingRenders.get(cacheKey)
@@ -997,18 +1189,38 @@ function requestThumbnail(asset: RenderAsset) {
 
 export function CatalogAssetRender({ asset, fallbackSrc }: { asset: RenderAsset; fallbackSrc: string }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
-  const [src, setSrc] = useState(() => renderCache.get(`catalog-3d-v3:${asset.type}:${asset.key}:${asset.tier}`) ?? '')
+  const [src, setSrc] = useState(() => renderCache.get(thumbnailKey(asset)) ?? '')
 
   useEffect(() => {
     const root = rootRef.current
     if (!root || src) return
     let cancelled = false
     let started = false
+    /*
+     * The store is asked before the renderer is.
+     *
+     * A thumbnail is a pure function of the asset and the capture size, both of
+     * which are in the key, so a card drawn in an earlier session is still
+     * correct in this one — and reading it back is an IndexedDB get and an object
+     * URL rather than a scene, a shadow map and an encode. The lookup happens
+     * here rather than inside `requestThumbnail` so that the reads are not
+     * serialised behind the render queue, which would defeat the point: fourteen
+     * cards would wait on each other to find out they had nothing to do.
+     */
     const start = () => {
       if (started) return
       started = true
-      void requestThumbnail(asset).then((url) => {
-        if (!cancelled) setSrc(url)
+      const key = thumbnailKey(asset)
+      void readThumbnail(key).then((stored) => {
+        if (cancelled) return
+        if (stored) {
+          renderCache.set(key, stored)
+          setSrc(stored)
+          return
+        }
+        return requestThumbnail(asset).then((url) => {
+          if (!cancelled) setSrc(url)
+        })
       }).catch(() => {
         if (!cancelled) setSrc(fallbackSrc)
       })

@@ -174,6 +174,8 @@ export type HumanoidSkeleton = {
    * resting stance still apply to it.
    */
   restOffsets: Array<{ bone: THREE.Object3D; offset: THREE.Quaternion; group: RestOffsetGroup }>
+  /** See `BindableRig.hair`. Absent on a rig whose hair does not move. */
+  hair?: { node: THREE.Object3D; swing: number }
 }
 
 /**
@@ -276,6 +278,19 @@ export type BindableRig = {
   rightKnee: THREE.Object3D
   leftFoot: THREE.Object3D
   rightFoot: THREE.Object3D
+  /**
+   * Optional, and deliberately not one of `HUMANOID_BONES`.
+   *
+   * The hair swings, so it needs a driven transform; it is not a joint, so it
+   * must not become one. Adding it to the bone set would put it in the clip
+   * bindings, the mixer's pose reclamation, the rest-offset table and the
+   * anatomical clamp, none of which have anything to say about a haircut, and
+   * every clip in the library would have to be rebaked to keep binding. It is
+   * driven by `HumanoidActor` as one more damped follower instead — the same
+   * integrator as the head and the hands — and a rig without it simply has no
+   * hair that moves.
+   */
+  hair?: { node: THREE.Object3D; swing: number }
 }
 
 /**
@@ -443,7 +458,7 @@ export function bindHumanoidSkeleton(rig: BindableRig): HumanoidSkeleton {
     legLength: thighLength + shinLength,
   }
 
-  return { root: rig.root, bones, proportions, restOffsets }
+  return { root: rig.root, bones, proportions, restOffsets, hair: rig.hair }
 }
 
 /**
