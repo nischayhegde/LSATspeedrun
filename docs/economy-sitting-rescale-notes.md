@@ -3,9 +3,19 @@
 Branch `cursor/shorten-case-and-rescale-economy-508c`, based on
 `integration/all-features` at `82acaf6`.
 
-Everything here is one change: a practice run is six questions instead of ten,
-and every constant that was counted in whole runs was re-expressed so that
-neither the campaign's length nor its question count moved.
+Two changes, in order.
+
+**One:** a practice run is six questions instead of ten, and every constant that
+was counted in whole runs was re-expressed so that neither the campaign's length
+nor its question count moved.
+
+**Two:** Reading Comprehension is served as whole-passage cases. Shortening the
+sitting exposed — and worsened — a defect the QA agent's interleaving audit
+measured: the general question filler cannot reach an RC passage at all, so
+practice was serving 0.0% Reading Comprehension to anyone with a review queue,
+against a bank that is 34.4% RC. A practice case is now either an argument case
+or a reading case, and the measured share is 33.7%. See "Reading Comprehension
+is now a case shape" below.
 
 ---
 
@@ -159,6 +169,137 @@ Four passages longer than eight questions (one of 9, one of 10, two of 16; 51
 questions, 2.2% of the RC bank) are no longer reachable and were reachable at
 ten. That is the price of the shorter run and it is paid knowingly.
 
+**The allowance was not enough, and a later pass on this branch replaced the
+mechanism.** See the next section.
+
+---
+
+## Reading Comprehension is now a case shape, not a share of a mixed run
+
+The allowance above was aimed at the right problem and did not solve it. The QA
+agent's interleaving audit (`docs/audits/interleaving-audit.md`) measured
+`select_random_questions` directly, 40 calls per budget, against the real
+6,886-question bank, and found that at the fresh budgets every entry point in
+the app produces, the served Reading Comprehension share was **0.0%**.
+
+The mechanism: a session asks the review scheduler for `session_size // 2`
+first, so the fresh budget is about half the sitting. A passage is indivisible
+and 88.3% of passages are six questions or longer, so a whole passage has to win
+a slot race against roughly 4,520 single Logical Reasoning questions inside a
+budget of 3. It essentially never does. And because fresh selection served no
+RC, no new RC entered the review queue either — so from about a student's tenth
+answered question onward, practice was 100% Logical Reasoning, permanently.
+
+Shortening the sitting made this worse, which is why it landed on this branch:
+at ten the fresh budget was 5, and a cold-start student on a size-10 run was the
+one remaining window at 18–26%. At six the budget is 3, and that window closes.
+
+Reproduced on this branch before changing anything, with
+`tools/audit/rc_reachability_probe.py`:
+
+| fresh budget | RC share | runs containing any RC |
+|---:|---:|---:|
+| 2 | 0.0% | 0 of 40 |
+| 3 | 0.0% | 0 of 40 |
+| 5 | 0.0% | 0 of 40 |
+| 6 | 15.7% | 6 of 40 |
+| 10 | 23.3% | 15 of 40 |
+
+The allowance is visible in the 6 and 10 rows — it is why they are not the
+audit's 5.0% and 18.5%. It does nothing at 3, which is the budget that matters.
+
+### The design
+
+**A practice case is one of two shapes.**
+
+* An **argument case** is the old one: `SITTING_QUESTIONS` questions, up to half
+  of them review, **Logical Reasoning only**.
+* A **reading case** is **one passage plus its questions**, served whole.
+
+`services.RC_CASE_SHARE = 1/3` decides which. A third is over-determined: the
+bank is 34.4% RC, the scored exam is about the same (27 RC against 51 LR), and
+the form the mega-litigation imitates is literally one section in three — LR I,
+RC, LR II. In *questions* a third of cases works out at about 36%, because a
+passage averages 6.8 questions where an argument case is 6. That is stated
+rather than tuned away; landing exactly on 34.4% wants a share of 0.316, and
+buying 1.6 points of precision with a number nobody can read off the design is a
+bad trade.
+
+**Drawn per run, not rotated.** A rotation needs a counter that survives across
+sessions, and up to `PRACTICE_QUEUE_MAX` runs can be queued and abandoned before
+any is answered, so the only counter cheap enough to reach `create_study_session`
+(`profile.total_cases`, which moves on settlement) would hand every queued run
+the same shape. The cost of a draw is variance early on: a 13% chance of seeing
+no reading case in the first five runs. Worth saying out loud, and still the
+whole section arriving instead of none of it.
+
+**Review splits across cases rather than inside one**, because a passage is one
+unit and a case built on it cannot be half review the way an argument case is.
+Half of reading cases are **review-led** — built on the passage carrying the
+weakest due card, so the card comes back inside a re-read of the passage it
+belongs to. The rest are **fresh-led**, on a passage with unseen questions. All
+of it, one way or the other: an all-fresh rule would never return an RC card, an
+all-review rule would never put a new one in.
+
+Argument-case review is correspondingly restricted to Logical Reasoning cards. A
+lone RC question between six arguments is 450 words arriving with no warning to
+pay for one question — the bug the passage-mate fix removed, and not one to
+reintroduce from the review side.
+
+**A different sitting size for RC, deliberately.** A reading case is as long as
+its passage: 5 to 8 questions where an argument case is 6. The passage is the
+unit of work — you read it once and it pays for every question on it — so asking
+it to be exactly six means either splitting it or discarding the 71% of passages
+that are not six. In time the two shapes are comparable: a six-question argument
+case is 15.0 budgeted minutes, the common 6–7 question passage is 16.8–18.1, and
+the ceiling of 8 is 21.3.
+
+**A sixteen-question passage** is served across consecutive cases, each still
+that one passage and nothing else, cut at `reading_case_ceiling`. Unseen
+questions sort first, so a second visit picks up where the first left off with
+nothing stored to remember where that was. The alternative — excluding passages
+longer than the ceiling — is 51 questions served to nobody, which is the same
+defect as the one being fixed, forty-five times smaller and just as invisible.
+
+**Two gates** keep the shape honest on banks that are not the shipped one.
+`RC_CASE_MIN_SITTING = 6` because a passage does not fit in a three-question
+drill; below it the ordinary shape is used. `reading_case_floor` requires a
+passage to carry at least half the requested sitting, so a two-question passage
+cannot become a "case". Neither fires on the shipped bank.
+
+### Measured after, same instrument
+
+`tools/audit/rc_reachability_probe.py`, 300 runs of size 6 through
+`create_study_session` against the real bank:
+
+| cohort | RC share | runs with any RC | q/run | rev/run | RC of review | s/question |
+|---|---:|---:|---:|---:|---:|---:|
+| cold (0 answered) | 39.0% | 108 of 300 | 6.29 | 0.00 | 0.0% | 155.3 |
+| mid (60 answered) | 30.5% | 88 of 300 | 6.10 | 2.27 | 6.7% | 154.8 |
+| **warmed (played in)** | **33.7%** | 92 of 300 | 6.28 | 3.46 | **39.8%** | 154.5 |
+
+The warmed cohort is the one to read: a student whose history was produced by
+this selector rather than by a synthetic draw, which is the only cohort whose
+review queue has the shape real play makes. **33.7% of served questions against
+a bank that is 34.4%, and 39.8% of review material, from 0.0%.**
+
+The cold and mid rows straddle it because the shape is drawn: 300 draws at
+p = 1/3 has a standard deviation of about 2.7 points.
+
+### What it cost in time
+
+`SERVED_SECONDS_PER_CASE` moves 152.7 → 154.5. That is the entire wall-clock
+cost of nearly doubling the share of the slower section, and it is small for a
+reason worth knowing: a passage served whole amortises its reading.
+`_target_time_seconds` charges 330s for the first question on a passage and 135s
+for each one after it, and 135s is *cheaper* than a Logical Reasoning question's
+150s. So a seven-question passage averages 163s, not 330.
+
+The simulated campaign curve does not move at all — bit-identical across all
+eight modelled players, 0.00% drift — because the simulation converts cases to
+hours with a fixed constant and its case counts come from prices and payouts,
+neither of which the section mix touches.
+
 ---
 
 ## Every variable that moved
@@ -239,7 +380,18 @@ invariant rather than preserved it.
   inside a single run.
 - **Mega-litigation.** `DIAGNOSTIC_SESSION_SIZE` is 77 and is derived from
   nothing this change touches. Not one line of `exam.py` was edited.
-- **`backend/app/strategies.py`.** Owned by a sibling branch. Untouched.
+- **`backend/app/strategies.py` and the strategy trial.** Owned by a sibling
+  branch. Untouched. The bandit's rank ceiling and the control-arm collapse the
+  audit found are going there, not here.
+- **`select_random_questions`'s block filling.** Still the general filler, still
+  unable to reach a passage at a budget of 3, and that is now correct rather
+  than broken: it is what a type-filtered drill uses, and drills below six
+  questions cannot hold a passage. Reading Comprehension does not come from it
+  any more. `PASSAGE_OVERSHOOT_ALLOWANCE` is kept because a type-filtered drill
+  on an RC question type still has passages to serve whole.
+- **The mega-litigation's section blocking.** `select_diagnostic_questions`
+  already built LR / intact-RC / LR blocks, which the audit called correct. The
+  reading case makes practice resemble it more, not less.
 
 ---
 
@@ -247,20 +399,39 @@ invariant rather than preserved it.
 
 ```
 backend/app/game.py                            the economy: sitting, goals, contracts, bonuses
-backend/app/services.py                        run construction, passage allowance, daily docket
+backend/app/services.py                        run construction, the two case shapes, daily docket
+backend/app/scheduling.py                      due_for_review takes an optional section
 backend/app/__init__.py                        PRACTICE_SESSION_SIZE / PRACTICE_QUEUE_MAX defaults
 backend/app/routes.py                          serves session_size on two endpoints
 backend/scripts/simulate_economy_curve.py      sittings in the report, the pace caveat, database fallback
 backend/scripts/measure_served_section_mix.py  new
 backend/tests/test_sitting_scale.py            new
 backend/tests/test_economy_simulation.py       new
-backend/tests/{test_flow,test_progress,test_game_catalog}.py   variable run length
+backend/tests/test_reading_cases.py            new
+backend/tests/{test_flow,test_progress,test_game_catalog}.py   variable run length, realistic fixture passages
 backend/.env.example                           stops pinning 10
 deploy/ec2/cloudformation.yaml                 stops pinning 10 (one deleted line)
 frontend/src/api.ts                            session_size on two response types
 frontend/src/pages/{cases,dashboard}-page.tsx  copy reads the served size
-frontend/src/guided-tour.tsx                   two sentences, numbers only
+frontend/src/guided-tour.tsx                   three sentences, numbers and the reading case
+tools/audit/rc_reachability_probe.py           new, sits beside the QA branch's probes
 ```
+
+`tools/audit/rc_reachability_probe.py` is written to live in the QA agent's
+`tools/audit/` directory and imports nothing from it, so it merges cleanly
+whichever branch lands first. Reproducing the measurements in this document
+needs their `interleaving_probe.py` only for the cohort comparison; the RC
+tables above come from the new probe alone.
+
+**One fixture change worth flagging to whoever merges.** `test_flow.py` and
+`test_progress.py` built two-question Reading Comprehension passages. The
+shipped bank has nothing shorter than four and a median of seven, so those
+fixtures described a bank that cannot exist — and specifically one where no
+passage is long enough to be a reading case, meaning the end-to-end suite could
+never have built the shape practice now serves a third of the time. They build
+passages of five and six now, and `test_flow`'s bank grew from 4 RC questions to
+12. This is the same class of problem as the one the audit found in
+`seed_demo.py`: an instrument that agrees with whatever it is pointed at.
 
 **Expect conflicts on:**
 
@@ -273,22 +444,40 @@ frontend/src/guided-tour.tsx                   two sentences, numbers only
   branch has rewritten the surrounding copy, take theirs and re-check the number.
 - `backend/tests/test_flow.py` and `test_progress.py`, against the QA branch. The
   edits there are all the same shape: a test that assumed a run is exactly `size`
-  questions now reads `session["total_items"]` or uses
-  `services.passage_overshoot_allowance`.
+  questions now reads `session["total_items"]`, or uses
+  `services.reading_case_floor`/`reading_case_ceiling`, or pins
+  `PRACTICE_RC_CASE_SHARE` to the shape it means to exercise. Plus the fixture
+  passage sizes noted above.
+- `backend/app/scheduling.py`, if another branch is in `due_for_review`. My
+  change is one optional `section` argument and a conditional join.
 
 ## What to check by hand after merging
 
-1. Start a run from the Practice tab. It should say "Start 6 cases" and serve 6
-   to 8 questions — 8 only when it picked up a reading passage, and the passage
-   should be whole.
+1. Start half a dozen runs from the Practice tab. Most should be six Logical
+   Reasoning questions; roughly one in three should be a single reading passage
+   and all of its questions, 5 to 8 of them, with the passage whole and its
+   questions consecutive. If you get six argument runs in a row, that is a 9%
+   coincidence rather than a bug — start a few more.
 2. Look at a client card. The contract bar should be 3 to 9 wins, and any client
    whose blurb quotes a length should quote the same number the bar shows.
 3. Finish one run. The first daily goal should complete exactly as the run ends,
-   not two questions before or after.
+   not two questions before or after. A reading case can overshoot it, since a
+   reading case is as long as its passage.
 4. Queue runs until it refuses. It should take 13, not 8.
-5. `backend/.venv/bin/python -m pytest` from the repo root: 396 pass. Note the
+5. `backend/.venv/bin/python -m pytest` from the repo root: 407 pass. Note the
    suite must run from the repo root, not from `backend/` — `pytest.ini` sets
    `pythonpath = backend` and two tests import `backend.app.game` directly.
+6. To re-measure the section mix end to end, seed a scratch database and run the
+   probe:
+
+   ```
+   DATABASE_URL=sqlite:////tmp/audit.db backend/.venv/bin/python -m flask db upgrade
+   DATABASE_URL=sqlite:////tmp/audit.db backend/.venv/bin/python -m flask seed
+   cd backend && DATABASE_URL=sqlite:////tmp/audit.db \
+     .venv/bin/python ../tools/audit/rc_reachability_probe.py --runs 40 --cases 300
+   ```
+
+   The warmed cohort is the row that matters. It takes about 45 seconds.
 
 ## One unrelated fix carried on this branch
 
