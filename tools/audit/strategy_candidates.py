@@ -140,7 +140,118 @@ def main() -> None:
     print("\nLARGEST CHANGES IN CANDIDATE COUNT")
     for (section, old, new), count in widened.most_common(10):
         print(f"  {count:5}  {section[:2]}  {old} -> {new} candidates")
+
+    print_reachability(rows, offers["after"])
+    print_strata(rows)
     print()
+
+
+def print_strata(rows) -> None:
+    """The cells the mandatory-approach draw charges to, and how thin they are.
+
+    `strategies.stratum_key` is approach-by-section-by-question-type, and it is
+    what `information_need` ranks when deciding where to spend a mandatory
+    question. So the type fix moves this too, and not only in the good
+    direction: finer types mean more cells and thinner ones.
+
+    Reported because it is a real cost of the change and would otherwise be
+    invisible. It is not a cost the change *created*, though — the old count
+    was small because the placeholder pooled the whole untyped bank into single
+    cells like `argument_core|Logical Reasoning|Logical Reasoning`. What moves
+    here is how honestly the grain is described, and the honest description has
+    more thin cells in it.
+    """
+    print("\nSTRATA THE MANDATORY-APPROACH DRAW CHARGES TO (approach × section × type)")
+    for label, typer in (("before", before_type), ("after", lambda s, q: classify(s, q)[0])):
+        strata: Counter[str] = Counter()
+        for section, stem, context in rows:
+            question_type = typer(section, stem)
+            for key in _candidate_keys(_question(section, stem, context, question_type)):
+                strata[f"{key}|{section}|{question_type}"] += 1
+        sizes = sorted(strata.values())
+        thin = sum(1 for size in sizes if size < 20)
+        print(
+            f"  {label:6} {len(strata):4} cells   median {sizes[len(sizes) // 2]:4} questions"
+            f"   under 20 questions: {thin} ({thin / len(strata) * 100:.0f}%)"
+        )
+
+
+# `strategies.MIN_CONTRAST_SAMPLE` is 10 on the *effective* per-arm sample
+# 1/(1/n₁ + 1/n₀), which is cheapest at the balanced point: 20 prompt-arm
+# questions against 20 controls. Controls are a quarter of assignments, so 20
+# controls means 80 assignments of that one approach.
+ASSIGNMENTS_TO_ELIGIBILITY = 80
+# A thousand questions in one section: a hundred sittings at the production run
+# size, in that section alone. A generous ceiling on a committed student.
+PRACTICE_CEILING = 1000
+
+
+def print_reachability(rows, offers) -> None:
+    """How much practice an approach needs before it can be ranked at all.
+
+    A lower bound, and generous on purpose. It assumes the approach is chosen
+    every single time it is a candidate, which is the best case: under the
+    coverage rule the least-sampled candidate wins, so a rare approach really
+    does get picked on nearly every question it appears on — until it has its
+    three observations, after which it only keeps appearing if it is leading.
+
+    So the number below is the number of questions in that section a student
+    must be *served* for the approach to appear eighty times even under the
+    most favourable selection this app can produce.
+
+    `PRACTICE_CEILING` is what that gets compared against: a thousand questions
+    in one section, which at the production run size of ten is a hundred
+    sittings in that section alone. It is not a limit the app imposes; it is a
+    generous estimate of what a committed student will actually answer. An
+    approach needing more than that cannot be ranked for anybody, and the
+    panel's "a few more questions and this will be clearer" is then asking for
+    something nobody will ever supply.
+    """
+    section_totals = Counter(section for section, _stem, _context in rows)
+    print("\nQUESTIONS NEEDED BEFORE AN APPROACH CAN BE RANKED")
+    print("  Lower bound: assumes the approach is chosen every time it is a candidate.")
+    print(f"  Compared against {PRACTICE_CEILING} questions in one section — 100 sittings there.")
+    print(f"  {'approach':<22}{'candidate on':>14}{'share':>8}{'questions needed':>18}")
+    reachable, unreachable = [], []
+    for key in sorted(offers):
+        candidates = offers[key]
+        # Which section the approach lives in, read off where it is a candidate
+        # rather than off its catalogue label.
+        section = "Reading Comprehension" if candidates <= section_totals[
+            "Reading Comprehension"
+        ] and key in _RC_KEYS else "Logical Reasoning"
+        total = section_totals[section]
+        share = candidates / total
+        needed = ASSIGNMENTS_TO_ELIGIBILITY / share if share else float("inf")
+        flag = ""
+        if needed > PRACTICE_CEILING:
+            flag = "  <- beyond any realistic amount of practice"
+            unreachable.append(key)
+        else:
+            reachable.append(key)
+        print(f"  {key:<22}{candidates:>14}{share:>7.1%}{needed:>18.0f}{flag}")
+    print(
+        f"\n  {len(reachable)} of {len(offers)} approaches could be ranked inside "
+        f"{PRACTICE_CEILING} questions in their section. {len(unreachable)} could not: "
+        f"{', '.join(unreachable)}."
+    )
+    print(
+        "  And that is the generous reading. After the coverage phase the selector "
+        "keeps offering its leader,\n  so in practice only the approaches that are "
+        "candidates everywhere accumulate at anything like this rate."
+    )
+
+
+_RC_KEYS = frozenset(
+    {
+        "passage_map",
+        "textual_proof",
+        "comparative_matrix",
+        "paragraph_function",
+        "main_point_synthesis",
+        "viewpoint_ledger",
+    }
+)
 
 
 if __name__ == "__main__":
