@@ -71,15 +71,57 @@ Rules:
 Three faces, and the rule is which face does which job, not what size it is
 set at.
 
+| Token | Stack | Job |
+| --- | --- | --- |
+| `--font-display` | Fraunces → Georgia → Times → serif | `h1`–`h3`, card titles, large figures, plaque names, cutscene lettering |
+| `--font-hud`, aliased `--font-pixel` | Archivo → Inter → system sans | Eyebrows, HUD labels, badges, tab labels, status chips — anything tracked caps |
+| `--font-body` | Inter → system sans | Body copy, descriptions, supporting prose. The document default. |
+
 - **Fraunces** (`--font-display`), 620 weight, `-0.01em`: headings, figures a
   reader is meant to register, plaque names.
 - **Archivo** (`--font-hud`, aliased as `--font-pixel`): labels, control text,
   eyebrows, chips — anything that is tracked caps. Typically 7.5–11px at
   800–900, tracked 0.06–0.24em.
-- **Inter** (`--font-body`, aliased as `--font-ui`): body copy and sentences.
-  Nothing else.
-- Georgia appears in ~20 rules and is the prestige-print hand. It is only
-  correct where a surface is deliberately printed matter.
+- **Inter** (`--font-body`): body copy and sentences. Nothing else.
+
+`--font-pixel` is a misnomer kept for compatibility: it names the Archivo
+stack, not a pixel face. Roughly a hundred declarations reference it and
+renaming them is a mechanical change with a merge cost and no visual result.
+`--font-hud` is the name new work should use.
+
+**Where the faces are declared.** `art/art.css` is the illustrated layer's
+token authority and declares all three plus `--font-hud`. `styles.css` also
+declares `--font-display`, `--font-pixel` and `--font-body`, with byte-identical
+stacks, because it is the sheet every entry imports and `gate-harness-main.tsx`
+imports it *without* `art.css` — without them the harness has no display or
+label face at all. The two sites agreeing is load-bearing: when they disagreed,
+what shipped was decided by import order. `tools/theme-audit/token-clashes.mjs`
+is the scan that catches them drifting apart.
+
+#### Rules
+
+- **Never name a family literally.** `Georgia, serif` in particular was the
+  display face before Fraunces and is now only the fallback inside
+  `--font-display`; writing it by hand pins the element to the stand-in while
+  everything doing the same job renders in Fraunces. Forty-one rules named it
+  literally before the August 2026 sweep. Four mentions remain in the sheets:
+  two are the `--font-display` stacks themselves, one is the comment explaining
+  the exception, and one is the exception — `.passage-text, .stimulus`.
+- **The eyebrow is one component with two class names**, `.eyebrow` and
+  `.pixel-kicker`. Its face, size, weight, line-height and tracking are set
+  once, in `styles.css`: Archivo 900, 11px, `.14em`, `1.2`. It had three
+  conflicting base declarations across two sheets before that, so which one a
+  reader saw came down to sheet order. Per-component *size* overrides are
+  tolerated where space is genuinely tight; tracking overrides are not.
+- **Heading tracking is set for all three levels at once.** `h1, h2, h3` all
+  track at `-.01em`. `styles.css` and `art/art.css` each used to declare it for
+  a different subset, and `art.css` won for `h1, h2` only, which left `h3`
+  tracking 3.5× tighter than the two above it.
+- **Do not introduce a fourth face, or a second name for one of these three.**
+  `--font-ui` and `--font-mono` were exactly that. `--font-mono` is gone
+  entirely. `--font-ui` survives only as an alias of `--font-body` in
+  `art.css`, with no readers left; it is there for branches still in flight and
+  should not gain new ones.
 
 The defect this rule catches is a **tracked-caps label set in Inter**, or a
 sentence set in Archivo — two faces doing one job on one screen. The exam
@@ -168,6 +210,25 @@ cropping the head off every 3D client portrait in the app with a
 changes, the rules that named its old elements are not dead — they are
 pointing at something else.
 
+**Production order is not dev order.** Sheets resolve in this order in a
+**production build**: route sheets (emitted as real `<link>`s by
+`lsat-route-stylesheets` in `vite.config.ts`), then the entry sheet —
+`review-panels.css`, `styles.css`, `art/art.css`, `case-instrument.css`,
+`mobile.css`, in that order, as imported by `main.tsx`. In dev this is not
+true: `lsat-route-stylesheets` is `apply: 'build'`, so on the dev server a
+route sheet is injected when its chunk executes, which for a lazily imported
+sheet is *after* the entry sheet. Any rule where a route sheet and the entry
+sheet tie on specificity therefore resolves the opposite way in dev and in
+production. **Anything verified by screenshot must be checked against a
+build**, not against the dev server; `tools/theme-audit/prod-check.mjs` does
+exactly that.
+
+**The corollary: a token or a base rule must be declared exactly once**, or, if
+it genuinely must be declared twice, with identical values. Where two sheets
+declared one with different values, what shipped was decided by import order
+rather than by anyone. `tools/theme-audit/token-clashes.mjs` and
+`tools/theme-audit/selector-clashes.mjs` are the scans that find them.
+
 ### Motion
 
 Already decided and documented in the motion block at the foot of
@@ -223,6 +284,123 @@ measured and every piece of decoration is somewhere for the eye to go that
 the real test would not have offered. Its plainness is a decision. What it
 still owes the rest of the app is the *face* a job is done in, not the
 weight of its ornament.
+
+Four smaller ones, named so they are not "fixed" by the next sweep:
+
+- **`.passage-text, .stimulus`** (`case-session-styles.css`) is set in
+  `Georgia, "Times New Roman", serif`. This is the LSAT stimulus, and the serif
+  is a reading face chosen to match the printed test. It is deliberately
+  neither the display face nor the body face, and it is the only hand-named
+  family left in the app.
+- **`/firm`'s page heading** is Archivo where every other route's `h1` is
+  Fraunces. It is the app's only non-display-face page heading, it is part of a
+  coherent local treatment — the whole route is styled as a manila catalogue —
+  and **it is a decision the user has already made and confirmed.** Do not
+  "correct" it.
+- **`.asset-card .requirements`** (`firm-page.css`) is in the label face at
+  9.5px with a diamond bullet. It reads as prose but functions as a status
+  line, and it is sized and marked as one.
+- **`.progress-panel-fallback`** is declared in both `review-panels.css` and
+  `styles.css`. This is layering, not a clash: the first supplies the box, the
+  second deliberately repaints it as a ruled ledger, `border-style: solid`
+  included. The comment above it in `styles.css` says so.
+
+---
+
+## Do not reintroduce
+
+- **Weight in the entry stylesheet.** `frontend/src/styles.css`, `art/art.css`,
+  `review-panels.css`, `case-instrument.css` and `mobile.css` are the entry
+  sheet, which every screen blocks on. It was deliberately cut down to improve
+  first contentful paint. Route-specific rules belong in the route's own sheet,
+  and a rule for a feature that is not on this branch belongs on that branch.
+- **Backdrop blur, as a new thing.** It is expensive over a WebGL canvas, and
+  the map HUD's panels already carry a measured note about it. See the count
+  under [Known drift](#known-drift) before quoting a number: an earlier draft
+  of this file claimed the frontend had zero `backdrop-filter` declarations,
+  and that has never been true of this branch. The rule is *do not add one*,
+  not *there are none*.
+
+---
+
+## Known drift
+
+Real, measured against this tree, and deliberately not fixed — each is a large
+mechanical change that would be unreviewable mixed in with anything else.
+`tools/theme-audit/scan.mjs` regenerates every count below.
+
+1. **1,592 distinct hex literals**, against a token set of about 25 colours.
+   The worst clusters are ten near-identical teals and a comparable spread of
+   golds and brick reds: one accent, ten spellings. Most are in `art.css`,
+   which draws illustrations in CSS, and in the scene HUDs.
+2. **322 distinct `box-shadow` values.** `--el-1/2/3` were introduced precisely
+   so that "raised" would mean one distance, and they are barely referenced.
+3. **66 distinct `border-radius` values.** Some are organic shapes in the
+   illustration CSS and are fine; the UI chrome ones are not, and `--r-card` /
+   `--r-control` / `--r-chip` exist for them.
+4. **68 distinct `font` shorthands and 46 distinct tracking values.** The
+   shorthand is the riskier of the two: a `font:` shorthand that reads an
+   undeclared token drops the size and weight along with the family.
+5. **56 `backdrop-filter` declarations**, across ten sheets, eleven of them in
+   the map HUD over the WebGL canvas. This number is unchanged by the August
+   2026 merges — it is the same on every branch involved, including their
+   common ancestor. It is the performance pass's call, not a visual one.
+6. **`--pixel-*` is declared in two sheets with two different meanings.**
+   `art/art.css` repoints `--pixel-ink`, `--pixel-shadow`, `--pixel-night`,
+   `--pixel-gold`, `--pixel-gold-dark`, `--pixel-cyan` and `--pixel-border`
+   onto the illustrated palette; `styles.css` still declares the original
+   pixel-empire literals. `art.css` loads last and wins, so the app renders the
+   illustrated values — but `gate-harness-main.tsx` imports `styles.css`
+   without `art.css` and therefore still renders the pixel-empire ones.
+   Repointing rather than renaming was deliberate (see the comment in
+   `art.css`); finishing the job means deleting the stale declarations from
+   `styles.css`, which is a change to what the harness renders and wants a
+   decision rather than a sweep.
+7. **`.rival-war-room`** is declared in both `rival-war-room.css` and
+   `styles.css` with different values, so production and dev render different
+   ones. The hardcoded values are the ones that match the hero-panel scale, so
+   the fix is probably to delete the tokenised block rather than promote it —
+   but it needs a look at both.
+8. **Eyebrow sizes** range from 7.5px to 11.5px across nine per-component
+   overrides. The base is single-sourced; the overrides are not audited.
+
+---
+
+## The audit tools
+
+`tools/theme-audit/` holds the scans this document is measured with. The ones
+worth running before claiming a type or token change is clean:
+
+| Tool | What it answers |
+| --- | --- |
+| `scan.mjs` | Every count in [Known drift](#known-drift) |
+| `undefined-vars.mjs` | Tokens read but never declared, and declared but never read |
+| `token-clashes.mjs` | One token, two base declarations, two values |
+| `selector-clashes.mjs` | One base rule declared in two sheets |
+| `prod-check.mjs` | The above against a **real build**, not the dev server |
+
+Two caveats, both load-bearing:
+
+- `prod-check.mjs` exists because of the dev-versus-production ordering
+  described under [Cascade](#cascade). A dev-server measurement cannot speak
+  for production.
+- `undefined-vars.mjs` reports `--i` in `art/art.css` as undeclared. It is a
+  false positive: `case-flow.tsx` sets it inline as a computed key
+  (`style={{ ['--i' as string]: i }}`), which the tool's JS-write scan does not
+  match. Everything else it reports carries a `var(…, fallback)`.
+
+---
+
+## Where the old brief is stale
+
+`planning/2026-07-22-visual-overhaul-design.md` says `--font-pixel` "is
+redefined to the Archivo stack". That happened in `art/art.css` while
+`styles.css` went on declaring it as a Courier New stack, so the app had two
+conflicting declarations for four months and Archivo won only because
+`main.tsx` imports `art.css` second. Both sheets now declare the same stack.
+The brief also predates the pixel-empire layer entirely, and the pixel-empire
+layer has itself since been superseded by the illustrated direction described
+at the top of this file.
 
 ---
 

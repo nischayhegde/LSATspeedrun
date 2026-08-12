@@ -19,7 +19,7 @@
 .office-upkeep-heading strong { margin-top: 3px; color: #f0dfaf; font-family: var(--font-display); font-size: 16px; }
 .office-upkeep-terms { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
 .office-upkeep-terms > span { min-width: 0; padding: 1px 12px; border-left: 1px solid rgba(213,193,143,.16); }
-.office-upkeep-terms strong { display: block; margin-top: 4px; overflow: hidden; color: #e8dfc7; font-family: var(--font-ui); font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.office-upkeep-terms strong { display: block; margin-top: 4px; overflow: hidden; color: #e8dfc7; font-family: var(--font-body); font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .office-upkeep-terms .is-due strong { color: #efaf8f; }
 .office-upkeep-note { color: #9badab; font-size: 10px; line-height: 1.4; text-align: right; }
 .office-upkeep-strip > p { margin: 0; color: #c1cfca; font-size: 11px; }

@@ -7,32 +7,6 @@
   color: var(--uw-ink);
 }
 
-/* The presentation tour gives the world the whole usable frame. Ordinary map
-   pages keep their ledger and region rail; the deck route carries
-   `?deckDemo=map`, starts on the scene's home camera, then moves to Firm. */
-.empire-game-page.is-deck-demo {
-  width: 100%;
-  height: calc(100vh - 68px);
-  min-height: 0;
-  padding: 0;
-  overflow: hidden;
-}
-.empire-game-page.is-deck-demo .unified-empire,
-.empire-game-page.is-deck-demo .uw-map-frame {
-  width: 100%;
-  max-width: none;
-  height: 100%;
-  min-height: 0;
-}
-.empire-game-page.is-deck-demo .uw-world-ledger,
-.empire-game-page.is-deck-demo .uw-arc-navigation {
-  display: none;
-}
-.empire-game-page.is-deck-demo .uw-map-frame {
-  border: 0;
-  border-radius: 0;
-}
-
 /* One consolidated headquarters panel: office + level progress, and a
    jump-to-HQ action, side by side instead of stacked separate cards. Empire
    value used to sit here too; it now lives on the location card that "Jump
