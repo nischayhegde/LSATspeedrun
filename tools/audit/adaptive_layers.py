@@ -51,12 +51,27 @@ def print_census() -> None:
     print(f"\n{len(LAYERS)} adaptive layers declared\n")
     for entry in registry_reading():
         arms = ", ".join(f"{arm} {share:.0%}" for arm, share in entry["arms"].items())
-        print(f"  {entry['layer']}  [{entry['status']}]  randomised per {entry['unit']}")
+        # A calibrated layer has a unit — it is what the exposure *would* be —
+        # but calling it "randomised per student" would be the one thing the
+        # registry is careful not to claim about it.
+        unit = (
+            f"randomised per {entry['unit']}"
+            if entry["instrument"] == "holdout"
+            else f"not randomised; a holdout would be per {entry['unit']}"
+        )
+        print(f"  {entry['layer']}  [{entry['status']}]  {unit}")
         print(f"      decides   {entry['question']}")
         print(f"      reads     {entry['signal']}")
         print(f"      if absent {entry['without_signal']}")
         print(f"      arms      {arms}   (off: {entry['off_arm']})")
         print(f"      drawn by  {entry['assigned_by']}   design {entry['design_version']}")
+        if entry["instrument"] != "holdout":
+            print(f"      read by   {entry['instrument']}, not by a comparison group")
+        else:
+            print(f"      read on   {entry['outcome_window']} answers"
+                  + (f", split by {entry['strata']}, never pooled" if entry["strata"] else ""))
+        if entry["population"]:
+            print(f"      over      {entry['population']}")
         print()
 
 
