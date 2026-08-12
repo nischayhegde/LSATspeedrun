@@ -68,8 +68,44 @@ def _cell(result: dict) -> str:
     )
 
 
+def _readable(app) -> bool:
+    """Whether there is a database here with the trial's tables in it.
+
+    Checked rather than discovered from a traceback: this is the one probe in
+    the directory that cannot build its own data — the whole point of it is to
+    read a real cohort — and "no such table: attempts" under four thousand
+    characters of generated SQL is a poor way to say "point me at a database".
+    """
+    from sqlalchemy import inspect
+
+    from app.extensions import db
+
+    with app.app_context():
+        try:
+            tables = set(inspect(db.engine).get_table_names())
+        except Exception as error:  # pragma: no cover - unreachable engine
+            print(f"\ncannot open {app.config['SQLALCHEMY_DATABASE_URI']}: {error}")
+            return False
+    missing = {"attempts", "session_items", "questions"} - tables
+    if missing:
+        print(
+            f"\nNo trial data at {app.config['SQLALCHEMY_DATABASE_URI']}"
+            f"\n  missing tables: {', '.join(sorted(missing))}"
+            "\n\nThis probe reads a real cohort and cannot make one up. Point it at a copy"
+            "\nof an application database:"
+            "\n\n    python3 tools/audit/strategy_trial_population.py path/to/app.db"
+            "\n    DATABASE_URL=postgresql://... python3 tools/audit/strategy_trial_population.py"
+            "\n\nIt only reads. Every other probe under tools/audit/ builds its own data and"
+            "\nneeds no database at all."
+        )
+        return False
+    return True
+
+
 def main() -> None:
     app = create_app({"SQLALCHEMY_DATABASE_URI": _database_uri(), "AUTO_SEED": False})
+    if not _readable(app):
+        raise SystemExit(1)
     with app.app_context():
         reading = strategy_population_reading()
         print("THE OFFER TRIAL, POOLED ACROSS STUDENTS")
