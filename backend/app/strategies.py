@@ -1088,8 +1088,8 @@ def assign_strategy_trial(
 
     The mega-litigation stays a clean measurement surface and gets no trial.
     Early trials force coverage across the candidate approaches; later trials
-    favor the best posterior performer while preserving a challenger and a 25%
-    control condition.
+    favor the best performer while keeping every other candidate reachable as a
+    challenger, and a 25% control condition throughout.
 
     `exposure` names *this encounter* with this question — in practice the id of
     the run being built. Every draw below is a threshold on a hash, so a draw is
