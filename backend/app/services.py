@@ -1276,16 +1276,14 @@ def select_reading_comprehension_case(
     # Review-led: the passage under the weakest due card. `due_ids` arrives
     # already ranked by retrievability, so the first one whose passage is still
     # available is the weakest memory this case can rebuild.
+    review_led = None
     if due_ids and random.random() < (REVIEW_SHARE if review_share is None else review_share):
         due_by_passage = {fact.id: fact.passage_id for fact in facts}
         for question_id in due_ids:
             passage_id = due_by_passage.get(question_id)
             if passage_id and passage_id in passages:
-                return _load_questions_in_order(
-                    _reading_case_from_passage(
-                        passages[passage_id], ceiling, prefer_first=set(due_ids)
-                    )
-                )
+                review_led = passage_id
+                break
 
     # Fresh-led: finish a passage already started, else begin a new one, else —
     # for a student who has worked the whole section — any passage at all.
@@ -1313,21 +1311,57 @@ def select_reading_comprehension_case(
     # it costs a re-read, which `_target_time_seconds` charges honestly at 330s
     # for the first question of every visit, because the student really does
     # have to read the passage again.
-    started, untouched = [], []
-    for passage_id, block in passages.items():
-        unseen_here = [question for question in block if question.id not in seen_ids]
-        if not unseen_here:
-            continue
-        (untouched if len(unseen_here) == len(block) else started).append(passage_id)
-    # Shuffled rather than ranked within a tier, because there is no signal here
-    # worth ranking on and a stable order would serve the same passages to
-    # everybody.
-    candidates = started or untouched or list(passages)
-    passage_id = random.choice(candidates)
-    unseen = {question.id for question in passages[passage_id] if question.id not in seen_ids}
-    return _load_questions_in_order(
-        _reading_case_from_passage(passages[passage_id], ceiling, prefer_first=unseen)
-    )
+    def next_passage(used: set[str]) -> str | None:
+        started, untouched = [], []
+        for passage_id, block in passages.items():
+            if passage_id in used:
+                continue
+            unseen_here = [question for question in block if question.id not in seen_ids]
+            if not unseen_here:
+                continue
+            (untouched if len(unseen_here) == len(block) else started).append(passage_id)
+        # Shuffled rather than ranked within a tier, because there is no signal
+        # here worth ranking on and a stable order would serve the same passages
+        # to everybody.
+        remaining = started or untouched or [key for key in passages if key not in used]
+        return random.choice(remaining) if remaining else None
+
+    # Usually one passage, and at the shipped six-question sitting always one:
+    # the median passage carries 7 and the loop below stops as soon as the room
+    # left is too small to be worth reading another passage for.
+    #
+    # More than one when the run is long enough to want it. A reading case used
+    # to be a single passage however long the run was, so a twelve-question run
+    # that drew one came back seven questions long — short of what was asked
+    # for, and short in a way that pulled the *section mix* down with it, since
+    # every argument run was its full twelve. Measured over sizes 1 to 12 that
+    # showed up as Reading Comprehension sliding from 38.6% of a six-question
+    # run to 14.0% of a twelve-question one against a 34.4% bank. It is the same
+    # defect as the one at the short end — a run length quietly deciding how
+    # much of the exam a student sees — approached from above.
+    chosen: list[QuestionFact] = []
+    used: set[str] = set()
+    while True:
+        passage_id = review_led if not used and review_led else next_passage(used)
+        if passage_id is None:
+            break
+        used.add(passage_id)
+        prefer = (
+            set(due_ids or ())
+            if passage_id == review_led
+            else {question.id for question in passages[passage_id] if question.id not in seen_ids}
+        )
+        chosen += _reading_case_from_passage(
+            passages[passage_id], ceiling - len(chosen), prefer_first=prefer
+        )
+        # Another passage only if what is left could hold a case in its own
+        # right. `RC_CASE_MIN_SITTING` is already the answer to "is this many
+        # questions worth reading a passage for", which is exactly the question
+        # the leftover room asks, so it is reused rather than given a twin that
+        # could drift away from it.
+        if count - len(chosen) < RC_CASE_MIN_SITTING:
+            break
+    return _load_questions_in_order(chosen)
 
 
 def _fill_blocks(
