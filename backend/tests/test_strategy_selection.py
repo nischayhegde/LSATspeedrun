@@ -151,7 +151,7 @@ def _past_coverage(user: User, question: Question) -> list[str]:
 
 def _draws(user: User, question: Question, runs: int) -> list[dict]:
     return [
-        assign_strategy_trial(user.id, question, "cases", 0, exposure=f"run-{index}")
+        assign_strategy_trial(user.id, question, 0, exposure=f"run-{index}")
         for index in range(runs)
     ]
 
@@ -270,12 +270,12 @@ def test_a_question_with_nothing_to_choose_between_draws_no_arm(app):
         user = _user("nothing-to-choose@example.test")
         question = _wide_question()
 
-        cold = assign_strategy_trial(user.id, question, "cases", 0, exposure="run-1")
+        cold = assign_strategy_trial(user.id, question, 0, exposure="run-1")
         assert cold["selection_arm"] is None
         assert cold["selection_propensity"] is None
 
         _past_coverage(user, question)
-        warm = assign_strategy_trial(user.id, question, "cases", 0, exposure="run-1")
+        warm = assign_strategy_trial(user.id, question, 0, exposure="run-1")
         assert warm["selection_arm"] in {"ranked", "uniform"}
 
         narrow = next(
@@ -287,7 +287,7 @@ def test_a_question_with_nothing_to_choose_between_draws_no_arm(app):
             None,
         )
         if narrow is not None:
-            single = assign_strategy_trial(user.id, narrow, "cases", 0, exposure="run-1")
+            single = assign_strategy_trial(user.id, narrow, 0, exposure="run-1")
             assert single["selection_arm"] is None
 
 

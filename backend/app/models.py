@@ -145,7 +145,15 @@ class StudySession(db.Model):
         index=True,
     )
     mode = db.Column(db.String(20), nullable=False, index=True)
-    practice_style = db.Column(db.String(24), nullable=False, default="deep", index=True)
+    # Which kind of sitting this was: "cases", "diagnostic" or "blind_review".
+    # Not a setting — nothing takes it from a caller. Which function built the
+    # run decides it, and `services.EVIDENCE_CLASS` is what reads it.
+    #
+    # The default was "deep" until now, one of four practice styles migration
+    # 0021 collapsed into "cases". No run has been created with it since, so
+    # the one branch still testing for it was unreachable and is gone; the
+    # default follows.
+    practice_style = db.Column(db.String(24), nullable=False, default="cases", index=True)
     feedback_policy = db.Column(db.String(20), nullable=False, default="immediate")
     status = db.Column(db.String(20), nullable=False, default="in_progress", index=True)
     target_minutes = db.Column(db.Integer, nullable=False)

@@ -1069,14 +1069,20 @@ def _refresh_daily(user: User) -> None:
 # --------------------------------------------------------------------------
 
 
-def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -> dict:
+def _stage_live_trial(user: User, *, attempts: int = 60) -> dict:
     """Leave one live session whose third question carries a prompted trial.
 
-    Variant assignment is a hash of user, question, position, and style, so a
-    fresh session lands on the invisible control arm about a quarter of the
+    Variant assignment is a hash of user, question, position and the run's own
+    id, so a fresh session lands on the control arm about a quarter of the
     time. Sessions are created and discarded here until one has a `prompt`
     variant at position 2, and that session is left open. `create_study_session`
     returns the resumable session, so the demo cannot draw a different one.
+
+    The run id in that hash is what makes the retry loop below terminate
+    quickly. Before it was there, the arm was a function of the student, the
+    question and the slot alone, so every discarded session redrew exactly the
+    same arm and the loop's only source of variation was the questions the
+    sampler happened to pick.
 
     Positions 0 and 1 are pre-answered, leaving the learner one question away
     from the brief.
@@ -1089,7 +1095,7 @@ def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -
     db.session.commit()
 
     for round_index in range(attempts):
-        session = create_study_session(user, count=8, practice_style=style)
+        session = create_study_session(user, count=8)
         item = SessionItem.query.filter_by(session_id=session.id, position=2).first()
         if item and item.strategy_variant == "prompt" and item.strategy_key:
             for position in (0, 1):
@@ -1130,7 +1136,7 @@ def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -
             payload = serialize_item(item)
             return {
                 "session_id": session.id,
-                "practice_style": style,
+                "practice_style": "cases",
                 "position": item.position,
                 "question_number": item.position + 1,
                 "strategy_key": item.strategy_key,

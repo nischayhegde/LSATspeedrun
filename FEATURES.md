@@ -301,11 +301,13 @@ distraction, not instruction.
 
 ### 3.3 When a trial fires
 
-`assign_strategy_trial(user_id, question, practice_style, position, *, focus_types=None)` returns `None` only for
-a mega-litigation. Every question in a cases run is trial-eligible.
+`assign_strategy_trial(user_id, question, position, *, exposure, focus_types=None)` is called only from the
+practice path. Every question in a cases run is trial-eligible.
 
 The mega-litigation is excluded to keep it a neutral baseline — it is the one surface the dashboard headline
-reads. Everywhere else, the unprompted comparison condition comes from the hidden 25% control arm rather than
+reads. That exclusion used to be a `practice_style == "diagnostic"` guard inside this function; it is now held
+where it is true, in that `create_diagnostic_session` and the sectioned-form path build their items without
+calling here at all. Everywhere else, the unprompted comparison condition comes from the hidden 25% control arm rather than
 from a sparse cadence, which is why prompting every question does not destroy the comparison; it converges it
 roughly four times faster.
 
@@ -360,8 +362,14 @@ lucky result forever.
 
 Two details make the trials trustworthy. First, prompt-reading time is subtracted from elapsed time before pace
 is computed, so a method is never penalized for the seconds spent reading its own brief. Second, assignment is
-**deterministic**, seeded on `user_id:question_id:position:practice_style` hashed through SHA-256. Reloading the
-page cannot reroll into a preferred condition.
+**deterministic within a run**, seeded on `user_id:question_id:position:session_id` hashed through SHA-256.
+Reloading the page cannot reroll into a preferred condition.
+
+The session id in that seed matters more than it looks. Without it the arm was a function of the student, the
+question and the slot alone, so a review question returning to the same slot redrew the same arm every time —
+the bank-wide control share stayed at a healthy 25% while an individual heavy user's realised share collapsed
+toward 2%, and the propensity column went on recording 0.25 for a mechanism whose actual probability was 0 or 1.
+See `app/experiments.py`.
 
 ### 3.6 The invisible control arm
 

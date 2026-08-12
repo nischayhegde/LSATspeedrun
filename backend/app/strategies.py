@@ -431,7 +431,6 @@ PROMPT_VARIANTS = frozenset({VARIANT_PROMPT, VARIANT_PROMPT_REQUIRED})
 def assign_strategy_trial(
     user_id: str,
     question: Question,
-    practice_style: str,
     position: int,
     *,
     exposure: str,
@@ -440,6 +439,15 @@ def assign_strategy_trial(
     """Assign a balanced within-student strategy trial on every question.
 
     The mega-litigation stays a clean measurement surface and gets no trial.
+    That used to be enforced here, by a `practice_style == "diagnostic"` guard
+    on an argument the only caller always passed as `"cases"` — a guard against
+    a call nobody makes, reading a parameter that had one legal value. The
+    invariant is real and is held where it is true: `create_diagnostic_session`
+    and the sectioned-form path build their items without ever coming here.
+    `test_exam.py` and `test_flow.py` assert it on the items, which is the
+    property that matters, rather than on this function's willingness to
+    refuse.
+
     Early trials force coverage across the candidate approaches; later trials
     favor the best posterior performer while preserving a challenger and a 25%
     control condition.
@@ -510,8 +518,6 @@ def assign_strategy_trial(
     encounter its own draw. It is keyword-only and has no default so the
     substitution cannot be made again by omission. See `app/experiments.py`.
     """
-    if practice_style == "diagnostic":
-        return None
     candidates = _candidate_keys(question)
     selection = None
     observations = (
@@ -525,7 +531,7 @@ def assign_strategy_trial(
     for observation in observations:
         grouped[observation.strategy_key].append(observation)
 
-    seed = f"{user_id}:{question.id}:{position}:{practice_style}:{exposure}"
+    seed = f"{user_id}:{question.id}:{position}:{exposure}"
     minimum = min((len(grouped[key]) for key in candidates), default=0)
     under_sampled = [key for key in candidates if len(grouped[key]) == minimum]
     coverage_target = (

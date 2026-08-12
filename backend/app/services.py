@@ -76,8 +76,16 @@ from .strategies import (
 )
 
 
-PRACTICE_STYLES = {"cases"}
 FEEDBACK_POLICIES = {"immediate", "delayed"}
+# What kind of sitting a run was, which is not the same thing as a setting.
+# `StudySession.practice_style` used to be a choice the caller made from
+# `PRACTICE_STYLES`, and by the time migration 0021 had collapsed the four
+# styles into one, that set held a single value. A selector with one option is
+# not a selector; the surviving distinctions are between a practice run, a
+# mega-litigation and a blind review, and those are decided by which function
+# built the run rather than by anything the caller passes. The set and the
+# parameter are gone. The column stays, because it is the discriminator these
+# three keys read.
 EVIDENCE_CLASS = {
     "cases": "coached_practice",
     "diagnostic": "diagnostic",
@@ -948,7 +956,6 @@ def create_study_session(
     *,
     count: int | None = None,
     question_type: str | None = None,
-    practice_style: str = "cases",
 ) -> StudySession:
     # The account row is the cross-request mutex for the single active case
     # batch. Both POST /study-sessions and final acknowledgement use this path.
@@ -960,8 +967,6 @@ def create_study_session(
         db.session.commit()
         raise ValueError("queue_full")
 
-    if practice_style not in PRACTICE_STYLES:
-        raise ValueError("invalid_practice_style")
     policy = "immediate"
 
     session_size = count if count is not None else int(current_app.config["PRACTICE_SESSION_SIZE"])
@@ -1081,7 +1086,7 @@ def create_study_session(
         id=session_id,
         user_id=user.id,
         mode="practice",
-        practice_style=practice_style,
+        practice_style="cases",
         feedback_policy=policy,
         target_minutes=user.target_minutes,
         total_items=len(questions),
@@ -1095,7 +1100,6 @@ def create_study_session(
             assign_strategy_trial(
                 user.id,
                 question,
-                practice_style,
                 position,
                 exposure=session.id,
                 focus_types=focus_types,
@@ -1923,13 +1927,6 @@ def submit_attempt(
     if item.attempt:
         return item.attempt, True
     _freeze_current_case(item, user)
-    if (
-        item.game_context_json is None
-        and session.mode == "practice"
-        and session.practice_style == "deep"
-    ):
-        raise ValueError("game_context_required")
-
     selected_label = str(payload.get("selected_label", "")).strip().upper()
     if selected_label not in {choice.label for choice in item.question.choices}:
         raise ValueError("invalid_choice")
