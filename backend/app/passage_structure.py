@@ -113,6 +113,42 @@ _SENTENCE_BREAK = re.compile(
     r"|(?<=[a-z]{3}[.!?])(?=[A-Z][a-z])"
 )
 
+# Abbreviations whose full stop ends a word rather than a sentence. Found by
+# reading a sample of the derived divisions and finding one that had cut the case
+# citation "Charrier v. Bell" in half, leaving a part that opened "Bell, a United
+# States appellate court ruled ..." — not a debatable boundary, a broken one.
+#
+# There are 227 of these breaks across the bank, 70 in the passages and 157 in the
+# stimuli, and this list covers the ones that are never anything else: a title, a
+# citation, or an abbreviation whose internal stops give it away (`U.S.`, `B.C.`,
+# `e.g.`, `P.M.`).
+#
+# Single capital initials are deliberately *not* here, though they are the largest
+# remaining group. "Robert L. Herbert" wants joining and "Group A. Clearly, at
+# least one type of memory" does not, and the two are the same shape — a
+# capitalised word, a single capital, a stop, a capital. Suppressing them all would
+# silently weld together real sentences in the Logical Reasoning stimuli, which
+# label things "Group B" and "Country F" constantly. `_cut_within` refuses to open
+# a part on one instead, which is the narrower fix for the thing that matters here:
+# a part may not begin mid-name, and a joined pair of stimulus sentences is a cost
+# this module has no business paying.
+_ABBREVIATION_TAIL = re.compile(
+    r"(?:"
+    r"\b(?:Mr|Mrs|Ms|Dr|Prof|Rev|Hon|Sr|Jr|St|vs?|cf|al|ed|eds|No|Vol|Fig|ch|pp|ca)"
+    r"|\.[A-Za-z]"
+    r")\.$"
+)
+
+# A part may not open on something that cannot open a sentence: a lowercase word,
+# or a single initial, which is the abbreviation class the shared splitter leaves
+# alone on purpose.
+_CANNOT_OPEN_A_PART = re.compile(r"^(?:[a-z]|[A-Z]\.(?:\s|$))")
+
+
+def is_sentence_break(text: str, position: int) -> bool:
+    """Whether the stop ending at `position` really ends a sentence."""
+    return not _ABBREVIATION_TAIL.search(text[max(0, position - 12): position])
+
 _AUTHORED_BREAK = re.compile(r"\n\s*\n|\r\n\s*\r\n")
 
 # The comparative heading, matched exactly as `strategies.detect_comparative`
@@ -250,6 +286,8 @@ def sentence_spans(text: str) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
     start = 0
     for match in _SENTENCE_BREAK.finditer(text):
+        if not is_sentence_break(text, match.start()):
+            continue
         spans.append((start, match.start()))
         start = match.end()
     spans.append((start, len(text)))
@@ -330,7 +368,7 @@ def _cut_within(text: str, spans: list[tuple[int, int]]) -> list[int]:
 
     def admits(chosen: list[int], boundary: int) -> bool:
         begin, end = spans[boundary]
-        if _CONTINUATION.match(text[begin:end]):
+        if _CONTINUATION.match(text[begin:end]) or _CANNOT_OPEN_A_PART.match(text[begin:end]):
             return False
         edges = sorted([0, *chosen, boundary, len(spans)])
         parts = list(zip(edges, edges[1:]))

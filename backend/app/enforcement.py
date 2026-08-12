@@ -48,7 +48,7 @@ import unicodedata
 from flask import current_app
 
 from .models import Attempt, Question
-from .passage_structure import paragraphs_from_offsets
+from .passage_structure import is_sentence_break, paragraphs_from_offsets
 
 
 # Bumped whenever a gate's required operations change. Attempts carry it so an
@@ -188,11 +188,24 @@ def split_sentences(text: str | None) -> list[str]:
     The client renders these by index and posts indices back, so this function
     is the shared contract: a student can only ever mark a sentence the server
     also believes exists.
+
+    A full stop inside an abbreviation does not end a sentence. Without that check
+    this split 227 times across the bank where it should not have, most visibly
+    turning the citation "Charrier v. Bell" into two lines and offering a student
+    "Bell, a United States appellate court ruled ..." as something to cite.
     """
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
     if not cleaned:
         return []
-    parts = [part.strip() for part in _SENTENCE_RE.split(cleaned) if part.strip()]
+    parts: list[str] = []
+    start = 0
+    for match in _SENTENCE_RE.finditer(cleaned):
+        if not is_sentence_break(cleaned, match.start()):
+            continue
+        parts.append(cleaned[start: match.start()])
+        start = match.end()
+    parts.append(cleaned[start:])
+    parts = [part.strip() for part in parts if part.strip()]
     # A stimulus written as one long sentence still has to be markable, and a
     # stray fragment ("Dr.") should not become its own pickable unit.
     merged: list[str] = []

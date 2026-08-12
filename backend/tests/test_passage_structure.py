@@ -184,6 +184,58 @@ def test_an_abbreviation_is_not_a_sentence_boundary():
         assert len(sentence_spans(text)) == 1, text
 
 
+def test_a_case_citation_is_not_two_sentences():
+    """Found by reading the output, which is the only way it could have been found.
+
+    A part opened "Bell, a United States appellate court ruled ...", because the
+    stop in "Charrier v." looked like the end of a sentence. Both splitters have to
+    agree it is not, since the same stop would otherwise be offered to a student as
+    a line to cite.
+    """
+    text = "In Charrier v. Bell, an appellate court ruled that abandonment does not apply here."
+    assert len(sentence_spans(text)) == 1
+    assert len(split_sentences(text)) == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The dispute reached the U.S. Congress in the end.",
+        "Some tokens date to before 4000 B.C. Others are later.",
+        "Critics have praised Ms. Whitlock for the digitization programme.",
+        "The ruling in Charrier vs. Bell has been followed since then.",
+    ],
+)
+def test_an_abbreviation_mid_sentence_does_not_end_it(text):
+    assert len(split_sentences(text)) == 1, split_sentences(text)
+
+
+def test_a_real_sentence_ending_in_a_labelled_group_still_ends():
+    """The abbreviations that were left out on purpose, and why.
+
+    A single capital initial is the largest remaining class of false break, and it
+    is not in the list because "Robert L. Herbert" wants joining while "Group A.
+    Clearly, at least one type of memory" does not, and the two look identical.
+    The Logical Reasoning stimuli label things this way constantly, so the
+    splitter leaves them alone and `_cut_within` refuses to open a part on one.
+    """
+    text = "There was one lapse in Group A. Clearly, at least one type of memory decays."
+    assert len(split_sentences(text)) == 2
+    # The cost of leaving them out, stated rather than hidden: a middle initial
+    # still splits a name into two lines. It cannot reach a student as a part
+    # boundary, which is what the test below holds, and it can still reach one as a
+    # citable line — a pre-existing rough edge in a different feature, left alone.
+    assert len(split_sentences("Robert L. Herbert dissociates himself from formalists.")) == 2
+
+
+def test_no_part_in_the_bank_opens_on_something_that_cannot_open_a_sentence(passages):
+    cannot_open = re.compile(r"^(?:[a-z]|[A-Z]\.\s)")
+    for text in passages:
+        offsets, _source = derive_paragraphs(text)
+        for part in paragraphs_from_offsets(text, offsets)[1:]:
+            assert not cannot_open.match(part), part[:70]
+
+
 # ---------------------------------------------------------------------------
 # Is it better than nothing? Measured on the only truth available.
 # ---------------------------------------------------------------------------
