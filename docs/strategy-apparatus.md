@@ -1,8 +1,14 @@
 # The strategy apparatus: what it is delivering, and what I would change
 
-**This is a recommendation, not a change. Nothing in it has been acted on.**
-The one thing I did touch is described in §7, and it is a data fix that was
-already in scope.
+**Written as a recommendation with nothing acted on. Two items have since been
+acted on, and they are marked where they appear.** The rest still stands as a
+recommendation and is deliberately not implemented: §3 and most of §5 are
+changes to what students see or to how the trial allocates, and neither is mine
+to make. §7 lists everything this branch actually touched.
+
+The one decision that changed between the first draft and now is §8's first
+question, "may the trial be analysed across students?". It was answered yes,
+and the query exists — see §2 and §7. Nothing a student sees changed with it.
 
 The question I was asked: fourteen strategies, enforcement gates, a bandit, an
 intention-to-treat trial, forced arms and a mandatory no-skip sub-arm add up to
@@ -134,24 +140,48 @@ observations, and every student-facing sentence it writes is scrupulously
 non-committal because of it. The instrument is honest about being unable to
 answer its own question. It just keeps asking.
 
-### And the estimate it could answer is never computed
+Priced against the other adaptive layers, that comment is if anything
+understated. `python3 tools/audit/measurement_cost.py` puts the offer trial at
+**468,907 answers** to settle, because it is not one question but twenty-eight
+— fourteen approaches in each of two sections — against 36,284 for interleaving
+and 47,100 for weak-type targeting. It is the most expensive question in the
+product by an order of magnitude, and the multiplier is the reason.
 
-Here is the part I did not expect. `strategy_performance(user_id)` is the only
+### And the estimate it could answer was never computed
+
+Here is the part I did not expect. `strategy_performance(user_id)` was the only
 reading of the trial in the codebase, and every query inside it filters on that
-student. There is no cross-student estimator anywhere in the application.
+student. There was no cross-student estimator anywhere in the application.
 
-The randomisation does not need fixing for one. It is already a valid trial at
+The randomisation did not need fixing for one. It is already a valid trial at
 cohort scale: arms drawn independently per encounter, propensity written to the
 row, intention-to-treat discipline held throughout, control and prompt labels
 kept apart so two presentations of the same assignment can be separated later.
-Everything a pooled analysis needs is on the table. Nobody has run the query
+Everything a pooled analysis needs was on the table. Nobody had run the query
 without the `WHERE user_id =` clause.
 
 And pooling does not merely help — it changes the shape of the cost. Twenty
-controls on one approach take eighty assignments **from one student** today.
-Across a hundred students they take eighty assignments **in total**, which is
-under one question each. The holdback stops being a tax each student pays in
-full and becomes one the cohort shares.
+controls on one approach take eighty assignments **from one student**. Across a
+hundred students they take eighty assignments **in total**, which is under one
+question each. The holdback stops being a tax each student pays in full and
+becomes one the cohort shares.
+
+> **Done.** `strategies.strategy_population_reading()` is that query. It groups
+> by section and approach across all students, applies the same Hájek weighting
+> and the same intention-to-treat discipline the per-student reading uses, and
+> reports a 95% interval on each difference alongside a student-stratified
+> estimate as a check against one heavy account carrying a cell.
+>
+> Two things about it are worth knowing before it is read. It distinguishes
+> **measured** from **leading**: a cell with enough sample to say something is
+> measured, and only a cell whose interval clears zero is leading. Reporting the
+> best point estimate of a set of noisy cells as a winner is how a trial of
+> fourteen approaches finds a winner every time it is run. And it changes
+> nothing about what any student is served — it is a reading, not a mechanism.
+>
+> `python3 tools/audit/strategy_trial_population.py` prints it, together with
+> the selection layer's reading and the independence check between the two
+> draws.
 
 ---
 
@@ -169,10 +199,19 @@ I would keep the panel and change what it is a panel *about*: this student's
 running totals and compliance, plainly labelled as description, next to what
 the cohort has found. That is a smaller claim and a true one.
 
-**Nothing else.** I looked for a layer to delete and did not find one. The
-closest candidate is the 30% runner-up explore, which buys little per student —
-but the strategy agent is rewriting that exploration term right now and I have
-not read the result, so I would not touch it on this evidence.
+**Nothing else here, but one thing next door.** I looked for a layer to delete
+in this apparatus and did not find one. I did find one adjacent to it and it is
+gone: `practice_style` had a single legal value, so the "two case shapes" it
+implied were one code path, and `assign_strategy_trial` carried a guard against
+a value nobody could pass. Deleted, with the invariant it was nominally
+protecting reasserted where it is true. See `docs/learning-system.md` §6.
+
+The closest candidate inside the apparatus is the 30% runner-up explore, which
+buys little per student. I would still not touch it on this evidence, and now
+there is a better reason than deference: `strategy_selection` has an off arm as
+of this branch, so what the ranked selector is worth — exploration term
+included — is a question the app can now answer rather than argue about.
+Changing the term before that reading exists would throw away the comparison.
 
 ---
 
@@ -227,10 +266,10 @@ whole product, and it puts the strategy trial inside the per-student allocation
 audit that would have caught its own collapse. The two are close enough that
 this is a merge and not a rewrite.
 
-**`_contrast_sample`, which now exists twice.** `strategies._contrast_sample`
-and `experiments.contrast_sample` are the same three lines. I duplicated it
-deliberately rather than import across a file another agent is actively
-rewriting, and the duplication should not survive the merge.
+**~~`_contrast_sample`, which now exists twice.~~ Done.**
+`strategies._contrast_sample` is a call to `experiments.contrast_sample`. It
+was duplicated deliberately while both files were being rewritten at once; two
+copies of an estimator is two things to keep in step.
 
 **The selector's prior with the cohort's.** Today a new student's bandit starts
 from nothing and spends its coverage phase re-discovering what every other
@@ -238,7 +277,18 @@ student has already shown. Seeding each approach's posterior from the pooled
 estimate would fix the cold start and the unreachability at once: the student's
 own data still moves the ranking, it just no longer has to carry it alone. This
 is the change I would make second, after the pooled analysis exists to seed
-from.
+from — which it now does, so this is the next thing rather than a distant one.
+
+It is also more urgent than it looked, because the unreachability is worse than
+the earlier audit stated. `python3 tools/audit/rank_reachability.py` runs an
+approach that goes 1-for-3 in coverage by bad luck, twenty times per condition,
+with every outcome fed back so the ranking is free to move. It is offered again
+in **1 run of 20** when it is genuinely the best approach on the question, and
+**2 of 20** when it is genuinely the worst. The same rate, because its posterior
+is frozen until it is offered and therefore cannot be evidence about itself.
+What releases it is the *runner-up* drawing a bad streak — someone else's luck.
+A cohort-seeded prior attacks this at the root: the exclusion would then be made
+against evidence from every student rather than against three observations.
 
 ---
 
@@ -265,16 +315,35 @@ I would rather state these than pretend the recommendation is unconditional.
 
 ## 7. What I touched
 
-Only the data underneath. `question_type` is the first thing
-`_candidate_keys` reads, and 45.8% of the bank was carrying a placeholder equal
-to its own section name. That is now 12.5%, and the effect on this apparatus is
-measured: questions with only two candidate approaches fall from 44.8% to
-36.6%, with `scope_precision` gaining 280 questions, `conditional_chain` 201
-and `flaw_abstraction` 123. A two-candidate question is a two-armed bandit, so
-this widens the instrument's choice set as a side effect of fixing the routing.
+**The data underneath.** `question_type` is the first thing `_candidate_keys`
+reads, and 45.8% of the bank was carrying a placeholder equal to its own section
+name. That is now 12.5%, and the effect on this apparatus is measured: questions
+with only two candidate approaches fall from 44.8% to 36.6%, with
+`scope_precision` gaining 280 questions, `conditional_chain` 201 and
+`flaw_abstraction` 123. A two-candidate question is a two-armed bandit, so this
+widens the instrument's choice set as a side effect of fixing the routing.
 
-`backend/app/strategies.py` and `backend/app/enforcement.py` are untouched on
-this branch.
+**A reading, and only a reading.** `strategy_population_reading` and
+`strategy_selection_reading` compute across students; `strategy_selection_health`
+checks the two draws are independent per student. None of them decides anything.
+
+**One off arm, and the independence it required.** `strategy_selection` is now
+registered with the spine: a quarter of eligible questions pick uniformly among
+the candidates instead of by the student's ranking. Making that safe meant one
+change to the offer trial — the chosen approach is no longer part of the offer
+arm's hash. Two randomisations sharing an input are not independent, and the
+whole argument for reading the selection layer inside the treated population
+rests on them being so. Same propensity, same shares, different draw, and the
+design version moves accordingly.
+
+**The exposure the trial draws on**, which arrived from a sibling branch and is
+the failure the whole spine generalises: `assign_strategy_trial` now takes a
+required, keyword-only `exposure` so each encounter is its own draw.
+
+`backend/app/enforcement.py` is untouched, and nothing in this branch changes
+which approach a student is offered except by way of the uniform arm above.
+`python3 tools/audit/strategy_trial_population.py` prints the new readings;
+`python3 tools/audit/measurement_cost.py` prices them.
 
 ---
 
@@ -282,18 +351,27 @@ this branch.
 
 Three, in order of how much they change:
 
-1. **May the trial be analysed across students?** One new reading, no change to
-   how anything is drawn, no change to what a student sees. This is the whole
-   recommendation in one step and it is nearly free.
-2. **If so, should the holdback narrow from 25%?** A cohort fills a comparison
-   far faster than a person, so the current holdback buys precision nobody
-   needs at a cost every student pays.
+1. ~~**May the trial be analysed across students?**~~ **Answered yes, and
+   built.** One new reading, no change to how anything is drawn, no change to
+   what a student sees.
+2. **Should the holdback narrow from 25%?** A cohort fills a comparison far
+   faster than a person, so the current holdback buys precision nobody needs at
+   a cost every student pays. This is now a decision with a number behind it
+   rather than an intuition: the pooled reading will show how fast the cells
+   actually fill, and the honest moment to narrow the holdback is when it does.
+   Narrowing it is a new `design_version`, and the two periods must not be
+   pooled.
 3. **Should the per-student panel stop promising a verdict it cannot reach?**
    This one is visible to students and is the only item here with a UI
-   consequence.
+   consequence. It is also the one I feel most strongly about, and the pooled
+   reading now gives the panel something true to say instead: this is what you
+   have done, and here is what the cohort has found.
 
 Reproduce the numbers with:
 
 ```
-python3 tools/audit/strategy_candidates.py
+python3 tools/audit/strategy_candidates.py        # candidate widths, reachability, strata
+python3 tools/audit/measurement_cost.py           # what each layer costs to settle
+python3 tools/audit/rank_reachability.py          # whether a shut-out approach returns
+python3 tools/audit/strategy_trial_population.py  # the pooled readings, needs a database
 ```

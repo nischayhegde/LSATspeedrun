@@ -143,7 +143,53 @@ def main() -> None:
 
     print_reachability(rows, offers["after"])
     print_strata(rows)
+    print_causal_misfire(rows)
     print()
+
+
+def print_causal_misfire(rows) -> None:
+    """How many `causal_audit` candidacies are the word "because".
+
+    `docs/audits/interleaving-audit.md` §2.5 found that `_candidate_keys` tests
+    `"cause" in stimulus` with no word boundary, so every argument containing
+    the word "because" — which is most arguments — looks like a causal one. The
+    audit put it at 275 of 426 offers, and the figure had no script behind it.
+
+    Measured the only way that does not require agreeing with the matcher about
+    what a word is: rewrite `"because"` to `"since"` in the stimulus, which
+    changes no meaning a rule here is entitled to care about, and count the
+    questions that stop being candidates. Anything that drops out was matched by
+    the substring and nothing else.
+    """
+    matched = 0
+    spurious = 0
+    for section, stem, context in rows:
+        if section != "Logical Reasoning":
+            continue
+        question_type = classify(section, stem)[0]
+        if "causal_audit" not in _candidate_keys(_question(section, stem, context, question_type)):
+            continue
+        matched += 1
+        rewritten = context.replace("because", "since").replace("Because", "Since")
+        if "causal_audit" not in _candidate_keys(
+            _question(section, stem, rewritten, question_type)
+        ):
+            spurious += 1
+
+    print("\nCAUSAL CANDIDACIES THAT ARE ONLY THE WORD \"BECAUSE\"")
+    print(f"  causal_audit is a candidate on   {matched} Logical Reasoning questions")
+    print(
+        f"  of which                         {spurious} ({spurious / matched:.1%}) "
+        "stop being candidates when\n                                   "
+        '"because" is rewritten to "since"'
+    )
+    print(
+        "\n  The audit measured 64.6%. What narrowed it is not a word boundary — there\n"
+        "  still is not one — but that the causal branch now also requires a strengthen,\n"
+        "  weaken, flaw or explain task, so the substring alone is no longer enough on\n"
+        "  its own. The remainder are questions carrying a candidate they do not deserve,\n"
+        "  which taxes the coverage phase and can evict a real approach."
+    )
 
 
 def print_strata(rows) -> None:
