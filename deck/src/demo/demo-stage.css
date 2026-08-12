@@ -225,11 +225,31 @@
    *on* a full-bleed one. `.deck-layers` is in the selector only to out-specify
    `.deck-layer[data-kind='demo']` in the base stylesheet. */
 .deck-layers .deck-layer[data-kind='demo'] {
-  /* A 0.82-alpha black gradient over the whole layer. Drawn to keep type legible
-     over a 3D render, and over a live app it is a smear across the product. The
-     copy plate is opaque and carries its own legibility, exactly as it does on a
-     scene slide. */
-  --scrim: none;
+  /* The base stylesheet's scrim is a 0.82-alpha black gradient over the *whole*
+     layer. Drawn to keep type legible over a 3D render, and over a live app it is
+     a smear across the product, so almost all of it goes: the copy plate is
+     opaque and carries its own legibility, exactly as it does on a scene slide.
+
+     What is kept is the last eighth of it, and that is not decoration.
+     Underneath the bottom margin of every slide sit the deck's two pieces of
+     permanent chrome — the progress hairline and the folio — and they are
+     drawn in cream because for the whole of this deck's life the bottom of a
+     slide has been a dark field. Full bleed hands that strip to the app, and
+     `demo-focus-mode` frames a cream page: measured on that slide before this
+     rule, the hairline and the slide number were both invisible. A scrim that
+     covers only the strip the chrome occupies restores them without dimming any
+     part of the product the room is looking at — the app's content stops well
+     above it, and it is a gradient rather than a band so there is no edge to
+     see. The folio's own halo is the belt to this braces; see
+     `engine/slide-number.css`.
+
+     Painted by `.deck-layer::before`, which is inside the layer at z-index 3 and
+     therefore over the embed at 2 and under the copy plate, and under the chrome
+     at 890 — which is the whole point. */
+  --scrim: linear-gradient(180deg,
+    transparent 86%,
+    rgba(4, 7, 12, .34) 92%,
+    rgba(4, 7, 12, .74) 100%);
   /* The presenter has to be able to click the app, which is the entire argument
      for an iframe over a video, and a full-screen layer above it swallows every
      pointer event. Nothing in a demo slide's layer is interactive — it is an
