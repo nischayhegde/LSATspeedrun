@@ -164,8 +164,10 @@ export function buildLettering(items: readonly LetteringItem[]): Lettering {
       outside it. What is left inside the frame falls in the strip of floor the
       letter itself occludes from this camera.
 
-      So it cost three draw calls and 10,468 triangles a frame, twice a second
-      for the length of a question period, to change no pixels.
+      So it cost three draw calls and 10,468 triangles on every frame of a
+      slide that is held for the whole question period, to change no pixels.
+      Left explicit rather than left to the default, so that restoring
+      `item.depth > 0` here is a decision rather than a tidy-up.
     */
     mesh.castShadow = false
     group.add(mesh)
