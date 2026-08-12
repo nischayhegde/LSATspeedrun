@@ -24,13 +24,30 @@ import { clockText, pct, usePhase, useStopwatch, vars, type FigureBody } from '.
  * difference between them is where they sit, and a dimension line under both
  * makes that a measured distance rather than a slope.
  *
+ * ## Why our lane does not stay empty
+ *
+ * It did, in the first cut of this rebuild, and an empty lane argues the
+ * opposite of the slide: a rail with one mark on it and clear air to the right
+ * reads as *nothing happens over here*, when what the deck claims is that the
+ * span the course path spends getting to its first question is a span we spend
+ * answering them. So the origin marker is followed by a run of the same mark,
+ * smaller and unlabelled, all the way to the far tick — the picture of "they
+ * sell hours, we sell reps" that the deck makes in words two slides earlier.
+ *
+ * `REPS` is a density and not a count, which is why it lives here rather than
+ * in the registry: the deck does not know how many questions a given student
+ * gets through in the time a course spends on its intro, and a number in the
+ * content file is a number somebody will eventually defend in a Q&A. Nothing is
+ * printed beside the run and nothing is totalled. It is texture, and the only
+ * thing it has to say is *more of the object at the origin*.
+ *
  * ## The order is the argument
  *
  * The eye is walked right along the course lane, stage by stage, until it
  * reaches that lane's question at the far edge — and then the frame cuts back
- * to zero and our marker lands there. Travel, then snap. That contrast is the
- * beat, and it is why the stages arrive before our node does rather than both
- * lanes drawing at once.
+ * to zero and our marker lands there. Travel, then snap, then the run fills in
+ * behind it left to right. That contrast is the beat, and it is why the stages
+ * arrive before our node does rather than both lanes drawing at once.
  *
  * Everything is DOM rather than SVG, which is unusual for this folder and is
  * the right call for one reason: the course rail has to be *dashed* and has to
@@ -43,13 +60,24 @@ import { clockText, pct, usePhase, useStopwatch, vars, type FigureBody } from '.
  */
 
 /**
- * Cumulative milliseconds. Course stages stagger inside their own beat, so the
- * number of stages does not change the runtime.
+ * Cumulative milliseconds. Course stages and our run of reps each stagger
+ * inside their own beat, so neither count changes the runtime.
  */
-const MARKS = [40, 400, 1000, 1360, 1680] as const
+const MARKS = [40, 400, 1000, 1360, 1700, 2180] as const
 
 /** How far apart the course stages land. Three at 160ms is a walk, not a list. */
 const STAGE_STAGGER_MS = 160
+
+/**
+ * How many marks follow our origin node, and how fast they land.
+ *
+ * A density, not a claim — see the header. 22 is the count at which the run
+ * reads as continuous work at 1366 wide without the marks touching at 1920, and
+ * 26ms apart it sweeps the lane in a little over half a second, which is short
+ * enough to be one gesture rather than a second list to read.
+ */
+const REPS = 22
+const REP_STAGGER_MS = 26
 
 /** The two lanes and the dimension line, in percent down the frame. */
 const COURSE_LANE = 24
@@ -121,6 +149,16 @@ export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
       >
         {ours.label}
       </p>
+      <span
+        className="fig-rt-rail"
+        data-ours="true"
+        style={vars({
+          left: pct(ORIGIN / 100),
+          top: pct(OURS_LANE / 100),
+          width: pct((END - ORIGIN) / 100),
+          transform: `scaleX(${phase >= 4 ? 1 : 0})`,
+        })}
+      />
 
       {/* Ours, solid, at zero.
           `transitions.ts` selects `.fig-rt-node[data-taken="true"]
@@ -150,6 +188,26 @@ export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
         </span>
       </div>
 
+      {/* The run. Same mark as the node at the origin, smaller and silent, and
+          the last one lands exactly on `END` — under the course lane's first
+          question and over the far dimension tick. That vertical line through
+          the three is the whole sentence: by the time that lane has one, this
+          lane has had the axis. */}
+      {Array.from({ length: REPS }, (_, index) => (
+        <span
+          className="fig-rt-rep"
+          key={index}
+          style={vars({
+            left: pct((ORIGIN + ((END - ORIGIN) / REPS) * (index + 1)) / 100),
+            top: pct(OURS_LANE / 100),
+            // Just off full, so the named node at the origin still reads as
+            // the brightest thing on its own lane.
+            opacity: phase >= 5 ? .85 : 0,
+            '--fig-delay': `${index * REP_STAGGER_MS}ms`,
+          })}
+        />
+      ))}
+
       {/* Two end ticks and a span, in the drafting convention. No arrowhead,
           because an arrow would make it a journey, and no fill, because a fill
           would make it a quantity. It is the distance between two markers,
@@ -158,7 +216,7 @@ export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
           box, and a box is a container rather than a measurement. The two
           markers are directly above the two ticks, which is the only alignment
           this needs to do its job. */}
-      <div className="fig-rt-dim" style={{ opacity: phase >= 5 ? 1 : 0 }}>
+      <div className="fig-rt-dim" style={{ opacity: phase >= 6 ? 1 : 0 }}>
         <span className="fig-rt-dim-tick" style={vars({ left: pct(ORIGIN / 100), top: pct(DIM_LINE / 100) })} />
         <span className="fig-rt-dim-tick" style={vars({ left: pct(END / 100), top: pct(DIM_LINE / 100) })} />
         <span
@@ -167,7 +225,7 @@ export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
             left: pct(ORIGIN / 100),
             top: pct(DIM_LINE / 100),
             width: pct((END - ORIGIN) / 100),
-            transform: `scaleX(${phase >= 5 ? 1 : 0})`,
+            transform: `scaleX(${phase >= 6 ? 1 : 0})`,
           })}
         />
         <p className="fig-rt-axis">{spec.axisLabel}</p>

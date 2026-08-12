@@ -585,10 +585,15 @@
   height: 100%;
 }
 
-/* The course lane. Dashed, because it is a path a student is walked
-   along rather than a measurement — the dimension line below is the
-   only solid horizontal in the figure, and it has to stay the only one
-   or the two read as the same kind of object. */
+/* Both lanes. Dashed, because a lane is a path a student is walked along
+   rather than a measurement — the dimension line below is the only solid
+   horizontal in the figure, and it has to stay the only one or the two
+   read as the same kind of object.
+
+   Our lane gets a rail of its own for one reason: two marks at different
+   heights with a rule under only one of them are two drawings, and the
+   claim needs them to be two positions on one axis. Same dash, same
+   weight, same start and end. */
 .fig-rt-rail {
   position: absolute;
   height: 0;
@@ -729,6 +734,25 @@
   font-weight: 600;
   font-size: var(--fig-lead);
   line-height: 1;
+}
+
+/* The run of reps. Square and filled like the node it follows, at .62em
+   against its 1.5em, which is the ratio at which the eye reads them as
+   the same object repeated rather than as a different kind of tick — a
+   circle, or a rule, would have been a new symbol to decode and the run
+   has no label to decode it with.
+
+   Nothing under them. Every mark on this figure that carries text is a
+   thing the slide names; these are the one thing it does not, and the
+   silence is what keeps a lane of twenty-two marks from being the
+   fourth block of copy on a slide whose complaint was clutter. */
+.fig-rt-rep {
+  position: absolute;
+  width: .62em;
+  height: .62em;
+  transform: translate(-50%, -50%);
+  background: var(--on-field);
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
 }
 
 .fig-rt-clock {

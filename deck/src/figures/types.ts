@@ -85,7 +85,13 @@ export type RouteFigure = {
      * Deliberately unattributed — see the note on the slide in the registry.
      */
     course: { label: string; stages: string[]; arrival: string }
-    /** The bright lane, which holds one node and holds it at the origin. */
+    /**
+     * The bright lane, whose one *named* node sits at the origin. The run of
+     * unlabelled marks that follows it is drawn from a constant in `route.tsx`
+     * and is deliberately not a field here: it is a texture, and a number in
+     * the registry would be read by the next person as a claim about how many
+     * questions a student gets through, which is not something the deck knows.
+     */
     ours: { label: string; arrival: string }
   }
   /** The chip on our node. Counts real time, because the clock is the point. */

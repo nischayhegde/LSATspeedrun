@@ -369,6 +369,14 @@ export const SLIDES: readonly SlideSpec[] = [
     // question markers are drawn identically so the only difference between
     // them is position, and a dimension line makes that a measured distance.
     //
+    // Our lane then fills with a silent run of the same marker to the far end
+    // of the axis — the deck's own "they sell hours, we sell reps", drawn. The
+    // run is a texture and its count lives in `route.tsx`, not here: a number
+    // in this file is a number somebody will be asked to defend, and the deck
+    // does not know how many questions a student gets through in the time a
+    // course spends on its intro. Nothing beside the run is labelled or
+    // totalled, which is also what keeps it from being more copy.
+    //
     // THE THREE STAGES NAME NO PRODUCT, AND MUST NOT. `CITATIONS.md` §4.2 is
     // explicit that LSAT Demon is question-first — "no complex diagramming or
     // hours of lessons... just hit Drill" — so "everyone makes you watch first"
