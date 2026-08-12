@@ -152,9 +152,24 @@ type Props = {
  * shows 39% of the case page's 1658px height, so the audience reads a third of the
  * thing being demonstrated.
  *
- * 1400 lands the scale near 1.15, still a magnification, while showing about half
- * the page. The rest is bought back by the autoplay driver scrolling the app to
- * whatever it is about to touch, which is a better answer than either number: the
+ * ## And what the slot became after that
+ *
+ * The paragraph above reasoned against a slot of about 1610px, which was full
+ * bleed *minus a copy rail*. There is no rail now: the slot is the whole
+ * projected image. Measured by `scripts/verify-demo-sizing.mjs` at 1920x1080,
+ * the composed result on the case slide is 1250 logical pixels blown up 1.54x,
+ * which puts the app's 16px body text at 1.99% of the image height — against the
+ * 2.67% the deck's own body copy occupies, so the product's type is now within
+ * three quarters of the deck's, from 45% of it before this file was touched at
+ * all.
+ *
+ * That magnification is the ceiling rather than a target. It buys legibility with
+ * the *extent* of the page: 703 logical pixels of a 1658px case page is 42% of
+ * it. The lever if a room ever wants more page and less type is `zoom` in the
+ * registry, not this constant — lowering `zoom` on one slide widens that slide's
+ * logical viewport and shrinks its type, which is exactly the per-slide editorial
+ * decision `zoom` exists to carry. What holds the current balance is that the
+ * autoplay driver scrolls the app to whatever it is about to touch, so the
  * audience sees the part that matters at the moment it matters.
  */
 const LEGIBILITY_WIDTH = 1400
@@ -168,10 +183,12 @@ const DEFAULT_WIDTH = 1400
  * This was `16 / 10`, and that one number was the letterbox. The frame is scaled
  * to *contain* — the app must never be cropped — so a logical box of one aspect
  * inside a slot of another leaves a band on two edges, and no amount of layout
- * work upstream can close it. Measured on the full-bleed slides before this
- * change, in stills mode at 1920x1080: the app occupied 77.2% of the viewport
- * height with 125px of black above it and 125px below. The founders' words were
- * "no vertical bars — have it take full viewport height."
+ * work upstream can close it. Measured on the six live demo slides before this
+ * change, the painted iframe as a share of the viewport: 77.2% wide by 85.7%
+ * tall at 1920x1080, 71.9% by 79.9% at 1366x768, 80.4% by 89.3% at 2560x1440 —
+ * about 66% of the screen by area, which is the number the founders were given
+ * and then rejected. Their words: "no vertical bars — have it take full viewport
+ * height."
  *
  * Deriving the logical height from the slot's own measured rect closes the band
  * arithmetically rather than by cropping or by zooming: both terms of the `min`

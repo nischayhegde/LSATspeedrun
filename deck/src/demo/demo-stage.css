@@ -176,17 +176,28 @@
    The slot is the viewport — no padding, no title bar above it, no caption row
    below it — and `demo-stage.tsx` now takes the frame's logical aspect from the
    slot's measured rect instead of a fixed 16:10, so the scale that contains the
-   app also fills the slot exactly. Measured in stills mode, the app's own picture
-   as a percentage of the viewport, before this pass and after:
+   app also fills the slot exactly. Measured by
+   `scripts/verify-demo-proportion.mjs` against a real mounted iframe, the app's
+   own picture as a percentage of the viewport, width by height, before this pass
+   and after:
 
-       1920x1080    77.2% x 77.2%   ->   100% x 100%
-       1600x900     74.6% x 74.7%   ->   100% x 100%
-       1366x768     72.0% x 72.0%   ->   100% x 100%
-       2560x1440    80.4% x 80.4%   ->   100% x 100%
+       1920x1080    77.2% x 85.7%   ->   100% x 100%
+       1600x900     74.6% x 82.9%   ->   100% x 100%
+       1366x768     71.9% x 79.9%   ->    99.9% x 100%
+       2560x1440    80.4% x 89.3%   ->   100% x 100%
+
+   66.2% of the screen by area at 1080p before, 100% after. The 99.9% is one
+   pixel of a 1366-wide viewport, which is odd and cannot be halved.
+
+   `demo-focus-mode` is `stillOnly` and its captured frame is 16:9, so it read
+   77.2% x 77.2% before and fills the screen exactly now, on every 16:9 stage.
 
    Nothing is cropped to get there and nothing is zoomed: the app is handed a
    viewport of the screen's shape rather than a taller one it then has to be shrunk
-   to fit inside. See the note on `MIN_ASPECT` in `demo-stage.tsx`.
+   to fit inside. At 1920x1080 that viewport is 1250x703 logical pixels — which is
+   a laptop lid, and which the stub origin in `scripts/stub-app-origin.mjs` prints
+   on its own page so the number can be read off a screenshot rather than
+   calculated. See the note on `MIN_ASPECT` in `demo-stage.tsx`.
 
    ## What this replaces
 
@@ -194,8 +205,8 @@
    measured 36.5% of a 1920x1080 projector. Then a full-bleed frame with the copy
    in a left rail — and because the frame was still a fixed 16:10 box, and was
    pushed off centre by exactly the rail's width so the rail would have room, the
-   room got an app at 77% of the screen in both axes, black bands above and below
-   it, `ACT IV — PROOF` broken over two lines and a five-word headline over
+   room got an app at 66% of the screen by area with black bands above and below
+   it, `ACT IV — PROOF` broken over two lines, and a five-word headline over
    three, hard against the frame.
 
    Both of those are one problem: the frame and the copy were competing for the
