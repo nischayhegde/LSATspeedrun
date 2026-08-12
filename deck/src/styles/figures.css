@@ -2091,20 +2091,49 @@
   box-shadow: inset 0 0 0 2px currentColor;
 }
 
-/* The label is the whole of the card's contents now.
-   It used to sit under two grey bars at 84% and 56% width, standing in for the
-   text of a question — which is, exactly and unfortunately, how every loading
-   skeleton on the web is drawn. "Figures that read as loading skeletons rather
-   than content" was on the founders' list, and this was the clearest instance
-   of it in the deck: a bordered box with two grey bars of decreasing width, at
-   the dead centre of the frame, on a slide the room looks at for eleven
-   seconds. An outlined card with two words in it reads as a card; the bars only
-   ever read as a card that had not finished loading. */
-.fig-cr-inner-label {
+/* The card's contents are the app's `case-timer`, set the way the app sets it:
+   a clock glyph and the running time on one line, the target in small under it.
+   Two states of this card have been wrong before, in the same place and for the
+   same reason — it is at the dead centre of a frame the room looks at for ten
+   seconds, so whatever is in it is what the slide is *about*. Two grey bars read
+   as a loading skeleton. `this question` read as a caption on a diagram. A
+   clock reading 2:56 against a target of 2:30 reads as a product. */
+.fig-cr-read {
   margin: 0;
-  font-size: var(--fig-label);
-  line-height: 1.25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .34em;
+  font-family: var(--font-pixel);
+  font-size: calc(1.45 * var(--fig-label));
+  font-weight: 600;
+  line-height: 1;
+  /* Over target, and the app says so in colour — `case-timer.over`. Gold
+     rather than red, because the deck spends red on two verdicts and this is
+     not one of them; and because the point of the overrun here is that the
+     student can see it, not that they have failed. */
+  color: var(--gold-dark);
+}
+
+.fig-cr-glyph {
+  width: .82em;
+  height: .82em;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+}
+
+.fig-cr-target {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: calc(.78 * var(--fig-micro));
+  letter-spacing: .08em;
+  text-transform: uppercase;
   text-align: center;
+  line-height: 1.2;
+  color: var(--on-field-dim);
 }
 
 /* ================================================================
@@ -2148,7 +2177,9 @@
   display: flex;
   justify-content: flex-end;
   align-items: baseline;
-  gap: .9em;
+  /* Tight, because the only thing that ever sits in it is the status pill and
+     a pill a whole em from its row is a pill belonging to no row. */
+  gap: .55em;
   min-width: 0;
   transition:
     opacity var(--mo-3) var(--ease-out) var(--fig-delay),
@@ -2171,14 +2202,31 @@
   font-weight: 600;
 }
 
+/* The app's own chip, not two loose words.
+   `evidence forming` is a real string from `dashboard-page.tsx` and the app
+   sets it in a pill — `.n` in `frontend/src/performance.css`: pixel face at
+   nine pixels, uppercase, tracked, inside a hairline round-rect. Set as plain
+   text at the deck's scale it landed on the left of a right-aligned column
+   with a nine-point gap to the label it belonged to, and read as debris — a
+   caption that had come adrift, which is exactly how it was reported.
+
+   A pill cannot come adrift. It is visibly one object attached to one row,
+   and it stays where it is: leading the label rather than trailing it, so
+   that all eleven labels keep the single right edge the wires leave from. */
 .fig-si-tag {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: .18em .6em .22em;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 99px;
   font-style: normal;
   font-family: var(--font-pixel);
-  font-size: var(--fig-micro);
-  letter-spacing: .04em;
+  font-size: calc(.82 * var(--fig-micro));
+  letter-spacing: .1em;
+  text-transform: uppercase;
   white-space: nowrap;
   color: var(--on-field-dim);
-  opacity: .72;
+  background: color-mix(in srgb, currentColor 6%, transparent);
   transition: opacity var(--mo-3) var(--ease-out);
 }
 

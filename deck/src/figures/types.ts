@@ -326,7 +326,16 @@ export type ClockRingsFigure = {
   used: number
   /** 0..1 target pace, drawn as a ghost ring behind. */
   target: number
-  innerLabel: string
+  /**
+   * The app's own `case-timer`, at the middle of the dial: what the clock reads
+   * and what it is running against. Both are quoted from the product —
+   * `case-flow.tsx` sets the elapsed time over `target {…}` — and the two must
+   * agree with `used` and `target` above, because the ring is the same reading
+   * drawn round. 150 seconds is the shipped Logical Reasoning target; see
+   * `_target_time_seconds` in `backend/app/services.py`.
+   */
+  innerTime: string
+  innerTarget: string
   /** The outer ring, deliberately left unfinished at this fraction. */
   outer: number
   outerLabel: string

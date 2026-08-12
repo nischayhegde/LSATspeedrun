@@ -1061,7 +1061,12 @@ export const SLIDES: readonly SlideSpec[] = [
       kind: 'clock-rings',
       used: 0.82,
       target: 0.7,
-      innerLabel: 'this question',
+      // The app's own clock, over target. 150s is the shipped Logical Reasoning
+      // target (`_target_time_seconds`, `backend/app/services.py`) and 2:56 is
+      // the elapsed time that puts the used arc where `used` and `target` put
+      // it: 150 × 0.82 / 0.7 = 176s. Move one of the four and move all four.
+      innerTime: '2:56',
+      innerTarget: '2:30',
       outer: 0.38,
       outerLabel: 'a full form — always available, never required',
     },
