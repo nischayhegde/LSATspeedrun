@@ -103,7 +103,7 @@ export function useStopwatch(active: boolean, reduced: boolean, frozenAt: number
  * the only one. Almost every figure here is drawn in a unit-square viewBox and
  * therefore never needs to know how big it is; the exception is a shape that
  * must stay *undistorted* while filling a box whose aspect ratio is set by the
- * projector — slide 11's full-form ring runs around a 1674×430 band and its
+ * projector — `pov-real-clock`'s full-form ring runs around a 1674×430 band and its
  * corners have to be round on every stage, which a stretched viewBox cannot do
  * and a square one cannot fill.
  *
@@ -134,6 +134,155 @@ export function useBoxSize<T extends Element>(): [RefObject<T | null>, { w: numb
   }, [])
 
   return [ref, box]
+}
+
+/**
+ * The guarantee that a figure never loses its last line to the stage's clip.
+ *
+ * ## The defect this exists to remove
+ *
+ * `.figure-stage` is the middle track of a three-row grid — `auto minmax(0,1fr)
+ * auto` — and it sets `overflow: hidden`, deliberately, so that a figure sized
+ * to its frame cannot paint over the credit and the progress rail beneath it.
+ * Every figure is then written to a height that is a hand-summed stack of
+ * measures: a bar height, four gaps, two line-heights, a padding. Nothing
+ * connects that sum to the track it has to fit inside, so the two agree only
+ * because somebody measured them agreeing once.
+ *
+ * They stop agreeing for reasons that have nothing to do with the figure. The
+ * track is whatever is left after the headline and the standfirst have wrapped,
+ * so one extra word in a standfirst, one more line in a credit, or a projector
+ * whose aspect ratio wraps a headline differently takes forty pixels out of the
+ * stage — and the figure does not find out. It draws at its full height and the
+ * clip removes the bottom of it, which on `cohort-split` was the string
+ * `LSAC's words, not ours`: cut through the descenders, and the one annotation
+ * on that slide whose whole job is to be readable when the claim is challenged.
+ * That is the founder's screenshot, and it had been "fixed" three times by
+ * taking a few pixels off a gap. `cohort-split.css` still carries the log of it.
+ *
+ * ## What this does instead
+ *
+ * It measures. The figure's real content bounds are compared with the stage's
+ * box, and if the content is taller or wider the whole figure is scaled down by
+ * the ratio, once, about its own centre. Type, rules and gaps all lose the same
+ * few percent, the hierarchy is untouched, and *nothing leaves the frame*. A
+ * figure that fits is not touched at all, so the deck at 16:9 is pixel-identical
+ * to what it was.
+ *
+ * Shrinking is the right failure mode here and reflowing is not: these are
+ * compositions, not documents. A figure that re-wrapped into the space it was
+ * given would be a different drawing on every projector.
+ *
+ * ## How the measurement stays honest
+ *
+ * - An element that clips its own overflow bounds its subtree, so the walk
+ *   takes that element's box and stops. Otherwise `method-lab`'s filter sweep —
+ *   deliberately wider than the pane that clips it — would shrink the figure to
+ *   accommodate something no one can see.
+ * - `clip-path` marks the deck's screen-reader-only text, which is meant to be
+ *   invisible and is skipped whole.
+ * - Bounds are divided by the scale already applied, so the measurement is of
+ *   the figure's natural size and the result is a fixed point rather than a
+ *   feedback loop.
+ * - `INK` is the allowance for the difference between a text node's border box
+ *   and the ink inside it: a descender sits a pixel or two below the line box,
+ *   and this measurement is of boxes.
+ */
+const INK = 8
+
+/** Never shrink past this: below it, fix the slide rather than the scale. */
+const FLOOR = 0.62
+
+export function useFitScale<T extends HTMLElement>(active: boolean, reduced: boolean): [RefObject<T | null>, number] {
+  const ref = useRef<T>(null)
+  const [scale, setScale] = useState(1)
+  const applied = useRef(1)
+  applied.current = scale
+
+  useEffect(() => {
+    const node = ref.current
+    const stage = node?.parentElement
+    if (!node || !stage) return
+
+    const measure = () => {
+      const limit = stage.getBoundingClientRect()
+      if (limit.width < 1 || limit.height < 1) return
+      const bounds = contentBounds(node)
+      if (!bounds) return
+      const current = applied.current || 1
+      const needed = { w: bounds.w / current, h: bounds.h / current }
+      if (needed.w < 1 || needed.h < 1) return
+      // Most of the set is written to fill its stage exactly, so `needed` and
+      // the stage agree to the pixel and there is nothing to correct. The guard
+      // only engages on a figure that genuinely wants more room than it has;
+      // `INK` is then spent buying the descenders clearance, which is the
+      // difference between the box this measures and the glyphs it paints.
+      const overflow = Math.max(needed.h - limit.height, needed.w - limit.width)
+      const next = overflow <= 0.5
+        ? 1
+        : Math.min(
+          1,
+          (limit.height - INK * 2) / needed.h,
+          (limit.width - INK * 2) / needed.w,
+        )
+      const rounded = Math.max(FLOOR, Math.floor(next * 500) / 500)
+      // A dead band, so a fractional layout change during a stage tween cannot
+      // put this into a commit loop on a live slide.
+      setScale((prev) => (Math.abs(prev - rounded) < 0.006 ? prev : rounded))
+    }
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(stage)
+
+    // The figures animate in over as much as three and a half seconds, and a
+    // measurement taken mid-entrance is a measurement of a composition that is
+    // not the one the room ends up reading. These are the beats after which
+    // something in the set has finished arriving.
+    const timers = (reduced ? [80] : [80, 700, 1600, 2600, 3800])
+      .map((ms) => window.setTimeout(measure, ms))
+
+    return () => {
+      observer.disconnect()
+      for (const timer of timers) window.clearTimeout(timer)
+    }
+  }, [active, reduced])
+
+  return [ref, scale]
+}
+
+/** Union of everything a figure actually paints, in screen pixels. */
+function contentBounds(root: HTMLElement): { w: number; h: number } | null {
+  let top = Infinity
+  let left = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+
+  const visit = (element: Element) => {
+    for (const child of element.children) {
+      const style = getComputedStyle(child)
+      if (style.display === 'none' || style.visibility === 'hidden') continue
+      // The deck's idiom for copy that is spoken but not shown.
+      if (style.clipPath !== 'none') continue
+
+      const rect = child.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        if (rect.top < top) top = rect.top
+        if (rect.left < left) left = rect.left
+        if (rect.bottom > bottom) bottom = rect.bottom
+        if (rect.right > right) right = rect.right
+      }
+
+      // A clipper is the boundary of its own subtree: what is inside it is
+      // already bounded, and what escapes it is already invisible.
+      if (style.overflowX !== 'visible' || style.overflowY !== 'visible') continue
+      visit(child)
+    }
+  }
+  visit(root)
+
+  if (!Number.isFinite(top) || !Number.isFinite(left)) return null
+  return { w: right - left, h: bottom - top }
 }
 
 /** `M:SS.cc`, the speedrun convention, zero-padded so the readout never reflows. */
@@ -167,7 +316,7 @@ export function pct(value: number): string {
  * The radial figures draw into a `viewBox="0 0 100 100"` with
  * `preserveAspectRatio="none"`, which turns every circle into an ellipse that
  * fills the frame. That is deliberate: a true circle on a 21:9 slide wastes both
- * sides, and the twelve labels of slide 15 need every millimetre. Strokes are
+ * sides, and the twelve labels of `dashboard-everything` need every millimetre. Strokes are
  * kept honest with `vector-effect="non-scaling-stroke"`, and anything that must
  * stay round — a node dot — is a DOM element positioned in percentages rather
  * than an SVG shape.
@@ -209,7 +358,7 @@ export function ringPoint(degrees: number, radiusX: number, radiusY: number): { 
  * right for them.
  *
  * This handles a full reveal only. A stroke that stops part-way — the rings on
- * slide 11 — needs its true length, and computes it from its own radius in a
+ * `pov-real-clock` — needs its true length, and computes it from its own radius in a
  * square viewBox where that number means something.
  */
 export const DRAW = 400
@@ -224,8 +373,8 @@ export const DRAW = 400
  * row — and a stroke width in user units is multiplied by *both*, unevenly.
  * The visible consequences were not subtle: slide 5's route drew as a tapering
  * wedge (thin where it ran horizontally, three times thicker down the
- * diagonal), slide 9's guardrailed trace drew as a 25-pixel lozenge with round
- * caps the size of the plot, and slide 22's forward arrow as a 54-pixel bar.
+ * diagonal), `pov-ai-never-answers`'s guardrailed trace drew as a 25-pixel lozenge with round
+ * caps the size of the plot, and `game-never-gates`'s forward arrow as a 54-pixel bar.
  * Each had been re-tuned by eye after the non-scaling stroke came off, which
  * fixes one aspect ratio and no other.
  *

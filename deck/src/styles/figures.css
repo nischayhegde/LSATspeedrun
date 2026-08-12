@@ -1,9 +1,15 @@
 /* ================================================================
    FIGURES — the bespoke slide graphics
    ================================================================
-   Twelve figures, all inline SVG and CSS, all transparent. `theme.css`
+   Thirteen figures, all inline SVG and CSS, all transparent. `theme.css`
    owns the palette and the motion; this file owns nothing but layout,
    type scale and choreography.
+
+   Sections run in deck order and are titled by figure kind. They used to
+   be numbered by slide position as well, and the numbering was four
+   slides stale by the time anyone read it — inserting one slide in Act
+   II renumbers everything after it and no tool notices. The kind is what
+   the class names are built from and it does not move.
 
    THREE RULES, AND THEY ARE THE WHOLE FILE
 
@@ -138,7 +144,7 @@
 }
 
 /* ================================================================
-   2 · bar-pair — 0.22 against 2.77
+   bar-pair — 0.22 against 2.77
    ================================================================ */
 
 .fig-bar-pair {
@@ -324,7 +330,7 @@
 }
 
 /* ================================================================
-   3 · hours-bar — the hours, the attributions, the bill
+   hours-bar — the hours, the attributions, the bill
    ================================================================ */
 
 .fig-hours-bar {
@@ -524,10 +530,20 @@
   transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
 }
 
+/* The clip is here for the ribbon, which enters on `translateX(-102%)` and has
+   to be hidden until it arrives. It also clips vertically, which nothing here
+   needs — the line under it enters from *above*, on `translateY(-.4em)` — and
+   that is the one clip in the figure layer that `useFitScale` cannot see,
+   because the guard measures a figure against its stage and this box is inside
+   both. `+ $124 / year to LSAC` was resting six tenths of a pixel above the
+   clip edge, which is not a bug today and is precisely the arrangement that
+   produced the clipped credit line on `pov-volume-is-the-constraint` the first
+   time. A quarter of an em of floor costs nothing and closes it. */
 .fig-hb-bill {
   display: flex;
   flex-direction: column;
   gap: .55em;
+  padding-bottom: .25em;
   overflow: hidden;
 }
 
@@ -564,8 +580,20 @@
 }
 
 /* ================================================================
-   5 · route — the speedrun route
-   ================================================================ */
+   route — the first question, on a named clock
+   ================================================================
+   Rebuilt with the figure. The old block styled a route line, four
+   nodes on two lanes and a corner HUD; the geometry it supported drew
+   the slide's own subject at the far right of the frame, on an axis
+   nothing named. See `route.tsx` for what that cost and what replaced
+   it. What survives by name is `.fig-rt-ring`, inside a
+   `[data-taken='true']` marker, because `transitions.ts` grows it into
+   slide 6's question card and that file is not ours to re-aim.
+
+   Rules and ticks are DOM here rather than SVG strokes, and the reason
+   is the dash: an SVG stroke reveals by spending its dash pattern, so a
+   rail cannot be both dashed and drawn on. A rule with `scaleX` from
+   its left edge draws on and keeps its dashes. */
 
 .fig-rt {
   position: relative;
@@ -573,147 +601,126 @@
   height: 100%;
 }
 
-.fig-rt-hud {
+/* Both lanes. Dashed, because a lane is a path a student is walked along
+   rather than a measurement — the dimension line below is the only solid
+   horizontal in the figure, and it has to stay the only one or the two
+   read as the same kind of object.
+
+   Our lane gets a rail of its own for one reason: two marks at different
+   heights with a rule under only one of them are two drawings, and the
+   claim needs them to be two positions on one axis. Same dash, same
+   weight, same start and end. */
+.fig-rt-rail {
   position: absolute;
-  left: 0;
-  bottom: 0;
-  display: flex;
-  align-items: stretch;
-  gap: .8em;
-  padding: .35em .8em .35em 0;
-  border: 1px solid var(--on-field-dim);
-  font-family: var(--font-pixel);
-  transition: opacity var(--mo-2) var(--ease-out);
+  height: 0;
+  border-top: 1px dashed var(--on-field-dim);
+  transform-origin: left center;
+  transition: transform 520ms var(--ease-out);
 }
 
-/* THE TRACK.
-   The narrative's transition into this slide rotates slide 4's extruded
-   `0.22` edge-on until it is a single vertical line, and says that line
-   *becomes* the progress track of this timer. So the timer has a track, on
-   the leading edge of the HUD, at the width the numeral's extrusion collapses
-   to — and `numeral-morph` in `transitions.ts` lands the numeral exactly on
-   this element's box. It fills as the run proceeds.
-
-   It is deliberately the only vertical rule in the figure: a track the eye
-   cannot find is a target the transition cannot hit. */
-.fig-rt-hud-track {
-  position: relative;
-  flex: none;
-  width: .42em;
-  margin-right: .2em;
-  align-self: stretch;
-  background: color-mix(in srgb, var(--on-field) 18%, transparent);
-  overflow: hidden;
-}
-
-.fig-rt-hud-track::after {
-  content: '';
+/* Lane names sit above the left end of their own rail, which is the one
+   band on each lane that nothing else can occupy: the stages are spaced
+   from the first division onward and our marker hangs below its dot. */
+.fig-rt-lane-name {
   position: absolute;
-  inset: auto 0 0 0;
-  height: var(--rt-progress, 0%);
-  background: currentColor;
-  transition: height 900ms var(--ease-out);
-}
-
-.fig-rt-hud-label {
+  margin: 0;
+  transform: translateY(-2.4em);
   font-size: var(--fig-micro);
   letter-spacing: .1em;
   text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+/* Further off its lane than the course name is off its own, because the
+   marker under it carries the ring the next slide's transition grows
+   out of, and the ring is three quarters of an em wider than the dot on
+   every side. */
+.fig-rt-lane-name[data-ours='true'] {
+  transform: translateY(-3.4em);
+  color: var(--on-field);
+  font-weight: 600;
+}
+
+/* A stage is a plate and a name, not a dot and a strike. The old drawing
+   greyed the three of them out and ruled a line through each, which
+   photographs as an error state; an outlined plate on a dimmed lane says
+   the same thing — these exist, and they are not where we start —
+   without looking like something failed to load. The bar across the
+   plate is the one mark that makes it read as a lesson rather than as an
+   empty box. */
+.fig-rt-stage {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .6em;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+
+.fig-rt-stage-plate {
+  width: 2.8em;
+  height: 1.9em;
+  border: 1px solid currentColor;
+  background: linear-gradient(
+    to bottom,
+    transparent 0 32%,
+    currentColor 32% 40%,
+    transparent 40% 62%,
+    currentColor 62% 70%,
+    transparent 70% 100%
+  );
+  opacity: .75;
+}
+
+.fig-rt-stage-label {
+  font-size: var(--fig-label);
+  white-space: nowrap;
+}
+
+/* Both question markers, and they are deliberately the same object at
+   the same size on both lanes. If ours were bigger the picture would be
+   about emphasis; identical, the only difference between them is where
+   they sit, which is the claim. */
+.fig-rt-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .8em;
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.fig-rt-node[data-lane='course'] {
   color: var(--on-field-dim);
 }
 
-.fig-rt-hud-clock {
-  font-size: var(--fig-lead);
-  font-variant-numeric: tabular-nums;
-  /* The readout changes 25 times a second; a proportional monospace would
-     still reflow on the `1` glyph without this. */
-  font-feature-settings: 'tnum' 1;
-}
-
-.fig-rt-wires {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-/* Widths are screen pixels, because the stroke is non-scaling — see `DRAW_PX`
-   in `kit.tsx`. At the old user-unit widths the vertical scale of the
-   stretched viewBox turned 4.5 into a 24-pixel bar on the horizontals and
-   something half again as thick down the diagonal, which is the tapering
-   wedge this figure used to draw instead of a route. */
-.fig-rt-lead,
-.fig-rt-cut {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.5;
-  stroke-dasharray: 4000;
-  transition: stroke-dashoffset 300ms linear;
-}
-
-.fig-rt-cut {
-  stroke-width: 4;
-  stroke-linejoin: miter;
-  transition: stroke-dashoffset 420ms var(--ease-out);
-}
-
-/* THE LABEL SITS ABOVE ITS DOT, AND HAS TO.
-   The route is a line through these dots — horizontal into the first one,
-   diagonal away from it, horizontal again into the last — so the band
-   immediately *below* a dot is exactly where the line is. With the labels
-   under the dots, `intro course` was struck through by the route itself and
-   `first real question` sat on its own horizontal, which read as two crossed
-   marks rather than as a node and its name. Above the dot, the only thing in
-   that band is beige. */
-.fig-rt-node {
-  position: absolute;
-  display: flex;
-  flex-direction: column-reverse;
-  align-items: center;
-  gap: .7em;
-  /* The *dot* goes on the lane, not the box. With the label stacked above it
-     the two are no longer the same point, and centring the box put the dot
-     half a label below the route it is supposed to be a node on — which on the
-     destination, where the route runs horizontally through it, read as a line
-     passing under a circle rather than through it. `--fig-dot` is half the dot,
-     which is what brings its centre back up onto the lane. */
-  --fig-dot: .5em;
-  transform: translate(-50%, calc(-100% + var(--fig-dot))) scale(var(--fig-scale, 1));
-  transform-origin: bottom center;
-  transition:
-    opacity var(--mo-3) var(--ease-out) var(--fig-delay),
-    transform var(--mo-3) var(--ease-out) var(--fig-delay);
-}
-
-/* Struck, not shrunk to nothing. At .66 the three skipped nodes rendered at
-   about ten pixels on a 1080 frame, which is under the size the back of a room
-   can resolve — and a node the room cannot read is a node that was deleted,
-   which is the opposite of the point. The route has to visibly *decline* three
-   things that are still there. */
-.fig-rt-node[data-struck='true'] {
-  --fig-scale: .86;
+/* Ranged from its own left edge, because it sits on the origin and a
+   centred stack would hang half of itself off the frame. Hung from the
+   dot rather than centred on the stack, too: the dot is what the lane
+   and the dimension tick are aligned to, and centring a three-element
+   stack on the lane pushes the dot up into the lane's own name. */
+.fig-rt-node[data-lane='ours'] {
+  align-items: flex-start;
+  transform: translate(-.75em, -.75em);
 }
 
 .fig-rt-dot {
   position: relative;
-  width: 1em;
-  height: 1em;
-  border-radius: 50%;
+  width: 1.5em;
+  height: 1.5em;
+  border: 2px solid currentColor;
   background: currentColor;
 }
 
-.fig-rt-node[data-taken='true'] {
-  --fig-dot: .75em;
-  /* The destination's name is set at display scale and the route runs straight
-     through the dot underneath it, so this one label needs more air than the
-     three it is being contrasted with. */
-  gap: 1.1em;
-}
-
-.fig-rt-node[data-taken='true'] .fig-rt-dot {
-  width: 1.5em;
-  height: 1.5em;
+/* Hollow, so the course lane's question reads as a place on the axis
+   rather than as a second answer. */
+.fig-rt-node[data-lane='course'] .fig-rt-dot {
+  background: none;
 }
 
 .fig-rt-node[data-arrived='true'] .fig-rt-dot {
@@ -725,61 +732,117 @@
   to { transform: scale(1); }
 }
 
-/* The destination's ring, which slide 5's transition out grows into the
-   question card of slide 6. */
+/* The ring slide 5's transition out grows into slide 6's question card. */
 .fig-rt-ring {
   position: absolute;
   inset: -.75em;
   border: 2px solid currentColor;
-  border-radius: 3px;
   transition: opacity var(--mo-3) var(--ease-out);
 }
 
 .fig-rt-node-label {
   font-size: var(--fig-label);
-  text-align: center;
   white-space: nowrap;
-  transition: color var(--mo-3) var(--ease-out);
 }
 
-.fig-rt-node[data-skipped='true'] .fig-rt-node-label {
-  color: var(--on-field-dim);
-}
-
-.fig-rt-node[data-struck='true'] .fig-rt-node-label {
-  text-decoration-line: line-through;
-  text-decoration-thickness: 1px;
-}
-
-.fig-rt-node[data-taken='true'] .fig-rt-node-label {
+.fig-rt-node[data-lane='ours'] .fig-rt-node-label {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: var(--fig-lead);
+  line-height: 1;
 }
 
-/* Beside the dot, not above it: above is where the label went. To the right
-   is the only side that is free of both the label and the route, and it puts
-   the tick where a speedrun HUD would put it — next to the thing it is
-   ticking off. */
-.fig-rt-tick {
+/* The run of reps. Square and filled like the node it follows, at .62em
+   against its 1.5em, which is the ratio at which the eye reads them as
+   the same object repeated rather than as a different kind of tick — a
+   circle, or a rule, would have been a new symbol to decode and the run
+   has no label to decode it with.
+
+   Nothing under them. Every mark on this figure that carries text is a
+   thing the slide names; these are the one thing it does not, and the
+   silence is what keeps a lane of twenty-two marks from being the
+   fourth block of copy on a slide whose complaint was clutter. */
+.fig-rt-rep {
   position: absolute;
-  bottom: -.1em;
-  left: calc(50% + .95em);
-  width: 1.15em;
-  height: 1.15em;
+  width: .62em;
+  height: .62em;
+  transform: translate(-50%, -50%);
+  background: var(--on-field);
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
 }
 
-.fig-rt-tick path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-dasharray: 400;
-  transition: stroke-dashoffset 200ms linear var(--fig-delay);
+.fig-rt-clock {
+  display: flex;
+  align-items: stretch;
+  gap: .7em;
+  font-family: var(--font-pixel);
+}
+
+/* THE TRACK. The transition into this slide rotates slide 4's extruded
+   `0.22` edge-on until it is a single vertical line, and that line
+   *becomes* this. It is the only vertical rule in the figure, because a
+   track the eye cannot find is a target the transition cannot hit. */
+.fig-rt-clock-track {
+  flex: none;
+  width: .42em;
+  background: currentColor;
+}
+
+.fig-rt-clock-name {
+  align-self: center;
+  font-size: var(--fig-micro);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+}
+
+.fig-rt-clock-read {
+  font-size: var(--fig-strong);
+  font-variant-numeric: tabular-nums;
+  /* The readout changes 25 times a second; a proportional numeral would
+     reflow the line under it on every tick. */
+  font-feature-settings: 'tnum' 1;
+}
+
+.fig-rt-dim {
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-rt-dim-tick {
+  position: absolute;
+  width: 0;
+  height: 1.4em;
+  transform: translateY(-50%);
+  border-left: 1px solid var(--on-field-dim);
+  opacity: .7;
+}
+
+.fig-rt-dim-span {
+  position: absolute;
+  height: 0;
+  border-top: 1px solid var(--on-field-dim);
+  transform-origin: left center;
+  transition: transform 620ms var(--ease-out);
+}
+
+/* The axis label, centred under the span it names. This is the string
+   the old figure did not have, and its absence is the whole of what made
+   that drawing abstract: without it a line across a frame is a line, and
+   with it the same line is a duration. */
+.fig-rt-axis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  text-align: center;
+  font-size: var(--fig-label);
+  letter-spacing: .06em;
+  color: var(--on-field-dim);
 }
 
 /* ================================================================
-   6 · reasoning-card — the emphasis moves onto the reasoning
+   reasoning-card — the emphasis moves onto the reasoning
    ================================================================ */
 
 .fig-rc {
@@ -1038,7 +1101,140 @@
 }
 
 /* ================================================================
-   7 · confidence-tiles — four results, four problems
+   market-ledger — the field, in its own words
+   ================================================================
+   New with the slide, and the one figure in this folder that is mostly
+   type. That is deliberate. Every cell in the first column is a
+   competitor's own marketing copy and the whole persuasive weight of
+   the slide is that the room can check it, so the drawing's job is to
+   get out of the way and let six lines be read.
+
+   Which is also why there is no grid: no cell borders, no zebra rows,
+   no ticks and no crosses. A ruled table reads as a scorecard, a
+   scorecard reads as a claim about who is better, and a claim about who
+   is better is the thing `NARRATIVE.md` §D was right to be afraid of.
+   Three columns held by a grid template and separated by space alone,
+   with exactly one rule on the slide — the one above our row. */
+
+.fig-mk {
+  /* The ledger's own step, and everything below is `em` against it, so
+     the whole table grows or shrinks from one number. It is set above
+     `--fig-label` because this figure is nothing but type and had a
+     third of the stage spare at both projector sizes; a table with room
+     to be bigger and set small is a table nobody reads from row four
+     back. `useFitScale` still owns the ceiling. */
+  --mk: calc(1.72 * var(--u));
+  font-size: var(--mk);
+
+  width: 100%;
+  display: grid;
+  /* All three columns shrink to their own content and the block centres,
+     rather than the quotes taking every spare pixel and pushing the last
+     column against the right margin. The eye has to cross from a quote
+     to its verdict five times; the width of that crossing is the cost of
+     the slide. */
+  grid-template-columns: auto auto auto;
+  justify-content: center;
+  column-gap: 2.6em;
+  align-items: baseline;
+  text-align: left;
+}
+
+.fig-mk-head {
+  grid-row: 1;
+  margin: 0 0 .55em;
+  padding-bottom: .4em;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  font-family: var(--font-pixel);
+  font-size: .64em;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+/* The first head spans the name and quote columns, so the ledger reads
+   as two questions asked of six products rather than three unrelated
+   lists. The names need no head — they are obviously names. */
+.fig-mk-head[data-col='claim'] { grid-column: 1 / 3; }
+.fig-mk-head[data-col='grades'] { grid-column: 3; }
+
+/* A row is a grid item that is itself a subgrid, so all six rows share
+   one set of column edges. Without it each row measures its own name
+   and the second column ragged-edges down the slide, which on a figure
+   whose entire point is that one column repeats is the worst possible
+   place to lose an alignment. */
+.fig-mk-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  padding: .4em 0;
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-mk-name {
+  margin: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+}
+
+.fig-mk-claim {
+  margin: 0;
+  line-height: 1.25;
+  color: var(--on-field);
+}
+
+/* The column that repeats. Set in the pixel face rather than the body
+   face, which is what makes five identical phrases read as five
+   identical *values* — the same trick a table of figures uses — instead
+   of as five sentences that happen to match. */
+.fig-mk-grades {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: .78em;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+/* The only rule on the slide, and it draws rather than fades. */
+.fig-mk-rule {
+  grid-column: 1 / -1;
+  height: 0;
+  margin: .55em 0 .5em;
+  border-top: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  transform-origin: left center;
+  transition: transform 480ms var(--ease-out);
+}
+
+/* Our row, at the weight the difference deserves and no more. The name
+   comes up to full colour and the second cell takes the display face —
+   those two changes are the entire visual claim, and anything louder
+   (a fill, a box, a colour) would turn a ledger back into a
+   scorecard. */
+.fig-mk-row[data-ours='true'] .fig-mk-name {
+  color: var(--on-field);
+  font-weight: 600;
+}
+
+.fig-mk-row[data-ours='true'] .fig-mk-claim {
+  color: var(--on-field);
+}
+
+.fig-mk-row[data-ours='true'] .fig-mk-grades {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.16em;
+  letter-spacing: -.01em;
+  text-transform: none;
+  color: var(--on-field);
+}
+
+/* ================================================================
+   confidence-tiles — four results, four problems
    ================================================================ */
 
 .fig-confidence-tiles {
@@ -1302,7 +1498,7 @@
 }
 
 /* ================================================================
-   9 · traces — the AI misdirection chart
+   traces — the AI misdirection chart
    ================================================================ */
 
 .fig-tr {
@@ -1421,44 +1617,214 @@
 }
 
 /* ================================================================
-   10 · method-lab — the catalogue, the one handed over, the verdict
-   ================================================================ */
+   method-lab — the app's own tip card, and the app's own record
+   ================================================================
+   Rebuilt with the figure, and the block it replaces was three
+   columns wide: a fourteen-name catalogue, a method pane and a
+   verdict pane, plus a filter sweep across the first of them. The
+   founder's note was clutter and no animation, and the column count
+   was most of the first half of that.
 
-/* Three panes across a band that is 1674 by 430 at 1920 — very wide and not at
-   all tall. That shape is the whole reason this is columns rather than a card
-   with things stacked under it: the previous arrangement put the trigger, the
-   name, three steps and two bars in one column, came to 508px, and lost its
-   last 78px inside `.figure-stage`, which clips. The bottom bar and the note
-   under it were simply not on the slide.
-   
-   Left to right the panes are catalogue, method, verdict, which is the sentence
-   the slide is making: here is everything we have, here is the one this
-   question handed over, here is whether it worked.
+   Two objects now, on the same 1674 by 430 band. Both are lifts of
+   real product surfaces — `.strategy-tip` from the case flow and the
+   `.strategy-comparison` tiles from the dashboard — because the slide
+   argues about something the app does and the app has already drawn
+   it. Nothing here invents a visual language for the mechanism.
 
-   `text-align: left` because the slide body is centred and three columns of
-   centred ragged text is the look of a page that has no grid. */
+   The grid is `card / wire / record`. The wire is a track rather than
+   a gap so that the rule between the two objects has somewhere
+   definite to be at every width, and so the two panes cannot drift
+   into each other at 1366. */
+
 .fig-ml {
   position: relative;
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-columns: 31fr 37fr 25fr;
-  column-gap: 3.2em;
-  align-items: start;
+  grid-template-columns: 46fr 7fr 47fr;
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  column-gap: 0;
   text-align: left;
-  overflow: hidden;
 }
 
-/* One heading treatment for all three panes, because three panes that label
-   themselves three different ways are three objects rather than one figure.
-   The rule under each runs the full width of its column, which is what makes
-   the columns read as columns without a single vertical line on the slide. */
-.fig-ml-pane-head {
+/* ---- the moment of need ---------------------------------------------- */
+
+/* One line across the whole band, above both objects. It was the card's
+   column only, which is 46% of 1674 and not enough for the app's trigger
+   list: the line wrapped to two, took 110px of a 470px band, and pushed
+   the card's own buttons off the bottom of the stage. Full width it sets
+   in one line at both viewports, and reading as a caption over the pair
+   is also truer — the trigger is the condition the whole mechanism runs
+   under, not a property of the card.
+
+   The app's trigger list, verbatim; the chip in front of it is all that
+   is left of the fourteen-name catalogue. */
+.fig-ml-trigger {
+  grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: .8em;
-  margin: 0 0 .8em;
+  flex-wrap: wrap;
+  gap: .9em;
+  margin: 0 0 1.1em;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  line-height: 1.4;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.fig-ml-chip {
+  flex: none;
+  padding: .25em .7em;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---- the card the app hands you -------------------------------------- */
+
+/* A real bordered card, because the product's is one and because the
+   thing being claimed is that this arrives *inside* something else. The
+   left rule is heavier than the other three: that is how `.strategy-tip`
+   is drawn in the app, and it is the detail that makes the shape
+   recognisable when the same card turns up in the live demo. */
+.fig-ml-tip {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: center;
+  padding: 1em 1.3em 1.1em;
+  border: 1px solid color-mix(in srgb, var(--on-field) 26%, transparent);
+  border-left: 3px solid var(--on-field);
+  background: color-mix(in srgb, var(--on-field) 4%, transparent);
+  transition:
+    opacity var(--mo-3) var(--ease-out),
+    border-color var(--mo-2) var(--ease-out),
+    background-color var(--mo-2) var(--ease-out);
+}
+
+/* The card firms up when the student takes it. A colour change and
+   nothing else — a card that moves on being pressed would pull the eye
+   back left at the exact moment the wire is taking it right. */
+.fig-ml-tip[data-taken='true'] {
+  border-color: color-mix(in srgb, var(--on-field) 52%, transparent);
+  background: color-mix(in srgb, var(--on-field) 8%, transparent);
+}
+
+.fig-ml-tip-head {
+  margin: 0 0 .5em;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+}
+
+.fig-ml-tip-name {
+  margin: 0 0 .7em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fig-lead);
+  line-height: 1.05;
+  letter-spacing: -.015em;
+  color: var(--on-field);
+}
+
+/* Numbered by the counter rather than by written digits, so the numerals
+   hang outside the text column and the three steps align on one edge. */
+.fig-ml-tip-steps {
+  margin: 0 0 .9em;
+  padding: 0;
+  list-style: none;
+  counter-reset: fig-ml-step;
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+}
+
+.fig-ml-tip-steps li {
+  counter-increment: fig-ml-step;
+  display: grid;
+  grid-template-columns: 1.5em 1fr;
+  align-items: baseline;
+  font-size: var(--fig-strong);
+  line-height: 1.28;
+  color: var(--on-field);
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-ml-tip-steps li::before {
+  content: counter(fig-ml-step);
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  color: var(--on-field-dim);
+}
+
+.fig-ml-tip-actions {
+  display: flex;
+  align-items: stretch;
+  gap: .7em;
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.fig-ml-tip-btn {
+  padding: .4em 1em;
+  border: 1px solid color-mix(in srgb, var(--on-field) 40%, transparent);
+  font-size: var(--fig-label);
+  line-height: 1.2;
+  color: var(--on-field-dim);
+  transition:
+    background-color var(--mo-2) var(--ease-out),
+    color var(--mo-2) var(--ease-out),
+    border-color var(--mo-2) var(--ease-out);
+}
+
+/* Filled, not outlined, and it is the only filled control on the slide.
+   The press is the event the whole right-hand pane is downstream of. */
+.fig-ml-tip-btn[data-pressed='true'] {
+  border-color: var(--on-field);
+  background: var(--on-field);
+  color: var(--field);
+  font-weight: 600;
+}
+
+.fig-ml-tip-btn[data-role='refuse'] {
+  border-color: color-mix(in srgb, var(--on-field) 22%, transparent);
+  color: color-mix(in srgb, var(--on-field) 55%, transparent);
+}
+
+/* ---- the wire between them ------------------------------------------- */
+
+/* One hairline across the middle column, drawn left to right after the
+   press. Solid, because everything else horizontal on this slide is a
+   bar in a track; a dash here would read as a third kind of measurement.
+   No arrowhead — the direction is carried by the draw. */
+.fig-ml-wire {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  height: 0;
+  border-top: 1px solid color-mix(in srgb, var(--on-field) 45%, transparent);
+  transform-origin: left center;
+  transition: transform 420ms var(--ease-out);
+}
+
+/* ---- the record ------------------------------------------------------ */
+
+.fig-ml-record {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2em;
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.fig-ml-record-head {
+  margin: 0;
   padding-bottom: .45em;
   border-bottom: 1px solid color-mix(in srgb, currentColor 24%, transparent);
   font-family: var(--font-pixel);
@@ -1468,187 +1834,61 @@
   color: var(--on-field-dim);
 }
 
-.fig-ml-pane-head b {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-lead);
-  letter-spacing: 0;
-  line-height: 1;
-  color: var(--on-field);
-}
-
-/* ---- the catalogue --------------------------------------------------- */
-
-.fig-ml-catalog {
-  position: relative;
-  overflow: hidden;
-}
-
-/* Column-major, so the names read top to bottom in catalogue order rather than
-   zig-zagging across two columns. `grid-auto-flow: column` against an explicit
-   row count is what makes that a property of the layout rather than a
-   re-sorted array. */
-.fig-ml-catalog-list {
-  display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(var(--fig-rows), auto);
-  grid-auto-columns: 1fr;
-  column-gap: 1.1em;
-  row-gap: .3em;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.fig-ml-method {
-  font-size: var(--fig-note);
-  line-height: 1.3;
-  color: var(--on-field-dim);
-  transition:
-    opacity 200ms var(--ease-out) var(--fig-delay),
-    color 260ms var(--ease-out);
-}
-
-/* Thirteen go quiet; they do not leave. A catalogue that empties itself is a
-   catalogue the audience can no longer count, and the honest claim is that the
-   other thirteen are still in rotation — they lost this question, not their
-   place in the app. */
-.fig-ml[data-swept='true'] .fig-ml-method[data-kept='false'] {
-  color: color-mix(in srgb, currentColor 42%, transparent);
-}
-
-.fig-ml[data-swept='true'] .fig-ml-method[data-kept='true'] {
-  color: var(--on-field);
-  font-weight: 600;
-}
-
-/* The filter. Inside the catalogue pane, which is where it belongs — the
-   catalogue is the thing being filtered — and mounted only for the phase it
-   crosses, so that at rest it contributes nothing to the pane's scroll box.
-   See the note in `method-lab.tsx`. */
-.fig-ml-sweep {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -16%;
-  width: 22%;
-  opacity: .34;
-  background: linear-gradient(90deg, transparent, currentColor, transparent);
-  pointer-events: none;
-  animation: fig-ml-sweep 190ms linear both;
-}
-
-@keyframes fig-ml-sweep {
-  from { transform: translateX(0); }
-  to { transform: translateX(600%); }
-}
-
-/* ---- the one that was handed over ------------------------------------ */
-
-.fig-ml-handed {
-  transition: opacity 260ms var(--ease-out);
-}
-
-/* Why the method fired, above the method. This is the slide's "at the moment
-   you need it", and it is the app's own trigger list for `prephrase` rather
-   than a description of one. */
-.fig-ml-trigger {
-  margin: 0 0 .5em;
-  font-family: var(--font-pixel);
-  font-size: var(--fig-note);
-  line-height: 1.4;
-  letter-spacing: .01em;
-  color: var(--on-field-dim);
-}
-
-.fig-ml-name {
-  margin: 0 0 .6em;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-lead);
-  line-height: 1.05;
-  letter-spacing: -.015em;
-  color: var(--on-field);
-}
-
-/* The three steps, numbered by the counter rather than by written digits, so
-   the numerals stay out of the text column and the steps hang under each
-   other. */
-.fig-ml-steps {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: fig-ml-step;
+.fig-ml-arm {
   display: flex;
   flex-direction: column;
-  gap: .45em;
+  gap: .15em;
 }
 
-.fig-ml-steps li {
-  counter-increment: fig-ml-step;
-  display: grid;
-  grid-template-columns: 1.5em 1fr;
-  align-items: baseline;
-  font-size: var(--fig-strong);
-  line-height: 1.28;
-  color: var(--on-field);
-  transition: opacity 220ms var(--ease-out) var(--fig-delay);
-}
-
-.fig-ml-steps li::before {
-  content: counter(fig-ml-step);
-  font-family: var(--font-pixel);
-  font-size: var(--fig-note);
-  color: var(--on-field-dim);
-}
-
-/* ---- and whether it worked ------------------------------------------- */
-
-/* Its own pane, not a footnote under the method. This is the evidence for the
-   slide's competitive claim — "nobody else measures whether it worked" — and
-   under the steps it was a pair of bars in the gutter. */
-.fig-ml-lift {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1em;
-  transition: opacity 220ms var(--ease-out);
-}
-
-.fig-ml-lift-row {
-  display: flex;
-  flex-direction: column;
-  gap: .1em;
-}
-
-/* The numeral and its bar on one line, the bar taking whatever the numeral
-   leaves. Baseline-aligned rather than centred, so the bar sits on the
-   numeral's own baseline and the two read as one measurement. */
-.fig-ml-lift-head {
-  display: flex;
-  align-items: baseline;
-  gap: .55em;
-  margin: 0;
-}
-
-/* At display scale. These two numbers are the evidence for the last fragment's
-   claim; set as a pixel-font caption they were a footnote to a diagram of a
-   filter, which inverts the slide's priorities. */
-.fig-ml-lift-value {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-num);
-  line-height: 1;
-  color: var(--on-field);
-}
-
-.fig-ml-lift-name {
+.fig-ml-arm-name {
   margin: 0;
   font-size: var(--fig-label);
   line-height: 1.25;
   color: var(--on-field-dim);
 }
 
-.fig-ml-lift-track {
+/* The count and its bar on one line, baseline-aligned, the bar taking
+   whatever the count leaves. */
+.fig-ml-arm-read {
+  display: flex;
+  align-items: baseline;
+  gap: .7em;
+  margin: 0;
+}
+
+/* Display scale. These two are the evidence for the slide's competitive
+   claim and they are allowed to be the largest thing in the figure.
+
+   `of` rather than a solidus, set smaller and lighter so the two
+   numerals stay the figures being compared. A slide reading "13/16" at
+   this size reads as a date before it reads as a proportion. */
+.fig-ml-arm-count {
+  flex: none;
+  /* The two counts are different widths — "13 of 16" against "4 of 7" —
+     and without a floor under them the two tracks begin at different x
+     and end at the same one. That is not a cosmetic problem: the arms
+     are then drawn on different scales, so 81% of a short track came out
+     *shorter* than it should be against 57% of a long one, and the
+     figure understated its own comparison. One width, both tracks
+     aligned at both ends, and the bars are finally to scale. */
+  min-width: 3.4em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fig-num);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--on-field);
+}
+
+.fig-ml-arm-count i {
+  font-family: var(--font-body);
+  font-style: normal;
+  font-weight: 400;
+  font-size: .42em;
+  color: var(--on-field-dim);
+}
+
+.fig-ml-arm-track {
   display: block;
   flex: 1;
   min-width: 0;
@@ -1656,30 +1896,22 @@
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
 }
 
-.fig-ml-lift-run {
+.fig-ml-arm-run {
   display: block;
   height: 100%;
   background: currentColor;
-  transition: width 300ms var(--ease-out) var(--fig-delay);
+  transition: width 520ms var(--ease-out);
 }
 
-/* The control, at half weight. `--on-field-dim` is a hairline colour and over a
-   solid bar it read as an empty track — which put the comparison's second
-   number on screen with nothing to compare against. */
-.fig-ml-lift-row[data-role='baseline'] .fig-ml-lift-run {
-  background: color-mix(in srgb, currentColor 40%, transparent);
-}
-
-.fig-ml-lift-note {
-  margin: .2em 0 0;
-  font-family: var(--font-pixel);
-  font-size: var(--fig-note);
-  line-height: 1.3;
-  color: var(--on-field-dim);
+/* The control arm at part weight. `--on-field-dim` is a hairline colour
+   and over a solid bar it reads as an empty track, which would put the
+   comparison's second number on screen with nothing under it. */
+.fig-ml-arm[data-role='without'] .fig-ml-arm-run {
+  background: color-mix(in srgb, currentColor 38%, transparent);
 }
 
 /* ================================================================
-   11 · clock-rings — one completes, one is left open
+   clock-rings — one completes, one is left open
    ================================================================ */
 
 .fig-cr {
@@ -1869,24 +2101,53 @@
   box-shadow: inset 0 0 0 2px currentColor;
 }
 
-/* The label is the whole of the card's contents now.
-   It used to sit under two grey bars at 84% and 56% width, standing in for the
-   text of a question — which is, exactly and unfortunately, how every loading
-   skeleton on the web is drawn. "Figures that read as loading skeletons rather
-   than content" was on the founders' list, and this was the clearest instance
-   of it in the deck: a bordered box with two grey bars of decreasing width, at
-   the dead centre of the frame, on a slide the room looks at for eleven
-   seconds. An outlined card with two words in it reads as a card; the bars only
-   ever read as a card that had not finished loading. */
-.fig-cr-inner-label {
+/* The card's contents are the app's `case-timer`, set the way the app sets it:
+   a clock glyph and the running time on one line, the target in small under it.
+   Two states of this card have been wrong before, in the same place and for the
+   same reason — it is at the dead centre of a frame the room looks at for ten
+   seconds, so whatever is in it is what the slide is *about*. Two grey bars read
+   as a loading skeleton. `this question` read as a caption on a diagram. A
+   clock reading 2:56 against a target of 2:30 reads as a product. */
+.fig-cr-read {
   margin: 0;
-  font-size: var(--fig-label);
-  line-height: 1.25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .34em;
+  font-family: var(--font-pixel);
+  font-size: calc(1.45 * var(--fig-label));
+  font-weight: 600;
+  line-height: 1;
+  /* Over target, and the app says so in colour — `case-timer.over`. Gold
+     rather than red, because the deck spends red on two verdicts and this is
+     not one of them; and because the point of the overrun here is that the
+     student can see it, not that they have failed. */
+  color: var(--gold-dark);
+}
+
+.fig-cr-glyph {
+  width: .82em;
+  height: .82em;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+}
+
+.fig-cr-target {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: calc(.78 * var(--fig-micro));
+  letter-spacing: .08em;
+  text-transform: uppercase;
   text-align: center;
+  line-height: 1.2;
+  color: var(--on-field-dim);
 }
 
 /* ================================================================
-   15 · signal-index — eleven signals, read into one number
+   signal-index — eleven signals, read into one number
    ================================================================ */
 
 /* The whole figure is one coordinate space: the rows are a grid inside it, the
@@ -1926,7 +2187,9 @@
   display: flex;
   justify-content: flex-end;
   align-items: baseline;
-  gap: .9em;
+  /* Tight, because the only thing that ever sits in it is the status pill and
+     a pill a whole em from its row is a pill belonging to no row. */
+  gap: .55em;
   min-width: 0;
   transition:
     opacity var(--mo-3) var(--ease-out) var(--fig-delay),
@@ -1949,14 +2212,31 @@
   font-weight: 600;
 }
 
+/* The app's own chip, not two loose words.
+   `evidence forming` is a real string from `dashboard-page.tsx` and the app
+   sets it in a pill — `.n` in `frontend/src/performance.css`: pixel face at
+   nine pixels, uppercase, tracked, inside a hairline round-rect. Set as plain
+   text at the deck's scale it landed on the left of a right-aligned column
+   with a nine-point gap to the label it belonged to, and read as debris — a
+   caption that had come adrift, which is exactly how it was reported.
+
+   A pill cannot come adrift. It is visibly one object attached to one row,
+   and it stays where it is: leading the label rather than trailing it, so
+   that all eleven labels keep the single right edge the wires leave from. */
 .fig-si-tag {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: .18em .6em .22em;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 99px;
   font-style: normal;
   font-family: var(--font-pixel);
-  font-size: var(--fig-micro);
-  letter-spacing: .04em;
+  font-size: calc(.82 * var(--fig-micro));
+  letter-spacing: .1em;
+  text-transform: uppercase;
   white-space: nowrap;
   color: var(--on-field-dim);
-  opacity: .72;
+  background: color-mix(in srgb, currentColor 6%, transparent);
   transition: opacity var(--mo-3) var(--ease-out);
 }
 
@@ -2019,7 +2299,7 @@
 }
 
 /* ================================================================
-   16 · spokes — points against badges
+   spokes — points against badges
    ================================================================ */
 
 .fig-sp {
@@ -2147,7 +2427,7 @@
 }
 
 /* ================================================================
-   17 · paired-bars — Clark's four splits
+   paired-bars — Clark's four splits
    ================================================================ */
 
 .fig-paired-bars {
@@ -2269,8 +2549,15 @@
 .fig-pb-legs span {
   flex: 1;
   min-width: 0;
-  height: 2.5em;
-  overflow: hidden;
+  /* Two lines of the pixel face, plus the difference between a line box and
+     the ink inside it. At a flat `height: 2.5em` with `overflow: hidden` the
+     box was shorter than the glyphs it held and the clip took two pixels off
+     the top of every one of these eight labels — the same defect as the
+     credit line on `pov-volume-is-the-constraint`, three orders of magnitude smaller and on eight
+     labels at once. `min-height` keeps the pairs aligned; the clip is gone,
+     so a label that ever runs to three lines is ugly rather than beheaded. */
+  min-height: 2.5em;
+  padding-block: .12em;
   text-align: center;
   font-family: var(--font-pixel);
   font-size: var(--fig-micro);
@@ -2300,247 +2587,200 @@
 }
 
 /* ================================================================
-   22 · gate — one direction only
-   ================================================================ */
+   gate — the app's own unlock list
+   ================================================================
+   Drawn as the wardrobe screen draws it: a padlock, the thing, and
+   the sentence that says what it costs. Three columns, no cell
+   borders, one rule — the same restraint `market-ledger` runs on,
+   and for the same reason. The persuasion is in the right-hand
+   column reading the same way four times and then differently once,
+   and a ruled grid would give the eye something else to do.
+
+   The one departure from the ledger is the lock well. It is a fixed
+   column of empty space on every row including the last, because a
+   missing padlock is only legible where a padlock was expected — cut
+   the well from the open row and the row is merely shorter. */
 
 .fig-gate {
-  align-items: stretch;
+  align-items: center;
 }
 
 .fig-gt {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-5);
+  /* One step for the whole list, everything below in `em` against it,
+     as `market-ledger` does. This figure is type and one icon, and it
+     had the stage to be read from the back of the room. */
+  --gt: calc(1.85 * var(--u));
+  font-size: var(--gt);
+
   width: 100%;
-  height: 100%;
-}
-
-/* Three fifths to the diagram, two to the couplings.
-   The frame used to take every pixel the couplings did not need, and the
-   couplings needed very few — so the slide was a wide empty band with two
-   arrows in it and three hairlines huddled underneath. The couplings are the
-   concrete half of this argument (the diagram states the rule; these are the
-   three places it bites) and they are entitled to a share of the frame rather
-   than to the remainder. */
-.fig-gt-frame {
-  position: relative;
-  flex: 0 1 58%;
-  min-height: 0;
-}
-
-/* The lane between the two words is set at 21–79 in `gate.tsx`, so a column is
-   allowed a fifth of the frame and no more. At a quarter the arrows had to be
-   pulled back to 27 to clear a word that never actually reached that far, and
-   the picture was two short arrows marooned in the middle of a wide slide. */
-.fig-gt-col {
-  position: absolute;
-  top: 50%;
-  max-width: 19%;
-  margin: 0;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-num);
-  line-height: 1.05;
-  transition: opacity var(--mo-4) var(--ease-out);
-}
-
-.fig-gt-col[data-side='left'] {
-  left: 0;
-  transform: translateY(-50%);
-}
-
-.fig-gt-col[data-side='right'] {
-  right: 0;
-  transform: translateY(-50%);
-  text-align: right;
-}
-
-.fig-gt-arrows {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* Screen pixels on a non-scaling stroke — see `DRAW_PX` in `kit.tsx`. The
-   forward arrow is meant to be thick; at 10 user units through the stretched
-   viewBox it was a 54-pixel bar, which is not thick, it is a rectangle. */
-.fig-gt-shaft {
-  fill: none;
-  stroke-linecap: butt;
-  stroke-dasharray: 4000;
-}
-
-.fig-gt-shaft[data-dir='forward'] {
-  stroke: currentColor;
-  stroke-width: 16;
-  transition: stroke-dashoffset 620ms var(--ease-out);
-}
-
-.fig-gt-shaft[data-dir='reverse'] {
-  stroke: var(--on-field-dim);
-  stroke-width: 5;
-  transition: stroke-dashoffset 520ms var(--ease-in-out), opacity var(--mo-3) var(--ease-out);
-}
-
-/* Faint, because it is the coupling that does not exist — but not so faint
-   that the cross above has nothing under it. At .38 the shaft was very nearly
-   the least visible thing on the slide and the strike had no visible object. */
-.fig-gt-shaft[data-denied='true'] {
-  opacity: .5;
-}
-
-/* Two beats, then it holds. A coupling that keeps throbbing behind a speaker
-   is a coupling nobody stops looking at.
-   The pulse is a weight change rather than a scale, because the arrow's ends
-   are anchored to two columns of type and must not move off them — and because
-   a scale about a stretched viewBox's centre displaces a horizontal line
-   vertically. */
-.fig-gt-shaft[data-pulse='true'] {
-  animation: fig-gt-pulse 640ms var(--ease-in-out) 2 both;
-}
-
-@keyframes fig-gt-pulse {
-  0%, 100% { stroke-width: 10; }
-  50% { stroke-width: 15; }
-}
-
-.fig-gt-chevron[data-pulse='true'] {
-  animation: fig-gt-chevron-pulse 640ms var(--ease-in-out) 2 both;
-}
-
-@keyframes fig-gt-chevron-pulse {
-  0%, 100% { border-top-width: .62em; border-right-width: .62em; }
-  50% { border-top-width: .92em; border-right-width: .92em; }
-}
-
-.fig-gt-chevron {
-  position: absolute;
-  width: 1.5em;
-  height: 1.5em;
-  transition: opacity var(--mo-2) var(--ease-out) 560ms;
-}
-
-/* The offsets put the chevron's *corner* on the end of the shaft rather than the
-   centre of its bounding square. Rotating a square by 45° moves that corner
-   0.707 of the box width from the centre, so the translate is half the box plus
-   that, in whichever direction the arrow points. */
-.fig-gt-chevron[data-dir='forward'] {
-  border-top: .62em solid currentColor;
-  border-right: .62em solid currentColor;
-  transform: translate(-120.7%, -50%) rotate(45deg);
-}
-
-.fig-gt-chevron[data-dir='reverse'] {
-  width: 1.05em;
-  height: 1.05em;
-  border-top: .24em solid var(--on-field-dim);
-  border-right: .24em solid var(--on-field-dim);
-  transform: translate(20.7%, -50%) rotate(225deg);
-}
-
-/* The refusal: two strokes crossed on the reverse arrow, each drawn in 140ms
-   with no easing worth the name. A strike-through that eases looks like a
-   flourish; this one is a refusal. Drawn in `--on-field`, because verdict red
-   is spent on slides 6 and 7 and this is not one of them, and `clip-path`
-   rather than a scale so each arm grows from the end a pen would start at
-   instead of unfolding from its middle.
-
-   Sized against the shaft it crosses rather than against the frame — at 4.4u
-   the mark stood ten times the height of a 5px stroke and floated clear above
-   it — but no longer *only* against it: one arm of this size over a thin arrow
-   already at 38% opacity was read, correctly, as a stray solidus rather than
-   as anything cancelling anything. Two arms are a cross, and a cross is
-   legible as a cancellation from the back of a room. */
-.fig-gt-strike {
-  position: absolute;
-  width: calc(2.7 * var(--u));
-  height: 4px;
-  background: currentColor;
-  clip-path: inset(0 100% 0 0);
-  transition: clip-path 140ms linear var(--fig-delay, 0ms);
-}
-
-.fig-gt-strike[data-arm='down'] { transform: translate(-50%, -50%) rotate(-56deg); }
-.fig-gt-strike[data-arm='up'] { transform: translate(-50%, -50%) rotate(56deg); }
-
-.fig-gt-strike[data-struck='true'] { clip-path: inset(0 0 0 0); }
-
-.fig-gt-denied {
-  position: absolute;
-  left: 50%;
-  top: 79%;
-  transform: translateX(-50%);
-  margin: 0;
-  max-width: 46%;
-  text-align: center;
-  font-size: var(--fig-label);
-  line-height: 1.25;
-  color: var(--on-field-dim);
-  /* No line through it. The slash above is the refusal; striking the caption
-     as well says the same thing twice and makes the words harder to read at
-     the one moment the room is trying to read them. */
-  transition: opacity var(--mo-3) var(--ease-out) 220ms;
-}
-
-/* Takes the rest of the frame and centres in it, rather than sitting straight
-   under the diagram and leaving the last fifth of the slide empty. The
-   couplings are the concrete half of the argument — the diagram states the
-   rule, these are the three places it bites — and a block of content with a
-   void under it reads as a slide that stopped early. */
-.fig-gt-couplings {
-  flex: 1 1 auto;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s-3);
-}
-
-/* Each row is a three-column rule of its own at a shared width, so the three
-   arrows stack into one vertical and the causes and effects range off it.
-   Centring each row independently — which is what a flex row does — left the
-   arrows at three different x positions and the whole block read as loose
-   type rather than as a table of consequences. */
-.fig-gt-couplings li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--s-3);
-  width: min(100%, 62ch);
-  font-size: var(--fig-strong);
-  line-height: 1.2;
-  transition:
-    opacity var(--mo-3) var(--ease-out) var(--fig-delay),
-    transform var(--mo-3) var(--ease-out) var(--fig-delay);
-}
-
-/* Cause in the field's full weight, effect recessed: the couplings read left to
-   right, in the same direction as the arrow above them. */
-.fig-gt-cause {
-  font-weight: 600;
-  text-align: right;
-}
-
-.fig-gt-effect {
-  color: var(--on-field-dim);
+  /* Well, name, requirement — all shrink to content, and the block
+     centres. The eye crosses from a name to its price five times, and
+     stretching the middle column to the margins makes that crossing
+     the width of the slide. */
+  grid-template-columns: auto auto auto;
+  justify-content: center;
+  column-gap: 1.9em;
+  align-items: baseline;
   text-align: left;
 }
 
-.fig-gt-thin {
-  flex: 0 0 auto;
-  width: 2.8em;
-  height: .85em;
+/* Over the requirement column only. The names want no head — they are
+   obviously names — and a head over the padlocks would be a caption on
+   an icon. */
+.fig-gt-head {
+  grid-column: 3;
+  margin: 0 0 .5em;
+  padding-bottom: .4em;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  font-family: var(--font-pixel);
+  font-size: .6em;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
 }
 
-.fig-gt-thin path {
+.fig-gt-list {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A row is a subgrid of the figure's own columns so that every row —
+   including the open one, which is not in the list — shares one set of
+   column edges. */
+.fig-gt-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  padding: .42em 0;
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+/* Sized in advance rather than by its contents, so the empty one on the
+   last row holds the column open. `align-self` rather than a baseline,
+   because an SVG has no baseline worth aligning to and the lock has to
+   sit against the cap height of the name beside it. */
+.fig-gt-well {
+  width: 1.15em;
+  height: 1.15em;
+  align-self: center;
+}
+
+.fig-gt-lock {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   fill: none;
   stroke: var(--on-field-dim);
-  stroke-width: 1.4;
-  stroke-linecap: butt;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+}
+
+/* The shackle drops into the body on the row's beat. It is the only
+   motion on the figure, and it exists so that the room watches the
+   column *acquire* four padlocks — which is what makes the gap at the
+   bottom a gap rather than a design choice nobody noticed. */
+.fig-gt-shackle {
+  transform: translateY(-42%);
+  transform-origin: center;
+  opacity: 0;
+  transition:
+    transform 260ms var(--ease-out) var(--fig-delay),
+    opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-gt-lock[data-shut='true'] .fig-gt-shackle {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.fig-gt-body {
+  opacity: 0;
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-gt-lock[data-shut='true'] .fig-gt-body {
+  opacity: 1;
+}
+
+.fig-gt-name {
+  line-height: 1.25;
+  color: var(--on-field);
+}
+
+/* The column that repeats, in the pixel face for the same reason
+   `market-ledger`'s does: it makes four sentences read as four *values*
+   in one currency instead of as four sentences that happen to rhyme.
+   Which is the whole argument, so it is worth the family switch. */
+.fig-gt-requires {
+  font-family: var(--font-pixel);
+  font-size: .76em;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+/* The only rule on the figure, and it draws rather than fades. */
+.fig-gt-rule {
+  grid-column: 1 / -1;
+  height: 0;
+  margin: .5em 0 .45em;
+  border-top: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  transform-origin: left center;
+  transition: transform 480ms var(--ease-out);
+}
+
+/* The row with nothing in its well. Accent rather than the field's own
+   colour — this section's accent is the app's own `--pixel-gold`, so
+   the line the slide is about is lit in the game's gold while the game's
+   own items sit in beige, which is the inversion said in paint. */
+.fig-gt-row[data-open='true'] .fig-gt-name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.fig-gt-row[data-open='true'] .fig-gt-requires {
+  color: var(--accent);
+}
+
+.fig-gt-quote {
+  grid-column: 1 / -1;
+  /* Held down to what the list can spare. At 1.5em the figure measured a
+     pixel over its stage at 1920x1080 and `useFitScale` shrank the whole
+     thing by 3% to buy that pixel back — a scale nobody sees and everybody
+     pays for. */
+  margin: 1.15em 0 0;
+  text-align: center;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+/* Set as a quotation and credited, because it is one: the sentence is
+   the wardrobe screen's, not the deck's, and a line of product copy
+   passed off as a claim we wrote is the kind of thing this deck has
+   been pulled up for before. */
+.fig-gt-quote q {
+  display: block;
+  font-size: .86em;
+  font-style: italic;
+  line-height: 1.3;
+  color: var(--on-field);
+}
+
+.fig-gt-quote small {
+  display: block;
+  margin-top: .45em;
+  font-family: var(--font-pixel);
+  font-size: .56em;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
 }
 
 /* ================================================================

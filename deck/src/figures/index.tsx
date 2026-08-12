@@ -1,6 +1,7 @@
 import type { ReactElement, ReactNode } from 'react'
 
 import type { FigureProps, FigureSpec } from './types'
+import { useFitScale } from './kit'
 import { BarPair } from './bar-pair'
 import { ClockRings } from './clock-rings'
 import { CohortSplit } from './cohort-split'
@@ -8,6 +9,7 @@ import { ConfidenceTiles } from './confidence-tiles'
 import { CurrencyLift } from './currency-lift'
 import { Gate } from './gate'
 import { HoursBar } from './hours-bar'
+import { MarketLedger } from './market-ledger'
 import { MethodLab } from './method-lab'
 import { Numeral } from './numeral'
 import { PairedBars } from './paired-bars'
@@ -25,7 +27,7 @@ export type { FigureSpec } from './types'
  *
  * The whole set is inline SVG and CSS. Not for purity: eight of these sit over a
  * live `WebGLRenderer` and three of them sit beside a live app iframe, and
- * `NARRATIVE.md` names the constraint out loud on slide 15 — "no WebGL, which
+ * `NARRATIVE.md` names the constraint out loud on `dashboard-everything` — "no WebGL, which
  * protects the frame rate right after a live demo". A figure that cost a
  * millisecond a frame would be paid for by the thing it is annotating.
  *
@@ -41,11 +43,21 @@ export type { FigureSpec } from './types'
  * the warning outline on the flagged tile in `confidence-tiles`.
  */
 export function Figure({ spec, active, reduced }: FigureProps): ReactElement | null {
+  // The fit guard. `.figure-stage` clips, every figure's height is a sum of
+  // hand-set measures, and nothing else in the deck connects the two — see
+  // `useFitScale` for the failure that produced this and why the answer is a
+  // scale rather than a reflow. A figure that fits is untouched; `data-fit` is
+  // on the element so `scripts/measure-clipping.mjs` can report which figures
+  // are riding the guard rather than sitting inside their stage honestly.
+  const [ref, fit] = useFitScale<HTMLDivElement>(active, reduced)
   return (
     <div
+      ref={ref}
       className={`fig fig-${spec.kind}`}
       data-in={active ? 'true' : 'false'}
       data-reduced={reduced ? 'true' : 'false'}
+      data-fit={fit < 1 ? fit.toFixed(3) : undefined}
+      style={fit < 1 ? { transform: `scale(${fit})` } : undefined}
     >
       {body(spec, active, reduced)}
     </div>
@@ -66,6 +78,8 @@ function body(spec: FigureSpec, active: boolean, reduced: boolean): ReactNode {
       return <BarPair spec={spec} active={active} reduced={reduced} />
     case 'hours-bar':
       return <HoursBar spec={spec} active={active} reduced={reduced} />
+    case 'market-ledger':
+      return <MarketLedger spec={spec} active={active} reduced={reduced} />
     case 'route':
       return <Route spec={spec} active={active} reduced={reduced} />
     case 'reasoning-card':

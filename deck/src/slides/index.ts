@@ -53,7 +53,7 @@ import type { SlideSpec } from './types'
  *  because the compliance step was nowhere in it, so this revision adds ONE
  *  slide and rewires three.
  *
- *      + `pov-volume-is-the-constraint`  NEW, slide 8, between the confidence POV
+ *      + `pov-volume-is-the-constraint`  NEW, then slide 8 and now 9, between the POV
  *                               and the concept. LSAC's own study of a free prep
  *                               platform: practice moved the score, video did
  *                               not, and 51% never completed one exam. New
@@ -124,6 +124,27 @@ import type { SlideSpec } from './types'
  *  that Revision 8 is the autoplay demo revision, recorded in §C of the
  *  narrative rather than in its header — this is 9.
  *
+ *  Revision 10 is the founders' walkthrough pass. Four complaints, one of them
+ *  a slide that did not exist.
+ *
+ *      + `market-in-their-own-words`  NEW, slide 7, immediately after Spiky POV
+ *                               01. Five named competitors, each in its own
+ *                               quoted words, against the one column none of
+ *                               them meets. §D of the narrative argued against
+ *                               a comparison slide; this is built to answer its
+ *                               four objections rather than to overrule them,
+ *                               and §4.10 of `CITATIONS.md` sources every cell.
+ *                               **10s, and the only change that moves the
+ *                               runtime: the deck is 5:00 across 25 slides.**
+ *      `thesis-speedrun`        the route figure was a falling line past three
+ *                               struck-out labels on an axis nothing named.
+ *                               Rebuilt on a named axis with two lanes.
+ *      `pov-strategy-inside…`   seven blocks of text cut to two objects, both
+ *                               of them screens the product actually draws.
+ *      `pov-volume-is-the-c…`   the clipped credit line. Fixed in the figure
+ *                               layer rather than here — see `useFitScale` in
+ *                               `figures/kit.tsx` — and no copy changed.
+ *
  *  A writer owns exactly these fields per slide:
  *      eyebrow      the small line above the headline
  *      headline     the slide's one claim
@@ -155,7 +176,7 @@ import type { SlideSpec } from './types'
  *  belongs in `notes`, not on the slide.
  *
  *  `budgetSeconds` is taken from the narrative's timing table (§C) and sums to
- *  **4:50** across 24 slides. Seven slides carry a `demo` block with its own hard
+ *  **5:00** across 25 slides. Seven slides carry a `demo` block with its own hard
  *  budget, which is the number the presenter is held to; six of those mount a
  *  live frame and come to **1:22** between them, and the seventh —
  *  `demo-focus-mode` — is `stillOnly` and paints a single frame. Demo overrun is
@@ -356,16 +377,48 @@ export const SLIDES: readonly SlideSpec[] = [
       'Rereading: rated lowest',
     ],
     credit: 'Dunlosky et al. (2013), ten techniques rated',
-    // The route ignores the first three nodes and cuts a hard diagonal to the
-    // fourth. Under two seconds, and it does not loop.
+    // REBUILT. The old figure ran a route left to right past three struck-out
+    // waypoints and landed `first real question` at the FAR RIGHT of the
+    // frame — the slide's own subject drawn at the end of the longest journey
+    // on screen, under a headline that says to skip to it, on a horizontal
+    // axis nothing named. The founder's note was that the slide is too
+    // abstract to understand, and the geometry is why.
+    //
+    // Same four objects, same claim, and the axis is now stated: `time to your
+    // first real question` runs under both lanes, the course path spends the
+    // whole of it, and ours is one marker at zero with a clock on it. The two
+    // question markers are drawn identically so the only difference between
+    // them is position, and a dimension line makes that a measured distance.
+    //
+    // Our lane then fills with a silent run of the same marker to the far end
+    // of the axis — the deck's own "they sell hours, we sell reps", drawn. The
+    // run is a texture and its count lives in `route.tsx`, not here: a number
+    // in this file is a number somebody will be asked to defend, and the deck
+    // does not know how many questions a student gets through in the time a
+    // course spends on its intro. Nothing beside the run is labelled or
+    // totalled, which is also what keeps it from being more copy.
+    //
+    // THE THREE STAGES NAME NO PRODUCT, AND MUST NOT. `CITATIONS.md` §4.2 is
+    // explicit that LSAT Demon is question-first — "no complex diagramming or
+    // hours of lessons... just hit Drill" — so "everyone makes you watch first"
+    // is false and would be caught by anyone in the room who has used it. What
+    // is on the lane is the *course* model, which is a real product category
+    // the deck has already sourced on slide 3 out of the vendors' own pages:
+    // 7Sage's 900 lessons "from the ground up", LSAT Lab's "comprehensive
+    // 3-month courses", PowerScore's 2–3 month syllabus. The honest
+    // comparison, with Demon credited for being question-first, is
+    // `market-in-their-own-words` two slides later.
     figure: {
       kind: 'route',
-      nodes: [
-        { label: 'intro course', skipped: true },
-        { label: 'concept videos', skipped: true },
-        { label: 'drill unlock', skipped: true },
-        { label: 'first real question', skipped: false },
-      ],
+      axisLabel: 'time to your first real question',
+      lanes: {
+        course: {
+          label: 'the course path',
+          stages: ['intro course', 'concept videos', 'drill unlock'],
+          arrival: 'first question',
+        },
+        ours: { label: 'ours', arrival: 'question one' },
+      },
       timerLabel: 'speedrun',
     },
     // ACTIVE-VS-PASSIVE, BEAT 2, and where "strip away the fluff" enters. This
@@ -474,6 +527,113 @@ export const SLIDES: readonly SlideSpec[] = [
     // backdrop, new framing, continuous camera.
     scene: { id: 'none', framing: 'still' },
     transition: 'camera',
+  },
+  {
+    // NEW, and the deck's only competitor comparison. §D of the narrative argued
+    // against a comparison slide and gave four reasons; the founders asked for
+    // one anyway. The four reasons were not wrong, so the slide is built to
+    // answer them rather than to overrule them — see the header of
+    // `figures/market-ledger.tsx`, which takes them one at a time, and §4.10 of
+    // `CITATIONS.md`, which carries every quote below with its URL and the date
+    // it was read.
+    //
+    // WHY IT IS HERE AND NOT IN ACT I. The obvious slot is beside the price
+    // slide, and it is wrong twice over. The room cannot be told "why us" before
+    // it has been told what we are, and the deck deliberately withholds the
+    // product until slide 10 — so in Act I our own row would either be missing,
+    // which is not a comparison, or be the first thing the room ever hears about
+    // us, which spends the turn early. Here, it is the second half of the slide
+    // before it. Slide 6 has just priced the difference between feedback on your
+    // answer and feedback on your steps — 0.31 against 0.76 — and this slide
+    // reads that same axis across five named products. Every competitor sits in
+    // VanLehn's cheap column. That is an inference the room has already made,
+    // which §D says is the only kind of competitive claim worth putting on a
+    // projector.
+    //
+    // WHAT IS NOT ON IT, AND WHY. Price. Slide 3 carries the range and it is
+    // twenty seconds of talk away, so a price column here would be the same
+    // argument twice; per-vendor prices are also the one class of fact in
+    // `CITATIONS.md` §4 that moves weekly and that §4.9 could least often load
+    // directly; and the deck has no price of its own to print (§8), so the
+    // column would end on a blank in the one row that is the punchline. The
+    // presenter carries the numbers in the notes instead and answers in a
+    // sentence if asked.
+    id: 'market-in-their-own-words',
+    section: 'thesis',
+    kind: 'figure',
+    field: 'beige',
+    eyebrow: 'Act II — the field',
+    headline: 'Nobody else reads your reasoning.',
+    // A concession, and it is the whole standfirst. It is the only sentence on
+    // the slide that is not in the figure, the only one that costs us something,
+    // and the reason the room believes the rest: anyone who has used LSAT Demon
+    // knows they are question-first and would spend the next four slides
+    // discounting us if we pretended otherwise. `CITATIONS.md` §4.2.
+    deck: 'LSAT Demon will get you to a question as fast as we will.',
+    // No fragment line. The figure is eleven lines of type already and the
+    // second column is the argument; anything on the ledger line would be read
+    // instead of it.
+    //
+    // EVERY QUOTE IS VERBATIM AND CARRIES ITS QUOTATION MARKS. That is the whole
+    // mechanism of the slide: there is no judgement of a competitor anywhere on
+    // it, so there is nothing for a judge to argue with one row at a time. If a
+    // line here is ever reworded into a paraphrase, the slide stops working and
+    // becomes the scorecard §D was right to refuse. Our own row is unquoted,
+    // which is the marks doing their job — it is the one row that is a claim.
+    //
+    // The order is not a ranking. It runs from the most instruction to the
+    // least, so the first column visibly converges on our own thesis by the
+    // fifth row and the second column has not moved at all. Demon last is the
+    // concession the standfirst just made, drawn.
+    figure: {
+      kind: 'market-ledger',
+      claimHead: 'what it hands you · their words',
+      gradesHead: 'what it grades',
+      rows: [
+        // Four of Kaplan's own pages say 60; one FAQ paragraph says over 150.
+        // The smaller number is quoted on purpose — see §4.10 — and it is the
+        // one cell on the slide that was read from a cached copy rather than
+        // from the live page, because kaptest.com serves a bot wall.
+        { name: 'Kaplan', claim: '“60 hours of live and on demand instruction”', grades: 'the letter you picked' },
+        { name: 'Princeton Review', claim: '“100+ hours of recorded video lessons”', grades: 'the letter you picked' },
+        { name: 'Blueprint', claim: '“61 interactive learning modules and video lessons”', grades: 'the letter you picked' },
+        // Their pricing page's own feature name for the Core plan. Slide 3
+        // already quotes their "900+ video lessons" at the same company, so
+        // this is the other phrase off the same page rather than that one
+        // twice.
+        { name: '7Sage', claim: '“Comprehensive video course”', grades: 'the letter you picked' },
+        { name: 'LSAT Demon', claim: '“Smart Drilling”', grades: 'the letter you picked' },
+      ],
+      // Not a slogan. It is the case screen the room watches Alan use in four
+      // slides' time, described in the fewest words that survive being checked
+      // against it.
+      ours: {
+        name: 'Lawyer Tycoon',
+        claim: 'A question, and a box to explain it in',
+        grades: 'your reasoning',
+      },
+    },
+    credit: 'Each company’s own page, quoted verbatim, read 2026-08-12 · Kaplan from a cached copy of theirs',
+    notes:
+      'Here is the field, in its own words. Videos, classes, modules — and Demon, which drills, and is good. '
+      + 'Every one of them grades the letter you picked.'
+      + ' ⟢ IF CHALLENGED ON A QUOTE — all five are off the company’s own page and were read this month; the URLs are '
+      + 'in the citations file. Kaplan blocks scrapers, so theirs came from a cached copy of their own page, and their '
+      + 'course pages say sixty hours where one FAQ says over a hundred and fifty — we quoted the smaller. '
+      + '⟢ IF PRESSED ON THE SECOND COLUMN — it is a claim about the workflow, not about their code: none of them asks '
+      + 'you to write your reasoning, so there is nothing for them to grade. If LSAT Lab’s AI centre does something '
+      + 'like this, they have not published it. '
+      + '⟢ IF ASKED THE PRICE — Demon ninety-nine a month, 7Sage sixty-nine, Blueprint ninety-nine, Princeton Review '
+      + 'six ninety-nine for self-paced, Kaplan from about nine hundred, every one of them plus a hundred and '
+      + 'twenty-four a year to LSAC. That is slide three, and it is deliberately not a column here — it is the only '
+      + 'number in this market that moves weekly.',
+    speaker: 'Nischay',
+    budgetSeconds: 10,
+    // Nothing behind it and nothing carried into it. The slide is a page of
+    // type that has to be read, and it is the one place in the deck where the
+    // audience is being invited to check something rather than watch it.
+    scene: { id: 'none', framing: 'still' },
+    transition: 'cut',
   },
   {
     id: 'pov-confidence-signal',
@@ -771,7 +931,13 @@ export const SLIDES: readonly SlideSpec[] = [
     field: 'beige',
     eyebrow: 'Act III — Spiky POV 04',
     headline: 'Strategies get taught. They should get tested.',
-    deck: 'One method, handed to you at the moment you need it, kept only if your own data says it works.',
+    // Was: "One method, handed to you at the moment you need it, kept only if
+    // your own data says it works." Eighteen words over two lines, and the
+    // rebuilt figure now draws both halves of it — the card arriving on the
+    // question is the handing over, and the two arms beside it are the own
+    // data. What is left is the bridge between the headline and the picture,
+    // in one line.
+    deck: 'One method per question, and your own record decides if it stays.',
     // Two of the four fragments went when the figure was rebuilt, because the
     // rebuilt figure draws them. `14 in the catalog` is now the catalogue's own
     // heading, set against the fourteen names it counts, which is a better
@@ -788,56 +954,84 @@ export const SLIDES: readonly SlideSpec[] = [
     // inside a question — so "nobody prompts a method" would be false, while
     // "nobody measures whether it worked for this student" is the finding §4
     // actually supports across all seven products.
+    // `One per question` went into the deck line above. What is left is the
+    // deck's second competitive line, which uses the same device as the one on
+    // `pov-reasoning-is-the-work`: a bare sentence, arriving last, naming
+    // nobody.
     points: [
-      'One per question',
       'Nobody else measures whether it worked',
     ],
-    // The fourteen are the app's real catalog keys, in the app's own order.
+    // REBUILT, on the founder's note that this slide was "way too much text and
+    // clutter, not aesthetic, no dynamic animations." It carried nine blocks for
+    // one idea. It now carries the two ends of the mechanism and nothing else,
+    // both lifted from real product surfaces — see `method-lab.tsx`.
+    //
+    // WHAT CAME OFF THE SCREEN. The fourteen catalogue names are a chip reading
+    // `1 of 14 approaches`: nobody reads a list of method names off a
+    // projector, and the only fact in that list is its length.
     // `comparative_matrix` is in the catalog but unreachable today because the
     // dataset never marks comparative passages — say "fourteen in the catalog,
     // thirteen currently in rotation" if anyone presses, and never claim all
-    // fourteen are being trialed. The one handed over is `prephrase`, which is
-    // also the method staged on the live demo case.
+    // fourteen are being trialed.
     //
     // `handed` is `prephrase` as the app defines it in
-    // `backend/app/strategies.py`: the trigger is that strategy's `best_for`
-    // and the three steps are its `steps`, verbatim. They are quoted rather
-    // than written because the figure sets them as the card the student is
-    // handed, and a paraphrase of a real product string on a pitch slide is a
-    // thing somebody can walk into the app and catch.
+    // `backend/app/strategies.py`: `name` is that entry's `title`, `trigger` is
+    // its `best_for`, the three steps are its `steps`, and `take` / `refuse`
+    // are the two button labels in `frontend/src/case-flow.tsx`. All verbatim,
+    // because the figure sets them as the card the student is handed and a
+    // paraphrase of a real product string on a pitch slide is a thing somebody
+    // can walk into the app and catch.
+    //
+    // `trial` REPLACES A PAIR OF NUMBERS THAT WERE NOT MEASUREMENTS. This slide
+    // used to show `71%` with the method against `58%` without it. Neither
+    // figure exists anywhere in this repository as data. They are the worked
+    // example in an internal design document —
+    // `docs/superpowers/specs/2026-07-27-strategy-flow-simplification-design.md`
+    // illustrates the copy format with "You get 71% right with it and 58% right
+    // without it" — and they were read into the deck as findings.
+    //
+    // These are the demo account's real record for `prephrase`, straight off
+    // `STRATEGY_PLAN` in `backend/scripts/seed_demo.py`: 16 prompted attempts,
+    // 13 correct; 7 control attempts, 4 correct. They are counts and not
+    // percentages because the product refuses to print percentages here —
+    // `strategies.py` sets `PERCENTAGE_DISPLAY_MIN_SAMPLE = 30` and falls back
+    // to `13/16` on the grounds that a whole-point percentage at this sample is
+    // fiction. Do not "improve" these into 81% and 57%.
     figure: {
       kind: 'method-lab',
+      catalogSize: 14,
       handed: {
         name: 'Prephrase Before Choices',
-        trigger: 'assumption · inference · strengthen · weaken · point-at-issue',
+        trigger: 'fires on assumption · inference · strengthen · weaken · point-at-issue',
         steps: [
           'Name the question task',
           'Predict the needed effect',
           'Use choices to verify, not invent',
         ],
+        take: 'Use it',
+        refuse: 'Skip this one',
       },
-      methods: [
-        'Argument core',
-        'Prephrase',
-        'Negation test',
-        'Causal audit',
-        'Conditional chain',
-        'Flaw abstraction',
-        'Scope precision',
-        'Role map',
-        'Passage map',
-        'Viewpoint ledger',
-        'Paragraph function',
-        'Textual proof',
-        'Comparative matrix',
-        'Main point synthesis',
-      ],
-      keep: 1,
-      lift: { prompted: 0.71, baseline: 0.58, note: 'this student, prompted vs. their own unprompted attempts' },
+      trial: {
+        with: { label: 'with the method', hit: 13, of: 16 },
+        without: { label: 'their own attempts without it', hit: 4, of: 7 },
+      },
     },
+    // The credit carries what the small print under the old bars carried, and
+    // says the quiet part: these are running counts on one account, not a
+    // result. That is the app's own position — `strategies.py` never writes the
+    // word "confirmed" about a per-student contrast — and stating it is what
+    // makes the slide's competitive claim survive a hostile room.
+    credit: 'One student’s own record in the app · running counts, not a proven effect',
     notes:
       'Everyone sells strategies and leaves you with them. We prompt one method inside the question '
-      + 'and test it against your own unprompted attempts. Nobody else measures whether it worked.',
+      + 'and test it against your own unprompted attempts. Nobody else measures whether it worked.'
+      + ' ⟢ THE NUMBERS ARE COUNTS ON PURPOSE. Thirteen of sixteen with it, four of seven without, on the demo '
+      + 'account. If anyone asks why not a percentage: the product will not print one under thirty attempts an arm, '
+      + 'because at that size a percentage is noise with a decimal point. That refusal is the pitch. '
+      + '⟢ IF PRESSED ON SAMPLE — right, and that is the point of the mechanism rather than of this student: every '
+      + 'prompted question is randomised against a control arm of their own unprompted ones, so the estimate is '
+      + 'thin on day one and gets better every session. This account alone is twelve approaches over 166 measured '
+      + 'questions. Nobody else in the market has the event to attach a measurement to.',
     speaker: 'Alan',
     budgetSeconds: 11,
     scene: { id: 'none', framing: 'drift' },
@@ -867,7 +1061,12 @@ export const SLIDES: readonly SlideSpec[] = [
       kind: 'clock-rings',
       used: 0.82,
       target: 0.7,
-      innerLabel: 'this question',
+      // The app's own clock, over target. 150s is the shipped Logical Reasoning
+      // target (`_target_time_seconds`, `backend/app/services.py`) and 2:56 is
+      // the elapsed time that puts the used arc where `used` and `target` put
+      // it: 150 × 0.82 / 0.7 = 176s. Move one of the four and move all four.
+      innerTime: '2:56',
+      innerTarget: '2:30',
       outer: 0.38,
       outerLabel: 'a full form — always available, never required',
     },
@@ -930,8 +1129,8 @@ export const SLIDES: readonly SlideSpec[] = [
     // performance.
     //
     // The dimmed choices got words because they are the strongest version of
-    // the strategy POV available and the deck was underclaiming them. Slide 11
-    // says the method arrives inside the question; this shows the app REFUSING
+    // the strategy POV available and the deck was underclaiming them.
+    // `pov-strategy-inside-the-question` says the method arrives inside the question; this shows the app REFUSING
     // to show the choices until the method is taken up. Enforced, not suggested.
     notes:
       "Watch this — I'm not touching anything. "
@@ -1435,7 +1634,7 @@ export const SLIDES: readonly SlideSpec[] = [
     speaker: 'Alan',
     budgetSeconds: 9,
     scene: { id: 'none', framing: 'still' },
-    // "Cut straight to slide 19. No animation. The cut is the effect."
+    // "Cut straight to the tier-0 office. No animation. The cut is the effect."
     transition: 'cut',
     demo: {
       route: '/office?officeTier=0',
@@ -1636,24 +1835,42 @@ export const SLIDES: readonly SlideSpec[] = [
     // third statement of the same proposition, in a frame where the figure's
     // struck-out reverse arrow is already a fourth.
     deck: 'The practice gates the game.',
-    // The struck-through reverse arrow is the slide. The three couplings label
-    // the direction that does exist; the denied one is drawn and then crossed
-    // out, hard, once.
+    // The app's own unlock list, quoted. Every `requires` string below is
+    // composed by `_wardrobe_requirement` in `backend/app/game.py` and printed
+    // beside a padlock by `frontend/src/wardrobe.tsx` — they are not deck copy
+    // and must not be rewritten to scan better. The four locked rows are real
+    // items across three of the game's currencies; the open row is the string
+    // the same function returns for anything available on day one, which is
+    // what the practice is and has always been. Nothing in `scheduling.py` or
+    // `services.py` reads `office_tier`, `reputation` or `total_cases`, so the
+    // last row is a fact about the code and not a promise.
+    //
+    // Two liberties, both noted so nobody has to rediscover them: the app files
+    // its cosmetics under category headings, so "Forest green" is printed here
+    // as "Forest green suit" and "Regimental stripe" keeps the name it is
+    // listed under; and the tier requirement keeps its parenthetical, which is
+    // three words of clutter and buys the room the one piece of context — that
+    // this is a headquarters and not another hat — that makes the list read as
+    // the whole game rather than as a wardrobe.
     figure: {
       kind: 'gate',
-      left: 'Practice',
-      right: 'Firm',
-      couplings: [
-        'Cases → cash and story',
-        'Full test → a whole tier',
-        'Focus Mode → the game disappears',
+      head: 'Locked until',
+      locked: [
+        { name: 'Regimental stripe', requires: 'Settle 25 cases' },
+        { name: 'Oxhide briefcase', requires: 'Settle 100 cases' },
+        { name: 'Gold wristwatch', requires: 'Hold 55 reputation' },
+        { name: 'Forest green suit', requires: 'Reach the Downtown Firm (HQ tier 3)' },
       ],
-      denied: 'the firm never unlocks a question',
+      open: { name: 'Every question in the app', requires: 'Available from your first day' },
+      quote: 'Everything here is won by practising, never bought.',
+      quoteCredit: 'the wardrobe screen, in the app',
     },
     notes:
-      'This is structural, not a disclaimer. The game exists to get the reps done, '
-      + 'so the only path through it is the reps. The firm never unlocks a question.'
-      + ' ⟢ IF CHALLENGED — every gamification source we read says the same thing: a complement to good practice, '
+      'Everything the game has is priced in reps. That is the app\'s own screen — its words, not ours. '
+      + 'One row has no lock on it, and it is the practice.'
+      + ' ⟢ IF CHALLENGED — the requirement strings are the shipped ones, from `_wardrobe_requirement`; '
+      + 'nothing in question selection reads tier, reputation or case count, so the last row is a fact about the code. '
+      + 'And every gamification source we read says the same thing: a complement to good practice, '
       + 'never a replacement. A student who never opens the office loses nothing except the office.',
     speaker: 'Alan',
     budgetSeconds: 11,

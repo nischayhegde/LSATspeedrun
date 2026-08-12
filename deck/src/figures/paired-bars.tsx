@@ -2,7 +2,7 @@ import type { PairedBarsFigure } from './types'
 import { pct, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 17 — `paired-bars`. Clark's four splits, ours against the alternative.
+ * `game-by-design` — Clark's four splits, ours against the alternative.
  *
  * The alternatives are negative, and that is the entire visual argument, so the
  * zero line is drawn and the axis extends below it. What the axis does *not* do is

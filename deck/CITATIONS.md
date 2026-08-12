@@ -2,7 +2,9 @@
 
 **Prepared 2026-08-10.** Read this before rehearsing. It covers the 610 SAT claim on `turn-610-reader`, ranked replacements for it, the competitor and study-hour claims on `problem-hours-and-price`, and a full competitor reference for the seven products a questioner may name (§4), including LSAT Demon, Kaplan, PowerScore and Khan Academy.
 
-**§6, §7 and §8 were added when the founders asked whether the deck actually answers two questions: *why gamification* and *why us rather than them*.** §6 is the gamification evidence and, more usefully, its limits. §7 is LSAC's own study of a prep platform — the source behind the new `pov-volume-is-the-constraint` slide and the best citation in the deck. §8 is the register of every sentence the deck says about a competitor while the audience is watching, which is three sentences.
+**§6, §7 and §8 were added when the founders asked whether the deck actually answers two questions: *why gamification* and *why us rather than them*.** §6 is the gamification evidence and, more usefully, its limits. §7 is LSAC's own study of a prep platform — the source behind the new `pov-volume-is-the-constraint` slide and the best citation in the deck. §8 is the register of every sentence the deck says about a competitor while the audience is watching.
+
+**§4.10 was added on 2026-08-12, when the founders asked for the comparison slide this file had recommended against.** It carries `market-in-their-own-words` cell by cell — five companies, five quotations, the page each one came off and the date it was read — plus the argument for why the slide has no price column and what the presenter says instead. Blueprint's, Princeton Review's, 7Sage's and LSAT Demon's own pages were re-read that day in a real browser; Kaplan's still blocks one, and §4.9(11) says so.
 
 Every entry gives the claim, the source, the exact numbers, a URL, and the objection a hostile audience member can raise. §4.9 lists everything in §4 that could not be verified; §7 ends with the one number in the repo's research notes that nobody has read off the primary page, and which is therefore on no slide.
 
@@ -17,10 +19,12 @@ Every entry gives the claim, the source, the exact numbers, a URL, and the objec
 | "200+ hours for a 5–10 point gain" | `problem-200-hours` | **Half-sourced.** Hours are fine; the gain figure needs rewording. |
 | "80+ of those hours are instruction" | `problem-200-hours` | **Not substantiated by competitor materials.** Soften. |
 | "Competitors charge hundreds of dollars monthly" | `problem-200-hours` | **False for the entry tiers. This is the most dangerous line in the deck.** 7Sage starts at $69/mo, LSAT Lab at $65/mo. Fix before you present. |
-| No competitive positioning anywhere in the deck | *(deck-wide)* | **Closed.** LSAT Demon, Kaplan, PowerScore and Khan Academy were absent entirely; Demon's public thesis is the closest to ours. Full reference in §4, spoken answers in §G of `NARRATIVE.md`, and now **three** on-stage lines, registered in §8. |
+| No competitive positioning anywhere in the deck | *(deck-wide)* | **Closed.** LSAT Demon, Kaplan, PowerScore and Khan Academy were absent entirely; Demon's public thesis is the closest to ours. Full reference in §4, spoken answers in §G of `NARRATIVE.md`, and three on-stage lines registered in §8. |
+| No direct comparison to a named competitor | `market-in-their-own-words` | **Closed 2026-08-12, on the founders' instruction.** Five companies by name, each quoted from its own page and nowhere characterised, against the one column none of them meets. Every cell and its URL in **§4.10**; the Kaplan cell is the only one not read live and the credit line says so. |
 | "Virtual currency raised practice 1.4× to 3.7×" | `pov-virtual-currency` | **Directionally right, wrong column.** Those are group totals from unequal groups. Per student it is **1.3× to 3.7×**, published in the same table. Corrected on the slide. §6.1 |
 | Why gamification at all — the causal chain | *(deck-wide)* | **Was missing, now on `pov-volume-is-the-constraint`.** The deck argued the method and then produced a game, with no slide establishing that compliance is the binding constraint. LSAC's own RR 21-01 supplies it. §7 |
 | "Video minutes were not correlated with LSAT scores" | `pov-volume-is-the-constraint` | **Solid, and it is a direct quote from the test maker.** LSAC RR 21-01, read from the primary PDF 2026-08-10. §7 |
+| Figures that print the product's own strings and numbers | `game-never-gates`, `pov-real-clock`, `pov-strategy-inside-the-question` | **Checkable, and checked 2026-08-12.** Three diagrams were replaced by the app's own screens on the founders' abstraction note, which makes each printed string a claim about the product. Every one is listed against the file it came from in **§9**. The one to know: `71%` and `58%` on the strategy slide were never data — they are a worked example from an internal design document — and are now the demo account's real counts. |
 
 ---
 
@@ -243,7 +247,9 @@ The deck's claim that LSAC removed Analytical Reasoning is accurate and worth ke
 
 **Everything in this section was checked on 2026-08-10.** Where a page could not be loaded directly, that is said so in the cell rather than papered over, and every unverifiable item is listed in §4.9.
 
-The deck names only 7Sage and LSAT Lab. This section exists because the three companies most likely to come up in Q&A — **LSAT Demon**, **Kaplan** and **PowerScore** — appear nowhere in it, and because Demon's public thesis is close enough to ours that being caught unprepared on it would be the single most damaging thing that could happen in the question period. See §G of `NARRATIVE.md` for the spoken answers.
+**Updated 2026-08-12:** the deck now names five of these products on one slide — see §4.10, which carries `market-in-their-own-words` cell by cell and re-reads Blueprint's, Princeton Review's, 7Sage's and Demon's own pages on that date. Princeton Review is new to this file and is there.
+
+When this section was written the deck named only 7Sage and LSAT Lab. It exists because the three companies most likely to come up in Q&A — **LSAT Demon**, **Kaplan** and **PowerScore** — appear nowhere in it, and because Demon's public thesis is close enough to ours that being caught unprepared on it would be the single most damaging thing that could happen in the question period. See §G of `NARRATIVE.md` for the spoken answers.
 
 ## 4.1 At a glance
 
@@ -254,12 +260,15 @@ The deck names only 7Sage and LSAT Lab. This section exists because the three co
 | **LSAT Lab** | $0 free / $65/mo Premium | $425/mo (Tutor) | **Yes** — "Adaptive Drill Engine" | **No** — "AI Skills Training Center," contents not published | No | No |
 | **Blueprint** | $99/mo (Starter) | $4,799 (170+ tutoring) | Yes (Pro plan study plan / QBank) | **No** | No | No |
 | **Kaplan** | from $899 (On Demand) | $3,999 (Bootcamp) | Personalized Study Calendar; "interactive hints" | **No** | No | No |
+| **Princeton Review** | $699 (Self-Paced) | $3,549 (Immersion 170+) | None advertised | **No** | No | No |
 | **PowerScore** | $99/mo (On-Demand) | $995 (Live Online) | Performance analytics only | **No** | No | No |
 | **Khan Academy** | Free | Free | — | **No** | No | No |
 
 **Every row above also pays LSAC $124/year for LawHub Advantage.** LSAC's own page is the governing price: "A LawHub account is free, but with LawHub Advantage ($124/year)…" — https://www.lsac.org/lawhub *(accessed 2026-08-10)*. Providers quote it inconsistently at $115, $120 and $124 in their own checkout flows; **use LSAC's $124 and say where it comes from.**
 
 **No product in this field grades a student's written reasoning, captures a confidence rating, or runs a game layer.** That is the finding this section exists to establish, and §4.9 says exactly how confident you may be in it.
+
+**The Princeton Review row is new on 2026-08-12** and its whole source is one page, https://www.princetonreview.com/law/lsat-test-prep, loaded in a real browser: Self-Paced "100+ hours of recorded video lessons" **$799 → $699**; Fundamentals "30 hours of live instruction" $1,249 → **$1,049**; LSAT 170+ "65 hours of live instruction" $2,099 → **$1,799**; Immersion 170+ "130 hours of live instruction" plus "Additional 56 hours of content workshops" $3,999 → **$3,549**; private tutoring **$167/hr**. LawHub is passed through as it is everywhere: "Access 90+ LSAT PrepTests at no additional charge." **Every price on that page is a sale price shown against a higher list price**, so quote the range or the discounted figure with the word "currently" — this is the vendor whose numbers are most likely to have moved by the pitch. Nothing on the page describes anything a student writes, and there is no separate feature index to check, which is a thinner negative than the others in this table and should be said that way if pressed.
 
 ## 4.2 LSAT Demon — read this one twice
 
@@ -302,7 +311,8 @@ The closest competitor by positioning and the one that must not surprise you.
 
 In the deck already, but only as a source for study hours. Worth carrying because it is the field's other subscription-priced course and because the deck borrows its blind-review framing on `demo-mega-litigation`.
 
-- **Pricing** — Self-Paced Starter **$99/mo**, Self-Paced Pro **$149/mo**, Live Course **$1,299**, 170+ Course **$1,999**, tutoring packages from $2,699 to $4,799. Blueprint's own monthly checkout page confirms **"LSAT Self-Paced Pro Plan $149/month"** (https://blueprintprep.com/self-paced-pro-course-monthly, accessed 2026-08-10); the full ladder is from third-party compilations citing https://blueprintprep.com/lsat/online-anytime, which **could not be loaded directly on 2026-08-10** — see §4.9.
+- **Pricing — re-read on the vendor's own page 2026-08-12, and §4.9(4) is discharged.** https://blueprintprep.com/lsat/online-anytime now loads and carries: Self-Paced Starter **$99/mo**, Self-Paced Pro **$149/mo**, Pro prepaid **from $649** for 6 or 12 months (was $894), Live Course **$899** on sale from $1,299 with "30 hours of live instruction," 170+ Course **$1,599** on sale from $1,999 with "60 hours of live instruction," tutoring **from $2,699**. The two live-course figures are sale prices carrying their own strikethroughs, so quote the range rather than the number. Blueprint's own monthly checkout page separately confirms "LSAT Self-Paced Pro Plan $149/month" (https://blueprintprep.com/self-paced-pro-course-monthly, accessed 2026-08-10).
+- **Instruction format** *(online-anytime, 2026-08-12)* — Starter is "**61 interactive learning modules and video lessons**" plus "Qbank with 7,000+ real LSAT exam questions" and "Access all 59 official LawHub exams." Pro adds "Unlimited live review sessions 6x/week with LSAT experts." **This is the quote on `market-in-their-own-words`** — §4.10.
 - **LawHub, in their own words** — "As of August 4, 2020, all LSAT students need an active LawHub Advantage… The cost for this service is **$124/yr** and is required for any student who wants to prep for the LSAT with official LSAT content, **no matter which third-party LSAT prep service you choose**." (https://blog.blueprintprep.com/lsat/what-is-lsat-prep-plus/, page updated 2026-03-20, accessed 2026-08-10.) **This is the best single citation in the whole file for the LawHub claim, because it is a competitor stating the universality of the fee.** Note that Blueprint's own checkout page simultaneously shows $115 and $120 for the same line item, which is a good illustration of why LSAC's number governs.
 - **Reasoning grading / confidence / gamification** — none found.
 
@@ -338,25 +348,72 @@ The brand a non-expert room recognizes, and therefore the mental anchor, even th
 
 ## 4.9 What could NOT be verified — read before asserting any of it
 
-1. **That no competitor grades student-written reasoning.** This is an unverifiable negative. What is established is that none of the seven *advertises* such a feature anywhere on its public pages, and that several advertise the alternative explicitly (pre-written explanations, human Ask replies, ask-the-AI assistants). **LSAT Lab's "AI Skills Training Center" is the specific hole**: it is named on the pricing page and described nowhere. Phrase the claim as "nobody else makes you write your reasoning and grades it," which is a claim about the required step in the workflow, and be ready to say "if LSAT Lab's AI center does something like this, they haven't published it."
+1. **That no competitor grades student-written reasoning.** This is an unverifiable negative. What is established is that none of the eight in §4.1 *advertises* such a feature anywhere on its public pages, and that several advertise the alternative explicitly (pre-written explanations, human Ask replies, ask-the-AI assistants). **LSAT Lab's "AI Skills Training Center" is the specific hole**: it is named on the pricing page and described nowhere. Phrase the claim as "nobody else makes you write your reasoning and grades it," which is a claim about the required step in the workflow, and be ready to say "if LSAT Lab's AI center does something like this, they haven't published it."
 2. **That no competitor has a game or motivation layer.** Same problem, lower risk. None advertises points, currency, levels or streaks. Demon's retention mechanics are community and habit — Discord, daily classes, seven podcast episodes a week — which are not gamification but are a real motivational moat and should not be dismissed.
 3. **Kaplan's exact prices.** kaptest.com served a bot-verification challenge to direct retrieval on 2026-08-10. Figures are from search-index copies of Kaplan's own pages and are mutually consistent, but nobody loaded that page today. **Re-check manually before the pitch if you intend to say a Kaplan number out loud.**
-4. **Blueprint's full price ladder.** Only the $149/mo Self-Paced Pro checkout page loaded directly. The rest is third-party citation of Blueprint's own pricing page.
+4. ~~**Blueprint's full price ladder.**~~ **Discharged 2026-08-12.** https://blueprintprep.com/lsat/online-anytime loaded in a real browser and carries the self-paced ladder and the live-course prices directly — §4.10. The tutoring floor of $2,699 is on the same page. What the 2026-08-10 pass could not load, it can now.
 5. **7Sage annual pricing.** Not offered on their self-paced pricing page today. Two third-party sources give two different annual figures. **§3.4's "both discount roughly 30% for annual" is wrong as written and is corrected in §4.3.**
 6. **Demon's fee-waiver discount.** Two Demon pages give two different numbers (80% vs 50% off Essential). Do not quote one.
 7. **Demon's advertised score guarantee.** A third-party review describes a 165-point guarantee on the Live tier. Nothing on Demon's own site confirms it. **Do not repeat it.**
 8. **PowerScore and Kaplan instruction-hour counts.** Each company's own pages contradict themselves (PowerScore 50+ vs 100+; Kaplan 12 vs 24 asynchronous hours). Quote the live-class structure instead, which is consistent.
 9. **Whether third-party review sites can be cited at all.** Several of the highest-ranking LSAT review sites returned prices that do not appear on any vendor page, including a "$89/month Daily tier" and a "$109/month" figure for LSAT Demon, neither of which exists. **Nothing in this section rests on a review site except where explicitly labelled**, and the labelled ones are flagged above.
 10. **Our own question bank's provenance — settled, and the word "official" is now off the slides.** Internal rather than external, but it belongs on this list because it was the claim most likely to be challenged. The verified facts, from `README.md` and `backend/data/question_bank/manifest.json`: a pinned, checksum-manifested snapshot of **6,886 questions — 4,520 Logical Reasoning from `tasksource/lsat-lr` and 2,366 Reading Comprehension from `tasksource/lsat-rc`**, both Hugging Face datasets of publicly released LSAT material. **Neither upstream dataset card declares a license, and the repo's own README says to confirm dataset terms and LSAT content rights before publication or commercial use.** In this market "official" means LSAC-licensed content delivered through LawHub Advantage at $124/year, so claiming it asserted a license we do not hold *and* invited "then what are you paying LSAC?" on the very slides where §4.1's fee is the attack. `demo-case-answer` now says "real LSAT questions from publicly released exams" and `concept-lawyer-tycoon` says "6,886 LSAT questions"; the §4.1 LawHub line is unchanged, because it remains true that every competitor passes that fee through. The Q&A panel carries the provenance answer under `question-provenance`. **If the founders do hold a content license, or conclude the dataset terms permit commercial use, the stronger wording can come back — verify first.**
+11. **Kaplan's quote on the market slide.** Item 3 above is about Kaplan's prices; this is about the one sentence of theirs that is now on a projector. kaptest.com served a bot wall to a real headless browser on 2026-08-12 as well, so the phrase quoted on `market-in-their-own-words` was read from cached copies of four Kaplan pages rather than from a page loaded in front of me. **It is the only cell on that slide not read live, and the slide's credit line says so out loud.** §4.10 carries the four pages and why the smaller of Kaplan's two self-contradicting figures is the one on screen. Re-check it manually before the pitch.
+
+## 4.10 The market slide — every cell, its page, and the date it was read
+
+`market-in-their-own-words` is the deck's only competitor comparison and the only slide that names five companies at once. Everything on it is a quotation or a price, both of which are checkable in front of the room, and **nothing on it is a judgement of a competitor.** That is the design: see the header of `src/figures/market-ledger.tsx` for how it answers §D of `NARRATIVE.md`, which argued against a comparison slide and was not wrong about why.
+
+**Verification method, 2026-08-12.** Every page below except Kaplan's was loaded in a real headless Chromium, scrolled to the foot and read out of the rendered DOM, because all five vendors ship their pricing and feature copy from JavaScript and a plain fetch returns a cookie banner. Kaplan's is the exception and item 11 of §4.9 says so.
+
+### The first column — what it hands you, in the company's own words
+
+| On screen | Verbatim from | Read |
+| --- | --- | --- |
+| Kaplan — *"60 hours of live and on demand instruction"* | https://www.kaptest.com/lsat — "Only Kaplan courses includes The LSAT Channel, which gives you access to 60 hours of live and on demand instruction covering every subject and question type." The same figure appears on /lsat/courses/lsat-prep-online and /lsat/courses/score-170-lsat as "60 hours of exclusive live and on demand lessons on the LSAT Channel," and on /lsat/courses/lsat-self-study as "60+ hours of expert-led live and on demand video sessions." | 2026-08-12, **cached copies** — §4.9(11) |
+| Princeton Review — *"100+ hours of recorded video lessons"* | https://www.princetonreview.com/law/lsat-test-prep, the Self-Paced card. The same page's live courses read "65 hours of live instruction" (LSAT 170+), "130 hours of live instruction" (Immersion 170+) and "30 hours of live instruction" (Fundamentals). | 2026-08-12, loaded |
+| Blueprint — *"61 interactive learning modules and video lessons"* | https://blueprintprep.com/lsat/online-anytime, first bullet of the Starter plan. **This page could not be loaded on 2026-08-10 and can now** — §4.9(4) is discharged for the self-paced ladder: Starter $99/mo, Pro $149/mo, Pro 6/12-month from $649, Live Course $899 (was $1,299) with "30 hours of live instruction," 170+ Course $1,599 (was $1,999) with "60 hours of live instruction," tutoring from $2,699. | 2026-08-12, loaded |
+| 7Sage — *"Comprehensive video course"* | https://7sage.com/self-study/pricing, a feature line on the Core plan. Their homepage expands it: "900+ bite-sized video lessons cover LSAT logic and strategy from the ground up." **The slide quotes the short form on purpose** — slide 3 already quotes the 900 at the same company, and one company saying the same thing twice in one deck is the founders' "text clutter" complaint in miniature. | 2026-08-12, loaded |
+| LSAT Demon — *"Smart Drilling"* | https://lsatdemon.com/plans/lsat, a feature of the Essential plan alongside "Complete Curriculum," "Every Explanation" and "Ask Button." | 2026-08-12, loaded |
+
+**Why Kaplan's smaller number is the one on screen.** §4.9(8) says not to quote a Kaplan hour count, and that rule is about their *classroom* hours, where their own pages say 12 and 24 for the same asynchronous course and 24 and 32 for the same live one. The LSAT Channel figure is a different case: **four Kaplan pages say 60 and one FAQ paragraph says "over 150."** Both are quotable, they differ in the direction that is worse for Kaplan, and the slide quotes the smaller. If anyone in the room says "it's more than that," the answer is *"your own course pages say sixty; your FAQ says a hundred and fifty; we used yours."* That is a good exchange to have and a bad one to lose by having reached for the big number.
+
+**Why LSAT Lab and PowerScore are not on the slide.** Six rows is what reads in three seconds and the founders named five competitors. LSAT Lab is on slide 3 by name and PowerScore is in §4.7 for Q&A. Neither omission changes the second column: §4.1 has both of them at **No** for reasoning grading.
+
+### The second column — *the letter you picked*, five times
+
+This is the load-bearing cell and it is deliberately a statement about **what the product scores**, not about what it lacks. Every one of the five scores answer choices and publishes analytics on accuracy and timing; none of them has a step in its workflow where the student writes their reasoning, so none of them has anything else to score. That framing is §4.9(1)'s instruction followed exactly: *a claim about the required step in the workflow*, not an assertion about code nobody outside the company has seen.
+
+What each of the five ships **instead** of grading your reasoning, in their own words, is the reason the claim survives contact with someone who has used them:
+
+- **LSAT Demon** — 10,000+ pre-written and video explanations, "Merged Explanations," and the Ask Button, where a human teacher writes you a personal explanation within 24 hours (§4.2). Expert explanation *of the question*.
+- **7Sage** — "Every question explained," plus Sage AI: "ask Sage AI about tricky LSAT questions" (§4.3). An assistant that answers *your* questions.
+- **Blueprint** — "Analytics that highlight where to focus," "A Qbank that gets smarter as you do" (online-anytime, 2026-08-12).
+- **Kaplan** — "interactive hints with instant feedback," "performance assessments with personalized study recommendations using advanced analytics" (§4.6).
+- **Princeton Review** — live instruction and "world-class test-taking strategies" (their own homepage, 2026-08-12).
+
+**The one hole, and the sentence that covers it.** LSAT Lab's "AI Skills Training Center" is named on their pricing page and described nowhere — §4.9(1). LSAT Lab is not a row on this slide, so the hole cannot be pointed at a cell; if it is raised anyway, the answer is in the slide's own notes: *"If LSAT Lab's AI centre does something like this, they have not published it."*
+
+### Why there is no price column, and what the presenter says instead
+
+Three reasons, in the order they matter.
+
+1. **Slide 3 is twenty seconds of talk away** and carries the range — $65–$425 a month, plus $124 a year to LSAC — with the hours it buys. A price column here is the same argument twice, on the slide whose whole job is a different axis.
+2. **Price is the only figure in this market that moves weekly**, and §4.9 items 3 through 7 are all prices: Kaplan's could not be loaded at all, Blueprint's ladder was third-party until this month, 7Sage's annual plan does not exist on their own page, and Demon's own two pages disagree about their fee waiver. A slide that is wrong by the morning of the pitch is worse than a slide that never claimed it.
+3. **There is no Lawyer Tycoon price to print** (§8), so a price column would end on a blank in the one row that is the punchline.
+
+**The prices the presenter carries instead**, all verified 2026-08-12 unless marked: LSAT Demon $99/mo Essential, $179 Live, $499 Pro. 7Sage $69/mo Core, $129 Live (first month $79), $299 Coach. Blueprint $99/mo Starter, $149/mo Pro, $899 Live Course, $1,599 for the 170+ course. Princeton Review $699 self-paced, $1,049 Fundamentals, $1,799 for the 170+ course, $3,549 Immersion, tutoring $167/hr. Kaplan from about $900 to about $4,000 *(§4.9(3), not loaded)*. **Every one of them plus $124/year to LSAC**, which is the only number on this list that is the same for everybody, including us.
 
 ---
 
 # 5. Summary of slide changes recommended
 
-Rows 3–8 were the original recommendations and are applied in `NARRATIVE.md` Revision 3. Row 2 is Revision 4's. **Row 1 is Revision 6's**, and it is the only change in the file's history that moved the runtime.
+Rows 5–10 were the original recommendations and are applied in `NARRATIVE.md` Revision 3. Row 4 is Revision 4's. Row 3 is Revision 6's. **Rows 1 and 2 are Revision 10's.** Row 2 and row 3 are the only changes in the file's history that moved the runtime.
 
 | Slide | Change | Severity |
 | --- | --- | --- |
+| `game-never-gates` · `pov-real-clock` · `pov-strategy-inside-the-question` | **Three diagrams replaced by the product's own screens**, on the founders' note that the deck was too abstract to be recognisably about the app. Each now quotes the shipped code, and **§9 lists every string and number with the file it came from** so a judge can check the lot. Nothing here is a research claim and nothing changes what a slide argues; what changes is that the argument is drawn in the product's language instead of about it. **No runtime cost.** | Applied |
+| **`market-in-their-own-words`** | **New slide, inserted at position 7**, between Spiky POV 01 and the confidence POV. Five named competitors quoted from their own pages against one column none of them meets, sourced cell by cell in §4.10, with the Demon concession on screen as the standfirst. Requested by the founders after walking the deck; §D of `NARRATIVE.md` had argued against a comparison slide and its four objections are answered rather than overruled — see the header of `src/figures/market-ledger.tsx`. **Costs 10s and nothing gives way. The deck is 5:00 across 25 slides.** | Applied |
 | **`pov-volume-is-the-constraint`** | **New slide, inserted at position 8**, between `pov-confidence-signal` and the concept. Carries §7: video minutes were not correlated with LSAT scores, practice time was worth +4.3 points across the engagement range, and 51% of the cohort never completed one practice exam. This is the deck's answer to *why gamification* — the game is the compliance mechanism for a method whose binding constraint is compliance — and it is stated before the game is ever named, so the game arrives as an answer rather than as an amenity. **Costs 26s; `pov-virtual-currency` gives back 2. The deck is 10:04.** | Applied |
 | `pov-virtual-currency` | **Rebuilt in Revision 5, corrected in Revision 6.** Argues the mechanism (§6.1) rather than points-against-badges. The three multiples were the paper's group totals and are now its per-student averages — 1.3× / 2.5× / 3.7× — because the experimental and comparison groups are not the same size. Both nulls stay on screen. | Applied |
 | `pov-reasoning-is-the-work` | **Add the competitive line on stage:** a fourth fragment reading *"They explain the question. We grade your explanation."* and one closing sentence in the speaker notes, paid for by compressing the Zhang & Fiorella sentence. No new slide, no comparison table, runtime unchanged at 9:40. Everything else about the competitive field lives in §G and in §4 above. | Applied |
@@ -449,18 +506,55 @@ It is now **corroboration**, and the load moved off it entirely. The audience ha
 
 # 8. On-stage competitive claims — the register
 
-Three sentences in the deck compare Lawyer Tycoon to the field. They name nobody, they arrive last in their slide's fragment list, and each one is here with the thing that makes it true. **These three are the whole of the on-stage positioning.** Everything else is §4, §G of `NARRATIVE.md`, and `notes/qa.ts`.
+Three sentences in the deck compare Lawyer Tycoon to the field without naming anybody. Each one is here with the thing that makes it true.
+
+**They are no longer the whole of the on-stage positioning.** The founders asked for a direct comparison after walking the deck, and `market-in-their-own-words` is now slide 7 — five companies by name, each quoted from its own page, sourced cell by cell in §4.10. That changes what these three sentences are for rather than what they say: the slide does the naming, and they stay as the register in which everything else is said. Read §4.10 before reading this table; the rule the slide is built on — quote, never characterise — is the rule below, applied to five rows instead of one sentence.
 
 | Slide | On-screen | What backs it | Risk |
 | --- | --- | --- | --- |
 | `pov-reasoning-is-the-work` | *"They explain the question. We grade your explanation."* | §4.1 — no product in the field advertises grading student-written reasoning. Demon ships 10,000+ pre-written and video explanations plus a human Ask reply; 7Sage ships Sage AI, which answers *your* questions. Both are explanation *of the question*. | **Medium.** §4.9(1): unverifiable negative, and LSAT Lab's undescribed "AI Skills Training Center" is the hole. Phrase as the required step in the workflow, and be ready to say "if LSAT Lab's AI centre does this, they have not published it." |
 | `pov-strategy-inside-the-question` | *"Nobody else measures whether it worked."* | §4.2 — a claim about **measurement**, chosen deliberately over "nobody prompts a method," which would be false: Demon's Prediction Mode already prompts a technique inside a question. No product in §4 measures a named method's effect on an individual student against their own control. | **Low.** The narrower claim is the one §4 actually supports. |
 | `pov-volume-is-the-constraint` | *"They sell hours. We sell reps."* | §3.1 and §3.3 — the field sells instruction and prices it in hours: 7Sage's 900+ video lessons and 60+ live sessions a week; LSAT Lab's 90-minute classes five days a week; Kaplan's live hours plus the LSAT Channel; PowerScore's 50–100+ video hours; Blueprint's course; Demon's daily classes and seven podcast episodes a week (§4.2). Against that, §7: video minutes were not correlated with LSAT scores. | **Low, and this is the strongest of the three.** It is the one axis LSAT Demon cannot meet by being cheap or by being AI-driven — Demon's own retention runs on live classes, podcasts and Discord, all of which still require the student to show up. **Be fair about that when it comes up:** it is a genuine moat, it is not gamification, and habit-through-community is a real answer to the same problem. Ours is structural; theirs is social. |
+| `market-in-their-own-words` | Five quotes, five identical verdicts, and the standfirst *"LSAT Demon will get you to a question as fast as we will."* | §4.10, cell by cell. Nothing on the slide characterises a competitor: the first column is their marketing copy inside quotation marks and the second is what the product scores. | **Low, and lower than the three above**, because a quotation cannot be argued with and the slide makes no comparative judgement for a judge to attack. The two exposures are Kaplan's cell, which was read from a cached page (§4.9(11)), and the second column, which is the §4.9(1) negative restated as the workflow claim it is allowed to be. **The standfirst is a concession and it is not optional** — it is what buys the other five rows from anyone in the room who has used Demon. |
 
 **Three things the deck deliberately does not claim on stage.**
 
 1. **A price.** There is no Lawyer Tycoon price to name. `close-one-stop-shop` says *"Cheaper — no video studio, no live instructors,"* which is a claim about cost structure and is true by construction. **Do not answer "how much?" with a number that has not been decided.** Say what the cost structure removes.
 2. **That the thesis is ours.** §D of `NARRATIVE.md` is emphatic and it is still right: Demon has argued publicly for years that drilling beats lecturing. The differentiation is what happens inside one rep, plus the compliance mechanism — not the diagnosis.
 3. **That competitors have no motivation layer.** §4.9(2). None *advertises* points, currency, levels or streaks. That is a claim about their marketing pages, and it is as far as it can honestly go.
+
+---
+# 9. Figures that quote the product — three slides, and how to check them
+
+Revision 10 answered the founders' note that *"some of these slides are simply too abstract and don't show enough good visuals really theming itself around the app"* by putting the app's own screens on three figures in place of diagrams of them. That is a better slide and a **new kind of exposure**: a number or a phrase presented as the product's is a claim about the product, and this deck has been pulled up before for framing that outran its evidence. So every one of them is listed here with the file it came from.
+
+None of these is a research claim and none needs an outside source. What they need is to be **true of the shipped code**, and all of them were read out of the tree on 2026-08-12. If the product changes, these slides are wrong and this section is the list of what to re-read.
+
+## 9.1 `game-never-gates` — the unlock list
+
+| On the slide | Where it comes from |
+| --- | --- |
+| The form of every row — a padlock, the thing, its requirement | `frontend/src/wardrobe.tsx` line 185: `<b className="wardrobe-item-lock"><Lock size={12} />{item.requirement}</b>` |
+| *Settle 25 cases* · *Settle 100 cases* · *Hold 55 reputation* · *Reach the Downtown Firm (HQ tier 3)* | `_wardrobe_requirement` in `backend/app/game.py` composes these from three verbs. The four items are `tie_regimental`, `accessory_briefcase`, `accessory_wristwatch` and `suit_forest` in the `WARDROBE` table; the tier name and number are `FIRM_TIERS[3]` |
+| *Available from your first day* | The same function's fallback, returned for any item whose unlock is `WARDROBE_UNLOCK_START` |
+| “Everything here is won by practising, never bought.” | `frontend/src/wardrobe.tsx` line 113, printed under the wardrobe's own heading. Set as a quotation on the slide and credited to that screen |
+
+**Two liberties, both small and both worth knowing before somebody notices them.** The app files its cosmetics under category headings, so "Forest green" is printed on the slide as "Forest green suit"; and the four items are four of twenty-nine, picked to span three of the game's currencies rather than at random. **No requirement string was reworded.**
+
+**The last row is a claim about the code, not a promise, and this is how it was checked.** Nothing in `backend/app/scheduling.py` or `backend/app/services.py` — the two modules that build a session and choose its questions — reads `office_tier`, `reputation` or `total_cases`. Grep for all three returns nothing in either file. That is the whole of the evidence for *the game never gates the practice*; it is a negative, and it is the one class of negative this deck is allowed to assert, because the surface is ours.
+
+## 9.2 `pov-real-clock` — the timer at the middle of the dial
+
+- **`target 2:30`** is the shipped Logical Reasoning target: `_target_time_seconds` in `backend/app/services.py` returns **150** seconds for any Logical Reasoning item. (Reading Comprehension is 330, or 135 on a reused passage, which is why the slide's chip is an LR one.)
+- **`2:56`** is the elapsed time the ring already draws. The used arc is at 0.82 and the pace ring at 0.70, so the overrun is 150 × 0.82 / 0.70 ≈ **176 seconds**. The four values are one reading; move any of them and move all four.
+- **The gold** is the app's, not the deck's: `case-flow.tsx` puts a `case-timer` into its `over` state once elapsed passes target. Gold rather than red because the deck spends verdict red on `pov-reasoning-is-the-work` and `pov-confidence-signal` and this is not one of them.
+- **This slide still carries no credit line and must not acquire one.** See §D of `NARRATIVE.md`: the POV itself has no outside source, LSAT Demon publicly argues the opposite, and a hairline here would invite the search that finds nothing. Quoting our own timer does not change that — it evidences *that we time a question*, which nobody disputes, not *that timing a question is right*, which is the claim.
+
+## 9.3 `pov-strategy-inside-the-question` — the record, in counts
+
+- **13 of 16 and 4 of 7** are the demo account's prompted and control attempts on `prephrase`, seeded by `backend/scripts/seed_demo.py`. They replaced **71% and 58%**, which were never measurements of anything: they are the worked example in an internal design document (`docs/superpowers/specs/2026-07-27-strategy-flow-simplification-design.md`, *"You get 71% right with it and 58% right without it"*), and somewhere between that spec and this deck they were read as data. **If either number reappears on a slide, it is a regression.**
+- **The counts are printed rather than the percentages, and the product's own rule is why.** `backend/app/strategies.py` sets `PERCENTAGE_DISPLAY_MIN_SAMPLE = 30` and falls back to `13/16` below it, on the reasoning that a control sample of four can only ever read 0, 25, 50, 75 or 100 per cent. A pitch slide quoting a statistic the product itself refuses to display is the cheapest available way to lose a technical audience.
+- **The bars are sized from the ratios** (0.8125 and 0.571), so the comparison still lands in one glance. The ratio is drawn; the number under it is one the room can check against the app.
+- **The card is the app's `strategy-tip` section** from `frontend/src/case-flow.tsx`, down to both buttons. The refusal button is drawn on purpose: the control arm is made of the questions where a student pressed it.
 
 ---

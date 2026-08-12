@@ -2,7 +2,7 @@ import type { ClockRingsFigure } from './types'
 import { ringPoint, useBoxSize, usePhase, type FigureBody } from './kit'
 
 /**
- * SLIDE 11 — `clock-rings`. The per-question ring that completes and the
+ * `pov-real-clock` — The per-question ring that completes and the
  * full-form ring that does not.
  *
  * The two rings are the tension, so they are deliberately built out of different
@@ -323,8 +323,22 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
           />
         </svg>
 
+        {/* The app's `case-timer`, at the middle of its own dial: a clock
+            glyph, the time on it, and the target under it. The card used to
+            say `this question`, which is a caption on a diagram; this is the
+            chip the student is actually looking at when the ring around it is
+            running, and it is the one place on the slide where the room can
+            see that "timed" means a number on the screen rather than a policy
+            in a deck. */}
         <div className="fig-cr-card" data-settled={phase >= 3 ? 'true' : 'false'} style={{ opacity: phase >= 1 ? 1 : 0 }}>
-          <p className="fig-cr-inner-label">{spec.innerLabel}</p>
+          <p className="fig-cr-read">
+            <svg className="fig-cr-glyph" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M 12 7.4 V 12 l 3.2 1.9" />
+            </svg>
+            {spec.innerTime}
+          </p>
+          <p className="fig-cr-target">target {spec.innerTarget}</p>
         </div>
       </div>
     </div>

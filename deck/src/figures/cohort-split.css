@@ -1,5 +1,5 @@
 /* ================================================================
-   cohort-split — slide 8, the half that never started
+   cohort-split — `pov-volume-is-the-constraint`, the half that never started
    ================================================================
    Scoped to this figure and imported by `cohort-split.tsx` rather than
    added to `styles/figures.css`, so the shared sheet stays owned by the
@@ -119,8 +119,18 @@
      Trimmed from 8vh to 6.6vh to help pay back the figure's 48px of overflow.
      It is still comfortably the largest object in the frame — the next tallest
      thing is a 1.35rem run — so the retreat still reads; what it is not any
-     longer is tall enough to push the video row's attribution off the stage. */
+     longer is tall enough to push the video row's attribution off the stage.
+
+     The floor under it is the other half of the fit guard's bargain. This bar
+     is the only child of the figure with no text in it, so on a stage a few
+     pixels short it is the only one a column flex container can take them
+     from — every text row refuses at its own min-content. Squashing the hero
+     object silently is the worse failure: with a floor the figure overflows
+     honestly instead, `useFitScale` sees it, and the whole composition loses a
+     uniform two or three percent rather than the retreat flattening to a rule
+     while everything around it stays put. */
   height: calc(4 * var(--u));
+  min-height: calc(3 * var(--u));
   border: 1px solid currentColor;
   transition: opacity var(--mo-3) var(--ease-out);
 }
