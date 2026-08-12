@@ -79,14 +79,18 @@
    in the face this app sets names in, and the figures are separated because
    they are two facts about the contract rather than one.
    --------------------------------------------------------------------------- */
-.client-quest-card { --portrait-overhang: 20px; padding: 13px 15px 22px 22px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 15px; }
+.client-quest-card { --portrait-overhang: 14px; padding: 13px 15px 22px 16px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 14px; }
 .client-quest-card > div { min-width: 0; display: grid; gap: 6px; }
-.client-quest-card h3 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: clamp(17px, 1.35vw, 21px); font-weight: 620; letter-spacing: -.01em; line-height: 1.06; text-transform: none; text-wrap: balance; }
+/* Sized to hold "Regional corporation" on one line in the column this card
+   actually has, which is about 215px at 1440. Every step up from here spends
+   a whole extra row of card height on a name that was already legible, and
+   the row's other two cards are stretched to match whatever this one does. */
+.client-quest-card h3 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: clamp(16px, 1.25vw, 20px); font-weight: 620; letter-spacing: -.01em; line-height: 1.06; text-transform: none; text-wrap: balance; }
 /* The two figures the contract runs on: how much of it is left, and what it
    pays. Ink hairline on a lighter draw of the same parchment, so they read as
    entries written on the sheet rather than as controls sitting on it. */
 .client-quest-card p { margin: 0; display: flex; flex-wrap: wrap; gap: 5px; overflow-wrap: anywhere; }
-.client-quest-card p b { padding: 3px 9px 4px; border: 1px solid rgba(27, 26, 36, .24); border-radius: var(--r-chip); color: rgba(27, 26, 36, .74); background: rgba(255, 250, 230, .5); font-family: var(--font-hud); font-size: 10px; font-weight: 800; letter-spacing: .03em; }
+.client-quest-card p b { padding: 3px 9px 4px; border: 1px solid rgba(27, 26, 36, .24); border-radius: var(--r-chip); color: rgba(27, 26, 36, .74); background: rgba(255, 250, 230, .5); font-family: var(--font-hud); font-size: 9.5px; font-weight: 800; letter-spacing: .03em; }
 /* Reputation has fallen under the client's requirement, the original contract
    is suspended and a walk-in is billing. A returned filing, not an alarm. */
 .client-quest-card.is-on-hold p b:first-child { border-color: rgba(168, 70, 69, .5); color: #8d3d38; background: rgba(168, 70, 69, .09); }
