@@ -78,10 +78,26 @@ export type IllustratedStyleOptions = {
  *
  * Below two megapixels — every use inside the app, and every portrait — nothing
  * changes.
+ *
+ * ## Why a 1080p frame now gets none at all
+ *
+ * The bandwidth this saves is not saved for its own sake, it is spent on
+ * resolution, and at a full frame that is a trade with an obvious winner.
+ * Multisampling buys smoother silhouette edges at a fixed resolution; the
+ * resolution buys everything, including those edges. The office was reaching
+ * this file at 1920×1080 with two samples and then being pulled down to a
+ * 806×453 drawing buffer by the governor to pay for them — a stair-stepped edge
+ * described very precisely, and upscaled 2.4× on each axis afterwards.
+ *
+ * The scene is also the wrong kind of image for MSAA to be load-bearing on: the
+ * illustrated pass lays a dark ink contour along every silhouette it can find,
+ * and a 2px drawn line hides the aliasing under itself. At 1:1 with no samples
+ * the office reads sharp; at 0.42 with four it reads like a screenshot of a
+ * screenshot, which is exactly the note it came back with.
  */
 function samplesFor(pixels: number): number {
   if (pixels <= 1_400_000) return 4
-  if (pixels <= 3_000_000) return 2
+  if (pixels <= 1_800_000) return 2
   return 0
 }
 
@@ -128,18 +144,32 @@ export function budgetedPixelRatio(
 /**
  * A ceiling on what a scene that fills the deck's frame may spend on pixels.
  *
- * Deliberately generous — roughly a 1080p frame, so on a 1×1080p projector it is
- * barely a reduction at all. It exists to stop the pathological case, which is a
- * retina panel asking for four times that and a 4K television asking for eight,
- * neither of which any machine can draw this scene into at 60fps.
+ * It exists to stop the pathological case, which is a retina panel asking for
+ * four times a projector frame and a 4K television asking for eight, neither of
+ * which any machine can draw this scene into at 60fps.
  *
  * Finding the *right* number for a given machine is not this constant's job; it
  * is the resolution governor's, and it starts from whatever this allows and
  * comes down from there only as far as the measured frame time requires. A
  * constant tuned low enough to be safe everywhere would be a soft picture on the
  * workstations where it was never needed.
+ *
+ * ## It has to clear a 1080p frame, and it did not
+ *
+ * This was 1,600,000, described in this comment as "roughly a 1080p frame". A
+ * 1080p frame is 2,073,600, so the description was 23% out and the consequence
+ * was not subtle: the binding constraint on a 1×1080p projector — the machine
+ * the deck is actually presented on — was this number and not the device, so the
+ * office was *never* drawn at 1:1 anywhere. `sqrt(1.6/2.07)` is 0.878, so the
+ * best case in the room was a 1686×948 buffer stretched over the frame, before
+ * the governor had made a single decision. On a 1512×938 retina laptop it is the
+ * same story at 1.06.
+ *
+ * Set above a 1080p frame so that the projector case is not a reduction at all,
+ * and so the number means what the sentence above says. A 1440p panel gets 0.75,
+ * a 4K television 0.53, which is the pathological case still being caught.
  */
-export const FULL_FRAME_PIXEL_BUDGET = 1_600_000
+export const FULL_FRAME_PIXEL_BUDGET = 2_200_000
 
 const DEFAULTS: Required<Omit<IllustratedStyleOptions, 'samples'>> = {
   ink: 0x1b1a24,

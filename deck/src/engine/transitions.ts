@@ -116,6 +116,52 @@ class Batch {
   /** Pending `after` callbacks, so `finish()` can flush them. See `after`. */
   private readonly deferrals: Array<() => void> = []
 
+  /**
+   * Take an element over, discarding whatever an earlier transition left on it.
+   *
+   * THE BUG THIS EXISTS TO KILL, and it is the one the founder photographed.
+   *
+   * `fill: 'both'` is required for `finish()` to leave an end state on screen,
+   * and its cost is that a finished animation keeps writing its last keyframe
+   * *for ever*, from the animation origin, which outranks the stylesheet. The
+   * runtime pools two slide layer elements and alternates them, and it only
+   * unmounts the outgoing one when a transition is allowed to run to
+   * completion. Interrupt one — which is what fast navigation does, and
+   * `finish()` is the deck's whole answer to it — and the element survives
+   * carrying every animation every previous transition ever started on it.
+   *
+   * Per property, the animation started last wins. So a kernel that does not
+   * mention a property inherits it from a transition two slides ago, and
+   * `price-curtain` did not mention `opacity` on either side. Walk the deck at
+   * speed and `turn-nothing-to-teach` arrives holding `opacity: 0` from the
+   * `camera` move that took slide 3 *off* the screen — no longer animating,
+   * nothing left to finish, permanently invisible, with the bare WebGL stage
+   * showing through it. Measured: three arrow presses 120ms apart from the
+   * title, and the slide settles at `opacity: 0` with `field="beige"`.
+   *
+   * It cannot be fixed only by making every kernel declare every property,
+   * because that is a rule nobody can enforce and the next kernel breaks it
+   * again. So each transition claims the two layers it is about to move and
+   * starts from the stylesheet: a live layer is `opacity: 1`, an outgoing one
+   * is `opacity: 0`, and anything else on the element was somebody else's.
+   *
+   * Called synchronously in the same task as the kernel's own `play` calls, so
+   * no frame is ever composited in the interval — the outgoing layer does not
+   * flash away between losing its old animation and being given its new one.
+   *
+   * CSS animations and transitions are left alone. They belong to the slide's
+   * own entrance, they are declared in a stylesheet this file does not own, and
+   * cancelling one would be reaching across that boundary.
+   */
+  claim(element: Element | null) {
+    if (!element) return
+    for (const animation of element.getAnimations()) {
+      const kind = animation.constructor?.name
+      if (kind === 'CSSAnimation' || kind === 'CSSTransition') continue
+      animation.cancel()
+    }
+  }
+
   play(
     element: Element,
     keyframes: Keyframe[],
@@ -245,6 +291,11 @@ type Kernel = (context: TransitionContext, batch: Batch) => void | Promise<void>
 /** Wraps a kernel into the runtime's contract. */
 function build(context: TransitionContext, kernel: Kernel): RunningTransition {
   const batch = new Batch()
+  // The two pooled layer elements, before anything is asked of them. See
+  // `Batch.claim` — this is what stops one transition's filled end state from
+  // deciding what a later slide looks like.
+  batch.claim(context.from)
+  batch.claim(context.to)
   const started = Promise.resolve(kernel(context, batch)).then(() => batch.settle())
   return {
     done: started,
@@ -265,19 +316,37 @@ function overlayLayer(batch: Batch, overlay: HTMLElement, className: string) {
 // 1 — CUT. The floor: a short push-dissolve for beats that should not announce
 // themselves. Every other transition here is a decision; this one is the absence
 // of one, and a deck where every slide arrives with a flourish has no flourishes.
+//
+// ## Why the outgoing slide is held opaque instead of cross-fading
+//
+// Two slides at opacity .5 do not add up to one opaque slide: they add up to
+// .75 of one, and the missing quarter is the WebGL stage, which on the copy
+// slides is a near-black room. Measured across the deck's eight cuts, the
+// midpoint of every one of them let 4-6% of the stage through — a short dark
+// dip in the middle of a beige-to-beige beat, on the transition that is
+// specifically supposed to be the one nobody notices.
+//
+// So the outgoing field stays at full opacity until the incoming one has
+// finished arriving over the top of it, and only then goes. Optically this is
+// the same dissolve — the eye is watching the incoming slide resolve — and the
+// sum of the two coverages never drops below one. It costs nothing: the frames
+// where both are opaque are frames where the lower one cannot be seen.
 // ---------------------------------------------------------------------------
 const cut: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
   const shift = 34 * direction
   if (from) {
     batch.play(from, [
       { opacity: 1, transform: 'translate3d(0,0,0) scale(1)' },
+      { opacity: 1, transform: `translate3d(${-shift * .35}px,0,0) scale(.99)`, offset: .62, easing: 'cubic-bezier(.4,0,1,1)' },
+      { opacity: 0, transform: `translate3d(${-shift * .5}px,0,0) scale(.985)`, offset: .78 },
       { opacity: 0, transform: `translate3d(${-shift * .5}px,0,0) scale(.985)` },
-    ], { duration: TRANSITION_MS.cut * .7, easing: 'cubic-bezier(.4,0,1,1)' })
+    ], { duration: TRANSITION_MS.cut })
   }
   batch.play(to, [
-    { opacity: 0, transform: `translate3d(${shift}px,0,0) scale(1.012)` },
+    { opacity: 0, transform: `translate3d(${shift}px,0,0) scale(1.012)`, easing: 'cubic-bezier(.22,1,.36,1)' },
+    { opacity: 1, transform: `translate3d(${shift * .12}px,0,0) scale(1.002)`, offset: .6, easing: 'cubic-bezier(.22,1,.36,1)' },
     { opacity: 1, transform: 'translate3d(0,0,0) scale(1)' },
-  ], { duration: TRANSITION_MS.cut, easing: 'cubic-bezier(.22,1,.36,1)' })
+  ], { duration: TRANSITION_MS.cut })
   onMidpoint?.()
 }
 
@@ -300,15 +369,22 @@ const inkBleed: Kernel = ({ from, to, direction, overlay, onMidpoint }, batch) =
     { transform: `translate3d(${direction > 0 ? 140 : -140}%,0,0) skewX(-9deg)`, opacity: 0 },
   ], { duration, easing: 'cubic-bezier(.45,.05,.55,.95)' })
 
+  // Held opaque under the arrival for the same reason as in `cut`: two
+  // half-transparent fields are not one field. The defocus still runs, so the
+  // outgoing copy still softens as it goes — what changed is that it does not
+  // take the field with it before the incoming one has laid a new one down.
   if (from) {
     batch.play(from, [
       { opacity: 1, filter: 'blur(0px) saturate(1)' },
-      { opacity: 0, filter: 'blur(7px) saturate(.4)' },
-    ], { duration: duration * .55, easing: 'cubic-bezier(.55,0,1,.45)' })
+      { opacity: 1, filter: 'blur(7px) saturate(.4)', offset: .62, easing: 'cubic-bezier(.55,0,1,.45)' },
+      { opacity: 0, filter: 'blur(9px) saturate(.35)', offset: .76 },
+      { opacity: 0, filter: 'blur(9px) saturate(.35)' },
+    ], { duration })
   }
   batch.play(to, [
     { opacity: 0, filter: 'blur(9px) saturate(.5)', transform: 'scale(1.014)' },
-    { opacity: 0, offset: .3, easing: 'cubic-bezier(.22,1,.36,1)' },
+    { opacity: 0, filter: 'blur(9px) saturate(.5)', transform: 'scale(1.014)', offset: .22, easing: 'cubic-bezier(.22,1,.36,1)' },
+    { opacity: 1, filter: 'blur(0px) saturate(1)', transform: 'scale(1.002)', offset: .6, easing: 'cubic-bezier(.22,1,.36,1)' },
     { opacity: 1, filter: 'blur(0px) saturate(1)', transform: 'scale(1)' },
   ], { duration })
 
@@ -402,16 +478,21 @@ const letterbox: Kernel = async ({ from, to, overlay, onMidpoint }, batch) => {
 // ---------------------------------------------------------------------------
 const camera: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
   const total = TRANSITION_MS.camera
+  // The dolly runs for the whole move; the opacity is held until the incoming
+  // field has arrived, so the two fields never sum to less than one. See `cut`.
   if (from) {
     batch.play(from, [
-      { opacity: 1, transform: 'perspective(1400px) translate3d(0,0,0)' },
+      { opacity: 1, transform: 'perspective(1400px) translate3d(0,0,0)', easing: 'cubic-bezier(.5,0,.9,.4)' },
+      { opacity: 1, transform: `perspective(1400px) translate3d(0,0,${140 * direction}px)`, offset: .66 },
+      { opacity: 0, transform: `perspective(1400px) translate3d(0,0,${170 * direction}px)`, offset: .8 },
       { opacity: 0, transform: `perspective(1400px) translate3d(0,0,${170 * direction}px)` },
-    ], { duration: total * .62, easing: 'cubic-bezier(.5,0,.9,.4)' })
+    ], { duration: total })
   }
   batch.play(to, [
-    { opacity: 0, transform: `perspective(1400px) translate3d(0,0,${-120 * direction}px)` },
+    { opacity: 0, transform: `perspective(1400px) translate3d(0,0,${-120 * direction}px)`, easing: 'cubic-bezier(.16,1,.3,1)' },
+    { opacity: 1, transform: `perspective(1400px) translate3d(0,0,${-14 * direction}px)`, offset: .58, easing: 'cubic-bezier(.16,1,.3,1)' },
     { opacity: 1, transform: 'perspective(1400px) translate3d(0,0,0)' },
-  ], { duration: total, delay: total * .16, easing: 'cubic-bezier(.16,1,.3,1)' })
+  ], { duration: total, delay: total * .16 })
 
   // The app-scene canvases, when there are two of them, get the same dolly. They
   // live outside the slide layers, so they are addressed by role.
@@ -459,9 +540,12 @@ const type: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
   const outgoingGlyphs = from ? Array.from(from.querySelectorAll<HTMLElement>('[data-glyph]')) : []
 
   if (from) {
-    batch.play(from, [{ opacity: 1 }, { opacity: 0 }], {
-      duration: total * .5, delay: total * .2, easing: 'ease-in',
-    })
+    batch.play(from, [
+      { opacity: 1 },
+      { opacity: 1, offset: .62, easing: 'ease-in' },
+      { opacity: 0, offset: .84 },
+      { opacity: 0 },
+    ], { duration: total })
     // Outgoing glyphs leave upward behind their own mask, in reverse order, so
     // the two headlines never appear to swap places.
     outgoingGlyphs.forEach((glyph, index) => {
@@ -480,7 +564,7 @@ const type: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
   // choreographed. A slide where every element is individually staggered is
   // noise, and the headline is the only thing the audience is reading yet.
   batch.play(to, [{ opacity: 0 }, { opacity: 1 }], {
-    duration: total * .34, delay: total * .18, easing: 'ease-out',
+    duration: total * .3, delay: total * .18, easing: 'ease-out',
   })
 
   glyphs.forEach((glyph, index) => {
@@ -792,8 +876,18 @@ function runMorph(context: TransitionContext, batch: Batch, duration: number) {
   // The flying box has to be the only copy of the object on screen. The source
   // goes at once; the target is held back until the box is nearly home, so the
   // two never overlap and the landing is a substitution rather than a fade.
-  batch.play(source, [{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'linear' })
-  batch.play(target, [
+  //
+  // Transient, both of them. These two are figure elements inside the slide
+  // layers, and the layers are pooled: a filled `opacity: 0` left on the source
+  // outlives the transition, and if the runtime re-hosts that slide in the same
+  // element — which it does whenever a transition was interrupted rather than
+  // completed — React reuses the figure's nodes and the bar the morph flew
+  // *from* is still invisible. `Batch.claim` cannot reach these, because it
+  // only claims the two layers and not their subtrees. By the time these are
+  // cancelled the source's layer is at opacity 0 and the target is at its own
+  // resting state, so cancelling changes nothing anyone can see.
+  batch.playTransient(source, [{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'linear' })
+  batch.playTransient(target, [
     { opacity: 0 },
     { opacity: 0, offset: .9 },
     { opacity: 1 },
@@ -881,6 +975,28 @@ const exposureBlowout: Kernel = ({ from, to, overlay, onMidpoint }, batch) => {
  *
  * There is no plate and no wash. An inversion this hard does not need help;
  * what it needs is for nothing to be laid over the beige as it is uncovered.
+ *
+ * ## Every keyframe list here now says `opacity`, and that is the fix for the
+ * ## frame the founder could not read
+ *
+ * This kernel moved both slides and mentioned opacity on neither, on the
+ * reasoning that a curtain does not fade — which is true of the motion and
+ * false of the DOM. A slide layer's opacity comes from the stylesheet only when
+ * no animation is writing it, and the runtime pools and reuses the layer
+ * elements, so under any navigation quick enough to interrupt a transition both
+ * of these slides inherited an opacity from whichever transition last used
+ * their element. The incoming one inherited `0` and stayed there: slide 4 held
+ * for as long as the presenter left it, showing the bare stage. `Batch.claim`
+ * now clears those leftovers, which turns the same defect into the honest
+ * version of itself — with nothing writing opacity, the outgoing layer would
+ * take the stylesheet's value for a layer that is no longer live, which is 0,
+ * and the curtain would never be drawn at all. So both sides declare it.
+ *
+ * The sheet's hold is written on its own keyframe rather than as an effect-level
+ * curve, per the note on `Batch`: at `offset: .16` under the old effect easing
+ * the hold really lasted about three tenths of the move, and three tenths is
+ * the number that was tuned by eye against the ribbon's lead. It is now spelled
+ * the way it behaves.
  */
 const priceCurtain: Kernel = ({ from, to, onMidpoint }, batch) => {
   const total = TRANSITION_MS.letterbox * .72
@@ -888,25 +1004,25 @@ const priceCurtain: Kernel = ({ from, to, onMidpoint }, batch) => {
 
   if (ribbon) {
     batch.play(ribbon, [
-      { transform: 'translate3d(0,0,0)' },
-      { transform: 'translate3d(-38vw,0,0)', offset: .3 },
+      { transform: 'translate3d(0,0,0)', easing: 'cubic-bezier(.5,0,.35,1)' },
+      { transform: 'translate3d(-38vw,0,0)', offset: .3, easing: 'cubic-bezier(.5,0,.35,1)' },
       { transform: 'translate3d(-150vw,0,0)' },
-    ], { duration: total * .78, easing: 'cubic-bezier(.5,0,.35,1)' })
+    ], { duration: total * .78 })
   }
 
   if (from) {
     batch.play(from, [
-      { transform: 'translate3d(0,0,0)' },
-      { transform: 'translate3d(0,0,0)', offset: .16 },
-      { transform: 'translate3d(-104vw,0,0)' },
-    ], { duration: total, easing: 'cubic-bezier(.66,0,.28,1)' })
+      { opacity: 1, transform: 'translate3d(0,0,0)' },
+      { opacity: 1, transform: 'translate3d(0,0,0)', offset: .3, easing: 'cubic-bezier(.45,0,.28,1)' },
+      { opacity: 1, transform: 'translate3d(-104vw,0,0)' },
+    ], { duration: total })
   }
   // A shallow counter-move, so the beige is not simply sitting there waiting.
   // Anything larger and the two layers read as two slides sliding, which is
   // the idiom this exists to avoid.
   batch.play(to, [
-    { transform: 'translate3d(5vw,0,0)' },
-    { transform: 'translate3d(0,0,0)' },
+    { opacity: 1, transform: 'translate3d(5vw,0,0)' },
+    { opacity: 1, transform: 'translate3d(0,0,0)' },
   ], { duration: total, easing: 'cubic-bezier(.3,0,.2,1)' })
 
   batch.after(total * .4, () => onMidpoint?.())
