@@ -530,10 +530,20 @@
   transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
 }
 
+/* The clip is here for the ribbon, which enters on `translateX(-102%)` and has
+   to be hidden until it arrives. It also clips vertically, which nothing here
+   needs — the line under it enters from *above*, on `translateY(-.4em)` — and
+   that is the one clip in the figure layer that `useFitScale` cannot see,
+   because the guard measures a figure against its stage and this box is inside
+   both. `+ $124 / year to LSAC` was resting six tenths of a pixel above the
+   clip edge, which is not a bug today and is precisely the arrangement that
+   produced the clipped credit line on `pov-volume-is-the-constraint` the first
+   time. A quarter of an em of floor costs nothing and closes it. */
 .fig-hb-bill {
   display: flex;
   flex-direction: column;
   gap: .55em;
+  padding-bottom: .25em;
   overflow: hidden;
 }
 
