@@ -177,6 +177,17 @@ things rather than as interface. They are **not** allowed a different palette:
 their ink is `--ink`, their paper is the parchment ramp, their brass is
 `--brass`.
 
+**The warm ground under a mega-litigation.** Two surfaces — `.diagnostic-lab`
+on `/progress` and `.mega-panel` on `/cases` — are drawn on a warm brown-to-
+night gradient rather than the navy every other dark panel grounds on, because
+sitting a full form is not ordinary practice and the app marks it. That is a
+distinction worth keeping, so the sweep kept it. What it did not keep was the
+value: it was `rgba(93,66,39,.94)`, a desaturated brown at 94% over a parchment
+page, so six percent of the paper lifted through and the panel read milky. It
+is opaque now and both ends come off the ink-to-night ramp. The two rules are
+identical, which is what the comment at the top of `mega-litigation.css` has
+always claimed.
+
 **The 3D scenes** have their own rendering pipeline and are out of scope for
 interface rules entirely. Flattening a cel-shaded room to match a flat panel
 would be a mistake.
