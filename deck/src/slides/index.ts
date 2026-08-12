@@ -987,10 +987,10 @@ export const SLIDES: readonly SlideSpec[] = [
       // — which is the first three seconds of a thirty second beat. On the stills
       // path the slide therefore stopped before the only thing it is for: the room
       // saw the question it had just been told the app was about to answer, and
-      // never saw it answered. `demo-case-answered.png` is the same driven session
+      // never saw it answered. `demo-case-answered.webp` is the same driven session
       // at rest, with (C) credited, the stamp down and the coach's reading in
       // shot, so the fallback makes the slide's point instead of setting it up.
-      still: 'demo-case-answered.png',
+      still: 'demo-case-answered.webp',
       width: 1440,
       zoom: 1.12,
       budgetSeconds: 30,
@@ -1099,12 +1099,12 @@ export const SLIDES: readonly SlideSpec[] = [
       route: '/progress?tab=answers',
       // Captured for this slide and nothing else: the Answer Log with the first
       // tile open and both "WHAT YOU WROTE" and "COACH" in frame. It replaces
-      // `demo-progress.png`, which belongs to `demo-mega-litigation` and shows
+      // `demo-progress.webp`, which belongs to `demo-mega-litigation` and shows
       // the top of the dashboard — a fallback that rendered perfectly while
       // making none of this slide's point, which is the worst of the three
       // states a still can be in. `recapture-stills.mjs` now checks both
       // headings are actually in the frame before it keeps the bytes.
-      still: 'demo-answer-log.png',
+      still: 'demo-answer-log.webp',
       width: 1440,
       zoom: 1.06,
       budgetSeconds: 12,
@@ -1159,7 +1159,7 @@ export const SLIDES: readonly SlideSpec[] = [
     transition: 'cut',
     demo: {
       route: '/progress',
-      still: 'demo-progress.png',
+      still: 'demo-progress.webp',
       width: 1440,
       zoom: 1.06,
       budgetSeconds: 14,
@@ -1398,7 +1398,7 @@ export const SLIDES: readonly SlideSpec[] = [
     transition: 'cut',
     demo: {
       route: '/office',
-      still: 'demo-office.png',
+      still: 'demo-office.webp',
       width: 1440,
       zoom: 1.06,
       budgetSeconds: 9,
@@ -1439,13 +1439,13 @@ export const SLIDES: readonly SlideSpec[] = [
     transition: 'cut',
     demo: {
       route: '/office?officeTier=0',
-      still: 'demo-office-tier0.png',
+      still: 'demo-office-tier0.webp',
       // THE MECHANISM THE SLIDE WAS MISSING. This slide is scripted as a toggle
       // and had nothing that toggled: one route, pinned at tier 0, and `L`
       // merely reloaded it. The before/after — the entire point — could not
       // happen, live or on the fallback.
       //
-      // `demo-office-tier14.png` already existed and was referenced by nothing,
+      // `demo-office-tier14.webp` already existed and was referenced by nothing,
       // which is why the stills path costs no new capture: press the key with
       // `?stills=1` on and the two pictures swap, so the beat survives the whole
       // stack being dead. That is the state in which this slide most needs to
@@ -1456,7 +1456,7 @@ export const SLIDES: readonly SlideSpec[] = [
       // room read as built, and the line being spoken is about the objects.
       toggle: {
         route: '/office?officeTier=14&officeAll=1',
-        still: 'demo-office-tier14.png',
+        still: 'demo-office-tier14.webp',
         // `O` for office. It is the only key on this slide, so there is nothing
         // to confuse it with while the five silent seconds run, and its
         // neighbours are all harmless: `L` reloads this same route, `P` opens
@@ -1501,8 +1501,8 @@ export const SLIDES: readonly SlideSpec[] = [
         + 'app is never reloaded from cold. Press it again to go back; a mis-press is one more press rather than a '
         + 'stranded slide. Leaving the slide resets it to tier 0, so a second run-through starts on the shack again '
         + 'instead of playing the transformation backwards. '
-        + 'IT WORKS ON STILLS TOO — with `?stills=1` or after `S`, O swaps `demo-office-tier0.png` for '
-        + '`demo-office-tier14.png`. The before/after is the whole slide, so it had to survive the stack being dead; '
+        + 'IT WORKS ON STILLS TOO — with `?stills=1` or after `S`, O swaps `demo-office-tier0.webp` for '
+        + '`demo-office-tier14.webp`. The before/after is the whole slide, so it had to survive the stack being dead; '
         + 'this is the one demo the cut list says never to cut. '
         + 'The tier overrides are DEV query parameters and only exist under `npm run dev` — never against a '
         + 'production build. '
@@ -1532,7 +1532,7 @@ export const SLIDES: readonly SlideSpec[] = [
     transition: 'camera',
     demo: {
       route: '/map',
-      still: 'demo-map.png',
+      still: 'demo-map.webp',
       width: 1440,
       zoom: 1.06,
       budgetSeconds: 8,
@@ -1600,10 +1600,10 @@ export const SLIDES: readonly SlideSpec[] = [
       // the header. A `/progress` caption over an `/office` frame is the deck
       // contradicting itself in two adjacent elements.
       route: '/office',
-      // `demo-progress.png` was wrong here — it is the plain progress route, and
+      // `demo-progress.webp` was wrong here — it is the plain progress route, and
       // this slide's entire content is what is MISSING from the navigation bar,
       // which a plain capture cannot show.
-      still: 'demo-focus-mode.png',
+      still: 'demo-focus-mode.webp',
       stillOnly: true,
       width: 1440,
       // Cropped tight and scaled up: this slide is a navigation bar read from the

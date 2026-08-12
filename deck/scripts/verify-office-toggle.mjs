@@ -28,7 +28,7 @@
  *    implementing the live path first, and it is the half that matters most: the
  *    whole before/after is the slide, so it has to survive the stack dying. Before
  *    the toggle existed, `?stills=1` on this slide could only ever show tier 0 —
- *    the "after" was unreachable and `demo-office-tier14.png` sat in the
+ *    the "after" was unreachable and `demo-office-tier14.webp` sat in the
  *    repository referenced by nothing.
  *
  * ## What it cannot check, and why the screenshots are the point
@@ -166,7 +166,7 @@ const RESERVED = {
 }
 
 /** Both stills are committed files, and the slide is unpresentable without either. */
-for (const file of ['demo-office-tier0.png', 'demo-office-tier14.png']) {
+for (const file of ['demo-office-tier0.webp', 'demo-office-tier14.webp']) {
   const path = resolve(DECK_DIR, 'public/stills', file)
   if (!existsSync(path)) {
     fail(`public/stills/${file} is missing, so one half of the slide has no fallback at all`)
@@ -413,22 +413,22 @@ const stillBefore = await readSlide()
 if (stillBefore.present) {
   fail('?stills=1 left a live embed mounted as well as the still on demo-office-transformation')
 }
-if (stillBefore.still !== '/stills/demo-office-tier0.png') {
-  fail(`?stills=1 painted ${stillBefore.still} rather than /stills/demo-office-tier0.png`)
+if (stillBefore.still !== '/stills/demo-office-tier0.webp') {
+  fail(`?stills=1 painted ${stillBefore.still} rather than /stills/demo-office-tier0.webp`)
 } else {
-  ok('?stills=1 opens on demo-office-tier0.png')
+  ok('?stills=1 opens on demo-office-tier0.webp')
 }
 await page.screenshot({ path: resolve(OUT, '3-stills-tier0.png') })
 
 await press(TOGGLE_KEY)
 await page.waitForTimeout(1200)
 const stillAfter = await readSlide()
-if (stillAfter.still !== '/stills/demo-office-tier14.png') {
-  fail(`${KEY} did not swap the still: still showing ${stillAfter.still} rather than /stills/demo-office-tier14.png. `
+if (stillAfter.still !== '/stills/demo-office-tier14.webp') {
+  fail(`${KEY} did not swap the still: still showing ${stillAfter.still} rather than /stills/demo-office-tier14.webp. `
     + 'This is the half that matters most — the before/after is the whole slide, so it has to survive the stack '
-    + 'being dead, and `demo-office-tier14.png` is otherwise referenced by nothing.')
+    + 'being dead, and `demo-office-tier14.webp` is otherwise referenced by nothing.')
 } else {
-  ok(`${KEY} swaps the still to demo-office-tier14.png with no app running`)
+  ok(`${KEY} swaps the still to demo-office-tier14.webp with no app running`)
 }
 if (stillAfter.present) fail('the toggle mounted a live embed on the stills path')
 if (stillAfter.caption && /officeTier|officeAll/.test(stillAfter.caption)) {
@@ -441,7 +441,7 @@ await page.screenshot({ path: resolve(OUT, '4-stills-tier14.png') })
 await press(TOGGLE_KEY)
 await page.waitForTimeout(900)
 const stillBack = await readSlide()
-if (stillBack.still !== '/stills/demo-office-tier0.png') {
+if (stillBack.still !== '/stills/demo-office-tier0.webp') {
   fail(`${KEY} did not swap the still back (showing ${stillBack.still})`)
 } else {
   ok(`${KEY} swaps the still back, so the stills path is reversible too`)

@@ -156,10 +156,10 @@ be wrong. Ids do not move.
 | `demo-clients-walk-in` | `/office` | **9** | 2 |
 | `demo-office-transformation` | `/office?officeTier=0` | **9** | 3 |
 | `demo-map-and-firm` | `/map` | **8** | 2 |
-| `demo-focus-mode` | *still only* — `demo-focus-mode.png` | **6** budget, **0** live | — |
+| `demo-focus-mode` | *still only* — `demo-focus-mode.webp` | **6** budget, **0** live | — |
 
 `demo-focus-mode` is no longer a live embed. It carries `stillOnly` and paints
-`demo-focus-mode.png`, so it costs no load and cannot fail. See §7.
+`demo-focus-mode.webp`, so it costs no load and cannot fail. See §7.
 
 ### `demo-case-answer` — the case, 30s
 
@@ -413,16 +413,50 @@ names is not merely untidy, it is downloaded by every machine that opens the
 deck. Four files failed that test and were deleted on 2026-08-11 — see
 [Four stills that were not fallbacks](#four-stills-that-were-not-fallbacks).
 
-| Still | `--only` key | Stands in for | Used by |
-| --- | --- | --- | --- |
-| `demo-case-answered.png` | `case-answered` | `{autoplay}` at rest: (C) credited, stamp down, coach's reading in shot | `demo-case-answer` — see below |
-| `demo-answer-log.png` | `answer-log` | `/progress?tab=answers`, first tile open | `demo-case-verdict-review` — see below |
-| `demo-progress.png` | `progress` | `/progress` | `demo-mega-litigation` |
-| `demo-office.png` | `office` | `/office` | `demo-clients-walk-in` |
-| `demo-office-tier0.png` | `office-tier0` | `/office?officeTier=0` | `demo-office-transformation` |
-| `demo-map.png` | `map` | `/map` | `demo-map-and-firm` |
-| `demo-focus-mode.png` | `focus-mode` | `/office` **with Focus Mode on** | `demo-focus-mode` — its only content |
-| `demo-office-tier14.png` | `office-tier14` | `/office?officeTier=14&officeAll=1` | `demo-office-transformation` — the *after* half of its toggle |
+| Still | `--only` key | Bytes | Stands in for | Used by |
+| --- | --- | --- | --- | --- |
+| `demo-case-answered.webp` | `case-answered` | 124 KB, q92 | `{autoplay}` at rest: (C) credited, stamp down, coach's reading in shot | `demo-case-answer` — see below |
+| `demo-answer-log.webp` | `answer-log` | 179 KB, **lossless** | `/progress?tab=answers`, first tile open | `demo-case-verdict-review` — see below |
+| `demo-progress.webp` | `progress` | 133 KB, q92 | `/progress` | `demo-mega-litigation` |
+| `demo-office.webp` | `office` | 376 KB, q92 | `/office` | `demo-clients-walk-in` |
+| `demo-office-tier0.webp` | `office-tier0` | 275 KB, q92 | `/office?officeTier=0` | `demo-office-transformation` |
+| `demo-map.webp` | `map` | 426 KB, q92 | `/map` | `demo-map-and-firm` |
+| `demo-focus-mode.webp` | `focus-mode` | 97 KB, **lossless** | `/office` **with Focus Mode on** | `demo-focus-mode` — its only content |
+| `demo-office-tier14.webp` | `office-tier14` | 410 KB, q92 | `/office?officeTier=14&officeAll=1` | `demo-office-transformation` — the *after* half of its toggle |
+
+#### Why WebP, and why two of them are lossless
+
+The eight were 12.4 MB of PNG until 2026-08-11 and are 2.0 MB now; the built deck
+went from 15.3 MB to 4.9 MB. That is not housekeeping. These are what the room
+sees when an embed dies, so they are fetched at the worst possible moment, and
+`demo-office-tier14` is fetched at a *specific* worst moment — the instant the
+presenter presses `O` on `demo-office-transformation`, which was 2.6 MB of cold
+PNG and is 410 KB now. Measured cold, with an empty HTTP cache, the toggle now
+swaps and decodes in 109 ms.
+
+`recapture-stills.mjs` tries both encodings per still and keeps the smaller file.
+That is deliberately a rule rather than a table, because which one wins depends on
+the picture: the four 3D scenes are soft-shaded renders that lossy takes to an
+eighth of PNG, while the flattest UI screenshots are long runs of identical pixels
+that lossless WebP encodes *smaller than lossy* — so `demo-answer-log` and
+`demo-focus-mode` are bit-exact **and** cost fewer bytes than q92 would have.
+There was nothing to trade on those two.
+
+On q92 for the rest, and why "just raise the quality" is not the answer it looks
+like: what survives compression here is almost entirely chroma error on glyph
+edges, because lossy WebP is always YUV 4:2:0 — the format has no lossy 4:4:4.
+Its peak does not move with quality. On the dashboard's amber figures it is 69
+levels at q98 and 69 at q92, and `-sharp_yuv` only trims it to 64. So quality
+cannot buy away the failure mode that would matter for small type, and
+losslessness is the other arm of the rule for exactly that reason. Inspected at
+1:1 and at 4x on the smallest saturated micro-caps in the set — the `REPUTATION` /
+`DAILY LEASE` micro-caps in the money bar, ~9px — q92 is indistinguishable from
+source, which is the outcome 4:2:0 is designed for: the error is single-pixel and
+the eye has little chroma acuity at that frequency.
+
+Decode is a wash and it would be dishonest to claim otherwise: WebP is ~3 ms
+slower than PNG on the two big scenes and ~2 ms faster on the flat ones. The whole
+win is transfer, and it is 10.4 MB of it.
 
 #### Four stills that were not fallbacks
 
@@ -491,22 +525,22 @@ node scripts/shoot.mjs --out=.deck-shots/live            # live embeds
 node scripts/shoot.mjs --stills --out=.deck-shots/canned # forced to stills
 ```
 
-Check `demo-case-answered.png` after any change to the case UI, and the office
+Check `demo-case-answered.webp` after any change to the case UI, and the office
 and map stills after any change to a game scene — those are the ones under
 active development.
 
-> `demo-answer-log.png` is the one still that needs a click to exist. The
+> `demo-answer-log.webp` is the one still that needs a click to exist. The
 > attempt drawer has no URL — the router has no per-attempt route and the panel
 > takes no parameter — so its entry in `recapture-stills.mjs` carries a
 > `prepare` step that opens the first tile and scrolls to the pair of headings
 > the slide points at, and a `require` list the frame is checked against before
 > the bytes are kept. That check exists because this file's predecessor on that
-> slide, `demo-progress.png`, rendered perfectly and showed the top of the
+> slide, `demo-progress.webp`, rendered perfectly and showed the top of the
 > dashboard instead of the review drawer: a still can be wrong without being
 > broken, and a fallback that quietly stops making the slide's point is the
 > worst of the three states it can be in.
 
-> `demo-case-answered.png` is the one still whose capture takes half a minute:
+> `demo-case-answered.webp` is the one still whose capture takes half a minute:
 > its `prepare` step lets the app's own autoplay driver play the whole sequence
 > and waits for the page to stop changing, because driving it from the script
 > would race it for the same controls. That replay goes through the attempt's
@@ -546,7 +580,7 @@ four-minute talk and cost a live navigation to show the room something it had
 already seen twice. It now carries `stillOnly` and paints a single frame, which
 returns its seconds and removes a failure surface. The point is still spoken.
 
-**The frame is `demo-focus-mode.png`, and it is not the dashboard.** It is
+**The frame is `demo-focus-mode.webp`, and it is not the dashboard.** It is
 `/office` with Focus Mode on, which renders the app's focus gate. It was chosen
 to carry one sentence — *the game never gates practice* — rather than merely to
 show a screen, and it earns that sentence three ways at once:
@@ -562,7 +596,7 @@ The score, case count and streak are all still in the header, so progress
 visibly survives the game being switched off — which is the direction of
 dependency the deck argues for: practice drives game progress, never the reverse.
 
-`demo-progress.png` would not have carried any of that, and in fact did not even
+`demo-progress.webp` would not have carried any of that, and in fact did not even
 show the dashboard before it was recaptured.
 
 ### Verifying it, and one loose end
@@ -919,6 +953,15 @@ So the remaining gap is one command on the laptop that already has the key:
 `npm run capture-coaching`, commit the result. Until someone runs it, the
 paragraph above still describes what a keyless machine shows.
 
+**That command has now been run and both beats are committed** — `74b3377` took the
+verdict twin and `7c95dd4` took the solo case, both real `gpt-5.6-luna` grades. The
+first run captured only the twin, because of a bug in `stage_demo.py` rather than
+in the run: the solo capture only fired when the case had no grade yet, so a solo
+case already graded from an earlier staging skipped it silently. That is fixed, and
+the fix re-grades rather than copying the stored payload, so a future
+`npm run capture-coaching` records what the gateway says at the time rather than
+whatever was lying in the database.
+
 If you are ever in a room without the gateway *and* without a capture:
-`FORCE_STILLS = true` in `demo.config.ts`, and `demo-case-answered.png` carries
+`FORCE_STILLS = true` in `demo.config.ts`, and `demo-case-answered.webp` carries
 the coached frame.
