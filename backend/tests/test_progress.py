@@ -18,7 +18,12 @@ def add_question(index: int, section: str, question_type: str = "Inference") -> 
     passage_id = None
     stimulus = f"Argument stimulus {index}."
     if section == "Reading Comprehension":
-        passage_id = f"progress-passage-{index // 2}"
+        # Five questions to a passage. The shipped bank runs 4 to 16 with a
+        # median of 7 and has nothing shorter than 4, so a fixture built on
+        # two-question passages was testing a bank that cannot exist — and
+        # specifically one where no passage is long enough to be a reading case,
+        # which is the shape practice now serves the section in.
+        passage_id = f"progress-passage-{(index - 20) // 5}"
         if not db.session.get(Passage, passage_id):
             db.session.add(
                 Passage(
@@ -955,12 +960,19 @@ def test_practice_never_serves_a_lone_reading_comprehension_question(app):
 
 
 def test_a_practice_run_serves_passage_mates_back_to_back(app):
-    """Intact is not enough — the questions have to arrive together."""
+    """Intact is not enough — the questions have to arrive together.
+
+    Reading cases are drawn a third of the time, so the shape is asked for here
+    rather than waited for: six runs at the shipped share would miss entirely
+    once in eleven attempts, and a test that fails 9% of the time teaches people
+    to re-run the suite.
+    """
     from app.models import SessionItem
 
     client = app.test_client()
     headers = login(client, "practice-passage-order@example.test")
     create_game(client, headers)
+    app.config["PRACTICE_RC_CASE_SHARE"] = 1.0
 
     found_a_passage = False
     for index in range(6):

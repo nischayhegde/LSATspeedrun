@@ -53,7 +53,15 @@ def add_question(index: int, section: str) -> None:
     passage_id = None
     stimulus = f"Argument stimulus {index}."
     if section == "Reading Comprehension":
-        passage_id = f"sample-passage-{index // 2}"
+        # Six questions to a passage, and enough passages to choose between.
+        # The shipped bank has nothing shorter than four and a median of seven,
+        # so the two-question passages this fixture used to build described a
+        # bank that cannot exist — and one where no passage is long enough to be
+        # a reading case, so the end-to-end suite would never have built the
+        # shape practice now serves a third of the time. That is precisely how
+        # the section went missing in the first place: `seed_demo.py` fabricates
+        # a balanced history the real selector never produces.
+        passage_id = f"sample-passage-{(index - 8) // 6}"
         passage = db.session.get(Passage, passage_id)
         if not passage:
             db.session.add(
@@ -117,7 +125,7 @@ def app():
     with application.app_context():
         for index in range(8):
             add_question(index, "Logical Reasoning")
-        for index in range(8, 12):
+        for index in range(8, 20):
             add_question(index, "Reading Comprehension")
         db.session.commit()
     return application
@@ -3013,8 +3021,14 @@ def test_every_item_in_a_long_run_arrives_with_a_card(app):
     `PRACTICE_SESSION_SIZE`, so that a run long enough to reach both arms is
     exercised and so that the fixture's smaller default runs are not what this
     is measured on.
+
+    The length is a floor and not an equality. A reading case is one passage and
+    is therefore as long as its passage rather than as long as the number that
+    was asked for, so a request for ten can come back as a seven-question
+    passage. What this test is about is that every item has a card, so it takes
+    the run it was given and checks all of it.
     """
-    from app.services import passage_overshoot_allowance, serialize_item
+    from app.services import reading_case_ceiling, reading_case_floor, serialize_item
 
     client = app.test_client()
     headers = login(client, "long-run-cards@example.test")
@@ -3023,7 +3037,7 @@ def test_every_item_in_a_long_run_arrives_with_a_card(app):
 
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        assert 10 <= len(items) <= 10 + passage_overshoot_allowance(10)
+        assert reading_case_floor(10) <= len(items) <= reading_case_ceiling(10)
 
         cards = []
         for item in items:
