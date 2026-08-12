@@ -325,12 +325,27 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
   }, [goto, slides])
 
   // --- the presenter clock -------------------------------------------------
+  //
+  // Only while somebody is looking at it. `elapsed` has exactly one reader, the
+  // presenter overlay, and it is a piece of *state on the root component* — so
+  // running the interval unconditionally re-rendered the entire deck once a
+  // second for the length of the talk: both slide layers, every figure, the
+  // demo stage, the app-scene layer and twenty-four progress ticks, to move a
+  // number nobody had asked to see. React bails out of nothing here, because
+  // the layers are rebuilt inline in `deck.tsx` rather than memoised.
+  //
+  // It is also a clock rather than an accumulator — the elapsed value is
+  // computed from `timerStart`, not counted up — so nothing is lost by not
+  // running it. Reopening the overlay reads the true time immediately, which
+  // is why the first read is taken before the interval rather than a second
+  // later.
   useEffect(() => {
-    const tick = window.setInterval(() => {
-      setElapsed(Math.floor((Date.now() - timerStart.current) / 1000))
-    }, 1000)
+    if (!presenterOpen) return
+    const read = () => setElapsed(Math.floor((Date.now() - timerStart.current) / 1000))
+    read()
+    const tick = window.setInterval(read, 1000)
     return () => window.clearInterval(tick)
-  }, [])
+  }, [presenterOpen])
 
   // --- the URL on first load ----------------------------------------------
   useEffect(() => {
@@ -366,4 +381,35 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
     reduced,
     appScenes,
   }
+}
+
+/**
+ * FAST REFRESH: RELOAD RATHER THAN PATCH THIS MODULE.
+ *
+ * The same defect `figures/kit.tsx` carries, and for the same structural
+ * reason: this file exports a hook and no component, so it is not a Fast
+ * Refresh boundary. Vite propagates an edit here into `deck.tsx`, and React
+ * Refresh re-renders `Deck` **in place** — it decides whether to remount by
+ * comparing a signature recorded at the component's own definition site, and
+ * that signature names `useDeck` without describing it. Change the hook order
+ * inside `useDeck` and `Deck`'s signature is still byte-identical: nothing
+ * remounts, and the next render walks a hook queue built by the previous
+ * version of this module.
+ *
+ * It is the worse of the two instances. `kit.tsx` can only desynchronise a
+ * figure, so the damage is bounded by the sixteen slides that draw one; `Deck`
+ * is mounted for the whole run, so a stale queue here can surface on *any*
+ * slide. That is the most likely explanation for a hooks-order error that was
+ * reported against a different slide on each sweep and never reproduced from a
+ * cold load — it depended only on which slide happened to be on screen when
+ * somebody saved this file.
+ *
+ * Editing `deck.tsx` directly is safe, because the signature is recomputed
+ * there. Only a shared hook module consumed across a boundary can drift.
+ *
+ * `import.meta.hot` is undefined in a production build and this is dropped, so
+ * a built deck never sees it.
+ */
+if (import.meta.hot) {
+  import.meta.hot.accept(() => window.location.reload())
 }

@@ -179,19 +179,19 @@ export function createResolutionGovernor(options: {
       }
 
       if (median > TOO_SLOW_MS && ratio > FLOOR) {
-          // Damped, because frame time is not perfectly linear in pixel count —
-          // there is a fixed cost per frame that no amount of shrinking removes,
-          // and correcting as though there were none overshoots into a soft
-          // picture on the first step.
-          //
-          // Except when the scene is nowhere near budget. Under-correcting from
-          // 27ms just buys another slow window and another visible step, and
-          // three small steps are far more noticeable than one large one: the
-          // audience reads a picture that keeps changing as a fault and a
-          // picture that changed once as the picture. So past half again the
-          // target, the correction is taken at face value.
-          const ideal = Math.sqrt(TARGET_MS / median)
-          const damped = median > TARGET_MS * 1.5 ? ideal : 1 - (1 - ideal) * .8
+        // Damped, because frame time is not perfectly linear in pixel count —
+        // there is a fixed cost per frame that no amount of shrinking removes,
+        // and correcting as though there were none overshoots into a soft
+        // picture on the first step.
+        //
+        // Except when the scene is nowhere near budget. Under-correcting from
+        // 27ms just buys another slow window and another visible step, and
+        // three small steps are far more noticeable than one large one: the
+        // audience reads a picture that keeps changing as a fault and a
+        // picture that changed once as the picture. So past half again the
+        // target, the correction is taken at face value.
+        const ideal = Math.sqrt(TARGET_MS / median)
+        const damped = median > TARGET_MS * 1.5 ? ideal : 1 - (1 - ideal) * .8
         before = { median, ratio }
         apply(Math.max(FLOOR, ratio * Math.max(.66, damped)))
         steps += 1

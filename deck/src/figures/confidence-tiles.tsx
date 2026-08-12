@@ -73,6 +73,21 @@ export function ConfidenceTiles({ spec, active, reduced }: FigureBody<Confidence
               })}
             >
               <span className="fig-ct-fill" />
+              {/* The rank the sort put it in, as a band across the head of the
+                  card. This is where the four shades of royal blue the
+                  narrative asks for now live.
+
+                  They used to be the tile's whole background, at up to 44%
+                  ink, which is how four cards carrying three glyphs each came
+                  to read as four loaded grey slabs — the founder's "figures
+                  that look like loading skeletons", and the fair reading of
+                  them. A card cannot be mistaken for a placeholder while its
+                  own field is nearly empty and one solid band is carrying the
+                  colour; and concentrating the ramp into a band makes the four
+                  steps further apart than they ever were spread over a whole
+                  tile, which was the reason the ramp had been pushed so dark
+                  in the first place. */}
+              <span className="fig-ct-rank" style={{ opacity: sorted ? 1 : 0 }} />
               <svg className="fig-ct-mark" viewBox="0 0 24 24" aria-hidden="true">
                 {tile.mark === 'correct' ? (
                   <path d="M 4 13 L 10 19 L 20 5" vectorEffect="non-scaling-stroke" />

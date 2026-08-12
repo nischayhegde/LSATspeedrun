@@ -67,7 +67,7 @@ export function HoursBar({ spec, active, reduced }: FigureBody<HoursBarFigure>) 
             {/* The hours becoming lecture: scanlines arrive with the curriculum
                 quotes, and they live inside the clipped fill so an un-drawn bar
                 is never textured. */}
-            <span className="fig-hb-grain" style={{ opacity: grained ? 0.55 : 0 }} />
+            <span className="fig-hb-grain" style={{ opacity: grained ? 0.34 : 0 }} />
           </div>
           <div
             className="fig-hb-sliver"

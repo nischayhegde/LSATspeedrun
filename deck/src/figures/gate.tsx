@@ -59,16 +59,27 @@ export function Gate({ spec, active, reduced }: FigureBody<GateFigure>) {
           />
         </svg>
 
-        {/* The strike is DOM for the same reason the arrowheads are. Drawn in
-            the stretched viewBox it ran the full width of the lane at a few
-            degrees off horizontal — a third line parallel to the two arrows
-            rather than a mark across one of them. A slash is a shape, and a
-            shape has to be square at every aspect. */}
-        <span
-          className="fig-gt-strike"
-          data-struck={phase >= 5 ? 'true' : 'false'}
-          style={{ left: '50%', top: `${RUN.reverseY}%` }}
-        />
+        {/* Two strokes, not one, and DOM for the same reason the arrowheads are:
+            drawn in the stretched viewBox a slash runs a few degrees off
+            horizontal and becomes a third line parallel to the two arrows.
+
+            It was one stroke until now, and one stroke was the wrong mark. The
+            thing being cancelled is a thin arrow at 38% opacity — very nearly
+            the faintest thing on the slide — and a single bright diagonal laid
+            over almost nothing does not read as a strike-through. It reads as a
+            solidus someone left in the frame, which is what it was reported as.
+            A cross is unambiguous at the back of a room in a way a slash is
+            not, and it costs one more span. The second arm follows the first by
+            a beat, because that is the order a hand would draw it in. */}
+        {(['down', 'up'] as const).map((arm, index) => (
+          <span
+            key={arm}
+            className="fig-gt-strike"
+            data-arm={arm}
+            data-struck={phase >= 5 ? 'true' : 'false'}
+            style={vars({ left: '50%', top: `${RUN.reverseY}%`, '--fig-delay': `${index * 90}ms` })}
+          />
+        ))}
 
         <span
           className="fig-gt-chevron"

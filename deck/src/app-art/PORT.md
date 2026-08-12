@@ -10,9 +10,27 @@ re-copied and the fix-ups below are re-applied.
 
 - `frontend/src/art/**` → `deck/src/app-art/**` (including `rig/`), wholesale.
 - `frontend/src/types.ts` → `deck/src/app-art/types.ts`.
-- `frontend/public/art/**` → `deck/public/art/**` (218 files, ~18 MB of `.webp`
-  catalog card art). Untouched; the paths the art modules build are relative to
-  the site root, so they resolve identically under the deck's Vite server.
+- ~~`frontend/public/art/**` → `deck/public/art/**`~~ — **no longer copied, and
+  do not restore it.** This was 218 files and about 18 MB of `.webp` catalog card
+  art, and across a full 24-slide walk plus every presenter-only key it was
+  requested exactly zero times. The reason is that the only module which builds
+  those URLs is `assets.ts`, and nothing reachable from the deck's entry point
+  calls the functions that do:
+
+  - `structures.tsx` imports `tierSiteArt` and `rivalSiteArt`, and **nothing
+    imports `structures.tsx`**.
+  - `office-three.tsx` does import `assets.ts`, but only `clientCastSeed`, which
+    is an FNV-1a hash over a name and never touches `BASE`.
+
+  So every URL builder is tree-shaken, and a production bundle contains no `art/`
+  path template at all — the only `/art` substring left in it is `/article/`,
+  inside a citation URL on slide 2. There is also no `import.meta.glob`, no
+  dynamic import built from a string, and no CSS `url()` anywhere in the deck
+  that could reach the directory at runtime.
+
+  The copy was never what made the demo slides work: those are iframes onto
+  `demoConfig.appOrigin`, so the app serves its own art from its own origin.
+  `frontend/public/art/**` is untouched and must stay that way.
 
 Copied from the working tree at commit `0f47beb5` ("Read a wrapped pavement
 round the seam in order, not backwards and then forwards"), **including
@@ -103,6 +121,34 @@ lifted from `art.css` and `unified-empire-map.css`:
 
 - `office-scene-host.css`
 - `map-scene-host.css`
+
+### 6. `renderer.forceContextLoss()` on the office teardown
+
+One line added to `office-three.tsx`'s cleanup, and the only fix-up here that
+changes behaviour rather than types, imports or hosting.
+
+`renderer.dispose()` releases three.js's own GPU objects but not the WebGL
+context behind the canvas; the browser reclaims that only when the canvas is
+collected, which is not deterministic and in practice is late. Upstream mounts
+the office once per page load, so a context that lingers until GC costs nothing
+and the omission is invisible there. The deck mounts and unmounts the same
+component every time the presenter moves through the demo slides, and a
+rehearsal is many passes — so contexts accumulate against Chrome's per-page
+limit, and when that limit is reached Chrome discards the **oldest** live
+context, which is the shared stage's, created at boot.
+
+The symptom is therefore reported against the wrong object: a navigation stress
+run logged `deck: WebGL context lost — reload the deck` from `scenes/stage.ts`
+while the leak was here. On stage it would mean a dead 3D background for the
+rest of the talk, with no recovery but a reload.
+
+`map-three-scene.tsx` already calls `forceContextLoss()` in its own teardown and
+`scenes/map-scene.tsx` documents it as the required pattern, so this brings the
+office in line with its sibling rather than inventing anything.
+
+**This belongs upstream too** — `frontend/src/art/office-three.tsx` has the same
+single-`dispose()` teardown. It is lower severity there for the reason above, but
+it is the same bug, and once it is fixed upstream this fix-up can be dropped.
 
 ## What was deliberately *not* changed
 

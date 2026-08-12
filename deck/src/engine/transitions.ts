@@ -77,6 +77,39 @@ export const TRANSITION_MS: Record<TransitionKind, number> = {
  * incoming slide means invisible. With the fill, `finish()` genuinely leaves the
  * end state on screen.
  */
+/**
+ * WHY ALMOST NOTHING IN THIS FILE PASSES `easing` IN THE OPTIONS.
+ *
+ * A timing function in `KeyframeAnimationOptions` is not "the easing between
+ * the keyframes". It is applied to the iteration progress *before* the
+ * keyframes are consulted, so it moves every offset in the list. Under
+ * `cubic-bezier(.22,1,.36,1)` — the deck's house ease-out, and the one that was
+ * on four of these kernels — the timeline is already 72% spent a fifth of the
+ * way through, which means a keyframe written at `offset: .33` actually
+ * happens at 0.1 and a hold written as "stay invisible for the first third"
+ * lasts a fourteenth.
+ *
+ * That is not a rounding error, and it had eaten the two transitions whose
+ * whole job is to hide a swap:
+ *
+ *   - `letterbox` says in its own comment that "the incoming slide is hidden
+ *     until the shutter is shut, so nothing of the swap is ever visible". The
+ *     bars close on `steps()`, which is honest linear time, while the incoming
+ *     slide came up on the remapped clock — so it was fully opaque a fifth of
+ *     the way in, with the bars only three fifths closed and the outgoing slide
+ *     still at full opacity underneath it. Which of the two you saw depended on
+ *     which of the deck's two layer elements happened to be holding it, because
+ *     they alternate and their DOM order does not.
+ *   - `foil-seal` is the same shape: the plate that the swap is supposed to
+ *     happen behind reaches full at 44% of the move, and the incoming slide was
+ *     arriving at 10%. It is the transition into the close, held for the whole
+ *     of the Q&A.
+ *
+ * So the rule here is: the effect-level easing stays `linear` — `play` already
+ * defaults it — and a curve goes on the keyframe that *starts* the interval it
+ * is meant to shape. Two-keyframe animations are unaffected either way and are
+ * left alone, since for those the two spellings mean the same thing.
+ */
 class Batch {
   private readonly animations: Animation[] = []
   private readonly cleanups: Array<() => void> = []
@@ -275,9 +308,9 @@ const inkBleed: Kernel = ({ from, to, direction, overlay, onMidpoint }, batch) =
   }
   batch.play(to, [
     { opacity: 0, filter: 'blur(9px) saturate(.5)', transform: 'scale(1.014)' },
-    { opacity: 0, offset: .3 },
+    { opacity: 0, offset: .3, easing: 'cubic-bezier(.22,1,.36,1)' },
     { opacity: 1, filter: 'blur(0px) saturate(1)', transform: 'scale(1)' },
-  ], { duration, easing: 'cubic-bezier(.22,1,.36,1)' })
+  ], { duration })
 
   onMidpoint?.()
 }
@@ -323,11 +356,11 @@ const letterbox: Kernel = async ({ from, to, overlay, onMidpoint }, batch) => {
   // The act slug lives in the black, which is the only moment in the deck where
   // there is room for a line of type at the size an act title wants.
   batch.play(slug, [
-    { opacity: 0, letterSpacing: '.5em' },
-    { opacity: 1, letterSpacing: '.28em', offset: .5 },
-    { opacity: 1, letterSpacing: '.26em', offset: .78 },
+    { opacity: 0, letterSpacing: '.5em', easing: 'ease-out' },
+    { opacity: 1, letterSpacing: '.28em', offset: .5, easing: 'ease-out' },
+    { opacity: 1, letterSpacing: '.26em', offset: .78, easing: 'ease-out' },
     { opacity: 0, letterSpacing: '.2em' },
-  ], { duration: close + hold + open * .6, delay: close * .55, easing: 'ease-out' })
+  ], { duration: close + hold + open * .6, delay: close * .55 })
 
   if (from) {
     batch.play(from, [
@@ -338,13 +371,15 @@ const letterbox: Kernel = async ({ from, to, overlay, onMidpoint }, batch) => {
     ], { duration: total, easing: 'linear' })
   }
   // The incoming slide is hidden until the shutter is shut, then pushed in behind
-  // it, so nothing of the swap is ever visible.
+  // it, so nothing of the swap is ever visible. `.33` is just past `close`, which
+  // is `.34` of the total — see the note on `Batch` for why the offsets in this
+  // list only started being true when the effect-level easing came off.
   batch.play(to, [
     { opacity: 0, transform: 'scale(1.04)' },
-    { opacity: 0, transform: 'scale(1.04)', offset: .33 },
-    { opacity: 1, transform: 'scale(1.02)', offset: .52 },
+    { opacity: 0, transform: 'scale(1.04)', offset: .33, easing: 'cubic-bezier(.22,1,.36,1)' },
+    { opacity: 1, transform: 'scale(1.02)', offset: .52, easing: 'cubic-bezier(.22,1,.36,1)' },
     { opacity: 1, transform: 'scale(1)' },
-  ], { duration: total, easing: 'cubic-bezier(.22,1,.36,1)' })
+  ], { duration: total })
 
   // The outgoing scene is released inside the black.
   batch.after(close, () => onMidpoint?.())
@@ -523,11 +558,13 @@ const foilSeal: Kernel = ({ from, to, overlay, onMidpoint }, batch) => {
       { opacity: 0 },
     ], { duration: total, easing: 'linear' })
   }
+  // `.44` is `cover`, the point the plate is opaque. The swap has to be behind
+  // it; see the note on `Batch` for why it was in front of it until now.
   batch.play(to, [
     { opacity: 0, transform: 'scale(1.03)' },
-    { opacity: 0, transform: 'scale(1.03)', offset: .44 },
+    { opacity: 0, transform: 'scale(1.03)', offset: .44, easing: 'cubic-bezier(.22,1,.36,1)' },
     { opacity: 1, transform: 'scale(1)' },
-  ], { duration: total, easing: 'cubic-bezier(.22,1,.36,1)' })
+  ], { duration: total })
 
   batch.after(cover, () => onMidpoint?.())
 }
@@ -875,6 +912,62 @@ const priceCurtain: Kernel = ({ from, to, onMidpoint }, batch) => {
   batch.after(total * .4, () => onMidpoint?.())
 }
 
+/**
+ * 17 → 18, and back. The field parts and the audience is in the ladder.
+ *
+ * `tiers-scene.ts` builds all fifteen firm tiers as one object climbing a
+ * helix, and its own header calls the move between two of its framings "the
+ * deck's demonstration of a continuous camera move… the transition *is* the
+ * camera". It was not, and could not be: both slides that share the scene paint
+ * an opaque field, so the stage flew sixty units up a helix behind a royal blue
+ * rectangle, every time, for nobody. That is the whole of the founders' note
+ * that the 3D is decorative — the deck's best camera move was running with the
+ * lens cap on.
+ *
+ * So this kernel does the one thing the generic `camera` kernel cannot: it
+ * takes the field *off* for the middle of the move. The outgoing slide pulls
+ * back and clears, the room looks at the ladder itself with the camera climbing
+ * it, and the incoming slide's field closes over the top. Nothing is added to
+ * the frame to make this happen and no extra scene is built — the object was
+ * always there and always moving, and all that changes is that the audience can
+ * now see it.
+ *
+ * Longer than any other transition in the deck at 1.7s, and deliberately: a
+ * quick one would read as a flash of something going wrong behind the slides,
+ * which is exactly the note this is answering. The window is nine tenths of a
+ * second of held 3D, and `tiers-scene.ts` sets its camera tween to 1.25s
+ * against it, so the audience joins the climb at speed and the camera arrives
+ * at its framing as the incoming field closes over the top of it.
+ */
+const TIER_FLY_MS = 1700
+
+const tierFly: Kernel = ({ from, to, onMidpoint }, batch) => {
+  const total = TIER_FLY_MS
+
+  if (from) {
+    // Away from the audience rather than towards them: the flat plate recedes
+    // and leaves the world it was printed over, which is the read that makes
+    // the ladder feel like it was behind the slide all along.
+    batch.play(from, [
+      { opacity: 1, transform: 'perspective(1600px) translate3d(0,0,0)', easing: 'cubic-bezier(.45,0,.75,.5)' },
+      { opacity: 0, transform: 'perspective(1600px) translate3d(0,0,-190px)', offset: .33 },
+      { opacity: 0, transform: 'perspective(1600px) translate3d(0,0,-190px)' },
+    ], { duration: total })
+  }
+
+  batch.play(to, [
+    { opacity: 0, transform: 'perspective(1600px) translate3d(0,0,-150px)' },
+    { opacity: 0, transform: 'perspective(1600px) translate3d(0,0,-150px)', offset: .86, easing: 'cubic-bezier(.33,0,.2,1)' },
+    { opacity: 1, transform: 'perspective(1600px) translate3d(0,0,0)' },
+  ], { duration: total })
+
+  // At the point the field is off. Nothing mounted is being released here —
+  // neither of these slides holds an app scene — but the contract is that the
+  // midpoint is the moment the outgoing slide stops being on screen, and for
+  // this kernel that is when it finishes clearing.
+  batch.after(total * .33, () => onMidpoint?.())
+}
+
 const OVERRIDES: readonly Override[] = [
   {
     id: 'exposure-blowout',
@@ -885,6 +978,19 @@ const OVERRIDES: readonly Override[] = [
     id: 'price-curtain',
     matches: ({ from, to }) => Boolean(from?.querySelector('.fig-hb-ribbon')) && to.dataset.field === 'beige',
     kernel: priceCurtain,
+  },
+  {
+    id: 'tier-fly',
+    // Both sides looking at the same stage scene, and both hiding it. If a
+    // future slide shows the ladder outright there is nothing to part and the
+    // generic `camera` kernel is already the right answer.
+    matches: ({ from, to }) => (
+      from?.dataset.scene === 'tiers'
+      && to.dataset.scene === 'tiers'
+      && from.dataset.field !== 'scene'
+      && to.dataset.field !== 'scene'
+    ),
+    kernel: tierFly,
   },
 ]
 

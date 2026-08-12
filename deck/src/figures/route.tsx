@@ -20,9 +20,14 @@ const MARKS = [40, 420, 1000, 1500] as const
 /** How far apart the skip ticks land. Three nodes at 150ms is a rhythm; five is still under the budget. */
 const SKIP_STAGGER_MS = 150
 
-/** The lane the curriculum sits on, and the lane the route ends on, in percent of the frame. */
-const SKIP_LANE = 26
-const TAKEN_LANE = 78
+/**
+ * The lane the curriculum sits on, and the lane the route ends on, in percent of
+ * the frame. Pulled apart from 26/78 so the cut is steeper: at the old spacing
+ * the diagonal fell about one unit in three across the whole frame, which reads
+ * as a gentle decline rather than as a route leaving the curriculum.
+ */
+const SKIP_LANE = 22
+const TAKEN_LANE = 82
 
 /** Where the readout is held when motion is off: a plausible mid-run split rather than a row of zeroes. */
 const FROZEN_MS = 52_400
@@ -53,8 +58,31 @@ export function Route({ spec, active, reduced }: FigureBody<RouteFigure>) {
       {/* The track is the first child, on the HUD's leading edge, because the
           transition in from slide 4 lands the collapsed numeral on it and a
           target that moved with the label's width would be a target that
-          moved between projectors. */}
-      <div className="fig-rt-hud" style={{ opacity: phase >= 1 ? 1 : 0 }}>
+          moved between projectors.
+
+          IN THE CORNER, AND IT HAS TO BE. This sat on the skip lane, at the
+          start of the run, on the argument that a HUD pinned to a corner is a
+          badge while a HUD on the line is the run's origin. The argument was
+          right and the geometry was not: the node labels are stacked *above*
+          their lane — they have to be, or the route strikes through them — so
+          the chip and the first node's name were placed in the same band, and
+          `SPEEDRUN 0:07.41` printed straight across `intro course` on every
+          frame the deck has ever been shot at. The two cannot both be there:
+          the chip's width is set by its type and the node's position by a
+          percentage of the row, so no amount of nudging makes the clearance
+          hold from a 4:3 projector to a 21:9 one.
+
+          The bottom-left corner is where it goes instead, and there are two
+          reasons it is not a consolation. It is where a speedrun timer
+          actually lives, in every run the metaphor is borrowed from. And it is
+          the one part of this frame that nothing else can ever occupy — the
+          route leaves the curriculum lane at the top left and lands at the
+          bottom right, so the triangle underneath its departure was the empty
+          quarter of the slide. */}
+      <div
+        className="fig-rt-hud"
+        style={vars({ opacity: phase >= 1 ? 1 : 0 })}
+      >
         <span
           className="fig-rt-hud-track"
           data-morph="timer-track"

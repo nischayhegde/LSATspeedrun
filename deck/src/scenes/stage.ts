@@ -70,6 +70,8 @@ export class DeckStage {
   private width = 1
   private height = 1
   private running = false
+  /** Latched by `dispose`, and the guard every async continuation checks. */
+  private disposed = false
   private frame = 0
   private previousTime = 0
   private sceneElapsed = 0
@@ -152,10 +154,7 @@ export class DeckStage {
     window.addEventListener('pointermove', this.handlePointer, { passive: true })
     // A lost context is unrecoverable mid-talk, so it is at least reported
     // loudly rather than showing a frozen frame nobody can explain.
-    this.canvas.addEventListener('webglcontextlost', (event) => {
-      event.preventDefault()
-      console.error('deck: WebGL context lost — reload the deck')
-    })
+    this.canvas.addEventListener('webglcontextlost', this.handleContextLost)
 
     // A function rather than an object, so a caller gets this frame's values
     // instead of a snapshot taken when the deck booted. Read-only by
@@ -169,6 +168,44 @@ export class DeckStage {
   }
 
   /**
+   * Link a scene's shader programs before anything asks to see it.
+   *
+   * Building a scene is not the same as being ready to draw it, and `warm` was
+   * only doing the first half. Constructing geometry and materials costs
+   * nothing on the GPU; the expensive step is the driver compiling and linking
+   * a program per distinct material, and three.js defers that to the first
+   * `render()` that encounters each one. So the whole point of warming — pay
+   * the cost on a slide nobody is waiting on, so the arrow key costs a camera
+   * tween — was being defeated for the one part of it that stalls the main
+   * thread. What the room saw was a hitch the *first* time each 3D slide
+   * appeared and never again, which is the signature of exactly this and is
+   * easy to misread as a slow scene.
+   *
+   * `compileAsync` links the set in parallel and resolves when they are ready,
+   * rather than making the main thread wait on each in turn inside a frame.
+   * `map-three-scene.tsx` already does this for the ported city, which is where
+   * the pattern comes from.
+   *
+   * ORDERING CONSTRAINT, and it is easy to break by accident: a program's cache
+   * key includes renderer state — `shadowMap.enabled` among it. Anything that
+   * changes such state must be set on the renderer in the constructor, before
+   * any scene is warmed. Flip one afterwards and every program compiled here is
+   * invalidated, so this work is thrown away and the hitch comes back on the
+   * keystroke that flipped it.
+   *
+   * Failure is swallowed on purpose. A scene that cannot precompile is a scene
+   * that will compile on its first frame, which is merely the old behaviour;
+   * it is not a reason to drop the scene from the cache or to fail the warm.
+   */
+  private async precompile(scene: DeckScene) {
+    try {
+      await this.renderer.compileAsync(scene.scene, scene.camera)
+    } catch {
+      /* falls back to compiling on first render */
+    }
+  }
+
+  /**
    * Build a scene now and keep it, without showing it.
    *
    * Called for the slide either side of the current one. This is the whole
@@ -176,15 +213,26 @@ export class DeckStage {
    * has already been built, so the keystroke costs a camera tween.
    */
   async warm(id: string) {
-    if (!id || id === 'none' || this.cache.has(id)) return
+    if (this.disposed || !id || id === 'none' || this.cache.has(id)) return
     const factory = this.factories.get(id)
     if (!factory) return
     try {
       const scene = await factory(this.context)
+      // The stage went away while this was building. Nothing will ever show it
+      // and `dispose` has already walked the cache, so putting it in the cache
+      // now is a scene's worth of geometry and textures held against a dead
+      // renderer for the life of the document.
+      if (this.disposed) { scene.dispose(); return }
       // The show that raced ahead of this warm may already have built and
       // cached the same scene; keep the one that is in use.
       if (this.cache.has(id)) { scene.dispose(); return }
       scene.resize(this.width, this.height)
+      await this.precompile(scene)
+      // Re-checked after the compile, which is a second await and therefore a
+      // second window in which the stage can be disposed or the same scene can
+      // be built and cached by a `show` that raced past this warm.
+      if (this.disposed) { scene.dispose(); return }
+      if (this.cache.has(id)) { scene.dispose(); return }
       this.remember(id, scene)
     } catch (error) {
       console.error(`deck: scene "${id}" failed to build`, error)
@@ -204,6 +252,7 @@ export class DeckStage {
     params: Record<string, string | number | boolean> | undefined,
     blend: 'ink' | 'none',
   ) {
+    if (this.disposed) return
     const mine = ++this.token
 
     // Same scene, different framing: this is the continuous camera move, and it
@@ -230,6 +279,15 @@ export class DeckStage {
         console.error(`deck: scene "${id}" failed to build`, error)
         return
       }
+      if (this.disposed) { next.dispose(); return }
+      // Compiled here too, for the same reason as in `warm` and at a better
+      // price than it looks. This branch is the cache miss — the warm never ran
+      // or was evicted — so the alternative is not "show it sooner", it is
+      // showing it and hitching on the first frame. The old scene is still
+      // rendering throughout, so the cost lands as a slightly longer held frame,
+      // which nobody can see, instead of as a stutter, which everybody can.
+      await this.precompile(next)
+      if (this.disposed) { next.dispose(); return }
       if (mine !== this.token) {
         // Superseded. Keep it — it is built and correct, and the presenter is
         // very likely coming back to it — but do not activate it.
@@ -304,10 +362,17 @@ export class DeckStage {
   }
 
   dispose() {
+    // Set first, and read by `warm` and `show` on the far side of their awaits.
+    // Both build a scene asynchronously and then put it in the cache, and both
+    // could be in flight here — `dispose` walks the cache once, so anything
+    // that arrives afterwards is a room's worth of geometry and textures held
+    // against a disposed renderer with nothing left that could ever free it.
+    this.disposed = true
     this.stop()
     registerProbe('__deckStage', undefined)
     window.removeEventListener('resize', this.handleResize)
     window.removeEventListener('pointermove', this.handlePointer)
+    this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     for (const scene of this.cache.values()) scene.dispose()
     this.cache.clear()
     this.recent.length = 0
@@ -340,6 +405,11 @@ export class DeckStage {
     // Every cached scene, not only the visible one: an off-screen scene with a
     // stale aspect is a wrong first frame the moment it is shown.
     for (const scene of this.cache.values()) scene.resize(width, height)
+  }
+
+  private handleContextLost = (event: Event) => {
+    event.preventDefault()
+    console.error('deck: WebGL context lost — reload the deck')
   }
 
   private handlePointer = (event: PointerEvent) => {

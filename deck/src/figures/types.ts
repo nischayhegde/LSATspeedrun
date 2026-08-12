@@ -172,13 +172,26 @@ export type TracesFigure = {
   baselineLabel: string
 }
 
-/** Slide 10 — fourteen methods, thirteen dismissed, one docked. */
-export type MethodFanFigure = {
-  kind: 'method-fan'
+/** Slide 10 — the catalogue, the one method handed over, and whether it worked. */
+export type MethodLabFigure = {
+  kind: 'method-lab'
+  /** The whole catalogue, in the app's own order. Drawn in full; none of it leaves. */
   methods: string[]
-  /** Which one survives the filter. Index into `methods`. */
+  /** Which one this question handed over. Index into `methods`. */
   keep: number
-  /** The inline lift bar beside the docked card: this student, prompted vs not. */
+  /**
+   * The card the student is actually given. Every string here is the app's own
+   * copy from `backend/app/strategies.py` — this figure must not paraphrase a
+   * method, because the room may go and look.
+   */
+  handed: {
+    name: string
+    /** What fired it: the question types this method is offered on. */
+    trigger: string
+    /** The three things it asks for, in order. */
+    steps: string[]
+  }
+  /** The verdict bars: this student, prompted vs. their own unprompted attempts. */
   lift: { prompted: number; baseline: number; note: string }
 }
 
@@ -195,20 +208,19 @@ export type ClockRingsFigure = {
   outerLabel: string
 }
 
-/** Slide 15 — the dashboard as a radial diagram. */
-export type RadialFigure = {
-  kind: 'radial'
-  /** The large beige numeral at the centre. */
+/** Slide 15 — every signal the product watches, converging on the one derived number. */
+export type SignalIndexFigure = {
+  kind: 'signal-index'
+  /** The large numeral the signals are read into. */
   centre: { label: string; value: string }
   nodes: Array<{
     label: string
-    /** Hairline thickness: how much this signal feeds the centre, 0..1. */
+    /** How much this signal feeds the index, 0..1. Sets the row order, the
+     *  weight bar and the hairline's thickness. */
     weight: number
-    /** Inner or outer ring. */
-    ring: 1 | 2
     /** The current weakest link burns brighter. */
     highlight?: boolean
-    /** Gets an `evidence forming` tag when the outer ring dims. */
+    /** Carries an `evidence forming` tag: the sample is not big enough to compare yet. */
     forming?: boolean
   }>
 }
@@ -242,10 +254,6 @@ export type CurrencyLiftFigure = {
   /** Sits on the shared dashed gate, printed once on the first row. */
   controlLabel: string
   rows: Array<{ course: string; venue: string; multiple: number }>
-  /** The eyebrow on the null register, e.g. `did not move`. */
-  unmovedLabel: string
-  /** Outcomes the study measured and found unchanged. Drawn flat, never as bars. */
-  unmoved: string[]
 }
 
 /** Slide 17 — the four Clark splits, ours against the alternative. */
@@ -297,9 +305,9 @@ export type FigureSpec =
   | ConfidenceTilesFigure
   | CohortSplitFigure
   | TracesFigure
-  | MethodFanFigure
+  | MethodLabFigure
   | ClockRingsFigure
-  | RadialFigure
+  | SignalIndexFigure
   | SpokesFigure
   | CurrencyLiftFigure
   | PairedBarsFigure

@@ -93,6 +93,29 @@ export function createHeroScene(context: SceneContext): DeckScene {
   const rim = new THREE.DirectionalLight(0x7fc6d8, .9)
   rim.position.set(9, 5, -7)
   scene.add(rim)
+  // From the camera's side, and the mark is unreadable without it.
+  //
+  // The rig above is a hard spot from above at (-4.6, 21, 9) and a rim from
+  // behind at (9, 5, -7). Neither of them is in front of the object. The spot's
+  // cone lands on the top faces of the beam and the pans and on the floor; the
+  // rim draws an edge on the far side. What the camera is looking at — the
+  // front of a 9.4-unit navy column, the front edge of the beam across it and
+  // the near face of both pans — is lit by nothing but a .85 hemisphere, and
+  // navy at roughness .62 under a .85 hemisphere is black.
+  //
+  // Photographed, the whole glyph came out as one featureless dark obelisk: the
+  // scales-of-justice mark that the header of this file calls "the first thing
+  // the audience sees" was, on a projector, a slab. It is the deck's opening
+  // frame and it was the least finished thing in it.
+  //
+  // Weak, cool and well off-axis on purpose. This is a night exterior and the
+  // spot is still the key — a fill that competes flattens the object into the
+  // haze plane behind it, which is the failure the fog and that plane exist to
+  // prevent. All this has to do is put the navy a few values above black so the
+  // contour pass has an edge to find.
+  const fill = new THREE.DirectionalLight(0xa8c4e8, .85)
+  fill.position.set(-7, 9, 17)
+  scene.add(fill)
   const goldBounce = new THREE.PointLight(PALETTE.pixelGold, 26, 16, 2)
   goldBounce.position.set(0, 3.1, 1.4)
   scene.add(goldBounce)

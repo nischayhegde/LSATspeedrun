@@ -251,8 +251,16 @@ export const SLIDES: readonly SlideSpec[] = [
       ticks: [
         { at: 0.16, source: 'Kaplan', range: '150–300' },
         { at: 0.4, source: 'Blueprint', range: '200–300' },
-        { at: 0.66, source: 'Princeton Review', range: '250–300' },
-        { at: 0.88, source: 'LSAC' },
+        { at: 0.62, source: 'Princeton Review', range: '250–300' },
+        // Pulled in from 0.88. The tick positions carry no quantity — all three
+        // published ranges top out at 300 — so they are spacing, and at 0.88 the
+        // blank one sat close enough to the outcome sliver at the bar's right
+        // end that "a few points" read as a label on LSAC's tick rather than on
+        // the sliver its leader line points at. The blank tick is drawn at full
+        // strength precisely so it is not mistaken for anything else; it should
+        // not then be crowded by the one mark on the slide it could be confused
+        // with.
+        { at: 0.79, source: 'LSAC' },
       ],
       outcome: 'a few points',
       curriculum: [
@@ -315,7 +323,14 @@ export const SLIDES: readonly SlideSpec[] = [
       + 'the governing bodies describing their own rules, which is why this one is not arguable.',
     speaker: 'Nischay',
     budgetSeconds: 12,
-    scene: { id: 'hero', framing: 'beam' },
+    // No stage scene. This used to name the hero city at its `beam` framing,
+    // which is a night exterior, under a slide that paints an opaque beige
+    // field — so it was never once on screen. What it did instead was build and
+    // cache a second copy of the deck's heaviest scene for a slide that cannot
+    // show it, and flash a dark cityscape through the crossfade into slide 5,
+    // where the two beige layers are briefly part-transparent at the same time.
+    // The `0.22` is this slide's object and the comment above says so.
+    scene: { id: 'none', framing: 'still' },
     // The full inversion — royal blue to beige — and the only one in the first
     // half of the deck. It is an act break and it should feel like a light
     // coming on, so it gets the shutter.
@@ -402,7 +417,13 @@ export const SLIDES: readonly SlideSpec[] = [
       'Why yours was wrong',
       'Why the right one works',
     ],
-    credit: 'VanLehn (2011), 87 comparisons · Zhang & Fiorella (2024)',
+    // "87 comparisons" was in this line for three revisions and is not a number
+    // VanLehn reports. His counts against no tutoring are 165 effects for
+    // answer-based, 28 for step-based, 26 for substep and 10 for human, and no
+    // combination of them is 87. The three effect sizes the figure plots â
+    // 0.31, 0.76, 0.79 â are his, exactly, so the finding is sound and only the
+    // provenance was invented. The journal is checkable and the count was not.
+    credit: 'VanLehn (2011), Educational Psychologist — against no tutoring · Zhang & Fiorella (2024)',
     // The emphasis moves: the five choices shrink and desaturate while the
     // reasoning box grows and takes the focus ring. The three effect bars draw
     // in sequence so the room sees the last two land at nearly the same length —
@@ -463,7 +484,7 @@ export const SLIDES: readonly SlideSpec[] = [
     headline: "Accuracy and time can't see understanding.",
     deck: 'A lucky guess and a confident miss look identical on a score report.',
     points: ['Rate 1–5, before the key.'],
-    credit: 'Metcalfe (2017), the hypercorrection effect',
+    credit: 'Metcalfe (2017), Annual Review of Psychology 68 — the hypercorrection effect',
     // All four tiles carry the same plain mark, so they look interchangeable.
     // Then confidence drops onto each and they re-sort into four different
     // problems. The sort is the argument; it is over in under 1.5 seconds.
@@ -694,21 +715,29 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act III — Spiky POV 03',
     headline: 'An AI that gives answers makes you worse.',
     deck: 'With unguarded ChatGPT, practice grades rose 48%. On the real exam, those students dropped 17%.',
-    // REVISION 9 CUT `Hints, never solutions` AND PUT IT BACK. On the data it
-    // looks like the third trace's own label repeated four inches lower — the
-    // guarded trace below is named "a coach that gives hints, never answers".
-    // It is not. That trace is flat at the baseline, so it draws underneath the
-    // control's dashed line and its label is never painted; a 4K still of the
-    // settled frame has bare background where the other two traces carry their
-    // right-edge labels. Cut the fragment and the deck's own guardrail — the
-    // one thing on this slide that is a product commitment rather than somebody
-    // else's finding — is spoken once and shown nowhere.
+    // `Hints, never solutions` is CUT, and the reason it was restored no longer
+    // holds. Revision 9 cut it as a repeat of the guarded trace's own label —
+    // "a coach that gives hints, never answers" — and then put it back on the
+    // finding that the trace is flat at the baseline, draws underneath the
+    // control's dashed line, and never paints its label at all.
+    //
+    // It paints. `spreadLabels` in `traces.tsx` pushes coincident right-edge
+    // labels apart precisely so that this one is legible, and a 1920x1080
+    // capture of the settled frame shows all three tags. So the restored
+    // fragment is what it looked like in the first place: the sentence
+    // immediately above it, set again in a smaller face. Two fragments left,
+    // and they are the two halves of the guardrail the trace does not draw.
     points: [
       'Attempt first',
-      'Hints, never solutions',
       'One step at a time',
     ],
-    credit: 'Bastani et al. (2024), ~1,000 students, field experiment',
+    // 2025, not 2024, and PNAS. The year was wrong on the slide and the paper is
+    // the single most-cited AI-in-education RCT there is, so it is the credit in
+    // the deck most likely to be looked up from the room. The population is
+    // named too: these were high-school mathematics students in Turkey, which
+    // is the caveat a hostile questioner reaches for first, and a credit that
+    // hides the caveat is worse than one that does not fit on the line.
+    credit: 'Bastani et al. (2025), PNAS 122 — ~1,000 high-school students, three-arm field experiment',
     // The only slide in the deck permitted a moment of misdirection: the good
     // trace draws first and holds long enough for the room to start nodding.
     figure: {
@@ -725,7 +754,7 @@ export const SLIDES: readonly SlideSpec[] = [
       "I'll take it from here. Bastani gave a thousand students plain ChatGPT. "
       + 'Practice grades up forty-eight percent. Take it away for the real exam: seventeen percent worse. '
       + 'Ours never gives the answer.'
-      + ' ⟢ IF CHALLENGED — Bastani and colleagues, 2024, a field experiment with about a thousand high-school '
+      + ' ⟢ IF CHALLENGED — Bastani and colleagues, PNAS 2025, a field experiment with about a thousand high-school '
       + 'students in Turkey. The detail that matters and is on the slide: the arm that gave hints instead of '
       + 'answers left students level with the control, so the harm is the answer, not the AI.',
     speaker: 'Alan',
@@ -743,28 +772,50 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act III — Spiky POV 04',
     headline: 'Strategies get taught. They should get tested.',
     deck: 'One method, handed to you at the moment you need it, kept only if your own data says it works.',
-    // The fourth fragment is the deck's second competitive line, and it uses the
-    // same device as the one on `pov-reasoning-is-the-work`: a bare sentence,
-    // arriving last, naming nobody. It is deliberately a claim about
+    // Two of the four fragments went when the figure was rebuilt, because the
+    // rebuilt figure draws them. `14 in the catalog` is now the catalogue's own
+    // heading, set against the fourteen names it counts, which is a better
+    // place for it than a fragment eight lines below the list. `Tested against
+    // your own control` was always the figure's note word for word — the
+    // narrative flags it as the one line here available for cutting, and this
+    // is the pass that spends it.
+    //
+    // The fourth fragment is the deck's second competitive line, and it uses
+    // the same device as the one on `pov-reasoning-is-the-work`: a bare
+    // sentence, arriving last, naming nobody. It is deliberately a claim about
     // *measurement* rather than about method vocabulary, because `CITATIONS.md`
     // §4.2 establishes that Demon's Prediction Mode already prompts a technique
     // inside a question — so "nobody prompts a method" would be false, while
     // "nobody measures whether it worked for this student" is the finding §4
     // actually supports across all seven products.
     points: [
-      '14 in the catalog',
       'One per question',
-      'Tested against your own control',
       'Nobody else measures whether it worked',
     ],
     // The fourteen are the app's real catalog keys, in the app's own order.
     // `comparative_matrix` is in the catalog but unreachable today because the
     // dataset never marks comparative passages — say "fourteen in the catalog,
     // thirteen currently in rotation" if anyone presses, and never claim all
-    // fourteen are being trialed. The one that survives the filter is
-    // `prephrase`, which is also the method staged on the live demo case.
+    // fourteen are being trialed. The one handed over is `prephrase`, which is
+    // also the method staged on the live demo case.
+    //
+    // `handed` is `prephrase` as the app defines it in
+    // `backend/app/strategies.py`: the trigger is that strategy's `best_for`
+    // and the three steps are its `steps`, verbatim. They are quoted rather
+    // than written because the figure sets them as the card the student is
+    // handed, and a paraphrase of a real product string on a pitch slide is a
+    // thing somebody can walk into the app and catch.
     figure: {
-      kind: 'method-fan',
+      kind: 'method-lab',
+      handed: {
+        name: 'Prephrase Before Choices',
+        trigger: 'assumption · inference · strengthen · weaken · point-at-issue',
+        steps: [
+          'Name the question task',
+          'Predict the needed effect',
+          'Use choices to verify, not invent',
+        ],
+      },
       methods: [
         'Argument core',
         'Prephrase',
@@ -1146,31 +1197,31 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act IV — proof',
     headline: 'Everything it watches, and why the numbers hold.',
     deck: 'First attempts only. Every figure carries how much evidence is behind it.',
-    // Twelve signals, deliberately — the founders asked for the complete list on
+    // Eleven signals, deliberately — the founders asked for the complete list on
     // one slide, and this is the one slide that knowingly exceeds the
-    // three-fragment rule. They are the radial's nodes rather than body copy, so
+    // three-fragment rule. They are the figure's rows rather than body copy, so
     // `points` is empty here on purpose: printing them twice would be the whole
     // list at half the size next to itself.
     //
-    // The Speedrun Index sits at the centre because it is the only derived
-    // figure; `weight` is how much each signal feeds it, and it sets hairline
-    // thickness. `forming` marks the ones whose sample is still too small to
+    // The Speedrun Index is the only derived figure, so it is what the eleven
+    // converge on; `weight` orders the column and sets both the weight bar and
+    // the hairline. `forming` marks the ones whose sample is still too small to
     // compare, which is the honesty claim the notes make out loud.
     figure: {
-      kind: 'radial',
+      kind: 'signal-index',
       centre: { label: 'Speedrun Index', value: '61' },
       nodes: [
-        { label: 'Accuracy by question type', weight: 1, ring: 1 },
-        { label: 'Pace against target time', weight: 0.9, ring: 1 },
-        { label: 'Reasoning quality grade', weight: 0.85, ring: 1 },
-        { label: 'Confidence calibration', weight: 0.7, ring: 1 },
-        { label: 'Weakest link and next focus', weight: 0.65, ring: 1, highlight: true },
-        { label: 'Review recovery', weight: 0.5, ring: 2 },
-        { label: 'Trend vs. your previous window', weight: 0.45, ring: 2 },
-        { label: 'Per-method lift', weight: 0.4, ring: 2, forming: true },
-        { label: 'Evidence confidence', weight: 0.35, ring: 2 },
-        { label: 'Comparison readiness', weight: 0.3, ring: 2, forming: true },
-        { label: 'Full-test section breakdown', weight: 0.55, ring: 2 },
+        { label: 'Accuracy by question type', weight: 1 },
+        { label: 'Pace against target time', weight: 0.9 },
+        { label: 'Reasoning quality grade', weight: 0.85 },
+        { label: 'Confidence calibration', weight: 0.7 },
+        { label: 'Weakest link and next focus', weight: 0.65, highlight: true },
+        { label: 'Full-test section breakdown', weight: 0.55 },
+        { label: 'Review recovery', weight: 0.5 },
+        { label: 'Trend vs. your previous window', weight: 0.45 },
+        { label: 'Per-method lift', weight: 0.4, forming: true },
+        { label: 'Evidence confidence', weight: 0.35 },
+        { label: 'Comparison readiness', weight: 0.3, forming: true },
       ],
     },
     // THE ONE SPOKEN CUT IN THIS PASS, and it is the same defect as the fragment
@@ -1191,7 +1242,14 @@ export const SLIDES: readonly SlideSpec[] = [
     budgetSeconds: 8,
     // 2D over the blue field, no WebGL: this lands directly after a live demo and
     // the frame rate is worth protecting.
-    scene: { id: 'metrics', framing: 'panel' },
+    //
+    // That is what the line above has always said and it is right; what was
+    // written underneath it was `{ id: 'metrics', framing: 'panel' }`, which is
+    // a WebGL scene, built and rendered and post-processed every frame behind
+    // an opaque royal blue rectangle for the whole of the slide. Nobody saw it,
+    // including whoever wrote the comment. Now the declaration agrees with the
+    // intent.
+    scene: { id: 'none', framing: 'still' },
     transition: 'ink-bleed',
   },
 
@@ -1211,11 +1269,13 @@ export const SLIDES: readonly SlideSpec[] = [
     // tenth of the size, and it repeated them as a range, which is a fourth
     // number the study does not report.
     //
-    // The two nulls stay, and stay as fragments rather than being left to the
-    // figure's `did not move` rule, which is set at hairline weight. They are
-    // the reason a room that distrusts gamification believes the rest of the
-    // slide, so they are the one thing here that has to be legible from the
-    // back. See `CITATIONS.md` §6.
+    // The two nulls are fragments and only fragments. The figure used to draw
+    // them a second time under a rule, as a pixel-face `DID NOT MOVE` label and
+    // two flat stubs — the same two findings, in the least legible type on the
+    // slide, directly under the sentence that already said them. They are the
+    // reason a room that distrusts gamification believes the rest of the slide,
+    // so they have to be readable from the back, and saying a thing twice with
+    // one of the two illegible is not emphasis. See `CITATIONS.md` §6.
     points: [
       'Intrinsic motivation: unchanged',
       'Course grades: not significant',
@@ -1259,8 +1319,6 @@ export const SLIDES: readonly SlideSpec[] = [
         { course: 'Discrete Structures', venue: 'private research university, PA', multiple: 2.5 },
         { course: 'Computer Networking', venue: 'private university, MO', multiple: 3.7 },
       ],
-      unmovedLabel: 'did not move',
-      unmoved: ['intrinsic motivation', 'final course grades'],
     },
     notes:
       'Back to the fifty-one percent. Dicheva isolated virtual currency in three courses. '
@@ -1289,7 +1347,7 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Act V',
     headline: 'The meta-analysis designed our game.',
     deck: 'Clark and colleagues, 69 samples, 6,868 participants. Every split went the way we built it.',
-    credit: 'Clark et al. — average participant age ~12–13; RCT subset smaller',
+    credit: 'Clark et al. (2016), Review of Educational Research 86(1) — average participant age ~12–13; RCT subset smaller',
     // Four paired bars, ours in beige and the alternative in dim royal blue,
     // with three of the four alternatives at or below zero. The pairs animate in
     // as the presenter names them, roughly one every three seconds. The four
@@ -1599,7 +1657,21 @@ export const SLIDES: readonly SlideSpec[] = [
       + 'never a replacement. A student who never opens the office loses nothing except the office.',
     speaker: 'Alan',
     budgetSeconds: 11,
-    scene: { id: 'tiers', framing: 'nexus' },
+    // No stage scene, and this one was doing active harm rather than merely
+    // costing frames.
+    //
+    // It named `tiers` at the `nexus` framing — the top of the ladder — behind
+    // an opaque royal blue field, so it was never seen. But it was also the
+    // only `camera` transition in the deck that *changes* the stage scene, and
+    // `transitionBlendsScene` deliberately returns `none` for `camera` on the
+    // assumption that a camera move shares its scene. The slide before this one
+    // is a demo, which paints no field at all, so the audience is genuinely
+    // looking at the stage when the swap happens: the background hard-cut from
+    // the backdrop to a night helix, unblended, in the middle of a crossfade.
+    //
+    // The ladder gets its one showing on the way into `game-by-design`, where
+    // the camera actually flies; see the `tier-fly` kernel.
+    scene: { id: 'none', framing: 'still' },
     transition: 'camera',
   },
 

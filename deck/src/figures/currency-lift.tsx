@@ -11,8 +11,16 @@ import './currency-lift.css'
  * mechanism instead: three courses at three universities, currency isolated
  * from every other game element, and the only thing that moved was how much
  * practice got done. So the argument is one shared control line with three bars
- * running past it, and then — set apart, below the rule — the two outcomes the
- * same intervention left exactly where it found them.
+ * running past it.
+ *
+ * The two nulls — intrinsic motivation, final course grades — used to be drawn
+ * here too, under a rule, as a pair of flat stubs labelled "DID NOT MOVE". They
+ * are now only on the fragment line. That is not a demotion: they are the whole
+ * reason a room that distrusts gamification believes the rest of the slide, and
+ * on the fragment line they are set in the body face at a size the back row can
+ * read, where in the figure they were a hairline stub, a pixel-face label at
+ * .76rem, and two strings that said what the fragment line said. Twice, once
+ * illegibly, is not emphasis.
  *
  * The overshoot idiom is deliberately the one the room already learned on slide
  * 2, where a stub bar and a long bar carried 0.22 against 2.77. Reusing it here
@@ -41,7 +49,6 @@ export function CurrencyLift({ spec, active, reduced }: FigureBody<CurrencyLiftF
   // number in the registry re-scales the plot instead of overflowing it.
   const longest = Math.max(...spec.rows.map((row) => row.multiple), 1)
   const unit = LONGEST_RUN / longest
-  const settled = phase >= 2 + spec.rows.length
 
   return (
     <div className="fig-cl">
@@ -83,22 +90,6 @@ export function CurrencyLift({ spec, active, reduced }: FigureBody<CurrencyLiftF
         })}
       </ol>
 
-      {/* The honesty beat, and the reason the product is shaped the way it is: a
-          currency that moves volume and nothing else has to sit on top of an
-          engine that turns volume into a score. Set flat and dim on purpose —
-          these are nulls, and drawing them as bars would give them a magnitude
-          the study did not find. */}
-      <div className="fig-cl-null" style={{ opacity: settled ? 1 : 0 }}>
-        <span className="fig-cl-null-label">{spec.unmovedLabel}</span>
-        <ul>
-          {spec.unmoved.map((item) => (
-            <li key={item}>
-              <i />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { DemoStage } from './demo/demo-stage'
 import { GridOverview } from './engine/grid'
@@ -6,6 +6,7 @@ import { Presenter } from './engine/presenter'
 import { useDeck } from './engine/use-deck'
 import { QaPanel } from './notes'
 import { AppSceneLayer } from './scenes/app-scene-layer'
+import { setStageOccluded } from './scenes/occlusion'
 import { registerScenes } from './scenes/registry'
 import { DeckStage } from './scenes/stage'
 import { SECTION_LABELS, SLIDES } from './slides'
@@ -56,6 +57,19 @@ export function Deck() {
     return () => stage.canvas.remove()
   }, [stage])
 
+  // A slide that paints a field is an opaque rectangle over the stage canvas,
+  // and eighteen of the twenty-four do. See `occlusion.ts`: while one is being
+  // held, the stage's render and its full-screen post pass are work whose
+  // result nobody can see. `moving` is the safety rule — during a transition
+  // both layers are part-transparent and the stage really is on screen — and a
+  // layout effect rather than an effect so the flag is right before the browser
+  // paints the first frame of the move rather than one frame into it.
+  useLayoutEffect(() => {
+    const covered = !deck.moving && deck.current.field !== undefined && deck.current.field !== 'scene'
+    setStageOccluded('field', covered)
+    return () => setStageOccluded('field', false)
+  }, [deck.current.field, deck.moving])
+
   // Telemetry is polled rather than pushed. The stage runs at 60fps and a state
   // update per frame would put React's commit on the frame budget it is measuring.
   useEffect(() => {
@@ -81,6 +95,13 @@ export function Deck() {
       <div
         className={`deck-layer${live ? ' is-live' : ''}`}
         data-act-label={SECTION_LABELS[slide.section]}
+        // Which slide this layer is holding, on the layer itself. The HUD
+        // carries the same string but is off by default and suppressed under
+        // the presenter overlay, so the two harnesses in `scripts/` had no
+        // reliable way to ask the deck what it thought was on screen — and
+        // "the deck lost track of which slide it is on" is precisely the
+        // failure a navigation stress run exists to catch.
+        data-slide={slide.id}
         data-kind={slide.kind}
         data-section={slide.section}
         // The deck inverts between a royal blue field and a beige one as a
@@ -88,6 +109,11 @@ export function Deck() {
         // wants it to feel like a light coming on. `scene` paints nothing at
         // all, so a slide whose subject is the 3D stage stays transparent.
         data-field={slide.field ?? 'scene'}
+        // Which stage scene is behind this layer. Read by the `tier-fly`
+        // override in `transitions.ts`, which is the one transition in the deck
+        // that has to know whether the two slides it is between are looking at
+        // the same 3D object.
+        data-scene={slide.scene?.id ?? 'none'}
         ref={(element) => deck.registerLayer(key, element)}
         // The layer that is leaving must not swallow a click aimed at the one
         // arriving, and an iframe inside it must not keep loading.

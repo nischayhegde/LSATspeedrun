@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 
 /**
  * FIGURE KIT — the four things every figure in this folder needs.
@@ -94,6 +94,46 @@ export function useStopwatch(active: boolean, reduced: boolean, frozenAt: number
   }, [active, reduced, frozenAt])
 
   return elapsed
+}
+
+/**
+ * An element's own pixel size, kept current.
+ *
+ * The one thing in this kit that costs a live observer, and it is deliberately
+ * the only one. Almost every figure here is drawn in a unit-square viewBox and
+ * therefore never needs to know how big it is; the exception is a shape that
+ * must stay *undistorted* while filling a box whose aspect ratio is set by the
+ * projector — slide 11's full-form ring runs around a 1674×430 band and its
+ * corners have to be round on every stage, which a stretched viewBox cannot do
+ * and a square one cannot fill.
+ *
+ * A `ResizeObserver` rather than a window listener, because the figure row's
+ * height is a grid track that changes when the headline wraps to a second line,
+ * which is not a resize of anything the window would report. Disconnected on
+ * cleanup: this is exactly the class of subscription that outlives its slide if
+ * it is set up carelessly, and the deck has been bitten by that before.
+ */
+export function useBoxSize<T extends Element>(): [RefObject<T | null>, { w: number; h: number }] {
+  const ref = useRef<T>(null)
+  const [box, setBox] = useState({ w: 0, h: 0 })
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const read = () => {
+      const rect = node.getBoundingClientRect()
+      // Rounded, because a fractional layout size churns state every frame the
+      // stage tweens through and each churn is a React commit on a live slide.
+      const next = { w: Math.round(rect.width), h: Math.round(rect.height) }
+      setBox((prev) => (prev.w === next.w && prev.h === next.h ? prev : next))
+    }
+    read()
+    const observer = new ResizeObserver(read)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
+  return [ref, box]
 }
 
 /** `M:SS.cc`, the speedrun convention, zero-padded so the readout never reflows. */

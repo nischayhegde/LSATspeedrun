@@ -82,7 +82,18 @@
      unfinished. */
   --font-display: Archivo, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-ui: Archivo, Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-pixel: "Courier New", "Lucida Console", ui-monospace, monospace;
+  /* The deck's readout face: source credits, the speedrun clock, chart
+     annotations, the demo chrome's URL bar. Everything that is meant to
+     read as *recorded* rather than as written.
+
+     It was Courier New, which is not a choice — it is what a document
+     looks like when nobody made one. Projected at the size a credit line
+     needs, its stems are too light to hold and its width forces the
+     citations to run nearly the full measure. Plex Mono is drawn for
+     screens, has real weight below 700, and sets the same citation about
+     15% shorter. The old stack stays behind it as the fallback, so a
+     conference-wifi failure lands exactly where the deck used to be. */
+  --font-pixel: "IBM Plex Mono", "Courier New", "Lucida Console", ui-monospace, monospace;
 
   /* --- tracking, by size ------------------------------------------
      One rule, applied everywhere, rather than a letter-spacing invented

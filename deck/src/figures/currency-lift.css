@@ -29,19 +29,23 @@
 .fig-cl {
   /* The label gutter is sized from the longest venue line rather than
      guessed, and the multiple gutter from `3.7×` in the display face. */
-  --fig-cl-label: clamp(9rem, 15vw, 15rem);
-  --fig-cl-mult: clamp(3rem, 4.6vw, 4.6rem);
-  --fig-cl-row-gap: clamp(.55rem, 1.5vh, 1.15rem);
+  --fig-cl-label: calc(15 * var(--u));
+  --fig-cl-mult: calc(4.8 * var(--u));
+  --fig-cl-row-gap: var(--s-3);
   width: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: clamp(.7rem, 1.9vh, 1.5rem);
+  gap: var(--s-3);
 }
 
 .fig-cl-lede {
-  margin: 0;
-  font-size: clamp(.92rem, 1.12vw, 1.14rem);
+  /* The extra step below is the room the control's name needs. That name is
+     positioned off the dashed rule rather than laid out in the column, so it
+     costs the flow nothing and the flow gave it nothing: at one step of gap it
+     printed on top of this sentence's descenders. */
+  margin: 0 0 var(--s-3);
+  font-size: var(--fig-label);
   line-height: 1.25;
   color: var(--on-field-dim);
   transition: opacity var(--mo-3) var(--ease-out);
@@ -60,7 +64,7 @@
   display: grid;
   grid-template-columns: var(--fig-cl-label) 1fr var(--fig-cl-mult);
   align-items: center;
-  column-gap: clamp(.7rem, 1.4vw, 1.4rem);
+  column-gap: var(--s-3);
 }
 
 .fig-cl-where {
@@ -73,20 +77,20 @@
 
 .fig-cl-where b {
   font-weight: 600;
-  font-size: clamp(.92rem, 1.1vw, 1.12rem);
+  font-size: var(--fig-label);
 }
 
 /* The three universities are the reason this is a multi-case result rather
    than one classroom, so they are on the slide — but one step down, because
    the argument is the overshoot and not the address. */
 .fig-cl-where span {
-  font-size: clamp(.74rem, .88vw, .9rem);
+  font-size: var(--fig-note);
   color: var(--on-field-dim);
 }
 
 .fig-cl-track {
   position: relative;
-  height: clamp(.85rem, 2vh, 1.5rem);
+  height: calc(2.4 * var(--u));
 }
 
 .fig-cl-run {
@@ -106,17 +110,31 @@
   top: calc(var(--fig-cl-row-gap) / -2);
   bottom: calc(var(--fig-cl-row-gap) / -2);
   width: 0;
+}
+
+/* The rule is faint; its label is not. These were one element, so the .62 that
+   holds a dashed control line back from the bars it is a reference for was also
+   being applied to the only words naming what that line is — dim ink at 62% on
+   beige, in the smallest face in the figure. Two elements, two opacities. */
+.fig-cl-gate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   border-left: 1px dashed currentColor;
   opacity: .62;
 }
 
+/* Clear of the measure label above it, which gets the gap for it — see the
+   margin on `.fig-cl-lede`. At one step the two sat close enough that they
+   read as one wrapped caption and the eye had to separate a sentence about
+   what is counted from a two-word name for a control line. */
 .fig-cl-gate span {
   position: absolute;
-  bottom: calc(100% + .25em);
+  bottom: calc(100% + .35em);
   left: 0;
   transform: translateX(-50%);
   font-family: var(--font-pixel);
-  font-size: clamp(.72rem, .86vw, .88rem);
+  font-size: var(--fig-note);
   letter-spacing: .03em;
   white-space: nowrap;
   color: var(--on-field-dim);
@@ -126,53 +144,8 @@
   justify-self: end;
   font-family: var(--font-display);
   font-weight: var(--weight-strong);
-  font-size: clamp(1.2rem, 1.9vw, 1.9rem);
+  font-size: var(--fig-num-sm);
   line-height: 1;
   white-space: nowrap;
   transition: opacity var(--mo-3) var(--ease-out) 420ms;
-}
-
-/* ---- the two nulls ---------------------------------------------------- */
-
-.fig-cl-null {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: clamp(.7rem, 1.8vw, 1.8rem);
-  padding-top: clamp(.5rem, 1.4vh, 1rem);
-  border-top: 1px solid currentColor;
-  transition: opacity var(--mo-4) var(--ease-out);
-}
-
-.fig-cl-null-label {
-  font-family: var(--font-pixel);
-  font-size: clamp(.76rem, .9vw, .92rem);
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--on-field-dim);
-}
-
-.fig-cl-null ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: clamp(.9rem, 2.2vw, 2.2rem);
-}
-
-.fig-cl-null li {
-  display: flex;
-  align-items: center;
-  gap: .55em;
-  font-size: clamp(.88rem, 1.05vw, 1.06rem);
-}
-
-/* A flat stub where the other half of the figure has a bar. The null is drawn
-   at the control length and stops there, which is what the study found. */
-.fig-cl-null li i {
-  width: clamp(1.4rem, 2.6vw, 2.6rem);
-  height: 0;
-  border-top: 2px solid currentColor;
-  opacity: .55;
 }
