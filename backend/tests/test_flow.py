@@ -3159,11 +3159,18 @@ def test_the_diagnostic_still_has_no_strategy_trial(app):
 
         user = User.query.filter_by(email="diagnostic-no-trial@example.test").one()
         question = Question.query.order_by(Question.id).first()
-        assert assign_strategy_trial(user.id, question, "diagnostic", 2) is None
-        assert assign_strategy_trial(user.id, question, "cases", 1) is not None
+        assert assign_strategy_trial(user.id, question, "diagnostic", 2, exposure="run-1") is None
+        assert assign_strategy_trial(user.id, question, "cases", 1, exposure="run-1") is not None
 
 
 def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
+    """One exposure, asked twice, answers the same — nobody is flipped mid-question.
+
+    The exposure is part of the assignment's identity, so "identical" means the
+    same student meeting the same question at the same slot *of the same run*.
+    Two different runs are two different encounters and are randomised
+    separately, which is `test_strategy_selection`'s subject.
+    """
     client = app.test_client()
     headers = login(client, "strategy-stable@example.test")
     create_game(client, headers)
@@ -3173,8 +3180,14 @@ def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
 
         user = User.query.filter_by(email="strategy-stable@example.test").one()
         question = Question.query.order_by(Question.id).first()
-        first = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
-        second = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
+        first = [
+            assign_strategy_trial(user.id, question, "cases", position, exposure="run-1")
+            for position in range(6)
+        ]
+        second = [
+            assign_strategy_trial(user.id, question, "cases", position, exposure="run-1")
+            for position in range(6)
+        ]
         assert first == second
         # The control arm still exists alongside the prompts. It is visible now
         # rather than hidden, but it is still an arm that offers no technique.
@@ -3201,7 +3214,7 @@ def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monke
         user = User.query.filter_by(email="strategy-control@example.test").one()
         question = Question.query.order_by(Question.id).first()
         monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.0)
-        assigned = assign_strategy_trial(user.id, question, "deep", 2)
+        assigned = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
         assert assigned["variant"] == "control_visible"
         assert assigned["key"] in {"argument_core", "prephrase", "scope_precision", "conditional_chain"}
         # The arm's propensity is untouched by making it visible, so the
@@ -4507,7 +4520,7 @@ def test_strategy_scoring_weighs_explanation_quality(app, monkeypatch):
 
         from app.strategies import assign_strategy_trial
 
-        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        trial = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
         assert trial is not None
         assert trial["variant"] == "prompt"
         assert trial["key"] == best
@@ -4563,7 +4576,7 @@ def test_strategy_scoring_falls_back_without_graded_attempts(app):
         from app.strategies import assign_strategy_trial
 
         # Must not raise (a naive mean over None would) and must still assign.
-        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        trial = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
         assert trial is not None
         assert trial["key"] in {"argument_core", "prephrase", "scope_precision", "role_map"}
 
@@ -5608,14 +5621,35 @@ def test_a_weak_type_keeps_exploring_strategies_after_others_have_settled(app):
         db.session.commit()
 
         assert BASE_COVERAGE_TRIALS < FOCUS_COVERAGE_TRIALS
-        assert assign_strategy_trial(user.id, question, "cases", 1)["key"] != starved
-        focused = assign_strategy_trial(
-            user.id, question, "cases", 1, focus_types=[question.question_type]
-        )
-        assert focused["key"] == starved
+        # Off the focus list, coverage is satisfied and the exploit phase runs.
+        # It can still reach the worst performer on an explore draw, so the claim
+        # this test can make is about the coverage branch: the run of exposures
+        # below must contain at least one that is not the starved key, where a
+        # coverage-bound question would return it on every single one.
+        unfocused = {
+            assign_strategy_trial(user.id, question, "cases", 1, exposure=f"run-{index}")["key"]
+            for index in range(12)
+        }
+        assert unfocused - {starved}
+        # On the focus list the bar is higher, the question is still covering,
+        # and the least-sampled candidate is the only one it can return.
+        focused = {
+            assign_strategy_trial(
+                user.id, question, "cases", 1, exposure=f"run-{index}",
+                focus_types=[question.question_type],
+            )["key"]
+            for index in range(12)
+        }
+        assert focused == {starved}
         # The focus list is read by question type, not applied to everything.
-        elsewhere = assign_strategy_trial(user.id, question, "cases", 1, focus_types=["Some Other Type"])
-        assert elsewhere["key"] != starved
+        elsewhere = {
+            assign_strategy_trial(
+                user.id, question, "cases", 1, exposure=f"run-{index}",
+                focus_types=["Some Other Type"],
+            )["key"]
+            for index in range(12)
+        }
+        assert elsewhere - {starved}
 
 
 def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):

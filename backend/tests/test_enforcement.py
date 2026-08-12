@@ -2195,8 +2195,14 @@ def test_a_real_run_deals_a_standing_order_and_serves_it_as_one(app):
         # ran in carries its probability on winners and losers alike.
         assert all(item.strategy_stratum for item in items if item.strategy_key)
         pooled = [item for item in items if item.strategy_forcing_propensity is not None]
-        assert len(pooled) > len(required)
+        assert len(pooled) >= len(required)
+        # One shared probability, and it is exactly the draw's own: a quota over
+        # a pool. Asserting the pool is merely *larger* than the quota tests the
+        # run's luck instead — a run whose weakest three cells hold only two
+        # questions is a legitimate pool of two, drawn twice, and the invariant
+        # that matters is still this one.
         assert len({item.strategy_forcing_propensity for item in pooled}) == 1
+        assert pooled[0].strategy_forcing_propensity == len(required) / len(pooled)
         # And a mandatory question is always fully blocking.
         assert all(item.strategy_enforcement_level == LEVEL_FULL for item in required)
 

@@ -16,8 +16,10 @@ than by reasoning about it.
 2. How wide is the candidate list in practice? "Two to five eligible
    strategies" is the design; the bank decides the realised distribution.
 3. Is the 25% control arm 25% *for one student*? The arm is a threshold on a
-   hash of (user, question, position, style, key), so a question that recurs
-   at the same slot draws the same arm every time.
+   hash that now includes the exposure — the id of the run the question was met
+   in — so a question recurring at the same slot draws afresh each run, while a
+   single encounter asked twice still answers the same. Both halves are measured
+   here, because the second is the property the fix had to keep.
 """
 
 from __future__ import annotations
@@ -108,7 +110,9 @@ def main() -> None:
 
         chosen = Counter()
         for position in range(400):
-            trial = strategies.assign_strategy_trial(user.id, wide, "cases", position)
+            trial = strategies.assign_strategy_trial(
+                user.id, wide, "cases", position, exposure=f"run-{position}"
+            )
             chosen[trial["key"]] += 1
         print(f"   over 400 draws at one question: {dict(chosen)}")
         never = [key for key in candidates if key not in chosen]
@@ -117,16 +121,35 @@ def main() -> None:
         print("\ncontrol-arm share for one student at one question")
         arms = Counter()
         for position in range(400):
-            trial = strategies.assign_strategy_trial(user.id, wide, "cases", position)
+            trial = strategies.assign_strategy_trial(
+                user.id, wide, "cases", position, exposure=f"run-{position}"
+            )
             arms["control" if trial["variant"] in strategies.CONTROL_VARIANTS else "prompt"] += 1
         share = arms["control"] / sum(arms.values())
         print(f"   across 400 distinct slots: {share:.1%} control (design says {strategies.CONTROL_PROBABILITY:.0%})")
 
+        # The same question at the same slot, met once per run across 40 runs.
+        # The exposure has to vary for this to be 40 encounters rather than one
+        # asked 40 times, which is the distinction the arm is now drawn over.
         repeat = Counter()
-        for _ in range(40):
-            trial = strategies.assign_strategy_trial(user.id, wide, "cases", 3)
+        for index in range(40):
+            trial = strategies.assign_strategy_trial(
+                user.id, wide, "cases", 3, exposure=f"run-{index}"
+            )
             repeat["control" if trial["variant"] in strategies.CONTROL_VARIANTS else "prompt"] += 1
-        print(f"   the same question at the same slot, 40 times: {dict(repeat)}")
+        print(f"   the same question at the same slot, once per run over 40 runs: {dict(repeat)}")
+
+        # And the same exposure asked twice must not change its answer, or a
+        # student could be flipped part-way through a question.
+        held = {
+            (
+                strategies.assign_strategy_trial(
+                    user.id, wide, "cases", 3, exposure="run-7"
+                )["variant"]
+            )
+            for _ in range(20)
+        }
+        print(f"   one exposure asked 20 times: {len(held)} distinct arm(s) (1 is correct)")
 
         db.session.rollback()
 

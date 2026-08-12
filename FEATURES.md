@@ -301,8 +301,10 @@ distraction, not instruction.
 
 ### 3.3 When a trial fires
 
-`assign_strategy_trial(user_id, question, practice_style, position, *, focus_types=None)` returns `None` only for
-a mega-litigation. Every question in a cases run is trial-eligible.
+`assign_strategy_trial(user_id, question, practice_style, position, *, exposure, focus_types=None)` returns
+`None` only for a mega-litigation. Every question in a cases run is trial-eligible. `exposure` is required and
+identifies the encounter — the run's own id, in the application — so that a question met again at the same slot
+in a later run draws its arm afresh instead of repeating the first one.
 
 The mega-litigation is excluded to keep it a neutral baseline — it is the one surface the dashboard headline
 reads. Everywhere else, the unprompted comparison condition comes from the hidden 25% control arm rather than
