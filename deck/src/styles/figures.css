@@ -2269,8 +2269,15 @@
 .fig-pb-legs span {
   flex: 1;
   min-width: 0;
-  height: 2.5em;
-  overflow: hidden;
+  /* Two lines of the pixel face, plus the difference between a line box and
+     the ink inside it. At a flat `height: 2.5em` with `overflow: hidden` the
+     box was shorter than the glyphs it held and the clip took two pixels off
+     the top of every one of these eight labels — the same defect as the
+     credit line on slide 8, three orders of magnitude smaller and on eight
+     labels at once. `min-height` keeps the pairs aligned; the clip is gone,
+     so a label that ever runs to three lines is ugly rather than beheaded. */
+  min-height: 2.5em;
+  padding-block: .12em;
   text-align: center;
   font-family: var(--font-pixel);
   font-size: var(--fig-micro);
