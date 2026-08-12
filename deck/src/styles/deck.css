@@ -622,43 +622,43 @@
    rhythm moves, these should move with it rather than be defended.
    ---------------------------------------------------------------- */
 
-/* A gentler scrim than the statement default, which runs to 90% black at
-   the left edge. That is written for copy over a bright scene; this room is
-   already dark, and at full strength the gradient took the left third of it
-   to flat black and threw away the wall, the floor line and the shadow the
-   slide exists to show. Enough to seat the type, and no more. */
-.deck-layer[data-section='close'] {
-  --scrim: linear-gradient(96deg, rgba(4, 7, 12, .42) 0%, rgba(4, 7, 12, .24) 42%, rgba(4, 7, 12, .06) 72%, transparent 100%);
-}
+/* No scrim. The statement default runs to 90% black at the left edge, which
+   is written for DOM copy over a bright scene; there is no DOM copy here to
+   seat, and a gradient over the left third now only dims the lettering that
+   stands in it and the shadow the slide exists to show. */
+.deck-layer[data-section='close'] { --scrim: none; }
 
-/* Narrower than the statement default's 56%: the character stands at about
-   55% across the frame and the copy has to finish clear of her, not behind
-   her. */
-.deck-layer[data-section='close'] .body-statement {
-  grid-template-columns: minmax(0, 46%);
-  align-content: center;
-}
+/* ----------------------------------------------------------------
+   THE CLOSE'S COPY IS NOT IN THE DOM
 
+   It is geometry, standing in the room, in `close-room-scene.ts` —
+   the founders asked for lettering immersed in the scene rather than
+   floating on top of it, and `room-lettering.ts` carries the argument
+   for why the whole block moved rather than just the headline.
+
+   The plate is still rendered, and still carries the eyebrow, the
+   headline, the deck sentence and `Questions?` in that order, because
+   a canvas is opaque to assistive technology and to find-in-page, and
+   because `layouts.tsx` should not need a special case for one slide.
+   This hides it from sighted eyes only.
+
+   Not `display: none`, which would take it out of the accessibility
+   tree along with the picture, and not `opacity: 0`, which leaves a
+   46% column of invisible text sitting over the stage swallowing the
+   click zones that page the deck.
+   ---------------------------------------------------------------- */
 .deck-layer[data-section='close'] .plate {
-  /* The same `.plate` with its surface taken away. `animation: none` goes
-     with the surface: `plate-in` slides a card in, and there is no card. */
-  animation: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
   padding: 0;
-  background: none;
   border: 0;
-  box-shadow: none;
-  color: var(--beige);
-}
-
-.deck-layer[data-section='close'] .plate::after { content: none; }
-
-.deck-layer[data-section='close'] .plate .display { color: var(--beige); }
-.deck-layer[data-section='close'] .plate .slide-deck { color: var(--beige-dim); }
-
-/* The deck's gold hairline, spent once. */
-.deck-layer[data-section='close'] .plate .rule {
-  margin: calc(2.4 * var(--u)) 0 calc(1.8 * var(--u));
-  background: linear-gradient(90deg, rgba(200, 155, 75, .7), rgba(200, 155, 75, .16) 78%, transparent);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  /* `plate-in` slides a card in, and there is no card. */
+  animation: none;
 }
 
 /* `Questions?` — the Q&A prompt, and the last thing the deck says.
@@ -681,7 +681,6 @@
   color: var(--gold);
 }
 
-.deck-layer[data-section='close'] .plate .slide-credit { display: none; }
 
 /* ================================================================
    BODY — POV

@@ -2,7 +2,9 @@ import * as THREE from 'three'
 
 import { HumanoidActor, assignHumanoidLod, type HumanoidGesture, type HumanoidState } from '../app-art/rig'
 import { buildStylizedCounsel, type StylizedCounselRig } from '../app-art/stylized-counsel'
+import { SLIDES } from '../slides'
 import { registerProbe, withdrawProbe } from './probe'
+import { buildLettering, setCopy, type LetteringItem } from './room-lettering'
 import { CameraRig, disposeTree, seededRandom } from './scene-kit'
 import type { DeckScene, SceneContext } from './types'
 
@@ -61,10 +63,22 @@ import type { DeckScene, SceneContext } from './types'
  * that fits the theme of the slideshow", and the theme's blue is `--blue`.
  */
 const ROOM_PALETTE = {
-  /** `--blue`. The walls. */
+  /** `--blue`. The deck's field blue, and here the back wall. */
   blue: 0x1b2f6b,
-  /** `--blue-lit`. Where the key washes the wall behind her. */
-  blueLit: 0x2a4bb8,
+  /**
+   * The floor, and the value the whole frame is aiming at.
+   *
+   * `--blue` taken down about a fifth, which lands it between it and
+   * `--blue-deep` — and, not by coincidence, exactly on the value the floor was
+   * already painted. The founders picked the target themselves: "make the
+   * entire slide that dark blue" was said about the navy below the old horizon,
+   * which is this. So the half of the frame they approved does not move at all
+   * and the half they objected to comes down to meet it, rather than both
+   * drifting to a new value nobody has seen. What the back wall has to be
+   * painted for it to *arrive* at this value is a separate question, and the
+   * answer is at `wallBack`.
+   */
+  field: 0x142455,
   /** `--blue-deep`. The ceiling and the far corners, so the box has a top. */
   blueDeep: 0x0d1734,
   /** `--gold`. Spent once, on one hairline. */
@@ -103,6 +117,54 @@ const ROOM = {
 
 /** Where she stands. Stage right, and far enough downstage to be lit. */
 const COUNSEL = { x: 4.35, z: -1.1 } as const
+
+/**
+ * Where the copy stands, as the left end of the eyebrow's baseline.
+ *
+ * Depth is the interesting number and it is bounded on both sides. Her cast
+ * shadow runs from her soles at z −1.1 to its head about z −4.3, so lettering
+ * downstage of −4.6 stands *in* it; and the further upstage it goes the smaller
+ * the frame makes it, because a block standing on the floor has its base fixed
+ * to the horizon by its distance and cannot be lowered without moving nearer.
+ * −4.6 is as close to the lens as the copy can be set and still be clear of the
+ * shadow — which is the same as saying it is as large as it can be.
+ *
+ * `y` is not a free parameter: it is the block's own height, so that the last
+ * line's baseline lands on y 0 and the whole thing stands on the floor rather
+ * than floating above it. `letteringLines` returns the leads it is summed from.
+ */
+const LETTERING = { x: -3.4, z: -4.6 } as const
+
+/** The framing's own vertical field of view, and the aspect it was set at. */
+const BASE_FOV = 33
+const BASE_ASPECT = 16 / 9
+
+/**
+ * The vertical fov that holds the *horizontal* one steady on a narrow panel.
+ *
+ * This is the price of world-space copy and it has to be paid somewhere. A
+ * `PerspectiveCamera` is specified vertically, so `CameraRig.resize` keeps the
+ * vertical angle and lets the horizontal one follow the aspect. Every other
+ * scene in the deck is fine with that, because their copy is DOM and reflows;
+ * here the copy is a rigid object standing at x −3.4, and on a panel narrower
+ * than 16:9 the frustum simply arrives in front of it. Rendered at 1024×648 —
+ * the window the founders' own screenshot was taken in — the headline lost its
+ * `O` and the eyebrow read "CT VI — THE CLOSE".
+ *
+ * So the horizontal angle is the one held fixed, at the value the framing has
+ * at 16:9, and the vertical is solved from it. `tan(v/2)·a` is the horizontal
+ * half-tangent, so holding it means `tan(v'/2) = tan(v/2)·a_ref/a`.
+ *
+ * Widen only. At exactly 16:9 this returns `BASE_FOV` to the last bit and the
+ * camera is untouched; on anything *wider* the vertical angle is left alone, so
+ * a cinema panel gains width rather than losing height off the top of her head.
+ * Only the narrow case moves, and only far enough to put the copy back.
+ */
+function fovFor(aspect: number): number {
+  if (aspect >= BASE_ASPECT) return BASE_FOV
+  const halfTangent = Math.tan(THREE.MathUtils.degToRad(BASE_FOV) / 2) * BASE_ASPECT
+  return THREE.MathUtils.radToDeg(2 * Math.atan(halfTangent / aspect))
+}
 
 /**
  * The shadow map, sized deliberately rather than left at the default.
@@ -286,6 +348,130 @@ const BEATS: readonly HumanoidGesture[] = [
   'doubleTake', 'postureReset',
 ]
 
+/**
+ * The close's copy, as the lines the room is lettered with.
+ *
+ * The strings are read out of the slide registry rather than written here, and
+ * that is worth a sentence. `index.ts` names `headline`, `deck` and `pull` as
+ * fields a writer owns and may edit without touching staging; the same slide's
+ * DOM plate is still rendered for assistive technology, and two transcriptions
+ * of one sentence is one of them going stale. So there is one source, and a
+ * writer editing the close still edits the close.
+ *
+ * ## What is dimensional and what is not
+ *
+ * Extruded: the headline and `Questions?`. Flat: the eyebrow, the deck sentence
+ * and the rule. The rule is drawn in `room-lettering.ts`; the reasoning is that
+ * a letter's extruded side wall takes this room's key more squarely than its
+ * front face does, so extrusion adds a bright rim to every stroke, and a rim
+ * that is a chamfer on a 0.67-unit cap height is a third of the stroke on a
+ * 0.22-unit one. The two lines set large enough to carry it are the two the
+ * founders named as the ones that should carry weight.
+ */
+function letteringLines(): readonly LetteringItem[] {
+  const slide = SLIDES.find((entry) => entry.id === 'close-one-stop-shop')
+
+  // Both break a sentence to a line; `setCopy` carries the reasoning. The
+  // measures are the width each has before it would reach the figure — the
+  // headline is the widest thing on the slide and gets nearly all of it.
+  const headline = setCopy(slide?.headline ?? '', HEADLINE_SIZE, 6.4)
+  const deck = setCopy(slide?.deck ?? '', DECK_SIZE, 5.6)
+
+  const lines: LetteringItem[] = []
+
+  if (slide?.eyebrow) {
+    lines.push({
+      text: slide.eyebrow.toUpperCase(),
+      size: .2,
+      depth: 0,
+      color: ROOM_PALETTE.gold,
+      // The DOM eyebrow is tracked to .28em and it is the whole character of
+      // the line; at zero it stops being an eyebrow and becomes small copy.
+      tracking: .26,
+      lead: 0,
+      // Flat gold at this size disappears into the field under the key alone,
+      // the same problem the gold hairline used to have, with the same answer.
+      glow: .45,
+    })
+  }
+
+  for (const [index, text] of headline.entries()) {
+    lines.push({
+      text,
+      size: HEADLINE_SIZE,
+      /*
+        A tenth of the cap height, picked off a sweep of 0, .04, .07, .1 and
+        .16 rendered at 1920 and read back at a third scale.
+
+        What the sweep showed is that the visible side wall is the *left* one,
+        lit by the cool fill rather than by the key: the camera sits up and to
+        the right of this block, so the faces it can see down the side of a
+        stroke are the two the key cannot reach, and it is the fill from the
+        empty half of the room that models them. That is why this reads as cut
+        lettering catching a bounce rather than as a drop shadow, and it is
+        also why it cannot go much deeper — past about .1 the fill-lit edge is
+        wide enough to compete with the stroke it belongs to, and the letters
+        start to look embossed instead of solid.
+      */
+      depth: .065,
+      color: ROOM_PALETTE.beige,
+      lead: index === 0 ? .82 : 1.02,
+    })
+  }
+
+  for (const [index, text] of deck.entries()) {
+    lines.push({
+      text,
+      size: DECK_SIZE,
+      depth: 0,
+      /*
+        `--beige` where the DOM set `--beige-dim`, plus a little emission, and
+        the reason is that the scrim can no longer help.
+
+        The old plate was DOM copy drawn *over* a gradient that darkened the
+        room behind it — the field lost a third of its value and the type kept
+        all of its own, which is where its contrast came from. Copy that lives
+        in the scene is under the gradient rather than over it, so a scrim now
+        dims the letters and the floor by the same factor and moves the ratio
+        the wrong way. It is gone, and this line has to hold its own contrast.
+
+        Measured on the settled frame: stroke peak against the floor behind it
+        was 191:38 on the old plate and is 206:50 here. The founders traded some
+        of that when they asked for one field with no dark band in it; this
+        recovers what could be recovered without making the sentence shout at
+        the headline.
+      */
+      color: ROOM_PALETTE.beige,
+      glow: .18,
+      lead: index === 0 ? .72 : .42,
+    })
+  }
+
+  lines.push({ lead: .46, width: 5.4, thickness: .022, color: ROOM_PALETTE.gold, glow: .5 })
+
+  if (slide?.pull) {
+    lines.push({
+      text: slide.pull,
+      size: .66,
+      depth: .05,
+      color: ROOM_PALETTE.gold,
+      lead: .78,
+      // Gold is a dark yellow — `--gold` is #c89b4b, two thirds of cream's
+      // luminance before any light touches it — so a gold face lit to the same
+      // irradiance as the headline lands well under it. This is the line the
+      // founders asked to carry the most weight after the headline, and the
+      // emission is what buys back what the colour costs.
+      glow: .3,
+    })
+  }
+
+  return lines
+}
+
+/** Sizes the copy has to be measured at before its lines can be built. */
+const HEADLINE_SIZE = .92
+const DECK_SIZE = .32
+
 export function createCloseRoomScene(context: SceneContext): DeckScene {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(ROOM_PALETTE.blueDeep)
@@ -321,19 +507,55 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
     context.width / Math.max(1, context.height),
   )
 
+  // `CameraRig` owns `camera.fov`: it assigns it on `go` and lerps it on every
+  // frame of a move, so the correction cannot be applied once and left. It is
+  // re-asserted after each `rig.update` instead, which is close to free — the
+  // projection matrix is only rebuilt when the value actually moved, and on a
+  // 16:9 panel it never does.
+  const holdHorizontal = () => {
+    const wanted = fovFor(rig.camera.aspect)
+    if (Math.abs(rig.camera.fov - wanted) < 1e-6) return
+    rig.camera.fov = wanted
+    rig.camera.updateProjectionMatrix()
+  }
+  holdHorizontal()
+
   // --- the room ------------------------------------------------------------
   // One inverted box. A `BoxGeometry` carries six material groups, so the
   // floor, the ceiling and the walls can each be their own value at the cost
   // of six draw calls and twelve triangles for the entire set.
-  const wall = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blue, roughness: .92, metalness: 0 })
-  // The back wall is a shade lighter than the sides, so the key reads as a
-  // wash falling across it rather than as an even fill, and so her silhouette
-  // has something to be a silhouette against.
-  const wallBack = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blueLit, roughness: .94, metalness: 0 })
-  // Deeper than the walls and slightly bluer. A floor at the wall's own value
-  // gives the shadow nothing to be darker than; this is about a stop down,
-  // which is where a cast shadow reads as a shadow rather than as a stain.
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x142455, roughness: .78, metalness: .04 })
+  const wall = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .92, metalness: 0 })
+  /*
+    ONE FIELD, AND THE REASON IT TAKES TWO PAINTS TO GET ONE COLOUR.
+
+    The back wall used to be `--blue-lit`, and against the navy floor that split
+    the frame into a bright band across the top third with a gold hairline on
+    the seam. The founders asked for the whole slide to be the darker blue, and
+    for floor and wall to be separated "by a few percent rather than by a hard
+    line".
+
+    Painting the wall `field` as well — literally one colour — was tried first
+    and is the obvious reading of the request. It fails, and it fails
+    *measurably*: a key 36° above the floor meets a horizontal plane and a
+    vertical one at very different incidences, so identical paint came back at
+    29 luma on the wall against 37 on the floor, a 20% step. That is not one
+    field, it is the old horizon with its polarity flipped — the band is dark
+    now instead of bright, which is less objectionable but is the same defect.
+
+    What "a few percent" specifies is rendered value, not pigment, so the paint
+    has to be pre-divided by the incidence. The wall is `--blue` and the floor
+    is `--blue` taken down a fifth; the wall's extra albedo is very nearly
+    exactly what its shallower `N·L` takes back out. Swept across five values
+    either side, `--blue` is the one that lands: wall 34.6 against floor 36.9,
+    a 6.3% step, with the floor the brighter of the two, which is the right way
+    round for a key this high. Close enough that the frame reads as one navy,
+    far enough that the corner is still there for the shadow to lie against.
+
+    The happy part is that no colour was invented for this. Both values are
+    already in `theme.css`, and the room turns out to want them adjacent.
+  */
+  const wallBack = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blue, roughness: .94, metalness: 0 })
+  const floorMaterial = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .78, metalness: .04 })
   const ceiling = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blueDeep, roughness: .96, metalness: 0 })
   // Groups are ordered +x, -x, +y, -y, +z, -z. The +z face is behind the lens.
   const shell = new THREE.Mesh(
@@ -345,28 +567,49 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   shell.receiveShadow = true
   scene.add(shell)
 
-  // The gold hairline. One, along the foot of the back wall — the deck spends
-  // gold on a rule and nowhere else, and a room with a skirting is a room
-  // somebody paid for. It does not cast: it is a line, and a line's shadow is
-  // noise.
-  //
-  // Emissive rather than metallic, which is the one thing about it that is not
-  // obvious. Gold wants `metalness` near 1, but a metal reflects its
-  // surroundings and there is no environment map in this deck, so a metallic
-  // skirting resolves to black and the hairline disappears. It is also two
-  // pixels tall at this distance, which is too few to carry a specular. So it
-  // is a dielectric that emits: the emission is what makes it read as gold at
-  // two pixels, and being emissive it holds its value whatever the key does.
-  const goldMaterial = new THREE.MeshStandardMaterial({
-    color: ROOM_PALETTE.gold,
-    roughness: .45,
-    metalness: 0,
-    emissive: ROOM_PALETTE.gold,
-    emissiveIntensity: .55,
-  })
-  const skirting = new THREE.Mesh(new THREE.BoxGeometry(ROOM.width, .09, .08), goldMaterial)
-  skirting.position.set(0, .21, ROOM.centreZ - ROOM.depth / 2 + .06)
-  scene.add(skirting)
+  /*
+    THERE IS NO SKIRTING ANY MORE, AND THAT IS THE SECOND HALF OF THE ONE FIELD.
+
+    A gold hairline ran the full width of the room along the foot of the back
+    wall. It was right when the wall above it was `--blue-lit`: it was the edge
+    between two values that were already different, and it made the room a room
+    somebody had paid for. Against a single field it stopped being a skirting
+    and became the only hard line in the frame — which is precisely the "hard
+    horizon" the founders asked to lose, and dimming it only made a fainter
+    version of the same line.
+
+    It also had nowhere to go. The copy is set large enough now that the top of
+    "One place." crosses the wall/floor junction, and the bar cut through the
+    headline's cap height; rendered side by side, the version with the line is
+    the one that looks unfinished.
+
+    Nothing is lost. The junction still reads, off the six per cent of luma
+    that separates wall from floor, and the shadow — the reason the junction
+    has to read at all — is pixel-for-pixel unchanged either way. The deck's
+    gold is still spent, on the eyebrow, the rule under the deck sentence and
+    `Questions?`; it moved from the architecture onto the type.
+  */
+
+  // --- the copy, standing in the room --------------------------------------
+  const lettering = buildLettering(letteringLines())
+  /*
+    Stood on its lowest ink, not on its last baseline.
+
+    Standing it on the baseline is the obvious reading of "on the floor" and it
+    is wrong, in a way that took a while to see: `Questions?` is the bottom
+    line, and Archivo's `Q` hangs its tail 0.13em below the baseline. With the
+    baseline on y 0 the tail is *inside the floor*, and the room's last word
+    renders "Ouestions?" — at every size, in flat and extruded alike, which is
+    what ruled out the extrusion as the cause.
+
+    So the offset comes from the built geometry's own bounds rather than from
+    the leads, which also means it stays correct for copy this scene has never
+    seen: a headline with no descender in it needs a different lift from one
+    ending in "pay.", and neither is a number worth maintaining by hand.
+  */
+  const bounds = new THREE.Box3().setFromObject(lettering.group)
+  lettering.group.position.set(LETTERING.x, -bounds.min.y, LETTERING.z)
+  scene.add(lettering.group)
 
   // --- light ---------------------------------------------------------------
   //
@@ -673,6 +916,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
         actor.update(delta)
         applyFold(1)
         rig.update(delta, context.pointer)
+        holdHorizontal()
         return
       }
 
@@ -701,10 +945,12 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
       applyFold(foldWeight(foldClock))
 
       rig.update(delta, context.pointer)
+      holdHorizontal()
     },
 
     resize(width, height) {
       rig.resize(width, height)
+      holdHorizontal()
     },
 
     setFraming(name, immediate) {
@@ -742,8 +988,9 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
       // the root object and an actor collected without it keeps the rig alive.
       actor.dispose()
       holder.removeFromParent()
+      lettering.dispose()
       disposeTree(scene)
-      for (const material of [wall, wallBack, floorMaterial, ceiling, goldMaterial]) material.dispose()
+      for (const material of [wall, wallBack, floorMaterial, ceiling]) material.dispose()
     },
   }
 }
