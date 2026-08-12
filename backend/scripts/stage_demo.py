@@ -553,6 +553,13 @@ def _stage_graded_twin(user: User, question: Question, *, live_model: bool, capt
             try:
                 payload, meta = generate_attempt_coaching(attempt)
                 model = meta.get("model") or "stage-pregrade"
+                # Cleared here rather than before the loop: a run that refused
+                # once and then succeeded was still carrying the refusal, so it
+                # took the "coach refused" branch below and reported reusing an
+                # old grade when it had just produced a fresh one. Before the
+                # loop would be wrong — the salvage path reads this after four
+                # failures, and needs it to survive them.
+                failure_text = ""
                 break
             except CoachingProviderError as failure:
                 failure_text = str(failure)

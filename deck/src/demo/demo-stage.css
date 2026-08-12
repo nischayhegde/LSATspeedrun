@@ -240,10 +240,18 @@
    all here — 22% of a 1920 screen is 417px, wider than the margin it is meant
    to protect, so it would simply cancel the whole rule. */
 
+/* The floor, which was the frame's and should have been the deck's. Anchored at
+   `bottom: 0`, the plate's own 16px of padding was the only thing between the
+   headline and the edge of the screen — measured at 1064 of 1080 and 704 of 720,
+   the same 16px at both, so it was never a breakpoint. Every other slide in the
+   deck sits its copy on `--gutter`, and at six times tighter than that the demo
+   headlines read as sliding off the bottom of the frame on seven slides running.
+   Same variable as the rest of the deck rather than a number that matches it
+   today. */
 .body.body-demo .demo-copy {
   position: absolute;
   left: 0;
-  bottom: 0;
+  bottom: var(--gutter);
   z-index: 4;
   grid-column: auto;
   grid-row: auto;
