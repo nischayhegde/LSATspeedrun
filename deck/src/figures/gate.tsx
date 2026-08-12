@@ -12,7 +12,7 @@ import { DRAW_PX, usePhase, vars, type FigureBody } from './kit'
  * that eases in looks like a design flourish and this one is a refusal.
  *
  * The strike is drawn in `--on-field`, not in verdict red. The narrative spends
- * that colour exactly twice, on slide 6's underlined clause and slide 7's warning
+ * that colour exactly twice, on `pov-reasoning-is-the-work`'s underlined clause and `pov-confidence-signal`'s warning
  * outline, and this slide is not one of them.
  */
 

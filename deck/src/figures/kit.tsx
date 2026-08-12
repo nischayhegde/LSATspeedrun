@@ -103,7 +103,7 @@ export function useStopwatch(active: boolean, reduced: boolean, frozenAt: number
  * the only one. Almost every figure here is drawn in a unit-square viewBox and
  * therefore never needs to know how big it is; the exception is a shape that
  * must stay *undistorted* while filling a box whose aspect ratio is set by the
- * projector — slide 11's full-form ring runs around a 1674×430 band and its
+ * projector — `pov-real-clock`'s full-form ring runs around a 1674×430 band and its
  * corners have to be round on every stage, which a stretched viewBox cannot do
  * and a square one cannot fill.
  *
@@ -316,7 +316,7 @@ export function pct(value: number): string {
  * The radial figures draw into a `viewBox="0 0 100 100"` with
  * `preserveAspectRatio="none"`, which turns every circle into an ellipse that
  * fills the frame. That is deliberate: a true circle on a 21:9 slide wastes both
- * sides, and the twelve labels of slide 15 need every millimetre. Strokes are
+ * sides, and the twelve labels of `dashboard-everything` need every millimetre. Strokes are
  * kept honest with `vector-effect="non-scaling-stroke"`, and anything that must
  * stay round — a node dot — is a DOM element positioned in percentages rather
  * than an SVG shape.
@@ -358,7 +358,7 @@ export function ringPoint(degrees: number, radiusX: number, radiusY: number): { 
  * right for them.
  *
  * This handles a full reveal only. A stroke that stops part-way — the rings on
- * slide 11 — needs its true length, and computes it from its own radius in a
+ * `pov-real-clock` — needs its true length, and computes it from its own radius in a
  * square viewBox where that number means something.
  */
 export const DRAW = 400
@@ -373,8 +373,8 @@ export const DRAW = 400
  * row — and a stroke width in user units is multiplied by *both*, unevenly.
  * The visible consequences were not subtle: slide 5's route drew as a tapering
  * wedge (thin where it ran horizontally, three times thicker down the
- * diagonal), slide 9's guardrailed trace drew as a 25-pixel lozenge with round
- * caps the size of the plot, and slide 22's forward arrow as a 54-pixel bar.
+ * diagonal), `pov-ai-never-answers`'s guardrailed trace drew as a 25-pixel lozenge with round
+ * caps the size of the plot, and `game-never-gates`'s forward arrow as a 54-pixel bar.
  * Each had been re-tuned by eye after the non-scaling stroke came off, which
  * fixes one aspect ratio and no other.
  *

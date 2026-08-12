@@ -586,7 +586,7 @@
 .plate .pull cite { color: #5c6570; opacity: 1; }
 
 /* ----------------------------------------------------------------
-   THE CLOSE — slide 24, and the only slide that takes the statement
+   THE CLOSE — the last slide, and the only one that takes the statement
    layout apart.
 
    The founders composed this frame themselves: *"the 3D rigged
@@ -1998,8 +1998,8 @@ kbd {
 
 /* One step down from the text layouts' headline. On these slides the figure
    is the claim and the headline is its caption, and at `--t-lg` the copy
-   block was taking nearly half the frame — which left the traces on slide 9
-   and the rings on slide 11 squeezed into a band too short to read a shape
+   block was taking nearly half the frame — which left the traces on `pov-ai-never-answers`
+   and the rings on `pov-real-clock` squeezed into a band too short to read a shape
    in. The headline gets the full measure; only the standfirst is capped,
    since that is the line that actually becomes unreadable when it runs long. */
 .body-figure .display {
@@ -2031,7 +2031,7 @@ kbd {
      its outer ring with `preserveAspectRatio="none"` precisely so it
      fills the stage — and `min-height: 0` above lets this row be shorter
      than they assume. Without a clip the difference is painted over the
-     credit and the progress rail beneath, which is what slide 11 did. */
+     credit and the progress rail beneath, which is what `pov-real-clock` did. */
   overflow: hidden;
 }
 

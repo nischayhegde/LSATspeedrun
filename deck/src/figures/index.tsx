@@ -27,7 +27,7 @@ export type { FigureSpec } from './types'
  *
  * The whole set is inline SVG and CSS. Not for purity: eight of these sit over a
  * live `WebGLRenderer` and three of them sit beside a live app iframe, and
- * `NARRATIVE.md` names the constraint out loud on slide 15 — "no WebGL, which
+ * `NARRATIVE.md` names the constraint out loud on `dashboard-everything` — "no WebGL, which
  * protects the frame rate right after a live demo". A figure that cost a
  * millisecond a frame would be paid for by the thing it is annotating.
  *

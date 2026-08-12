@@ -53,7 +53,7 @@ import type { SlideSpec } from './types'
  *  because the compliance step was nowhere in it, so this revision adds ONE
  *  slide and rewires three.
  *
- *      + `pov-volume-is-the-constraint`  NEW, slide 8, between the confidence POV
+ *      + `pov-volume-is-the-constraint`  NEW, then slide 8 and now 9, between the POV
  *                               and the concept. LSAC's own study of a free prep
  *                               platform: practice moved the score, video did
  *                               not, and 51% never completed one exam. New
@@ -1124,8 +1124,8 @@ export const SLIDES: readonly SlideSpec[] = [
     // performance.
     //
     // The dimmed choices got words because they are the strongest version of
-    // the strategy POV available and the deck was underclaiming them. Slide 11
-    // says the method arrives inside the question; this shows the app REFUSING
+    // the strategy POV available and the deck was underclaiming them.
+    // `pov-strategy-inside-the-question` says the method arrives inside the question; this shows the app REFUSING
     // to show the choices until the method is taken up. Enforced, not suggested.
     notes:
       "Watch this — I'm not touching anything. "
@@ -1629,7 +1629,7 @@ export const SLIDES: readonly SlideSpec[] = [
     speaker: 'Alan',
     budgetSeconds: 9,
     scene: { id: 'none', framing: 'still' },
-    // "Cut straight to slide 19. No animation. The cut is the effect."
+    // "Cut straight to the tier-0 office. No animation. The cut is the effect."
     transition: 'cut',
     demo: {
       route: '/office?officeTier=0',

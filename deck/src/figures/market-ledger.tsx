@@ -2,7 +2,7 @@ import type { MarketLedgerFigure } from './types'
 import { usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 4 — `market-ledger`. The field, in its own words, and the column that
+ * `market-in-their-own-words` — the field in its own words, and the column that
  * says the same thing five times.
  *
  * ## Why this exists over a written objection

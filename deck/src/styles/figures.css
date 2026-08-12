@@ -1,9 +1,15 @@
 /* ================================================================
    FIGURES — the bespoke slide graphics
    ================================================================
-   Twelve figures, all inline SVG and CSS, all transparent. `theme.css`
+   Thirteen figures, all inline SVG and CSS, all transparent. `theme.css`
    owns the palette and the motion; this file owns nothing but layout,
    type scale and choreography.
+
+   Sections run in deck order and are titled by figure kind. They used to
+   be numbered by slide position as well, and the numbering was four
+   slides stale by the time anyone read it — inserting one slide in Act
+   II renumbers everything after it and no tool notices. The kind is what
+   the class names are built from and it does not move.
 
    THREE RULES, AND THEY ARE THE WHOLE FILE
 
@@ -138,7 +144,7 @@
 }
 
 /* ================================================================
-   2 · bar-pair — 0.22 against 2.77
+   bar-pair — 0.22 against 2.77
    ================================================================ */
 
 .fig-bar-pair {
@@ -324,7 +330,7 @@
 }
 
 /* ================================================================
-   3 · hours-bar — the hours, the attributions, the bill
+   hours-bar — the hours, the attributions, the bill
    ================================================================ */
 
 .fig-hours-bar {
@@ -564,140 +570,7 @@
 }
 
 /* ================================================================
-   4 · market-ledger — the field, in its own words
-   ================================================================
-   New with the slide, and the one figure in this folder that is mostly
-   type. That is deliberate. Every cell in the first column is a
-   competitor's own marketing copy and the whole persuasive weight of
-   the slide is that the room can check it, so the drawing's job is to
-   get out of the way and let six lines be read.
-
-   Which is also why there is no grid: no cell borders, no zebra rows,
-   no ticks and no crosses. A ruled table reads as a scorecard, a
-   scorecard reads as a claim about who is better, and a claim about who
-   is better is the thing `NARRATIVE.md` §D was right to be afraid of.
-   Three columns held by a grid template and separated by space alone,
-   with exactly one rule on the slide — the one above our row. */
-
-.fig-mk {
-  /* The ledger's own step, and everything below is `em` against it, so
-     the whole table grows or shrinks from one number. It is set above
-     `--fig-label` because this figure is nothing but type and had a
-     third of the stage spare at both projector sizes; a table with room
-     to be bigger and set small is a table nobody reads from row four
-     back. `useFitScale` still owns the ceiling. */
-  --mk: calc(1.72 * var(--u));
-  font-size: var(--mk);
-
-  width: 100%;
-  display: grid;
-  /* All three columns shrink to their own content and the block centres,
-     rather than the quotes taking every spare pixel and pushing the last
-     column against the right margin. The eye has to cross from a quote
-     to its verdict five times; the width of that crossing is the cost of
-     the slide. */
-  grid-template-columns: auto auto auto;
-  justify-content: center;
-  column-gap: 2.6em;
-  align-items: baseline;
-  text-align: left;
-}
-
-.fig-mk-head {
-  grid-row: 1;
-  margin: 0 0 .55em;
-  padding-bottom: .4em;
-  border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  font-family: var(--font-pixel);
-  font-size: .64em;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--on-field-dim);
-  transition: opacity var(--mo-2) var(--ease-out);
-}
-
-/* The first head spans the name and quote columns, so the ledger reads
-   as two questions asked of six products rather than three unrelated
-   lists. The names need no head — they are obviously names. */
-.fig-mk-head[data-col='claim'] { grid-column: 1 / 3; }
-.fig-mk-head[data-col='grades'] { grid-column: 3; }
-
-/* A row is a grid item that is itself a subgrid, so all six rows share
-   one set of column edges. Without it each row measures its own name
-   and the second column ragged-edges down the slide, which on a figure
-   whose entire point is that one column repeats is the worst possible
-   place to lose an alignment. */
-.fig-mk-row {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: subgrid;
-  align-items: baseline;
-  padding: .4em 0;
-  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
-}
-
-.fig-mk-name {
-  margin: 0;
-  line-height: 1.25;
-  white-space: nowrap;
-  color: var(--on-field-dim);
-}
-
-.fig-mk-claim {
-  margin: 0;
-  line-height: 1.25;
-  color: var(--on-field);
-}
-
-/* The column that repeats. Set in the pixel face rather than the body
-   face, which is what makes five identical phrases read as five
-   identical *values* — the same trick a table of figures uses — instead
-   of as five sentences that happen to match. */
-.fig-mk-grades {
-  margin: 0;
-  font-family: var(--font-pixel);
-  font-size: .78em;
-  line-height: 1.3;
-  white-space: nowrap;
-  color: var(--on-field-dim);
-  transition: opacity var(--mo-2) var(--ease-out);
-}
-
-/* The only rule on the slide, and it draws rather than fades. */
-.fig-mk-rule {
-  grid-column: 1 / -1;
-  height: 0;
-  margin: .55em 0 .5em;
-  border-top: 1px solid color-mix(in srgb, currentColor 45%, transparent);
-  transform-origin: left center;
-  transition: transform 480ms var(--ease-out);
-}
-
-/* Our row, at the weight the difference deserves and no more. The name
-   comes up to full colour and the second cell takes the display face —
-   those two changes are the entire visual claim, and anything louder
-   (a fill, a box, a colour) would turn a ledger back into a
-   scorecard. */
-.fig-mk-row[data-ours='true'] .fig-mk-name {
-  color: var(--on-field);
-  font-weight: 600;
-}
-
-.fig-mk-row[data-ours='true'] .fig-mk-claim {
-  color: var(--on-field);
-}
-
-.fig-mk-row[data-ours='true'] .fig-mk-grades {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.16em;
-  letter-spacing: -.01em;
-  text-transform: none;
-  color: var(--on-field);
-}
-
-/* ================================================================
-   5 · route — the first question, on a named clock
+   route — the first question, on a named clock
    ================================================================
    Rebuilt with the figure. The old block styled a route line, four
    nodes on two lanes and a corner HUD; the geometry it supported drew
@@ -959,7 +832,7 @@
 }
 
 /* ================================================================
-   6 · reasoning-card — the emphasis moves onto the reasoning
+   reasoning-card — the emphasis moves onto the reasoning
    ================================================================ */
 
 .fig-rc {
@@ -1218,7 +1091,140 @@
 }
 
 /* ================================================================
-   7 · confidence-tiles — four results, four problems
+   market-ledger — the field, in its own words
+   ================================================================
+   New with the slide, and the one figure in this folder that is mostly
+   type. That is deliberate. Every cell in the first column is a
+   competitor's own marketing copy and the whole persuasive weight of
+   the slide is that the room can check it, so the drawing's job is to
+   get out of the way and let six lines be read.
+
+   Which is also why there is no grid: no cell borders, no zebra rows,
+   no ticks and no crosses. A ruled table reads as a scorecard, a
+   scorecard reads as a claim about who is better, and a claim about who
+   is better is the thing `NARRATIVE.md` §D was right to be afraid of.
+   Three columns held by a grid template and separated by space alone,
+   with exactly one rule on the slide — the one above our row. */
+
+.fig-mk {
+  /* The ledger's own step, and everything below is `em` against it, so
+     the whole table grows or shrinks from one number. It is set above
+     `--fig-label` because this figure is nothing but type and had a
+     third of the stage spare at both projector sizes; a table with room
+     to be bigger and set small is a table nobody reads from row four
+     back. `useFitScale` still owns the ceiling. */
+  --mk: calc(1.72 * var(--u));
+  font-size: var(--mk);
+
+  width: 100%;
+  display: grid;
+  /* All three columns shrink to their own content and the block centres,
+     rather than the quotes taking every spare pixel and pushing the last
+     column against the right margin. The eye has to cross from a quote
+     to its verdict five times; the width of that crossing is the cost of
+     the slide. */
+  grid-template-columns: auto auto auto;
+  justify-content: center;
+  column-gap: 2.6em;
+  align-items: baseline;
+  text-align: left;
+}
+
+.fig-mk-head {
+  grid-row: 1;
+  margin: 0 0 .55em;
+  padding-bottom: .4em;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  font-family: var(--font-pixel);
+  font-size: .64em;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+/* The first head spans the name and quote columns, so the ledger reads
+   as two questions asked of six products rather than three unrelated
+   lists. The names need no head — they are obviously names. */
+.fig-mk-head[data-col='claim'] { grid-column: 1 / 3; }
+.fig-mk-head[data-col='grades'] { grid-column: 3; }
+
+/* A row is a grid item that is itself a subgrid, so all six rows share
+   one set of column edges. Without it each row measures its own name
+   and the second column ragged-edges down the slide, which on a figure
+   whose entire point is that one column repeats is the worst possible
+   place to lose an alignment. */
+.fig-mk-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  padding: .4em 0;
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-mk-name {
+  margin: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+}
+
+.fig-mk-claim {
+  margin: 0;
+  line-height: 1.25;
+  color: var(--on-field);
+}
+
+/* The column that repeats. Set in the pixel face rather than the body
+   face, which is what makes five identical phrases read as five
+   identical *values* — the same trick a table of figures uses — instead
+   of as five sentences that happen to match. */
+.fig-mk-grades {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: .78em;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+/* The only rule on the slide, and it draws rather than fades. */
+.fig-mk-rule {
+  grid-column: 1 / -1;
+  height: 0;
+  margin: .55em 0 .5em;
+  border-top: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  transform-origin: left center;
+  transition: transform 480ms var(--ease-out);
+}
+
+/* Our row, at the weight the difference deserves and no more. The name
+   comes up to full colour and the second cell takes the display face —
+   those two changes are the entire visual claim, and anything louder
+   (a fill, a box, a colour) would turn a ledger back into a
+   scorecard. */
+.fig-mk-row[data-ours='true'] .fig-mk-name {
+  color: var(--on-field);
+  font-weight: 600;
+}
+
+.fig-mk-row[data-ours='true'] .fig-mk-claim {
+  color: var(--on-field);
+}
+
+.fig-mk-row[data-ours='true'] .fig-mk-grades {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.16em;
+  letter-spacing: -.01em;
+  text-transform: none;
+  color: var(--on-field);
+}
+
+/* ================================================================
+   confidence-tiles — four results, four problems
    ================================================================ */
 
 .fig-confidence-tiles {
@@ -1482,7 +1488,7 @@
 }
 
 /* ================================================================
-   9 · traces — the AI misdirection chart
+   traces — the AI misdirection chart
    ================================================================ */
 
 .fig-tr {
@@ -1601,7 +1607,7 @@
 }
 
 /* ================================================================
-   10 · method-lab — the app's own tip card, and the app's own record
+   method-lab — the app's own tip card, and the app's own record
    ================================================================
    Rebuilt with the figure, and the block it replaces was three
    columns wide: a fourteen-name catalogue, a method pane and a
@@ -1895,7 +1901,7 @@
 }
 
 /* ================================================================
-   11 · clock-rings — one completes, one is left open
+   clock-rings — one completes, one is left open
    ================================================================ */
 
 .fig-cr {
@@ -2102,7 +2108,7 @@
 }
 
 /* ================================================================
-   15 · signal-index — eleven signals, read into one number
+   signal-index — eleven signals, read into one number
    ================================================================ */
 
 /* The whole figure is one coordinate space: the rows are a grid inside it, the
@@ -2235,7 +2241,7 @@
 }
 
 /* ================================================================
-   16 · spokes — points against badges
+   spokes — points against badges
    ================================================================ */
 
 .fig-sp {
@@ -2363,7 +2369,7 @@
 }
 
 /* ================================================================
-   17 · paired-bars — Clark's four splits
+   paired-bars — Clark's four splits
    ================================================================ */
 
 .fig-paired-bars {
@@ -2489,7 +2495,7 @@
      the ink inside it. At a flat `height: 2.5em` with `overflow: hidden` the
      box was shorter than the glyphs it held and the clip took two pixels off
      the top of every one of these eight labels — the same defect as the
-     credit line on slide 8, three orders of magnitude smaller and on eight
+     credit line on `pov-volume-is-the-constraint`, three orders of magnitude smaller and on eight
      labels at once. `min-height` keeps the pairs aligned; the clip is gone,
      so a label that ever runs to three lines is ugly rather than beheaded. */
   min-height: 2.5em;
@@ -2523,7 +2529,7 @@
 }
 
 /* ================================================================
-   22 · gate — one direction only
+   gate — one direction only
    ================================================================ */
 
 .fig-gate {
@@ -2665,7 +2671,7 @@
 /* The refusal: two strokes crossed on the reverse arrow, each drawn in 140ms
    with no easing worth the name. A strike-through that eases looks like a
    flourish; this one is a refusal. Drawn in `--on-field`, because verdict red
-   is spent on slides 6 and 7 and this is not one of them, and `clip-path`
+   is spent on `pov-reasoning-is-the-work` and `pov-confidence-signal` and this is not one of them, and `clip-path`
    rather than a scale so each arm grows from the end a pen would start at
    instead of unfolding from its middle.
 

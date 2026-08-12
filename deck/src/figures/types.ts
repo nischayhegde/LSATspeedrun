@@ -13,12 +13,19 @@
  * matters here more than usual, because several of these numbers are the ones
  * `CITATIONS.md` had to correct.
  *
+ * **Every header below names its slide by id rather than by position, and no new
+ * one may use a position.** They used to read "Slide 9 — the AI misdirection
+ * chart", and by the time anyone looked, seven of them were wrong: inserting one
+ * slide in Act II shifts every number after it and nothing in the toolchain
+ * notices. An id is a deep link (`#/pov-ai-never-answers`), it is what the
+ * registry is keyed on, and it survives the deck being reordered.
+ *
  * Every figure animates itself in when `active` becomes true and holds. None of
  * them loops: a figure that keeps moving under a speaker is a figure that keeps
  * pulling the eye back to itself.
  */
 
-/** Slide 2 — coaching 0.22 against real LSATs 2.77, with the behaviour inverted. */
+/** `problem-coaching-tax` — coaching 0.22 against real LSATs 2.77, behaviour inverted. */
 export type BarPairFigure = {
   kind: 'bar-pair'
   bars: Array<{
@@ -35,7 +42,7 @@ export type BarPairFigure = {
   gapNote?: string
 }
 
-/** Slide 3 — the hours bar, its four attributions, and the price ribbon. */
+/** `problem-hours-and-price` — the hours bar, its four attributions, the price ribbon. */
 export type HoursBarFigure = {
   kind: 'hours-bar'
   /** e.g. '150–300 hours, by their own recommendation' */
@@ -57,7 +64,7 @@ export type HoursBarFigure = {
 }
 
 /**
- * Slide 5 — where the first question sits on a clock, on two paths.
+ * `thesis-speedrun` — where the first question sits on a clock, on two paths.
  *
  * Rebuilt, because the old drawing argued the opposite of the slide. It ran a
  * route left to right past three struck-out waypoints and landed `first real
@@ -98,7 +105,7 @@ export type RouteFigure = {
   timerLabel: string
 }
 
-/** Slide 6 — a question card whose emphasis moves onto the reasoning box. */
+/** `pov-reasoning-is-the-work` — a question card whose emphasis moves onto the reasoning box. */
 export type ReasoningCardFigure = {
   kind: 'reasoning-card'
   /** Shown small at the top of the mock card. */
@@ -113,7 +120,7 @@ export type ReasoningCardFigure = {
   effects: Array<{ value: number; label: string; emphasis?: boolean }>
 }
 
-/** Slide 7 — four identical-looking results that re-sort into four problems. */
+/** `pov-confidence-signal` — four identical-looking results that re-sort into four problems. */
 export type ConfidenceTilesFigure = {
   kind: 'confidence-tiles'
   tiles: Array<{
@@ -129,7 +136,7 @@ export type ConfidenceTilesFigure = {
 }
 
 /**
- * Slide 8 — the cohort that had the method, and the half that never used it.
+ * `pov-volume-is-the-constraint` — the cohort that had the method, and the half that never used it.
  *
  * One bar drawn at full width and then pulled back to `keptShare`, leaving its
  * own hatched footprint where the rest of the cohort was, and under it the two
@@ -191,7 +198,7 @@ export type CohortSplitInput = {
     }
 )
 
-/** Slide 9 — the AI misdirection chart. */
+/** `pov-ai-never-answers` — the AI misdirection chart. */
 export type TracesFigure = {
   kind: 'traces'
   /** Drawn in order. The first should look fantastic; the second is the reveal. */
@@ -207,7 +214,7 @@ export type TracesFigure = {
 }
 
 /**
- * Slide 10 — the card the app hands you inside a question, and the record that
+ * `pov-strategy-inside-the-question` — the card the app hands you inside a question, and the record that
  * decides whether it stays.
  *
  * Rebuilt twice. The first version was a fan of fourteen cards over a greeked
@@ -271,7 +278,7 @@ export type MethodLabFigure = {
 }
 
 /**
- * Slide 4 — the field, in its own words, and the column nobody else fills.
+ * `market-in-their-own-words` — the field in its own words, and the column nobody else fills.
  *
  * NEW, and it exists over an objection recorded in `NARRATIVE.md` §D, which
  * argued that a comparison table is "the least persuasive object a founder can
@@ -312,7 +319,7 @@ export type MarketLedgerFigure = {
   ours: { name: string; claim: string; grades: string }
 }
 
-/** Slide 11 — the per-question ring that completes, and the full-form ring that does not. */
+/** `pov-real-clock` — the per-question ring that completes, and the full-form ring that does not. */
 export type ClockRingsFigure = {
   kind: 'clock-rings'
   /** 0..1 of the inner ring the student has used. */
@@ -325,7 +332,7 @@ export type ClockRingsFigure = {
   outerLabel: string
 }
 
-/** Slide 15 — every signal the product watches, converging on the one derived number. */
+/** `dashboard-everything` — every signal the product watches, converging on one derived number. */
 export type SignalIndexFigure = {
   kind: 'signal-index'
   /** The large numeral the signals are read into. */
@@ -343,7 +350,7 @@ export type SignalIndexFigure = {
 }
 
 /**
- * Slide 16 — points light all four engagement spokes; badges light one.
+ * `pov-virtual-currency`, superseded — points light all four engagement spokes; badges light one.
  *
  * Not currently bound to a slide: `pov-virtual-currency` now argues the
  * mechanism rather than the mechanic and uses `currency-lift` instead. Kept
@@ -357,7 +364,7 @@ export type SpokesFigure = {
 }
 
 /**
- * Slide 16 — what a virtual currency moved, and what it left alone.
+ * `pov-virtual-currency` — what a virtual currency moved, and what it left alone.
  *
  * One control line with a bar per course running past it, then the outcomes the
  * same intervention did not shift. `multiple` is the experimental group as a
@@ -373,7 +380,7 @@ export type CurrencyLiftFigure = {
   rows: Array<{ course: string; venue: string; multiple: number }>
 }
 
-/** Slide 17 — the four Clark splits, ours against the alternative. */
+/** `game-by-design` — the four Clark splits, ours against the alternative. */
 export type PairedBarsFigure = {
   kind: 'paired-bars'
   pairs: Array<{
@@ -385,7 +392,7 @@ export type PairedBarsFigure = {
   footnote: string
 }
 
-/** Slide 22 — practice gates the game, and not the other way round. */
+/** `game-never-gates` — practice gates the game, and not the other way round. */
 export type GateFigure = {
   kind: 'gate'
   left: string
@@ -397,7 +404,7 @@ export type GateFigure = {
 }
 
 /**
- * Slide 4 — the hero numeral, and the turn.
+ * `turn-nothing-to-teach` — the hero numeral, and the turn.
  *
  * The narrative is specific that this must read as the same extruded object the
  * room saw on slide 2, dollied in. It also offers a drop-in alternative: the word
