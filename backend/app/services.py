@@ -23,7 +23,8 @@ from .game import (
     settle_attempt,
     snapshot_case_context,
 )
-from . import enforcement, exam, scheduling
+from . import enforcement, exam, experiments, scheduling
+from .experiments import Exposure
 from .models import (
     AiJob,
     Attempt,
@@ -34,6 +35,7 @@ from .models import (
     SkillProgress,
     StudySession,
     User,
+    new_id,
     utcnow,
 )
 from .scoring import (
@@ -963,6 +965,12 @@ def create_study_session(
     policy = "immediate"
 
     session_size = count if count is not None else int(current_app.config["PRACTICE_SESSION_SIZE"])
+    # The run's id, minted here rather than by the insert below, because two
+    # decisions taken before the run exists need something that names *this
+    # sitting*: the layer draws immediately below, and — once the strategy
+    # trial's exposure argument lands — the arm each question is dealt. See
+    # `experiments.Exposure`.
+    session_id = new_id()
     # Repairs fill at most half a run so a large queue can never turn practice
     # into pure repetition. A type-filtered run is a focused drill; mixing
     # off-type repairs into it would defeat the filter the student asked for.
@@ -973,6 +981,30 @@ def create_study_session(
     # A type-filtered run is the student overriding the weighting by hand, so the
     # last mega-litigation only steers an unfiltered one.
     focus_types = [] if question_type else diagnostic_focus(user.id)
+    # Weak-type targeting is an adaptive layer like any other, and until now it
+    # was one nobody could evaluate: it has steered every eligible run since it
+    # shipped, so there has never been a run to compare a steered one against.
+    # A quarter of eligible runs now draw the untargeted arm. See
+    # `app/experiments.py` for why the run's id is the exposure and why the
+    # propensity is written down.
+    #
+    # The draw happens only where the layer could act — a run with no focus
+    # types is the same run either way, and enrolling it would dilute the
+    # comparison with runs on which the treatment is a no-op. Eligibility is
+    # decided from the student's diagnostic history, which is fixed before this
+    # run starts and cannot be an outcome of the arm.
+    if focus_types:
+        targeting = experiments.assign(
+            "weak_type_targeting", user.id, exposure=Exposure.run(session_id)
+        )
+        # The strategy trial still sees the unblanked list. Its `focus_types`
+        # only lengthens the coverage runway on weak types, which is a decision
+        # about a different layer; letting this arm move it too would bundle
+        # two treatments into one label and make the reading below the effect
+        # of neither.
+        selection_focus_types = focus_types if targeting.on else []
+    else:
+        selection_focus_types = focus_types
     repair_ids = {question.id for question in repairs}
     # A fresh question sharing a passage with a review item would have the run
     # read that passage twice, because reviews and fresh material are placed
@@ -993,7 +1025,7 @@ def create_study_session(
         question_type,
         user_id=user.id,
         exclude_ids=blocked_ids,
-        focus_types=focus_types,
+        focus_types=selection_focus_types,
     )
     # Genuine interleaving, not front-loading. Reviews are distributed through
     # the run instead of stacked at the start, which is what the old
@@ -1021,6 +1053,7 @@ def create_study_session(
     questions = _questions_by_id(chosen_ids)
 
     session = StudySession(
+        id=session_id,
         user_id=user.id,
         mode="practice",
         practice_style=practice_style,
