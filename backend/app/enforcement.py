@@ -1183,7 +1183,13 @@ GATE_COPY = {
 # Advisory quality read
 # ---------------------------------------------------------------------------
 
-ARTIFACT_PROMPT_VERSION = "artifact-v1-advisory-only"
+# Bumped alongside `coaching.PROMPT_VERSION`, and for the same reason. Every
+# rating stored under v1 on a Reading Comprehension question was produced without
+# the model seeing the passage or the parts the artifact is keyed to, so those
+# ratings and the ones produced from here are not measurements of the same thing
+# and must not be pooled. Still advisory: the name says so because the property is
+# the important one and a later reader should not have to go looking for it.
+ARTIFACT_PROMPT_VERSION = "artifact-v2-advisory-only-sees-the-passage"
 
 _ARTIFACT_SYSTEM = """You are rating one artifact a student produced while working an LSAT question with a named approach. Return one JSON object and nothing else.
 

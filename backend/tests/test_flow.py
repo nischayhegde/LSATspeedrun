@@ -1332,7 +1332,13 @@ def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monke
     assert coaching["reasoning_verdict"] == "mostly_correct"
     assert len(coaching["answer_analysis"]["choice_explanations"]) == 5
     assert {choice["label"] for choice in coaching["answer_analysis"]["choice_explanations"]} == set("ABCDE")
-    assert coaching["prompt_version"] == "coaching-v3-invalid-is-a-finding"
+    # The version the grade was produced under, read from the module rather than
+    # spelled out. Pinning the literal made this test fail on every legitimate
+    # bump, which is the opposite of what the column is for: what has to hold is
+    # that the stored grade says which prompt made it.
+    from app.coaching import PROMPT_VERSION
+
+    assert coaching["prompt_version"] == PROMPT_VERSION
     assert captured["request"]["reasoning_effort"] == "xhigh"
     assert "one decisive bottom-line sentence" in captured["request"]["messages"][0]["content"]
     assert coaching_response.json["reward"]["explanation_grade"] == "Excellent"
