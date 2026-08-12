@@ -66,9 +66,43 @@
 .office-gamebar .training-evidence-card small { color: #565e59; font-size: 11px; font-weight: 700; }
 .office-gamebar .training-focus-card button,
 .office-gamebar .training-evidence-card button { min-height: 44px; padding: 9px 13px; border: 1px solid var(--ink-line-strong); border-radius: var(--r-control); font-size: 10px; box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1); }
-.client-quest-card { --portrait-overhang: 6px; padding: 12px 12px 20px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
-.client-quest-card > div { min-width: 0; }
-.client-quest-card p { overflow-wrap: anywhere; }.client-quest-card h3 { margin: 5px 0; color: #1d2935; font-family: var(--font-hud); font-size: 13px; letter-spacing: .02em; text-transform: uppercase; }.client-quest-card p { margin: 0; color: #6d5e4b; font-size: 11px; }
+/* ---------------------------------------------------------------------------
+   The active contract.
+
+   Three surfaces draw this same object: the Firm tab's retainer panel, the
+   Practice docket's client header, and this card. The other two set the
+   client's name in Fraunces at 24-26px and hang the contract's figures off it
+   as labelled chips. This one set the name in 13px tracked caps and joined its
+   two figures into one grey sentence with a middot, which left the subject of
+   the card as the smallest type in the row it sits in — smaller than "0 / 5
+   QUESTIONS" and "0%" on either side of it. The name is a name, so it is set
+   in the face this app sets names in, and the figures are separated because
+   they are two facts about the contract rather than one.
+   --------------------------------------------------------------------------- */
+.client-quest-card { --portrait-overhang: 20px; padding: 13px 15px 22px 22px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 15px; }
+.client-quest-card > div { min-width: 0; display: grid; gap: 6px; }
+.client-quest-card h3 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: clamp(17px, 1.35vw, 21px); font-weight: 620; letter-spacing: -.01em; line-height: 1.06; text-transform: none; text-wrap: balance; }
+/* The two figures the contract runs on: how much of it is left, and what it
+   pays. Ink hairline on a lighter draw of the same parchment, so they read as
+   entries written on the sheet rather than as controls sitting on it. */
+.client-quest-card p { margin: 0; display: flex; flex-wrap: wrap; gap: 5px; overflow-wrap: anywhere; }
+.client-quest-card p b { padding: 3px 9px 4px; border: 1px solid rgba(27, 26, 36, .24); border-radius: var(--r-chip); color: rgba(27, 26, 36, .74); background: rgba(255, 250, 230, .5); font-family: var(--font-hud); font-size: 10px; font-weight: 800; letter-spacing: .03em; }
+/* Reputation has fallen under the client's requirement, the original contract
+   is suspended and a walk-in is billing. A returned filing, not an alarm. */
+.client-quest-card.is-on-hold p b:first-child { border-color: rgba(168, 70, 69, .5); color: #8d3d38; background: rgba(168, 70, 69, .09); }
+/* The portrait's title pill is centred on an 86px bust and set `nowrap`, so
+   the card has to reserve the room it hangs outside the portrait in
+   `--portrait-overhang` above. At the shared 9.5px it needed 105px for
+   "GENERAL COUNSEL" against a 98px allowance and shipped as "GENERAL C…", a
+   fact rendered unreadable to save seven pixels. Set smaller, the longest
+   title in the catalog — "LEAGUE COMMISSIONER" — fits inside an allowance the
+   card's own left padding can still contain, which is what keeps the pill from
+   hanging over the card edge the way it does in the phone brief sheet.
+   Carrying `.av-portrait` is not decoration: `art.css` styles this pill
+   through `.client-portrait.av-portrait > small` and is injected after this
+   sheet, so without the extra class these lose the cascade to it and do
+   nothing. */
+.client-quest-card .client-portrait.av-portrait > small { padding: 2.5px 7px; font-size: 7.5px; letter-spacing: .06em; }
 /* "Take case" — the slate plate the shared secondary button is drawn as, at
    the size this card asks for. It was a flat navy fill inside a 2px cold-black
    outline standing on a 3px printed drop. */
