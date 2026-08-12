@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from app.calibration import (
     INITIAL_RATING,
     Match,
+    clamp_rating,
     expected_correct,
     guess_floor,
     standard_error,
@@ -96,13 +97,20 @@ class ReplayResult:
         return sum(rated) / len(rated) if rated else 0.0
 
 
-def replay(responses: list[Response], *, unbiased_only: bool = False) -> ReplayResult:
+def replay(
+    responses: list[Response], *, unbiased_only: bool = False, fixed_k: float | None = None
+) -> ReplayResult:
     """Run the production update over a response stream, in order.
 
     `unbiased_only` skips responses whose exposure depended on difficulty, which
     is what `QuestionCalibration.blind_rating` does online. Running the same
     stream both ways is how the size of a selection bias is measured rather
     than argued about.
+
+    `fixed_k` replaces the information-scaled step with plain Elo's constant, on
+    both sides. It exists so the choice of step rule can be measured rather than
+    argued for: the production rule has to beat the constant it replaced on the
+    same corpus, or it is complexity with a citation attached.
     """
     result = ReplayResult()
     for response in responses:
@@ -113,11 +121,15 @@ def replay(responses: list[Response], *, unbiased_only: bool = False) -> ReplayR
         learner = result.learners.setdefault(key, LearnerState())
         guess = guess_floor(response.choices)
         match = Match(learner.rating, item.rating, response.correct, guess)
-        learner.rating = match.next_theta(learner.information)
+        if fixed_k is None:
+            learner.rating = match.next_theta(learner.information)
+            item.rating = match.next_difficulty(item.information)
+        else:
+            learner.rating = clamp_rating(learner.rating + fixed_k * match.delta)
+            item.rating = clamp_rating(item.rating - fixed_k * match.delta)
         learner.information += match.information
         learner.responses += 1
         learner.correct += int(response.correct)
-        item.rating = match.next_difficulty(item.information)
         item.information += match.information
         item.responses += 1
         item.correct += int(response.correct)
@@ -345,6 +357,7 @@ def evaluate(
     holdout: float = 0.3,
     seed: int = 7,
     min_item_responses: int = 0,
+    fixed_k_arms: tuple[float, ...] = (),
 ) -> dict:
     """Fit on part of the corpus, then ask whether the ratings predict the rest.
 
@@ -366,6 +379,9 @@ def evaluate(
 
     state = replay(fit)
     centre = state.centre()
+    # Same responses, same order, same arithmetic apart from the step rule.
+    fixed = {value: replay(fit, fixed_k=value) for value in fixed_k_arms}
+    fixed_centres = {value: arm.centre() for value, arm in fixed.items()}
 
     total = sum(response.correct for response in fit)
     base_rate = total / len(fit) if fit else 0.5
@@ -390,6 +406,7 @@ def evaluate(
     predictions: dict[str, list[float]] = {name: [] for name in (
         "global", "question_scope", "learner", "item_rate", "learner_x_item_rate", "elo"
     )}
+    predictions.update({f"elo_fixed_k_{value:g}": [] for value in fixed_k_arms})
     for response in test:
         learner_p = smoothed(learner_rate, (response.learner, response.scope), base_rate)
         item_p = smoothed(item_rate, response.item, base_rate)
@@ -409,6 +426,16 @@ def evaluate(
         predictions["elo"].append(
             expected_correct(theta, difficulty, guess_floor(response.choices))
         )
+        for value, arm in fixed.items():
+            arm_item = arm.items.get(response.item)
+            arm_learner = arm.learners.get((response.learner, response.scope))
+            predictions[f"elo_fixed_k_{value:g}"].append(
+                expected_correct(
+                    arm_learner.rating if arm_learner else INITIAL_RATING,
+                    arm_item.rating if arm_item else fixed_centres[value],
+                    guess_floor(response.choices),
+                )
+            )
 
     rows = [score(name, values, outcomes) for name, values in predictions.items()]
     by_name = {row["model"]: row for row in rows}

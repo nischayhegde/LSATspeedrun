@@ -96,10 +96,12 @@ That is the stochastic Newton step rather than a tuned constant, and it is the
 same idea Glicko adds to Elo: carry the uncertainty and let it set how far each
 response is allowed to move the rating. A brand-new item moves a long way on its
 first response and barely at all on its two-hundredth, without a hand-picked
-schedule deciding when that happens. Measured against a fixed-K schedule on the
-simulation in `scripts/calibration_lab.py` — 400 items, 9,600 responses, 2PL
-generator — it is worth 0.006 nats of held-out log loss and 0.010 of AUC, which
-is small but free.
+schedule deciding when that happens. Against the best of four fixed K values on
+the simulation in `scripts/calibration_lab.py` — 400 items, 9,600 responses, 2PL
+generator — it is worth 0.006 nats of held-out log loss and 0.009 of AUC, which
+is small but free. That comparison is an arm of `calibration_validate.py
+--simulate` rather than a remembered result, so a change that makes the step
+rule stop earning its complexity shows up the next time anyone runs it.
 
 The two sides differ in one respect. The item's K decays without limit, because
 an item's difficulty is a fixed property and two hundred responses in there is
@@ -373,7 +375,7 @@ def learner_step_size(information: float) -> float:
     return 1.0 / (LEARNER_PRIOR_PRECISION + min(max(0.0, information), LEARNER_INFORMATION_CAP))
 
 
-def _clamp_rating(value: float) -> float:
+def clamp_rating(value: float) -> float:
     return min(max(value, -RATING_LIMIT), RATING_LIMIT)
 
 
@@ -395,16 +397,23 @@ class Match:
         self.surprise = (1.0 if is_correct else 0.0) - self.expected
         self.information = response_information(theta, difficulty, guess)
 
-    def _delta(self) -> float:
+    @property
+    def delta(self) -> float:
+        """The gradient of the log-likelihood, before any step size is applied.
+
+        Public because `scripts/calibration_lab.py` needs it to run the same
+        match under a fixed K, which is how the information-scaled step is shown
+        to be worth having rather than asserted to be.
+        """
         return self.surprise * _gradient_factor(self.theta, self.difficulty, self.guess)
 
     def next_theta(self, information: float) -> float:
         """The student's rating after this match. `information` is theirs, before it."""
-        return _clamp_rating(self.theta + learner_step_size(information) * self._delta())
+        return clamp_rating(self.theta + learner_step_size(information) * self.delta)
 
     def next_difficulty(self, information: float) -> float:
         """The item's rating after this match. `information` is the item's, before it."""
-        return _clamp_rating(self.difficulty - item_step_size(information) * self._delta())
+        return clamp_rating(self.difficulty - item_step_size(information) * self.delta)
 
 
 def standard_error(information: float | None) -> float | None:

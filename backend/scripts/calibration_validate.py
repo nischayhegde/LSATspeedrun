@@ -116,6 +116,21 @@ def run_simulation(args) -> int:
             f"{scored['elo_vs_item_rate_log_loss']:>+9.4f}{elo['auc']:>8.4f}"
         )
 
+    print("\n== Is the information-scaled step worth its complexity? ==")
+    print("  Same responses, same order, same arithmetic apart from the step rule.")
+    print("  K = 1/(prior + ΣI) against plain Elo's constant, at four sizes. If the")
+    print("  best constant wins, the constant is what should ship.")
+    print(f"  {'step rule':<22}{'log loss':>10}{'brier':>9}{'AUC':>8}")
+    arms = (0.1, 0.2, 0.4, 0.8)
+    stepped = evaluate(
+        simulation.responses, holdout=args.holdout, seed=args.seed + 1, fixed_k_arms=arms
+    )
+    for row in stepped["models"]:
+        if row["model"] != "elo" and not row["model"].startswith("elo_fixed_k_"):
+            continue
+        label = "information-scaled" if row["model"] == "elo" else f"fixed K = {row['model'][12:]}"
+        print(f"  {label:<22}{row['log_loss']:>10.5f}{row['brier']:>9.5f}{row['auc']:>8.4f}")
+
     print("\n== Selection bias, and what the random slice is for ==")
     print("  'targeting' is the share of exposures chosen because of the item's")
     print("  estimated difficulty; 'holdout' is the share of those slots forced back to")

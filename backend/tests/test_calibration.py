@@ -547,6 +547,27 @@ def test_the_rating_predicts_held_out_responses_better_than_knowing_only_the_stu
     assert result["rating_vs_holdout_difficulty_spearman"] > 0.4
 
 
+def test_the_information_scaled_step_beats_every_constant_it_replaced():
+    """Complexity has to pay for itself, so the step rule is measured too.
+
+    `K = 1/(prior + ΣI)` is two functions and an accumulator more than plain
+    Elo's constant. It is worth having only if it predicts better than the best
+    constant anyone would have picked, run over the same responses in the same
+    order.
+    """
+    from scripts.calibration_lab import evaluate, simulate
+
+    simulation = simulate(items=250, learners=100, responses_per_learner=60, seed=4242)
+    result = evaluate(
+        simulation.responses, holdout=0.3, seed=99, fixed_k_arms=(0.1, 0.2, 0.4, 0.8)
+    )
+    scores = {row["model"]: row for row in result["models"]}
+    constants = [row for name, row in scores.items() if name.startswith("elo_fixed_k_")]
+    assert len(constants) == 4
+    assert scores["elo"]["log_loss"] < min(row["log_loss"] for row in constants)
+    assert scores["elo"]["auc"] > max(row["auc"] for row in constants)
+
+
 def test_the_rating_recovers_the_difficulties_that_generated_the_data():
     from scripts.calibration_lab import recovery, replay, simulate
 
