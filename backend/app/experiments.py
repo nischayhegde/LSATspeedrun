@@ -139,7 +139,9 @@ class Layer:
     `assigned_by` is where the draw happens. For most layers that is this
     module. For the strategy trial it is `app/strategies.py`, and saying so is
     the point of registering it: the registry is a census of adaptive machinery
-    rather than a census of this module's customers.
+    rather than a census of this module's customers. Where it reads "nothing
+    draws this", the layer is shipped and unmeasured, and `arms` describes the
+    comparison that would be run rather than one that is running.
 
     `design_version` moves whenever the arms or their shares move. Rows carry
     it, and nothing pools two versions, because a share retuned midway is two
@@ -163,10 +165,19 @@ class Layer:
         return (self.arms.get(arm, 0.0) / total) if total > 0 else 0.0
 
 
-# Every adaptive layer in the product. The ones this module assigns carry a
-# holdback; the ones it does not are here so the list is a complete answer to
-# "what is deciding what this student sees", which is a question nobody could
-# previously answer from one place.
+# Every adaptive layer in the product, in four states:
+#
+#   live       drawn, recorded, and estimable today
+#   seam       registered and waiting for the code it wraps to land
+#   planned    the signal it needs does not exist yet
+#   unmeasured shipped and deciding, with nothing drawing an off arm for it
+#
+# The last state is the uncomfortable one and it is why the list includes
+# layers this module does not touch. A census that only counted what was
+# already measured would report a fully measured system, which is exactly the
+# kind of instrument that agrees with whoever points it. Three of the eight
+# entries below are `unmeasured`: that is the honest headline, and each of them
+# names the reason in its own `without_signal`.
 #
 # A holdback of a quarter is the same figure the strategy trial's control arm
 # uses, and for the same reason: it is the smallest share that fills a
@@ -219,6 +230,58 @@ LAYERS: dict[str, Layer] = {
             off_arm="uniform",
             design_version="2026-08-12",
             status="planned",
+        ),
+        Layer(
+            key="review_scheduling",
+            unit=UNIT_STUDENT,
+            question="Does FSRS-6 — memory state per card, queue ordered by "
+            "retrievability — return a question at a better moment than the fixed "
+            "1/3/7/21-day ladder it replaced?",
+            signal="Per-card stability and difficulty, updated from a grade derived "
+            "from correctness, pace, confidence, explanation quality and whether the "
+            "answer was changed. See `app/scheduling.py`.",
+            without_signal="A card with no stability reports retrievability 0 and "
+            "sorts to the front, which is the right place for a question just missed. "
+            "The scheduler has no state to be missing — only state it has not gathered.",
+            arms={"fsrs": 0.75, "ladder": 0.25},
+            off_arm="ladder",
+            design_version="unmeasured",
+            assigned_by="nothing draws this",
+            status="unmeasured",
+        ),
+        Layer(
+            key="run_ordering",
+            unit=UNIT_RUN,
+            question="Does distributing review items through a run, and separating "
+            "same-type questions, beat serving reviews first?",
+            signal="Which questions came from the review queue, and each question's "
+            "type. See `scheduling.interleave`.",
+            without_signal="A run with no review items, or one type-filtered by the "
+            "student, is returned untouched. The de-blocking pass is skipped outright "
+            "on a filtered drill because the student asked for the block.",
+            arms={"interleaved": 0.75, "front_loaded": 0.25},
+            off_arm="front_loaded",
+            design_version="unmeasured",
+            assigned_by="nothing draws this",
+            status="unmeasured",
+        ),
+        Layer(
+            key="strategy_selection",
+            unit=UNIT_ITEM,
+            question="Given that an approach is offered, does choosing *which* one by "
+            "the student's own record beat choosing uniformly among the candidates?",
+            signal="Per-approach posterior accuracy, pace, calibration and explanation "
+            "quality over that student's prompt-arm attempts; and a longer coverage "
+            "runway on the types the last mega-litigation marked weak.",
+            without_signal="Under the coverage target the draw is already uniform over "
+            "the least-sampled candidates, so a cold student is getting the off arm by "
+            "default — which is why this gap has never shown up as a bug.",
+            arms={"ranked": 0.75, "uniform": 0.25},
+            off_arm="uniform",
+            design_version="unmeasured",
+            assigned_by="app/strategies.py",
+            status="unmeasured",
+            outcome_join="attempt_columns",
         ),
         Layer(
             key="strategy_offer",
@@ -380,6 +443,17 @@ def assign(
     lets the draw precede question selection.
     """
     spec = layer(layer_key)
+    if spec.assigned_by != "app/experiments.py":
+        # A registry entry is a description, not a switch. The census carries
+        # layers this module does not draw so the holes are visible, and the
+        # cost of that honesty is that `LAYERS` now contains keys which look
+        # callable and are not: drawing `review_scheduling` here would write
+        # rows under a design nothing implements and leave an analysis reading
+        # arms no student was ever in.
+        raise ValueError(
+            f"layer {spec.key!r} is drawn by {spec.assigned_by}, not here; "
+            "it is registered so the census is complete, not so it can be assigned"
+        )
     if exposure.kind != spec.unit:
         raise ValueError(
             f"layer {spec.key!r} is randomised per {spec.unit}, so it needs an "

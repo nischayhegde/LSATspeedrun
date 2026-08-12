@@ -403,9 +403,36 @@ def test_the_registry_describes_every_layer_including_the_ones_it_does_not_draw(
         reading = registry_reading()
         keys = {entry["layer"] for entry in reading}
         assert {"strategy_offer", "strategy_forcing"} <= keys
+        # The three that ship deciding and are compared against nothing. They
+        # are the reason the census exists; a list that held only the measured
+        # layers would report a fully measured system.
+        assert {"review_scheduling", "run_ordering", "strategy_selection"} <= keys
         for entry in reading:
             assert entry["off_arm"] in entry["arms"]
             assert entry["signal"] and entry["without_signal"] and entry["question"]
         external = [entry for entry in reading if entry["assigned_by"] != "app/experiments.py"]
         assert external, "the strategy trial is part of the system and belongs in the census"
         assert layer_reading("strategy_offer")["measured_elsewhere"] is True
+
+
+def test_a_layer_this_module_does_not_draw_cannot_be_drawn_through_it(app):
+    """A registry entry is a description, not a switch.
+
+    The cost of a complete census is that `LAYERS` holds keys which look
+    callable and are not. Assigning one would write rows under a design nothing
+    implements, and a later reading would report arms no student was in — which
+    is a worse failure than the hole the entry was added to expose, because it
+    would look like data.
+    """
+    with app.app_context():
+        user = make_user("census@example.test")
+        for key in ("review_scheduling", "run_ordering", "strategy_selection"):
+            unit = LAYERS[key].unit
+            exposure = {
+                "student": Exposure.student(user.id),
+                "run": Exposure.run("session-1"),
+                "item": Exposure.item("session-1", 0),
+            }[unit]
+            with pytest.raises(ValueError, match="not here"):
+                assign(key, user.id, exposure=exposure)
+        assert LayerAssignment.query.count() == 0
