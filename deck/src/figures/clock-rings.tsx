@@ -2,7 +2,7 @@ import type { ClockRingsFigure } from './types'
 import { ringPoint, useBoxSize, usePhase, type FigureBody } from './kit'
 
 /**
- * SLIDE 11 — `clock-rings`. The per-question ring that completes and the
+ * `pov-real-clock` — The per-question ring that completes and the
  * full-form ring that does not.
  *
  * The two rings are the tension, so they are deliberately built out of different

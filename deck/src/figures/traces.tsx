@@ -2,7 +2,7 @@ import type { TracesFigure } from './types'
 import { DRAW_PX, pct, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 9 — `traces`. Bastani's practice gains, the exam that followed, and the
+ * `pov-ai-never-answers` — Bastani's practice gains, the exam that followed, and the
  * guardrailed tutor that lands level with the control.
  *
  * The only slide in the deck permitted misdirection, and the misdirection is

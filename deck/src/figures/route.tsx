@@ -2,7 +2,7 @@ import type { RouteFigure } from './types'
 import { clockText, pct, usePhase, useStopwatch, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 5 — `route`. Where the first question sits on a named clock.
+ * `thesis-speedrun` — Where the first question sits on a named clock.
  *
  * ## What was wrong with the drawing this replaces
  *

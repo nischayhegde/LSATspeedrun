@@ -2,7 +2,7 @@ import type { MethodLabFigure } from './types'
 import { pct, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 10 — `method-lab`. The card the app hands you inside a question, and
+ * `pov-strategy-inside-the-question` — The card the app hands you inside a question, and
  * the record that decides whether it stays.
  *
  * ## The complaint this answers

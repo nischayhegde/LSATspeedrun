@@ -3,7 +3,7 @@ import { pct, usePhase, vars, type FigureBody } from './kit'
 import './currency-lift.css'
 
 /**
- * SLIDE 16 — `currency-lift`. What a virtual currency actually moves, and what
+ * `pov-virtual-currency` — What a virtual currency actually moves, and what
  * it does not.
  *
  * The slide it replaced argued points against badges, which is a comparison

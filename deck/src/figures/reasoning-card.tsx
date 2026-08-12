@@ -2,7 +2,7 @@ import type { ReasoningCardFigure } from './types'
 import { pct, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 6 — `reasoning-card`. The emphasis moving off the answer and onto the
+ * `pov-reasoning-is-the-work` — The emphasis moving off the answer and onto the
  * reasoning, and VanLehn's three effect sizes beside it.
  *
  * The card is a mock rather than a screenshot because the slide is an *argument

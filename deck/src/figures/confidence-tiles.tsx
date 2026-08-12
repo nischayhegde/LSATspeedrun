@@ -2,7 +2,7 @@ import type { ConfidenceTilesFigure } from './types'
 import { pct, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 7 — `confidence-tiles`. Four results a score report cannot tell apart,
+ * `pov-confidence-signal` — Four results a score report cannot tell apart,
  * re-sorting into four different problems.
  *
  * The sort *is* the argument, so the tiles keep their DOM order and move by

@@ -2,7 +2,7 @@ import type { HoursBarFigure } from './types'
 import { pct, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 3 — `hours-bar`. The 150–300 hours, who says so, and what they cost.
+ * `problem-hours-and-price` — The 150–300 hours, who says so, and what they cost.
  *
  * One bar, monochrome, because the slide's whole rhetorical trick is that a
  * single quantity is being read four different ways: as a duration, as an

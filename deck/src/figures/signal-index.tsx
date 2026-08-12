@@ -2,7 +2,7 @@ import type { SignalIndexFigure } from './types'
 import { DRAW_PX, pct, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 15 — eleven signals, and the one number they are read into.
+ * `dashboard-everything` — eleven signals, and the one number they are read into.
  *
  * ## Why this is not the radial it used to be
  *

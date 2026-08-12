@@ -3,7 +3,7 @@ import { pct, usePhase, vars, type FigureBody } from './kit'
 import './cohort-split.css'
 
 /**
- * SLIDE 8 — `cohort-split`. The method is not in dispute. Finishing it is.
+ * `pov-volume-is-the-constraint` — The method is not in dispute. Finishing it is.
  *
  * This is the slide that makes the game load-bearing instead of decorative, and
  * the figure has to carry an argument in a specific order or the game reads as a

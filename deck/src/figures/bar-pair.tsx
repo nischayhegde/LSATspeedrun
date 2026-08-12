@@ -5,7 +5,7 @@ import { ExtrudedNumeral } from './extruded-numeral'
 import { pct, usePhase, type FigureBody } from './kit'
 
 /**
- * SLIDE 2 — `bar-pair`. Coaching's 0.22 against real LSATs' 2.77.
+ * `problem-coaching-tax` — Coaching's 0.22 against real LSATs' 2.77.
  *
  * The ratio is the argument, so the ratio is the drawing: the bars are scaled
  * against the larger value with no compression, no broken axis and no minimum

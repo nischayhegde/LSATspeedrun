@@ -2,8 +2,15 @@ import type { SpokesFigure } from './types'
 import { pct, ringPoint, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 16 — `spokes`. Points correlated with all four dimensions of engagement;
- * badges correlated with one.
+ * `spokes` — points correlated with all four dimensions of engagement; badges
+ * correlated with one.
+ *
+ * NO SLIDE CURRENTLY MOUNTS THIS. It was built for the virtual-currency POV and
+ * lost that slide to `currency-lift`, which draws the same argument from the
+ * study's own numbers instead of from its correlation table. It is kept because
+ * the radial is the only shape-comparison primitive in the folder and the
+ * argument it draws may come back; if it has not by the next pass, delete it
+ * rather than carrying an unmounted figure through another revision.
  *
  * One radial with both series on the same axes rather than two radials side by
  * side. Two diagrams would ask the room to compare two shapes across a gap and
