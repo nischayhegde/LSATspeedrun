@@ -124,6 +124,27 @@ import type { SlideSpec } from './types'
  *  that Revision 8 is the autoplay demo revision, recorded in §C of the
  *  narrative rather than in its header — this is 9.
  *
+ *  Revision 10 is the founders' walkthrough pass. Four complaints, one of them
+ *  a slide that did not exist.
+ *
+ *      + `market-in-their-own-words`  NEW, slide 7, immediately after Spiky POV
+ *                               01. Five named competitors, each in its own
+ *                               quoted words, against the one column none of
+ *                               them meets. §D of the narrative argued against
+ *                               a comparison slide; this is built to answer its
+ *                               four objections rather than to overrule them,
+ *                               and §4.10 of `CITATIONS.md` sources every cell.
+ *                               **10s, and the only change that moves the
+ *                               runtime: the deck is 5:00 across 25 slides.**
+ *      `thesis-speedrun`        the route figure was a falling line past three
+ *                               struck-out labels on an axis nothing named.
+ *                               Rebuilt on a named axis with two lanes.
+ *      `pov-strategy-inside…`   seven blocks of text cut to two objects, both
+ *                               of them screens the product actually draws.
+ *      `pov-volume-is-the-c…`   the clipped credit line. Fixed in the figure
+ *                               layer rather than here — see `useFitScale` in
+ *                               `figures/kit.tsx` — and no copy changed.
+ *
  *  A writer owns exactly these fields per slide:
  *      eyebrow      the small line above the headline
  *      headline     the slide's one claim
@@ -155,7 +176,7 @@ import type { SlideSpec } from './types'
  *  belongs in `notes`, not on the slide.
  *
  *  `budgetSeconds` is taken from the narrative's timing table (§C) and sums to
- *  **4:50** across 24 slides. Seven slides carry a `demo` block with its own hard
+ *  **5:00** across 25 slides. Seven slides carry a `demo` block with its own hard
  *  budget, which is the number the presenter is held to; six of those mount a
  *  live frame and come to **1:22** between them, and the seventh —
  *  `demo-focus-mode` — is `stillOnly` and paints a single frame. Demo overrun is
@@ -385,8 +406,8 @@ export const SLIDES: readonly SlideSpec[] = [
     // the deck has already sourced on slide 3 out of the vendors' own pages:
     // 7Sage's 900 lessons "from the ground up", LSAT Lab's "comprehensive
     // 3-month courses", PowerScore's 2–3 month syllabus. The honest
-    // time-to-first-question comparison, with Demon credited on our side of it,
-    // is `market-what-you-do` in Act I.
+    // comparison, with Demon credited for being question-first, is
+    // `market-in-their-own-words` two slides later.
     figure: {
       kind: 'route',
       axisLabel: 'time to your first real question',
@@ -506,6 +527,113 @@ export const SLIDES: readonly SlideSpec[] = [
     // backdrop, new framing, continuous camera.
     scene: { id: 'none', framing: 'still' },
     transition: 'camera',
+  },
+  {
+    // NEW, and the deck's only competitor comparison. §D of the narrative argued
+    // against a comparison slide and gave four reasons; the founders asked for
+    // one anyway. The four reasons were not wrong, so the slide is built to
+    // answer them rather than to overrule them — see the header of
+    // `figures/market-ledger.tsx`, which takes them one at a time, and §4.10 of
+    // `CITATIONS.md`, which carries every quote below with its URL and the date
+    // it was read.
+    //
+    // WHY IT IS HERE AND NOT IN ACT I. The obvious slot is beside the price
+    // slide, and it is wrong twice over. The room cannot be told "why us" before
+    // it has been told what we are, and the deck deliberately withholds the
+    // product until slide 10 — so in Act I our own row would either be missing,
+    // which is not a comparison, or be the first thing the room ever hears about
+    // us, which spends the turn early. Here, it is the second half of the slide
+    // before it. Slide 6 has just priced the difference between feedback on your
+    // answer and feedback on your steps — 0.31 against 0.76 — and this slide
+    // reads that same axis across five named products. Every competitor sits in
+    // VanLehn's cheap column. That is an inference the room has already made,
+    // which §D says is the only kind of competitive claim worth putting on a
+    // projector.
+    //
+    // WHAT IS NOT ON IT, AND WHY. Price. Slide 3 carries the range and it is
+    // twenty seconds of talk away, so a price column here would be the same
+    // argument twice; per-vendor prices are also the one class of fact in
+    // `CITATIONS.md` §4 that moves weekly and that §4.9 could least often load
+    // directly; and the deck has no price of its own to print (§8), so the
+    // column would end on a blank in the one row that is the punchline. The
+    // presenter carries the numbers in the notes instead and answers in a
+    // sentence if asked.
+    id: 'market-in-their-own-words',
+    section: 'thesis',
+    kind: 'figure',
+    field: 'beige',
+    eyebrow: 'Act II — the field',
+    headline: 'Nobody else reads your reasoning.',
+    // A concession, and it is the whole standfirst. It is the only sentence on
+    // the slide that is not in the figure, the only one that costs us something,
+    // and the reason the room believes the rest: anyone who has used LSAT Demon
+    // knows they are question-first and would spend the next four slides
+    // discounting us if we pretended otherwise. `CITATIONS.md` §4.2.
+    deck: 'LSAT Demon will get you to a question as fast as we will.',
+    // No fragment line. The figure is eleven lines of type already and the
+    // second column is the argument; anything on the ledger line would be read
+    // instead of it.
+    //
+    // EVERY QUOTE IS VERBATIM AND CARRIES ITS QUOTATION MARKS. That is the whole
+    // mechanism of the slide: there is no judgement of a competitor anywhere on
+    // it, so there is nothing for a judge to argue with one row at a time. If a
+    // line here is ever reworded into a paraphrase, the slide stops working and
+    // becomes the scorecard §D was right to refuse. Our own row is unquoted,
+    // which is the marks doing their job — it is the one row that is a claim.
+    //
+    // The order is not a ranking. It runs from the most instruction to the
+    // least, so the first column visibly converges on our own thesis by the
+    // fifth row and the second column has not moved at all. Demon last is the
+    // concession the standfirst just made, drawn.
+    figure: {
+      kind: 'market-ledger',
+      claimHead: 'what it hands you · their words',
+      gradesHead: 'what it grades',
+      rows: [
+        // Four of Kaplan's own pages say 60; one FAQ paragraph says over 150.
+        // The smaller number is quoted on purpose — see §4.10 — and it is the
+        // one cell on the slide that was read from a cached copy rather than
+        // from the live page, because kaptest.com serves a bot wall.
+        { name: 'Kaplan', claim: '“60 hours of live and on demand instruction”', grades: 'the letter you picked' },
+        { name: 'Princeton Review', claim: '“100+ hours of recorded video lessons”', grades: 'the letter you picked' },
+        { name: 'Blueprint', claim: '“61 interactive learning modules and video lessons”', grades: 'the letter you picked' },
+        // Their pricing page's own feature name for the Core plan. Slide 3
+        // already quotes their "900+ video lessons" at the same company, so
+        // this is the other phrase off the same page rather than that one
+        // twice.
+        { name: '7Sage', claim: '“Comprehensive video course”', grades: 'the letter you picked' },
+        { name: 'LSAT Demon', claim: '“Smart Drilling”', grades: 'the letter you picked' },
+      ],
+      // Not a slogan. It is the case screen the room watches Alan use in four
+      // slides' time, described in the fewest words that survive being checked
+      // against it.
+      ours: {
+        name: 'Lawyer Tycoon',
+        claim: 'A question, and a box to explain it in',
+        grades: 'your reasoning',
+      },
+    },
+    credit: 'Each company’s own page, quoted verbatim, read 2026-08-12 · Kaplan from a cached copy of theirs',
+    notes:
+      'Here is the field in its own words. Hours of class, hours of video, sixty-one modules — '
+      + 'and Demon, which drills, and is good. Every one of them grades the letter you picked.'
+      + ' ⟢ IF CHALLENGED ON A QUOTE — all five are off the company’s own page and were read this month; the URLs are '
+      + 'in the citations file. Kaplan blocks scrapers, so theirs came from a cached copy of their own page, and their '
+      + 'course pages say sixty hours where one FAQ says over a hundred and fifty — we quoted the smaller. '
+      + '⟢ IF PRESSED ON THE SECOND COLUMN — it is a claim about the workflow, not about their code: none of them asks '
+      + 'you to write your reasoning, so there is nothing for them to grade. If LSAT Lab’s AI centre does something '
+      + 'like this, they have not published it. '
+      + '⟢ IF ASKED THE PRICE — Demon ninety-nine a month, 7Sage sixty-nine, Blueprint ninety-nine, Princeton Review '
+      + 'six ninety-nine for self-paced, Kaplan from about nine hundred, every one of them plus a hundred and '
+      + 'twenty-four a year to LSAC. That is slide three, and it is deliberately not a column here — it is the only '
+      + 'number in this market that moves weekly.',
+    speaker: 'Nischay',
+    budgetSeconds: 10,
+    // Nothing behind it and nothing carried into it. The slide is a page of
+    // type that has to be read, and it is the one place in the deck where the
+    // audience is being invited to check something rather than watch it.
+    scene: { id: 'none', framing: 'still' },
+    transition: 'cut',
   },
   {
     id: 'pov-confidence-signal',

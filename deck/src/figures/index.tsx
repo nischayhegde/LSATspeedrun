@@ -9,6 +9,7 @@ import { ConfidenceTiles } from './confidence-tiles'
 import { CurrencyLift } from './currency-lift'
 import { Gate } from './gate'
 import { HoursBar } from './hours-bar'
+import { MarketLedger } from './market-ledger'
 import { MethodLab } from './method-lab'
 import { Numeral } from './numeral'
 import { PairedBars } from './paired-bars'
@@ -77,6 +78,8 @@ function body(spec: FigureSpec, active: boolean, reduced: boolean): ReactNode {
       return <BarPair spec={spec} active={active} reduced={reduced} />
     case 'hours-bar':
       return <HoursBar spec={spec} active={active} reduced={reduced} />
+    case 'market-ledger':
+      return <MarketLedger spec={spec} active={active} reduced={reduced} />
     case 'route':
       return <Route spec={spec} active={active} reduced={reduced} />
     case 'reasoning-card':

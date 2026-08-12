@@ -270,6 +270,48 @@ export type MethodLabFigure = {
   }
 }
 
+/**
+ * Slide 4 — the field, in its own words, and the column nobody else fills.
+ *
+ * NEW, and it exists over an objection recorded in `NARRATIVE.md` §D, which
+ * argued that a comparison table is "the least persuasive object a founder can
+ * put on a projector." Three of that objection's four reasons were good and are
+ * designed around here rather than ignored; the fourth had already lapsed. See
+ * the slide's own note in the registry, and `CITATIONS.md` §4.10 for the
+ * sourcing of every cell.
+ *
+ * The shape of the answer: **it is not a scorecard.** There are no ticks, no
+ * crosses and no column in which one product beats another. There are two
+ * columns of plain statements, and every statement about a competitor is that
+ * competitor's own marketing copy, quoted and dated. Nothing here can be argued
+ * with one row at a time, because there is no judgement in a row to argue with
+ * — the only judgement on the slide is the reader's, when they notice that the
+ * second column says the same three words five times.
+ */
+export type MarketLedgerFigure = {
+  kind: 'market-ledger'
+  /** Head over the quotes. Names the axis: what the product puts in front of you. */
+  claimHead: string
+  /** Head over the second column. The one that repeats. */
+  gradesHead: string
+  /**
+   * One row per competitor, in the order they should be read.
+   *
+   * `claim` MUST be the company's own words with quotation marks, or an
+   * unquoted statement of fact that their own page supports. An elision is
+   * marked with `…`. No paraphrase, ever: the entire persuasive weight of this
+   * figure is that a room can check every line, and one invented phrase costs
+   * all of them. `CITATIONS.md` §4.10 carries the full quote and the URL.
+   *
+   * `grades` is what the product scores about an attempt. It is the same for
+   * every competitor by finding rather than by construction — see §4.10 — and
+   * if that ever stops being true this figure must change, not be padded.
+   */
+  rows: Array<{ name: string; claim: string; grades: string }>
+  /** Us, under a rule. Same two columns, and the second one is the slide. */
+  ours: { name: string; claim: string; grades: string }
+}
+
 /** Slide 11 — the per-question ring that completes, and the full-form ring that does not. */
 export type ClockRingsFigure = {
   kind: 'clock-rings'
@@ -375,6 +417,7 @@ export type FigureSpec =
   | NumeralFigure
   | BarPairFigure
   | HoursBarFigure
+  | MarketLedgerFigure
   | RouteFigure
   | ReasoningCardFigure
   | ConfidenceTilesFigure
