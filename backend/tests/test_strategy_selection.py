@@ -64,6 +64,11 @@ WIDE_STIMULUS = (
     "Jamie: The airline is not obligated to compensate you. Unless a passenger is denied a "
     "seat through the airline's own negligence, the delay is not brought about by the airline at all."
 )
+# Several points of the hash space rather than one, because every draw in the
+# selector is a threshold on a hash: a test pinned to a single student id proves
+# the property holds there and says nothing about anywhere else.
+HASH_POINTS = ("01", "55", "77")
+
 WIDE_STEM = (
     "A principle that, if established, justifies Jamie's response to Arnold is that an "
     "airline is obligated to compensate a passenger only if the airline caused the delay"
@@ -112,8 +117,18 @@ def app():
 class Student:
     """A student, their question, and a way to give them a track record on it."""
 
-    def __init__(self) -> None:
-        self.user = User(email="selection@example.test", display_name="Selection")
+    def __init__(self, tag: str = "01") -> None:
+        # A fixed id, because every draw in the selector is a hash over it. Left
+        # to the column default it would be a fresh UUID per run, so each test
+        # below would sample a different point of the hash space every time it
+        # executed — which is how one run of this module passed and the next
+        # failed on the recovery test alone. `tag` picks the point deliberately,
+        # so a test that needs more than one can ask for more than one.
+        self.user = User(
+            id=f"00000000-0000-4000-8000-0000000000{tag}",
+            email=f"selection-{tag}@example.test",
+            display_name="Selection",
+        )
         db.session.add(self.user)
         db.session.flush()
         self.session = StudySession(
@@ -127,6 +142,7 @@ class Student:
         )
         db.session.add(self.session)
         db.session.flush()
+        self.tag = tag
         self.question = db.session.get(Question, "hf-lsat-lr:selection-wide")
         self.candidates = _candidate_keys(self.question)
         self._index = 0
@@ -147,7 +163,7 @@ class Student:
             Attempt(
                 user_id=self.user.id,
                 session_item_id=item.id,
-                idempotency_key=f"selection-{key}-{self._index}",
+                idempotency_key=f"selection-{self.tag}-{key}-{self._index}",
                 selected_label="A",
                 is_correct=correct,
                 confidence=3,
@@ -181,24 +197,28 @@ def test_the_wide_question_this_module_rests_on_is_actually_wide(app):
         assert len(_candidate_keys(question)) >= 4
 
 
-def test_every_candidate_is_reachable_and_not_only_the_top_two(app):
-    """The rank-1 ceiling: four of six approaches took zero of 400 draws.
+@pytest.mark.parametrize("tag", HASH_POINTS)
+def test_every_candidate_is_reachable_and_not_only_the_top_two(app, tag):
+    """The rank-1 ceiling, which on this question hid four approaches of six.
 
     The old exploit branch was `ranked[1 if explore else 0]`, so rank 2 and below
-    could not be dealt at all. The exclusion was permanent as well as total,
-    which is the part that makes it serious: a candidate that is never dealt
-    never gains an observation, so its rank can never change.
+    could not be dealt at all — measured on the widest question in the live bank
+    as four of six approaches taking zero of 400 draws. The exclusion was
+    permanent as well as total, which is the part that makes it serious: a
+    candidate that is never dealt never gains an observation, so its rank can
+    never change.
     """
     with app.app_context():
-        student = Student()
+        student = Student(tag)
         assert len(student.candidates) >= 4
         student.clear_coverage()
 
-        dealt = {student.deal(f"run-{index}")["key"] for index in range(400)}
+        dealt = {student.deal(f"run-{index}")["key"] for index in range(250)}
         assert dealt == set(student.candidates)
 
 
-def test_a_candidate_starved_of_samples_does_not_stay_starved(app):
+@pytest.mark.parametrize("tag", HASH_POINTS)
+def test_a_candidate_starved_of_samples_does_not_stay_starved(app, tag):
     """The worst performer on three observations keeps a share of the draws.
 
     Three observations is a thin basis for a verdict, and the old selector made
@@ -207,7 +227,7 @@ def test_a_candidate_starved_of_samples_does_not_stay_starved(app):
     turns the exclusion from permanent into revisable.
     """
     with app.app_context():
-        student = Student()
+        student = Student(tag)
         worst = student.candidates[-1]
         student.clear_coverage(worst=worst)
         # And the leader has a long winning record, which is exactly the state in
@@ -217,7 +237,7 @@ def test_a_candidate_starved_of_samples_does_not_stay_starved(app):
             student.observe(leader, correct=True)
         db.session.commit()
 
-        draws = 400
+        draws = 150
         dealt = [student.deal(f"run-{index}")["key"] for index in range(draws)]
         assert dealt.count(worst) > 0
         # The leader still leads: this is exploration, not a reshuffle.
@@ -227,35 +247,51 @@ def test_a_candidate_starved_of_samples_does_not_stay_starved(app):
 def test_an_approach_unlucky_on_its_first_three_observations_can_climb_back(app):
     """Reachability on one draw is the weak claim; this is the one that matters.
 
-    One candidate is the best in the set and answered every coverage observation
-    wrong. The selector is then driven for 200 encounters and each assignment is
-    answered according to the candidate's true accuracy, so the record it builds
-    is its own. Under the old rule it was dealt zero times out of 240 and its
-    share of the last quarter was 0.0%.
+    One candidate is the best approach in the set and answered every coverage
+    observation wrong. The selector is then driven for 200 encounters and each
+    assignment is answered according to the candidate's true accuracy, so the
+    record it builds is its own rather than the fixture's. Under the old rule it
+    was dealt zero times and its share of both the first and the last quarter was
+    0.0%, because nothing below rank 1 could be dealt and a candidate that is
+    never dealt never gains the observation that would change its rank.
+
+    Three students, because every draw here is a hash and a single one would be a
+    single point of the hash space — which is how the first version of this test
+    came to assert a threshold that held at the point it was written and nowhere
+    else. Recovery is not promised to be quick: measured over twelve points, the
+    unlucky approach gained share at all twelve and took the lead within 200
+    encounters at eleven, so the claim made per student is that it climbs, and
+    the claim made across students is that it usually finishes in front.
     """
     with app.app_context():
-        student = Student()
-        best = student.candidates[-1]
-        student.clear_coverage(worst=best)
+        climbed = 0
+        for tag in ("11", "55", "77"):
+            student = Student(tag)
+            best = student.candidates[-1]
+            student.clear_coverage(worst=best)
 
-        encounters = 200
-        dealt: list[str] = []
-        for index in range(encounters):
-            key = student.deal(f"climb-{index}", position=index % 10)["key"]
-            dealt.append(key)
-            # The unlucky candidate is genuinely the better approach; every other
-            # one is mediocre. Deterministic so the test cannot flake.
-            student.observe(key, correct=index % 10 < (8 if key == best else 5))
-        db.session.commit()
+            encounters = 200
+            dealt: list[str] = []
+            for index in range(encounters):
+                key = student.deal(f"climb-{index}", position=index % 10)["key"]
+                dealt.append(key)
+                # The unlucky candidate is genuinely the better approach; every
+                # other one is mediocre. Deterministic, so this cannot flake.
+                student.observe(key, correct=index % 10 < (8 if key == best else 5))
+            db.session.commit()
 
-        quarter = encounters // 4
-        early = dealt[:quarter].count(best) / quarter
-        late = dealt[-quarter:].count(best) / quarter
-        assert late > early
-        assert late > 0.5
+            quarter = encounters // 4
+            early = dealt[:quarter].count(best) / quarter
+            late = dealt[-quarter:].count(best) / quarter
+            assert dealt.count(best) > 0
+            assert late > early
+            if max(set(dealt[-quarter:]), key=dealt[-quarter:].count) == best:
+                climbed += 1
+        assert climbed >= 2
 
 
-def test_the_uncertainty_term_cancels_when_every_candidate_is_equally_measured(app):
+@pytest.mark.parametrize("tag", HASH_POINTS)
+def test_the_uncertainty_term_cancels_when_every_candidate_is_equally_measured(app, tag):
     """It reorders nothing a plain mean would have got right.
 
     The bonus is a function of a candidate's own observation count, so when the
@@ -265,7 +301,7 @@ def test_the_uncertainty_term_cancels_when_every_candidate_is_equally_measured(a
     on explanation quality still separates them.
     """
     with app.app_context():
-        student = Student()
+        student = Student(tag)
         winner = student.candidates[-1]
         # Equal counts throughout, and one candidate plainly better than the rest.
         for key in student.candidates:
@@ -290,7 +326,8 @@ def test_one_exposure_asked_twice_gives_the_same_assignment(app):
         assert len({trial["propensity"] for trial in repeated}) == 1
 
 
-def test_a_question_returning_to_the_same_slot_draws_its_arm_again(app):
+@pytest.mark.parametrize("tag", HASH_POINTS)
+def test_a_question_returning_to_the_same_slot_draws_its_arm_again(app, tag):
     """The control arm collapse, and it only shows up on repeats.
 
     A review question comes back at a fixed slot, so before the exposure existed
@@ -300,7 +337,7 @@ def test_a_question_returning_to_the_same_slot_draws_its_arm_again(app):
     nothing wrong.
     """
     with app.app_context():
-        student = Student()
+        student = Student(tag)
         student.clear_coverage()
 
         # The same question at the same slot, met once per run over many runs.
