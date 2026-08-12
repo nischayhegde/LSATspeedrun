@@ -50,32 +50,84 @@ Chance is a chooser allowed exactly what this module is allowed: the same number
 of boundaries, in the same places the floors permit, averaged over 300 draws. Any
 weaker baseline flatters the result.
 
-Three things follow, and all three shaped the design.
+**The markers row of that table is not evidence about markers**, and it used to be
+read here as though it were. The seam is where a whole new passage starts, and a
+new passage does not open with a connective: a marker opens 0 of the 32 seam
+sentences against 22.6% of every other sentence in the same passages. A
+marker-driven chooser is guaranteed to score 0/32 there however good markers are,
+so that row measures the seam and not the signal. The question needs a test that
+can see it, which is the second table below.
 
-**It finds the region and not the sentence.** Chance matched the within-one figure
-in 1 draw of 300 and matched the exact figure in 44 of 300. So there is a real
-signal about roughly where a passage turns, and no evidence at all that the exact
-sentence is better than a guess. That asymmetry is the whole basis for how this
-data is labelled: the offsets are stored as `derived_cohesion_v1` and never as
-authored, and the gate copy that used to say "paragraph" now says "part". A
-student is asked what each part of the passage is doing, which is the operation
-the technique is for and is true of a topical segment, so a boundary that lands a
-sentence early costs an odd division rather than a false claim about where the
-author broke the line.
+## The second held-out test: ordinary paragraph breaks
 
-**Discourse markers are worse than nothing, which is worth recording because they
-are the obvious guess.** "However", "By contrast" and "Moreover" do open
-paragraphs, and they open sentences inside paragraphs far more often; driven by
-them alone the seam was never once placed exactly. Added as a bonus on top of the
-cohesion score they made it worse at every weight tried. There is no marker term
-here. The one place a marker gets a say is `_CONTINUATION` below, which asks the
-opposite and much safer question — where a boundary cannot be.
+Authored paragraph breaks in expository prose of the kind this bank is drawn
+from, harvested by `rcgen_harvest.py` across the four subject areas real Reading
+Comprehension rotates through, flattened to one blob the way the bank's own
+passages arrived, and kept only where every authored break lands on a sentence
+the splitter finds and the floors permit. The breaks are the original authors';
+nothing in the construction chooses a boundary or mentions a marker. Re-run it
+with `scripts/derive_passage_paragraphs.py --verify-markers`, which documents the
+harvest. One run, 747 passages and 2,305 authored boundaries:
+
+| method                          |   exact | within one | precision |
+|---------------------------------|--------:|-----------:|----------:|
+| lexical cohesion (this module)  |    749  |      1841  |     26.4% |
+| + snap to a marker, ±1          |    627  |      1834  |     22.1% |
+| + snap to a stronger marker, ±1 |    637  |      1831  |     22.4% |
+| + marker bonus 0.5 sd           |    728  |      1865  |     25.3% |
+| + marker bonus 1.0 sd           |    698  |      1901  |     23.0% |
+| + turn-marker bonus 0.5 sd      |    743  |      1847  |     26.2% |
+| + turn-marker bonus 1.0 sd      |    735  |      1850  |     25.5% |
+| discourse markers alone         |    176  |       853  |      9.3% |
+| equal-sized chunks              |    577  |      1680  |     23.2% |
+| chance, same budget and floors  |  627.2  |    1432.3  |         — |
+
+Four things follow, and all four shaped the design.
+
+**It finds the region, and it finds the sentence better than a guess.** On the
+seam, chance matched the exact figure in 44 draws of 300, which read as no
+evidence that the exact sentence beat a guess. That was the small sample talking:
+against 2,305 ordinary boundaries chance matched neither figure in 300 draws.
+There is a real signal about the exact sentence. It is still a *weak* one — 749
+of 2,305 is 32.5% — and the labelling below does not change, because 32.5% is
+nowhere near recovering the author's paragraphs and the cost of claiming
+otherwise is a false structure taught as fact.
+
+**How this data is labelled.** The offsets are stored as `derived_cohesion_v1`
+and never as authored, and the gate copy that used to say "paragraph" says
+"part". A student is asked what each part of the passage is doing, which is the
+operation the technique is for and is true of a topical segment, so a boundary
+that lands a sentence early costs an odd division rather than a false claim about
+where the author broke the line.
+
+**Discourse markers are worse than nothing, and now for a reason that survives
+inspection.** "However", "By contrast" and "Moreover" do open paragraphs — and
+they open sentences *inside* paragraphs more than twice as often. Measured on the
+set above, a marker opens 9.6% of authored boundaries and 23.4% of every other
+sentence, so within a passage a marker is evidence *against* a boundary rather
+than for one. Every way of using it was tried and every one lost: snapping a
+chosen boundary onto a nearby marker, snapping only onto a stronger marker, and
+adding a bonus to the depth score at four weights. Not one beat 749 exact. Two of
+the bonus weights buy a better within-one figure, and they pay for it in exact
+placement and in precision, which is the wrong trade for the one thing this has
+to get right. There is no marker term here. The one place a marker gets a say is
+`_CONTINUATION` below, which asks the opposite and much safer question — where a
+boundary cannot be.
 
 **Reading the output found what the numbers could not.** A sample printed and read
 by hand turned up a division that had cut the case citation "Charrier v. Bell" in
 two, leaving a part that opened "Bell, a United States appellate court ruled" —
 not a debatable boundary but a broken one, and invisible to every aggregate above.
 `_ABBREVIATION_TAIL` is the fix.
+
+Reading it again is what prompted the marker test: several parts bury an explicit
+turn one sentence inside themselves, opening "Moreover, he maintains ..." when the
+turn is the next sentence, "But Weiner's opponents contend ...". Those readings
+are correct about the individual cuts and wrong about the remedy, which is what
+the table above is for. A part that opens "Then??, subjected to massive
+ultraviolet radiation ..." is a third thing again: `Then??` is a corruption in the
+upstream row, the only one of its kind in the bank, and no segmenter can be
+blamed for it.
 
 Where a boundary *is* authored it is used and not re-derived: the Passage A/B
 seam is a hard cut on the comparative sets, and cohesion runs inside each half.

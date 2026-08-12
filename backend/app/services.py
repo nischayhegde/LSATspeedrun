@@ -1328,9 +1328,13 @@ def select_reading_comprehension_case(
         remaining = started or untouched or [key for key in passages if key not in used]
         return random.choice(remaining) if remaining else None
 
-    # Usually one passage, and at the shipped six-question sitting always one:
-    # the median passage carries 7 and the loop below stops as soon as the room
-    # left is too small to be worth reading another passage for.
+    # Usually one passage, and at the shipped six-question sitting one for every
+    # passage that can fill it — 348 of this bank's 349. The median passage
+    # carries 7 and the loop below stops as soon as the run is long enough or
+    # the room left is too small to be worth reading another passage for. The
+    # exception is the single four-question passage, which leaves a whole case's
+    # worth of room under the ceiling and so draws a second rather than hand
+    # back a four-question run.
     #
     # More than one when the run is long enough to want it. A reading case used
     # to be a single passage however long the run was, so a twelve-question run
@@ -1356,12 +1360,28 @@ def select_reading_comprehension_case(
         chosen += _reading_case_from_passage(
             passages[passage_id], ceiling - len(chosen), prefer_first=prefer
         )
-        # Another passage only if what is left could hold a case in its own
+        # Stop once the run is as long as it asked to be, and otherwise take
+        # another passage only if what is left could hold a case in its own
         # right. `RC_CASE_MIN_SITTING` is already the answer to "is this many
         # questions worth reading a passage for", which is exactly the question
         # the leftover room asks, so it is reused rather than given a twin that
         # could drift away from it.
-        if count - len(chosen) < RC_CASE_MIN_SITTING:
+        #
+        # The room left is measured against `ceiling`, which is where the line
+        # above actually cuts the next passage. Measuring it against `count`
+        # asked a different question from the one the fill then answered and
+        # understated the room by the overshoot allowance, and that is what
+        # starved the nine-question run. No passage in this bank carries nine,
+        # so a nine-question reading case is always short after one passage —
+        # by 1 to 3 questions, every one of which reads as "less than
+        # RC_CASE_MIN_SITTING" against `count` and so ended the case. A reading
+        # case therefore averaged 7.5 questions where the argument case it is
+        # averaged against was a full 9, and Reading Comprehension came out at
+        # 28.1% of a nine-question run against 35-37% at every neighbouring
+        # size. Against `ceiling` the same case has 4 questions of room and
+        # takes a second passage, which is the mechanism twelve-question runs
+        # already used.
+        if len(chosen) >= count or ceiling - len(chosen) < RC_CASE_MIN_SITTING:
             break
     return _load_questions_in_order(chosen)
 

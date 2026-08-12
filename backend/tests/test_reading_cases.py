@@ -181,12 +181,30 @@ def _fresh_user(application, email: str) -> User:
     return User.query.filter_by(email=email).one()
 
 
-def test_a_reading_case_is_one_passage_and_nothing_else(app):
-    """The shape, stated. Every question in the case, same passage.
+def _passage_runs(served: list[Question]) -> list[list[Question]]:
+    """The case broken into the passages it served, in the order it served them."""
+    grouped: list[list[Question]] = []
+    for question in served:
+        if grouped and grouped[-1][0].passage_id == question.passage_id:
+            grouped[-1].append(question)
+        else:
+            grouped.append([question])
+    return grouped
+
+
+def test_a_reading_case_is_whole_passages_and_nothing_else(app):
+    """The shape, stated. Whole passages, no Logical Reasoning, none spare.
 
     This is the property the whole design rests on. A case that is 'mostly one
     passage' is just the old mixed run with a bigger allowance, which was
     measured and was not enough.
+
+    Stated as "whole passages" rather than "one passage" because the number is
+    decided by the sitting, not fixed: a case reads a second passage only when
+    the first one left the run short of what was asked for. So the pin is that
+    no passage is ever *spare* — drop the last one and the case no longer fills
+    the sitting — which is the claim "one passage" was standing in for and
+    which holds at every length rather than only at six.
     """
     with app.app_context():
         user = _fresh_user(app, "one-passage@example.test")
@@ -194,9 +212,16 @@ def test_a_reading_case_is_one_passage_and_nothing_else(app):
         for _ in range(30):
             served = _run(app, user)
             passages = {question.passage_id for question in served}
-            assert len(passages) == 1, f"{len(served)} questions across {len(passages)} passages"
             assert None not in passages
             assert all(question.section == READING_COMPREHENSION for question in served)
+            # Each passage arrives contiguously, so the case reads like a case
+            # rather than like a shuffle of two passages.
+            assert len(_passage_runs(served)) == len(passages)
+            without_last = len(served) - len(_passage_runs(served)[-1])
+            assert without_last < 6, (
+                f"{len(served)} questions across {len(passages)} passages: the last "
+                f"passage was not needed to fill a six-question sitting"
+            )
 
 
 def test_a_reading_case_is_as_long_as_its_passage_not_as_long_as_the_number_asked_for(app):
@@ -508,23 +533,43 @@ def test_a_run_is_about_as_long_as_it_asked_to_be_whichever_shape_it_took(app):
                 assert len(served) <= reading_case_ceiling(size)
 
 
-def test_the_shipped_sitting_is_one_passage_and_cannot_become_two(app):
+def test_the_shipped_sitting_is_one_passage_whenever_one_passage_can_fill_it(app):
     """Filling long runs must not reach back and change the six-question one.
 
-    Not a preference — arithmetic. The shortest passage in the bank carries four
-    questions, so a six-question run has at most two questions of room left
-    after one passage, and two is below the floor at which another passage is
-    worth reading. This pins that the two numbers still stand in that
-    relationship, because the campaign curve was measured on the six-question
-    sitting being one passage.
+    Not a preference — arithmetic. Any passage of six or more fills a
+    six-question sitting on its own, so the case stops there and the sitting is
+    one passage. That covers 348 of the shipped bank's 349 passages, which is
+    what the campaign curve was measured on.
+
+    The exception is arithmetic too, and it is the same rule rather than a
+    second one: the bank's single four-question passage leaves four questions
+    of room under a ceiling of eight, which is `RC_CASE_MIN_SITTING`, so the
+    case reads a second passage instead of handing back a four-question run for
+    a six-question request. The fixture carries that passage deliberately —
+    it is the one case at this length where the run and the passage disagree.
+
+    So what is pinned is the relationship, not the count: a six-question case
+    is one passage for every passage that can fill it, and never more than two.
     """
     with app.app_context():
+        # The old arithmetic — a passage leaves less than a case's worth of room
+        # — and the one exception to it, both stated rather than assumed.
         assert 6 - min(PASSAGE_SIZES) < RC_CASE_MIN_SITTING
+        assert reading_case_ceiling(6) - min(PASSAGE_SIZES) >= RC_CASE_MIN_SITTING
         app.config["PRACTICE_RC_CASE_SHARE"] = 1.0
         user = _fresh_user(app, "shipped-sitting@example.test")
         for _ in range(40):
             served = _run(app, user, size=6)
-            assert len({question.passage_id for question in served}) == 1
+            drawn = _passage_runs(served)
+            first = len(drawn[0])
+            # A second passage exactly when the first left the sitting short
+            # *and* there is a whole case's worth of room under the ceiling for
+            # another. In this fixture only the four-question passage does both.
+            short = first < 6 and reading_case_ceiling(6) - first >= RC_CASE_MIN_SITTING
+            assert short == (first == min(PASSAGE_SIZES))
+            assert len(drawn) == (2 if short else 1), (
+                f"a {first}-question passage produced a {len(drawn)}-passage case"
+            )
 
 
 def test_a_passage_cut_short_is_finished_next_time_rather_than_abandoned(app):
