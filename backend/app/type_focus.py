@@ -147,8 +147,9 @@ reported 9.6% placeholders and only 47.0% weak types: the quota was going on
 Reading Comprehension passages selected because they happened to contain a
 question named "Inference". Targeting a Logical-Reasoning-only type reported
 3.9%, and the gap between the two was that pull-in. It is closed rather than
-narrowed — an exclusive type and a shared one now report 4.4% and 4.6%, which is
-the same number twice.
+narrowed: `--weak-type Assumption`, which exists only in Logical Reasoning, and
+`--weak-type Inference`, which does not, now report 4.4% and 4.6% — the same
+number twice, where they used to differ by 5.7 points.
 
 That pull-in was never reachable through `create_study_session`; see
 `services._weight_toward_focus`, which is where the reachability argument
