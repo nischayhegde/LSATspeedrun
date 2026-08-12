@@ -1608,17 +1608,30 @@ def strategy_performance(user_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Reading a trial across students
+# Reading the trial across students
 #
 # Everything above this line answers "what is this student's running total?"
-# and is careful never to call it a verdict, for a reason `strategy_performance`
-# states plainly: a per-student verdict on one of twelve approaches needs
-# thousands of observations, which one person will not answer.
+# and is careful never to call it a verdict, for a reason the file states in
+# `strategy_performance`: a per-student verdict on one of twelve approaches
+# needs thousands of observations, which one person will not answer.
 #
-# A cohort fills a comparison far faster than a person does, and these readings
-# are the ones that use that. Nothing here changes a draw, a card, a schedule
-# or a panel. They are queries.
+# The awkward consequence, and the reason this section exists: the app has been
+# running a randomised trial whose per-student output it knows is unusable,
+# while never computing the estimate the same randomisation fully supports. The
+# randomisation needs no repair for it. Arms are drawn independently per
+# encounter, the propensity is on the row, intention-to-treat is held
+# throughout, and prompt and control labels are kept apart. The only thing
+# missing was a query without a `WHERE user_id =` clause.
+#
+# These functions are that query. Nothing here changes a draw, a card, a
+# schedule or a panel. Read them from `tools/audit/strategy_trial_population.py`.
 # ---------------------------------------------------------------------------
+
+# A cell needs both arms and enough of each before it is worth printing a
+# difference for. Same threshold as the per-student panel, applied to the same
+# quantity, so a cohort reading and a personal one are not graded on different
+# scales.
+POPULATION_MIN_STUDENTS = 2
 
 
 def _student_stratified(rows: list[Attempt], treated, control) -> dict:
@@ -1670,6 +1683,174 @@ def _student_stratified(rows: list[Attempt], treated, control) -> dict:
         "lift": round(weighted / total_weight * 100, 1),
         "students": students,
         "answers_used": used,
+    }
+
+
+def _half_width(treated: list[Attempt], control: list[Attempt]) -> float | None:
+    """95% half-width, in points, on the difference of the two arms' rates.
+
+    A threshold on the effective sample answers "is this worth printing". It
+    does not answer "is this distinguishable from zero", and at cohort scale
+    the two come apart badly: `MIN_CONTRAST_SAMPLE` is set for a student's
+    running total, and a pooled cell clears it by an order of magnitude while
+    still being pure noise. So the cohort readings carry an interval.
+
+    1.96·√(p₁(1−p₁)/n₁ + p₀(1−p₀)/n₀), on the unweighted rates. That is exact
+    while the propensity is a constant within the arm, which is the case for
+    both draws read here — the Hájek weights cancel and the estimate is the
+    plain mean. It would understate the width if a propensity ever varied
+    within an arm, and the note beside it says so rather than the interval
+    quietly getting it wrong.
+    """
+    if not treated or not control:
+        return None
+    variance = 0.0
+    for arm in (treated, control):
+        rate = sum(1 for value in arm if value.is_correct) / len(arm)
+        variance += rate * (1 - rate) / len(arm)
+    return round(1.96 * (variance**0.5) * 100, 1)
+
+
+def _population_cell(rows: list[Attempt], baseline: float) -> dict:
+    """One approach in one section, pooled across every student who met it."""
+    prompted = [row for row in rows if row.strategy_variant in PROMPT_VARIANTS]
+    controls = [row for row in rows if row.strategy_variant in CONTROL_VARIANTS]
+    effective = _contrast_sample(len(prompted), len(controls))
+    pooled_with = _shrink_toward(_arm_rate(prompted), len(prompted), baseline)
+    pooled_without = _shrink_toward(_arm_rate(controls), len(controls), baseline)
+    stratified = _student_stratified(
+        rows,
+        lambda row: row.strategy_variant in PROMPT_VARIANTS,
+        lambda row: row.strategy_variant in CONTROL_VARIANTS,
+    )
+    pooled_lift = round((pooled_with - pooled_without) * 100, 1) if effective else None
+    half_width = _half_width(prompted, controls)
+    return {
+        "sample": len(prompted),
+        "control_sample": len(controls),
+        "students": len({row.user_id for row in rows}),
+        "students_with_both_arms": stratified["students"],
+        "contrast_sample": round(effective, 1),
+        "contrast_evidence": _contrast_grade(effective),
+        "eligible": effective >= MIN_CONTRAST_SAMPLE
+        and stratified["students"] >= POPULATION_MIN_STUDENTS,
+        "half_width": half_width,
+        "separates_from_zero": bool(
+            pooled_lift is not None and half_width is not None and abs(pooled_lift) > half_width
+        ),
+        "pooled_lift": pooled_lift,
+        "within_student_lift": stratified["lift"],
+        # The two estimators disagreeing is a statement about the allocation,
+        # not about the approach. Reported as its own number so it is read.
+        "estimator_gap": (
+            round(abs(pooled_lift - stratified["lift"]), 1)
+            if pooled_lift is not None and stratified["lift"] is not None
+            else None
+        ),
+    }
+
+
+def strategy_population_reading() -> dict:
+    """The trial, read across every student at once, per section and approach.
+
+    Intention-to-treat on the offer, exactly as the per-student panel is: an
+    attempt belongs to the arm it was assigned, and `strategy_applied` is not
+    consulted. Hájek-weighted by the recorded propensity. Both arms shrunk
+    toward the section's own accuracy, which is where they sit if the offer
+    changes nothing.
+
+    Sections are kept apart for the reason `strategy_performance` keeps them
+    apart — they are measured on different approaches — and never pooled into a
+    single number.
+
+    Two estimates per cell rather than one, and the reason is in
+    `_student_stratified`. Read-only, with no route and nothing cached.
+    """
+    observations = (
+        Attempt.query.options(
+            joinedload(Attempt.session_item).joinedload(SessionItem.question)
+        )
+        .filter(Attempt.strategy_key.isnot(None))
+        .order_by(Attempt.created_at.asc())
+        .all()
+    )
+    by_section: dict[str, list[Attempt]] = defaultdict(list)
+    for observation in observations:
+        by_section[observation.session_item.question.section].append(observation)
+
+    sections = []
+    for section, short_label in SECTIONS:
+        rows = by_section.get(section, [])
+        trials = len(rows)
+        observed = sum(row.is_correct for row in rows) / trials if trials else 0.0
+        baseline = shrink_toward_prior(observed, trials)
+        by_key: dict[str, list[Attempt]] = defaultdict(list)
+        for row in rows:
+            by_key[row.strategy_key].append(row)
+        results = []
+        for key, values in by_key.items():
+            strategy = STRATEGIES.get(key)
+            if not strategy:
+                continue
+            results.append(
+                {
+                    "key": key,
+                    "title": strategy["title"],
+                    **_population_cell(values, baseline),
+                }
+            )
+        results.sort(
+            key=lambda result: (
+                result["eligible"],
+                result["pooled_lift"] if result["pooled_lift"] is not None else -1e3,
+            ),
+            reverse=True,
+        )
+        sections.append(
+            {
+                "section": section,
+                "short_label": short_label,
+                "students": len({row.user_id for row in rows}),
+                "trials": trials,
+                "baseline_accuracy": round(baseline * 100, 1),
+                "minimum_contrast_sample": MIN_CONTRAST_SAMPLE,
+                "results": results,
+                # Two different claims, kept apart the way `_section_reading`
+                # keeps them apart. "Measured" means both arms of that cell
+                # have filled enough for a difference to be worth printing;
+                # it says nothing about the direction. "Leading" is the subset
+                # that is ahead *and* whose interval clears zero. A cell can be
+                # well measured and level, which is a result rather than an
+                # absence of one.
+                #
+                # The interval, not just the threshold, because the threshold
+                # is the per-student one and a pooled cell clears it by an
+                # order of magnitude while still being noise. Without the
+                # second condition this list named a three-point difference on
+                # a ±8-point interval.
+                "measured": [result["key"] for result in results if result["eligible"]],
+                "leading": [
+                    result["key"]
+                    for result in results
+                    if result["eligible"]
+                    and (result["pooled_lift"] or 0) >= 0.5
+                    and result["separates_from_zero"]
+                ],
+            }
+        )
+    return {
+        "students": len({row.user_id for row in observations}),
+        "trials": len(observations),
+        "sections": sections,
+        "basis": (
+            "intention-to-treat on the offer, Hájek-weighted by the recorded propensity, "
+            "both arms shrunk toward the section's own accuracy, reported per section and "
+            "never pooled across them"
+        ),
+        "note": (
+            "A cohort reading. It says nothing about any individual student, and the "
+            "per-student panel is unchanged by its existence."
+        ),
     }
 
 
@@ -1737,6 +1918,7 @@ def strategy_selection_reading() -> dict:
                 "contrast_sample": round(effective, 1),
                 "contrast_evidence": _contrast_grade(effective),
                 "eligible": effective >= MIN_CONTRAST_SAMPLE,
+                "half_width": _half_width(ranked, uniform),
                 "pooled_lift": round(
                     (
                         _shrink_toward(rate(ranked), len(ranked), baseline)
@@ -1749,6 +1931,12 @@ def strategy_selection_reading() -> dict:
                 else None,
                 "within_student_lift": stratified["lift"],
             }
+        )
+    for section in sections:
+        section["separates_from_zero"] = bool(
+            section["pooled_lift"] is not None
+            and section["half_width"] is not None
+            and abs(section["pooled_lift"]) > section["half_width"]
         )
     return {
         "layer": "strategy_selection",
