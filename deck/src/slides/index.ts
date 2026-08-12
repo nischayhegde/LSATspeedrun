@@ -615,8 +615,8 @@ export const SLIDES: readonly SlideSpec[] = [
     },
     credit: 'Each company’s own page, quoted verbatim, read 2026-08-12 · Kaplan from a cached copy of theirs',
     notes:
-      'Here is the field in its own words. Hours of class, hours of video, sixty-one modules — '
-      + 'and Demon, which drills, and is good. Every one of them grades the letter you picked.'
+      'Here is the field, in its own words. Videos, classes, modules — and Demon, which drills, and is good. '
+      + 'Every one of them grades the letter you picked.'
       + ' ⟢ IF CHALLENGED ON A QUOTE — all five are off the company’s own page and were read this month; the URLs are '
       + 'in the citations file. Kaplan blocks scrapers, so theirs came from a cached copy of their own page, and their '
       + 'course pages say sixty hours where one FAQ says over a hundred and fifty — we quoted the smaller. '
