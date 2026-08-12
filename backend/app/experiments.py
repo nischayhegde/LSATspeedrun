@@ -85,6 +85,20 @@ UNIT_RUN = "run"
 UNIT_ITEM = "item"
 UNITS = (UNIT_STUDENT, UNIT_RUN, UNIT_ITEM)
 
+# When the effect is expected, and therefore which answers the reading is over.
+# `Layer.outcome_window` documents the difference between them; it is the
+# distinction most likely to turn a benefit into a reported harm.
+WINDOW_IMMEDIATE = "immediate"
+WINDOW_DELAYED = "delayed"
+WINDOW_LATER_ENCOUNTERS = "later_encounters"
+WINDOWS = (WINDOW_IMMEDIATE, WINDOW_DELAYED, WINDOW_LATER_ENCOUNTERS)
+
+# How the `signal` column is packed. A separator that cannot occur in a
+# question type, and a length that matches the column so a long signal is
+# truncated here rather than by the database.
+SIGNAL_SEPARATOR = "|"
+SIGNAL_MAX_LENGTH = 240
+
 
 @dataclass(frozen=True)
 class Exposure:
@@ -155,19 +169,39 @@ class Layer:
     between "nobody got to it" and "here is the instrument, and here is why it
     is not a randomisation".
 
-    `outcome_window` is *when* the effect is expected to show. `immediate`
-    means the answers given inside the assigned run. `delayed` means the
-    answers given when those same questions come back through the review
-    queue, in some later run. The distinction is not a refinement: for
-    interleaving the immediate reading is expected to point the wrong way, and
-    a layer that declares `delayed` and gets read `immediate` will report a
-    real benefit as a harm.
+    `outcome_window` is *when* the effect is expected to show, and which
+    answers therefore count. Three values, and the difference between them is
+    not a refinement — for two of the layers here the immediate reading is
+    expected to point the wrong way, so a layer read in the wrong window will
+    report a real benefit as a harm, with a large sample and great confidence.
+
+    * `immediate` — the answers given inside the assigned run.
+    * `delayed` — the answers given when *those same questions* come back
+      through the review queue in some later run. Retention of the material
+      the run contained, which is what interleaving claims to change.
+    * `later_encounters` — the answers given on *later first encounters with
+      the same question type*, which is what weak-type targeting claims to
+      change. Not the same window as `delayed` and not a stricter version of
+      it: practising a type is supposed to help the student at the type, not
+      at the particular questions they practised on, and reading it through
+      the review queue would compare arms on a set of cards the treated arm
+      itself created more of.
 
     `strata` names a variable the reading must never pool over. Reading
     Comprehension and Logical Reasoning are the case: the repository's own
     evidence file predicts an effect in one and a null in the other, so a
     pooled figure would average them and understate both. Setting this makes
     the split the default rather than something an analyst remembers.
+
+    `population` is which answers the reading is over, and for the layers that
+    declare it the definition depends on something true only at the moment of
+    the draw. Weak-type targeting is read on later encounters with *the types
+    this student was weak at when the run was built*, and that list is not
+    reconstructible afterwards, because the whole point of the rolling signal
+    is that it moves as the student improves. So the draw records it — see
+    `assign`'s `signal` argument — and the reading restricts to it. Without
+    that the field is a comment and the reading quietly averages over every
+    type the student happened to meet.
     """
 
     key: str
@@ -189,6 +223,18 @@ class Layer:
     def share(self, arm: str) -> float:
         total = sum(self.arms.values())
         return (self.arms.get(arm, 0.0) / total) if total > 0 else 0.0
+
+    @property
+    def restricted_by_signal(self) -> bool:
+        """Whether the reading keeps only answers matching the recorded signal.
+
+        A layer this module draws and reads through `layer_assignments`, and
+        which declares a population, is one whose population is defined by
+        what its signal said at the draw. That is the only kind of population
+        this module can enforce; layers that draw elsewhere (`outcome_join`)
+        state theirs for the estimator that does read them.
+        """
+        return self.outcome_join == "session" and bool(self.population)
 
 
 # Every adaptive layer in the product, in five states:
@@ -221,15 +267,73 @@ LAYERS: dict[str, Layer] = {
         Layer(
             key="weak_type_targeting",
             unit=UNIT_RUN,
-            question="Does steering fresh questions toward the types a mega-litigation "
-            "marked weak beat drawing them from the whole bank?",
-            signal="`focus.diagnostic_focus`: the question types the last diagnostic "
-            "scored worst on.",
-            without_signal="No diagnostic, no focus types, and the run is drawn as if "
-            "the layer were off. Those runs are not part of the comparison.",
+            question="Does steering fresh questions toward the types this student is "
+            "weak at beat drawing them from the whole bank?",
+            signal="`type_focus.rolling_focus`: types whose recency-weighted accuracy "
+            "over the student's first encounters sits at least five points below their "
+            "own accuracy in that section, after shrinkage.",
+            without_signal="A student with no type standing out below its section gets "
+            "an empty list, and the run is drawn as if the layer were off. Those runs "
+            "are not part of the comparison.",
             arms={"targeted": 0.75, "untargeted": 0.25},
             off_arm="untargeted",
-            design_version="2026-08-12",
+            # Bumped from the version that read `focus.diagnostic_focus`. Not a
+            # change to the arms or the draw: the signal underneath the treated
+            # arm is a different quantity, so runs assigned before and after are
+            # not comparable and must not be pooled.
+            #
+            # The old signal read one run — the last completed mega-litigation —
+            # and returned the types that came in under that run's own average.
+            # A student consistently poor at necessary-assumption questions over
+            # two hundred ordinary cases was not noticed as weak at that
+            # category by anything, and a student who had improved was still
+            # being fed what their last sitting said. The new signal reads every
+            # first encounter, decays it, weights the mega-litigation's answers
+            # highest, and shrinks each type toward the student's own accuracy
+            # in that section.
+            #
+            # This subsumes the old mechanism rather than joining it. There is
+            # one weak-type layer, and `app/type_focus.py` argues why a second
+            # arm comparing the two signals would not be worth its observations.
+            design_version="2026-08-12-rolling",
+            # Not immediate, and for the reason `run_ordering` is not: serving
+            # more of a student's weakest type makes the run it is served in
+            # *harder* — that is what a weakness means — so an immediate
+            # reading would report a working treatment as a harm, with a large
+            # sample and great confidence.
+            #
+            # Not `delayed` either, which is the less obvious half. That window
+            # reads the assigned run's own questions coming back through the
+            # review queue, and here it would be a trap: the targeted arm
+            # serves more weak-type questions, a student misses more of them,
+            # so the treated arm *creates* the cards it is then measured on.
+            # The comparison would be over two differently-composed sets of
+            # material and would not be a comparison. What targeting claims is
+            # that the student gets better at the type, not at the questions
+            # they drilled, so the outcome is later first encounters with those
+            # types — new questions, never seen, of the category the run leaned
+            # into.
+            outcome_window="later_encounters",
+            # Interference is real here and is not solved. A student's runs
+            # alternate arms, so a later encounter follows a mixture of
+            # targeted and untargeted runs and the window credits it to the
+            # most recent assignment only. That dilutes toward the null: a
+            # positive reading is trustworthy and a null one is ambiguous
+            # between "no effect" and "contaminated". Per-student exposure
+            # would remove it and costs what `review_scheduling` costs, which
+            # is why it is not what this does; `tools/audit/measurement_cost.py`
+            # carries both figures.
+            #
+            # The population is enforced rather than described. The draw writes
+            # the weak types down (`assign(..., signal=...)`) because the list
+            # is not recoverable later — the signal moves as the student
+            # improves, which is the whole point of it — and the reading
+            # restricts to answers on those types. Without that the arms would
+            # be compared on every type the student happened to meet, most of
+            # which neither arm touched, and the treatment would be diluted by
+            # the bank.
+            population="first encounters with a type the student was weak at "
+            "when the run was built",
         ),
         Layer(
             key="run_sequencing",
@@ -597,6 +701,7 @@ def assign(
     *,
     exposure: Exposure,
     session_id: str | None = None,
+    signal: str | None = None,
 ) -> Assignment:
     """Draw this layer's arm for this student on this encounter, and record it.
 
@@ -618,6 +723,16 @@ def assign(
     needed in, and is only ever a breadcrumb. There is no foreign key on it on
     purpose: the id is minted before the row it names exists, which is what
     lets the draw precede question selection.
+
+    `signal` is what the layer's signal said at the moment of the draw, packed
+    by `signal_tokens` into a sorted, separated string. It is here because a
+    layer's declared population is otherwise a comment: `weak_type_targeting`
+    claims to be read on later encounters with the types the student was weak
+    at *when this run was built*, and that list is not recoverable afterwards,
+    since the whole point of the rolling signal is that it moves as the student
+    improves. Recorded once, at the only moment it is true, and read back by
+    `layer_reading` as the set the population is restricted to. The spine gives
+    the tokens no meaning beyond set membership.
     """
     spec = layer(layer_key)
     if spec.outcome_join != "session":
@@ -653,6 +768,7 @@ def assign(
             propensity=propensity,
             design_version=spec.design_version,
             session_id=session_id or (exposure.token if spec.unit == UNIT_RUN else None),
+            signal=signal,
         )
     )
     return Assignment(spec.key, arm, propensity, exposure.token, randomised=True)
@@ -714,8 +830,38 @@ def _naive(value):
     return value.replace(tzinfo=None) if value.tzinfo is not None else value
 
 
+def signal_tokens(values) -> str:
+    """A layer's signal, packed for the `signal` column.
+
+    Sorted so that the same set written on two runs is the same string, and
+    truncated to fit the column rather than raising: a signal too long to
+    record is a reading problem and not a reason to refuse a student a run.
+    Truncation drops whole tokens from the end, so what survives is always a
+    valid subset — a reading restricted to it is narrower than intended, never
+    wrong.
+    """
+    text = ""
+    for token in sorted({str(value) for value in values if value}):
+        candidate = f"{text}{SIGNAL_SEPARATOR}{token}" if text else token
+        if len(candidate) > SIGNAL_MAX_LENGTH:
+            break
+        text = candidate
+    return text
+
+
+def _signal_set(value: str | None) -> frozenset[str]:
+    return frozenset(part for part in (value or "").split(SIGNAL_SEPARATOR) if part)
+
+
 def _immediate_rows(spec: Layer, user_id: str | None) -> list[tuple]:
-    """Answers given inside the run the arm was drawn for."""
+    """Answers given inside the run the arm was drawn for.
+
+    Restricted to the layer's declared population where it has one. For
+    weak-type targeting the immediate reading is the *cost* side of the trade —
+    a run leaning into your worst type is harder — and it is only that if it is
+    read over the same answers the later window is read over. Pooled across
+    every type in the run it would mostly be measuring the bank.
+    """
     query = (
         db.session.query(
             LayerAssignment.arm,
@@ -723,6 +869,8 @@ def _immediate_rows(spec: Layer, user_id: str | None) -> list[tuple]:
             LayerAssignment.subject_id,
             Attempt.is_correct,
             Question.section,
+            Question.question_type,
+            LayerAssignment.signal,
         )
         .join(StudySession, StudySession.id == LayerAssignment.session_id)
         .join(SessionItem, SessionItem.session_id == StudySession.id)
@@ -735,10 +883,12 @@ def _immediate_rows(spec: Layer, user_id: str | None) -> list[tuple]:
     )
     if user_id:
         query = query.filter(LayerAssignment.subject_id == user_id)
-    return [
-        (arm, propensity, subject, bool(correct), section)
-        for arm, propensity, subject, correct, section in query.all()
-    ]
+    rows = []
+    for arm, propensity, subject, correct, section, question_type, signal in query.all():
+        if spec.restricted_by_signal and question_type not in _signal_set(signal):
+            continue
+        rows.append((arm, propensity, subject, bool(correct), section))
+    return rows
 
 
 def _delayed_rows(spec: Layer, user_id: str | None) -> list[tuple]:
@@ -817,6 +967,102 @@ def _delayed_rows(spec: Layer, user_id: str | None) -> list[tuple]:
             entry
             for entry in entries
             if entry[1] != run_id and entry[0] is not None and answered is not None and entry[0] < answered
+        ]
+        if not prior:
+            continue
+        _, _, arm, propensity = prior[-1]
+        rows.append((arm, propensity, subject, bool(correct), section))
+    return rows
+
+
+def _later_encounter_rows(spec: Layer, user_id: str | None) -> list[tuple]:
+    """First encounters, in a later run, with a type the assigned run leaned into.
+
+    The outcome weak-type targeting actually claims. A run in the targeted arm
+    serves more of the student's weakest types; if that works, the student is
+    better at *those types* afterwards, on questions they have never seen. So
+    the answers read here are new questions, of a type the assignment's
+    recorded signal named, answered in a run that started after the assigned
+    one.
+
+    Three choices, all of which change the number:
+
+    **New questions only.** `from_review_queue` is excluded, which is the
+    difference between this window and `delayed`. Returns are cards the
+    treated arm created more of, by serving more questions the student was
+    likely to miss; comparing arms on them compares two differently-composed
+    sets of material. It is also the exclusion `type_focus` makes on the input
+    side, for the same reason, and making it on one side only would be strange.
+
+    **Credited to the most recent preceding assignment that named the type.**
+    Assignments that did not name the type neither targeted it nor withheld
+    it — the type was not in their population — so they are not candidates to
+    credit, and skipping them is not selection on an outcome: which *arm* a run
+    drew is random and independent of which types its signal held. Runs where
+    the type was named are the trial for that type, and the closest one in time
+    is the treatment the outcome belongs to.
+
+    **One credit per answer**, as in `_delayed_rows`, so no outcome is counted
+    twice under two arms.
+    """
+    served = (
+        db.session.query(
+            LayerAssignment.subject_id,
+            LayerAssignment.arm,
+            LayerAssignment.propensity,
+            LayerAssignment.session_id,
+            LayerAssignment.signal,
+            StudySession.started_at,
+        )
+        .join(StudySession, StudySession.id == LayerAssignment.session_id)
+        .filter(
+            LayerAssignment.layer == spec.key,
+            LayerAssignment.design_version == spec.design_version,
+        )
+    )
+    if user_id:
+        served = served.filter(LayerAssignment.subject_id == user_id)
+
+    # (student, type) -> the assignments that named that type, oldest first.
+    targeted: dict[tuple[str, str], list[tuple]] = {}
+    for subject, arm, propensity, run_id, signal, started in served.all():
+        for question_type in _signal_set(signal):
+            targeted.setdefault((subject, question_type), []).append(
+                (_naive(started), run_id, arm, propensity)
+            )
+    if not targeted:
+        return []
+    for entries in targeted.values():
+        entries.sort(key=lambda entry: (entry[0] is None, entry[0]))
+
+    encounters = (
+        db.session.query(
+            Attempt.user_id,
+            SessionItem.session_id,
+            Attempt.created_at,
+            Attempt.is_correct,
+            Question.section,
+            Question.question_type,
+        )
+        .join(SessionItem, SessionItem.id == Attempt.session_item_id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .filter(SessionItem.from_review_queue.is_(False))
+    )
+    if user_id:
+        encounters = encounters.filter(Attempt.user_id == user_id)
+
+    rows = []
+    for subject, run_id, answered_at, correct, section, question_type in encounters.all():
+        entries = targeted.get((subject, question_type))
+        if not entries:
+            continue
+        answered = _naive(answered_at)
+        if answered is None:
+            continue
+        prior = [
+            entry
+            for entry in entries
+            if entry[1] != run_id and entry[0] is not None and entry[0] < answered
         ]
         if not prior:
             continue
@@ -905,9 +1151,18 @@ def layer_reading(layer_key: str, *, user_id: str | None = None, window: str | N
     It will not read a layer in a window the layer did not declare, unless
     asked in as many words. `window` defaults to `spec.outcome_window`. For
     `run_ordering` that is `delayed`, because interleaving is expected to cost
-    accuracy while it is happening and repay it later; the immediate reading is
-    available by passing `window="immediate"` and is reported beside the
-    declared one, labelled, so the trade is visible rather than deniable.
+    accuracy while it is happening and repay it later; for
+    `weak_type_targeting` it is `later_encounters`, because a run leaning into
+    your worst type is harder while you are sitting it. Either immediate
+    reading is available by passing `window="immediate"`, and comes back
+    labelled with the declared window beside it, so the trade is visible rather
+    than deniable.
+
+    It will not read a layer outside the population it declared. Where the
+    population is defined by the signal at the moment of the draw, the reading
+    keeps only answers matching what was recorded there — every window, not
+    just the declared one, so the cost and the benefit are measured over the
+    same answers.
 
     It will not report a pooled lift for a layer that declares `strata`. The
     per-stratum readings are there instead. For interleaving the strata are the
@@ -941,7 +1196,14 @@ def layer_reading(layer_key: str, *, user_id: str | None = None, window: str | N
         }
 
     window = window or spec.outcome_window
-    rows = _delayed_rows(spec, user_id) if window == "delayed" else _immediate_rows(spec, user_id)
+    if window not in WINDOWS:
+        raise ValueError(f"unknown outcome window: {window!r}")
+    readers = {
+        WINDOW_IMMEDIATE: _immediate_rows,
+        WINDOW_DELAYED: _delayed_rows,
+        WINDOW_LATER_ENCOUNTERS: _later_encounter_rows,
+    }
+    rows = readers[window](spec, user_id)
     overall = _summarise(spec, rows)
 
     strata = []
@@ -962,6 +1224,8 @@ def layer_reading(layer_key: str, *, user_id: str | None = None, window: str | N
         "unit": spec.unit,
         "window": window,
         "declared_window": spec.outcome_window,
+        "population": spec.population,
+        "population_enforced": spec.restricted_by_signal,
         "strata_by": spec.strata,
         "strata": strata,
         **overall,

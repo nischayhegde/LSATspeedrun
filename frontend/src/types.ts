@@ -947,12 +947,39 @@ export type PerformanceSnapshot = {
     sections: StrategySectionReading[]
     sections_note: string
   }
-  /** What the last mega-litigation told practice to work on. */
+  /** What practice is weighted toward, and why.
+   *
+   * This used to be the last mega-litigation's verdict and nothing else. It is
+   * now read from every first encounter the account has filed, decayed toward
+   * recent work, so it moves as a student improves rather than staying frozen
+   * at whatever their last sitting said. `sitting` is the old figure, kept
+   * because a student who has just finished a form wants to know what it said —
+   * it is a report of that run and no longer a statement about what practice
+   * will do next. */
   focus: {
     types: string[]
-    session_id: string | null
-    completed_at: string | null
-    baseline_accuracy: number | null
+    weak: {
+      type: string
+      section: string
+      /** Points below this student's own accuracy in that section, after shrinkage. */
+      gap: number
+      shrunk_accuracy: number
+      raw_accuracy: number
+      section_baseline: number
+      effective_sample: number
+      answers: number
+      half_width: number
+      separates: boolean
+    }[]
+    section_baselines: Record<string, number>
+    first_encounters: number
+    half_life_days: number
+    sitting: {
+      types: string[]
+      session_id: string | null
+      completed_at: string | null
+      baseline_accuracy: number | null
+    }
     explanation: string
   }
   recommendation: { skill: string; accuracy: number; reason: string } | null

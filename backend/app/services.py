@@ -12,7 +12,8 @@ from sqlalchemy.orm import joinedload
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
 from .extensions import db
-from .focus import diagnostic_focus, diagnostic_focus_detail
+from .focus import diagnostic_focus_detail
+from .type_focus import rolling_focus, rolling_focus_detail
 from .game import (
     CLIENT_BY_KEY,
     explanation_band,
@@ -983,9 +984,23 @@ def create_study_session(
     # Due passage-mates travel together so the run reads the passage once. Only
     # the ones the scheduler already chose — see `cluster_passage_mates`.
     repairs = scheduling.cluster_passage_mates(repairs)
-    # A type-filtered run is the student overriding the weighting by hand, so the
-    # last mega-litigation only steers an unfiltered one.
-    focus_types = [] if question_type else diagnostic_focus(user.id)
+    # A type-filtered run is the student overriding the weighting by hand, so
+    # the weak-type signal only steers an unfiltered one.
+    #
+    # `rolling_focus`, not `diagnostic_focus`. The old signal read exactly one
+    # run — the last completed mega-litigation — so a student who was
+    # consistently poor at necessary-assumption questions across two hundred
+    # ordinary cases was not noticed as weak at that category by anything, and a
+    # student who had improved since March was still being fed what March said.
+    # The new one reads every first encounter the account has filed, decayed by
+    # recency, weighted by evidence class so the mega-litigation still counts
+    # nearly twice what a coached case does, and shrunk toward the student's own
+    # accuracy in that section. `app/type_focus.py` has the reasoning, including
+    # what it deliberately does not double-count.
+    #
+    # It subsumes the old signal rather than sitting beside it: same layer, same
+    # arms, new `design_version`.
+    focus_types = [] if question_type else rolling_focus(user.id)
     # Weak-type targeting is an adaptive layer like any other, and until now it
     # was one nobody could evaluate: it has steered every eligible run since it
     # shipped, so there has never been a run to compare a steered one against.
@@ -996,11 +1011,19 @@ def create_study_session(
     # The draw happens only where the layer could act — a run with no focus
     # types is the same run either way, and enrolling it would dilute the
     # comparison with runs on which the treatment is a no-op. Eligibility is
-    # decided from the student's diagnostic history, which is fixed before this
-    # run starts and cannot be an outcome of the arm.
+    # decided from answers filed before this run started, so it cannot be an
+    # outcome of the arm.
     if focus_types:
+        # The weak types go on the assignment row. They have to: the layer is
+        # read on later encounters with the types this run leaned into, and by
+        # the time anyone reads it the signal has moved — a student who
+        # improved has a different list, which is the treatment working rather
+        # than a bookkeeping inconvenience. Written here or not at all.
         targeting = experiments.assign(
-            "weak_type_targeting", user.id, exposure=Exposure.run(session_id)
+            "weak_type_targeting",
+            user.id,
+            exposure=Exposure.run(session_id),
+            signal=experiments.signal_tokens(focus_types),
         )
         # The strategy trial still sees the unblanked list. Its `focus_types`
         # only lengthens the coverage runway on weak types, which is a decision
@@ -2491,20 +2514,37 @@ def performance_snapshot(user: User) -> dict:
     }
     recommendation_skill = next((skill for skill in skills if skill["attempts"] >= 3), None)
     strategy_lab = strategy_performance(user.id)
-    focus_detail = diagnostic_focus_detail(user.id)
+    # What the panel reports is now what the selector reads. It used to report
+    # the last mega-litigation's verdict while claiming "most of each new case
+    # run is drawn from those" — true of the mechanism at the time, and a
+    # description of a much narrower signal than a student would take it for.
+    # The mega-litigation's own list is still available under `sitting`, because
+    # a student who has just sat one wants to know what it said, but it is a
+    # report of that run rather than a statement about what practice will do.
+    rolling_detail = rolling_focus_detail(user.id)
+    sitting_detail = diagnostic_focus_detail(user.id)
     focus = {
-        "types": focus_detail["types"],
-        "session_id": focus_detail["session_id"],
-        "completed_at": _iso_utc(focus_detail["completed_at"]) if focus_detail["completed_at"] else None,
-        "baseline_accuracy": focus_detail["baseline_accuracy"],
+        "types": rolling_detail["types"],
+        "weak": rolling_detail["weak"],
+        "section_baselines": rolling_detail["section_baselines"],
+        "first_encounters": rolling_detail["first_encounters"],
+        "half_life_days": rolling_detail["half_life_days"],
+        "sitting": {
+            "types": sitting_detail["types"],
+            "session_id": sitting_detail["session_id"],
+            "completed_at": _iso_utc(sitting_detail["completed_at"])
+            if sitting_detail["completed_at"]
+            else None,
+            "baseline_accuracy": sitting_detail["baseline_accuracy"],
+        },
         "explanation": (
-            "Your last mega-litigation came in under its own average on "
-            + _join_types(focus_detail["types"])
-            + ". Most of each new case run is drawn from those, and their strategy trials keep testing "
-            "approaches for longer before settling."
-            if focus_detail["types"]
-            else "Finish a mega-litigation and practice will start weighting itself toward whatever it "
-            "shows you are weakest at."
+            "Across your recent first attempts you are coming in under your own average for the "
+            "section on " + _join_types(rolling_detail["types"]) + ". Most of each new case run is "
+            "drawn from those, and their strategy trials keep testing approaches for longer before "
+            "settling. Recent work counts most, so this moves as you improve."
+            if rolling_detail["types"]
+            else "Nothing stands out yet as a question type you are weaker at than the rest of its "
+            "section. Keep practising and this will start weighting itself."
         ),
     }
 

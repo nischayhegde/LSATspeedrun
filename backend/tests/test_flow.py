@@ -5652,7 +5652,13 @@ def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
 
     blank = client.get("/v1/performance", headers=headers).json["performance"]
     assert blank["focus"]["types"] == []
-    assert "Finish a mega-litigation" in blank["focus"]["explanation"]
+    # The empty state no longer says "finish a mega-litigation", because the
+    # signal underneath it no longer waits for one. A student's ordinary
+    # practice is now what the weak-type list is read from, so what an empty
+    # list means has changed too: not "we have not measured you yet" but
+    # "nothing you have done stands out below the rest of its section".
+    assert "Nothing stands out yet" in blank["focus"]["explanation"]
+    assert blank["focus"]["sitting"]["types"] == []
 
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     total = session["total_items"]

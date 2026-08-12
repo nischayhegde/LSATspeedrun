@@ -821,6 +821,19 @@ class LayerAssignment(db.Model):
     propensity = db.Column(db.Float, nullable=False)
     design_version = db.Column(db.String(40), nullable=False)
     session_id = db.Column(db.String(36), nullable=True, index=True)
+    # What the layer's signal said at the moment of the draw, as a sorted
+    # pipe-separated set of tokens, or null for a layer whose reading does not
+    # need it. `experiments.signal_tokens` writes it and only set membership is
+    # ever read off it.
+    #
+    # It exists because a layer's declared population can otherwise be a
+    # comment rather than a fact: `weak_type_targeting` is read on later
+    # encounters with *the types this student was weak at when the run was
+    # built*, and that list is not reconstructible afterwards — the whole point
+    # of the layer is that it moves as the student improves. Recording it here
+    # is the difference between a reading restricted to the population it
+    # claims and one that quietly averages over every type in the bank.
+    signal = db.Column(db.String(240), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
 
 

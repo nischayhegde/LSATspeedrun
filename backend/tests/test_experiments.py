@@ -324,9 +324,9 @@ def _stock_bank() -> None:
 
 
 def _runs_with_focus(app, monkeypatch, *, holdback: float, runs: int) -> tuple[list[str], list[str]]:
-    """Practice runs for students whose diagnostic named one weak type."""
+    """Practice runs for students the rolling signal calls weak at one type."""
     app.config["ADAPTIVE_LAYERS"] = {LAYER: {"holdback": holdback}}
-    monkeypatch.setattr("app.services.diagnostic_focus", lambda _user_id: ["Flaw"])
+    monkeypatch.setattr("app.services.rolling_focus", lambda _user_id: ["Flaw"])
     served: list[str] = []
     users: list[str] = []
     for index in range(runs):
@@ -378,7 +378,7 @@ def test_the_run_records_its_arm_and_the_off_arm_really_stops_the_steering(app, 
 
 
 def test_a_run_with_nothing_to_target_is_left_out_of_the_comparison(app, monkeypatch):
-    """No diagnostic, no focus types, no draw.
+    """No weak type, no draw.
 
     Enrolling those runs would fill both arms with sittings on which the
     treatment is a no-op and pull any real difference toward zero — the same
@@ -386,7 +386,7 @@ def test_a_run_with_nothing_to_target_is_left_out_of_the_comparison(app, monkeyp
     """
     with app.app_context():
         _stock_bank()
-        monkeypatch.setattr("app.services.diagnostic_focus", lambda _user_id: [])
+        monkeypatch.setattr("app.services.rolling_focus", lambda _user_id: [])
         user = make_user("nofocus@example.test")
         db.session.add(
             PlayerProfile(user_id=user.id, lawyer_name="A", firm_name="B", character_gender="male")
