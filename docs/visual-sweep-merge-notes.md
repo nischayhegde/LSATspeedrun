@@ -95,6 +95,13 @@ dashboard work can land first without dragging it along. Four files:
 | `frontend/src/pages/office-page.tsx` | The contract card's terms split into two elements and an `is-on-hold` class on the article. Same fields, same words | Medium — same reason |
 | `frontend/src/mobile/office-page.css` | The portrait's title pill stood down on the phone brief sheet, where it hung 15px outside the sheet's border | **High** — the responsiveness branch owns the mobile sheets |
 
+One known limit: the title pill is centred on the bust and set `nowrap`, so
+what fits is a function of how much room the card reserves either side of an
+86px portrait. At the size it is now set, every client class in the catalog
+reads in full except the 19-character "LEAGUE COMMISSIONER", which still
+ellipsises. Buying that last one costs the text column real width on every
+card, and the title is on the portrait's `aria-label` either way.
+
 The one that reaches beyond this card is the `styles.css` deletion. It changes
 every `ClientPortrait` in the app — the office card, the Firm tab's retainer
 panel and client roster, the Practice docket header, the case session's matter
