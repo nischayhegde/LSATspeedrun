@@ -121,7 +121,7 @@ assume has not happened.
 |---|---|
 | **`weak_type_targeting`** | |
 | Decides | Whether 60% of a run's fresh questions come from the types this student is weak at, or from the whole bank. |
-| Reads | `type_focus.rolling_focus` — every first encounter the account has ever filed, decayed on a 30-day half-life, each type compared against the student's accuracy on *the rest of* that section and shrunk toward it. Capped at three types. §4.6 is the whole design. |
+| Reads | `type_focus.rolling_focus` — every first encounter the account has ever filed, decayed on a 30-day half-life, each type compared against the student's accuracy on *the rest of* that section and shrunk toward it. Capped at five types. §4.6 is the whole design. |
 | Signal absent | No type standing clear of its section means an empty list, and the run is built as if the layer were off. Those runs are left out of the draw entirely, because a treatment that does nothing on them would only dilute the comparison. |
 | Read on | Later *first encounters* with the types the run leaned into — new questions of that category, in a later run. Not the run it steered, where a treatment that works looks like a harm, and not the review queue, where the treated arm created the cards. |
 | Broken looks like | Every eligible run steering. Read `min_student_share` for the `untargeted` arm in the audit probe: it should sit near 0.25 for anyone with twenty runs. Before this work it was 0.0 for everybody, because the layer had no off arm at all. |

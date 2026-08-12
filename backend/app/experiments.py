@@ -271,10 +271,11 @@ LAYERS: dict[str, Layer] = {
             "weak at beat drawing them from the whole bank?",
             signal="`type_focus.rolling_focus`: types whose recency-weighted accuracy "
             "over the student's first encounters sits at least five points below their "
-            "own accuracy in that section, after shrinkage.",
-            without_signal="A student with no type standing out below its section gets "
-            "an empty list, and the run is drawn as if the layer were off. Those runs "
-            "are not part of the comparison.",
+            "own accuracy on the rest of that section, after shrinkage, by a margin the "
+            "interval clears.",
+            without_signal="A student with no type standing out below the rest of its "
+            "section gets an empty list, and the run is drawn as if the layer were off. "
+            "Those runs are not part of the comparison.",
             arms={"targeted": 0.75, "untargeted": 0.25},
             off_arm="untargeted",
             # Bumped from the version that read `focus.diagnostic_focus`. Not a
