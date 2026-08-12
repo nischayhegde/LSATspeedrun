@@ -79,6 +79,26 @@ class Passage(db.Model):
     # passage written by a path that has not learned about the flag is treated
     # as an ordinary single passage rather than crashing the allocator.
     comparative = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # Character offsets in `canonical_text` where each part of the passage begins,
+    # first always 0, written at ingest by `passage_structure.derive_paragraphs`.
+    # Offsets rather than a second copy of the prose, so a segmentation can never
+    # drift from the text it describes.
+    #
+    # Every passage in this bank arrived as one unbroken blob with no newline
+    # anywhere, which left `enforcement.split_paragraphs` returning the whole
+    # passage as a single unit — so "give each paragraph its job in three to
+    # twelve words" asked for one note on three thousand characters, and
+    # `paragraph_function`'s variety check, needing more than one segment to
+    # compare, never ran at all.
+    #
+    # `paragraph_source` says where the boundaries came from, because the two
+    # kinds do not deserve equal trust: "authored" means the text carried real
+    # breaks, "derived_cohesion_v1" means this application found them by lexical
+    # cohesion and they are topical rather than authored. Null on both columns
+    # means no segmentation, which reads as one part exactly as it did before
+    # these columns existed.
+    paragraph_offsets = db.Column(db.JSON, nullable=True)
+    paragraph_source = db.Column(db.String(40), nullable=True)
     source = db.Column(db.String(255), nullable=True)
     review_status = db.Column(db.String(60), nullable=False, default="development_only")
 

@@ -12,6 +12,7 @@ from flask import current_app
 
 from .extensions import db
 from .models import Passage, Question, QuestionChoice
+from .passage_structure import derive_paragraphs
 from .strategies import detect_comparative
 
 
@@ -212,8 +213,13 @@ def _upsert_row(
         # Recomputed on the update branch as well as the insert one: the id is a
         # hash of the text, so a passage whose text changed is a different row,
         # but a re-ingest that rewrites `canonical_text` must not leave a flag
-        # behind that describes text this passage no longer has.
+        # behind that describes text this passage no longer has. The paragraph
+        # offsets are positions in that same text and go stale the same way, so
+        # they are rewritten here too rather than only backfilled.
         passage.comparative = detect_comparative(context, passage.passage_type)
+        offsets, paragraph_source = derive_paragraphs(context)
+        passage.paragraph_offsets = offsets or None
+        passage.paragraph_source = paragraph_source if offsets else None
         passages[passage_id] = passage
 
     question = questions.get(question_id)
