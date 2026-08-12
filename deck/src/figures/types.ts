@@ -392,15 +392,27 @@ export type PairedBarsFigure = {
   footnote: string
 }
 
-/** `game-never-gates` — practice gates the game, and not the other way round. */
+/**
+ * `game-never-gates` — the app's own unlock list, and the one row with no lock.
+ *
+ * Every `requires` string on this figure is quoted from the product, not
+ * written for the deck: `_wardrobe_requirement` in `backend/app/game.py`
+ * composes exactly these sentences, and `wardrobe.tsx` prints them beside a
+ * padlock. Keep them verbatim. A requirement invented to read better on a
+ * projector is a competitor's favourite kind of slide.
+ */
 export type GateFigure = {
   kind: 'gate'
-  left: string
-  right: string
-  /** The three real couplings, labelled under the main arrow. */
-  couplings: string[]
-  /** The struck-through reverse direction. */
-  denied: string
+  /** Over the requirement column. The app's lock chip has no label; this is ours. */
+  head: string
+  /** What the game keeps behind reps, each with the requirement the app prints. */
+  locked: Array<{ name: string; requires: string }>
+  /** The one row that carries no padlock: the practice itself. */
+  open: { name: string; requires: string }
+  /** The wardrobe screen's own sentence about which way the coupling runs. */
+  quote: string
+  /** Where that sentence is printed in the app. */
+  quoteCredit: string
 }
 
 /**

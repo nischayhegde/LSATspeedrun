@@ -2529,247 +2529,200 @@
 }
 
 /* ================================================================
-   gate — one direction only
-   ================================================================ */
+   gate — the app's own unlock list
+   ================================================================
+   Drawn as the wardrobe screen draws it: a padlock, the thing, and
+   the sentence that says what it costs. Three columns, no cell
+   borders, one rule — the same restraint `market-ledger` runs on,
+   and for the same reason. The persuasion is in the right-hand
+   column reading the same way four times and then differently once,
+   and a ruled grid would give the eye something else to do.
+
+   The one departure from the ledger is the lock well. It is a fixed
+   column of empty space on every row including the last, because a
+   missing padlock is only legible where a padlock was expected — cut
+   the well from the open row and the row is merely shorter. */
 
 .fig-gate {
-  align-items: stretch;
+  align-items: center;
 }
 
 .fig-gt {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-5);
+  /* One step for the whole list, everything below in `em` against it,
+     as `market-ledger` does. This figure is type and one icon, and it
+     had the stage to be read from the back of the room. */
+  --gt: calc(1.85 * var(--u));
+  font-size: var(--gt);
+
   width: 100%;
-  height: 100%;
-}
-
-/* Three fifths to the diagram, two to the couplings.
-   The frame used to take every pixel the couplings did not need, and the
-   couplings needed very few — so the slide was a wide empty band with two
-   arrows in it and three hairlines huddled underneath. The couplings are the
-   concrete half of this argument (the diagram states the rule; these are the
-   three places it bites) and they are entitled to a share of the frame rather
-   than to the remainder. */
-.fig-gt-frame {
-  position: relative;
-  flex: 0 1 58%;
-  min-height: 0;
-}
-
-/* The lane between the two words is set at 21–79 in `gate.tsx`, so a column is
-   allowed a fifth of the frame and no more. At a quarter the arrows had to be
-   pulled back to 27 to clear a word that never actually reached that far, and
-   the picture was two short arrows marooned in the middle of a wide slide. */
-.fig-gt-col {
-  position: absolute;
-  top: 50%;
-  max-width: 19%;
-  margin: 0;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-num);
-  line-height: 1.05;
-  transition: opacity var(--mo-4) var(--ease-out);
-}
-
-.fig-gt-col[data-side='left'] {
-  left: 0;
-  transform: translateY(-50%);
-}
-
-.fig-gt-col[data-side='right'] {
-  right: 0;
-  transform: translateY(-50%);
-  text-align: right;
-}
-
-.fig-gt-arrows {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* Screen pixels on a non-scaling stroke — see `DRAW_PX` in `kit.tsx`. The
-   forward arrow is meant to be thick; at 10 user units through the stretched
-   viewBox it was a 54-pixel bar, which is not thick, it is a rectangle. */
-.fig-gt-shaft {
-  fill: none;
-  stroke-linecap: butt;
-  stroke-dasharray: 4000;
-}
-
-.fig-gt-shaft[data-dir='forward'] {
-  stroke: currentColor;
-  stroke-width: 16;
-  transition: stroke-dashoffset 620ms var(--ease-out);
-}
-
-.fig-gt-shaft[data-dir='reverse'] {
-  stroke: var(--on-field-dim);
-  stroke-width: 5;
-  transition: stroke-dashoffset 520ms var(--ease-in-out), opacity var(--mo-3) var(--ease-out);
-}
-
-/* Faint, because it is the coupling that does not exist — but not so faint
-   that the cross above has nothing under it. At .38 the shaft was very nearly
-   the least visible thing on the slide and the strike had no visible object. */
-.fig-gt-shaft[data-denied='true'] {
-  opacity: .5;
-}
-
-/* Two beats, then it holds. A coupling that keeps throbbing behind a speaker
-   is a coupling nobody stops looking at.
-   The pulse is a weight change rather than a scale, because the arrow's ends
-   are anchored to two columns of type and must not move off them — and because
-   a scale about a stretched viewBox's centre displaces a horizontal line
-   vertically. */
-.fig-gt-shaft[data-pulse='true'] {
-  animation: fig-gt-pulse 640ms var(--ease-in-out) 2 both;
-}
-
-@keyframes fig-gt-pulse {
-  0%, 100% { stroke-width: 10; }
-  50% { stroke-width: 15; }
-}
-
-.fig-gt-chevron[data-pulse='true'] {
-  animation: fig-gt-chevron-pulse 640ms var(--ease-in-out) 2 both;
-}
-
-@keyframes fig-gt-chevron-pulse {
-  0%, 100% { border-top-width: .62em; border-right-width: .62em; }
-  50% { border-top-width: .92em; border-right-width: .92em; }
-}
-
-.fig-gt-chevron {
-  position: absolute;
-  width: 1.5em;
-  height: 1.5em;
-  transition: opacity var(--mo-2) var(--ease-out) 560ms;
-}
-
-/* The offsets put the chevron's *corner* on the end of the shaft rather than the
-   centre of its bounding square. Rotating a square by 45° moves that corner
-   0.707 of the box width from the centre, so the translate is half the box plus
-   that, in whichever direction the arrow points. */
-.fig-gt-chevron[data-dir='forward'] {
-  border-top: .62em solid currentColor;
-  border-right: .62em solid currentColor;
-  transform: translate(-120.7%, -50%) rotate(45deg);
-}
-
-.fig-gt-chevron[data-dir='reverse'] {
-  width: 1.05em;
-  height: 1.05em;
-  border-top: .24em solid var(--on-field-dim);
-  border-right: .24em solid var(--on-field-dim);
-  transform: translate(20.7%, -50%) rotate(225deg);
-}
-
-/* The refusal: two strokes crossed on the reverse arrow, each drawn in 140ms
-   with no easing worth the name. A strike-through that eases looks like a
-   flourish; this one is a refusal. Drawn in `--on-field`, because verdict red
-   is spent on `pov-reasoning-is-the-work` and `pov-confidence-signal` and this is not one of them, and `clip-path`
-   rather than a scale so each arm grows from the end a pen would start at
-   instead of unfolding from its middle.
-
-   Sized against the shaft it crosses rather than against the frame — at 4.4u
-   the mark stood ten times the height of a 5px stroke and floated clear above
-   it — but no longer *only* against it: one arm of this size over a thin arrow
-   already at 38% opacity was read, correctly, as a stray solidus rather than
-   as anything cancelling anything. Two arms are a cross, and a cross is
-   legible as a cancellation from the back of a room. */
-.fig-gt-strike {
-  position: absolute;
-  width: calc(2.7 * var(--u));
-  height: 4px;
-  background: currentColor;
-  clip-path: inset(0 100% 0 0);
-  transition: clip-path 140ms linear var(--fig-delay, 0ms);
-}
-
-.fig-gt-strike[data-arm='down'] { transform: translate(-50%, -50%) rotate(-56deg); }
-.fig-gt-strike[data-arm='up'] { transform: translate(-50%, -50%) rotate(56deg); }
-
-.fig-gt-strike[data-struck='true'] { clip-path: inset(0 0 0 0); }
-
-.fig-gt-denied {
-  position: absolute;
-  left: 50%;
-  top: 79%;
-  transform: translateX(-50%);
-  margin: 0;
-  max-width: 46%;
-  text-align: center;
-  font-size: var(--fig-label);
-  line-height: 1.25;
-  color: var(--on-field-dim);
-  /* No line through it. The slash above is the refusal; striking the caption
-     as well says the same thing twice and makes the words harder to read at
-     the one moment the room is trying to read them. */
-  transition: opacity var(--mo-3) var(--ease-out) 220ms;
-}
-
-/* Takes the rest of the frame and centres in it, rather than sitting straight
-   under the diagram and leaving the last fifth of the slide empty. The
-   couplings are the concrete half of the argument — the diagram states the
-   rule, these are the three places it bites — and a block of content with a
-   void under it reads as a slide that stopped early. */
-.fig-gt-couplings {
-  flex: 1 1 auto;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s-3);
-}
-
-/* Each row is a three-column rule of its own at a shared width, so the three
-   arrows stack into one vertical and the causes and effects range off it.
-   Centring each row independently — which is what a flex row does — left the
-   arrows at three different x positions and the whole block read as loose
-   type rather than as a table of consequences. */
-.fig-gt-couplings li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--s-3);
-  width: min(100%, 62ch);
-  font-size: var(--fig-strong);
-  line-height: 1.2;
-  transition:
-    opacity var(--mo-3) var(--ease-out) var(--fig-delay),
-    transform var(--mo-3) var(--ease-out) var(--fig-delay);
-}
-
-/* Cause in the field's full weight, effect recessed: the couplings read left to
-   right, in the same direction as the arrow above them. */
-.fig-gt-cause {
-  font-weight: 600;
-  text-align: right;
-}
-
-.fig-gt-effect {
-  color: var(--on-field-dim);
+  /* Well, name, requirement — all shrink to content, and the block
+     centres. The eye crosses from a name to its price five times, and
+     stretching the middle column to the margins makes that crossing
+     the width of the slide. */
+  grid-template-columns: auto auto auto;
+  justify-content: center;
+  column-gap: 1.9em;
+  align-items: baseline;
   text-align: left;
 }
 
-.fig-gt-thin {
-  flex: 0 0 auto;
-  width: 2.8em;
-  height: .85em;
+/* Over the requirement column only. The names want no head — they are
+   obviously names — and a head over the padlocks would be a caption on
+   an icon. */
+.fig-gt-head {
+  grid-column: 3;
+  margin: 0 0 .5em;
+  padding-bottom: .4em;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  font-family: var(--font-pixel);
+  font-size: .6em;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
 }
 
-.fig-gt-thin path {
+.fig-gt-list {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A row is a subgrid of the figure's own columns so that every row —
+   including the open one, which is not in the list — shares one set of
+   column edges. */
+.fig-gt-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  padding: .42em 0;
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+/* Sized in advance rather than by its contents, so the empty one on the
+   last row holds the column open. `align-self` rather than a baseline,
+   because an SVG has no baseline worth aligning to and the lock has to
+   sit against the cap height of the name beside it. */
+.fig-gt-well {
+  width: 1.15em;
+  height: 1.15em;
+  align-self: center;
+}
+
+.fig-gt-lock {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   fill: none;
   stroke: var(--on-field-dim);
-  stroke-width: 1.4;
-  stroke-linecap: butt;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+}
+
+/* The shackle drops into the body on the row's beat. It is the only
+   motion on the figure, and it exists so that the room watches the
+   column *acquire* four padlocks — which is what makes the gap at the
+   bottom a gap rather than a design choice nobody noticed. */
+.fig-gt-shackle {
+  transform: translateY(-42%);
+  transform-origin: center;
+  opacity: 0;
+  transition:
+    transform 260ms var(--ease-out) var(--fig-delay),
+    opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-gt-lock[data-shut='true'] .fig-gt-shackle {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.fig-gt-body {
+  opacity: 0;
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-gt-lock[data-shut='true'] .fig-gt-body {
+  opacity: 1;
+}
+
+.fig-gt-name {
+  line-height: 1.25;
+  color: var(--on-field);
+}
+
+/* The column that repeats, in the pixel face for the same reason
+   `market-ledger`'s does: it makes four sentences read as four *values*
+   in one currency instead of as four sentences that happen to rhyme.
+   Which is the whole argument, so it is worth the family switch. */
+.fig-gt-requires {
+  font-family: var(--font-pixel);
+  font-size: .76em;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+/* The only rule on the figure, and it draws rather than fades. */
+.fig-gt-rule {
+  grid-column: 1 / -1;
+  height: 0;
+  margin: .5em 0 .45em;
+  border-top: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  transform-origin: left center;
+  transition: transform 480ms var(--ease-out);
+}
+
+/* The row with nothing in its well. Accent rather than the field's own
+   colour — this section's accent is the app's own `--pixel-gold`, so
+   the line the slide is about is lit in the game's gold while the game's
+   own items sit in beige, which is the inversion said in paint. */
+.fig-gt-row[data-open='true'] .fig-gt-name {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.fig-gt-row[data-open='true'] .fig-gt-requires {
+  color: var(--accent);
+}
+
+.fig-gt-quote {
+  grid-column: 1 / -1;
+  /* Held down to what the list can spare. At 1.5em the figure measured a
+     pixel over its stage at 1920x1080 and `useFitScale` shrank the whole
+     thing by 3% to buy that pixel back — a scale nobody sees and everybody
+     pays for. */
+  margin: 1.15em 0 0;
+  text-align: center;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+/* Set as a quotation and credited, because it is one: the sentence is
+   the wardrobe screen's, not the deck's, and a line of product copy
+   passed off as a claim we wrote is the kind of thing this deck has
+   been pulled up for before. */
+.fig-gt-quote q {
+  display: block;
+  font-size: .86em;
+  font-style: italic;
+  line-height: 1.3;
+  color: var(--on-field);
+}
+
+.fig-gt-quote small {
+  display: block;
+  margin-top: .45em;
+  font-family: var(--font-pixel);
+  font-size: .56em;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
 }
 
 /* ================================================================

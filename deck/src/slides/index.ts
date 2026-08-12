@@ -1830,24 +1830,42 @@ export const SLIDES: readonly SlideSpec[] = [
     // third statement of the same proposition, in a frame where the figure's
     // struck-out reverse arrow is already a fourth.
     deck: 'The practice gates the game.',
-    // The struck-through reverse arrow is the slide. The three couplings label
-    // the direction that does exist; the denied one is drawn and then crossed
-    // out, hard, once.
+    // The app's own unlock list, quoted. Every `requires` string below is
+    // composed by `_wardrobe_requirement` in `backend/app/game.py` and printed
+    // beside a padlock by `frontend/src/wardrobe.tsx` — they are not deck copy
+    // and must not be rewritten to scan better. The four locked rows are real
+    // items across three of the game's currencies; the open row is the string
+    // the same function returns for anything available on day one, which is
+    // what the practice is and has always been. Nothing in `scheduling.py` or
+    // `services.py` reads `office_tier`, `reputation` or `total_cases`, so the
+    // last row is a fact about the code and not a promise.
+    //
+    // Two liberties, both noted so nobody has to rediscover them: the app files
+    // its cosmetics under category headings, so "Forest green" is printed here
+    // as "Forest green suit" and "Regimental stripe" keeps the name it is
+    // listed under; and the tier requirement keeps its parenthetical, which is
+    // three words of clutter and buys the room the one piece of context — that
+    // this is a headquarters and not another hat — that makes the list read as
+    // the whole game rather than as a wardrobe.
     figure: {
       kind: 'gate',
-      left: 'Practice',
-      right: 'Firm',
-      couplings: [
-        'Cases → cash and story',
-        'Full test → a whole tier',
-        'Focus Mode → the game disappears',
+      head: 'Locked until',
+      locked: [
+        { name: 'Regimental stripe', requires: 'Settle 25 cases' },
+        { name: 'Oxhide briefcase', requires: 'Settle 100 cases' },
+        { name: 'Gold wristwatch', requires: 'Hold 55 reputation' },
+        { name: 'Forest green suit', requires: 'Reach the Downtown Firm (HQ tier 3)' },
       ],
-      denied: 'the firm never unlocks a question',
+      open: { name: 'Every question in the app', requires: 'Available from your first day' },
+      quote: 'Everything here is won by practising, never bought.',
+      quoteCredit: 'the wardrobe screen, in the app',
     },
     notes:
-      'This is structural, not a disclaimer. The game exists to get the reps done, '
-      + 'so the only path through it is the reps. The firm never unlocks a question.'
-      + ' ⟢ IF CHALLENGED — every gamification source we read says the same thing: a complement to good practice, '
+      'Everything the game has is priced in reps. That is the app\'s own screen — its words, not ours. '
+      + 'One row has no lock on it, and it is the practice.'
+      + ' ⟢ IF CHALLENGED — the requirement strings are the shipped ones, from `_wardrobe_requirement`; '
+      + 'nothing in question selection reads tier, reputation or case count, so the last row is a fact about the code. '
+      + 'And every gamification source we read says the same thing: a complement to good practice, '
       + 'never a replacement. A student who never opens the office loses nothing except the office.',
     speaker: 'Alan',
     budgetSeconds: 11,
