@@ -319,10 +319,14 @@ def probe_cases(user: User, cases: int, size: int) -> dict:
             # flag the rest of the app reads. Falling back to "have they ever
             # answered this" would also count a reading case's own passage-mates,
             # which are not review slots in any sense a student could learn.
-            runs_at_slot[item.position] += 1
-            if item.from_review_queue:
-                review_at_slot[item.position] += 1
-                in_run += 1
+            # Argument cases only. A reading case is one passage served in the
+            # passage's own order and has no review *slots* to speak of, so
+            # folding it into this histogram averages two different things and
+            # hides the one that can carry a positional cue.
+            if rc == 0:
+                runs_at_slot[item.position] += 1
+                review_at_slot[item.position] += item.from_review_queue
+            in_run += item.from_review_queue
             if item.question_id in seen_before:
                 review_questions += 1
                 rc_review += sections[item.question_id] == RC
