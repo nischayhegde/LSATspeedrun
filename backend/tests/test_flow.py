@@ -1098,6 +1098,63 @@ def test_run_size_and_focus_are_bounded(app):
     assert invalid.json["error"]["code"] == "invalid_session_size"
 
 
+def test_a_general_run_too_short_to_hold_a_passage_is_refused_but_a_drill_is_not(app):
+    """The lower bound on a run, and why a drill is exempt from it.
+
+    A run below `RC_CASE_MIN_SITTING` cannot be built as a reading case, and
+    what used to happen then was that it came back as arguments — the right
+    length, so nothing looked wrong, with a third of the exam missing. An audit
+    measured 0% Reading Comprehension at sizes 3 and 5.
+
+    Refused rather than rounded up, because a caller silently handed six
+    questions when it asked for three has been overruled without being told.
+
+    A type-filtered drill is exempt at any length. It has already said what it
+    wants, so it has no section left to drop: a drill on an argument type
+    contains no reading because that is what was asked for.
+    """
+    from app.services import RC_CASE_MIN_SITTING
+
+    client = app.test_client()
+    headers = login(client, "short-run@example.test")
+    create_game(client, headers)
+
+    for size in range(1, RC_CASE_MIN_SITTING):
+        refused = client.post("/v1/study-sessions", json={"size": size}, headers=headers)
+        assert refused.status_code == 400, size
+        assert refused.json["error"]["code"] == "invalid_session_size"
+
+        drill = client.post(
+            "/v1/study-sessions",
+            json={"size": size, "question_type": "Inference"},
+            headers=headers,
+        )
+        assert drill.status_code == 201, drill.json
+        assert drill.json["session"]["total_items"] == size
+        client.post(f"/v1/study-sessions/{drill.json['session']['id']}/abandon", headers=headers)
+
+
+def test_a_deployment_cannot_configure_the_reading_section_away(app):
+    """The same bound, one level up, where it would be a whole deployment.
+
+    The API check only covers what a caller asks for. `PRACTICE_SESSION_SIZE` is
+    what every caller gets when it asks for nothing, so a number in an env file
+    could quietly make every run in the deployment arguments-only. That is the
+    same defect with a much larger blast radius and no request to reject, so it
+    fails at boot instead.
+    """
+    from app.services import RC_CASE_MIN_SITTING
+
+    with pytest.raises(RuntimeError, match="PRACTICE_SESSION_SIZE"):
+        create_app(
+            {
+                "TESTING": True,
+                "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+                "PRACTICE_SESSION_SIZE": RC_CASE_MIN_SITTING - 1,
+            }
+        )
+
+
 def test_a_case_run_releases_feedback_immediately_and_seeds_review(app, monkeypatch):
     client = app.test_client()
     headers = login(client, "answer-only-speedrun@example.test")

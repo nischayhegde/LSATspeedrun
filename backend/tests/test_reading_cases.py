@@ -464,6 +464,139 @@ def test_argument_case_review_is_arguments(app):
             assert all(question.section == "Logical Reasoning" for question in served)
 
 
+def test_reading_is_reachable_at_every_length_a_run_can_be(app):
+    """The invariant this file exists to defend, stated over sizes rather than at one.
+
+    Reading Comprehension was measured at 0% for every session started at sizes
+    3 and 5, because a reading case could not be built below six and the silent
+    fallback was an argument run. The run came back the right length, so nothing
+    looked wrong; a third of the exam had simply stopped being practised.
+
+    Asserting it at the shipped size only is what let that sit undetected, so
+    this sweeps every length a general run is allowed to be. The upper bound is
+    arbitrary; the lower one is not, and is the whole point.
+    """
+    with app.app_context():
+        app.config["PRACTICE_RC_CASE_SHARE"] = 1.0
+        for size in range(RC_CASE_MIN_SITTING, 13):
+            user = _fresh_user(app, f"reachable-{size}@example.test")
+            served = _run(app, user, size=size)
+            assert all(question.section == READING_COMPREHENSION for question in served), (
+                f"a {size}-question run drew no reading case"
+            )
+
+
+def test_a_run_is_about_as_long_as_it_asked_to_be_whichever_shape_it_took(app):
+    """A reading case fills the run, rather than ending where its passage does.
+
+    A reading case used to be one passage however long the run was, so a
+    twelve-question run that drew one came back seven questions long. That is
+    not only short: it drags the section mix down with it, because the argument
+    runs it is averaged against are all full length. Measured over sizes 1 to
+    12, Reading Comprehension fell from 38.6% of a six-question run to 14.0% of
+    a twelve-question one against a 34.4% bank.
+
+    The shortfall that remains is bounded by RC_CASE_MIN_SITTING: the case stops
+    adding passages once the room left is too small to be worth reading one for.
+    """
+    with app.app_context():
+        app.config["PRACTICE_RC_CASE_SHARE"] = 1.0
+        for size in range(RC_CASE_MIN_SITTING, 13):
+            user = _fresh_user(app, f"length-{size}@example.test")
+            for _ in range(10):
+                served = _run(app, user, size=size)
+                assert size - len(served) < RC_CASE_MIN_SITTING, (
+                    f"a {size}-question run came back {len(served)} questions long"
+                )
+                assert len(served) <= reading_case_ceiling(size)
+
+
+def test_the_shipped_sitting_is_one_passage_and_cannot_become_two(app):
+    """Filling long runs must not reach back and change the six-question one.
+
+    Not a preference — arithmetic. The shortest passage in the bank carries four
+    questions, so a six-question run has at most two questions of room left
+    after one passage, and two is below the floor at which another passage is
+    worth reading. This pins that the two numbers still stand in that
+    relationship, because the campaign curve was measured on the six-question
+    sitting being one passage.
+    """
+    with app.app_context():
+        assert 6 - min(PASSAGE_SIZES) < RC_CASE_MIN_SITTING
+        app.config["PRACTICE_RC_CASE_SHARE"] = 1.0
+        user = _fresh_user(app, "shipped-sitting@example.test")
+        for _ in range(40):
+            served = _run(app, user, size=6)
+            assert len({question.passage_id for question in served}) == 1
+
+
+def test_a_passage_cut_short_is_finished_next_time_rather_than_abandoned(app):
+    """What makes cutting a passage a deferral instead of a loss.
+
+    Serving part of a passage is only honest if the rest comes back. It used to
+    come back by luck: the next passage was drawn uniformly from every passage
+    with anything unread, so on the shipped bank a cut passage had a 1-in-349
+    chance of being resumed. That was survivable while cutting was rare, and
+    stops being survivable at the run lengths where cutting is normal — which is
+    exactly where reading has to work.
+    """
+    with app.app_context():
+        app.config["PRACTICE_RC_CASE_SHARE"] = 1.0
+        user = _fresh_user(app, "resumed-passage@example.test")
+        # The shortest run there is, against a fixture whose passages mostly run
+        # longer than it — but which passage comes up is a draw, and some of
+        # them do fit, so this plays until one is genuinely cut rather than
+        # assuming the first one is.
+        for _ in range(10):
+            first = _run(app, user, size=RC_CASE_MIN_SITTING)
+            for question in first:
+                _answer(user.id, question.id)
+            started = first[0].passage_id
+            whole = {question.id for question in Question.query.filter_by(passage_id=started)}
+            if whole - {question.id for question in first}:
+                break
+        else:
+            pytest.fail("no passage was ever cut, so there is nothing to resume")
+
+        # Not "usually returns": the next reading case is the one that finishes
+        # it, because an unfinished passage outranks an untouched one.
+        second = _run(app, user, size=RC_CASE_MIN_SITTING)
+        assert {question.passage_id for question in second} == {started}
+        # Everything the first case left behind is in the second. The passage is
+        # re-read either way, so once there is room the case fills up with
+        # questions already answered rather than stopping short — what matters
+        # is that none of the unanswered ones are left for a third visit.
+        assert whole - {question.id for question in first} <= {
+            question.id for question in second
+        }
+
+
+def _answer(user_id: str, question_id: str) -> None:
+    """Mark a question as seen, which is what steers the next reading case."""
+    from app.models import Attempt, StudySession
+
+    session = StudySession(
+        user_id=user_id, mode="practice", status="completed", target_minutes=15, total_items=1
+    )
+    db.session.add(session)
+    db.session.flush()
+    item = SessionItem(session_id=session.id, question_id=question_id, position=0)
+    db.session.add(item)
+    db.session.flush()
+    db.session.add(
+        Attempt(
+            user_id=user_id,
+            session_item_id=item.id,
+            idempotency_key=f"seen-{item.id}",
+            selected_label="C",
+            is_correct=True,
+            confidence=3,
+            server_elapsed_ms=1000,
+        )
+    )
+    db.session.commit()
+
+
 def _queue(user_id: str, question_id: str) -> None:
     from app.models import ReviewQueueItem
 
