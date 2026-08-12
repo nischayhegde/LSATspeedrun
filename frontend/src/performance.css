@@ -196,8 +196,71 @@
 .strategy-catalog-grid { padding: 0 14px 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px; }.strategy-catalog-grid article { padding: 14px; border: 1px solid rgba(255,255,255,.07); border-radius: 8px; background: rgba(255,255,255,.02); }.strategy-catalog-grid article > span { color: #75c9bc; font: 900 9px var(--font-pixel); }.strategy-catalog-grid h3 { margin: 5px 0 2px; color: #e9d497; font: 600 20px/1.1 var(--font-display); }.strategy-catalog-grid em { display: block; margin-bottom: 6px; color: #86a09c; font-size: 10.5px; font-style: normal; letter-spacing: .02em; }.strategy-catalog-grid p,.strategy-catalog-grid li,.strategy-catalog-grid small { color: #b3bcb5; font-size: 11px; line-height: 1.5; }.strategy-catalog-grid p { margin: 0; }.strategy-catalog-grid ol { margin: 9px 0; padding-left: 19px; }.strategy-catalog-grid small { display: block; color: #8fa49f; }.strategy-catalog-grid article > div { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px 11px; }.strategy-catalog-grid a { color: #d7bd70; font-size: 10px; text-underline-offset: 2px; }
 .strategy-lab-caveat { max-width: var(--prose-measure); margin: 13px 0 0; display: flex; align-items: flex-start; gap: 7px; color: #879d99; font-size: 11px; line-height: 1.45; }.strategy-lab-caveat svg { width: 16px; flex: 0 0 16px; color: #cbb66f; }
 
-.diagnostic-lab { margin: 20px 0; padding: clamp(22px,3.5vw,42px); display: grid; grid-template-columns: minmax(0,1.4fr) minmax(250px,.6fr); gap: 36px; border: 1px solid rgba(230,198,120,.32); border-radius: 19px; color: #f2ead8; background: linear-gradient(120deg,rgba(93,66,39,.94),rgba(31,48,56,.97)); box-shadow: 0 18px 40px rgba(5,9,15,.3); }.diagnostic-copy h2 { margin: 7px 0; color: #f5df9e; font-family: var(--font-display); font-size: clamp(27px,3vw,42px); }.diagnostic-copy p { max-width: 720px; color: #d0c6ae; line-height: 1.55; }.diagnostic-copy ul { margin: 15px 0 20px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; list-style: none; }.diagnostic-copy li { padding: 7px 10px; border-left: 2px solid #73c9b9; color: #dcd1b9; background: rgba(9,19,25,.19); font-size: 11px; }.diagnostic-score { min-height: 230px; padding: 22px; display: grid; align-content: center; justify-items: center; border: 1px solid rgba(255,228,157,.24); border-radius: 16px; background: rgba(10,18,25,.38); text-align: center; }.diagnostic-score small { color: #72cfbf; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .14em; }.diagnostic-score strong { margin-top: 7px; color: #f2d27a; font-family: var(--font-display); font-size: clamp(42px,5vw,70px); line-height: .9; }.diagnostic-score span { margin-top: 8px; color: #f0e3c2; font-size: 12px; }.diagnostic-score p { max-width: 280px; margin: 13px 0 0; color: #aaa897; font-size: 10px; line-height: 1.5; }
-.diagnostic-score-empty { border-style: dashed; border-color: rgba(255,228,157,.2); background: rgba(10,18,25,.22); }.diagnostic-score-glyph { width: 38px; height: 38px; margin-top: 10px; color: rgba(242,210,122,.45); }.diagnostic-score-empty span { margin-top: 12px; }
+/* THE MEGA-LITIGATION SECTION
+   ---------------------------
+   The warm ground stays. A sat form is not ordinary practice, and this panel
+   and `.mega-panel` over on Practice are deliberately the only two surfaces
+   drawn on it — flattening them to the navy of their neighbours would lose a
+   distinction the app makes on purpose. What it is drawn in changed: it was
+   `rgba(93,66,39,.94)`, a desaturated brown at 94% over a parchment page, so
+   6% of the paper lifted through it and the panel read milky rather than warm.
+   It is opaque now, and both ends come off the ink-to-night ramp the rest of
+   the dark panels are grounded on. The two rules are kept identical, as the
+   comment at the top of `mega-litigation.css` promises.
+
+   Everything else here predates the illustrated sweep and was missed by it:
+   a brass border three points off `--hairline`, a 19px radius, a drop shadow
+   in cold near-black, a mint three points off `--verdigris`, and a
+   composition drawn for the state that has no score. */
+.diagnostic-lab {
+  /* Read by `.diagnostic-lab-body` below. Both values are declared here, on
+     one element, so the cascade picks between them; declaring the default on
+     the body itself would beat the inherited override every time. */
+  --lab-columns: minmax(0,1.42fr) minmax(230px,.58fr);
+  margin: 20px 0;
+  padding: clamp(20px,3vw,34px);
+  display: grid;
+  gap: clamp(16px,2vw,22px);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  color: #f2ead8;
+  background: linear-gradient(120deg,#382a1b,#17242f);
+  box-shadow: var(--el-3);
+}
+/* The heading is the shared one every other panel on this page wears, down to
+   its colour, which is also what takes the narrative line off the 42px it was
+   set at. It was competing with the score for the same job, and winning. */
+/* The narrow column is whichever one the figure is in, and the figure comes
+   first only once there is one — so the widths follow the markup's order
+   rather than being fixed to a side. The order is carried on a variable so
+   that the rule reading it stays a single class: the stacking rule below, and
+   anything in `mobile.css` after it, can still win with one selector. */
+.diagnostic-lab.has-result { --lab-columns: minmax(230px,.58fr) minmax(0,1.42fr); }
+.diagnostic-lab-body { display: grid; grid-template-columns: var(--lab-columns); gap: clamp(18px,2.4vw,34px); align-items: start; }
+.diagnostic-copy p { max-width: var(--prose-measure); margin: 0; color: #d0c6ae; font-size: 13.5px; line-height: 1.6; }
+
+/* The result, set as the panel's own figure rather than boxed as a widget
+   inside it: a nested card here read as a readout bolted to the side of the
+   sentence that was holding the top of the panel. */
+.diagnostic-lab.has-result .diagnostic-score { padding: 0; display: grid; justify-items: start; align-content: start; border: 0; background: none; text-align: left; }
+.diagnostic-score small { color: var(--verdigris); font-family: var(--font-hud); font-size: 9px; font-weight: 900; letter-spacing: .14em; }
+.diagnostic-score strong { margin-top: 6px; color: var(--brass-lit); font-family: var(--font-display); font-size: clamp(52px,5.4vw,80px); line-height: .88; letter-spacing: -.02em; }
+.diagnostic-score span { margin-top: 9px; color: #f0e3c2; font-size: 12.5px; }
+.diagnostic-score p { max-width: 34ch; margin: 11px 0 0; color: #b3ae9b; font-size: 11.5px; line-height: 1.5; }
+
+/* The action and the four terms that qualify it, read as one block. */
+.diagnostic-next { margin-top: 17px; padding-top: 15px; border-top: 1px solid rgba(232,200,124,.16); }
+.diagnostic-next > span { display: block; color: #c8a85d; font-family: var(--font-hud); font-size: 8.5px; font-weight: 900; letter-spacing: .14em; }
+.diagnostic-copy ul { margin: 11px 0 15px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; list-style: none; }
+.diagnostic-copy li { padding: 8px 11px; border: 1px solid rgba(232,200,124,.13); border-left: 2px solid var(--verdigris); border-radius: var(--r-control); color: #dcd1b9; background: rgba(9,19,25,.24); font-size: 11.5px; }
+.diagnostic-review-cue { max-width: var(--prose-measure); margin: 0 0 13px; padding: 10px 12px; border: 1px solid rgba(123,200,189,.3); border-radius: var(--r-control); color: #d8ecdf; background: rgba(24,58,58,.4); font-size: 12px; line-height: 1.5; }
+
+/* No form sat yet: an empty slot, and the invitation beside it is the
+   subject. This is the one state where the box is right. */
+.diagnostic-score-empty { min-height: 220px; padding: 22px; display: grid; align-content: center; justify-items: center; border: 1px dashed rgba(255,228,157,.2); border-radius: var(--r-card); background: rgba(10,18,25,.22); text-align: center; }
+.diagnostic-score-glyph { width: 38px; height: 38px; margin-top: 10px; color: rgba(242,210,122,.45); }
+.diagnostic-score-empty span { margin-top: 12px; }
+.diagnostic-score-empty p { max-width: 30ch; }
 
 .trend-panel,.skill-table-panel { padding: 19px; border: 1px solid rgba(226,194,118,.21); border-radius: 16px; color: #eee5d0; background: linear-gradient(150deg,#162635,#101c29); box-shadow: 0 13px 29px rgba(4,9,15,.23); }.trend-panel > svg { width: 100%; height: 190px; margin-top: 8px; overflow: visible; }.trend-panel line { stroke: rgba(164,185,184,.13); stroke-width: 1; }.trend-panel polyline { fill: none; stroke: #72d1bf; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 7px rgba(88,199,179,.45)); }.trend-panel circle { fill: #f0d17b; stroke: #112332; stroke-width: 3; }.empty-trend { min-height: 170px; display: grid; place-content: center; justify-items: center; color: #728f90; text-align: center; }.empty-trend strong { margin-top: 8px; color: #d7caa9; }.empty-trend p { margin: 3px 0; font-size: 11px; }.focus-sprint-button { width: 100%; margin: 8px 0 12px; padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(113,208,192,.4); border-radius: 9px; color: #dff5ee; background: rgba(66,156,143,.16); font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }.focus-sprint-button:hover:not(:disabled) { border-color: #74d3c1; background: rgba(66,156,143,.25); }
 .skill-table-panel { margin: 20px 0; }.skill-table { margin-top: 16px; display: grid; }.skill-row { min-height: 48px; padding: 8px 26px 8px 10px; display: grid; grid-template-columns: minmax(200px,1.5fr) repeat(4,minmax(80px,.6fr)); align-items: center; gap: 10px; border: 0; border-top: 1px solid rgba(255,255,255,.07); width: 100%; box-sizing: border-box; color: inherit; background: transparent; font: inherit; text-align: left; font-size: 11px; }.skill-row.header { min-height: 32px; border-top: 0; color: #789a99; font-family: var(--font-pixel); font-size: 7.5px; font-weight: 900; letter-spacing: .1em; }.skill-row strong { color: #e9dec3; }.skill-row > span { position: relative; color: #aeb6ad; }.skill-row > span i { height: 3px; position: absolute; left: 0; right: auto; bottom: -5px; border-radius: 3px; background: #68c2b2; }
@@ -250,7 +313,8 @@
   .dash-tiles { grid-column: 1/3; grid-template-columns: repeat(2,1fr); }
   .dash-summary-scenery { width: 240px; right: 2%; bottom: -34px; opacity: .13; }
   .dash-tabs { grid-template-columns: repeat(3,1fr); }
-  .diagnostic-lab { grid-template-columns: 1fr; }.index-ring { width: 125px; height: 125px; }.index-ring strong { font-size: 43px; }
+  /* Stacked, the score is still first: it is first in the markup. */
+  .diagnostic-lab-body { grid-template-columns: 1fr; }.index-ring { width: 125px; height: 125px; }.index-ring strong { font-size: 43px; }
   .metric-card { flex-basis: calc(50% - 5px); }.strategy-comparison { grid-template-columns: repeat(3,1fr); }
   .skill-row { grid-template-columns: minmax(150px,1.3fr) repeat(4,minmax(67px,.5fr)); overflow: hidden; }
   .skill-detail { justify-content: flex-start; }.skill-detail .focus-sprint-button { flex-basis: 100%; }
@@ -278,7 +342,7 @@
   .strategy-section-row.is-insufficient .strategy-section-headline strong,.strategy-section-row.is-none .strategy-section-headline strong,.strategy-section-row.is-level .strategy-section-headline strong { font-size: 15px; }
   .strategy-section-lift { font-size: 17px; }
   .strategy-section-detail { padding: 13px 12px 14px; }
-  .diagnostic-lab { padding: 20px 16px; }.diagnostic-copy ul { grid-template-columns: 1fr; }.diagnostic-score { min-height: 190px; }
+  .diagnostic-lab { padding: 20px 16px; }.diagnostic-copy ul { grid-template-columns: 1fr; }.diagnostic-score-empty { min-height: 190px; }
   /* The skill matrix stacks rather than scrolling sideways.
 
      Holding the desktop's five columns and letting the table scroll put 690px

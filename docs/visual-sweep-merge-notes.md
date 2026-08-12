@@ -27,6 +27,8 @@ no 3D scene file, no render pipeline.
 | `frontend/src/login-page.css`, `frontend/src/mobile/login-page.css`, `frontend/src/pages/login-page.tsx` | Pixel-hand sheets replaced; the `.tsx` change swaps the `lucide` scale for the drawn crest | Medium on the `.tsx` |
 | `frontend/src/markup.css`, `frontend/src/markup.tsx` | The pen swatch's inline colour variable renamed `--ink` to `--markup-ink`, off a collision with the app's outline token | Low, but the rename spans both files and must land together |
 | `frontend/src/mobile.css`, `frontend/src/mobile/firm-page.css` | Crest, overflow trigger, and the firm filter's face | **High** — the responsiveness branch owns both files |
+| `frontend/src/performance.css`, `frontend/src/pages/dashboard-page.tsx` | The mega-litigation panel on `/progress`: shared `panel-heading`, the score promoted to the panel's figure, the four terms attached to the action, and the shell moved onto the palette | **High** — the dashboard is another branch's surface. See the note below |
+| `frontend/src/mega-litigation.css` | The `.mega-panel` shell follows `.diagnostic-lab` onto the palette, which is what its own comment promises | Low — one rule, three declarations |
 | `frontend/src/narrative.css` | Cutscene overlay and campaign chrome | Medium |
 | `frontend/src/office-page.css`, `frontend/src/story-page.css` | Game bar and story board laid on the desk register | Medium |
 | `frontend/src/onboarding-page.css` | Character choice cards, goal step, native date picker weight | Medium |
@@ -60,7 +62,18 @@ no 3D scene file, no render pipeline.
    of a 1px inner shadow. Anything that reimplemented the old press locally
    will now be out of step with the header and the shared controls.
 
-5. **Several sheets carry whole blocks minified onto one line** —
+5. **The mega-litigation panel's markup moved, on a route another branch is
+   working.** `.diagnostic-lab` in `dashboard-page.tsx` gained a
+   `.panel-heading` and a `.diagnostic-lab-body` wrapper, and its score block
+   is now rendered before the copy when a score exists and after it when one
+   does not — that ordering is the whole point of the change, since the score
+   is the panel's subject and was reading last on a phone. The numbers and
+   their fallbacks (`raw_correct ?? summary.correct`,
+   `form_total ?? raw_total`) are untouched. If this conflicts, keep the two
+   conditional score blocks and the `has-result` class; everything in
+   `performance.css` depends on both.
+
+6. **Several sheets carry whole blocks minified onto one line** —
    `styles.css` (8), `art/art.css` (3), `case-session-styles.css` (2),
    `firm-page.css` (2), `story-page.css` (2) and `office-page.css` (1). Git
    cannot merge two edits to the same line, so a sibling branch that touched any

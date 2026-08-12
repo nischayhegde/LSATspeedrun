@@ -10,14 +10,16 @@
 
 /* Border, gradient, text colour and shadow are `.diagnostic-lab` verbatim —
    the dashboard's own mega-litigation section. Only the radius and inset are
-   the Practice tab's, so this panel keeps step with its neighbours there. */
+   the Practice tab's, so this panel keeps step with its neighbours there.
+   The gradient, border and drop moved onto the palette over there; this rule
+   follows, because "verbatim" is the point of it. */
 .mega-panel {
   padding: 20px;
-  border: 1px solid rgba(230,198,120,.32);
-  border-radius: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
   color: #f2ead8;
-  background: linear-gradient(120deg,rgba(93,66,39,.94),rgba(31,48,56,.97));
-  box-shadow: 0 18px 40px rgba(5,9,15,.3);
+  background: linear-gradient(120deg,#382a1b,#17242f);
+  box-shadow: var(--el-3);
 }
 .mega-panel .panel-heading h2 { color: #f5df9e; font-size: 25px; }
 .mega-panel .panel-heading > svg { color: rgba(242,210,122,.5); }
