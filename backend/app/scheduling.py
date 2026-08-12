@@ -72,6 +72,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import joinedload
 
+from .extensions import db
 from .models import Attempt, Question, ReviewQueueItem, utcnow
 
 
@@ -272,7 +273,10 @@ def derive_grade(attempt: Attempt) -> int:
 
 
 def elapsed_days_for(card: ReviewQueueItem, now: datetime | None = None) -> float:
-    now = now or utcnow()
+    # `now` is normalised as well as the reference, because a caller may hand
+    # over a timestamp read back off a row rather than one it just made, and
+    # SQLite returns those without a zone.
+    now = _aware(now) if now else utcnow()
     reference = card.last_reviewed_at or card.created_at
     if reference is None:
         return 0.0
@@ -308,6 +312,66 @@ def apply_review(card: ReviewQueueItem, attempt: Attempt, *, now: datetime | Non
     # historical row) stay interpretable. Nothing schedules from it any more.
     card.interval_index = min(4, card.reps)
     return grade
+
+
+# --- Calibration: the scheduler scored against its own predictions ----------
+#
+# `review_scheduling` is the one layer in `app/experiments.py` with no holdout,
+# and the reason is on its registry entry rather than here. In short: the
+# exposure would have to be per student, because a card put on a 21-day
+# interval by one arm is still on it when the next run starts; per-student
+# means the sample grows at the rate accounts are opened rather than the rate
+# questions are answered; and the off arm is not a milder treatment but a
+# scheduler the team believes is worse, shipped for the whole life of a trial
+# that cannot finish. `tools/audit/measurement_cost.py` puts it near three and
+# a half thousand students. That is a control arm nobody would believe in.
+#
+# What is here instead is not a consolation prize. FSRS is a *predictive*
+# model: at the moment a card is served it says, in a number, how likely the
+# student is to recall it. That is a falsifiable claim on every single review,
+# and scoring it needs no comparison group at all — a student on their own
+# supplies both the prediction and the outcome.
+#
+# It also happens to point at the part most likely to be wrong. FSRS itself is
+# fitted on hundreds of millions of reviews and is not this app's invention.
+# `derive_grade` is: it maps correctness, pace, confidence, explanation quality
+# and whether the answer was changed onto the four grades FSRS expects, with
+# weights chosen here. Wrong grades give wrong stabilities, and wrong
+# stabilities give a calibration curve that is displaced or flat.
+#
+# Displaced and flat are different findings and the reading separates them. A
+# curve that is monotone but sits below the diagonal means the grades are too
+# generous and the intervals too long — a tuning problem. A flat curve means
+# the per-card memory state carries no information about recall at all, which
+# is a null result for the whole layer, and one no holdout was needed to get.
+
+
+def predicted_recall(card: ReviewQueueItem, now: datetime | None = None) -> float | None:
+    """FSRS's own claim about this card, right now, or None if it makes none.
+
+    Deliberately the raw forgetting curve rather than `card_retrievability`.
+    That function reports 0.0 for a relearning card because 0.0 is where a
+    just-missed question belongs in a queue; here the question is what the
+    model predicts, and overriding the prediction before scoring it would make
+    the score a test of the override.
+
+    None where there is no memory state yet. A card the model has never graded
+    is one it has not made a claim about, and scoring it against an invented
+    0.0 would fill the bottom bucket with first encounters and make the whole
+    curve look well calibrated for a reason that has nothing to do with FSRS.
+    """
+    if not card.stability or card.stability <= 0:
+        return None
+    if card.last_reviewed_at is None:
+        return None
+    return retrievability(card.stability, elapsed_days_for(card, now))
+
+
+# Buckets of predicted recall. Uneven on purpose: the schedule aims at
+# `DESIRED_RETENTION`, so almost every review lands high and even buckets would
+# put nine reviews in ten into one of them. The narrow bands at the top are
+# where the scheduler actually operates and where being wrong costs the most.
+CALIBRATION_BANDS = ((0.0, 0.5), (0.5, 0.7), (0.7, 0.85), (0.85, 0.92), (0.92, 0.96), (0.96, 1.01))
 
 
 def in_relearning(card: ReviewQueueItem) -> bool:
@@ -564,3 +628,108 @@ def _separate_same_type(sequence: list[list], *, question_type=None) -> list[lis
             result[index], result[swap_with] = result[swap_with], result[index]
             movable[index], movable[swap_with] = movable[swap_with], movable[index]
     return result
+
+
+def review_calibration(user_id: str | None = None) -> dict:
+    """Score the scheduler against what it predicted, per band and overall.
+
+    Three readings, and they answer three different questions.
+
+    `bands` is the calibration curve: for reviews the model put at 90-96%, how
+    many were actually right? A well-calibrated scheduler tracks the diagonal.
+    Systematically below it means the grades feeding `derive_grade` are too
+    generous and every interval is a little too long.
+
+    `brier` is the mean squared error of the prediction, which is the standard
+    proper scoring rule for exactly this and the quantity FSRS's own optimiser
+    minimises. Lower is better; it is reported next to `brier_baseline`,
+    because on its own it is unreadable.
+
+    `brier_baseline` is what a model that knows nothing per card would score:
+    predict the overall review accuracy for every card, every time. This is the
+    comparison that makes the whole reading a test rather than a description.
+    If FSRS cannot beat a constant, then the per-card stability and difficulty
+    it maintains carry no information about whether the student will recall the
+    card — which is a negative result about the layer, obtained without ever
+    withholding the scheduler from anybody.
+
+    `skill` is the fraction of the baseline's error the model removes. Zero is
+    a flat curve. Negative means the memory state is actively misleading.
+
+    Report-only, and it needs a column that only exists going forward: the
+    prediction has to be written down at review time, because the card's state
+    has moved on by the time anyone asks. Reviews answered before that column
+    landed carry null and are not in this reading.
+    """
+    query = db.session.query(Attempt.predicted_retrievability, Attempt.is_correct).filter(
+        Attempt.predicted_retrievability.isnot(None)
+    )
+    if user_id:
+        query = query.filter(Attempt.user_id == user_id)
+    rows = [(float(predicted), bool(correct)) for predicted, correct in query.all()]
+
+    reviews = len(rows)
+    if not reviews:
+        return {
+            "instrument": "calibration",
+            "reviews": 0,
+            "bands": [],
+            "brier": None,
+            "brier_baseline": None,
+            "skill": None,
+            "note": (
+                "No scored reviews yet. The prediction is recorded when a review is "
+                "answered, so this fills at the rate the queue is worked."
+            ),
+        }
+
+    observed = sum(1 for _predicted, correct in rows if correct) / reviews
+    brier = sum((predicted - correct) ** 2 for predicted, correct in rows) / reviews
+    baseline = sum((observed - correct) ** 2 for _predicted, correct in rows) / reviews
+
+    bands = []
+    for low, high in CALIBRATION_BANDS:
+        values = [row for row in rows if low <= row[0] < high]
+        bands.append(
+            {
+                "band": f"{int(low * 100)}–{min(100, int(high * 100))}%",
+                "reviews": len(values),
+                "mean_predicted": round(
+                    sum(predicted for predicted, _correct in values) / len(values) * 100, 1
+                )
+                if values
+                else None,
+                "realised": round(
+                    sum(1 for _predicted, correct in values if correct) / len(values) * 100, 1
+                )
+                if values
+                else None,
+            }
+        )
+    for band in bands:
+        band["gap"] = (
+            round(band["realised"] - band["mean_predicted"], 1)
+            if band["reviews"] and band["mean_predicted"] is not None
+            else None
+        )
+
+    filled = [band for band in bands if band["reviews"]]
+    return {
+        "instrument": "calibration",
+        "reviews": reviews,
+        "observed_accuracy": round(observed * 100, 1),
+        "bands": bands,
+        "brier": round(brier, 4),
+        "brier_baseline": round(baseline, 4),
+        "skill": round((baseline - brier) / baseline, 3) if baseline > 0 else None,
+        # The flat-curve test, stated as a number rather than left to the eye.
+        # A scheduler whose lowest-predicted band comes back at the same rate
+        # as its highest-predicted one is not ranking anything.
+        "band_spread": round(filled[-1]["realised"] - filled[0]["realised"], 1)
+        if len(filled) > 1
+        else None,
+        "basis": (
+            "the retrievability FSRS predicted at review time against what happened, "
+            "scored by Brier against a constant-rate baseline"
+        ),
+    }

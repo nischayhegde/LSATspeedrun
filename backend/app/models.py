@@ -334,6 +334,15 @@ class Attempt(db.Model):
     # row. See `SessionItem.strategy_selection_arm`.
     strategy_selection_arm = db.Column(db.String(12), nullable=True, index=True)
     strategy_selection_propensity = db.Column(db.Float, nullable=True)
+    # What FSRS predicted the chance of recalling this card was, at the moment
+    # it came back. Written only on review returns, and only once the card has
+    # a memory state, because a model that has not graded a card has made no
+    # claim about it. This is the whole instrument for `review_scheduling`: the
+    # layer has no holdout, and this column is what lets the scheduler be
+    # scored against its own predictions instead. It has to be recorded here
+    # rather than derived later, because answering the question is what moves
+    # the state the prediction was made from. See `scheduling.review_calibration`.
+    predicted_retrievability = db.Column(db.Float, nullable=True)
     # --- Enforced strategy use (see app/enforcement.py) ----------------------
     # `strategy_applied` above is a self-report about a private mental act.
     # These columns are the observable version of the same claim. `satisfied`

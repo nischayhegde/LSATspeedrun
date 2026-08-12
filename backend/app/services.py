@@ -1780,6 +1780,20 @@ def _schedule_review(attempt: Attempt) -> None:
             return
         existing.last_attempt_id = attempt.id
         _rewind_pending(existing)
+        # The scheduler's own claim about this card, captured after the rewind
+        # and before the advance, which is the only moment it is available: the
+        # rewind restores the pre-attempt state, and the advance destroys it.
+        # Reading it here also makes the second call idempotent, since a
+        # rewound card predicts what it predicted the first time.
+        #
+        # This is the whole measurement for `review_scheduling`. That layer has
+        # no control arm, on purpose and for reasons written on its registry
+        # entry, so what stands in for one is that FSRS commits to a number
+        # before every review and can be scored against it afterwards. See
+        # `scheduling.review_calibration`.
+        attempt.predicted_retrievability = scheduling.predicted_recall(
+            existing, attempt.session_item.served_at
+        )
         _hold_pending(existing, pending)
         _advance_review(existing, attempt)
         return
