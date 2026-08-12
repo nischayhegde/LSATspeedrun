@@ -36,7 +36,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app.seed import DATASETS, SPLITS, _question_type  # noqa: E402
-from app.strategies import STRATEGIES, _candidate_keys, detect_comparative  # noqa: E402
+from app.strategies import STRATEGIES, _candidate_keys, _task_tags, detect_comparative  # noqa: E402
 
 SNAPSHOT_DIR = BACKEND_DIR / "data" / "question_bank"
 
@@ -318,6 +318,7 @@ def audit(questions: list[_Question]) -> dict:
     cohort_fires: Counter[str] = Counter()
     samples: dict[str, list[str]] = defaultdict(list)
     strategy_samples: dict[str, list[str]] = defaultdict(list)
+    untagged_reasoning = 0
 
     for question in questions:
         totals[question.section] += 1
@@ -327,6 +328,8 @@ def audit(questions: list[_Question]) -> dict:
         if question.passage and question.passage.comparative:
             comparative_questions += 1
             comparative_passages.add(id(question.passage))
+        if question.section == "Logical Reasoning" and not _task_tags(question):
+            untagged_reasoning += 1
         keys = _candidate_keys(question)
         counts_histogram[len(keys)] += 1
         if not keys:
@@ -360,6 +363,11 @@ def audit(questions: list[_Question]) -> dict:
         "empty_results": len(empty),
         "candidate_histogram": dict(sorted(counts_histogram.items())),
         "exactly_two_share": round(counts_histogram[2] / total * 100, 1),
+        # Logical Reasoning questions whose stem names no task the matcher can
+        # read. These are the ones that get only the two unconditional
+        # approaches, so this is the number that says how much of the bank still
+        # sees the same two generic cards.
+        "untagged_reasoning": untagged_reasoning,
         "per_strategy": {
             key: {
                 "count": per_strategy.get(key, 0),
@@ -409,6 +417,7 @@ def _print_report(result: dict, previous: dict | None) -> None:
     print(f"Comparative: {result['comparative_questions']} questions on "
           f"{result['comparative_passages']} passages")
     print(f"Type field merely repeats the section on {result['generic_type_questions']} questions")
+    print(f"Logical Reasoning stems naming no task at all: {result['untagged_reasoning']}")
     print(f"Difficulty distribution: {result['difficulties']}")
 
     print("\nCandidates per strategy across the bank")

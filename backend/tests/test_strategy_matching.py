@@ -695,6 +695,285 @@ def test_a_role_in_the_passage_is_not_a_role_in_the_subject_matter(stem, expecte
 
 
 # ---------------------------------------------------------------------------
+# The families that carried no task at all
+# ---------------------------------------------------------------------------
+#
+# 246 Logical Reasoning questions named no task the matcher could read, so they
+# saw only the two unconditional approaches. The stems below are the phrasings
+# that put them there, nearly all of them a pattern requiring two words to be
+# adjacent when the bank routinely separates them, or requiring one inflection
+# of a verb when the bank uses another.
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        "The point at issue between Emile and Sabina is whether",
+        "Alia and Martha disagree on whether",
+        "Which one of the following is a point at issue between Harris and Vogel?",
+        "On the basis of their statements, Mario and Lucy are committed to disagreeing about the truth "
+        "of which one of the following?",
+        "The issue in dispute between Powell and Freeman is the",
+        "A point on which Roxanne's and Salvador's views differ is whether",
+        "In the dispute the issue between the socialist and the conservative can most accurately be "
+        "described as whether",
+    ],
+)
+def test_a_point_at_issue_question_gets_the_scope_reading(stem):
+    """The largest group that had no card at all.
+
+    The credited answer is a statement one speaker affirms and the other denies,
+    and the standard wrong answer overstates the difference or reaches past what
+    one of them actually said, which is what this approach's "reject stronger or
+    broader claims" is for.
+    """
+    keys = _candidate_keys(lr(stem))
+    assert "scope_precision" in keys
+    # Still not a strengthen question, which is the older guarantee.
+    assert "causal_audit" not in _candidate_keys(lr(stem, stimulus=CAUSAL_STIMULUS))
+
+
+def test_a_disputed_painting_is_not_a_disagreement():
+    """The word, in the service of the subject matter rather than a dispute."""
+    keys = _candidate_keys(
+        lr(
+            "Which one of the following, if true, most strongly supports the position that the "
+            "traditional attribution of a disputed painting should not have special weight?",
+            stimulus=CAUSAL_STIMULUS,
+        )
+    )
+    assert "causal_audit" in keys
+    assert "scope_precision" not in keys
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # The words separated, which is how the bank writes it.
+        "Which one of the following, if true, most seriously calls the conclusion above into question?",
+        "The prediction that ends the passage would be most seriously called into question if it were "
+        "true that in the last few years",
+        "Which one of the following, if true, could contribute most to a refutation of the argument?",
+        "Which one of the following, if true, argues most strongly against the passage's recommendation?",
+        "Which one of the following, if true, provides the strongest basis for countering Dr. Ruiz' argument?",
+        "The information above, if accurate, can best be used as evidence against which one of the "
+        "following hypotheses?",
+        "Which one of the following, if true, most strongly indicates that the asteroid-impact theory "
+        "is at least incomplete, if not false?",
+    ],
+)
+def test_the_rest_of_the_weaken_vocabulary(stem):
+    assert "causal_audit" in _candidate_keys(lr(stem, stimulus=CAUSAL_STIMULUS))
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # "Errors" before "reasoning" rather than after it.
+        "The senator's reasoning contains which one of the following errors?",
+        "The reasoning in the editorial is in error because",
+        "The argument is faulty because it ignores the possibility that",
+        "The inference drawn above is unwarranted because",
+        "The conclusion is incorrectly drawn from the information given because this information "
+        "does not include",
+        "The proposal mentioned above falls short of offering a complete solution to the problem it "
+        "addresses because",
+        # What one speaker took another to mean, where the answer is the misreading.
+        "Mark's response shows that he interpreted Terry's remarks to mean that",
+        "Judith's response shows that she interprets Harry's statement to imply that",
+    ],
+)
+def test_the_rest_of_the_flaw_vocabulary(stem):
+    assert "flaw_abstraction" in _candidate_keys(lr(stem))
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # The adverb before the verb rather than after it.
+        "Which one of the following logically follows from the statements above?",
+        # Three words between the modal and the participle.
+        "Which one of the following can most reasonably be concluded on the basis of the information above?",
+        "If the statements above are both true, which one of the following conclusions can be drawn "
+        "on the basis of them?",
+        "Which one of the following statements is an inference that can be drawn from the information "
+        "given in the passage?",
+        "Which one of the following conclusions can be validly drawn from the passage?",
+        "Which one of the following is strictly implied by the above?",
+        "If the statements above are true, which one of the following would also have to be true?",
+        "A consequence of the view above is that",
+        "The observations above provide most evidence for the conclusion that",
+        # Completing the passage, which is a must-be-true question about its end.
+        "Which one of the following most logically completes the argument?",
+        "Which one of the following provides a logical completion to the passage above?",
+        "Which one of the following, if true, is the most logical completion of the paragraph above?",
+        "Which one of the following completes the passage most logically?",
+        "Which one of the following statements would most reasonably complete the argument?",
+    ],
+)
+def test_the_rest_of_the_inference_vocabulary(stem):
+    assert "scope_precision" in _candidate_keys(lr(stem))
+
+
+def test_falling_short_of_a_complete_solution_is_not_a_completion_question():
+    """The guard on the completion patterns.
+
+    "Complete" is a common enough word that reading it alone would make a flaw
+    question about an incomplete proposal into a question about the passage's
+    last sentence, so the adverb is required.
+    """
+    keys = _candidate_keys(
+        lr(
+            "The proposal mentioned above falls short of offering a complete solution to the problem "
+            "it addresses because"
+        )
+    )
+    assert "flaw_abstraction" in keys
+    assert "scope_precision" not in keys
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        # A commitment the speaker's own statements force on them.
+        ("The statements above logically commit the politician to which one of the following conclusions?", True),
+        ("John's statements commit him to which one of the following positions?", True),
+        # The same words asking what two speakers differ on. This is a
+        # point-at-issue question, and reading it as an inference would put the
+        # if-then chain on a stimulus nobody is asked to chain.
+        ("McBride's and Leggett's statements commit them to disagreeing about the truth of which one "
+         "of the following?", False),
+    ],
+)
+def test_a_commitment_is_an_inference_unless_it_is_a_disagreement(stem, expected):
+    keys = _candidate_keys(lr(stem, stimulus=CONDITIONAL_STIMULUS))
+    assert ("conditional_chain" in keys) is expected
+    # Either way the scope reading is offered, so neither loses its card.
+    assert "scope_precision" in keys
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # "Rely", not only "relies".
+        "Upon which one of the following assumptions does the author rely in the passage?",
+        "On which one of the following assumptions does the argument rely?",
+        "Which one of the following is an assumption that the argument makes?",
+        "The argument makes the assumption that",
+        # A possessive name where the pattern listed only pronouns.
+        "Which one of the following is an assumption made by Ariel's argument?",
+        "Which one of the following must the television station assume in order to conclude that the "
+        "plan will meet its stated purpose?",
+        "The industry representative's argument will not provide an effective answer to the consumer "
+        "activist's claim unless which one of the following is true?",
+    ],
+)
+def test_the_rest_of_the_necessary_assumption_vocabulary(stem):
+    assert "negation_test" in _candidate_keys(lr(stem))
+
+
+def test_an_assumption_that_would_make_the_conclusion_logical_is_sufficient():
+    """Enough, not needed, so the negation test is the wrong tool.
+
+    Denying a merely sufficient assumption need not break the argument, and the
+    procedure's own ruling — keep it only if the argument collapses — would
+    throw the credited answer away.
+    """
+    keys = _candidate_keys(
+        lr(
+            "Which one of the following is an assumption that would make the conclusion in the "
+            "passage a logical one?",
+            stimulus=CONDITIONAL_STIMULUS,
+        )
+    )
+    assert "negation_test" not in keys
+    assert "conditional_chain" in keys
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        # "The argument's conclusion", where the pattern wanted "the conclusion".
+        "Which one of the following most accurately expresses the argument's conclusion?",
+        "Which one of the following best expresses the point of the argument?",
+        "The argument is structured to lead to which one of the following conclusions?",
+        "The argument leads to the conclusion that",
+        "The point made by Anita's statements is most accurately expressed by which one of the following?",
+        # A statement's function where it sits, which "function of" alone missed.
+        "The claim about private corporations serves which one of the following functions in the argument?",
+        "The statistics cited function in the argument to",
+        "The argument derives its conclusion by",
+        "The discussion about the two Portuguese officers advances the argument by",
+        "How is Judy's response related to John's argument?",
+        "Which one of the following most accurately describes the relationship between Jane's argument "
+        "and Mark's argument?",
+        "Which one of the following comparisons is utilized by the argument?",
+        "The argument seeks to do which one of the following?",
+    ],
+)
+def test_the_rest_of_the_role_and_conclusion_vocabulary(stem):
+    assert "role_map" in _candidate_keys(lr(stem))
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        # The gerund, which is the thing being asked about.
+        ("The point of the scientist's mentioning astrology in the argument is to present", True),
+        # The participle, which only points back at the stimulus.
+        ("Each of the following, if true, contributes to an explanation of the increase mentioned "
+         "above EXCEPT:", False),
+    ],
+)
+def test_mentioning_is_a_role_question_and_mentioned_above_is_a_pointer(stem, expected):
+    assert ("role_map" in _candidate_keys(lr(stem))) is expected
+
+
+def test_describing_a_flaw_is_not_describing_a_role():
+    keys = _candidate_keys(lr("Which one of the following most accurately describes a flaw in the "
+                             "argument's reasoning?"))
+    assert "flaw_abstraction" in keys
+    assert "role_map" not in keys
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        # "Conforms most closely to", which the adjacent-words pattern missed.
+        ("The situation described above most closely conforms to which one of the following "
+         "generalizations?", True),
+        ("Which one of the following inferences conforms most closely to the philosopher's position?", True),
+        # A rule applied to cases.
+        ("Which one of the following situations violates the food labeling regulation?", True),
+        ("Which one of the applicants, as described below, does NOT meet the manager's requirements?", True),
+        ("Which one of the following university policies most justifies the decision to revoke "
+         "Meyer's PhD?", True),
+        ("The actions of which one of the following individuals exhibit the most advanced kind of "
+         "moral motivation, as described by the ethicist?", True),
+        # A quantity named "requirements", which is not a rule at all.
+        ("Which one of the following, if true, would most help to explain the difference in fuel "
+         "requirements?", False),
+        # And a bare pointer back at the stimulus.
+        ("Which one of the following, if true, most helps to explain why treating deep wounds with "
+         "sugar as described above is successful?", False),
+    ],
+)
+def test_a_rule_applied_to_cases_is_a_principle_question(stem, expected):
+    assert ("scope_precision" in _candidate_keys(lr(stem))) is expected
+
+
+def test_a_resolution_is_the_noun_of_resolve():
+    keys = _candidate_keys(
+        lr(
+            "Which one of the following provides a resolution to the apparent inconsistency described "
+            "by the council member?",
+            stimulus=CAUSAL_STIMULUS,
+        )
+    )
+    assert "causal_audit" in keys
+
+
+# ---------------------------------------------------------------------------
 # The whole bank
 # ---------------------------------------------------------------------------
 
@@ -723,10 +1002,14 @@ def test_every_question_in_the_bank_has_an_in_section_approach(bank_audit):
     # Not a guarantee, a measurement: before the stem was read, 44.8% of the
     # bank was eligible for exactly two approaches and nothing else, so a
     # student practising a lot met the same two generic cards constantly. It is
-    # 31.4% now, and the residue is structural rather than a matching failure —
-    # 666 of them are strengthen, weaken and explain questions on stimuli that
+    # 27.9% now, and the residue is structural rather than a matching failure —
+    # most of them are strengthen, weaken and explain questions on stimuli that
     # make no causal claim, for which the catalogue holds no third card.
-    assert bank_audit["exactly_two_share"] < 35
+    assert bank_audit["exactly_two_share"] < 30
+    # 19 Logical Reasoning questions still carry no task at all, down from 3,157
+    # when the type field was the only signal. Those 19 are stems like "in the
+    # passage, the author" that name no task to read.
+    assert bank_audit["untagged_reasoning"] <= 25
 
 
 def test_no_cohort_of_named_phrasings_regresses(bank_audit):
@@ -746,10 +1029,6 @@ def test_no_cohort_of_named_phrasings_regresses(bank_audit):
         # Attributions the cohort's exclusion list does not name: "political
         # theorists attribute", "the author concedes", "suggests sympathy with".
         "RC detail on a passage naming parties": 3,
-        # "The art critic's response to the curator would provide the strongest
-        # support for which one of the following conclusions?" — two speakers,
-        # so labelling what each sentence does is the right approach.
-        "the word conclusion, no conclusion task": 1,
     }
     for cohort in COHORTS:
         entry = bank_audit["cohorts"][cohort["name"]]
