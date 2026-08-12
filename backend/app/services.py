@@ -23,7 +23,8 @@ from .game import (
     settle_attempt,
     snapshot_case_context,
 )
-from . import calibration, enforcement, exam, scheduling
+from . import calibration, enforcement, exam, experiments, scheduling
+from .experiments import Exposure
 from .models import (
     AiJob,
     Attempt,
@@ -33,6 +34,7 @@ from .models import (
     SkillProgress,
     StudySession,
     User,
+    new_id,
     utcnow,
 )
 from .scoring import (
@@ -1500,6 +1502,20 @@ def create_study_session(
         raise ValueError("invalid_practice_style")
 
     session_size = count if count is not None else int(current_app.config["PRACTICE_SESSION_SIZE"])
+    # The run's id, minted here rather than by the insert below, because two
+    # decisions taken before the run exists need something that names *this
+    # sitting*: the layer draws further down, and the arm each question is
+    # dealt by the strategy trial. See `experiments.Exposure`. It is passed to
+    # the `StudySession` constructor below, and it has to stay passed: nothing
+    # references `layer_assignments.session_id`, so a run built without it
+    # writes assignment rows naming an id that was never inserted and
+    # `layer_reading` quietly reports nothing.
+    #
+    # A reading case returns before the draw below, so this id goes unused on
+    # that path and the case builds its own run. That is correct rather than a
+    # gap: reading cases do not read `focus_types`, so the layer cannot act on
+    # them and enrolling them would dilute the comparison.
+    session_id = new_id()
 
     # Which shape of case this is. A reading case is one passage and is built
     # entirely differently — see `select_reading_comprehension_case` for why the
@@ -1563,6 +1579,7 @@ def create_study_session(
                 user,
                 profile,
                 questions,
+                session_id=session_id,
                 practice_style=practice_style,
                 question_type=None,
                 # Whichever of the passage's questions were already due. A
@@ -1613,6 +1630,30 @@ def create_study_session(
     # A type-filtered run is the student overriding the weighting by hand, so the
     # last mega-litigation only steers an unfiltered one.
     focus_types = [] if question_type else diagnostic_focus(user.id)
+    # Weak-type targeting is an adaptive layer like any other, and until now it
+    # was one nobody could evaluate: it has steered every eligible run since it
+    # shipped, so there has never been a run to compare a steered one against.
+    # A quarter of eligible runs now draw the untargeted arm. See
+    # `app/experiments.py` for why the run's id is the exposure and why the
+    # propensity is written down.
+    #
+    # The draw happens only where the layer could act — a run with no focus
+    # types is the same run either way, and enrolling it would dilute the
+    # comparison with runs on which the treatment is a no-op. Eligibility is
+    # decided from the student's diagnostic history, which is fixed before this
+    # run starts and cannot be an outcome of the arm.
+    if focus_types:
+        targeting = experiments.assign(
+            "weak_type_targeting", user.id, exposure=Exposure.run(session_id)
+        )
+        # The strategy trial still sees the unblanked list. Its `focus_types`
+        # only lengthens the coverage runway on weak types, which is a decision
+        # about a different layer; letting this arm move it too would bundle
+        # two treatments into one label and make the reading below the effect
+        # of neither.
+        selection_focus_types = focus_types if targeting.on else []
+    else:
+        selection_focus_types = focus_types
     repair_ids = {question.id for question in repairs}
     # A fresh question sharing a passage with a review item would have the run
     # read that passage twice, because reviews and fresh material are placed
@@ -1645,7 +1686,7 @@ def create_study_session(
         question_type,
         user_id=user.id,
         exclude_ids=blocked_ids,
-        focus_types=focus_types,
+        focus_types=selection_focus_types,
         section=None if question_type else LOGICAL_REASONING,
     )
     # Genuine interleaving, not front-loading. Reviews are distributed through
@@ -1657,6 +1698,7 @@ def create_study_session(
         user,
         profile,
         questions,
+        session_id=session_id,
         practice_style=practice_style,
         question_type=question_type,
         repair_ids=repair_ids,
@@ -1669,6 +1711,7 @@ def _build_practice_session(
     profile,
     questions: list[Question],
     *,
+    session_id: str,
     practice_style: str,
     question_type: str | None,
     repair_ids: set[str] | None = None,
@@ -1680,6 +1723,13 @@ def _build_practice_session(
     the strategy trial, the forced-arm plan, the pace budget and the row writes.
     Extracted when the reading case arrived so the two shapes share it rather
     than growing a second copy that drifts.
+
+    `session_id` is minted by the caller before the run is built, because the
+    adaptive layers draw on it — see `create_study_session`. It is required
+    rather than defaulted on purpose: `layer_assignments.session_id` has no
+    foreign key behind it, so a caller that let this row generate its own id
+    would write assignment rows naming a run that was never inserted, and
+    nothing would raise. `layer_reading` would simply return nothing, for ever.
     """
     repair_ids = repair_ids or set()
     focus_types = focus_types or []
@@ -1705,6 +1755,7 @@ def _build_practice_session(
     questions = _questions_by_id(chosen_ids)
 
     session = StudySession(
+        id=session_id,
         user_id=user.id,
         mode="practice",
         practice_style=practice_style,

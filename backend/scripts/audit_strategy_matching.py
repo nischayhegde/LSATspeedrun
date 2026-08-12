@@ -13,8 +13,10 @@ snapshot is what `seed.seed_questions` ingests — and reading it directly means
 the audit runs with no database, no app context and no seeded account, so a
 before-and-after can be taken in one shell in a few seconds. The two derived
 fields the matcher reads are derived here by calling the *ingest's own*
-functions, `seed._question_type` and `strategies.detect_comparative`, so this
-never measures a second implementation of them.
+functions, `question_types.classify` and `strategies.detect_comparative`, so
+this never measures a second implementation of them. `classify` replaced
+`seed._question_type` and is what the seeder calls now, so the types below are
+the ones the bank actually carries after a reseed.
 
     python3 backend/scripts/audit_strategy_matching.py
     python3 backend/scripts/audit_strategy_matching.py --json before.json
@@ -35,7 +37,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.seed import DATASETS, SPLITS, _question_type  # noqa: E402
+from app.question_types import classify  # noqa: E402
+from app.seed import DATASETS, SPLITS  # noqa: E402
 from app.strategies import STRATEGIES, _candidate_keys, _task_tags, detect_comparative  # noqa: E402
 
 SNAPSHOT_DIR = BACKEND_DIR / "data" / "question_bank"
@@ -60,7 +63,7 @@ class _Question:
     def __init__(self, id: str, section: str, stem: str, context: str, passage: _Passage | None) -> None:
         self.id = id
         self.section = section
-        self.question_type = _question_type(section, stem)
+        self.question_type = classify(section, stem)[0]
         self.stem = stem
         self.stimulus = None if passage else context
         self.passage = passage

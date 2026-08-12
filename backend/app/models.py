@@ -90,6 +90,20 @@ class Question(db.Model):
     passage_id = db.Column(db.String(80), db.ForeignKey("passages.id"), nullable=True, index=True)
     section = db.Column(db.String(60), nullable=False, index=True)
     question_type = db.Column(db.String(100), nullable=False, index=True)
+    # Where the type came from: "inferred" (a rule in `app/question_types.py`
+    # matched the stem), "section_placeholder" (nothing matched, so the type is
+    # the section's own name and means "unknown"), "authored" (the bank labelled
+    # it), or "unrecorded" for rows written before this column existed.
+    #
+    # The column exists because the placeholder is indistinguishable from a real
+    # type by inspection — "Logical Reasoning" is a plausible-looking string —
+    # and 45.8% of the bank was carrying one. Four mechanisms read
+    # `question_type` and none of them could tell. Recording provenance makes
+    # the unknowns countable, which is the only reason the scale of it was
+    # findable at all.
+    question_type_source = db.Column(
+        db.String(24), nullable=False, default="inferred", server_default="unrecorded"
+    )
     # An *official* difficulty on the publisher's own 1-5 scale, and nothing
     # else. NULL on all 6,886 rows and expected to stay that way: the upstream
     # datasets carry no difficulty column, and the only per-item LSAT ratings
@@ -844,6 +858,55 @@ class ReviewQueueItem(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
     question = db.relationship("Question")
+
+
+class LayerAssignment(db.Model):
+    """One draw of one adaptive layer's arm, for one student, on one encounter.
+
+    The measurement spine's whole persistent state — see `app/experiments.py`
+    for what it is for. Four properties of this table are load-bearing and each
+    of them is a lesson from the strategy trial rather than a preference:
+
+    `exposure` is the encounter the draw belongs to, and it is part of the
+    uniqueness key. That is what makes asking twice return the same arm instead
+    of redrawing mid-run, and it is what makes a caller who reuses a token
+    visible in `experiments.assignment_health` rather than silently
+    non-random.
+
+    `propensity` is the probability of the arm that was actually drawn, under
+    the shares in force at the moment of the draw. A later inverse-propensity
+    fit trusts this column, so it records what happened rather than what the
+    design intended, and nothing rewrites it afterwards.
+
+    `design_version` moves whenever a layer's arms or shares move, and no
+    reading pools two versions. A share retuned halfway through is two
+    experiments, not a longer one.
+
+    `session_id` carries no foreign key deliberately. The run's id is minted
+    before its row exists — that is what lets a run-level draw happen before
+    question selection — so a constraint here would make the ordering
+    impossible rather than making the data safer. Nothing reads this column
+    except the outcome join, which tolerates a miss.
+    """
+
+    __tablename__ = "layer_assignments"
+    __table_args__ = (
+        UniqueConstraint("layer", "subject_id", "exposure", name="uq_layer_assignment_exposure"),
+        CheckConstraint("propensity > 0 and propensity <= 1", name="ck_layer_assignment_propensity"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    layer = db.Column(db.String(60), nullable=False, index=True)
+    subject_id = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    unit = db.Column(db.String(16), nullable=False)
+    exposure = db.Column(db.String(120), nullable=False)
+    arm = db.Column(db.String(40), nullable=False, index=True)
+    propensity = db.Column(db.Float, nullable=False)
+    design_version = db.Column(db.String(40), nullable=False)
+    session_id = db.Column(db.String(36), nullable=True, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
 
 
 class ScoreProjection(db.Model):
