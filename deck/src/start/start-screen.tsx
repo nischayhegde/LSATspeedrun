@@ -253,10 +253,25 @@ export function StartScreen({ onEnter, arrival, reduced, slideCount }: Props) {
         >
           {/* Head. The mark and what this document is, and nothing else: the
               product's name is the headline below and saying it twice is the
-              kind of small redundancy that reads as unconsidered. */}
+              kind of small redundancy that reads as unconsidered.
+
+              It read `Investor presentation` and the founders struck it. Not for
+              the tone — for the assumption. This deck is presented to investors,
+              to a class, to a hiring manager and to a friend of a friend who
+              might introduce you to one, and the first line of the first screen
+              telling three of those four rooms that they are in the wrong one is
+              a self-inflicted wound. Worse, it is a line the presenter cannot
+              take back once it has been read.
+              `Company presentation` says the same thing about the document
+              without saying anything about who is watching it, which is the only
+              honest thing a start card can know.
+
+              The count stays. It is the one question a room has before a deck
+              begins, it is the answer to "how long is this going to be", and it
+              comes off `SLIDES.length` so it cannot drift. */}
           <header className="start-head">
             <Mark />
-            <p className="start-kicker">Investor presentation<i aria-hidden="true" />{slideCount} slides</p>
+            <p className="start-kicker">Company presentation<i aria-hidden="true" />{slideCount} slides</p>
           </header>
 
           {/* The statement, and the way to act on it, as one object in the
