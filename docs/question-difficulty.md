@@ -63,6 +63,10 @@ the application source and fails if any line assigns to it, because the value of
 that column is entirely that nothing can forge it. If the 388 SuperPrep ratings
 are ever transcribed, they go there, and the estimate stays in its own table.
 
+That NULL is not a new idea: `research/11-measurement-implementation-spec.md` § 5
+specified seeding difficulty as NULL rather than as a number, and it was never
+done. Migration `0037_difficulty_calibration` does it.
+
 ---
 
 ## 2. What was built
