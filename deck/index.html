@@ -8,39 +8,103 @@
     <!-- The app's own favicon: the scales of justice in navy, gold and cream.
          The same mark is the deck's recurring motif, so it is the same SVG. -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23102735' stroke='%23c89b4b' stroke-width='3'/%3E%3Cpath d='M32 14v34M20 22h24M17 22 10 36h14L17 22Zm30 0-7 14h14l-7-14ZM23 49h18' fill='none' stroke='%23f5e8c8' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Presented from a laptop that may well be on conference wifi, so this is the
-         only network request the deck makes outside the demo iframes, and it is
-         `display=swap` so nothing is ever hidden waiting for it. Everything else —
-         art, textures, geometry — is either procedural or served from `public/`.
+    <!-- Archivo, served from `public/fonts/`. This used to be a `preconnect` pair
+         and a stylesheet from `fonts.googleapis.com`, which made the deck's
+         typography depend on the conference wifi: with Google unreachable the
+         `@font-face` rules never arrive, `display=swap` has nothing to swap to,
+         and the whole talk is set in the fallback — measured as a 941px headline
+         where Archivo draws 954px, so it was a silent substitution rather than a
+         visible failure. The display face now has nothing outside `public/` to
+         reach for. The mono still does — see the second link below.
 
-         Two families, one request. Fraunces was requested here until the display
-         face moved to Archivo; it was then a face nothing rendered, costing 5.4KB
-         of render-blocking CSS and 24 dead `@font-face` registrations, plus a
-         forced 67.4KB download because `start/warm-up.ts` was still asking for it
-         by name. The app itself is still set in Fraunces and loads it separately,
-         so the live demo slides are unaffected.
+         `archivo-v25-latin-wght.woff2` is byte-identical to the file Google was
+         serving: the `latin` subset of Archivo's variable face, 34.9KB, one
+         `wght` axis from 100 to 900, 230 codepoints. Verified to cover every
+         non-ASCII character in `src/` that Google's subset covered, and to lack
+         exactly the twelve it also lacked (`→`, `≈`, `π` and friends already fell
+         back to a system face and still do). Google's `latin-ext` and
+         `vietnamese` subsets are not vendored because nothing in the deck reaches
+         them, which is why the browser only ever downloaded this one file.
+         `OFL.txt` beside it is the licence the OFL requires to travel with it.
 
-         Archivo's four weights are not optional. Google serves its latin subset as
-         one variable file, so asking for four instances costs the same bytes as
-         asking for one — but a weight left out of this list is *synthesised* by the
-         browser rather than drawn, and 800 in particular is the display face.
-         There is deliberately no italic: Archivo's italic is not served here, so
-         any `font-style: italic` would be a sheared roman.
+         Four `@font-face` rules from the one file, and the number is not
+         arbitrary: it reproduces Google's own CSS exactly, so which instance the
+         browser picks for a given `font-weight` does not change. Declaring the
+         axis as a `100 900` range instead would be fewer bytes and more correct
+         in the abstract, but `deck.css` sets weights of 620, 640, 750 and 850,
+         and those currently resolve to the nearest declared instance rather than
+         interpolating. Changing that is a typographic decision, not a loading
+         one.
 
-         IBM Plex Mono is the second family and it is what `--font-pixel` resolves
-         to. That token used to be Courier New, and Courier New is the single most
-         dated thing a screen can put in front of a room: it is the face a document
-         wears when nobody chose a face. It carries every source credit in this
-         deck, the speedrun clock, and about thirty labels inside the figures, so
-         it was doing a great deal of the work of making the deck look unfinished.
-         Plex Mono is a contemporary institutional mono, has real weight at 500 and
-         600 where Courier has none, and holds up projected. It is one extra family
-         on a request that was already being made; if it fails to arrive the
-         `font-display: swap` fallback is Courier New, which is exactly today. -->
+         Inline rather than in a stylesheet so the declarations exist while the
+         document is still parsing, and `preload`ed above so the fetch starts in
+         the same breath. `block` rather than `swap` because a swap is the thing
+         to avoid here: the file is same-origin, preloaded and 34.9KB, so it wins
+         every race that matters, and the boot plate below covers the viewport
+         until React mounts anyway. `swap` would buy a fallback frame nobody sees
+         at the cost of a reflow everybody would. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="preload"
+      href="/fonts/archivo-v25-latin-wght.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <style>
+      @font-face {
+        font-family: 'Archivo';
+        font-style: normal;
+        font-weight: 500;
+        font-stretch: 100%;
+        font-display: block;
+        src: url('/fonts/archivo-v25-latin-wght.woff2') format('woff2');
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      @font-face {
+        font-family: 'Archivo';
+        font-style: normal;
+        font-weight: 600;
+        font-stretch: 100%;
+        font-display: block;
+        src: url('/fonts/archivo-v25-latin-wght.woff2') format('woff2');
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      @font-face {
+        font-family: 'Archivo';
+        font-style: normal;
+        font-weight: 700;
+        font-stretch: 100%;
+        font-display: block;
+        src: url('/fonts/archivo-v25-latin-wght.woff2') format('woff2');
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      @font-face {
+        font-family: 'Archivo';
+        font-style: normal;
+        font-weight: 800;
+        font-stretch: 100%;
+        font-display: block;
+        src: url('/fonts/archivo-v25-latin-wght.woff2') format('woff2');
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+    </style>
+    <!-- IBM Plex Mono, still from Google, and the one remaining network font.
+         It is what `--font-pixel` resolves to: every source credit, the speedrun
+         clock and around thirty labels inside the figures. That token used to be
+         Courier New, which is the face a document wears when nobody chose a face.
+
+         This is a merge seam, not a decision. The self-hosting pass above and the
+         pass that introduced this family were written against the same file
+         without seeing each other: one vendored Archivo and deleted the Google
+         request, the other had just added Plex Mono to that request. Dropping the
+         link would silently return thirty-odd labels to Courier New; vendoring
+         Plex Mono the way Archivo is vendored is the right end state and wants a
+         woff2 and an OFL copy chosen deliberately, not during a merge. Until then
+         the display face is local and the mono degrades to Courier on bad wifi,
+         which is strictly better than the deck did last week and worse than it
+         should be. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <title>Lawyer Tycoon</title>

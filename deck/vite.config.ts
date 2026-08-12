@@ -1,5 +1,138 @@
-import { defineConfig } from 'vite'
+import { rmSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+/**
+ * Keep `public/art/` out of a release, if a working tree still has one.
+ *
+ * Those 218 `.webp` were copied in alongside `src/app-art/` on the assumption
+ * that the ported art modules would read them. Nothing does. `assets.ts` is the
+ * only module that builds an `/art/…` URL and the only module that calls it,
+ * `structures.tsx`, is imported by nothing — so every one of those path
+ * templates is shaken out of the bundle, and a full 24-slide walk with both
+ * ported scene chunks executing requests none of the files. It was 18 MB of a
+ * 37 MB payload, or very nearly half, for a directory the deck cannot ask for.
+ *
+ * Deleted from the repository rather than merely stopped here, so this exists
+ * only for the stale copies the old `cp -R` recipe left behind. It logs when it
+ * fires, because a build that silently drops 18 MB is its own kind of surprise.
+ *
+ * Both orphaned modules stay exactly where they are: `src/app-art/` is a
+ * verbatim port of `frontend/src/art/` and `PORT.md` says not to edit it so that
+ * `diff -r` stays silent. That argument covers the code. It does not extend to
+ * data the code never reads.
+ */
+/**
+ * Prefetch the chunks the presentation will need but first paint does not.
+ *
+ * Splitting the scenes out of the entry graph is only half an improvement. The
+ * other half is that a scene must already be in the cache when its slide
+ * arrives: `engine/use-deck.ts` warms the next slide's scene one slide ahead, so
+ * a chunk that has to be fetched then is racing the presenter's next keystroke,
+ * and a scene that pops in mid-talk is worse than one that was paid for at boot.
+ *
+ * The links are created by a script after `DOMContentLoaded` rather than written
+ * into the head, and that detail is the whole plugin. Writing 14
+ * `<link rel="prefetch">` into the head was tried and measured on a 400 kbit/s
+ * 300 ms-RTT profile: it moved first paint from 1.9s to 10.2s and the start card
+ * from 4.8s to 35.2s. "Lowest priority" is a priority, not a queue position, and
+ * over HTTP/1.1 — `vite preview`, or any of the simple static servers this is
+ * likely to be shown from — six connections is the whole budget. The scene
+ * chunks were taking them and `three` finished dead last, at 34.5s.
+ *
+ * `DOMContentLoaded` is the honest signal for "the critical path is done": module
+ * scripts block it, so by then the entry, react and three have been fetched and
+ * evaluated. The idle callback after it yields to the first frame, and the 3s
+ * timeout is there because building the stage does not leave much idle time.
+ *
+ * `modulepreload` for the scripts rather than `prefetch`, since post-load there
+ * is no priority left to protect and its reuse is defined by the module map
+ * instead of resting on the host sending sensible cache headers. It fetches and
+ * compiles without evaluating, so the compile is paid behind the card too.
+ *
+ * That leaves the whole time the start card is up — as long as the founders take
+ * to press Start, and never less than the seconds it takes to build the WebGL
+ * stage — for 489 kB at the back of the queue.
+ *
+ * Generated rather than written by hand because the filenames are
+ * content-hashed and only exist at build time. Vite emits `modulepreload` for
+ * the entry's *static* imports and nothing for the dynamic ones, so whatever the
+ * document already references is skipped here and the rest is listed.
+ */
+function prefetchLazyChunks(): Plugin {
+  let base = '/'
+  return {
+    name: 'deck-prefetch-lazy-chunks',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) {
+      base = config.base
+    },
+    transformIndexHtml(html, ctx) {
+      if (!ctx.bundle) return
+      const referenced = new Set(
+        [...html.matchAll(/(?:href|src)="[^"]*\/([^/"]+\.(?:js|css))"/g)].map((m) => m[1]),
+      )
+      const lazy = Object.values(ctx.bundle)
+        .map((output) => output.fileName)
+        .filter((fileName) => /\.(js|css)$/.test(fileName))
+        .filter((fileName) => !referenced.has(fileName.split('/').pop() ?? ''))
+        .sort()
+      if (!lazy.length) return
+      const script = [
+        '(function () {',
+        `  var lazy = ${JSON.stringify(lazy.map((fileName) => `${base}${fileName}`))}`,
+        '  function warm() {',
+        '    for (var i = 0; i < lazy.length; i++) {',
+        '      var href = lazy[i]',
+        '      var script = href.slice(-3) === ".js"',
+        '      var link = document.createElement("link")',
+        '      link.rel = script ? "modulepreload" : "prefetch"',
+        '      if (script) link.crossOrigin = "anonymous"',
+        '      else link.as = "style"',
+        '      link.href = href',
+        '      document.head.appendChild(link)',
+        '    }',
+        '  }',
+        '  function schedule() {',
+        '    if (window.requestIdleCallback) window.requestIdleCallback(warm, { timeout: 3000 })',
+        '    else window.setTimeout(warm, 1000)',
+        '  }',
+        '  if (document.readyState === "loading") {',
+        '    document.addEventListener("DOMContentLoaded", schedule, { once: true })',
+        '  } else schedule()',
+        '})()',
+      ].join('\n')
+      return {
+        html,
+        tags: [{ tag: 'script', children: script, injectTo: 'body' as const }],
+      }
+    },
+  }
+}
+
+function dropUnreachableArt(): Plugin {
+  let outDir = 'dist'
+  return {
+    name: 'deck-drop-unreachable-art',
+    apply: 'build',
+    configResolved(config) {
+      outDir = config.build.outDir
+    },
+    closeBundle() {
+      const stale = resolve(outDir, 'art')
+      try {
+        if (!statSync(stale).isDirectory()) return
+      } catch {
+        return
+      }
+      rmSync(stale, { recursive: true, force: true })
+      this.warn('dropped public/art/ from the build: no reachable module requests it (see the note in vite.config.ts)')
+    },
+  }
+}
 
 /**
  * The deck is a standalone client-only site. It shares nothing with
@@ -40,7 +173,7 @@ import react from '@vitejs/plugin-react'
 const API_PROXY_PREFIX = '/demo-api'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), prefetchLazyChunks(), dropUnreachableArt()],
   server: {
     port: 5180,
     strictPort: true,
@@ -65,14 +198,43 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('/node_modules/three/')) return 'three'
-          // The two ported app scenes are the heaviest modules in the deck by
-          // an order of magnitude and are only reached from four slides, so
-          // they stay out of the entry chunk and are fetched when the scene
-          // ahead of them is warmed.
-          if (id.includes('/src/app-art/map-')) return 'app-map'
-          if (id.includes('/src/app-art/office-')) return 'app-office'
+        /**
+         * Two groups, both of them packages that are genuinely on the critical
+         * path, and nothing else. The scene modules are deliberately absent.
+         *
+         * This replaces a `manualChunks` function that named `three`, `app-map`
+         * and `app-office`. It did nothing at all: building with no `output`
+         * config produced byte-identical chunks, hashes included, because
+         * rolldown does not honour `manualChunks`. What it looked like it was
+         * doing was the opposite of what was happening. `three` never became a
+         * chunk; instead react, three, `app-art/render-style.ts` and the whole
+         * `app-art/rig/**` humanoid rig were merged into one 1.08 MB chunk that
+         * kept the `app-map` name — and because `scenes/stage.ts` statically
+         * imports `render-style.ts`, the entry statically depended on all of it.
+         * The ported map scene was `modulepreload`ed from `index.html` at boot,
+         * which is precisely what the old comment claimed could not happen.
+         *
+         * Naming only the two vendors gets both of them out of the way and lets
+         * the dynamic-import boundaries that already exist do the splitting —
+         * `scenes/registry.ts` and `scenes/app-scene-layer.tsx` load every scene
+         * with `import()`, so the map scene becomes a 236 kB dynamic chunk and
+         * the office scene a 105 kB one instead of riding in at boot. Measured
+         * first paint: 1,518,594 bytes down to 1,188,955.
+         *
+         * Do not add groups for the scenes. Naming `app-rig`, `app-map` and
+         * `app-office` here was tried and measured: it puts them back into
+         * statically-imported chunks and first paint returns to 1,519,768 bytes.
+         *
+         * `three` stays on the critical path and that is correct rather than
+         * unfortunate: `scenes/stage.ts` mounts the WebGL stage from the first
+         * frame and the title slide is itself a scene, so deferring it would
+         * only move the same bytes to a moment where they are visible.
+         */
+        advancedChunks: {
+          groups: [
+            { name: 'three', test: /[\\/]node_modules[\\/]three[\\/]/ },
+            { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+          ],
         },
       },
     },

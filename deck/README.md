@@ -533,17 +533,29 @@ Ignored, and how to get each one back:
 | Path | Size | Rebuild with |
 |---|---|---|
 | `node_modules/` | 106 MB | `npm install` |
-| `dist/` | 45 MB | `npm run build` |
+| `dist/` | 19 MB | `npm run build` |
 | `.deck-shots/` | 181 MB | `npm run shoot` (see `--help` for the flags) |
 | `tsconfig.tsbuildinfo` | — | any `tsc -b` |
-| `public/art/` | 18 MB | `cp -R ../frontend/public/art/. public/art/` — run from `deck/` |
 
-`public/art/` is the one worth explaining. It is a byte-identical copy of
-`frontend/public/art/` (218 `.webp` catalog cards), which is itself tracked, so
-versioning it here would carry the same 18 MB twice for no added safety. The
-copy is documented as a copy in [`src/app-art/PORT.md`](./src/app-art/PORT.md),
-and `diff -r public/art ../frontend/public/art` should always be silent. Run the
-`cp` after a fresh clone, and again whenever the app's catalog art changes.
+**`public/art/` is gone, and there is nothing to rebuild.** It was 18 MB of
+`.webp` catalog cards copied from `frontend/public/art/` on the assumption that
+the ported art modules would read them, restored after a fresh clone by a
+`cp -R` this table used to record. Nothing reads them. `src/app-art/assets.ts`
+is the only module that builds an `/art/…` URL and the only module that calls
+it, `structures.tsx`, is imported by nothing — so every one of those path
+templates is shaken out of the bundle, and a full 24-slide walk with both ported
+scene chunks executing requests none of the files. Deleting the directory
+outright changed nothing on screen. It was very nearly half of what the deck
+shipped.
+
+Both orphaned modules stay where they are: `src/app-art/` is a verbatim port and
+[`PORT.md`](./src/app-art/PORT.md) is right that editing it would cost the deck
+its claim to be showing the real game's art. That argument covers the code, not
+data the code never reads. `PORT.md` still lists `frontend/public/art/**` among
+what was copied; that line wants a note saying the data was dropped.
+
+Do not run the `cp` again. If a working tree still has a copy from before,
+`vite.config.ts` refuses to carry it into a build and says so.
 
 **`public/stills/` is tracked, deliberately, at 12 MB across 8 files.** There is
 a generator — `node scripts/recapture-stills.mjs`, all eight, keyed by `--only`

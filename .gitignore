@@ -115,22 +115,54 @@ deck/dist/
 deck/.deck-shots/
 deck/tsconfig.tsbuildinfo
 
+# JavaScript compiled out of the deck's TypeScript, which lands beside the source
+# it came from. `npm run typecheck` used to pass `--noEmit false` at a config with
+# no `outDir`, which put a stale `.js` twin next to all 97 sources in `src/` and
+# the two at the root; the script and the config are both fixed, and this is the
+# backstop, because the failure mode is not a broken build but a silent one —
+# `deploy-sandbox.ps1` runs `git add --all`, so those 99 compiled duplicates would
+# go to main and into the shipped payload without anyone typing `git add`.
+#
+# Nothing hand-written is captured. The deck has no `.js` sources at all: `src/` is
+# 97 `.ts`/`.tsx` beside 11 `.css` and 2 `.md`, and the harnesses in `scripts/` are
+# `.mjs`, which these lines do not match. The two root entries are named rather
+# than globbed as `deck/*.js` because tsconfig's `include` lists exactly these two
+# files outside `src/`, so they are the only root-level output possible — and a
+# real `deck/eslint.config.js`, like the one `frontend/` already tracks, must stay
+# committable.
+deck/src/**/*.js
+deck/src/**/*.js.map
+deck/vite.config.js
+deck/vite.config.js.map
+deck/demo.config.js
+deck/demo.config.js.map
+
 # Screenshot-harness scratch from the deck QA sweeps: the probe .mjs files and
 # the 25 MB of PNG they render. Regenerated on demand, and ignored for the same
 # `git add --all` reason as the block above -- excluding it by hand at commit
 # time does not stop the deploy from sweeping it into a release.
 deck/.deck-qa/
 
-# `deck/public/art/` is a byte-identical copy of `frontend/public/art/` (218
-# .webp, 18 MB), which is already tracked — see `deck/src/app-art/PORT.md`. One
-# `cp -R` rebuilds it exactly, and deck/README.md records the command.
+# `deck/public/art/` used to be ignored here, as a copy of `frontend/public/art/`
+# rebuilt by a hand-run `cp -R`. It is gone rather than ignored: no reachable code
+# path in the deck asks for a single one of those 218 files. `assets.ts` is what
+# builds `/art/*.webp` URLs, and the only module that calls it — `structures.tsx` —
+# is imported by nothing, so the bundle contains none of the path templates and a
+# full 24-slide walk requested none of the files. Both orphans stay in
+# `src/app-art/` because that folder is a verbatim port and `PORT.md` forbids
+# editing it; the 18 MB of data it never reads does not have to come along.
 #
+# The rule is still worth keeping as an ignore because the recipe existed for a
+# while and a stale copy may be sitting in a working tree — but `vite.config.ts`
+# now refuses to copy `public/art/` into a build, so a leftover cannot reach a
+# release either way.
+deck/public/art/
+
 # `deck/public/stills/` is NOT ignored, despite being 26 MB of PNG. Nothing in
 # the repo regenerates it: the route stills were captured by hand against a
 # seeded account that no longer exists in that state, and the two office-tier
 # stills came from `.shots-keep/`, which is ignored two blocks up. They are the
 # deck's on-stage fallback, so losing them costs more than carrying them.
-deck/public/art/
 
 # Root-level harness dependencies (playwright, pngjs, gifenc) used by the
 # scratch probes above. The application's own manifests live in frontend/.

@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b --force --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
+    "typecheck": "tsc -b --force --noEmit",
     "prepare-demo": "node scripts/prepare-demo.mjs",
     "stage-demo": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply",
     "stage-demo:fast": "cd ../backend && ../.venv/bin/python scripts/stage_demo.py --apply --no-model",
@@ -25,6 +25,7 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@types/three": "^0.185.4",
