@@ -90,6 +90,20 @@ class Question(db.Model):
     passage_id = db.Column(db.String(80), db.ForeignKey("passages.id"), nullable=True, index=True)
     section = db.Column(db.String(60), nullable=False, index=True)
     question_type = db.Column(db.String(100), nullable=False, index=True)
+    # Where the type came from: "inferred" (a rule in `app/question_types.py`
+    # matched the stem), "section_placeholder" (nothing matched, so the type is
+    # the section's own name and means "unknown"), "authored" (the bank labelled
+    # it), or "unrecorded" for rows written before this column existed.
+    #
+    # The column exists because the placeholder is indistinguishable from a real
+    # type by inspection — "Logical Reasoning" is a plausible-looking string —
+    # and 45.8% of the bank was carrying one. Four mechanisms read
+    # `question_type` and none of them could tell. Recording provenance makes
+    # the unknowns countable, which is the only reason the scale of it was
+    # findable at all.
+    question_type_source = db.Column(
+        db.String(24), nullable=False, default="inferred", server_default="unrecorded"
+    )
     difficulty = db.Column(db.Integer, nullable=False, default=3)
     stimulus = db.Column(db.Text, nullable=True)
     stem = db.Column(db.Text, nullable=False)
