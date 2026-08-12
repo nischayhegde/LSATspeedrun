@@ -7,7 +7,7 @@ from typing import NamedTuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import current_app
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import joinedload
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
@@ -43,6 +43,7 @@ from .scoring import (
     project_score,
     projection_snapshot,
     record_projection,
+    shrink_toward_prior,
 )
 from .seed import SOURCE_PREFIX
 from .trial import trial_plan
@@ -183,7 +184,63 @@ RC_CASE_MIN_SITTING = 6
 # Logical Reasoning case (`session_size // 2`), named here because the Reading
 # Comprehension case has to apply the same split across cases rather than inside
 # one — a passage is one unit and cannot be half review.
+#
+# This is now the *centre* of a range rather than a fixed value — the share a
+# student with an ordinary queue gets, which is what makes personalising it a
+# safe change rather than a re-pacing. See `_review_share`.
 REVIEW_SHARE = 0.5
+
+# How far the review share may move from REVIEW_SHARE, and where it lands.
+#
+# The floor exists so review never disappears: a student who is on top of their
+# queue today still has cards that will decay, and a run that stops testing them
+# stops finding out. One question in six is small enough not to pad a run and
+# large enough that the queue keeps turning over.
+#
+# The ceiling exists so practice never becomes pure repetition. Two thirds means
+# a student in real trouble still meets two new questions a run, so the bank
+# keeps opening up and the queue keeps getting new material to work with. It is
+# also self-correcting: more review drains the queue, which lowers the pressure,
+# which lowers the share.
+REVIEW_SHARE_FLOOR = 1 / 6
+REVIEW_SHARE_CEILING = 2 / 3
+
+# The share of a student's queue that has decayed below target retention at
+# which they get the old fixed half. A quarter, which is where a student who
+# plays regularly and answers their repairs actually sits — measured, on the
+# probe's warmed cohort: 81 cards slipping out of 331 tracked.
+#
+# A *share* and not a count, which was the first attempt and was wrong. A queue
+# only grows, so the number of cards below target grows with how long someone
+# has been playing whether or not they are keeping up: the warmed cohort has
+# thirteen runs' worth of overdue material and is not thirteen runs behind, it
+# has simply answered two thousand questions. Any threshold in cards is one that
+# every committed student crosses and then sits above forever, which is a knob
+# that reads "how long have you been here" while claiming to read "how far
+# behind are you". The share does not have that failure: it can only reach the
+# top when a student has genuinely stopped answering their repairs.
+QUEUE_SLIPPED_AT_REVIEW_CENTRE = 0.25
+
+# How far RC_CASE_SHARE may move for a student whose two sections have come
+# apart. A twelfth, so the share runs 1/4 to 5/12 and the reading diet runs from
+# one case in four to one case in two and a half.
+#
+# Bounded deliberately and bounded tightly. The reasons a third is the right
+# default — the bank is 34.4% Reading Comprehension, the scored exam is about
+# the same, and the form is literally one section in three — are reasons about
+# the *test*, and they do not stop being true because a particular student is
+# weak at reading. What a student's own record earns is a lean, not a veto: at
+# the extreme this serves half again as much reading as the default, which is
+# a large intervention, and it still cannot turn practice into a reading course
+# or let a strong reader stop practising the section they will be examined on.
+RC_CASE_SHARE_SPREAD = 1 / 12
+
+# The gap in section accuracy at which the reading share reaches its bound.
+# Fifteen points. Section accuracies live between about 0.4 and 0.8, so fifteen
+# points is a real difference in kind rather than a run of luck — and because
+# both sections are shrunk toward the same population prior, a student without
+# the evidence to establish a gap that size cannot produce one.
+SECTION_GAP_AT_FULL_SHIFT = 0.15
 
 
 def reasoning_min_chars(session: StudySession) -> int:
@@ -907,6 +964,179 @@ def reading_case_ceiling(count: int) -> int:
     return count + passage_overshoot_allowance(count)
 
 
+class SequencingProfile(NamedTuple):
+    """What this student's own record says the shape of their next run should be.
+
+    Everything the sequencer knows about an individual, computed once per run
+    and in one place. Until now the answer was the same for every student at a
+    given length: half review, a third reading, review at fixed positions. The
+    audit's phrase for that was "responsive rather than adaptive" — the system
+    reacted correctly to the signals it had and it had almost none.
+
+    The fields are shares rather than counts so that the same profile applies
+    whatever length was asked for, and the raw signals are carried alongside
+    them so a caller — or a probe — can say *why* a run came out the shape it
+    did without recomputing anything.
+
+    **Where question difficulty would go.** There is now a per-item rating,
+    earned per response in `app/calibration.py`, but nothing in the adaptive
+    path reads it and this profile does not either. When it is consumed, this
+    is where it belongs: a `target_difficulty` beside these, derived from the
+    same accuracy evidence, read by `select_random_questions` and by the
+    passage choice in `select_reading_comprehension_case` to bias *which*
+    questions a run draws rather than how many of each kind. Wiring it means
+    randomising exposure at the same time — see `docs/question-difficulty.md`
+    — which is why it is still left open. It is also why the two selection
+    functions take their inputs as arguments instead of reaching for the
+    profile themselves: adding a field here should not mean rewriting them.
+    """
+
+    review_share: float
+    reading_case_share: float
+    # The evidence, kept for reporting rather than used again below.
+    overdue: int
+    tracked: int
+    lr_accuracy: float
+    rc_accuracy: float
+
+
+def _section_accuracy(user_id: str) -> tuple[float, float, int, int]:
+    """This student's accuracy in each section, shrunk toward the population.
+
+    One aggregate, two rows. Deliberately not `scoring.project_score`, which
+    computes the same two rates far more carefully — time-weighted, weighted by
+    evidence class, with a full uncertainty band — at the cost of reading every
+    answer the account has ever filed. That is the right trade for a number
+    shown to a student as a projected score and the wrong one for a number that
+    decides whether this run has two reading cases or three.
+
+    The shrinkage is not optional and is the whole reason this is safe. Both
+    sections are pulled toward the same population prior with the same strength
+    (`scoring.PRIOR_STRENGTH`, ten answers' worth), so a student with four
+    Reading Comprehension answers, three of them wrong, does not thereby earn a
+    reading-heavy diet — the estimate barely moves off the prior, the gap
+    against their Logical Reasoning rate stays small, and the share stays near
+    its default. Evidence buys deviation, in proportion to how much of it there
+    is.
+
+    Returns both rates and both counts; the counts are what the profile reports
+    so that "no gap" and "no evidence" can be told apart downstream.
+    """
+    rows = (
+        db.session.query(
+            Question.section,
+            func.count(Attempt.id),
+            func.sum(case((Attempt.is_correct, 1), else_=0)),
+        )
+        .join(SessionItem, SessionItem.id == Attempt.session_item_id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .filter(Attempt.user_id == user_id)
+        .group_by(Question.section)
+        .all()
+    )
+    counts = {section: (total or 0, correct or 0) for section, total, correct in rows}
+    accuracies = {}
+    for section in (LOGICAL_REASONING, READING_COMPREHENSION):
+        total, correct = counts.get(section, (0, 0))
+        observed = (correct / total) if total else 0.0
+        accuracies[section] = shrink_toward_prior(observed, float(total))
+    return (
+        accuracies[LOGICAL_REASONING],
+        accuracies[READING_COMPREHENSION],
+        counts.get(LOGICAL_REASONING, (0, 0))[0],
+        counts.get(READING_COMPREHENSION, (0, 0))[0],
+    )
+
+
+def _review_share(overdue: int, tracked: int, session_size: int) -> float:
+    """How much of a run should be review, given how much of the queue is slipping.
+
+    Two straight segments through REVIEW_SHARE, so the student with an ordinary
+    queue gets exactly what the fixed `session_size // 2` used to give them and
+    the personalisation is a deviation from that rather than a replacement for
+    it. Below the centre it falls to REVIEW_SHARE_FLOOR at a queue with nothing
+    slipping; above it, it rises to REVIEW_SHARE_CEILING at a queue where
+    everything has.
+
+    The signal is the fraction of cards that have actually decayed below the
+    retention target. Not the size of the queue: a student with two hundred
+    cards all comfortably above target is not behind on anything, and asking
+    them to spend two thirds of every run proving it would be the "chore list
+    with a date attached" that `scheduling.queue_pressure` exists to avoid.
+
+    Shrunk by a run's worth of pseudo-cards sitting at the centre, for the same
+    reason the section rates are shrunk: a student with three cards, two of them
+    slipping, has not established that they are behind. It also makes the knob
+    move smoothly at the start of an account rather than swinging on the third
+    answer.
+
+    **Accuracy is deliberately not a second input here.** It looks like an
+    obvious one — answer badly, get more consolidation — but it is already in
+    this number twice over. A wrong answer is what puts a card in the queue in
+    the first place, and a failed review is what makes a card's retrievability
+    decay faster afterwards, so a student who is struggling arrives here with a
+    larger overdue count *because* they are struggling. Adding their accuracy on
+    top would count the same evidence a second time and make the knob react
+    roughly twice as hard as intended to exactly the students it should be
+    gentlest with. Accuracy earns its own knob below, where it is not already
+    represented.
+    """
+    if tracked <= 0:
+        # Nothing tracked, nothing to be behind on. The floor, so that the
+        # number this reports matches what the student will actually be served:
+        # `due_for_review` returns an empty queue whatever is asked of it.
+        return REVIEW_SHARE_FLOOR
+    prior = max(1.0, float(session_size))
+    centre = QUEUE_SLIPPED_AT_REVIEW_CENTRE
+    slipped = (overdue + centre * prior) / (tracked + prior)
+    if slipped <= centre:
+        return REVIEW_SHARE_FLOOR + (REVIEW_SHARE - REVIEW_SHARE_FLOOR) * (slipped / centre)
+    over = (slipped - centre) / (1.0 - centre)
+    return REVIEW_SHARE + (REVIEW_SHARE_CEILING - REVIEW_SHARE) * min(1.0, over)
+
+
+def _reading_case_share(lr_accuracy: float, rc_accuracy: float) -> float:
+    """How often a case should be a reading case, given where this student is weak.
+
+    RC_CASE_SHARE, leaned by the gap between the two sections and bounded by
+    RC_CASE_SHARE_SPREAD. A student whose reading trails their arguments sees
+    more reading; a student whose reading is the stronger half sees less, but
+    never little.
+
+    Signed the way round it reads: `lr_accuracy - rc_accuracy` positive means
+    reading is the weaker section, so the share goes up.
+
+    Note what this does *not* do. It does not chase the weakest section to the
+    exclusion of the other, and it does not compound: the share is recomputed
+    from the student's whole record on every run, so a stretch of reading cases
+    that fixes the gap moves the share straight back. A knob that ratcheted —
+    that read only recent performance, or only performance since the last
+    adjustment — would find its own extreme and stay there.
+    """
+    gap = (lr_accuracy - rc_accuracy) / SECTION_GAP_AT_FULL_SHIFT
+    lean = max(-1.0, min(1.0, gap))
+    return RC_CASE_SHARE + RC_CASE_SHARE_SPREAD * lean
+
+
+def sequencing_profile(user_id: str, session_size: int) -> SequencingProfile:
+    """Read the student's record and say what shape their next run should be.
+
+    One call site, `create_study_session`, and one place to look when a run
+    comes out unexpected. Two queries: the review queue, and one aggregate over
+    answers grouped by section.
+    """
+    pressure = scheduling.queue_pressure(user_id)
+    lr_accuracy, rc_accuracy, _lr_seen, _rc_seen = _section_accuracy(user_id)
+    return SequencingProfile(
+        review_share=_review_share(pressure["below_target"], pressure["tracked"], session_size),
+        reading_case_share=_reading_case_share(lr_accuracy, rc_accuracy),
+        overdue=pressure["below_target"],
+        tracked=pressure["tracked"],
+        lr_accuracy=lr_accuracy,
+        rc_accuracy=rc_accuracy,
+    )
+
+
 def reading_case_floor(count: int) -> int:
     """The fewest questions a passage must carry to be a case on its own.
 
@@ -958,6 +1188,7 @@ def select_reading_comprehension_case(
     user_id: str | None = None,
     exclude_ids: set[str] | None = None,
     due_ids: list[str] | None = None,
+    review_share: float | None = None,
 ) -> list[Question]:
     """One passage, whole, as a case in its own right.
 
@@ -1019,7 +1250,7 @@ def select_reading_comprehension_case(
     # Review-led: the passage under the weakest due card. `due_ids` arrives
     # already ranked by retrievability, so the first one whose passage is still
     # available is the weakest memory this case can rebuild.
-    if due_ids and random.random() < REVIEW_SHARE:
+    if due_ids and random.random() < (REVIEW_SHARE if review_share is None else review_share):
         due_by_passage = {fact.id: fact.passage_id for fact in facts}
         for question_id in due_ids:
             passage_id = due_by_passage.get(question_id)
@@ -1288,9 +1519,22 @@ def create_study_session(
     # keeps the ordinary shape whatever the draw says, and so does any sitting
     # too short to hold a passage.
     #
+    # What this student's own record says the run should look like: how much of
+    # it is review, and how often a case is a reading case. Read once, here, and
+    # nowhere else. See `SequencingProfile`.
+    #
+    # A type-filtered drill skips the read entirely — the student has overridden
+    # the shape by hand, so nothing personal applies and the queries are wasted.
+    sequencing = None if question_type else sequencing_profile(user.id, session_size)
+
     # The share is read from config so a test can pin the shape it means to
-    # exercise. Nothing sets it; the default is the constant.
-    rc_share = float(current_app.config.get("PRACTICE_RC_CASE_SHARE", RC_CASE_SHARE))
+    # exercise. Nothing sets it; the default is the student's own.
+    rc_share = float(
+        current_app.config.get(
+            "PRACTICE_RC_CASE_SHARE",
+            sequencing.reading_case_share if sequencing else RC_CASE_SHARE,
+        )
+    )
     reading_case = (
         not question_type and session_size >= RC_CASE_MIN_SITTING and random.random() < rc_share
     )
@@ -1304,28 +1548,64 @@ def create_study_session(
             user.id, reading_case_ceiling(session_size), section=READING_COMPREHENSION
         )
         questions = select_reading_comprehension_case(
-            session_size, user_id=user.id, due_ids=[question.id for question in due]
+            session_size,
+            user_id=user.id,
+            due_ids=[question.id for question in due],
+            # The same review share the argument case uses, applied across
+            # reading cases instead of inside one: a passage is a single unit,
+            # so "half this run is review" has to become "half of these runs are
+            # re-reads". A student behind on their queue therefore gets both
+            # more repairs per argument case and more re-read passages.
+            review_share=sequencing.review_share,
         )
         if questions:
             return _build_practice_session(
-                user, profile, questions, practice_style=practice_style, question_type=None
+                user,
+                profile,
+                questions,
+                practice_style=practice_style,
+                question_type=None,
+                # Whichever of the passage's questions were already due. A
+                # reading case does not have review *slots* — the passage is the
+                # run — but the questions in it that came off the queue are
+                # review in every sense the rest of the app cares about, and
+                # leaving them unflagged meant `apply_review` never advanced
+                # their memory state and the recovery rate never counted them.
+                # The whole of Reading Comprehension was invisible to the review
+                # machinery it had just been given access to.
+                repair_ids={question.id for question in due},
             )
         # No Reading Comprehension in this bank. Most of the test suite runs on
         # one of those, and so would a deployment that shipped LR only.
 
-    # Repairs fill at most half a run so a large queue can never turn practice
-    # into pure repetition. A type-filtered run is a focused drill; mixing
-    # off-type repairs into it would defeat the filter the student asked for.
+    # How much of this run is repair work. Bounded well short of the whole run
+    # in both directions, so a large queue can never turn practice into pure
+    # repetition and a small one can never turn review off. A type-filtered run
+    # is a focused drill; mixing off-type repairs into it would defeat the
+    # filter the student asked for.
     #
     # Restricted to Logical Reasoning cards now that reading has a case of its
     # own. An RC card arriving alone in an argument case is a passage the
     # student has to re-read for one question, which is the cost the passage-
     # mate fix removed from fresh material and should not be reintroduced here;
     # RC cards come back on their own passage, in a reading case.
+    #
+    # At least one whenever there is a queue to draw from, which is what the
+    # floor means once it meets a whole number of questions: a share of a sixth
+    # rounds to zero on any run shorter than four, and "review is never off" has
+    # to survive the short runs too. `due_for_review` returns nothing when the
+    # queue is empty, so this cannot invent repairs for a student who has none.
+    #
+    # `int(x + .5)` rather than `round`, which is banker's rounding — round(0.5)
+    # is 0 and round(2.5) is 2, so a budget could land a question below what the
+    # share asked for depending on whether the product happened to be even.
+    repair_budget = (
+        0 if question_type else max(1, int(session_size * sequencing.review_share + 0.5))
+    )
     repairs = (
         []
         if question_type
-        else _questions_due_for_review(user.id, session_size // 2, section=LOGICAL_REASONING)
+        else _questions_due_for_review(user.id, repair_budget, section=LOGICAL_REASONING)
     )
     # Due passage-mates travel together so the run reads the passage once. Only
     # the ones the scheduler already chose — see `cluster_passage_mates`.

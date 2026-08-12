@@ -73,7 +73,7 @@ from app.models import (  # noqa: E402
     User,
     utcnow,
 )
-from app import services  # noqa: E402
+from app import scheduling, services  # noqa: E402
 
 RC = "Reading Comprehension"
 
@@ -233,20 +233,30 @@ def play_in(user: User, cases: int, size: int, wrong_share: float = 0.4) -> None
         )
         for item in items:
             correct = random.random() > wrong_share
-            db.session.add(
-                Attempt(
-                    user_id=user.id,
-                    session_item_id=item.id,
-                    idempotency_key=f"rc-play-{item.id}",
-                    selected_label="A",
-                    is_correct=correct,
-                    server_elapsed_ms=120_000,
-                    confidence=3,
-                )
+            attempt = Attempt(
+                user_id=user.id,
+                session_item_id=item.id,
+                idempotency_key=f"rc-play-{item.id}",
+                selected_label="A",
+                is_correct=correct,
+                server_elapsed_ms=120_000,
+                confidence=3,
             )
-            if not correct and not ReviewQueueItem.query.filter_by(
+            db.session.add(attempt)
+            card = ReviewQueueItem.query.filter_by(
                 user_id=user.id, question_id=item.question_id
-            ).first():
+            ).first()
+            if card is not None:
+                # The state transition the app performs on every graded answer
+                # to a queued question. Skipping it — which this probe did at
+                # first — means no card is ever recalled, every card's
+                # retrievability decays to zero, and the queue reads as 281 of
+                # 281 overdue no matter how the student is doing. Any signal
+                # taken off the queue is then measured against a student who
+                # cannot exist.
+                attempt.session_item = item
+                services._advance_review(card, attempt)
+            elif not correct:
                 db.session.add(ReviewQueueItem(user_id=user.id, question_id=item.question_id))
         session.status = "completed"
         db.session.commit()
@@ -261,6 +271,15 @@ def probe_cases(user: User, cases: int, size: int) -> dict:
     rc_review = 0
     seconds = 0
     lengths = []
+    # Per-position review rate and per-run RC share. Both are distributions, and
+    # both are reported as distributions rather than means, because the two
+    # failures worth catching here are invisible in an average: a position that
+    # is always a repeat, and a student whose section mix has collapsed.
+    review_at_slot = Counter()
+    runs_at_slot = Counter()
+    rc_counts_per_run = []
+    review_per_run_counts = []
+    profiles = []
     seen_before = {
         question_id
         for (question_id,) in db.session.query(SessionItem.question_id)
@@ -293,12 +312,33 @@ def probe_cases(user: User, cases: int, size: int) -> dict:
         # Logical Reasoning question, so this is the whole of what the section
         # mix costs in wall-clock time.
         seconds += sum(item.target_time_seconds for item in items)
+        rc_counts_per_run.append(rc)
+        in_run = 0
         for item in items:
+            # `from_review_queue` is what the run itself recorded, which is the
+            # flag the rest of the app reads. Falling back to "have they ever
+            # answered this" would also count a reading case's own passage-mates,
+            # which are not review slots in any sense a student could learn.
+            # Argument cases only. A reading case is one passage served in the
+            # passage's own order and has no review *slots* to speak of, so
+            # folding it into this histogram averages two different things and
+            # hides the one that can carry a positional cue.
+            if rc == 0:
+                runs_at_slot[item.position] += 1
+                review_at_slot[item.position] += item.from_review_queue
+            in_run += item.from_review_queue
             if item.question_id in seen_before:
                 review_questions += 1
                 rc_review += sections[item.question_id] == RC
+        review_per_run_counts.append(in_run)
         session.status = "abandoned"
         db.session.commit()
+
+    # Absent on any revision before run sequencing was personalised, which is
+    # how this probe is pointed at the previous behaviour to get a baseline.
+    profile = getattr(services, "sequencing_profile", None)
+    profile = profile(user.id, size) if profile else None
+    profiles.append(profile)
     return {
         "rc_share": rc_questions / max(1, total_questions),
         "runs_with_rc": runs_with_rc,
@@ -310,7 +350,36 @@ def probe_cases(user: User, cases: int, size: int) -> dict:
         "rc_review_share": rc_review / max(1, review_questions),
         "seconds_per_question": seconds / max(1, total_questions),
         "minutes_per_run": seconds / cases / 60,
+        "profile": profile,
+        "flagged_review_per_run": statistics.mean(review_per_run_counts),
+        "slot_review_rate": {
+            slot: review_at_slot[slot] / runs_at_slot[slot] for slot in sorted(runs_at_slot)
+        },
+        "rc_share_windows": _windows(rc_counts_per_run, lengths),
     }
+
+
+WINDOW = 20
+
+
+def _windows(rc_counts: list[int], lengths: list[int]) -> list[float]:
+    """RC share over each consecutive stretch of WINDOW runs.
+
+    The distribution, not the mean, because a mean of a third could hide a
+    student who sees almost no reading.
+
+    Measured over stretches of twenty runs rather than over single runs. A
+    single run is now entirely one section or entirely the other, by design, so
+    its RC share is 0% or 100% and the spread of that says nothing. Twenty runs
+    is about a week of ordinary play, which is the shortest window over which
+    "how much reading am I getting" is a question a student could actually ask.
+    """
+    shares = []
+    for start in range(0, len(rc_counts) - WINDOW + 1, WINDOW):
+        window_rc = sum(rc_counts[start : start + WINDOW])
+        window_total = sum(lengths[start : start + WINDOW])
+        shares.append(window_rc / max(1, window_total))
+    return shares or [sum(rc_counts) / max(1, sum(lengths))]
 
 
 def main() -> int:
@@ -344,6 +413,7 @@ def main() -> int:
         )
         print(head)
         print("-" * len(head))
+        rows = []
         cohorts = [("cold (0 answered)", make_student("cold"), None)]
         mid = make_student("mid")
         give_history(mid, 60)
@@ -366,6 +436,44 @@ def main() -> int:
                 f"{f'{row['shortest']}-{row['longest']}':>8} {row['review_per_run']:>8.2f} "
                 f"{row['rc_review_share']:>9.1%} {row['seconds_per_question']:>7.1f} "
                 f"{row['minutes_per_run']:>8.1f}"
+            )
+            rows.append((label, row))
+
+        print("\n\nPersonalisation, per cohort. The whole point is that these differ.\n")
+        for label, row in rows:
+            profile = row["profile"]
+            print(f"  {label}")
+            if profile is None:
+                print("    (this revision does not personalise; fixed shares for everyone)")
+            windows = row["rc_share_windows"]
+            print(
+                f"    RC per {WINDOW} runs  min {min(windows):.0%}, median "
+                f"{statistics.median(windows):.0%}, max {max(windows):.0%} "
+                f"over {len(windows)} windows"
+            )
+            slots = row["slot_review_rate"]
+            print(
+                "    repeat by slot  "
+                + ", ".join(f"{slot}:{rate:.0%}" for slot, rate in slots.items())
+            )
+            print(f"    flagged repairs {row['flagged_review_per_run']:.2f} a run")
+            if profile is None:
+                continue
+            print(
+                f"    signals         {profile.overdue} of {profile.tracked} cards overdue; "
+                f"LR {profile.lr_accuracy:.3f} against RC {profile.rc_accuracy:.3f} "
+                f"(gap {profile.lr_accuracy - profile.rc_accuracy:+.3f})"
+            )
+            print(
+                f"    review share    {profile.review_share:.3f} "
+                f"(floor {services.REVIEW_SHARE_FLOOR:.3f}, centre {services.REVIEW_SHARE:.3f}, "
+                f"ceiling {services.REVIEW_SHARE_CEILING:.3f})"
+            )
+            print(
+                f"    reading share   {profile.reading_case_share:.3f} "
+                f"(default {services.RC_CASE_SHARE:.3f}, "
+                f"bounds {services.RC_CASE_SHARE - services.RC_CASE_SHARE_SPREAD:.3f}"
+                f"-{services.RC_CASE_SHARE + services.RC_CASE_SHARE_SPREAD:.3f})"
             )
         print(
             f"\ntarget is the bank's own {rc_share:.1%}; see services.RC_CASE_SHARE for why "

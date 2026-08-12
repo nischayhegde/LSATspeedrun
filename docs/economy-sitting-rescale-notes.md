@@ -3,7 +3,7 @@
 Branch `cursor/shorten-case-and-rescale-economy-508c`, based on
 `integration/all-features` at `82acaf6`.
 
-Two changes, in order.
+Three changes, in order.
 
 **One:** a practice run is six questions instead of ten, and every constant that
 was counted in whole runs was re-expressed so that neither the campaign's length
@@ -16,6 +16,15 @@ practice was serving 0.0% Reading Comprehension to anyone with a review queue,
 against a bank that is 34.4% RC. A practice case is now either an argument case
 or a reading case, and the measured share is 33.7%. See "Reading Comprehension
 is now a case shape" below.
+
+**Three:** the shape of a run is read off the student. How much of it is review,
+how often it is a reading case, and where the review lands were three fixed
+constants, so every student of a given length got an identical run. Each is now
+wired to the student, each centred on the constant it replaced so an ordinary
+student is treated exactly as before, and each bounded at both ends. The last of
+the three also closes a positional cue that was measured at its worst: the final
+question of a run used to be a repeat 99% of the time. See "The run's shape is
+now read off the student" below.
 
 ---
 
@@ -302,6 +311,183 @@ neither of which the section mix touches.
 
 ---
 
+## The run's shape is now read off the student
+
+Three things decided the shape of every run and all three were constants, so two
+students of the same length got byte-identical treatment however differently
+they were doing. The audit's phrase was **"responsive rather than adaptive"**:
+the system reacted correctly to the signals it had and it had almost none. All
+three are now wired to the student, each centred on the value it replaced and
+each bounded at both ends.
+
+Centred, and that word is doing the work. Every one of these is a *deviation*
+from the old fixed behaviour rather than a replacement for it, so the ordinary
+student is treated exactly as they were before this and only the two ends are
+new. That is what makes the change safe to ship without re-pacing anything.
+
+### 1. How much of a run is review — `services._review_share`
+
+Was `session_size // 2`, flat. Now it runs from `REVIEW_SHARE_FLOOR` (1/6) to
+`REVIEW_SHARE_CEILING` (2/3) through `REVIEW_SHARE` (1/2), on the **share of the
+student's queue that has decayed below target retention**.
+
+The floor is so review never switches off: a queue in good order is still a
+queue on its way back below target, and a run that stops testing it stops
+finding out. The ceiling is so practice never becomes pure repetition — at the
+top, two questions in six are still new — and it is self-correcting, because
+more review drains the queue, which lowers the pressure, which lowers the share.
+
+**A share, not a count, and the first attempt got that wrong.** A queue only
+grows, so the number of cards below target grows with how long someone has been
+playing whether or not they are keeping up. The probe's warmed cohort carries
+449 slipping cards, which under a count-based rule read as "thirteen sittings
+behind" and pinned it at the ceiling; it is not behind at all, it has answered
+two thousand questions. Any threshold in cards is one every committed student
+crosses and then sits above forever — a knob that reads *how long have you been
+here* while claiming to read *how far behind are you*. As a share it is 449 of
+1,662, which is 27%, and lands on the old fixed half.
+
+**Accuracy is deliberately not a second input**, though it was offered. It is
+already in this number twice: a wrong answer is what creates a card, and a
+failed review is what makes a card decay faster afterwards. Adding it on top
+would count the same evidence again and make the knob react about twice as hard
+as intended to exactly the students it should be gentlest with. It earns its own
+knob below, where it is not already represented.
+
+### 2. How often a case is a reading case — `services._reading_case_share`
+
+Was `RC_CASE_SHARE = 1/3`, flat. Now `1/3 ± 1/12`, leaning on the gap between
+the student's two section accuracies, reaching the bound at a gap of 15 points.
+
+Bounded tightly and on purpose. The reasons a third is right — the bank is 34.4%
+Reading Comprehension, the scored exam is about the same, the form the
+mega-litigation imitates is literally one section in three — are reasons about
+*the test*, and they do not stop being true because a particular student finds
+reading hard. So a student's record buys a lean and not a veto.
+
+Both section rates are shrunk toward the same population prior via
+`scoring.shrink_toward_prior`, which is what stops four reading answers deciding
+a diet: evidence buys deviation in proportion to how much of it there is. The
+rates come from one aggregate over answers grouped by section, deliberately not
+from `scoring.project_score`, which computes the same two numbers far more
+carefully at the cost of reading every answer the account has ever filed.
+
+### 3. Where review lands in a run — `scheduling._review_slots`
+
+Was `round((i + 0.5) * total / count)` — the midpoint of each stretch, fully
+determined by the run's length and the number of reviews in it. Measured on the
+real bank, inside an argument case:
+
+| revision | position 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|---:|
+| before, warmed | 0% | 92% | 14% | 73% | 21% | **99%** |
+| before, mid | 0% | 86% | 26% | 82% | 13% | **93%** |
+| after, warmed | 49% | 58% | 52% | 37% | 49% | 56% |
+| after, mid | 67% | 73% | 62% | 68% | 69% | 62% |
+
+The last question of a run used to be a repeat essentially always and the first
+never was. A student does not need to be told that to learn it, and once learned
+it lets them answer from where a question sits rather than from what it says —
+the exact failure Rohrer's result is about, quoted in `scheduling.py`'s own
+comment two functions above the code that was producing it. `research/12` §2
+specified a jitter term and it was never implemented.
+
+It is now **systematic sampling with a random start**: one offset for the whole
+run, reviews at `floor((i + u) * total / count)`. Every position carries exactly
+the same probability of being a repeat, so position carries no information;
+consecutive reviews stay a full stretch apart, so the spread is preserved as a
+guarantee rather than a tendency.
+
+Two things worth recording. Drawing an **independent** offset per review was
+tried and is worse: it makes the stretches unequal at *fixed* places, so at four
+reviews in six questions positions 0 and 3 become certain — measured at 72% and
+62% against 17% — which is the cue again. And one shared offset does cost a
+within-run correlation: three reviews in six land on the even positions or the
+odd ones, a coin toss. That is worth much less than it sounds, because a repeat
+is a question the student has already sat and will recognise on sight.
+
+### Measured per cohort — the point being that they now differ
+
+`tools/audit/rc_reachability_probe.py`, 1,200 runs of size 6 per cohort:
+
+| cohort | queue slipping | review share | repairs/run before → after | LR vs RC | reading share | RC served |
+|---|---:|---:|---:|---:|---:|---:|
+| cold (0 answered) | no queue | 0.167 (floor) | 0.00 → 0.00 | no evidence | 0.333 | 37.6% |
+| mid (60 abandoned) | 60 of 60 | 0.652 (near ceiling) | 2.04 → 2.81 | .527 / .479 | 0.360 | 37.5% |
+| warmed (played in) | 449 of 1,662 | 0.504 (the old half) | 1.96 → 2.14 | .591 / .593 | 0.332 | 35.7% |
+
+That is the shape of the result. The student who has stopped answering their
+repairs gets half again as much repair work and a lean toward the section they
+are worse at; the student who is keeping up gets what they always got; the
+student with no history gets the default, because a default is the correct
+answer to no evidence.
+
+### On the RC share, and reporting a distribution rather than a mean
+
+The bound is the honest form of the distribution here, and it is exact rather
+than sampled. A reading case averages 6.9 questions against an argument case's
+6, so a reading-case share of `s` serves `6.9s / (6.9s + 6(1-s))` of questions
+as Reading Comprehension. At the two bounds that is **27.7% and 45.1%**. No
+student can fall outside that whatever their record says, so the failure the
+user was right to ask about — a mean of a third hiding somebody on 5% — cannot
+happen by personalisation.
+
+Over any twenty runs a student can still see much less than that by chance,
+because whether a case is a reading case is a draw: the probe measures windows
+from 5% to 68%. That is unchanged by this work — the same measurement before it
+gave 11% to 76% — and it is the shape of a coin, not of a knob.
+
+The measured means bounce by about two points between runs of the probe, because
+row ids are UUIDs and so the bank's ordering is not seeded. Read the reading
+share column, which is exact, rather than the RC served column, which is the
+reading share plus noise.
+
+### One bug found while measuring
+
+A reading case's review was never flagged. `_build_practice_session` marks an
+item `from_review_queue` by membership in `repair_ids`, and the reading path
+passed none — so a due card served on its own passage advanced no memory state,
+counted toward no recovery rate, and was invisible to the review machinery it
+had just been given access to. Fixed by passing the due set through.
+
+The probe had the mirror-image fault and it is worth naming, because it is the
+same fault as `seed_demo.py`'s: it never called `_advance_review`, so no card
+was ever recalled, every card decayed to zero, and the warmed cohort read as
+**281 of 281 slipping** no matter how the student was doing. The first version
+of the review-share knob was calibrated against that, which is to say against a
+student who cannot exist. An instrument that agrees with whatever it is pointed
+at is the recurring hazard in this area of the code.
+
+### One thing this broke in the interface, and the smallest correct fix
+
+The Practice lobby promised a number: *"5 review items included."* The client
+computed it as `Math.min(5, dueReviews)` — the ten-question run's fixed half,
+written down a second time on the client, and so already wrong by two the moment
+a run became six questions. It is now not derivable there at all, because how
+much of a run is review is read off the student's queue and a reading case
+carries whichever of its passage's questions happened to be due.
+
+It could be served, the way `session_size` already is. It is not, because it
+would cost `sequencing_profile`'s two queries on every load of a hot endpoint to
+produce a number that a reading case would then make wrong anyway. The copy says
+*"Some will be repairs from your queue"* instead, and the Help panel gains one
+clause explaining that the further behind the queue gets the more of a run it
+takes back — which is now true, and is the only part of this a student needs.
+
+### The seam left open for question difficulty
+
+Every question in the bank is difficulty 3 and nothing in the adaptive path
+reads the field, so there is no signal to use and none was built.
+`services.SequencingProfile` is where one would go: a `target_difficulty`
+alongside the two shares, derived from the same accuracy evidence, read by
+`select_random_questions` and by the passage choice in
+`select_reading_comprehension_case` to bias *which* questions a run draws rather
+than how many of each kind. It is also why both selection functions take their
+inputs as arguments rather than reaching for the profile themselves — adding a
+field should not mean rewriting them.
+
+---
+
 ## Every variable that moved
 
 | Constant | Was | Now | Unit | Why |
@@ -392,6 +578,17 @@ invariant rather than preserved it.
 - **The mega-litigation's section blocking.** `select_diagnostic_questions`
   already built LR / intact-RC / LR blocks, which the audit called correct. The
   reading case makes practice resemble it more, not less.
+- **`scheduling._separate_same_type`.** It runs after review placement and its
+  forward-biased swap was the obvious suspect for the residual unevenness left
+  in the per-slot rates. Measured in isolation over 40,000 runs it is neutral —
+  50%, 48%, 52%, 50%, 50%, 50% — so there was nothing to fix, and the de-blocking
+  property it exists for has tests of its own that a speculative change would
+  have put at risk.
+- **Question difficulty.** All 6,886 questions are difficulty 3 and nothing
+  reads the field. A seam is left in `SequencingProfile`; nothing is built.
+- **Which questions a run draws.** Personalisation changes *how many* of each
+  kind a run contains and *where* they sit. It does not touch selection within a
+  kind, which is where difficulty would eventually act.
 
 ---
 
@@ -399,8 +596,8 @@ invariant rather than preserved it.
 
 ```
 backend/app/game.py                            the economy: sitting, goals, contracts, bonuses
-backend/app/services.py                        run construction, the two case shapes, daily docket
-backend/app/scheduling.py                      due_for_review takes an optional section
+backend/app/services.py                        run construction, the two case shapes, the sequencing profile
+backend/app/scheduling.py                      due_for_review takes a section; review placement is jittered
 backend/app/__init__.py                        PRACTICE_SESSION_SIZE / PRACTICE_QUEUE_MAX defaults
 backend/app/routes.py                          serves session_size on two endpoints
 backend/scripts/simulate_economy_curve.py      sittings in the report, the pace caveat, database fallback
@@ -408,13 +605,14 @@ backend/scripts/measure_served_section_mix.py  new
 backend/tests/test_sitting_scale.py            new
 backend/tests/test_economy_simulation.py       new
 backend/tests/test_reading_cases.py            new
+backend/tests/test_sequencing_personalisation.py  new: the bounds on all three knobs
 backend/tests/{test_flow,test_progress,test_game_catalog}.py   variable run length, realistic fixture passages
 backend/.env.example                           stops pinning 10
 deploy/ec2/cloudformation.yaml                 stops pinning 10 (one deleted line)
 frontend/src/api.ts                            session_size on two response types
-frontend/src/pages/{cases,dashboard}-page.tsx  copy reads the served size
+frontend/src/pages/{cases,dashboard}-page.tsx  copy reads the served size; stops promising a repair count
 frontend/src/guided-tour.tsx                   three sentences, numbers and the reading case
-tools/audit/rc_reachability_probe.py           new, sits beside the QA branch's probes
+tools/audit/rc_reachability_probe.py           new; per-cohort personalisation and per-slot review rates
 ```
 
 `tools/audit/rc_reachability_probe.py` is written to live in the QA agent's
@@ -464,20 +662,29 @@ passages of five and six now, and `test_flow`'s bank grew from 4 RC questions to
    not two questions before or after. A reading case can overshoot it, since a
    reading case is as long as its passage.
 4. Queue runs until it refuses. It should take 13, not 8.
-5. `backend/.venv/bin/python -m pytest` from the repo root: 407 pass. Note the
+5. Answer a run's repairs correctly for a few days running, then start a run and
+   count the repeats. It should be fewer than it was — the queue is in better
+   order, so less of the run is spent on it. Abandon the queue for a week and it
+   should be more. Neither should ever be zero or the whole run.
+6. Start a dozen runs and note which position the first repeat lands on. It
+   should move around. Before this change it was position 2 nearly every time on
+   a six-question run, and the last question was a repeat 99% of the time.
+7. `backend/.venv/bin/python -m pytest` from the repo root: 423 pass. Note the
    suite must run from the repo root, not from `backend/` — `pytest.ini` sets
    `pythonpath = backend` and two tests import `backend.app.game` directly.
-6. To re-measure the section mix end to end, seed a scratch database and run the
-   probe:
+8. To re-measure the section mix and the personalisation end to end, seed a
+   scratch database and run the probe:
 
    ```
    DATABASE_URL=sqlite:////tmp/audit.db backend/.venv/bin/python -m flask db upgrade
    DATABASE_URL=sqlite:////tmp/audit.db backend/.venv/bin/python -m flask seed
    cd backend && DATABASE_URL=sqlite:////tmp/audit.db \
-     .venv/bin/python ../tools/audit/rc_reachability_probe.py --runs 40 --cases 300
+     .venv/bin/python ../tools/audit/rc_reachability_probe.py --runs 40 --cases 1200
    ```
 
-   The warmed cohort is the row that matters. It takes about 45 seconds.
+   Read the per-cohort block below the table: the three cohorts differing from
+   each other is the result. 1,200 runs takes about four minutes; 300 is enough
+   for the shape but its means carry about 2.7 points of noise.
 
 ## One unrelated fix carried on this branch
 

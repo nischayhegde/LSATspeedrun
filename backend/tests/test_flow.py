@@ -4155,8 +4155,8 @@ def _queue_due_question(user_id: str, question_id: str) -> None:
     db.session.commit()
 
 
-def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
-    """Repairs fill at most half a run, spread through it rather than stacked.
+def test_due_repairs_are_interleaved_through_a_run_and_never_fill_it(app):
+    """Repairs are spread through a run and always leave fresh material in it.
 
     Front-loading is what the old `repairs + fresh` concatenation did, and it
     leaks the answer key: "the first three are the ones you got wrong" is a cue
@@ -4166,23 +4166,31 @@ def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
     for. A reading case is one passage and has nothing to interleave: its review
     is whichever of the passage's own questions were due, and they arrive in the
     passage's order because that is the order the passage reads in.
+
+    This student has twelve cards and has answered none of them, so their whole
+    queue is slipping and the review share is at `REVIEW_SHARE_CEILING` — the
+    worst case, and the one worth pinning, because it is where "more review for
+    a student who is behind" would turn into "nothing but repeats" if the
+    ceiling were not there. Two of the six are still new.
     """
+    from app.services import REVIEW_SHARE_CEILING
+
     client = app.test_client()
     headers = login(client, "folded-repairs@example.test")
     create_game(client, headers)
     app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
     with app.app_context():
         user = User.query.filter_by(email="folded-repairs@example.test").one()
-        for question in Question.query.order_by(Question.id).limit(5).all():
+        for question in Question.query.order_by(Question.id).limit(12).all():
             _queue_due_question(user.id, question.id)
 
     session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
         origins = [item.from_review_queue for item in items]
-        assert sum(origins) == 3
-        assert origins != [True, True, True, False, False, False]
-        assert origins[0] is False
+        assert sum(origins) == int(6 * REVIEW_SHARE_CEILING)
+        assert sum(origins) < len(origins), "a run of nothing but repeats"
+        assert origins != [True, True, True, True, False, False]
 
 
 def test_an_empty_review_queue_still_produces_a_full_run(app):

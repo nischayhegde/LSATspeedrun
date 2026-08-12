@@ -188,7 +188,14 @@ export function CasesLobbyPage() {
   }
   // A one-line read of the queue, so the header answers "what is in here"
   // before the list has to be scrolled.
-  const repairsIncluded = Math.min(5, dueReviews)
+  // Whether the next run will carry repairs, not how many. The count used to be
+  // `Math.min(5, dueReviews)` — the old ten-question run's fixed half, written
+  // down a second time on the client, and already wrong by two once a run became
+  // six questions. It is now not derivable here at all: how much of a run is
+  // review is read off the student's own queue, and a reading case carries
+  // whichever of its passage's questions happened to be due. The honest promise
+  // is the one the server can always keep.
+  const hasRepairs = dueReviews > 0
   const runningCount = runs.filter((run) => run.status === 'in_progress' && !run.pending_result).length
   const reviewCount = runs.filter((run) => run.pending_result).length
   const queueSummary = [
@@ -253,8 +260,8 @@ export function CasesLobbyPage() {
                     run is built, so this can only describe the range. */}
                 <p className="practice-action-shape">{queueFull
                   ? `Queue full (${runs.length}/${queueCap}). Discard a run below to start another.`
-                  : repairsIncluded
-                    ? `About ${sessionSize} questions, or one whole passage. ${repairsIncluded} review item${repairsIncluded === 1 ? '' : 's'} included.`
+                  : hasRepairs
+                    ? `About ${sessionSize} questions, or one whole passage. Some will be repairs from your queue.`
                     : `About ${sessionSize} unseen questions, or one whole passage.`}</p>
               </div>
               {daily && daily.next_action.kind !== 'start_cases' && (
@@ -353,7 +360,7 @@ export function CasesLobbyPage() {
         <div className="practice-guide-body">
           <section>
             <h2>Cases</h2>
-            <p>About {sessionSize} questions{repairsIncluded ? `, ${repairsIncluded} of them review` : ''}. A reading case is one whole passage, so it runs to whatever length its passage is. Written explanation on each, then coaching.</p>
+            <p>About {sessionSize} questions{hasRepairs ? ', some of them repeats from your review queue' : ''}. The further behind that queue gets, the more of a run it takes back. A reading case is one whole passage, so it runs to whatever length its passage is. Written explanation on each, then coaching.</p>
           </section>
           {daily && daily.deep_brief.priority_count > 0 && (
             <section>

@@ -21,6 +21,8 @@ that the check belongs in the suite rather than in a report nobody re-runs.
 
 from __future__ import annotations
 
+import io
+import tokenize
 from pathlib import Path
 
 import pytest
@@ -381,6 +383,23 @@ def test_the_exposure_draw_is_stable_and_reserves_a_quarter_of_slots():
         assert draw["propensity"] == pytest.approx(expected)
 
 
+def _code_only(source: str) -> str:
+    """`source` with comments and string literals dropped.
+
+    The assertions below are about what selection *executes*. The region they
+    read now also holds `SequencingProfile`, whose docstring discusses where a
+    per-item target would belong, so matching raw text fires on prose that is
+    describing the boundary rather than crossing it.
+    """
+    kept = []
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        name = tokenize.tok_name.get(token.type, "")
+        if token.type in (tokenize.COMMENT, tokenize.STRING) or name.startswith("FSTRING"):
+            continue
+        kept.append(token.string)
+    return " ".join(kept)
+
+
 def test_selection_still_ignores_difficulty_entirely():
     """The scope boundary, asserted rather than remembered.
 
@@ -393,6 +412,7 @@ def test_selection_still_ignores_difficulty_entirely():
     """
     services = (APP_DIR / "services.py").read_text(encoding="utf-8")
     selection = services[services.index("def select_random_questions") : services.index("def select_diagnostic_questions")]
+    selection = _code_only(selection)
     assert "calibration" not in selection
     assert "difficulty" not in selection
     assert "exposure_policy" not in selection
