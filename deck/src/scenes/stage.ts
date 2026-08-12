@@ -104,6 +104,19 @@ export class DeckStage {
     // lands on a keystroke rather than on a load.
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV
     this.renderer.info.autoReset = false
+    // Shadow mapping, on for the whole stage because exactly one scene needs
+    // it and toggling it per scene does not work: `shadowMap.enabled` is part
+    // of every material's program key, so flipping it recompiles every shader
+    // in the incoming scene, on the keystroke that shows it. Left on, it costs
+    // nothing at all in the scenes that do not use it — the shadow pass only
+    // runs for lights with `castShadow`, and `close-room-scene.ts` has the
+    // only one in the deck.
+    this.renderer.shadowMap.enabled = true
+    // PCF rather than `PCFSoftShadowMap`, which this version of three has
+    // deprecated: setting it logs a warning and then silently uses this
+    // anyway. The softness the close wants comes from the shadow camera being
+    // cut to the body rather than from the filter.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap
 
     const size = this.measure()
     this.renderer.setSize(size.width, size.height, false)

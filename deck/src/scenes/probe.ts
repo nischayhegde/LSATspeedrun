@@ -31,3 +31,19 @@ export function registerProbe(name: string, read: (() => unknown) | undefined) {
   if (read) host[name] = read
   else delete host[name]
 }
+
+/**
+ * Withdraw `read` from `name`, but only if it is still the published reader.
+ *
+ * A name here is global while the things behind it are not, and the stage can
+ * hold two instances of one scene at once: `warm` and `show` race, both build,
+ * and the loser is disposed *after* the winner has been cached and has already
+ * published. An unconditional withdraw in that dispose deletes the live
+ * scene's reader, and the hatch goes dark on exactly the fast navigation it
+ * exists to measure. Withdrawing by identity rather than by name means the
+ * loser's dispose is a no-op, which is what it should have been.
+ */
+export function withdrawProbe(name: string, read: () => unknown) {
+  const host = window as unknown as Record<string, unknown>
+  if (host[name] === read) delete host[name]
+}

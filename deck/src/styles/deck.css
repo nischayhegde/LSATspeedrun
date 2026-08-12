@@ -193,13 +193,6 @@
   --scrim: none;
 }
 
-/* The close keeps `data-field='scene'`, because its beige is a lit wall and
-   not a fill — but the scene scrim is a dark wash for holding pale type over
-   a night exterior, and this is the one scene in the deck that is already
-   paper-coloured and carries navy type. Left on, it dragged the wall to grey
-   from the bottom-left and took the closing words down with it. */
-.deck-layer[data-section='close'] { --scrim: none; }
-
 .deck-layer[data-field='blue'] {
   --field: var(--blue);
   --on-field: var(--beige);
@@ -228,18 +221,9 @@
 }
 
 /* The film layers are tuned for a dark stage and turn a beige field
-   grey, so a lit slide takes them back most of the way.
-
-   The close is `data-field='scene'` — it paints no field of its own,
-   because the beige it sits on is a lit 3D room rather than a flat
-   colour — but it is a *light* slide all the same, and at full strength
-   the vignette turned a paper-coloured wall into a grey one and undid
-   the inversion the whole close depends on. A field and a lit scene are
-   two ways of being bright; the film has to answer to both. */
-.deck:has(.deck-layer.is-live[data-field='beige']) .deck-vignette,
-.deck:has(.deck-layer.is-live[data-section='close']) .deck-vignette { opacity: .28; }
-.deck:has(.deck-layer.is-live[data-field='beige']) .deck-scanlines,
-.deck:has(.deck-layer.is-live[data-section='close']) .deck-scanlines { opacity: .22; }
+   grey, so a lit slide takes them back most of the way. */
+.deck:has(.deck-layer.is-live[data-field='beige']) .deck-vignette { opacity: .28; }
+.deck:has(.deck-layer.is-live[data-field='beige']) .deck-scanlines { opacity: .22; }
 
 .deck-overlay {
   position: absolute;
@@ -569,136 +553,99 @@
 .plate .pull cite { color: #5c6570; opacity: 1; }
 
 /* ----------------------------------------------------------------
-   THE CLOSE — slide 23, and the only slide that takes the statement
+   THE CLOSE — slide 24, and the only slide that takes the statement
    layout apart.
 
-   `NARRATIVE.md` composes this frame as a picture with type on it,
-   not as a card over a backdrop: *"Two doorways… the character stands
-   centered between them… Symmetry is the argument: neither door is
-   bigger, neither is brighter. The three closing words set small along
-   the bottom edge."* The statement plate is a 56%-wide opaque card
-   pinned to the left, which is the correct object for every other
-   statement slide in the deck and is, here, a shutter over exactly the
-   half of the composition the argument lives in — it covered one of
-   the two doors and the character's face.
+   The founders composed this frame themselves: *"the 3D rigged
+   character to the right… and then the text that you mentioned here to
+   the left. Add Questions? to it, as after all, it is the last
+   slide."* So the copy keeps the statement layout's left column and
+   loses its card. The plate is a 56%-wide opaque sheet of paper, which
+   is the right object on a slide whose scene is a backdrop and the
+   wrong one here: the room *is* the composition, and a card over half
+   of it is a shutter.
 
-   So on this one slide the plate stops being a card. The type is set
-   directly on the beige the scene is already painting, the headline
-   and its line go to the top where there is only wall behind them, and
-   the three words go along the bottom edge as a row. Nothing about the
-   markup changes; this is the same `.plate` with its surface taken
-   away.
+   What replaces the card is the field itself. The scene paints a
+   royal-blue room, which is the deck's own field colour rendered in
+   three dimensions, so the type is set on it exactly as it is set on a
+   painted `data-field='blue'` slide — beige on blue, one gold
+   hairline, and nothing else. That is the whole reason the room is
+   blue rather than any other colour.
 
    Held for the whole Q&A, so it is also the frame that has to survive
    the most looking at.
+
+   ## What is bespoke here, for whoever is passing over the deck's
+   ## spacing
+
+   Four numbers, and every one of them is in `--u` or in a percentage,
+   so nothing on this slide is pinned to a 1920 projector. Against the
+   statement defaults: the column is 46% rather than 56% (the figure
+   stands at about 55% across and the copy has to finish clear of her);
+   the plate's padding is 0 rather than `3.4u 3.6u 3.6u` (there is no
+   card to pad); the rule carries `2.4u 0 1.8u` rather than `2u 0 0`
+   (it now has something under it); and `.statement-pull` sits on
+   `2.6u` of air. The type sizes are all `--t-*` tokens. If the deck's
+   rhythm moves, these should move with it rather than be defended.
    ---------------------------------------------------------------- */
 
+/* A gentler scrim than the statement default, which runs to 90% black at
+   the left edge. That is written for copy over a bright scene; this room is
+   already dark, and at full strength the gradient took the left third of it
+   to flat black and threw away the wall, the floor line and the shadow the
+   slide exists to show. Enough to seat the type, and no more. */
+.deck-layer[data-section='close'] {
+  --scrim: linear-gradient(96deg, rgba(4, 7, 12, .42) 0%, rgba(4, 7, 12, .24) 42%, rgba(4, 7, 12, .06) 72%, transparent 100%);
+}
+
+/* Narrower than the statement default's 56%: the character stands at about
+   55% across the frame and the copy has to finish clear of her, not behind
+   her. */
 .deck-layer[data-section='close'] .body-statement {
-  grid-template-columns: minmax(0, 100%);
-  align-content: start;
-  justify-content: center;
-  padding-top: calc(2.4 * var(--u));
+  grid-template-columns: minmax(0, 46%);
+  align-content: center;
 }
 
 .deck-layer[data-section='close'] .plate {
-  /* Static, so the row of closing words below anchors to the slide body and
-     lands on the frame's bottom edge rather than just under the last line of
-     type.
-
-     `animation: none` is load-bearing and not tidying. `.is-live .plate` runs
-     `plate-in`, which animates a transform, and an element with a transform is
-     the containing block for its absolutely positioned descendants whatever
-     its own `position` says — so with the entrance still attached, the closing
-     words anchored to the bottom of the *plate's text* instead of to the
-     bottom of the frame and sat in the middle of the character's chest. There
-     is nothing left to animate in here anyway: the plate has no surface on
-     this slide, and its eyebrow, headline and line each carry their own
-     entrance already. */
-  position: static;
+  /* The same `.plate` with its surface taken away. `animation: none` goes
+     with the surface: `plate-in` slides a card in, and there is no card. */
   animation: none;
   padding: 0;
-  max-width: calc(58 * var(--u));
-  margin-inline: auto;
-  text-align: center;
   background: none;
   border: 0;
   box-shadow: none;
-  /* The scene behind is beige, so the type is the deck's royal blue and
-     not the light-on-dark it would inherit from a scene field. */
-  color: var(--navy);
+  color: var(--beige);
 }
 
 .deck-layer[data-section='close'] .plate::after { content: none; }
 
-/* Wide and short rather than narrow and tall: the sub-line has to finish
-   above the character's head, and two lines of it clear where three do not. */
-.deck-layer[data-section='close'] .plate .slide-deck {
-  margin-inline: auto;
-  max-width: calc(52 * var(--u));
-  color: #3a4855;
+.deck-layer[data-section='close'] .plate .display { color: var(--beige); }
+.deck-layer[data-section='close'] .plate .slide-deck { color: var(--beige-dim); }
+
+/* The deck's gold hairline, spent once. */
+.deck-layer[data-section='close'] .plate .rule {
+  margin: calc(2.4 * var(--u)) 0 calc(1.8 * var(--u));
+  background: linear-gradient(90deg, rgba(200, 155, 75, .7), rgba(200, 155, 75, .16) 78%, transparent);
 }
 
-.deck-layer[data-section='close'] .plate .rule { display: none; }
+/* `Questions?` — the Q&A prompt, and the last thing the deck says.
+   Set at headline weight but a step down in size, in gold rather than beige,
+   with air above it. Since the close's ledger was cut it is the only thing
+   under the rule, which is the weight it wants: it is the sentence the
+   founders stop talking on and the room answers.
 
-/* ----------------------------------------------------------------
-   THE CLOSE, WHEN THE PRODUCT IS BEHIND IT
-
-   The rules above set the close's type in royal blue with no plate
-   surface, because the scene behind it is a pale beige wall. Put the
-   built office behind the same slide and every one of those decisions
-   inverts: navy type on a dark, busy, sixteen-person room is not
-   low-contrast, it is *gone*. Shot it to be sure — the headline was
-   unreadable across most of its own length.
-
-   `concept-lawyer-tycoon` already solves this and has shipped: the
-   same office scene, with the copy on a dark translucent plate at the
-   edge of the frame, legible over the busiest part of the room. This
-   is that treatment, applied to the close.
-
-   Keyed on a mounted scene actually being present rather than on the
-   slide id, so it is inert today and becomes correct the moment the
-   scene swap lands in `index.ts` — no second edit, and no window where
-   the deck ships an illegible close. `.deck-appscene[data-role=
-   'current']` is the app-scene layer's own marker for the scene being
-   shown rather than merely warmed.
-   ---------------------------------------------------------------- */
-.deck:has(.deck-appscene[data-role='current']) .deck-layer[data-section='close'] .body-statement {
-  /* Bottom-left rather than centred-top. The office's own subject is the
-     partner desk on the centre line, and a centred headline sits straight on
-     top of it. */
-  align-content: end;
-  justify-content: start;
-  padding: 0 0 calc(4.5 * var(--u)) calc(4 * var(--u));
-}
-
-.deck:has(.deck-appscene[data-role='current']) .deck-layer[data-section='close'] .plate {
-  max-width: calc(44 * var(--u));
-  margin-inline: 0;
-  text-align: left;
-  padding: calc(1.9 * var(--u)) calc(2.2 * var(--u));
-  border-radius: calc(.45 * var(--u));
-  /* Opaque enough to guarantee the contrast ratio over *any* frame of the
-     room, since the staff move and the light changes. A plate that is legible
-     on average is not legible. */
-  background: color-mix(in srgb, var(--navy, #10233f) 88%, transparent);
-  backdrop-filter: blur(calc(.45 * var(--u))) saturate(115%);
-  border: 1px solid color-mix(in srgb, var(--gold, #c9a227) 28%, transparent);
-  box-shadow: 0 calc(1 * var(--u)) calc(2.8 * var(--u)) rgba(0, 0, 0, .45);
-  color: var(--cream, #f4eee2);
-}
-
-/* The headline carries its own colour from the light-wall rules and does not
-   inherit the plate's, so it stayed navy-on-navy and read as a faint ghost
-   across the plate. Everything in here takes the plate's colour unless a rule
-   below deliberately softens it. */
-.deck:has(.deck-appscene[data-role='current']) .deck-layer[data-section='close'] .plate :is(h1, h2, h3, p, strong, em) {
-  color: inherit;
-}
-
-.deck:has(.deck-appscene[data-role='current']) .deck-layer[data-section='close'] .plate .slide-deck {
-  margin-inline: 0;
-  max-width: calc(38 * var(--u));
-  color: color-mix(in srgb, var(--cream, #f4eee2) 82%, transparent);
+   Not scoped to the close, because `layouts.tsx` renders it for any statement
+   slide carrying a `pull` — but the close is the only one today, and the gold
+   is picked against the close's beige-on-blue. A second one on the paper plate
+   would want `--gold-dark`. */
+.statement-pull {
+  margin: calc(2.6 * var(--u)) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+  font-weight: var(--weight-display);
+  letter-spacing: var(--track-display);
+  line-height: 1;
+  color: var(--gold);
 }
 
 .deck-layer[data-section='close'] .plate .slide-credit { display: none; }

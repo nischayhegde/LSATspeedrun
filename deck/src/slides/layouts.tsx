@@ -177,6 +177,11 @@ function StatementBody({ slide }: BodyProps) {
         <Deck text={slide.deck} />
         <hr className="rule" />
         <Points items={slide.points} />
+        {/* The close is the only statement slide in the deck, and the only one
+            that carries a `pull`: the Q&A prompt it is held on. Set as its own
+            line under the ledger rather than as a blockquote, because it is
+            addressed to the room rather than quoted from anyone. */}
+        {slide.pull ? <p className="statement-pull">{slide.pull}</p> : null}
         <Credit text={slide.credit} />
       </div>
     </div>
