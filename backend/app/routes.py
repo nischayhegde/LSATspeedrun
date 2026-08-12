@@ -1214,7 +1214,6 @@ def create_attempt(session_id: str):
         code = str(exc)
         messages = {
             "onboarding_required": "Create your lawyer before starting cases.",
-            "game_context_required": "Reload the current case before submitting it.",
             "idempotency_conflict": "That request identifier was already used.",
             "debrief_required": "Review the current answer before continuing.",
             "diagnostic_expired": "Time is up. Your mega-litigation has been submitted as it stood.",

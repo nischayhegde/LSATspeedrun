@@ -777,12 +777,44 @@ export type PerformanceSnapshot = {
     sections: StrategySectionReading[]
     sections_note: string
   }
-  /** What the last mega-litigation told practice to work on. */
+  /** Which question types practice is currently weighted toward.
+   *
+   * Read from every first encounter the account has filed, decayed toward
+   * recent work, so it moves as a student improves rather than staying frozen
+   * at whatever their last mega-litigation said. `sitting` is that old figure,
+   * kept because a student who has just finished a form wants to know what it
+   * said — it is a report of that run and not a statement about what practice
+   * will do next. */
   focus: {
     types: string[]
-    session_id: string | null
-    completed_at: string | null
-    baseline_accuracy: number | null
+    weak: {
+      type: string
+      section: string
+      /** Points below this student's own accuracy on the *rest* of that
+       * section, after shrinkage. The rest rather than the whole: a baseline
+       * containing the type's own answers is one the type moves. */
+      gap: number
+      shrunk_accuracy: number
+      raw_accuracy: number
+      /** The rest of the section, which is what `gap` is measured against. */
+      section_baseline: number
+      effective_sample: number
+      answers: number
+      half_width: number
+      /** Whether the gap clears its own 95% interval. A gap that does not is
+       * reported and never acted on. */
+      separates: boolean
+    }[]
+    /** Whole-section accuracy, for display. Not what `gap` is measured against. */
+    section_baselines: Record<string, number>
+    first_encounters: number
+    half_life_days: number
+    sitting: {
+      types: string[]
+      session_id: string | null
+      completed_at: string | null
+      baseline_accuracy: number | null
+    }
     explanation: string
   }
   recommendation: { skill: string; accuracy: number; reason: string } | null

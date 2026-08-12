@@ -83,6 +83,15 @@ def app():
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "AUTO_SEED": False,
             "STRATEGY_ENFORCEMENT_ENABLED": False,
+            # Every test here is about what the ranked selector reaches and how
+            # often, so the module is pinned to the ranked arm of
+            # `strategy_selection`. Left unpinned, a quarter of the eligible
+            # draws come from a coin over the whole candidate set and the
+            # distributions below measure the mixture rather than the
+            # mechanism — the leader's share falls to roughly 0.58 against the
+            # 0.60 floor here, which reads as a broken selector and is not one.
+            # The off arm is exercised in `test_strategy_selection_arm.py`.
+            "ADAPTIVE_LAYERS": {"strategy_selection": {"holdback": 0.0}},
         }
     )
     with application.app_context():
@@ -185,7 +194,7 @@ class Student:
 
     def deal(self, exposure: str, position: int = 1) -> dict:
         return assign_strategy_trial(
-            self.user.id, self.question, "cases", position, exposure=exposure
+            self.user.id, self.question, position, exposure=exposure
         )
 
 
@@ -384,7 +393,7 @@ def test_the_selector_cannot_be_called_without_saying_which_encounter_it_is(app)
     with app.app_context():
         student = Student()
         with pytest.raises(TypeError):
-            assign_strategy_trial(student.user.id, student.question, "cases", 0)
+            assign_strategy_trial(student.user.id, student.question, 0)
 
 
 def test_two_runs_meeting_the_same_question_at_the_same_slot_are_two_encounters(app):
@@ -416,7 +425,7 @@ def test_two_runs_meeting_the_same_question_at_the_same_slot_are_two_encounters(
         exposures: set[str] = set()
         arms: set[tuple[str, str]] = set()
         for _ in range(20):
-            session = create_study_session(user, count=1, practice_style="cases")
+            session = create_study_session(user, count=1)
             item = SessionItem.query.filter_by(session_id=session.id).one()
             assert item.position == 0
             assert item.strategy_variant is not None

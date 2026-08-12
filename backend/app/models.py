@@ -185,7 +185,15 @@ class StudySession(db.Model):
         index=True,
     )
     mode = db.Column(db.String(20), nullable=False, index=True)
-    practice_style = db.Column(db.String(24), nullable=False, default="deep", index=True)
+    # Which kind of sitting this was: "cases", "diagnostic" or "blind_review".
+    # Not a setting — nothing takes it from a caller. Which function built the
+    # run decides it, and `services.EVIDENCE_CLASS` is what reads it.
+    #
+    # The default was "deep" until now, one of four practice styles migration
+    # 0021 collapsed into "cases". No run has been created with it since, so
+    # the one branch still testing for it was unreachable and is gone; the
+    # default follows.
+    practice_style = db.Column(db.String(24), nullable=False, default="cases", index=True)
     feedback_policy = db.Column(db.String(20), nullable=False, default="immediate")
     status = db.Column(db.String(20), nullable=False, default="in_progress", index=True)
     target_minutes = db.Column(db.Integer, nullable=False)
@@ -286,6 +294,18 @@ class SessionItem(db.Model):
     # P0-8 / assign_strategy_trial.
     strategy_propensity = db.Column(db.Float, nullable=True)
     strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # --- Which approach (see the `strategy_selection` layer) -----------------
+    # Whether this question's approach was chosen by the student's own record
+    # or drawn uniformly from the same candidate set, and the probability of
+    # the arm that was drawn. Written on control-arm questions too: the arm
+    # decides which approach a control question is *filed under*, and if the
+    # two offer arms were labelled by different processes the offer trial's own
+    # comparison would stop being about the offer. Null where the two arms
+    # would pick the same approach anyway — under the coverage target, or on a
+    # question with a single candidate — because a row with no counterfactual
+    # takes no part in a comparison.
+    strategy_selection_arm = db.Column(db.String(12), nullable=True)
+    strategy_selection_propensity = db.Column(db.Float, nullable=True)
     # --- Mandatory approaches (see strategies.plan_forced_arms) --------------
     # The approach-by-question-type cell this assignment is charged to, and the
     # probability this question had of being drawn as a mandatory one. The
@@ -366,6 +386,19 @@ class Attempt(db.Model):
     strategy_prompt_ms = db.Column(db.Integer, nullable=False, default=0)
     strategy_propensity = db.Column(db.Float, nullable=True)
     strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # Copied off the session item at answer time, like every other arm on this
+    # row. See `SessionItem.strategy_selection_arm`.
+    strategy_selection_arm = db.Column(db.String(12), nullable=True, index=True)
+    strategy_selection_propensity = db.Column(db.Float, nullable=True)
+    # What FSRS predicted the chance of recalling this card was, at the moment
+    # it came back. Written only on review returns, and only once the card has
+    # a memory state, because a model that has not graded a card has made no
+    # claim about it. This is the whole instrument for `review_scheduling`: the
+    # layer has no holdout, and this column is what lets the scheduler be
+    # scored against its own predictions instead. It has to be recorded here
+    # rather than derived later, because answering the question is what moves
+    # the state the prediction was made from. See `scheduling.review_calibration`.
+    predicted_retrievability = db.Column(db.Float, nullable=True)
     # --- Enforced strategy use (see app/enforcement.py) ----------------------
     # `strategy_applied` above is a self-report about a private mental act.
     # These columns are the observable version of the same claim. `satisfied`
@@ -926,6 +959,19 @@ class LayerAssignment(db.Model):
     propensity = db.Column(db.Float, nullable=False)
     design_version = db.Column(db.String(40), nullable=False)
     session_id = db.Column(db.String(36), nullable=True, index=True)
+    # What the layer's signal said at the moment of the draw, as a sorted
+    # pipe-separated set of tokens, or null for a layer whose reading does not
+    # need it. `experiments.signal_tokens` writes it and only set membership is
+    # ever read off it.
+    #
+    # It exists because a layer's declared population can otherwise be a
+    # comment rather than a fact: `weak_type_targeting` is read on later
+    # encounters with *the types this student was weak at when the run was
+    # built*, and that list is not reconstructible afterwards — the whole point
+    # of the layer is that it moves as the student improves. Recording it here
+    # is the difference between a reading restricted to the population it
+    # claims and one that quietly averages over every type in the bank.
+    signal = db.Column(db.String(240), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
 
 

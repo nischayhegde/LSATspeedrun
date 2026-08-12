@@ -12,7 +12,8 @@ from sqlalchemy.orm import joinedload
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
 from .extensions import db
-from .focus import diagnostic_focus, diagnostic_focus_detail
+from .focus import diagnostic_focus_detail
+from .type_focus import rolling_focus, rolling_focus_detail
 from .game import (
     CLIENT_BY_KEY,
     explanation_band,
@@ -76,8 +77,16 @@ from .strategies import (
 )
 
 
-PRACTICE_STYLES = {"cases"}
 FEEDBACK_POLICIES = {"immediate", "delayed"}
+# What kind of sitting a run was, which is not the same thing as a setting.
+# `StudySession.practice_style` used to be a choice the caller made from
+# `PRACTICE_STYLES`, and by the time migration 0021 had collapsed the four
+# styles into one, that set held a single value. A selector with one option is
+# not a selector; the surviving distinctions are between a practice run, a
+# mega-litigation and a blind review, and those are decided by which function
+# built the run rather than by anything the caller passes. The set and the
+# parameter are gone. The column stays, because it is the discriminator these
+# three keys read.
 EVIDENCE_CLASS = {
     "cases": "coached_practice",
     "diagnostic": "diagnostic",
@@ -1399,7 +1408,7 @@ def _fill_blocks(
 def _weight_toward_focus(
     pool: list[QuestionFact], count: int, focus_types: list[str] | None
 ) -> list[QuestionFact]:
-    """Fill most of a run from the mega-litigation's weak types, the rest at random.
+    """Fill most of a run from the student's weak types, the rest at random.
 
     Deliberately a bias and not a filter. Drilling only the weak types would
     stop measuring everything else and would make one bad run self-reinforcing;
@@ -1572,7 +1581,6 @@ def create_study_session(
     *,
     count: int | None = None,
     question_type: str | None = None,
-    practice_style: str = "cases",
 ) -> StudySession:
     # The account row is the cross-request mutex for the single active case
     # batch. Both POST /study-sessions and final acknowledgement use this path.
@@ -1583,9 +1591,6 @@ def create_study_session(
     if len(list_resumable_sessions(user)) >= queue_cap:
         db.session.commit()
         raise ValueError("queue_full")
-
-    if practice_style not in PRACTICE_STYLES:
-        raise ValueError("invalid_practice_style")
 
     session_size = count if count is not None else int(current_app.config["PRACTICE_SESSION_SIZE"])
     # The run's id, minted here rather than by the insert below, because two
@@ -1666,7 +1671,6 @@ def create_study_session(
                 profile,
                 questions,
                 session_id=session_id,
-                practice_style=practice_style,
                 question_type=None,
                 # Whichever of the passage's questions were already due. A
                 # reading case does not have review *slots* — the passage is the
@@ -1713,9 +1717,23 @@ def create_study_session(
     # Due passage-mates travel together so the run reads the passage once. Only
     # the ones the scheduler already chose — see `cluster_passage_mates`.
     repairs = scheduling.cluster_passage_mates(repairs)
-    # A type-filtered run is the student overriding the weighting by hand, so the
-    # last mega-litigation only steers an unfiltered one.
-    focus_types = [] if question_type else diagnostic_focus(user.id)
+    # A type-filtered run is the student overriding the weighting by hand, so
+    # the weak-type signal only steers an unfiltered one.
+    #
+    # `rolling_focus`, not `diagnostic_focus`. The old signal read exactly one
+    # run — the last completed mega-litigation — so a student who was
+    # consistently poor at necessary-assumption questions across two hundred
+    # ordinary cases was not noticed as weak at that category by anything, and a
+    # student who had improved since March was still being fed what March said.
+    # The new one reads every first encounter the account has filed, decayed by
+    # recency, weighted by evidence class so the mega-litigation still counts
+    # nearly twice what a coached case does, and shrunk toward the student's own
+    # accuracy in that section. `app/type_focus.py` has the reasoning, including
+    # what it deliberately does not double-count.
+    #
+    # It subsumes the old signal rather than sitting beside it: same layer, same
+    # arms, new `design_version`.
+    focus_types = [] if question_type else rolling_focus(user.id)
     # Weak-type targeting is an adaptive layer like any other, and until now it
     # was one nobody could evaluate: it has steered every eligible run since it
     # shipped, so there has never been a run to compare a steered one against.
@@ -1726,11 +1744,19 @@ def create_study_session(
     # The draw happens only where the layer could act — a run with no focus
     # types is the same run either way, and enrolling it would dilute the
     # comparison with runs on which the treatment is a no-op. Eligibility is
-    # decided from the student's diagnostic history, which is fixed before this
-    # run starts and cannot be an outcome of the arm.
+    # decided from answers filed before this run started, so it cannot be an
+    # outcome of the arm.
     if focus_types:
+        # The weak types go on the assignment row. They have to: the layer is
+        # read on later encounters with the types this run leaned into, and by
+        # the time anyone reads it the signal has moved — a student who
+        # improved has a different list, which is the treatment working rather
+        # than a bookkeeping inconvenience. Written here or not at all.
         targeting = experiments.assign(
-            "weak_type_targeting", user.id, exposure=Exposure.run(session_id)
+            "weak_type_targeting",
+            user.id,
+            exposure=Exposure.run(session_id),
+            signal=experiments.signal_tokens(focus_types),
         )
         # The strategy trial still sees the unblanked list. Its `focus_types`
         # only lengthens the coverage runway on weak types, which is a decision
@@ -1779,13 +1805,37 @@ def create_study_session(
     # the run instead of stacked at the start, which is what the old
     # `repairs + fresh` concatenation did — and which leaks "these first four
     # are the ones you got wrong" before the student has read a word.
-    questions = scheduling.interleave(repairs, fresh, question_type=question_type)
+    #
+    # A quarter of the runs where the two orderings differ get the front-loaded
+    # one, which is the app's own previous behaviour rather than a degraded
+    # arm invented for the trial. The draw only happens where there is
+    # something to compare: with no reviews or no fresh material `interleave`
+    # returns the list untouched and the two arms produce the same run, so
+    # enrolling those would dilute the comparison with questions on which the
+    # treatment is a no-op.
+    #
+    # The reading is taken on the *next* time these questions come round, not
+    # on this run, and it is reported per section and never pooled. Both of
+    # those are properties of the layer rather than of this call site; see
+    # `run_ordering` in `app/experiments.py` for why each one matters, and
+    # `scheduling.BLOCKED_SECTIONS` for the Reading Comprehension decision the
+    # arms are now measured around.
+    if repairs and fresh:
+        ordering = experiments.assign(
+            "run_ordering", user.id, exposure=Exposure.run(session_id)
+        )
+        questions = (
+            scheduling.interleave(repairs, fresh, question_type=question_type)
+            if ordering.on
+            else scheduling.front_load(repairs, fresh)
+        )
+    else:
+        questions = scheduling.interleave(repairs, fresh, question_type=question_type)
     return _build_practice_session(
         user,
         profile,
         questions,
         session_id=session_id,
-        practice_style=practice_style,
         question_type=question_type,
         repair_ids=repair_ids,
         focus_types=focus_types,
@@ -1798,7 +1848,6 @@ def _build_practice_session(
     questions: list[Question],
     *,
     session_id: str,
-    practice_style: str,
     question_type: str | None,
     repair_ids: set[str] | None = None,
     focus_types: list[str] | None = None,
@@ -1844,7 +1893,7 @@ def _build_practice_session(
         id=session_id,
         user_id=user.id,
         mode="practice",
-        practice_style=practice_style,
+        practice_style="cases",
         feedback_policy=policy,
         target_minutes=user.target_minutes,
         total_items=len(questions),
@@ -1864,8 +1913,11 @@ def _build_practice_session(
             position,
             question,
             assign_strategy_trial(
-                user.id, question, practice_style, position,
-                exposure=session.id, focus_types=focus_types,
+                user.id,
+                question,
+                position,
+                exposure=session.id,
+                focus_types=focus_types,
             ),
         )
         for position, question in enumerate(questions)
@@ -1902,6 +1954,16 @@ def _build_practice_session(
                 # of the second draw is its own column beside it.
                 strategy_propensity=strategy_trial["propensity"] if strategy_trial else None,
                 strategy_candidates_n=strategy_trial["candidates_n"] if strategy_trial else None,
+                # Which of the two ways this question's approach was picked,
+                # and the probability of that arm. Recorded on control-arm
+                # questions as well as prompt-arm ones, because it decides
+                # which approach a control question is filed under and both
+                # arms have to be labelled by the same process. Null where the
+                # two arms would agree anyway.
+                strategy_selection_arm=strategy_trial["selection_arm"] if strategy_trial else None,
+                strategy_selection_propensity=(
+                    strategy_trial["selection_propensity"] if strategy_trial else None
+                ),
                 strategy_stratum=drawn.get("stratum"),
                 strategy_forcing_propensity=drawn.get("forcing_propensity"),
                 # Fixed here rather than at serve time so the gate a student
@@ -2565,6 +2627,20 @@ def _schedule_review(attempt: Attempt) -> None:
             return
         existing.last_attempt_id = attempt.id
         _rewind_pending(existing)
+        # The scheduler's own claim about this card, captured after the rewind
+        # and before the advance, which is the only moment it is available: the
+        # rewind restores the pre-attempt state, and the advance destroys it.
+        # Reading it here also makes the second call idempotent, since a
+        # rewound card predicts what it predicted the first time.
+        #
+        # This is the whole measurement for `review_scheduling`. That layer has
+        # no control arm, on purpose and for reasons written on its registry
+        # entry, so what stands in for one is that FSRS commits to a number
+        # before every review and can be scored against it afterwards. See
+        # `scheduling.review_calibration`.
+        attempt.predicted_retrievability = scheduling.predicted_recall(
+            existing, attempt.session_item.served_at
+        )
         _hold_pending(existing, pending)
         _advance_review(existing, attempt)
         return
@@ -2695,13 +2771,6 @@ def submit_attempt(
     if item.attempt:
         return item.attempt, True
     _freeze_current_case(item, user)
-    if (
-        item.game_context_json is None
-        and session.mode == "practice"
-        and session.practice_style == "deep"
-    ):
-        raise ValueError("game_context_required")
-
     selected_label = str(payload.get("selected_label", "")).strip().upper()
     if selected_label not in {choice.label for choice in item.question.choices}:
         raise ValueError("invalid_choice")
@@ -2824,6 +2893,8 @@ def submit_attempt(
         strategy_propensity=item.strategy_propensity,
         strategy_candidates_n=item.strategy_candidates_n,
         exposure_policy=item.exposure_policy or calibration.EXPOSURE_BLIND,
+        strategy_selection_arm=item.strategy_selection_arm,
+        strategy_selection_propensity=item.strategy_selection_propensity,
         evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "coached_practice")),
         server_elapsed_ms=elapsed_ms,
         client_elapsed_ms=None,
@@ -3265,20 +3336,37 @@ def performance_snapshot(user: User) -> dict:
     }
     recommendation_skill = next((skill for skill in skills if skill["attempts"] >= 3), None)
     strategy_lab = strategy_performance(user.id)
-    focus_detail = diagnostic_focus_detail(user.id)
+    # What the panel reports is now what the selector reads. It used to report
+    # the last mega-litigation's verdict while claiming "most of each new case
+    # run is drawn from those" — true of the mechanism at the time, and a
+    # description of a much narrower signal than a student would take it for.
+    # The mega-litigation's own list is still available under `sitting`, because
+    # a student who has just sat one wants to know what it said, but it is a
+    # report of that run rather than a statement about what practice will do.
+    rolling_detail = rolling_focus_detail(user.id)
+    sitting_detail = diagnostic_focus_detail(user.id)
     focus = {
-        "types": focus_detail["types"],
-        "session_id": focus_detail["session_id"],
-        "completed_at": _iso_utc(focus_detail["completed_at"]) if focus_detail["completed_at"] else None,
-        "baseline_accuracy": focus_detail["baseline_accuracy"],
+        "types": rolling_detail["types"],
+        "weak": rolling_detail["weak"],
+        "section_baselines": rolling_detail["section_baselines"],
+        "first_encounters": rolling_detail["first_encounters"],
+        "half_life_days": rolling_detail["half_life_days"],
+        "sitting": {
+            "types": sitting_detail["types"],
+            "session_id": sitting_detail["session_id"],
+            "completed_at": _iso_utc(sitting_detail["completed_at"])
+            if sitting_detail["completed_at"]
+            else None,
+            "baseline_accuracy": sitting_detail["baseline_accuracy"],
+        },
         "explanation": (
-            "Your last mega-litigation came in under its own average on "
-            + _join_types(focus_detail["types"])
-            + ". Most of each new case run is drawn from those, and their strategy trials keep testing "
-            "approaches for longer before settling."
-            if focus_detail["types"]
-            else "Finish a mega-litigation and practice will start weighting itself toward whatever it "
-            "shows you are weakest at."
+            "Across your recent first attempts you are coming in under your own average for the "
+            "section on " + _join_types(rolling_detail["types"]) + ". Most of each new case run is "
+            "drawn from those, and their strategy trials keep testing approaches for longer before "
+            "settling. Recent work counts most, so this moves as you improve."
+            if rolling_detail["types"]
+            else "Nothing stands out yet as a question type you are weaker at than the rest of its "
+            "section. Keep practising and this will start weighting itself."
         ),
     }
 

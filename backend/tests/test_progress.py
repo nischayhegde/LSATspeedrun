@@ -1368,6 +1368,71 @@ def test_interleaving_keeps_passage_mates_together(app):
     assert passage_positions[-1] - passage_positions[0] == 2
 
 
+def test_reading_comprehension_is_blocked_on_purpose_and_not_by_accident(app):
+    """The type-discrimination pass leaves Reading Comprehension alone.
+
+    Not because passages are expensive to re-read — that is true, and it is
+    what `_blocks` already handles — but because
+    `research/01-learning-science.md` puts interleaving at g = 0.01 on
+    expository text against g = 0.42 overall. Moving Reading Comprehension
+    blocks around to break up repeated types would be buying a benefit the
+    evidence says is not there.
+
+    The distinction this asserts is between the two halves of interleaving.
+    Reading Comprehension keeps its review items distributed through the run,
+    because that half is about not leaking which questions were missed and
+    applies to any material. It does not get de-blocked by type.
+    """
+    from app.scheduling import interleave, is_blocked_section
+
+    class Item:
+        def __init__(self, name, question_type, section, passage_id=None):
+            self.name = name
+            self.question_type = question_type
+            self.section = section
+            self.passage_id = passage_id
+
+    # Two same-type Reading Comprehension blocks back to back, with a Logical
+    # Reasoning block available to swap in. The de-blocking pass would take it
+    # for a Logical Reasoning pair, and must not here.
+    fresh = [
+        Item("rcA", "Detail", "Reading Comprehension", "p1"),
+        Item("rcB", "Detail", "Reading Comprehension", "p2"),
+        Item("lr1", "Flaw", "Logical Reasoning"),
+    ]
+    reviews = [Item("rev", "Assumption", "Logical Reasoning")]
+    names = [item.name for item in interleave(reviews, fresh)]
+    # Read with the review filtered out, because the two passes are what this
+    # test is separating and only the second one is its subject. Where the
+    # review lands is a uniform draw over the run — see `_review_slots`, which
+    # replaced the fixed midpoints on purpose, having measured them as a
+    # positional cue — so it can fall between the two passages without the
+    # de-blocking pass having touched them. What must hold is that the *fresh*
+    # order still has the passages together, which is the pass that is
+    # supposed to leave Reading Comprehension alone.
+    #
+    # This assertion used to read the combined sequence, and there used to be
+    # one below it asserting the review is never first. Both were true only
+    # while review placement was deterministic; the second is now false by
+    # design, since "the first question is never a repeat" is itself the cue
+    # the jitter exists to remove.
+    fresh_names = [name for name in names if name != "rev"]
+    assert fresh_names.index("rcA") < fresh_names.index("rcB")
+    assert fresh_names.index("rcB") - fresh_names.index("rcA") == 1
+
+    # Same shape, Logical Reasoning throughout, and the pass does fire.
+    fresh = [
+        Item("a", "Flaw", "Logical Reasoning"),
+        Item("b", "Flaw", "Logical Reasoning"),
+        Item("c", "Assumption", "Logical Reasoning"),
+    ]
+    names = [item.name for item in interleave(reviews, fresh)]
+    assert abs(names.index("a") - names.index("b")) > 1
+
+    assert is_blocked_section(fresh[0]) is False
+    assert is_blocked_section(Item("x", "Detail", "Reading Comprehension")) is True
+
+
 def test_practice_runs_never_expose_the_scheduler(app):
     """The student presses practice; no rating, deck, or due-date UI appears."""
     client = app.test_client()

@@ -187,7 +187,15 @@ export function PerformancePage() {
     if (diagnosticSession) navigate(`/cases/${diagnosticSession.id}`)
     else setGateOpen(true)
   }
-  const focus = performance.focus ?? { types: [], session_id: null, completed_at: null, baseline_accuracy: null, explanation: '' }
+  const focus = performance.focus ?? {
+    types: [],
+    weak: [],
+    section_baselines: {},
+    first_encounters: 0,
+    half_life_days: 30,
+    sitting: { types: [], session_id: null, completed_at: null, baseline_accuracy: null },
+    explanation: '',
+  }
   const pauseActiveRun = () => {
     if (!activePractice) return
     void play('pause', { id: `dashboard-pause:${activePractice.id}`, seed: activePractice.id, intensity: .45 })
@@ -379,7 +387,14 @@ export function PerformancePage() {
         <p className="dash-focus-note">
           Practice is weighted {focus.types.length ? `toward ${focus.types.join(' · ')}` : 'evenly across the test'}.
           {focus.explanation ? ` ${focus.explanation}` : ''}
-          {focus.baseline_accuracy !== null ? ` Measured against your own ${focus.baseline_accuracy}% on that form.` : ''}
+          {/* The baseline each weak type was measured against, rather than the
+              old "your own N% on that form" — the comparison is no longer
+              against one sitting. It is the rest of the section rather than
+              the whole of it, so the sentence is a comparison the student
+              could make by hand. */}
+          {focus.weak.length
+            ? ` ${focus.weak[0].type} is running ${focus.weak[0].gap} points under your ${focus.weak[0].section_baseline}% on the rest of ${focus.weak[0].section}.`
+            : ''}
         </p>
         {activeRunChip}
         <div className="dash-actions">
