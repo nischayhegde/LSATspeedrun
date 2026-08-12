@@ -24,6 +24,7 @@ Every entry gives the claim, the source, the exact numbers, a URL, and the objec
 | "Virtual currency raised practice 1.4× to 3.7×" | `pov-virtual-currency` | **Directionally right, wrong column.** Those are group totals from unequal groups. Per student it is **1.3× to 3.7×**, published in the same table. Corrected on the slide. §6.1 |
 | Why gamification at all — the causal chain | *(deck-wide)* | **Was missing, now on `pov-volume-is-the-constraint`.** The deck argued the method and then produced a game, with no slide establishing that compliance is the binding constraint. LSAC's own RR 21-01 supplies it. §7 |
 | "Video minutes were not correlated with LSAT scores" | `pov-volume-is-the-constraint` | **Solid, and it is a direct quote from the test maker.** LSAC RR 21-01, read from the primary PDF 2026-08-10. §7 |
+| Figures that print the product's own strings and numbers | `game-never-gates`, `pov-real-clock`, `pov-strategy-inside-the-question` | **Checkable, and checked 2026-08-12.** Three diagrams were replaced by the app's own screens on the founders' abstraction note, which makes each printed string a claim about the product. Every one is listed against the file it came from in **§9**. The one to know: `71%` and `58%` on the strategy slide were never data — they are a worked example from an internal design document — and are now the demo account's real counts. |
 
 ---
 
@@ -407,10 +408,11 @@ Three reasons, in the order they matter.
 
 # 5. Summary of slide changes recommended
 
-Rows 4–9 were the original recommendations and are applied in `NARRATIVE.md` Revision 3. Row 3 is Revision 4's. Row 2 is Revision 6's. **Row 1 is Revision 10's**, and those two are the only changes in the file's history that moved the runtime.
+Rows 5–10 were the original recommendations and are applied in `NARRATIVE.md` Revision 3. Row 4 is Revision 4's. Row 3 is Revision 6's. **Rows 1 and 2 are Revision 10's.** Row 2 and row 3 are the only changes in the file's history that moved the runtime.
 
 | Slide | Change | Severity |
 | --- | --- | --- |
+| `game-never-gates` · `pov-real-clock` · `pov-strategy-inside-the-question` | **Three diagrams replaced by the product's own screens**, on the founders' note that the deck was too abstract to be recognisably about the app. Each now quotes the shipped code, and **§9 lists every string and number with the file it came from** so a judge can check the lot. Nothing here is a research claim and nothing changes what a slide argues; what changes is that the argument is drawn in the product's language instead of about it. **No runtime cost.** | Applied |
 | **`market-in-their-own-words`** | **New slide, inserted at position 7**, between Spiky POV 01 and the confidence POV. Five named competitors quoted from their own pages against one column none of them meets, sourced cell by cell in §4.10, with the Demon concession on screen as the standfirst. Requested by the founders after walking the deck; §D of `NARRATIVE.md` had argued against a comparison slide and its four objections are answered rather than overruled — see the header of `src/figures/market-ledger.tsx`. **Costs 10s and nothing gives way. The deck is 5:00 across 25 slides.** | Applied |
 | **`pov-volume-is-the-constraint`** | **New slide, inserted at position 8**, between `pov-confidence-signal` and the concept. Carries §7: video minutes were not correlated with LSAT scores, practice time was worth +4.3 points across the engagement range, and 51% of the cohort never completed one practice exam. This is the deck's answer to *why gamification* — the game is the compliance mechanism for a method whose binding constraint is compliance — and it is stated before the game is ever named, so the game arrives as an answer rather than as an amenity. **Costs 26s; `pov-virtual-currency` gives back 2. The deck is 10:04.** | Applied |
 | `pov-virtual-currency` | **Rebuilt in Revision 5, corrected in Revision 6.** Argues the mechanism (§6.1) rather than points-against-badges. The three multiples were the paper's group totals and are now its per-student averages — 1.3× / 2.5× / 3.7× — because the experimental and comparison groups are not the same size. Both nulls stay on screen. | Applied |
@@ -520,5 +522,39 @@ Three sentences in the deck compare Lawyer Tycoon to the field without naming an
 1. **A price.** There is no Lawyer Tycoon price to name. `close-one-stop-shop` says *"Cheaper — no video studio, no live instructors,"* which is a claim about cost structure and is true by construction. **Do not answer "how much?" with a number that has not been decided.** Say what the cost structure removes.
 2. **That the thesis is ours.** §D of `NARRATIVE.md` is emphatic and it is still right: Demon has argued publicly for years that drilling beats lecturing. The differentiation is what happens inside one rep, plus the compliance mechanism — not the diagnosis.
 3. **That competitors have no motivation layer.** §4.9(2). None *advertises* points, currency, levels or streaks. That is a claim about their marketing pages, and it is as far as it can honestly go.
+
+---
+# 9. Figures that quote the product — three slides, and how to check them
+
+Revision 10 answered the founders' note that *"some of these slides are simply too abstract and don't show enough good visuals really theming itself around the app"* by putting the app's own screens on three figures in place of diagrams of them. That is a better slide and a **new kind of exposure**: a number or a phrase presented as the product's is a claim about the product, and this deck has been pulled up before for framing that outran its evidence. So every one of them is listed here with the file it came from.
+
+None of these is a research claim and none needs an outside source. What they need is to be **true of the shipped code**, and all of them were read out of the tree on 2026-08-12. If the product changes, these slides are wrong and this section is the list of what to re-read.
+
+## 9.1 `game-never-gates` — the unlock list
+
+| On the slide | Where it comes from |
+| --- | --- |
+| The form of every row — a padlock, the thing, its requirement | `frontend/src/wardrobe.tsx` line 185: `<b className="wardrobe-item-lock"><Lock size={12} />{item.requirement}</b>` |
+| *Settle 25 cases* · *Settle 100 cases* · *Hold 55 reputation* · *Reach the Downtown Firm (HQ tier 3)* | `_wardrobe_requirement` in `backend/app/game.py` composes these from three verbs. The four items are `tie_regimental`, `accessory_briefcase`, `accessory_wristwatch` and `suit_forest` in the `WARDROBE` table; the tier name and number are `FIRM_TIERS[3]` |
+| *Available from your first day* | The same function's fallback, returned for any item whose unlock is `WARDROBE_UNLOCK_START` |
+| “Everything here is won by practising, never bought.” | `frontend/src/wardrobe.tsx` line 113, printed under the wardrobe's own heading. Set as a quotation on the slide and credited to that screen |
+
+**Two liberties, both small and both worth knowing before somebody notices them.** The app files its cosmetics under category headings, so "Forest green" is printed on the slide as "Forest green suit"; and the four items are four of twenty-nine, picked to span three of the game's currencies rather than at random. **No requirement string was reworded.**
+
+**The last row is a claim about the code, not a promise, and this is how it was checked.** Nothing in `backend/app/scheduling.py` or `backend/app/services.py` — the two modules that build a session and choose its questions — reads `office_tier`, `reputation` or `total_cases`. Grep for all three returns nothing in either file. That is the whole of the evidence for *the game never gates the practice*; it is a negative, and it is the one class of negative this deck is allowed to assert, because the surface is ours.
+
+## 9.2 `pov-real-clock` — the timer at the middle of the dial
+
+- **`target 2:30`** is the shipped Logical Reasoning target: `_target_time_seconds` in `backend/app/services.py` returns **150** seconds for any Logical Reasoning item. (Reading Comprehension is 330, or 135 on a reused passage, which is why the slide's chip is an LR one.)
+- **`2:56`** is the elapsed time the ring already draws. The used arc is at 0.82 and the pace ring at 0.70, so the overrun is 150 × 0.82 / 0.70 ≈ **176 seconds**. The four values are one reading; move any of them and move all four.
+- **The gold** is the app's, not the deck's: `case-flow.tsx` puts a `case-timer` into its `over` state once elapsed passes target. Gold rather than red because the deck spends verdict red on `pov-reasoning-is-the-work` and `pov-confidence-signal` and this is not one of them.
+- **This slide still carries no credit line and must not acquire one.** See §D of `NARRATIVE.md`: the POV itself has no outside source, LSAT Demon publicly argues the opposite, and a hairline here would invite the search that finds nothing. Quoting our own timer does not change that — it evidences *that we time a question*, which nobody disputes, not *that timing a question is right*, which is the claim.
+
+## 9.3 `pov-strategy-inside-the-question` — the record, in counts
+
+- **13 of 16 and 4 of 7** are the demo account's prompted and control attempts on `prephrase`, seeded by `backend/scripts/seed_demo.py`. They replaced **71% and 58%**, which were never measurements of anything: they are the worked example in an internal design document (`docs/superpowers/specs/2026-07-27-strategy-flow-simplification-design.md`, *"You get 71% right with it and 58% right without it"*), and somewhere between that spec and this deck they were read as data. **If either number reappears on a slide, it is a regression.**
+- **The counts are printed rather than the percentages, and the product's own rule is why.** `backend/app/strategies.py` sets `PERCENTAGE_DISPLAY_MIN_SAMPLE = 30` and falls back to `13/16` below it, on the reasoning that a control sample of four can only ever read 0, 25, 50, 75 or 100 per cent. A pitch slide quoting a statistic the product itself refuses to display is the cheapest available way to lose a technical audience.
+- **The bars are sized from the ratios** (0.8125 and 0.571), so the comparison still lands in one glance. The ratio is drawn; the number under it is one the room can check against the app.
+- **The card is the app's `strategy-tip` section** from `frontend/src/case-flow.tsx`, down to both buttons. The refusal button is drawn on purpose: the control arm is made of the questions where a student pressed it.
 
 ---
