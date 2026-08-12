@@ -21,9 +21,11 @@ import type { DeckScene, SceneContext } from './types'
  * The product's mark is a scales-of-justice glyph in navy, gold and cream — it is
  * the favicon, and the same four strokes appear on the boot spinner and on every
  * seal in the game. So the first thing the audience sees is that mark, built at
- * three dimensions and put together in front of them: nine parts fly in from
+ * three dimensions and put together in front of them: eight parts fly in from
  * scattered positions and settle into a single object. That is the deck's whole
- * argument in one gesture, and it takes four seconds.
+ * argument in one gesture, and it takes `ASSEMBLE_SECONDS` — currently 2.6, of
+ * the slide's 7-second budget, so the composed mark owns most of the frame's
+ * life rather than a minority of it.
  *
  * Behind it, sixty extruded blocks in three receding ranks read as a city under
  * fog — the skyline the firm ends up owning. In front of it, three light shafts
@@ -52,7 +54,37 @@ type Part = {
   delay: number
 }
 
-const ASSEMBLE_SECONDS = 4.2
+/**
+ * How long the mark takes to put itself together, and it is a budget question
+ * rather than a taste one.
+ *
+ * The slide is allotted `budgetSeconds: 7`. At the 4.2 this used to be, the
+ * *composed* mark — the thing the whole gesture is for — existed for 2.8 of
+ * those seconds, so the audience spent 60% of the deck's opening frame watching
+ * parts fly and 40% looking at the finished object. That is backwards, and the
+ * talk is cut to 4:50, so the fix is to land sooner rather than to hold the
+ * slide longer.
+ *
+ * At 2.6 the composed frame gets 4.4 seconds, a clear majority of the slide.
+ *
+ * Note that this is not the old timing scaled down, which would just look
+ * rushed. The compression is taken out of the *stagger* instead: `PART_WINDOW`
+ * below went from .55 to .72, so each individual part still travels for about
+ * 1.9 seconds against the 2.3 it had, while the gap between the first part
+ * leaving and the last one leaving falls from 1.9 seconds to 0.7. The parts
+ * overlap much more, which reads as one object converging rather than as nine
+ * things queueing up, and no single part moves appreciably faster than before.
+ */
+const ASSEMBLE_SECONDS = 2.6
+
+/**
+ * The share of the assembly any one part spends travelling.
+ *
+ * The remainder, `1 - PART_WINDOW`, is what the per-part `delay` values are
+ * spread across. Larger means more overlap and a more fluid convergence;
+ * smaller means a more legible one-at-a-time build. See `ASSEMBLE_SECONDS`.
+ */
+const PART_WINDOW = .72
 
 export function createHeroScene(context: SceneContext): DeckScene {
   const scene = new THREE.Scene()
@@ -116,9 +148,72 @@ export function createHeroScene(context: SceneContext): DeckScene {
   const fill = new THREE.DirectionalLight(0xa8c4e8, .85)
   fill.position.set(-7, 9, 17)
   scene.add(fill)
-  const goldBounce = new THREE.PointLight(PALETTE.pixelGold, 26, 16, 2)
+  // Dimmer than it was: at 26 this warm bounce over navy at the column's foot
+  // mixed to a distinctly green post, which is not a colour in the deck.
+  const goldBounce = new THREE.PointLight(PALETTE.pixelGold, 15, 16, 2)
   goldBounce.position.set(0, 3.1, 1.4)
   scene.add(goldBounce)
+
+  // --- the environment the metal is reflecting -----------------------------
+  /**
+   * Why the gold was not gold.
+   *
+   * `gold` is `metalness: .82`, and a metal in a physically based renderer is
+   * almost entirely *reflection* — its diffuse term goes to nothing as metalness
+   * approaches 1, so what it shows is its surroundings. This scene had no
+   * environment, so every metal in it was reflecting a void and resolving to
+   * near-black, lit only by whatever specular highlight a direct light happened
+   * to throw. Photographed, the beam, the pan rims, the collar and the seal
+   * rings all came out the same dull olive as the navy around them, which is
+   * most of why the mark read as one mass: the two materials that were supposed
+   * to separate it into gold furniture and a navy body were rendering as the
+   * same value.
+   *
+   * This is not a lighting bug and no amount of adding lights fixes it. What it
+   * needs is something to reflect.
+   *
+   * Built rather than loaded: a 64×32 equirectangular gradient is far too small
+   * to be seen as an image in a reflection but is entirely enough to give a
+   * metal a horizon, which is all a metal needs to read as metal. Three bands,
+   * matching the picture the scene actually paints — cold night sky above, the
+   * warm haze of the lit city at the horizon, and the gold bounce off the floor
+   * below. It costs one 2 KB canvas at build time and nothing per frame.
+   */
+  const environmentTexture = (() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 32
+    const context2d = canvas.getContext('2d')
+    if (!context2d) return null
+    const gradient = context2d.createLinearGradient(0, 0, 0, 32)
+    gradient.addColorStop(0, '#0a1526')
+    gradient.addColorStop(.46, '#20304a')
+    gradient.addColorStop(.54, '#6b5a3a')
+    gradient.addColorStop(1, '#2a1d0b')
+    context2d.fillStyle = gradient
+    context2d.fillRect(0, 0, 64, 32)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.mapping = THREE.EquirectangularReflectionMapping
+    texture.colorSpace = THREE.SRGBColorSpace
+    return texture
+  })()
+
+  const pmrem = new THREE.PMREMGenerator(context.renderer)
+  // The whole render target is kept, not just its texture. `fromEquirectangular`
+  // returns a `WebGLRenderTarget`, and disposing the texture off it leaves the
+  // target itself allocated — which would leak one per build, and the deck
+  // rebuilds a scene whenever the LRU has evicted it and the presenter comes
+  // back. `WebGLRenderTarget.dispose()` releases the texture with it.
+  const environmentTarget = environmentTexture ? pmrem.fromEquirectangular(environmentTexture) : null
+  environmentTexture?.dispose()
+  pmrem.dispose()
+  if (environmentTarget) {
+    scene.environment = environmentTarget.texture
+    // Held well below 1: this is a night exterior and the environment is here to
+    // give the metal a horizon, not to relight the scene. The hard spot is still
+    // the key.
+    scene.environmentIntensity = .55
+  }
 
   // --- materials -----------------------------------------------------------
   const navy = new THREE.MeshStandardMaterial({ color: PALETTE.navy, roughness: .62, metalness: .12 })
@@ -209,57 +304,142 @@ export function createHeroScene(context: SceneContext): DeckScene {
     parts.push({ mesh, from, to: to.clone(), fromQuaternion, toQuaternion, delay })
   }
 
-  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 4.2, 1.5, 8), navy)
-  registerPart(plinth, new THREE.Vector3(0, .75, 0), 0, .35)
+  /**
+   * The mark, measured off the favicon instead of approximated.
+   *
+   * The previous build was written as "traced from the favicon's own path data,
+   * scaled up" and was not: it had a 12.6-wide beam .42 thick over a column .98
+   * across, and pans built as `ConeGeometry(1.85, 1.35, 3)` with a
+   * `TorusGeometry(1.85, .055, 5, 3)` lip. Three radial segments is a triangular
+   * pyramid and three tubular segments is a triangular ring, so what hung off
+   * the beam were two angular **diamonds** — and photographed at a third scale,
+   * which is roughly the projected size from the back of a room, they read as
+   * pendants rather than as the pans of a balance. The mark the deck is named
+   * around did not read as scales.
+   *
+   * So the geometry is now derived from the glyph rather than eyeballed against
+   * it. These are the real paths out of `frontend/index.html`, in its own 24×24
+   * viewBox:
+   *
+   *   body   M7 20h10v2H7z  M10 18h4v2h-4z  M11 7h2v11h-2z  M10 3h4v3h-4z
+   *   beam   M3 6h18v2H3z  M4 8h1v3H4z  M19 8h1v3h-1z
+   *          M1 11h7l-1.75 3.25h-3.5z   M16 11h7l-1.75 3.25h-3.5z
+   *
+   * Two things fall out of reading them properly. The beam is 2 units thick
+   * against a column 2 units wide — the same weight, where the old build made
+   * the beam less than half the column. And a pan is `h7` across the top
+   * narrowing to `h3.5` at the bottom over `3.25` of drop: a **trapezoid**, which
+   * is a truncated cone in elevation, not a cone and certainly not a triangle.
+   *
+   * Everything below is expressed in glyph coordinates through `gx`/`gy`/`gs` so
+   * the proportions cannot drift again. If the favicon changes, change `S` and
+   * these numbers, and the model follows.
+   */
+  /**
+   * World units per glyph unit, and the number that decides the composition.
+   *
+   * The glyph puts its beam and pans across the middle of its own height — the
+   * pans hang from y 11 to 14.25 of a mark that runs 3 to 22 — so a mark that
+   * stands on the floor and fills the frame *always* lands its scales in the
+   * vertical centre of the picture. That is where a centred DOM headline is,
+   * and no value of this constant changes it: shrink the mark and the pans fall
+   * towards the floor, grow it and they climb past the top of the frame. It is
+   * a property of the glyph, not of the framing.
+   *
+   * So the type moved instead — `.body-title` in `deck.css` now sets its block
+   * at the top rather than centring it — and this is sized to put the whole
+   * head of the scales in the band below it: finial around 37% of frame height,
+   * pans between 63% and 74%, base on the floor at the bottom edge.
+   */
+  const S = .47
+  /** Glyph x (0..24, centre 12) to world x. */
+  const gx = (value: number) => (value - 12) * S
+  /** Glyph y (0..24, downward, 22 is the ground line) to world y, upward. */
+  const gy = (value: number) => (22 - value) * S
+  /** A glyph length to a world length. */
+  const gs = (value: number) => value * S
 
-  const plinthCap = new THREE.Mesh(new THREE.CylinderGeometry(3.05, 3.15, .22, 8), gold)
-  registerPart(plinthCap, new THREE.Vector3(0, 1.6, 0), .05, .35)
+  // `M7 20h10v2H7z` — the base plate. Octagonal rather than square: the glyph is
+  // a flat mark and this is a monument, and eight sides catch the key light on
+  // two faces at once where four catch it on one.
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(gs(5), gs(5.4), gs(2), 8), navy)
+  registerPart(base, new THREE.Vector3(0, gy(21), 0), 0, .35)
 
-  const column = new THREE.Mesh(new THREE.CylinderGeometry(.42, .56, 9.4, 12), navy)
-  registerPart(column, new THREE.Vector3(0, 6.4, 0), .16)
+  // `M10 18h4v2h-4z` — the plinth the column stands on.
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(gs(2), gs(2.2), gs(2), 8), navy)
+  registerPart(plinth, new THREE.Vector3(0, gy(19), 0), .05, .35)
 
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(.62, .13, 8, 20), goldBright)
+  // `M11 7h2v11h-2z` — the column. Two glyph units across, so radius 1.
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(gs(.92), gs(1.08), gs(11), 16), navy)
+  registerPart(column, new THREE.Vector3(0, gy(12.5), 0), .16)
+
+  // Not in the glyph. A gold collar where the beam crosses the column, because
+  // in three dimensions a bar passing through a post needs a joint or it reads
+  // as two objects that happen to overlap.
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(gs(1.32), gs(.3), 10, 24), goldBright)
   collar.rotation.x = Math.PI / 2
-  registerPart(collar, new THREE.Vector3(0, 9.6, 0), .3)
+  registerPart(collar, new THREE.Vector3(0, gy(8.6), 0), .3)
 
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(12.6, .42, .52), gold)
-  registerPart(beam, new THREE.Vector3(0, 10.5, 0), .42)
+  // `M3 6h18v2H3z` — the beam. Eighteen across and two thick, which is the
+  // single biggest change to how the mark reads at distance: this is now a
+  // heavy gold bar rather than a wire.
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(gs(18), gs(2), gs(1.3)), gold)
+  registerPart(beam, new THREE.Vector3(0, gy(7), 0), .42)
 
-  const finial = new THREE.Mesh(new THREE.OctahedronGeometry(.72, 0), goldBright)
-  registerPart(finial, new THREE.Vector3(0, 11.5, 0), .56)
+  // `M10 3h4v3h-4z` — a block standing on the beam, which is what the glyph
+  // draws and what the octahedron this used to be was not. Kept a plain box on
+  // purpose: the first attempt tapered it, and a four-sided taper with its top
+  // face lit reads as a gold cup sitting on the beam, which is both wrong and
+  // the third trapezoid in a picture that only wants two.
+  // `goldBright` rather than `gold`, and that is not interchangeable here. `gold`
+  // is metalness .82, so at this size and angle it shows almost nothing but the
+  // dark half of the environment and the cap came out a grey nub. This one
+  // carries an emissive term, which is what a small bright accent at the top of
+  // a dark object needs in order to stay the top of the object.
+  const finial = new THREE.Mesh(new THREE.BoxGeometry(gs(2.7), gs(3), gs(1.1)), goldBright)
+  registerPart(finial, new THREE.Vector3(0, gy(4.5), 0), .56)
 
-  /** A pan: an open inverted cone on three chains, as the glyph draws it. */
+  /**
+   * A pan, with the group's origin at the point it hangs from — the underside of
+   * the beam — so its `to` is simply the beam end and the bob in `update` moves
+   * the whole assembly the way a real one would swing.
+   *
+   * `M4 8h1v3H4z` is the hanger, three units of drop. `M1 11h7l-1.75 3.25h-3.5z`
+   * is the dish: 7 across at the rim, 3.5 across at the foot, 3.25 deep. Solid
+   * rather than an open bowl, which is both what the glyph draws and what
+   * survives being small — an open dish shows its own interior and at a third
+   * scale that inner ellipse muddles the silhouette instead of describing it.
+   */
   const buildPan = (side: 1 | -1) => {
     const group = new THREE.Group()
-    const dish = new THREE.Mesh(new THREE.ConeGeometry(1.85, 1.35, 3, 1, true), cream)
-    dish.rotation.x = Math.PI
-    group.add(dish)
-    const lip = new THREE.Mesh(new THREE.TorusGeometry(1.85, .055, 5, 3), gold)
-    lip.rotation.x = Math.PI / 2
-    lip.position.y = .675
-    group.add(lip)
-    for (let index = 0; index < 3; index += 1) {
-      const angle = (index / 3) * Math.PI * 2 + Math.PI / 6
-      const anchor = new THREE.Vector3(Math.cos(angle) * 1.7, .675, Math.sin(angle) * 1.7)
-      const top = new THREE.Vector3(0, 2.55, 0)
-      const span = top.clone().sub(anchor)
-      const chain = new THREE.Mesh(new THREE.CylinderGeometry(.035, .035, span.length(), 4), gold)
-      chain.position.copy(anchor).add(span.clone().multiplyScalar(.5))
-      chain.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), span.clone().normalize())
-      group.add(chain)
-    }
-    // The hanger, from the beam end down to where the chains meet.
-    const hanger = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, 1.5, 4), gold)
-    hanger.position.y = 3.3
+
+    const hanger = new THREE.Mesh(new THREE.CylinderGeometry(gs(.5), gs(.5), gs(3), 8), gold)
+    hanger.position.y = -gs(1.5)
     group.add(hanger)
+
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(gs(3.5), gs(1.75), gs(3.25), 28), cream)
+    dish.position.y = -gs(3 + 3.25 / 2)
+    group.add(dish)
+
+    // The rim, in bright gold along the dish's widest edge. This is the line
+    // that separates a pan from the wall of fog behind it: cream against navy
+    // is a value step the contour pass can find, and a lit gold edge on top of
+    // it is one the eye finds without looking.
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(gs(3.5), gs(.16), 8, 40), goldBright)
+    rim.rotation.x = Math.PI / 2
+    rim.position.y = -gs(3)
+    group.add(rim)
+
     group.userData.side = side
     return group
   }
 
+  /** Where a pan hangs from: the beam's underside, at the hanger's own x. */
+  const PAN_HANG_Y = gy(8)
   const leftPan = buildPan(-1)
-  registerPart(leftPan, new THREE.Vector3(-5.5, 6.4, 0), .68, .6)
+  registerPart(leftPan, new THREE.Vector3(gx(4.5), PAN_HANG_Y, 0), .68, .6)
   const rightPan = buildPan(1)
-  registerPart(rightPan, new THREE.Vector3(5.5, 6.4, 0), .82, .6)
+  registerPart(rightPan, new THREE.Vector3(gx(19.5), PAN_HANG_Y, 0), .82, .6)
 
   // The wordmark, laid into the floor in front of the plinth, struck rather
   // than printed: the shadow pass sits under the face in the app's own foil
@@ -363,8 +543,7 @@ export function createHeroScene(context: SceneContext): DeckScene {
       // Each part gets the same shaped curve over a different window, so the
       // object lands in an order — plinth, column, beam, then the pans, which is
       // the order you would actually build it in.
-      const window = .55
-      const local = (assembly - part.delay * (1 - window)) / window
+      const local = (assembly - part.delay * (1 - PART_WINDOW)) / PART_WINDOW
       const t = easeOutCubic(Math.min(1, Math.max(0, local)))
       part.mesh.position.lerpVectors(part.from, part.to, t)
       part.mesh.quaternion.slerpQuaternions(part.fromQuaternion, part.toQuaternion, t)
@@ -396,8 +575,8 @@ export function createHeroScene(context: SceneContext): DeckScene {
         // Amplitude decays as the object completes, so it arrives at rest.
         mark.rotation.z = swing * (1 - settled * .72)
         mark.rotation.y = Math.sin(elapsed * .19) * .07 + (1 - settled) * .3
-        leftPan.position.y = 6.4 + Math.sin(elapsed * .74) * .1
-        rightPan.position.y = 6.4 - Math.sin(elapsed * .74) * .1
+        leftPan.position.y = PAN_HANG_Y + Math.sin(elapsed * .74) * .1
+        rightPan.position.y = PAN_HANG_Y - Math.sin(elapsed * .74) * .1
 
         sealRings.rotation.y = elapsed * .028
 
@@ -436,6 +615,7 @@ export function createHeroScene(context: SceneContext): DeckScene {
     },
 
     dispose() {
+      environmentTarget?.dispose()
       disposeTree(scene)
       for (const material of [...materials, ...shaftMaterials, hazeMaterial, moteMaterial, ...wordMaterials]) {
         material.dispose()

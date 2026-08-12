@@ -152,8 +152,23 @@
   background: var(--scrim, none);
 }
 
+/* Seats the title block and then gets out of the way.
+
+   This used to be `radial-gradient(58% 52% at 50% 54%, rgba(5,8,13,.78), …)`:
+   a near-black blob, 78% opaque at its centre, centred at 54% of the frame.
+   Which is precisely where the scales hang. The mark the deck is named around
+   was being painted over by the thing meant to make the type on top of it
+   readable, and every attempt to fix the mark by lighting it was fighting a
+   layer above it in the DOM that no light can reach.
+
+   It made sense when it was written, because the type was centred too and the
+   scrim was drawn around the type. Now that the block sits at the top the two
+   have come apart, so this follows the type: weighted to the top edge, and
+   fully clear by 60% where the beam and pans are. Lighter overall as well — the
+   headline is cream at `--t-display` with a struck-foil shadow of its own over a
+   night exterior, and it never needed three quarters of black behind it. */
 .deck-layer[data-kind='title'] {
-  --scrim: radial-gradient(58% 52% at 50% 54%, rgba(5, 8, 13, .78), rgba(5, 8, 13, .22) 68%, transparent);
+  --scrim: linear-gradient(180deg, rgba(5, 8, 13, .74) 0%, rgba(5, 8, 13, .58) 18%, rgba(5, 8, 13, .3) 34%, rgba(5, 8, 13, .08) 48%, transparent 60%);
 }
 
 .deck-layer[data-kind='statement'],
@@ -461,7 +476,25 @@
    deck with nothing else on it. */
 
 .body-title {
-  place-content: center;
+  /* The type sits at the top, and this is the one slide where that is a
+     structural decision rather than a taste one.
+
+     The scene behind is the product's mark built at three dimensions, and the
+     glyph hangs its pans across the middle of its own height. So a mark that
+     stands on the floor and fills the frame puts its scales in the vertical
+     centre of the picture no matter how large or small it is drawn — shrink it
+     and the pans drop towards the floor, grow it and they leave the top of the
+     frame. Centred type therefore does not sit *over* the mark, it sits exactly
+     across the pans, and for a long time it did: the headline's baseline ran
+     through both rims, which is why the mark read as one mass instead of as a
+     balance.
+
+     Moving the block up is the only move that gives each of them a band of its
+     own. Type in the top third, the scales' head in the middle, the plinth on
+     the floor at the bottom — which is also, as it happens, how you would lay
+     out a monument and its nameplate. */
+  place-content: start center;
+  padding-top: calc(4.5 * var(--u));
   justify-items: center;
   text-align: center;
   padding-inline: calc(9 * var(--u));
