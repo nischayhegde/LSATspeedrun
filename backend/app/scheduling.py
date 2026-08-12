@@ -68,6 +68,7 @@ right now always gets their weakest material; the schedule decides the
 from __future__ import annotations
 
 import math
+import random
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import joinedload
@@ -465,14 +466,65 @@ def cluster_passage_mates(questions: list) -> list:
     return [question for block in grouped.values() for question in block]
 
 
+def _review_slots(total: int, count: int) -> set[int]:
+    """Which positions in a run of `total` blocks carry its `count` reviews.
+
+    Systematic sampling with a random start: one offset `u` is drawn for the
+    whole run and the reviews land at `floor((i + u) * total / count)`. That
+    keeps the spread — consecutive slots are always a full stretch apart, so
+    reviews can never bunch at one end — while making every position in the run
+    carry exactly the same probability of being one, `count / total`.
+
+    Both halves matter and a simpler jitter gets only one of them. Drawing each
+    review independently from inside its own stretch also spreads them, but when
+    `total` is not a multiple of `count` the stretches come out unequal at fixed
+    places: at four reviews in a run of six, positions 0 and 3 are the whole of
+    their stretch and are therefore certain. Measured, that showed up as
+    0:72%, 3:62% against 4:17%. Sliding all the stretches together by one random
+    offset rotates which positions are the tight ones, and the rate comes out
+    flat.
+
+    The jitter is the point. This used to be
+    `round((index + .5) * total / count)`, the midpoint of each stretch, which
+    is fully determined by the run's length and the number of reviews in it. On
+    a ten-question run that produced a measured per-slot review rate of
+    0:0%, 1:100%, 3:60%, 5:70%, 7:75%, 9:90% — the first question was never a
+    repeat and the second always was. That is a positional cue, and a student
+    who notices it can start answering from where a question sits in the run
+    instead of from what it says. Which is precisely the failure the comment
+    above cites Rohrer for: blocking is harmful because it lets the learner
+    infer the method from the assignment's position. Front-loading reviews was
+    the obvious version of that mistake and was fixed; placing them at fixed
+    positions is the same mistake, quieter.
+
+    `research/12` §2 specified this jitter term. It was never implemented.
+
+    Equal probability at every position is the strongest form of "no cue":
+    there is nothing to learn from where a question sits, because where it sits
+    carries no information.
+
+    Two slots can never collide, which would silently drop a review. Successive
+    values differ by `total / count`, which is at least 1 whenever there are no
+    more reviews than questions, so their floors are strictly increasing.
+    """
+    if count <= 0 or total <= 0:
+        return set()
+    if count >= total:
+        return set(range(total))
+    stretch = total / count
+    offset = random.random()
+    return {min(total - 1, int((index + offset) * stretch)) for index in range(count)}
+
+
 def interleave(reviews: list, fresh: list, *, question_type=None) -> list:
     """Distribute review items evenly through the fresh ones, then de-block.
 
     Two passes over passage-preserving blocks. The first spreads reviews across
-    the run at even fractional positions instead of stacking them at the front.
-    The second swaps any block that repeats the previous block's question type
-    with the next differently-typed one, so a run does not accidentally block
-    by skill either.
+    the run — one to each equal stretch of it, at a jittered position inside
+    that stretch, rather than stacked at the front or pinned to the middle of
+    each stretch. The second swaps any block that repeats the previous block's
+    question type with the next differently-typed one, so a run does not
+    accidentally block by skill either.
     """
     if not reviews:
         return list(fresh)
@@ -481,9 +533,7 @@ def interleave(reviews: list, fresh: list, *, question_type=None) -> list:
 
     review_blocks, fresh_blocks = _blocks(reviews), _blocks(fresh)
     total = len(review_blocks) + len(fresh_blocks)
-    # Even fractional spacing: with 3 reviews in a run of 10 they land at
-    # roughly positions 1, 4, and 7 rather than 0, 1, 2.
-    slots = {round((index + 0.5) * total / len(review_blocks)) for index in range(len(review_blocks))}
+    slots = _review_slots(total, len(review_blocks))
     sequence: list[list] = []
     for position in range(total):
         if position in slots and review_blocks:

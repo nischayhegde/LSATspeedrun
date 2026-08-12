@@ -1245,11 +1245,24 @@ def test_review_selection_ranks_by_retrievability_not_by_calendar_date(app):
         assert due_for_review(user.id, 1)[0].id == weak.id
 
 
-def test_review_items_are_interleaved_rather_than_front_loaded(app):
-    from app.scheduling import interleave
+def _interleave_items():
+    """Three reviews and seven fresh, every one a different question type.
+
+    Distinct types on purpose. `interleave` runs `_separate_same_type` over its
+    own output, which swaps a block that repeats the previous block's type with
+    the next differently-typed one — so an input where every review shares one
+    type and every fresh item shares another is a pathological case for it: the
+    separator alternates the two groups from the front and the placement these
+    tests are about disappears underneath it. Giving each item its own type
+    makes the separator a no-op and leaves the placement visible.
+
+    Whether the separator reintroduces a positional cue on real material is a
+    question about real material, and it is measured there, end to end, by
+    `tools/audit/rc_reachability_probe.py --slots`.
+    """
 
     class Item:
-        def __init__(self, name, question_type="Flaw", passage_id=None):
+        def __init__(self, name, question_type, passage_id=None):
             self.name = name
             self.question_type = question_type
             self.passage_id = passage_id
@@ -1257,21 +1270,78 @@ def test_review_items_are_interleaved_rather_than_front_loaded(app):
         def __repr__(self):
             return self.name
 
-    reviews = [Item(f"r{index}") for index in range(3)]
-    fresh = [Item(f"f{index}", question_type="Assumption") for index in range(7)]
-    ordered = interleave(reviews, fresh)
+    reviews = [Item(f"r{index}", question_type=f"review-type-{index}") for index in range(3)]
+    fresh = [Item(f"f{index}", question_type=f"fresh-type-{index}") for index in range(7)]
+    return reviews, fresh
 
-    assert len(ordered) == 10
-    assert set(ordered) == set(reviews) | set(fresh)
-    positions = sorted(ordered.index(item) for item in reviews)
-    assert positions != [0, 1, 2], "reviews are still front-loaded"
-    # Spread out: no two reviews adjacent, and none in the opening slot.
-    assert all(second - first > 1 for first, second in zip(positions, positions[1:]))
-    assert positions[0] > 0
 
-    # Degenerate inputs pass straight through.
-    assert interleave([], fresh) == fresh
-    assert interleave(reviews, []) == reviews
+def test_review_items_stay_a_full_stretch_apart_however_the_jitter_falls(app):
+    """The spread property, which the jitter had to preserve.
+
+    Three reviews in a run of ten are always a stretch of the run apart. That is
+    what stops them bunching, and it is a guarantee rather than a tendency — so
+    it is asserted on every one of a hundred draws rather than on one lucky
+    ordering.
+    """
+    from app.scheduling import interleave
+
+    for _ in range(100):
+        reviews, fresh = _interleave_items()
+        ordered = interleave(reviews, fresh)
+        assert len(ordered) == 10
+        assert set(ordered) == set(reviews) | set(fresh)
+        positions = sorted(ordered.index(item) for item in reviews)
+        assert positions != [0, 1, 2], "reviews are front-loaded"
+        # Consecutive reviews are always a stretch apart — three questions here,
+        # ten of them split three ways — wherever the random offset slid the
+        # whole set to. Systematic sampling moves the reviews together, so the
+        # gaps between them can only ever be floor or ceiling of the stretch.
+        gaps = [second - first for first, second in zip(positions, positions[1:])]
+        assert min(gaps) >= 10 // 3, positions
+
+    from app.scheduling import interleave as passthrough
+
+    reviews, fresh = _interleave_items()
+    assert passthrough([], fresh) == fresh
+    assert passthrough(reviews, []) == reviews
+
+
+def test_no_position_in_a_run_is_a_reliable_tell_that_a_question_is_a_repeat(app):
+    """The jitter, and the reason it exists.
+
+    Review placement used to be `round((i + .5) * total / count)` — the midpoint
+    of each stretch, fully determined by the run's length and the number of
+    reviews in it. Measured on a size-10 run, the per-slot review rate was
+    0:0%, 1:100%, 3:60%, 5:70%, 7:75%, 9:90%. The first question was never a
+    repeat and the second always was.
+
+    That is a cue the student can learn, and learning it is worse than useless:
+    knowing a question is one you got wrong before tells you something about the
+    answer without telling you anything about the argument, so you can start
+    responding to the position instead of to the problem. It is the same failure
+    Rohrer's result is about, which `scheduling.py` quotes in its own comment
+    two functions above the code that was producing it. `research/12` §2 asked
+    for a jitter term and nobody added one.
+
+    Stratified placement makes every position carry the same review probability,
+    3/10 here, so position carries no information at all. Asserted as a band
+    rather than an equality because 400 draws of a 30% event has a standard
+    deviation of about 2.3 points; what would fail is the old behaviour, where
+    two of these numbers were 0% and 100%.
+    """
+    from app.scheduling import interleave
+
+    draws = 400
+    review_at = [0] * 10
+    for _ in range(draws):
+        reviews, fresh = _interleave_items()
+        ordered = interleave(reviews, fresh)
+        for position in (ordered.index(item) for item in reviews):
+            review_at[position] += 1
+
+    rates = [count / draws for count in review_at]
+    for position, rate in enumerate(rates):
+        assert 0.15 <= rate <= 0.45, f"position {position} is a repeat {rate:.0%} of the time: {rates}"
 
 
 def test_interleaving_keeps_passage_mates_together(app):
