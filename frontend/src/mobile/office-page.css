@@ -71,6 +71,14 @@
     background: rgba(255,255,255,.045);
     text-align: left;
   }
+  /* The portrait's title pill is centred on the bust and set `nowrap`, so at
+     54px it is wider than the column, the card and — by 15px — the sheet: on a
+     390px phone "GENERAL COUNSEL" hung across the sheet's left border. The
+     title stays on the portrait's aria-label, and `firm-page.css` already
+     stands the same pill down where its column cannot hold it. `.av-portrait`
+     is load-bearing: `art.css` positions this pill and is injected after this
+     sheet. */
+  .office-mobile-current-case .client-portrait.av-portrait > small { display: none; }
   .office-mobile-current-case span { min-width: 0; }
   .office-mobile-current-case small,
   .office-mobile-current-case strong,

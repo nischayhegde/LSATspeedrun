@@ -206,9 +206,23 @@ export function OfficePage() {
       <OfficeEventPopup game={game} />
 
       <section className="office-gamebar">
-        <article className="client-quest-card">
+        {/* The two contract figures were joined into one line by a middot:
+            what is left of the docket, and what a case on it pays. They are
+            separate facts about the same arrangement and they are read
+            separately, so they are set as two entries rather than one
+            sentence. Same fields, same words, same fallbacks — including the
+            on-hold branch, which only renders once reputation has fallen
+            under the client's requirement and a walk-in starts billing. */}
+        <article className={`client-quest-card ${game.active_client.on_hold ? 'is-on-hold' : ''}`}>
           <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
-          <div><span>ACTIVE CONTRACT</span><h3>{workingClient.name}</h3><p>{game.active_client.on_hold ? 'Original contract on hold' : `${game.active_client.cases_remaining} files remaining`} · {formatMoney(workingClient.base_fee)} base</p></div>
+          <div>
+            <span>ACTIVE CONTRACT</span>
+            <h3>{workingClient.name}</h3>
+            <p>
+              <b>{game.active_client.on_hold ? 'Original contract on hold' : `${game.active_client.cases_remaining} files remaining`}</b>
+              <b>{formatMoney(workingClient.base_fee)} base</b>
+            </p>
+          </div>
           <button onClick={() => {
             if (active) void play('resume', { seed: active.id, intensity: .55 })
             openCase()
