@@ -21,9 +21,10 @@ PROMPT_VERSION = "coaching-v4-passage-and-approach"
 # twelve name argument moves — a conclusion, a conditional, a causal claim, a
 # quantifier, an assumption, a piece of evidence — and not one of them named
 # anything a Reading Comprehension answer goes wrong by. That mattered more than
-# it looks: the section was unreachable as fresh practice until recently, so
-# nobody noticed that a third of served questions had no code that fit and were
-# being filed under `other` or under an argument code that did not apply.
+# it looks: the section was unreachable as fresh practice until recently and is now
+# a third of served questions, so a third of graded attempts had no code that fit,
+# leaving the model a choice between `other` and an argument code describing a move
+# the question does not contain.
 #
 # The three added below are the ways an RC answer actually fails, and each is a
 # distinct repair rather than a shade of the same one:
