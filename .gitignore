@@ -86,6 +86,11 @@ frontend/scratch-*
 .light-shots/
 .office-evidence/
 .qa-tmp/
+
+# The performance harness's throwaway backend: its SQLite database, its seed
+# report and its build logs. `tools/perf/harness-backend.sh --reset` rebuilds
+# the lot in about 40 seconds, and the database is 19 MB.
+.harness/
 .room-evidence/
 .seam-verify/
 .shots-keep/
