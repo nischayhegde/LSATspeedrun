@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DemoStage } from './demo/demo-stage'
 import { GridOverview } from './engine/grid'
 import { Presenter } from './engine/presenter'
+import { SlideNumber } from './engine/slide-number'
 import { useDeck } from './engine/use-deck'
 import { QaPanel } from './notes'
 import { AppSceneLayer } from './scenes/app-scene-layer'
@@ -166,9 +167,14 @@ export function Deck() {
       <button type="button" className="zone zone-prev" onClick={deck.previous} aria-label="Previous slide" />
       <button type="button" className="zone zone-next" onClick={deck.next} aria-label="Next slide" />
 
+      {/* The folio, in the bottom-right margin directly above the hairline's
+          right-hand end. The deck's two pieces of permanent chrome are now a
+          pair rather than one and a stray; see `engine/slide-number.tsx`. */}
+      <SlideNumber index={deck.index} slides={SLIDES} />
+
       {/* The progress indicator: a hairline with one tick per slide and a heavier
-          tick at each act boundary. The only permanent chrome on the audience's
-          screen. */}
+          tick at each act boundary. It and the folio above it are the whole of
+          the permanent chrome on the audience's screen. */}
       <nav className="deck-progress" aria-label="Deck progress">
         {SLIDES.map((slide, position) => (
           <i

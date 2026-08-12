@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 
-import { DemoFrame } from '../demo/demo-frame'
+import { DemoFrame, DemoRoute } from '../demo/demo-frame'
 import { presenterChrome } from '../demo/demo-runtime'
 import { Figure } from '../figures'
 import type { SlideSpec } from './types'
@@ -211,23 +211,46 @@ function PovBody({ slide }: BodyProps) {
 }
 
 /**
- * Product-first: the running app is the slide and the words are a plate on top.
+ * Product-first: the running app *is* the slide, and the words are a caption
+ * plate on it.
  *
- * The demo used to sit in the right-hand 70% of a two-column grid, which measured
- * out at 36.5% of a 1920x1080 projector with 693px of deck copy beside it. The
- * frame is 16:9 and so is the slide, so the embed now takes the whole screen and
- * the copy moves onto it — the same treatment `SceneBody` gives a 3D scene, for
- * the same reason. Geometry lives in `demo/demo-stage.css`; see the long note
- * there for the height problem this arrangement had to solve.
+ * ## Three arrangements, and why this is the third
+ *
+ * It began as a 30% copy column beside a 70% embed, which measured out at 36.5%
+ * of a 1920x1080 projector with 693px of deck copy beside it — "a lot of white
+ * space", correctly.
+ *
+ * It then became a full-bleed frame with the copy in a rail down the left, which
+ * is the version the founders saw: the frame was still sized at a fixed 16:10
+ * logical aspect and pushed off centre by exactly the rail's width, so the app
+ * held 77% of the viewport in both axes with black bands above and below it, and
+ * the rail was a 349px column that broke `ACT IV — PROOF` over two lines and the
+ * headline over three. A five-word headline in a sliver, beside a letterboxed
+ * app, is two problems with one cause: the frame and the copy were competing for
+ * the same screen and both lost.
+ *
+ * So the copy stops competing. It is the same object `SceneBody` puts over a 3D
+ * scene — `caption-plate`, the deck's own plate, its own border, its own padding
+ * — seated at the bottom-left on `--gutter` by the grid rather than by a bespoke
+ * offset. The app gets the entire viewport: 100% of its height and 100% of its
+ * width, with the logical aspect taken from the slot so there is nothing left to
+ * letterbox. Geometry is in `demo/demo-stage.css`, which also explains why the
+ * embed now sits *under* this layer rather than over it.
+ *
+ * The frame's title line comes with the copy rather than in a band over the app —
+ * see `DemoRoute`. These slides carry no `deck`, `points` or `credit` in the
+ * registry, so the plate is an eyebrow and a headline, which is what lets it be
+ * a caption instead of a column.
  */
 function DemoBody({ slide, stills, annotations, active }: BodyProps) {
   return (
     <div className="body body-demo" data-speaker={slide.speaker}>
       {slide.demo ? (
-        <DemoFrame demo={slide.demo} stills={stills} annotations={annotations} active={active} />
+        <DemoFrame demo={slide.demo} stills={stills} annotations={annotations} active={active} bleed />
       ) : null}
-      <div className="demo-copy">
+      <div className="demo-copy caption-plate">
         {slide.demo ? <DemoBudget seconds={slide.demo.budgetSeconds} /> : null}
+        {slide.demo ? <DemoRoute demo={slide.demo} stills={stills} /> : null}
         <Eyebrow text={slide.eyebrow} />
         <Headline text={slide.headline} className="display sm" />
         <Deck text={slide.deck} />

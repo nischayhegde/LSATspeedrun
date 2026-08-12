@@ -37,6 +37,40 @@
   transition: opacity var(--mo-3) var(--ease-out);
 }
 
+/* ----------------------------------------------------------------
+   ...and why the full-bleed slides put it at 2 instead.
+
+   Four is the right answer for a frame that is a window inside a slide:
+   the slide paints a scrim and a plate around the window, and the app has
+   to be over both. It is the wrong answer for a frame that is the whole
+   slide. At full bleed the app covers the viewport, so everything in the
+   layer above the app that the layer used to paint *around* it — the
+   scrim, the chrome's border and background, the copy plate — is either
+   painted over the app or painting over the app.
+
+   That was the defect the previous arrangement could not solve and
+   documented at length instead: the copy plate is inside `.deck-layers`,
+   a stacking context at z-index 3, so nothing inside the layer can ever
+   paint over a sibling stacking context at 4. The plate could only be
+   kept off the app by shifting the app off centre by the plate's width,
+   which is what put the frame 349px to the right of the screen's middle
+   and the copy in a rail beside it.
+
+   Two inverts it. The embed sits below the layers and above the WebGL
+   stage, which is exactly where the 3D scenes sit — and a scene slide has
+   never had this problem, because `caption-plate` is simply in the layer
+   above the scene. So the demo slides now work the way the scene slides
+   do: the app is the field, the layer over it holds type, and the type
+   needs no z-index at all.
+
+   Three things follow, and all three are rules below rather than
+   accidents: the layer must stop painting its scrim over the app, the
+   chrome must stop painting its plate over the app, and the layer must
+   stop swallowing pointer events aimed at the app — which is the whole
+   argument for framing the product rather than filming it.
+   ---------------------------------------------------------------- */
+.demo-stage[data-under] { z-index: 2; }
+
 /* Leaving a run of demo slides. The frame is held at the rect it was last
    measured at and faded, because the slide layer that owned its slot is
    about to be emptied by the runtime and there is nothing left to track. */
@@ -120,151 +154,264 @@
    ================================================================
    Owned here rather than in `styles/deck.css` because that stylesheet is being
    rewritten for a deck-wide baseline grid at the same time as this, and these
-   selectors would collide. Loaded after it — `demo-stage.tsx` imports this, and
-   the component tree is imported after `main.tsx` pulls the base styles — so
-   equal-specificity rules here win without `!important`.
+   selectors would collide.
 
-   ## What this replaces, and why
+   ## Specificity, not order — and the earlier version of this note was wrong
 
-   The demo slides were a 30% copy column beside a 70% embed. Measured on a
-   1920x1080 screen that gave the running product 1101x688 — 36.5% of the
-   projector, with 693px of deck copy beside it. The founders read that as "a lot
-   of white space" and they were right. A 16:9 embed on a 16:9 slide can have the
-   whole screen, so the copy becomes a plate on top of it.
+   It used to say that this file is loaded *after* the base stylesheet, so
+   equal-specificity rules here win. They do not. `main.tsx` imports `./deck`
+   before `./styles/deck.css`, ES modules evaluate depth-first in source order,
+   and this file arrives through the component tree — so the injected order,
+   measured in the browser, is `demo/demo-stage.css` first and `styles/deck.css`
+   last. Every rule below therefore out-specifies its counterpart rather than
+   merely following it: `.body.body-demo` against `.body-demo`,
+   `.body.body-demo .demo-chrome` against `.demo-chrome`, and so on. That is
+   load-bearing. A rule written here at the same specificity as the one it means
+   to replace loses, silently, and looks like a rule that had no effect.
 
-   ## The height that would not resolve
+   ## What the room sees
 
-   The first attempt collapsed: `.demo-screen` came out 0px tall and the stage,
-   which mounts its iframe against the slot's measured rectangle, mounted nothing
-   at all. The chain `.body-demo > .demo > .demo-chrome > .demo-screen` ends in a
-   `1fr` row, and every `1fr` in it needs a definite height *above* it to resolve
-   against. `.body` supplies one by being `position: absolute; inset: 0` — until it
-   does not, which is exactly what a concurrent rewrite of the layout system can
-   change underneath this.
+   The whole screen is the product, and the words are a plate on it.
 
-   So height is resolved from *width* instead, which is always definite: the slot
-   is given `aspect-ratio`, and every intermediate row is told it may shrink. This
-   holds whatever the ancestors do, which is the point — it is the demo slides'
-   own guarantee rather than a borrowed one. */
+   The slot is the viewport — no padding, no title bar above it, no caption row
+   below it — and `demo-stage.tsx` now takes the frame's logical aspect from the
+   slot's measured rect instead of a fixed 16:10, so the scale that contains the
+   app also fills the slot exactly. Measured by
+   `scripts/verify-demo-proportion.mjs` against a real mounted iframe, the app's
+   own picture as a percentage of the viewport, width by height, before this pass
+   and after:
+
+       1920x1080    77.2% x 85.7%   ->   100% x 100%
+       1600x900     74.6% x 82.9%   ->   100% x 100%
+       1366x768     71.9% x 79.9%   ->    99.9% x 100%
+       2560x1440    80.4% x 89.3%   ->   100% x 100%
+
+   66.2% of the screen by area at 1080p before, 100% after. The 99.9% is one
+   pixel of a 1366-wide viewport, which is odd and cannot be halved.
+
+   `demo-focus-mode` is `stillOnly` and its captured frame is 16:9, so it read
+   77.2% x 77.2% before and fills the screen exactly now, on every 16:9 stage.
+
+   Nothing is cropped to get there and nothing is zoomed: the app is handed a
+   viewport of the screen's shape rather than a taller one it then has to be shrunk
+   to fit inside. At 1920x1080 that viewport is 1250x703 logical pixels — which is
+   a laptop lid, and which the stub origin in `scripts/stub-app-origin.mjs` prints
+   on its own page so the number can be read off a screenshot rather than
+   calculated. See the note on `MIN_ASPECT` in `demo-stage.tsx`.
+
+   ## What this replaces
+
+   Two arrangements, in order. First a 30% copy column beside a 70% embed, which
+   measured 36.5% of a 1920x1080 projector. Then a full-bleed frame with the copy
+   in a left rail — and because the frame was still a fixed 16:10 box, and was
+   pushed off centre by exactly the rail's width so the rail would have room, the
+   room got an app at 66% of the screen by area with black bands above and below
+   it, `ACT IV — PROOF` broken over two lines, and a five-word headline over
+   three, hard against the frame.
+
+   Both of those are one problem: the frame and the copy were competing for the
+   same screen. The copy now stops competing. It is `caption-plate`, the plate the
+   deck already puts over a 3D scene, seated at the bottom-left by the grid on
+   `--gutter` — the deck's own margin, the same one the previous pass moved these
+   captions onto when it found them 16px off the bottom edge of a 1080p frame.
+
+   ## The height that would not resolve, and why it cannot recur
+
+   An earlier attempt at full bleed collapsed: `.demo-screen` came out 0px tall
+   and the stage, which mounts its iframe against the slot's measured rectangle,
+   mounted nothing at all. The chain `.body-demo > .demo > .demo-chrome >
+   .demo-screen` ended in a `1fr` row, and every `1fr` in it needed a definite
+   height above it to resolve against — which an ancestor being rewritten
+   concurrently is free to take away.
+
+   There is no `1fr` in the chain any more. Each link is `position: absolute;
+   inset: 0` against the one above it, and the top of the chain is `.body`, which
+   is `inset: 0` on the slide layer. A slot sized by four containing blocks cannot
+   collapse to zero unless the viewport does. ================================ */
+
+/* The layer stops painting over the app.
+
+   Three overrides, one cause: at z-index 2 the embed is below this layer, and
+   everything the layer used to paint *around* a windowed frame is now painting
+   *on* a full-bleed one. `.deck-layers` is in the selector only to out-specify
+   `.deck-layer[data-kind='demo']` in the base stylesheet. */
+.deck-layers .deck-layer[data-kind='demo'] {
+  /* The base stylesheet's scrim is a 0.82-alpha black gradient over the *whole*
+     layer. Drawn to keep type legible over a 3D render, and over a live app it is
+     a smear across the product, so almost all of it goes: the copy plate is
+     opaque and carries its own legibility, exactly as it does on a scene slide.
+
+     What is kept is the last eighth of it, and that is not decoration.
+     Underneath the bottom margin of every slide sit the deck's two pieces of
+     permanent chrome — the progress hairline and the folio — and they are
+     drawn in cream because for the whole of this deck's life the bottom of a
+     slide has been a dark field. Full bleed hands that strip to the app, and
+     `demo-focus-mode` frames a cream page: measured on that slide before this
+     rule, the hairline and the slide number were both invisible. A scrim that
+     covers only the strip the chrome occupies restores them without dimming any
+     part of the product the room is looking at — the app's content stops well
+     above it, and it is a gradient rather than a band so there is no edge to
+     see. The folio's own halo is the belt to this braces; see
+     `engine/slide-number.css`.
+
+     Painted by `.deck-layer::before`, which is inside the layer at z-index 3 and
+     therefore over the embed at 2 and under the copy plate, and under the chrome
+     at 890 — which is the whole point. */
+  --scrim: linear-gradient(180deg,
+    transparent 86%,
+    rgba(4, 7, 12, .34) 92%,
+    rgba(4, 7, 12, .74) 100%);
+  /* The presenter has to be able to click the app, which is the entire argument
+     for an iframe over a video, and a full-screen layer above it swallows every
+     pointer event. Nothing in a demo slide's layer is interactive — it is an
+     eyebrow, a headline and a route caption — so the layer becomes glass.
+     `deck.tsx` already sets this inline on whichever layer is not live. */
+  pointer-events: none;
+}
 
 .body.body-demo {
+  /* One cell. The frame is absolutely positioned out of the flow, so the grid
+     exists only to seat the copy plate against two edges of the padding box. */
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   column-gap: 0;
   row-gap: 0;
-  position: relative;
-  /* The deck-wide gutter is set for slides made of type. On a demo slide it is
-     246px of projector spent on nothing, so these slides keep a hairline of it
-     for the drop shadow and give the rest to the product. */
-  /* Explicit pixels, not multiples of `--u`: that unit scales with the viewport
-     and is about 48px on a 1080p screen, so a "1.1u" hairline was a 53px band. */
-  padding: 12px;
+  align-content: end;
+  justify-content: start;
+  /* No `position: relative` here, and its removal is the whole reason the height
+     resolves. `.body` is `position: absolute; inset: 0` on the slide layer;
+     relative took that away, which left the body's height set by its content and
+     is why the previous version had to reach for `100dvh` inside it. Restoring the
+     absolute makes the layer the top of the chain again. */
+  /* The deck's own margin, restored. This was `12px` — a hairline kept for the
+     frame's drop shadow, on the reasoning that a 123px gutter on a demo slide is
+     projector spent on nothing. That was true of the *frame*, which now has no
+     gutter at all, and false of the copy, which was left sitting on a bespoke
+     16px instead of on the margin every other slide in the deck uses. */
+  padding: var(--gutter);
 }
 
-/* The one definite height in the chain, taken from the viewport rather than from
-   an ancestor, so nothing above this can collapse it. `dvh` because a browser
-   toolbar appearing mid-talk should shrink the demo, not clip it. */
+/* The frame: the whole slide layer, out of the flow.
+   For an absolutely positioned child the containing block is the *padding* box of
+   the positioned ancestor, so `inset: 0` here reaches the edges of the screen and
+   the gutter above still applies to the copy. That is the one arrangement in which
+   the app is edge to edge and the type is on the deck's margins. */
 .body.body-demo > .demo {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  min-height: 0;
-  height: calc(100dvh - 24px);
-  /* Sized so the slot inside comes out 16:9 and the frame never letterboxes:
-     viewport height, less the title bar and route caption, times the aspect. 16:10
-     rather than 16:9 because that is the ratio `ASPECT` gives the frame — matching
-     it means the slot is flush and there is no letterbox band at all.
-     `width` and `justify-self` rather than `max-width` and `margin-inline: auto`
-     — an auto inline margin switches off the grid's stretch, which leaves the
-     element shrink-to-fit and it collapsed to the 845px its caption text wanted. */
-  width: min(100%, calc((100dvh - 150px) * 16 / 10));
-  /* Off centre, by exactly the width the copy plate needs and no more.
-     
-     Centred, the frame leaves a 219px margin either side and the plate wants
-     349, so it laps 130px onto the app — and loses, because the plate is inside
-     `.deck-layers` (a stacking context at `z-index: 3`) while the hoisted stage
-     carrying the embed is a sibling of that layer at 4. Nothing inside the layer
-     can paint over the app. Measured on all seven demo slides, live and stills
-     alike: the app won every pixel of the shared band, which is what turned a
-     long headline into a truncated one — 81 of its last pixels were painted over
-     on `demo-case-answer`.
-
-     Shifted, the margins are 349 and 89 and the plate has the room it was drawn
-     for. Nothing about the embed changes: same width, same height, same logical
-     viewport, same 66.2% of the projector. The alternatives both cost more than
-     an off-centre frame — clipping the app out of the corner crashed the
-     renderer mid-sequence, and sizing the plate to a centred frame's margin
-     wrapped a five-word headline onto nine lines. */
-  justify-self: start;
-  margin-left: min(
-    /* Never more than the margin there is; at a viewport with no margin to
-       give, this is 0 and the frame stays where it was. */
-    calc(100% - min(100%, calc((100dvh - 150px) * 16 / 10))),
-    /* 38ch is the plate's own max-width, plus the hairline it sits against. */
-    calc(38ch + 2px)
-  );
-}
-
-.body.body-demo .demo-chrome { min-height: 0; }
-.body.body-demo .demo-screen { min-height: 0; }
-
-/* --- the copy, a plate in the margin the frame leaves ---------------
-   Written here as "a plate over the app", which is what it was designed to be
-   and is not. It cannot be: this plate is inside `.deck-layers`, a stacking
-   context at `z-index: 3`, and the hoisted stage that carries the embed is a
-   sibling of that layer at 4. Its own `z-index: 4` below only orders it within
-   its slide. Measured on all seven demo slides, in stills mode and live alike:
-   the app wins every pixel the two share.
-
-   Both ways out are shut. The plate cannot be raised, because the layer it
-   lives in is owned elsewhere and the stage has to stay above that layer's
-   scrim. The frame cannot be moved off it, because that is the embed's viewport
-   share and it is not for sale. Cutting the app out of the corner with a
-   `clip-path` on the stage was tried and reverted: it crashed the renderer
-   partway through the autoplay sequence while the framed app was scrolling.
-
-   What is left is to stop the plate from claiming width it does not have. The
-   frame is centred with a real margin either side — 219px of a 1920 projector —
-   and the plate used to run 130px past that, so a headline long enough to reach
-   the frame had its last 81px painted over by the app. It looked like a
-   truncated line, which is worse than a short one. `--demo-frame-left` is
-   published by the stage from the same measurement it positions the embed with,
-   so the plate ends exactly where the app begins, at every viewport, without
-   the two having to agree on an expression.
-
-   The floor matters, and it is absolute rather than a percentage: on a viewport
-   short and wide enough that the frame leaves almost no margin, sizing to the
-   margin would leave a plate a few characters wide. Below 18ch it stops
-   shrinking and goes back to lapping over the app, which is the old behaviour
-   on a shape the talk is not given on. A percentage floor would be no floor at
-   all here — 22% of a 1920 screen is 417px, wider than the margin it is meant
-   to protect, so it would simply cancel the whole rule. */
-
-/* The floor, which was the frame's and should have been the deck's. Anchored at
-   `bottom: 0`, the plate's own 16px of padding was the only thing between the
-   headline and the edge of the screen — measured at 1064 of 1080 and 704 of 720,
-   the same 16px at both, so it was never a breakpoint. Every other slide in the
-   deck sits its copy on `--gutter`, and at six times tighter than that the demo
-   headlines read as sliding off the bottom of the frame on seven slides running.
-   Same variable as the rest of the deck rather than a number that matches it
-   today. */
-.body.body-demo .demo-copy {
   position: absolute;
-  left: 0;
-  bottom: var(--gutter);
-  z-index: 4;
+  /* `auto` in both axes, and it has to be said out loud: the base stylesheet
+     places this element at `grid-column: 2; grid-row: 2` for the old two-column
+     demo body, and an absolutely positioned grid child with a *definite*
+     placement is positioned against its grid area rather than against the grid
+     container. Left at 2/2 in a one-cell grid that area is an implicit zero-width
+     track in the corner, so `inset: 0` resolved to a 123x123 box at the bottom
+     right of the screen — which is exactly what it did. With `auto` the
+     containing block is the container's padding box, per CSS Grid 9.2. */
   grid-column: auto;
   grid-row: auto;
-  align-self: end;
-  max-width: min(38ch, 30%);
-  padding: 18px 24px 16px;
-  /* Opaque rather than frosted. The app behind it is dense and mid-toned, and a
-     translucent plate turns small type to mush at projector contrast. */
-  background: linear-gradient(180deg, rgba(9, 14, 23, .93), rgba(6, 10, 17, .97));
-  border-top: 1px solid rgba(246, 223, 170, .22);
-  border-right: 1px solid rgba(246, 223, 170, .22);
-  border-radius: 0 10px 0 0;
-  box-shadow: 0 -10px 60px rgba(0, 0, 0, .6);
+  inset: 0;
+  display: block;
+  gap: 0;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+  /* `.is-live .demo` runs `plate-in`, which arrives from 1u below at 98.5%
+     scale. On a windowed frame that is a plate settling; at full bleed it is the
+     whole screen sliding, with a 19px band of the layer showing along one edge
+     for the length of it — and the stage measures the slot every frame while it
+     moves, so the embed chases it. The transition already owns this slide's
+     arrival. */
+  animation: none;
 }
 
-.body.body-demo .demo-copy .demo-budget { margin-bottom: 10px; }
+.body.body-demo .demo-chrome {
+  position: absolute;
+  inset: 0;
+  display: block;
+  min-height: 0;
+  /* The window's furniture, all of which is now either off screen or on top of
+     the app: a 3px black border around the viewport, a 2u drop shadow into
+     nothing, and an opaque navy plate over the embed below it. */
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.body.body-demo .demo-screen {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  /* Transparent, because the live embed is *behind* this element now. The
+     `#070d15` plate the base stylesheet gives the slot would hide the app
+     completely. The still keeps a backing of its own, below. */
+  background: none;
+}
+
+/* The still, which is what these slides show whenever the app is not reachable.
+   Every file in `public/stills/` is a 1920x1080 capture, so on a 16:9 screen
+   `contain` and `cover` agree and the picture lands pixel-for-pixel on the
+   viewport. The background is for the shapes where they do not agree — a 4:3
+   projector, where `contain` is still the right answer because the alternative is
+   cropping the product — so that the band is the app's own dark paper rather than
+   whatever is behind the layer. */
+.body.body-demo .demo-still { background: #070d15; }
+
+/* --- the copy: a caption plate, not a rail --------------------------
+   Everything about how the plate *looks* comes from `.caption-plate` in the base
+   stylesheet — border, padding, engraved fill, shadow — because it is the same
+   object over the same kind of art, and the one thing a plate over a live app
+   must not be is a second plate that nearly matches the first. What is set here
+   is only where it sits and how wide it may get. */
+.body.body-demo .demo-copy {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  justify-self: start;
+  min-width: 0;
+  /* Set against the longest of the seven headlines rather than by eye: "Every
+     object in this room was bought with LSAT questions." is 56 characters at
+     `--t-sm`, which needs about 590px of measure on a 1920 screen to hold two
+     lines. At 34u it broke to three — the founders' complaint about the rail was
+     partly that a five-word headline was wrapping to three lines, and a narrower
+     plate is the same mistake at a larger size. 38u leaves 641px inside the
+     plate's padding, and the ratio is scale-invariant because both the measure
+     and the type are in `--u`, so two lines holds at 1366 and at 2560 alike.
+     Still under the 40u a scene caption gets, which has a standfirst and a ledger
+     to carry. */
+  max-width: calc(38 * var(--u));
+}
+
+/* The route line, at the head of the plate.
+   It is `.demo-bar` — see `DemoRoute` — so the base stylesheet gives it the
+   monospace, the tracking and the gold chip already. What it must not bring with
+   it is the *bar*: a full-width engraved plate with a 2px rule under it, which
+   inside a caption plate reads as a title bar for the caption. */
+.body.body-demo .demo-copy .demo-bar {
+  margin-bottom: calc(1.4 * var(--u));
+  padding: 0;
+  border-bottom: 0;
+  background: none;
+}
+
+.body.body-demo .demo-copy .demo-bar code {
+  font-size: calc(.98 * var(--u));
+  color: var(--gold-soft);
+  opacity: .72;
+}
+
+.body.body-demo .demo-copy .demo-chip {
+  width: calc(1.9 * var(--u));
+  height: calc(1.9 * var(--u));
+}
+
+/* The presenter's budget bar, which is 24u wide by default and would set the
+   plate's width on its own — a 460px rule deciding the measure of a headline. */
+.body.body-demo .demo-copy .demo-budget {
+  justify-content: flex-start;
+  margin-bottom: calc(1.4 * var(--u));
+}
+
+.body.body-demo .demo-copy .demo-budget-bar {
+  flex: 1 1 auto;
+  width: auto;
+}

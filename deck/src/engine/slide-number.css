@@ -1,0 +1,171 @@
+/* ================================================================
+   THE FOLIO  ·  slide numbers in the corner
+   ================================================================
+   A new file rather than an addition to `styles/deck.css`, which is being
+   rewritten for a deck-wide baseline grid at the same time as this. Only
+   `.deck-folio` is styled here and only `engine/slide-number.tsx` emits it, so
+   the two stylesheets have nothing to collide over.
+
+   Every measurement is one the deck already holds: `--gutter` for the margin,
+   `--t-credit` for the size, `--font-pixel` for the face. Nothing here is a new
+   number, which is the point — this is the deck's own chrome joining the
+   progress hairline in the bottom margin, not a badge dropped on top of it.
+
+   ## Where it sits, and what it is sitting on
+
+   The bottom margin, right-aligned on `--gutter`, directly above the right-hand
+   end of the progress hairline. Two things are already down there: the hairline
+   at `bottom: 1.9u`, whose current tick rises to `.55u`, and nothing else. So
+   `3.4u` clears the tallest tick by about one unit and still lands inside the
+   `6.4u` gutter every slide's copy stops at — the folio is in the margin, not in
+   the composition.
+
+   Right rather than left because the deck seats its caption plates, its demo
+   copy and its credits at the bottom *left*; and bottom rather than top because
+   the top corners are where eyebrows and headlines begin. There is exactly one
+   free corner in this deck and this is it.
+
+   ## Legibility, which is the only hard part
+
+   `--on-field` is declared on `.deck-layer`, so the folio — a sibling of the
+   layers, not a descendant — cannot inherit it. It gets the field's own ink
+   explicitly instead, off the `data-field` the component copies from the slide.
+   Three treatments for four backdrops:
+
+     beige field   ink on paper
+     royal blue    cream on navy
+     scene         cream with a tight shadow
+
+   `scene` is every backdrop whose colour cannot be known from here: the two 3D
+   rooms, the title slide's night exterior, and the seven full-bleed demo slides,
+   where what is behind the corner is a live app that can put anything at all
+   under it — and it does. `demo-focus-mode` frames a cream page, so a first cut
+   of this file that gave `scene` cream type and a 2px shadow put cream on cream
+   and the folio was gone. A tight shadow defines an edge; it does not make a
+   contrast.
+
+   What the unknown case gets instead is a halo: a soft dark radial, sized by the
+   box's own padding, under cream type. Against the dark renders and the app's own
+   navy chrome it is invisible, and against a cream page it is the shadow the
+   glyphs need to sit in. It is deliberately *not* a plate — no border, no fill
+   edge, nothing that reads as a panel in the corner of a product shot — and the
+   negative margins mean the padding it needs does not move the number off the
+   gutter it is aligned to.
+
+   ## The one collision, and it is a dev one
+
+   `?hud` puts the developer HUD at `right: 1.6u; bottom: 3.4u` — the same corner
+   and the same height — and it is wider than the gutter, so it would sit on the
+   folio. The HUD is opt-in and never on in front of a room, so rather than
+   coupling the two components the folio steps up over it with `:has()`, the same
+   way `deck.css` already detects a beige field.
+   ================================================================ */
+
+.deck-folio {
+  position: absolute;
+  right: var(--gutter);
+  bottom: calc(3.4 * var(--u));
+  /* With the progress hairline, and for the same reason: over the slide layers
+     and the demo embed, under the transition furniture at 500 so an act break's
+     letterbox bars still close over it, and under the film layers at 899/900 so
+     the folio is grained and scanlined along with everything else. */
+  z-index: 890;
+  display: flex;
+  align-items: center;
+  gap: calc(.72 * var(--u));
+  /* Chrome is never in the way of a click aimed at the app underneath. */
+  pointer-events: none;
+
+  font-family: var(--font-pixel);
+  /* The deck's floor for small type, shared with the credit line and the
+     figures' smallest label — 20px on a 1080p projection. Quiet enough to
+     ignore, and nothing in the deck is smaller. */
+  font-size: var(--t-credit);
+  font-weight: 500;
+  letter-spacing: .14em;
+  line-height: 1;
+  /* Every numeral the same width, so the folio does not shift under itself
+     between slide 10 and slide 11. */
+  font-variant-numeric: tabular-nums;
+  animation: folio-in var(--mo-3) var(--ease-out);
+}
+
+/* Two-digit, zero-padded, so `04` and `24` are the same object at the same
+   width. A bare `4` in a corner reads as a stray glyph; `04` reads as a folio. */
+.deck-folio b {
+  font-weight: 700;
+  color: var(--folio-ink);
+}
+
+.deck-folio span {
+  font-weight: 500;
+  color: var(--folio-dim);
+}
+
+/* The separator as a rule rather than a slash, which is the idiom the start
+   card's kicker already uses. A `/` in a monospace at this size is a diagonal
+   smudge; a hairline is a hairline. */
+.deck-folio i {
+  width: calc(1.1 * var(--u));
+  height: 1px;
+  background: var(--folio-dim);
+  opacity: .6;
+}
+
+/* --- the three treatments ------------------------------------------- */
+
+.deck-folio[data-field='beige'] {
+  --folio-ink: var(--blue);
+  /* The warm grey `deck.css` uses for dimmed ink on paper, not a tint of the
+     navy: diluted ink is what a hairline folio on a printed page looks like. */
+  --folio-dim: #6a6a7d;
+  opacity: .78;
+}
+
+.deck-folio[data-field='blue'] {
+  --folio-ink: var(--beige);
+  --folio-dim: var(--beige-dim);
+  opacity: .68;
+}
+
+/* Unknown backdrop: a 3D room, a night exterior, or a live app. */
+.deck-folio[data-field='scene'] {
+  --folio-ink: var(--beige);
+  --folio-dim: var(--beige-dim);
+  opacity: .86;
+  /* Three shadows, all the same near-black, at three radii: a hard 2px that
+     defines the edge of each glyph, a 5px that thickens it, and a 12px that puts
+     the whole numeral in its own pool of shade. Against the dark renders and the
+     app's navy chrome none of them is visible. Against a light page they are what
+     the cream sits in.
+
+     A single radial behind the box was the first answer and it was worse: a
+     150x47 box makes a tight ellipse, and at the alpha needed to carry cream over
+     cream the ellipse itself became the thing you noticed — a smudge in the corner
+     of a product shot. A glow has no edge to notice. */
+  text-shadow:
+    0 1px 2px rgba(4, 7, 12, .95),
+    0 0 5px rgba(4, 7, 12, .85),
+    0 0 12px rgba(4, 7, 12, .7);
+}
+
+/* The separator is a box, so it needs the same three radii as a box-shadow. */
+.deck-folio[data-field='scene'] i {
+  box-shadow:
+    0 1px 2px rgba(4, 7, 12, .95),
+    0 0 5px rgba(4, 7, 12, .85),
+    0 0 12px rgba(4, 7, 12, .7);
+}
+
+/* --- arrival --------------------------------------------------------
+   The number is remounted per navigation (see the `key` in the component) so
+   this replays, which is what keeps it from changing a beat before the slide it
+   belongs to has finished arriving. A fade and half a unit of travel, on the
+   deck's own longest motion token. */
+@keyframes folio-in {
+  from { opacity: 0; transform: translateY(calc(.5 * var(--u))); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-folio { animation: none; }
+}
