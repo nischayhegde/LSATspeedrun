@@ -91,6 +91,19 @@ def parse_args():
         default=[2, 3, 5, 6, 7, 10, 12],
         help="fresh budgets to probe",
     )
+    parser.add_argument(
+        "--sizes",
+        type=int,
+        nargs="+",
+        default=list(range(1, 13)),
+        help="run sizes to sweep, so the reachability boundary is visible rather than assumed",
+    )
+    parser.add_argument(
+        "--sweep-cases",
+        type=int,
+        default=60,
+        help="runs built per cohort per size in the sweep",
+    )
     return parser.parse_args()
 
 
@@ -479,6 +492,42 @@ def main() -> int:
             f"\ntarget is the bank's own {rc_share:.1%}; see services.RC_CASE_SHARE for why "
             "a third of cases is the setting that produces it"
         )
+
+        # The boundary, measured rather than assumed. A reading case is one
+        # passage, so there is some run length below which it cannot be built,
+        # and the failure when that happens is silent: the run comes back the
+        # right length, full of arguments, with a third of the exam missing.
+        # Printing the share at every size is what makes the edge visible, and
+        # `requestable` is the answer to "and can anything actually ask for it".
+        minimum = getattr(services, "RC_CASE_MIN_SITTING", None)
+        print(f"\n\n{args.sweep_cases} runs per cohort at each size\n")
+        head = (
+            f"{'size':>5} {'requestable':>12} {'cold RC':>9} {'mid RC':>9} "
+            f"{'cold runs w/ RC':>17} {'mid runs w/ RC':>16} {'q/run':>8}"
+        )
+        print(head)
+        print("-" * len(head))
+        for size in args.sizes:
+            cold = make_student(f"sweep-cold-{size}")
+            mid_student = make_student(f"sweep-mid-{size}")
+            give_history(mid_student, 60)
+            cold_row = probe_cases(cold, args.sweep_cases, size)
+            mid_row = probe_cases(mid_student, args.sweep_cases, size)
+            # Whether the API would let anything start a general run this long.
+            # A type-filtered drill is exempt at any length, because it has
+            # already declared its scope and has no section to drop.
+            allowed = "yes" if minimum is None or size >= minimum else "refused"
+            print(
+                f"{size:>5} {allowed:>12} {cold_row['rc_share']:>8.1%} {mid_row['rc_share']:>8.1%} "
+                f"{f'{cold_row['runs_with_rc']} of {args.sweep_cases}':>17} "
+                f"{f'{mid_row['runs_with_rc']} of {args.sweep_cases}':>16} "
+                f"{cold_row['mean_length']:>8.2f}"
+            )
+        if minimum is not None:
+            print(
+                f"\nsizes below {minimum} are refused by the API and by create_app, so the 0% "
+                "rows are unreachable rather than merely unlikely"
+            )
         db.session.rollback()
     return 0
 

@@ -169,17 +169,43 @@ RC_CASE_SHARE = 1 / 3
 
 # The shortest sitting that can be a reading case at all.
 #
-# A reading case is one passage, so the sitting has to be able to hold one. Six,
-# because `reading_case_ceiling(6)` is 8 and the passages in this bank run 4 to
-# 16 with a median of 7 — at five the ceiling is 6 and the median passage no
-# longer fits, so what came back would be either a runt passage or nothing.
+# This was six, on the reasoning that a reading case is one passage so the
+# sitting must hold one whole, and at five `reading_case_ceiling` is 6 while the
+# median passage is 7. The reasoning was wrong, and wrong in a way worth writing
+# down because it left a whole section unreachable at every size below the
+# shipped one: an independent audit measured **0% Reading Comprehension at sizes
+# 3 and 5, across every session started**.
 #
-# Below this the ordinary argument shape is used. That is the right answer
-# rather than a concession: the entry points that ask for fewer than six are the
-# three-question quick drill and the "continue review" button, and a passage
-# does not fit in three questions under any rule. The sitting the game actually
-# hands out, and the one the daily goals are denominated in, is six.
-RC_CASE_MIN_SITTING = 6
+# A passage that does not fit is not a passage that cannot be served. Cutting a
+# passage at the ceiling and finishing it next visit is a mechanism this file
+# already had — it is how the two sixteen-question passages are served — and
+# treating it as an exception for four passages rather than as the general
+# answer is what made "does not fit whole" collapse into "serve no reading".
+# Now that a cut passage is actually finished rather than abandoned (see
+# `select_reading_comprehension_case`), the sitting only has to be long enough
+# for a reading case to still feel like the same sitting.
+#
+# Four, which is where it does. `_target_time_seconds` charges 330s for the
+# first question on a passage and 135s for each one after, so against an
+# argument case's 150s a question:
+#
+#     size 3 -> ceiling 4 -> 12.3 min against  7.5 min   1.63x
+#     size 4 -> ceiling 5 -> 14.5 min against 10.0 min   1.45x
+#     size 5 -> ceiling 6 -> 16.8 min against 12.5 min   1.34x
+#     size 6 -> ceiling 8 -> 19.0 min against 15.0 min   1.27x  (median passage)
+#
+# The shipped six-question sitting already accepts 1.27x and calls it near
+# enough the same sitting. 1.45x is the last size where that is still true;
+# 1.63x is not, because the fixed cost of reading the passage has stopped being
+# amortised and a student who asked for a short run would get a long one.
+#
+# Nothing may request a shorter *general* run — `routes.start_study_session`
+# rejects it and `create_app` refuses to boot on a shorter configured size — so
+# this is a floor with nothing underneath it rather than a branch that silently
+# drops a section. A type-filtered drill is exempt and may be any length,
+# because it has already declared its scope and a drill on an argument type
+# contains no reading by definition.
+RC_CASE_MIN_SITTING = 4
 
 # Share of a case's questions that come from the review queue rather than fresh
 # material. Half, which is what `create_study_session` has always used for the
@@ -1252,32 +1278,92 @@ def select_reading_comprehension_case(
     # Review-led: the passage under the weakest due card. `due_ids` arrives
     # already ranked by retrievability, so the first one whose passage is still
     # available is the weakest memory this case can rebuild.
+    review_led = None
     if due_ids and random.random() < (REVIEW_SHARE if review_share is None else review_share):
         due_by_passage = {fact.id: fact.passage_id for fact in facts}
         for question_id in due_ids:
             passage_id = due_by_passage.get(question_id)
             if passage_id and passage_id in passages:
-                return _load_questions_in_order(
-                    _reading_case_from_passage(
-                        passages[passage_id], ceiling, prefer_first=set(due_ids)
-                    )
-                )
+                review_led = passage_id
+                break
 
-    # Fresh-led: a passage with unseen questions, or any passage at all if the
-    # student has worked the whole section. Shuffled rather than ranked, because
-    # there is no signal here worth ranking on and a stable order would serve
-    # the same passages to everybody.
-    with_unseen = [
-        passage_id
-        for passage_id, block in passages.items()
-        if any(question.id not in seen_ids for question in block)
-    ]
-    candidates = with_unseen or list(passages)
-    passage_id = random.choice(candidates)
-    unseen = {question.id for question in passages[passage_id] if question.id not in seen_ids}
-    return _load_questions_in_order(
-        _reading_case_from_passage(passages[passage_id], ceiling, prefer_first=unseen)
-    )
+    # Fresh-led: finish a passage already started, else begin a new one, else —
+    # for a student who has worked the whole section — any passage at all.
+    #
+    # **Finishing first is what makes a cut passage safe**, and without it the
+    # cut is a quiet loss rather than a deferral. `_reading_case_from_passage`
+    # sorts unseen questions ahead of seen ones, so a second visit to a passage
+    # picks up where the first stopped; but nothing was *steering* the student
+    # back. A passage was drawn uniformly from every passage with anything
+    # unread, so the odds of returning to the one just cut were 1 in 349, and
+    # the honest description of the old behaviour is that a cut passage was
+    # abandoned with a 0.3% chance of rescue.
+    #
+    # That was survivable only because cutting was rare: at a six-question
+    # sitting the ceiling is 8 and just 4 of 349 passages are longer. It stops
+    # being survivable the moment the sitting is short enough that cutting is
+    # the normal case — at five the ceiling is 6 and 208 passages are longer —
+    # which is exactly the condition under which Reading Comprehension has to
+    # work at short run sizes. Making the cut resumable is what turns "the
+    # passage does not fit" from a reason to serve no reading at all into a
+    # passage read over two sittings.
+    #
+    # It is self-limiting rather than a trap: finishing a passage removes it
+    # from `started`, so the student works through one, then begins another. And
+    # it costs a re-read, which `_target_time_seconds` charges honestly at 330s
+    # for the first question of every visit, because the student really does
+    # have to read the passage again.
+    def next_passage(used: set[str]) -> str | None:
+        started, untouched = [], []
+        for passage_id, block in passages.items():
+            if passage_id in used:
+                continue
+            unseen_here = [question for question in block if question.id not in seen_ids]
+            if not unseen_here:
+                continue
+            (untouched if len(unseen_here) == len(block) else started).append(passage_id)
+        # Shuffled rather than ranked within a tier, because there is no signal
+        # here worth ranking on and a stable order would serve the same passages
+        # to everybody.
+        remaining = started or untouched or [key for key in passages if key not in used]
+        return random.choice(remaining) if remaining else None
+
+    # Usually one passage, and at the shipped six-question sitting always one:
+    # the median passage carries 7 and the loop below stops as soon as the room
+    # left is too small to be worth reading another passage for.
+    #
+    # More than one when the run is long enough to want it. A reading case used
+    # to be a single passage however long the run was, so a twelve-question run
+    # that drew one came back seven questions long — short of what was asked
+    # for, and short in a way that pulled the *section mix* down with it, since
+    # every argument run was its full twelve. Measured over sizes 1 to 12 that
+    # showed up as Reading Comprehension sliding from 38.6% of a six-question
+    # run to 14.0% of a twelve-question one against a 34.4% bank. It is the same
+    # defect as the one at the short end — a run length quietly deciding how
+    # much of the exam a student sees — approached from above.
+    chosen: list[QuestionFact] = []
+    used: set[str] = set()
+    while True:
+        passage_id = review_led if not used and review_led else next_passage(used)
+        if passage_id is None:
+            break
+        used.add(passage_id)
+        prefer = (
+            set(due_ids or ())
+            if passage_id == review_led
+            else {question.id for question in passages[passage_id] if question.id not in seen_ids}
+        )
+        chosen += _reading_case_from_passage(
+            passages[passage_id], ceiling - len(chosen), prefer_first=prefer
+        )
+        # Another passage only if what is left could hold a case in its own
+        # right. `RC_CASE_MIN_SITTING` is already the answer to "is this many
+        # questions worth reading a passage for", which is exactly the question
+        # the leftover room asks, so it is reused rather than given a twin that
+        # could drift away from it.
+        if count - len(chosen) < RC_CASE_MIN_SITTING:
+            break
+    return _load_questions_in_order(chosen)
 
 
 def _fill_blocks(

@@ -91,7 +91,10 @@ export function PerformancePage() {
     },
   })
   const startCases = useMutation({
-    mutationFn: () => api.startPractice({ size: 10 }),
+    // No size: the server owns how long a run is. This asked for ten, the run
+    // length from before it became six, so the button's own label read
+    // "Start 6 cases" and then started a ten-question run.
+    mutationFn: () => api.startPractice(),
     onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
   })
   const startFocus = useMutation({

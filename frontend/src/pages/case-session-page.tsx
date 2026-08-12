@@ -72,8 +72,11 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
   })
   const dueReviews = queueQuery.data?.review_queue.due ?? 0
   const startRepair = useMutation({
-    // Due repairs are folded into an ordinary run now; there is no repair mode.
-    mutationFn: () => api.startPractice({ size: Math.min(5, Math.max(1, dueReviews)) }),
+    // Due repairs are folded into an ordinary run now; there is no repair mode,
+    // so there is nothing for a run sized to the queue to mean. It used to ask
+    // for one to five questions, which is below the length a reading passage
+    // needs, so clearing a queue could never show the student any reading.
+    mutationFn: () => api.startPractice(),
     onSuccess: ({ session }) => {
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
       void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
@@ -197,7 +200,7 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
       </section>
 
       <section className="review-next-actions">
-        <div><span className="eyebrow">NEXT BEST ACTION</span><h2>{dueReviews ? `Repair ${Math.min(5, dueReviews)} due item${dueReviews === 1 ? '' : 's'}` : 'Return to unseen questions'}</h2><p>{dueReviews ? 'Write reasoning only where the evidence says it is needed.' : 'Your repair queue is clear; another run of cases provides fresh evidence.'}</p></div>
+        <div><span className="eyebrow">NEXT BEST ACTION</span><h2>{dueReviews ? `Repair ${dueReviews} due item${dueReviews === 1 ? '' : 's'}` : 'Return to unseen questions'}</h2><p>{dueReviews ? 'Write reasoning only where the evidence says it is needed.' : 'Your repair queue is clear; another run of cases provides fresh evidence.'}</p></div>
         <div>
           {isBrief && <button className="primary-button" onClick={() => finishBrief.mutate()} disabled={finishBrief.isPending}>{finishBrief.isPending ? 'Closing brief…' : 'Finish Deep Brief'} <CheckCircle2 /></button>}
           {dueReviews > 0 && <button className="primary-button" onClick={() => startRepair.mutate()} disabled={startRepair.isPending}>{startRepair.isPending ? 'Building review…' : 'Start priority review'} <ArrowRight /></button>}

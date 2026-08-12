@@ -34,7 +34,10 @@ export function OfficePage() {
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
   const start = useMutation({
-    mutationFn: () => api.startPractice({ size: 3 }),
+    // No size: the server owns how long a run is. Three was a short run back
+    // when a run was ten; now a run is six, and a three-question run is one the
+    // server refuses because a reading passage cannot fit in it.
+    mutationFn: () => api.startPractice(),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `office-case-open:${session.id}`, seed: session.id, intensity: .58 })
       navigate(`/cases/${session.id}`)

@@ -234,7 +234,7 @@ def test_session_history_paginates(app):
     headers = login(client, "history-page@example.test")
     create_game(client, headers)
     for index in range(3):
-        run_session(app, client, headers, f"page-{index}", size=2, correct=1)
+        run_session(app, client, headers, f"page-{index}", size=4, correct=1)
 
     first_page = client.get("/v1/history/sessions?limit=2", headers=headers).json
     assert len(first_page["sessions"]) == 2
@@ -312,7 +312,7 @@ def test_attempt_history_is_scoped_to_the_account(app):
     client = app.test_client()
     owner = login(client, "history-owner@example.test")
     create_game(client, owner)
-    run_session(app, client, owner, "owned", size=2, correct=1)
+    run_session(app, client, owner, "owned", size=4, correct=1)
     mine = client.get("/v1/history/attempts", headers=owner).json
     attempt_id = mine["attempts"][0]["attempt_id"]
 

@@ -91,7 +91,11 @@ def app():
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "AUTO_SEED": False,
             "DEV_AUTH_ENABLED": True,
-            "PRACTICE_SESSION_SIZE": 3,
+            # Four, not the three this fixture used to ask for: `create_app`
+            # now refuses a configured size below `services.RC_CASE_MIN_SITTING`,
+            # because a shorter general run cannot hold a reading passage and
+            # comes out Logical Reasoning only. Nothing here reads the size.
+            "PRACTICE_SESSION_SIZE": 4,
             "TFY_URL": "",
             "TFY_API_KEY": "",
             "AI_JOBS_MODE": "sync",
@@ -133,7 +137,10 @@ def onboard(client, headers) -> None:
 
 
 def start_run(client, headers) -> str:
-    response = client.post("/v1/study-sessions", json={"size": 2}, headers=headers)
+    # Was 2, to keep these runs short. A general run below RC_CASE_MIN_SITTING is
+    # now refused outright rather than served without its reading section, so the
+    # shortest run this helper can ask for is four.
+    response = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
     assert response.status_code in {200, 201}, response.json
     return response.json["session"]["id"]
 

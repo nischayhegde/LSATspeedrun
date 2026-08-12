@@ -58,7 +58,10 @@ export function CasesLobbyPage() {
   const reviews = useQuery({ queryKey: ['review-queue'], queryFn: api.reviewQueue })
   const docketQuery = useQuery({ queryKey: ['daily-docket'], queryFn: api.dailyDocket })
   const start = useMutation({
-    mutationFn: (plan?: { size?: number }) => api.startPractice({ size: plan?.size ?? 10 }),
+    // No size: the server owns how long a run is. This asked for ten, which was
+    // the run length before it became six, so the page's own copy said "about 6
+    // questions" and then started a ten-question run.
+    mutationFn: () => api.startPractice(),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `case-open:${session.id}`, seed: session.id, intensity: .62 })
       void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
@@ -137,7 +140,7 @@ export function CasesLobbyPage() {
       return
     }
     if (queueFull) return
-    if (daily.next_action.kind === 'start_cases') start.mutate({ size: 10 })
+    if (daily.next_action.kind === 'start_cases') start.mutate()
   }
   const describeStarted = (startedAt: string) => {
     const minutes = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 60000))
@@ -151,9 +154,9 @@ export function CasesLobbyPage() {
     if (run.status === 'in_progress') return { label: 'Running', cls: 'is-running' }
     return { label: 'Paused', cls: 'is-paused' }
   }
-  const startNewRun = (plan?: { size?: number }) => {
+  const startNewRun = () => {
     if (queueFull) return
-    start.mutate(plan)
+    start.mutate()
   }
   // A queued run's timer only ticks while its case view is open, so resuming
   // one that is already `in_progress` (or mid-debrief) is just a navigation —
