@@ -420,9 +420,11 @@ own invention, mapping pace, confidence, explanation quality and whether the
 answer was changed onto the four grades FSRS expects — the one part of this
 layer with no literature behind it. A wrong grade mapping produces wrong
 stabilities, and wrong stabilities show up as a calibration curve that is
-displaced or flat. Cost: about **450 reviews** for ±5 points on the busiest
-band, against 3,483 students. A flat curve would be a null result for the whole
-layer.
+displaced or flat. Cost: **113 reviews** in the 92% band for a ±5 point reading
+there, about **450 across the whole curve** — against 3,483 students for the
+holdout. Three orders of magnitude cheaper, no control group, and it can return
+a null: a flat curve means the per-card memory state carries no information
+about recall, which is a negative result about the entire layer.
 
 `calibrated` is a registry status of its own precisely so this cannot be read
 as "somebody got to it". It is a weaker instrument, honestly labelled, chosen
