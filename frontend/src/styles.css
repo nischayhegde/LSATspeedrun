@@ -1,5 +1,125 @@
+.deck-demo-sequence {
+  position: fixed;
+  z-index: 2000;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 12px;
+  border: 1px solid rgba(242, 199, 91, .58);
+  background: rgba(8, 18, 29, .92);
+  color: #f7e5b2;
+  box-shadow: 0 8px 22px rgba(4, 9, 16, .28);
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: deck-demo-sequence-enter .55s ease both;
+}
+
+.deck-demo-sequence i {
+  width: 22px;
+  flex: 0 0 22px;
+  border-top: 1px solid #c89b4b;
+}
+
+.deck-demo-sequence[data-live='true'] span {
+  opacity: .48;
+  transition: opacity .3s ease, color .3s ease;
+}
+
+.deck-demo-sequence[data-live='true'] span[data-state='complete'] {
+  color: #9bb7ab;
+  opacity: .72;
+}
+
+.deck-demo-sequence[data-live='true'] span[data-state='active'] {
+  color: #fff0bd;
+  opacity: 1;
+}
+
+.deck-demo-sequence[data-live='true'] span[data-state='active']::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  display: inline-block;
+  border-radius: 50%;
+  background: #f2c75b;
+  box-shadow: 0 0 9px rgba(242, 199, 91, .8);
+  vertical-align: 1px;
+}
+
+.deck-demo-caption {
+  width: min(680px, calc(100vw - 40px));
+  min-height: 66px;
+  padding: 10px 14px 11px;
+  position: fixed;
+  z-index: 1999;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 14px;
+  border: 1px solid rgba(242, 199, 91, .48);
+  border-left-width: 3px;
+  color: #f6e7c4;
+  background: rgba(7, 17, 29, .93);
+  box-shadow: 0 10px 30px rgba(2, 7, 12, .32);
+  pointer-events: none;
+}
+
+.deck-demo-caption small {
+  grid-row: 1 / 3;
+  align-self: center;
+  color: #d5ad62;
+  font: 800 9px var(--font-pixel);
+  letter-spacing: .1em;
+}
+
+.deck-demo-caption strong {
+  font: 600 17px var(--font-display);
+}
+
+.deck-demo-caption span {
+  color: #aebdc1;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+@keyframes deck-demo-sequence-enter {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+}
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* The three faces, as the base layer.
+     This file set `--font-pixel` to a Courier New stack while `art/art.css`
+     set it to Archivo, so which face every HUD label in the app rendered in
+     came down to which sheet loaded last. Archivo won and nothing looked
+     wrong, which is what made it worth removing rather than leaving — the
+     Courier declaration was one import-order change away from being visible
+     on ~100 labels. The stacks below are now byte-identical to the ones
+     `art/art.css` resolves, so load order no longer decides anything.
+
+     They stay declared here as well as there because this is the sheet every
+     entry imports: `gate-harness-main.tsx` imports this file and not
+     `art.css`, and had no display or label face at all without them.
+     `art/art.css` remains the illustrated layer's token authority — it adds
+     `--font-hud` and `--font-ui`, and `docs/visual-language.md` says so.
+
+     `--font-body` is new only as a name. The stack was already written out
+     longhand on the line below, and seven declarations across four sheets
+     were already asking for it by this name — with nothing declaring it, so
+     each of those `font-family` declarations was dropped and the element
+     silently inherited whichever face its parent happened to have. */
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-pixel: "Archivo", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-body);
   color: #182027;
   background: #f2eee5;
   font-synthesis: none;
@@ -12,7 +132,10 @@
      at the top of `art/art.css` and `docs/visual-language.md`. */
   --navy: #102735;
   --navy-2: #18394a;
-  --muted: #6f756f;
+  /* The contrast-bumped value from the visual overhaul. It lived in
+     `art/art.css` as an override of a lighter one here, which is the same
+     two-sheets-one-token problem as the faces above. */
+  --muted: #5c635c;
   --line: #d8d0c2;
   --surface: #fffdf7;
   --paper: #f8f3e8;
@@ -61,7 +184,7 @@ h1, h2, h3, p { text-wrap: pretty; }
 .case-brand { cursor: default; }
 .brand-mark { width: 39px; height: 39px; display: grid; place-items: center; color: #f7e8c4; border: 1px solid #d8ad5e; border-radius: 50%; background: var(--navy); box-shadow: inset 0 0 0 3px rgba(200,155,75,.16); }
 .brand-word { display: flex; flex-direction: column; line-height: .95; }
-.brand-word strong { font-family: Georgia, "Times New Roman", serif; font-size: 16px; letter-spacing: .07em; }
+.brand-word strong { font-family: var(--font-display); font-size: 16px; letter-spacing: .07em; }
 .brand-word small { margin-top: 4px; color: var(--gold-dark); font-size: 11px; font-weight: 900; letter-spacing: .35em; }
 .brand.light .brand-word small { color: #e7c57e; }
 .desktop-nav { height: 100%; display: flex; align-items: center; gap: 4px; }
@@ -242,7 +365,9 @@ h1, h2, h3, p { text-wrap: pretty; }
 
 .page-wrap { width: min(var(--page-measure), calc(100% - var(--page-gutter))); margin-inline: auto; padding-block: 42px 80px; }
 .contained { width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
-.eyebrow { color: var(--gold-dark); font-size: 11.5px; line-height: 1.2; letter-spacing: .16em; font-weight: 900; }
+/* Colour only. Size, tracking, weight and face are set once, below, on the
+   rule this shares with `.pixel-kicker`. */
+.eyebrow { color: var(--gold-dark); }
 .eyebrow.gold { color: #e7c57e; }
 .primary-button, .secondary-button { min-height: 46px; padding: 0 19px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid transparent; border-radius: 9px; font-weight: 800; text-decoration: none; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
 .primary-button { color: #fff9e9; background: var(--navy); box-shadow: 0 9px 24px rgba(16,39,53,.18); }
@@ -250,7 +375,7 @@ h1, h2, h3, p { text-wrap: pretty; }
 .secondary-button { color: var(--navy); border-color: #d4ccbe; background: #fffdf8; }
 .secondary-button:hover:not(:disabled) { transform: translateY(-1px); border-color: #b9a98d; background: white; }
 .secondary-button.full, .primary-button.full { width: 100%; }
-.secondary-button.compact { min-height: 37px; padding: 0 13px; font-size: 12px; }.loading-screen { min-height: 65vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; color: var(--muted); font-family: Georgia, serif; font-size: 17px; }
+.secondary-button.compact { min-height: 37px; padding: 0 13px; font-size: 12px; }.loading-screen { min-height: 65vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; color: var(--muted); font-family: var(--font-display); font-size: 17px; }
 .legal-spinner { width: 54px; height: 54px; display: grid; place-items: center; color: var(--gold); border: 1px solid #d6c7a9; border-radius: 50%; background: white; animation: legal-pulse 1.3s ease-in-out infinite; }
 /* The halo has to carry the plate's own bevel and drop with it: a keyframe
    replaces `box-shadow` outright, so stating only the ring made the plate go
@@ -316,7 +441,7 @@ svg.lucide { stroke-width: 2.35; }
 .partial-load-notice p { max-width: var(--prose-measure); margin: 7px 0 0; color: inherit; opacity: .78; font-size: 12.5px; line-height: 1.45; }
 .route-error { min-height: 100vh; min-height: 100dvh; padding: 30px; display: grid; place-items: center; background: #eee8dc; }
 .route-error > div { width: min(510px, 100%); padding: 34px; border: 1px solid #d6cbbb; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
-.route-error h1 { margin: 8px 0 18px; color: var(--navy); font-family: Georgia, serif; font-size: clamp(30px, 5vw, 45px); font-weight: 500; }
+.route-error h1 { margin: 8px 0 18px; color: var(--navy); font-family: var(--font-display); font-size: clamp(30px, 5vw, 45px); font-weight: 500; }
 .route-error .primary-button { margin-top: 14px; }
 
 /* Office artwork */
@@ -332,14 +457,14 @@ svg.lucide { stroke-width: 2.35; }
 .crest { width: 58px; height: 58px; margin: -67px auto 24px; display: grid; place-items: center; border: 5px solid #eee8dc; border-radius: 50%; color: #f2d494; background: var(--navy); box-shadow: 0 8px 20px rgba(16,39,53,.2); }
 
 /* Onboarding */
-.onboarding-scene-wrap .office-scene { box-shadow: 0 32px 90px rgba(0,0,0,.5); }@keyframes hotspot { to { transform: scale(1.35); opacity: 0; } }.milestone-card { flex: 1; padding: 24px; box-shadow: 0 18px 45px rgba(14,34,44,.17); }.milestone-card h2 { margin: 18px 0 8px; font-family: Georgia, serif; font-size: 29px; font-weight: 500; }
+.onboarding-scene-wrap .office-scene { box-shadow: 0 32px 90px rgba(0,0,0,.5); }@keyframes hotspot { to { transform: scale(1.35); opacity: 0; } }.milestone-card { flex: 1; padding: 24px; box-shadow: 0 18px 45px rgba(14,34,44,.17); }.milestone-card h2 { margin: 18px 0 8px; font-family: var(--font-display); font-size: 29px; font-weight: 500; }
 .milestone-card p { margin: 0; color: #b7c7ce; font-size: 12px; line-height: 1.55; }
 .milestone-numbers { margin-top: 30px; display: flex; align-items: baseline; justify-content: space-between; color: #b7c7ce; font-size: 11.5px; }
 .milestone-numbers strong { color: white; font-size: 18px; }
 .meter { height: 7px; margin: 9px 0 7px; overflow: hidden; border-radius: 99px; background: #294554; }
 .meter span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b48135, #f0d18a); }
 .milestone-card > small { display: block; color: #91a8b2; font-size: 11px; }
-.milestone-card .text-button { margin-top: 18px; color: #e3c077; }.daily-docket-card h3 { margin: 5px 0 4px; color: var(--navy); font-family: Georgia, serif; font-size: 22px; font-weight: 500; }.daily-goals button.complete > span { background: var(--gold-dark); }
+.milestone-card .text-button { margin-top: 18px; color: #e3c077; }.daily-docket-card h3 { margin: 5px 0 4px; color: var(--navy); font-family: var(--font-display); font-size: 22px; font-weight: 500; }.daily-goals button.complete > span { background: var(--gold-dark); }
 .daily-goals button.claimed { opacity: .62; }.primary-button.jumbo { min-height: 57px; padding: 0 23px; color: var(--navy); background: #e8c77f; box-shadow: 0 13px 30px rgba(0,0,0,.22); }
 .primary-button.jumbo:hover:not(:disabled) { color: var(--navy); background: #f0d493; }
 /* The one-sitting gate. A mega-litigation starts its clock the moment it is
@@ -410,7 +535,7 @@ svg.lucide { stroke-width: 2.35; }
 /* Map */
 .map-page { width: min(1300px, calc(100% - 48px)); }
 .section-heading { display: flex; align-items: center; justify-content: space-between; }
-.section-heading h2 { margin: 4px 0 20px; font-family: Georgia, serif; font-size: 31px; font-weight: 500; }
+.section-heading h2 { margin: 4px 0 20px; font-family: var(--font-display); font-size: 31px; font-weight: 500; }
 .section-heading > svg { width: 43px; height: 43px; color: #dfbd73; }
 
 /* Cartoon courtroom case experience */
@@ -527,7 +652,6 @@ svg.lucide { stroke-width: 2.35; }
   --pixel-red: #c95757;
   --pixel-shadow: #090d15;
   --pixel-border: 3px solid var(--pixel-ink);
-  --font-pixel: "Courier New", "Lucida Console", ui-monospace, monospace;
 }
 
 html { background: var(--pixel-night); }
@@ -554,7 +678,13 @@ body::before {
 ::selection { color: #fff4ce; background: #8d4c43; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #fff3ac; outline-offset: 3px; }
-h1, h2, h3 { letter-spacing: -.035em; }
+/* One tracking for all three heading levels.
+   This rule said -.035em and `art/art.css` said -0.01em for `h1, h2` only.
+   art.css loads later, so h1 and h2 took -0.01em and h3 was left on -.035em —
+   three and a half times tighter than the headings above it, from nothing but
+   the order the two sheets happened to be imported in. -.01em is the value
+   that was already winning wherever the two rules overlapped. */
+h1, h2, h3 { letter-spacing: -.01em; }
 
 /* The field the whole app sits on, and until now a flat swatch. On a screen
    like the paused case — one small card in the middle of a very large empty
@@ -761,7 +891,16 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .sound-volume-control input { width: 100%; height: 20px; accent-color: var(--brass-bright); cursor: pointer; }
 .sound-volume-control input:disabled { cursor: default; opacity: .35; }
 
-.eyebrow, .pixel-kicker { font-family: var(--font-pixel); font-weight: 900; letter-spacing: .14em; }
+/* The eyebrow, in one place.
+   `.eyebrow` had three base declarations across two sheets — 11.5px/.16em
+   here, .14em here, 11px/.15em in `art/art.css` — all at one-class
+   specificity, so what a reader actually saw was decided by which sheet the
+   bundler put last rather than by any of the three. `.pixel-kicker` is the
+   same component under a second name and rode on the middle one, which is why
+   the two labels tracked differently. Both now resolve here, at .14em: the
+   tracking sixteen other sheets already use, and the one `.pixel-kicker` was
+   already rendering at. */
+.eyebrow, .pixel-kicker { font-family: var(--font-pixel); font-size: 11px; font-weight: 900; line-height: 1.2; letter-spacing: .14em; }
 
 /* Disclosures, drawn once.
 

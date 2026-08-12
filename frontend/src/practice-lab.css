@@ -124,7 +124,7 @@
    stretched across the row, so it stays the lighter option rather than a
    second CTA fighting the gold button above it for width. */
 .practice-run-alt { justify-self: stretch; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; justify-items: start; gap: 14px; }
-.practice-run-or { display: inline-flex; align-items: center; gap: 8px; color: #7f959b; font-family: var(--font-pixel, inherit); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.practice-run-or { display: inline-flex; align-items: center; gap: 8px; color: #7f959b; font-family: var(--font-pixel); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .practice-run-or::before,
 .practice-run-or::after { content: ""; width: 14px; height: 1px; background: rgba(244,234,212,.18); }
 /* Ghost pill rather than a filled bar: an outline this size read as a

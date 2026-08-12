@@ -9,11 +9,11 @@
 .onboarding-scene-wrap { min-width: 0; padding: clamp(26px, 5vw, 70px); display: flex; flex-direction: column; justify-content: center; position: relative; background: radial-gradient(circle at 30% 15%, #2a4c5c, transparent 40%), #102735; }
 .opening-caption { margin-top: 25px; color: white; }
 .opening-caption span { color: #e3bd70; font-size: 11px; font-weight: 900; letter-spacing: .19em; }
-.opening-caption h2 { margin: 6px 0; font-family: Georgia, serif; font-size: clamp(27px, 3vw, 43px); font-weight: 400; line-height: 1.06; }
+.opening-caption h2 { margin: 6px 0; font-family: var(--font-display); font-size: clamp(27px, 3vw, 43px); font-weight: 400; line-height: 1.06; }
 .opening-caption p { margin: 0; color: #a9bdc6; }
 .onboarding-panel { padding: clamp(35px, 5vw, 70px); display: flex; flex-direction: column; justify-content: center; color: var(--ink); background: #f6f0e5; }
 .step-indicator { color: var(--gold-dark); font-size: 11.5px; font-weight: 900; letter-spacing: .16em; }
-.onboarding-panel h1 { margin: 12px 0 14px; font-family: Georgia, serif; color: var(--navy); font-size: clamp(37px, 4vw, 55px); line-height: 1.03; font-weight: 500; letter-spacing: -.035em; }
+.onboarding-panel h1 { margin: 12px 0 14px; font-family: var(--font-display); color: var(--navy); font-size: clamp(37px, 4vw, 55px); line-height: 1.03; font-weight: 500; letter-spacing: -.035em; }
 .onboarding-panel > p { max-width: 600px; margin: 0 0 24px; color: var(--muted); line-height: 1.55; }
 .character-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .character-choice button { min-height: 205px; padding: 7px 8px 13px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; overflow: hidden; border: 1px solid #d9d0c1; border-radius: 13px; color: var(--navy); background: #fffdf8; font-size: 12px; font-weight: 800; }

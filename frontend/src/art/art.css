@@ -115,8 +115,11 @@
   --pixel-border: 1px solid var(--ink-line-strong);
 }
 
-h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.01em; }
-.eyebrow { font-size: 11px; letter-spacing: 0.15em; }
+/* Tracking is set for all three heading levels in `styles.css`; it was
+   declared here for h1 and h2 only, which is what left h3 on a different one. */
+h1, h2 { font-family: var(--font-display); font-weight: 620; }
+/* `.eyebrow` was declared here too, at a third size and tracking. It resolves
+   in `styles.css` now, beside the colour it always took from there. */
 .desktop-nav a { font-size: 14px; }
 .header-economy > span { font-size: 13px; }
 
@@ -591,7 +594,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; letter-spacing: -0.
    pulled up a little to keep the headquarters clear of it, and the firm's
    monogram sits opposite as a stamped plate rather than floating on the art. */
 .av-card-frame-site .av-card-render { inset: 0 0 34px; }
-.av-card-mark { position: absolute; z-index: 4; right: 9px; bottom: 9px; min-width: 30px; padding: 4px 7px; display: grid; place-items: center; border: 1px solid rgba(232, 200, 124, .42); border-radius: 7px; color: #f2dda4; background: rgba(11, 17, 25, .82); font-family: var(--font-pixel, inherit); font-size: 10px; letter-spacing: .06em; }
+.av-card-mark { position: absolute; z-index: 4; right: 9px; bottom: 9px; min-width: 30px; padding: 4px 7px; display: grid; place-items: center; border: 1px solid rgba(232, 200, 124, .42); border-radius: 7px; color: #f2dda4; background: rgba(11, 17, 25, .82); font-family: var(--font-pixel); font-size: 10px; letter-spacing: .06em; }
 
 .av-vignette-owner { position: absolute; z-index: 4; left: 8px; bottom: 8px; display: flex; align-items: center; gap: 7px; padding: 4px 10px 4px 4px; border-radius: 12px; border: 1px solid var(--av-panel-line); background: var(--av-panel); }
 .av-vignette-owner .av-bust { width: 30px; height: 34px; }
