@@ -292,11 +292,23 @@ Four smaller ones, named so they are not "fixed" by the next sweep:
   is a reading face chosen to match the printed test. It is deliberately
   neither the display face nor the body face, and it is the only hand-named
   family left in the app.
-- **`/firm`'s page heading** is Archivo where every other route's `h1` is
-  Fraunces. It is the app's only non-display-face page heading, it is part of a
-  coherent local treatment — the whole route is styled as a manila catalogue —
-  and **it is a decision the user has already made and confirmed.** Do not
-  "correct" it.
+- **`/firm`'s page heading — unresolved, and the two records disagree.** The
+  standing instruction is that this heading stays in **Archivo**: it is the
+  app's only non-display-face page heading, it belongs to a coherent local
+  treatment (the whole route is styled as a manila catalogue), and it is a
+  decision that was made deliberately rather than inherited.
+
+  It is not what the code does. `firm-page.css` carries two `.page-heading h1`
+  rules; the later one sets `var(--font-display)` at 620 with
+  `text-transform: none`, and the comment above it calls the Archivo version
+  "drift rather than design". Measured against a production build, `/firm`
+  renders **Fraunces**, and it did so before the August 2026 merges as well —
+  the design sweep changed it, not the type sweep, and nothing in those merges
+  touched it either way.
+
+  So this is one decision recorded in two places with opposite answers. It
+  needs a person, not a sweep. Until it is settled, do not "fix" it in either
+  direction on the strength of this file alone.
 - **`.asset-card .requirements`** (`firm-page.css`) is in the label face at
   9.5px with a diamond bullet. It reads as prose but functions as a status
   line, and it is sized and marked as one.
