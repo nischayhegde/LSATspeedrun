@@ -1158,9 +1158,34 @@ export type HistoryAttempt = {
   created_at: string | null
 }
 
+/**
+ * What is known about how hard one question is, and how well it is known.
+ *
+ * `published` is the test maker's own rating and is null on every item in this
+ * bank, because the source material carries none. `rating` is measured from
+ * student responses, in logits relative to the bank's mean, and is null until
+ * anybody has answered the item. Read `usable_for_targeting` rather than
+ * re-deriving it: a `provisional` rating exists but must not steer anything.
+ * See `backend/app/calibration.py`.
+ */
+export type QuestionDifficulty = {
+  published: number | null
+  status: 'uncalibrated' | 'provisional' | 'estimated' | 'calibrated'
+  origin: 'responses' | 'simulated' | 'imported' | 'official' | null
+  rating: number | null
+  band: 1 | 2 | 3 | 4 | 5 | null
+  standard_error: number | null
+  responses: number
+  correct: number
+  unbiased_responses: number
+  unbiased_rating: number | null
+  selection_bias_gap: number | null
+  usable_for_targeting: boolean
+}
+
 /** The same row with everything needed to re-read the item and the coaching. */
 export type HistoryAttemptDetail = HistoryAttempt & {
-  question: Question & { difficulty?: number }
+  question: Question & { published_difficulty?: number | null; difficulty?: QuestionDifficulty }
   reasoning_text: string | null
   feedback: AttemptResult['feedback'] | null
   strategy_key: string | null

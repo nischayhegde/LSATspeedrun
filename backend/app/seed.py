@@ -224,7 +224,12 @@ def _upsert_row(
     question.passage_id = passage_id
     question.section = section
     question.question_type = _question_type(section, stem)
-    question.difficulty = 3
+    # `published_difficulty` is deliberately not written. These rows are the
+    # whole of `tasksource/lsat-lr` and `tasksource/lsat-rc`, whose schema is
+    # five fields and contains no difficulty at any revision, so there is no
+    # published rating to record. This line used to read `question.difficulty =
+    # 3`, which put the same invented number on all 6,886 items. An estimate is
+    # earned per response in `app/calibration.py`; nothing may be asserted here.
     question.stimulus = stimulus
     question.stem = stem
     question.correct_answer = CHOICE_LABELS[label]

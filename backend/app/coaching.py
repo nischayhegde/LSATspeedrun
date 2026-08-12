@@ -7,10 +7,14 @@ from typing import Any
 import requests
 from flask import current_app
 
+from . import calibration
 from .models import Attempt, Question
 
 
-PROMPT_VERSION = "coaching-v3-invalid-is-a-finding"
+# Bumped when the *input* changed as well as when the rubric does: v4 stops
+# asserting a difficulty of 3 on every question and sends what is measured,
+# including "nothing", so grades either side of it are not comparable.
+PROMPT_VERSION = "coaching-v4-difficulty-is-measured-or-absent"
 ERROR_CODES = {
     "misread_stem",
     "missed_conclusion",
@@ -324,11 +328,53 @@ def _chat(system: str, data: dict, max_tokens: int = 5000) -> tuple[dict, dict]:
     raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.")
 
 
+def _difficulty_for_prompt(question: Question) -> dict:
+    """What the model is told about how hard this question is.
+
+    It used to be told `"difficulty": 3`, on every question, always — the
+    constant the ingest path wrote onto all 6,886 rows. A constant presented to
+    a language model as a measurement is worse than silence: the model has no
+    way to know it is a placeholder, and "this is a mid-difficulty item" is a
+    real claim that shapes how the coaching is pitched.
+
+    So the field now says what is actually known, including when that is
+    nothing, and it says how it knows. Below `estimated` no number is sent at
+    all — a rating off four responses would be the old problem with extra steps.
+    """
+    row = question.calibration
+    if row is None or not row.responses:
+        return {"status": calibration.STATUS_UNCALIBRATED, "note": "No difficulty data for this item."}
+    if row.status not in {calibration.STATUS_ESTIMATED, calibration.STATUS_CALIBRATED}:
+        return {
+            "status": row.status,
+            "responses": row.responses,
+            "note": (
+                f"Only {row.responses} students have answered this item, which is too few to "
+                "say how hard it is. Do not assume a difficulty."
+            ),
+        }
+    reading = calibration.signal(question, row)
+    return {
+        "status": reading["status"],
+        "band_1_easiest_to_5_hardest": reading["band"],
+        "percent_correct": round(100 * row.correct / row.responses),
+        "responses": row.responses,
+        "note": (
+            "Measured from student responses on this app, not published by the test maker. "
+            f"Standard error {reading['standard_error']} logits."
+        ),
+    }
+
+
 def _question_data(question: Question) -> dict:
     return {
         "section": question.section,
         "question_type": question.question_type,
-        "difficulty": question.difficulty,
+        # The publisher's own rating, and NULL on every item in this bank
+        # because the source material carries none. Never an estimate: see
+        # `models.Question.published_difficulty`.
+        "published_difficulty": question.published_difficulty,
+        "measured_difficulty": _difficulty_for_prompt(question),
         "passage": question.passage.canonical_text if question.passage else None,
         "stimulus": question.stimulus,
         "stem": question.stem,

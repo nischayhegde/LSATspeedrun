@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload, selectinload
 
+from . import calibration
 from .extensions import db
 from .models import Attempt, Question, SessionItem, StudySession, User
 
@@ -236,7 +237,7 @@ def _compact_attempt(attempt: Attempt) -> dict:
     }
 
 
-def _full_attempt(attempt: Attempt) -> dict:
+def _full_attempt(attempt: Attempt, centre: float | None = None) -> dict:
     """Everything needed to re-read the question and the coaching, offline."""
     item = attempt.session_item
     question = item.question
@@ -247,7 +248,15 @@ def _full_attempt(attempt: Attempt) -> dict:
                 "id": question.id,
                 "section": question.section,
                 "question_type": question.question_type,
-                "difficulty": question.difficulty,
+                # Was `"difficulty": question.difficulty`, which was the literal
+                # 3 the ingest path wrote on all 6,886 rows. It is now the two
+                # separate things that were being conflated: what the publisher
+                # said (nothing, on this material) and what the responses have
+                # measured, with the evidence behind it attached. `centre` is
+                # passed in so a page of rows costs one aggregate rather than
+                # one per row.
+                "published_difficulty": question.published_difficulty,
+                "difficulty": calibration.signal(question, centre=centre),
                 "passage": (
                     {
                         "id": question.passage.id,
@@ -345,6 +354,7 @@ def attempt_history(
             .options(
                 selectinload(Question.choices),
                 joinedload(Question.passage),
+                joinedload(Question.calibration),
             ),
             joinedload(Attempt.session_item).joinedload(SessionItem.session),
         ]
@@ -355,7 +365,11 @@ def attempt_history(
         .offset(offset)
         .all()
     )
-    serialize = _full_attempt if detail else _compact_attempt
+    # One aggregate for the page, not one per row: the difficulty scale is
+    # centred on the bank's mean rating at read time (see
+    # `calibration.scale_centre`), and a detail page can carry 25 rows.
+    centre = calibration.scale_centre() if detail and rows else None
+    serialize = (lambda row: _full_attempt(row, centre)) if detail else _compact_attempt
     return {
         "attempts": [serialize(row) for row in rows],
         "total": total,
@@ -382,7 +396,11 @@ def attempt_detail(user: User, attempt_id: str) -> dict | None:
         Attempt.query.options(
             joinedload(Attempt.session_item)
             .joinedload(SessionItem.question)
-            .options(selectinload(Question.choices), joinedload(Question.passage)),
+            .options(
+                selectinload(Question.choices),
+                joinedload(Question.passage),
+                joinedload(Question.calibration),
+            ),
             joinedload(Attempt.session_item).joinedload(SessionItem.session),
         )
         .filter(Attempt.id == attempt_id, Attempt.user_id == user.id)

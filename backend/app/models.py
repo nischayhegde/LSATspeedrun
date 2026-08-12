@@ -90,7 +90,21 @@ class Question(db.Model):
     passage_id = db.Column(db.String(80), db.ForeignKey("passages.id"), nullable=True, index=True)
     section = db.Column(db.String(60), nullable=False, index=True)
     question_type = db.Column(db.String(100), nullable=False, index=True)
-    difficulty = db.Column(db.Integer, nullable=False, default=3)
+    # An *official* difficulty on the publisher's own 1-5 scale, and nothing
+    # else. NULL on all 6,886 rows and expected to stay that way: the upstream
+    # datasets carry no difficulty column, and the only per-item LSAT ratings
+    # LSAC has ever published cover five of the eighty-five PrepTests in this
+    # bank and exist as prose in two copyrighted books. See
+    # `docs/question-difficulty.md`.
+    #
+    # This column was `difficulty`, `nullable=False, default=3`, which put a
+    # literal 3 on every question in the bank and then handed it to a language
+    # model as if it were a measurement. The rename is the point: an estimate
+    # must never be written here, because the whole value of the column is that
+    # a number in it means somebody published one. The *estimate* lives in
+    # `QuestionCalibration` with its own provenance, and is read through
+    # `calibration.signal`.
+    published_difficulty = db.Column(db.Integer, nullable=True)
     stimulus = db.Column(db.Text, nullable=True)
     stem = db.Column(db.Text, nullable=False)
     correct_answer = db.Column(db.String(1), nullable=False)
@@ -101,6 +115,12 @@ class Question(db.Model):
 
     passage = db.relationship("Passage")
     choices = db.relationship("QuestionChoice", back_populates="question", cascade="all, delete-orphan", order_by="QuestionChoice.position")
+    calibration = db.relationship(
+        "QuestionCalibration",
+        back_populates="question",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class QuestionChoice(db.Model):
@@ -253,6 +273,14 @@ class SessionItem(db.Model):
     # serve time so a mid-question mastery change cannot move the goalposts.
     # See app/enforcement.py.
     strategy_enforcement_level = db.Column(db.String(12), nullable=False, default="none")
+    # Whether this slot was filled with any reference to the question's
+    # difficulty. 'blind' is the truth for every row written so far, because
+    # selection has never read difficulty at all. A selector that starts reading
+    # it must call `calibration.exposure_draw` per slot and write 'random' or
+    # 'targeted' here; leaving the default in place would quietly relabel biased
+    # exposure as unbiased, which is the one error the difficulty estimate
+    # cannot recover from. See `app/calibration.py`.
+    exposure_policy = db.Column(db.String(12), nullable=False, default="blind")
     target_time_seconds = db.Column(db.Integer, nullable=False, default=150)
     game_context_json = db.Column(db.JSON, nullable=True)
     timer_compromised = db.Column(db.Boolean, nullable=False, default=False)
@@ -333,6 +361,10 @@ class Attempt(db.Model):
     # the coaching pipeline when it is configured. Never blocks a submission,
     # never reaches the economy, never turns a correct answer into a penalty.
     strategy_artifact_quality = db.Column(db.Float, nullable=True)
+    # Copied off the session item at submit time, exactly as the strategy
+    # columns above are, so a later refit of the difficulty ratings can restrict
+    # itself to unbiased exposure without joining back. See `app/calibration.py`.
+    exposure_policy = db.Column(db.String(12), nullable=False, default="blind", index=True)
     evidence_class = db.Column(db.String(32), nullable=False, default="coached_practice", index=True)
     explanation_score = db.Column(db.Float, nullable=True)
     server_elapsed_ms = db.Column(db.Integer, nullable=False)
@@ -681,6 +713,92 @@ class SkillProgress(db.Model):
     explanation_count = db.Column(db.Integer, nullable=False, default=0)
     total_time_ms = db.Column(db.BigInteger, nullable=False, default=0)
     recent_mistakes = db.Column(db.Integer, nullable=False, default=0)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class QuestionCalibration(db.Model):
+    """What has been learned about one question's difficulty, and from what.
+
+    One row per question that has ever been answered. A question with no row has
+    not been answered and has no difficulty — that absence is the honest empty
+    state the whole bank is in today, and it is why nothing here has a default
+    that could be mistaken for a measurement.
+
+    The estimator is in `app/calibration.py`. Read it before reading a value out
+    of this table, because two of these columns are not what they look like:
+    `rating` is in logits and is only meaningful relative to the bank's mean
+    (`calibration.scale_centre`), and `blind_rating` is a second, deliberately
+    partial estimate that exists to be compared against the first.
+    """
+
+    __tablename__ = "question_calibrations"
+
+    question_id = db.Column(
+        db.String(80),
+        db.ForeignKey("questions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # Difficulty in logits: the θ at which a student has an even chance of the
+    # item, above the guessing floor. Higher is harder. Not centred — see
+    # `calibration.scale_centre`.
+    rating = db.Column(db.Float, nullable=False, default=0.0)
+    # Σ Fisher information, which is what the standard error is 1/√ of. Kept
+    # rather than derived from `responses` because a response from a student far
+    # above or below the item says almost nothing about it, and counting it the
+    # same as an informative one is how an estimate acquires false confidence.
+    information = db.Column(db.Float, nullable=False, default=0.0)
+    responses = db.Column(db.Integer, nullable=False, default=0)
+    correct = db.Column(db.Integer, nullable=False, default=0)
+    # The same estimate built only from responses whose exposure could not have
+    # depended on difficulty. Identical to `rating` while nothing targets;
+    # divergence afterwards is the measurement of selection bias rather than the
+    # worry about it. See `calibration.exposure_draw`.
+    blind_rating = db.Column(db.Float, nullable=False, default=0.0)
+    blind_information = db.Column(db.Float, nullable=False, default=0.0)
+    blind_responses = db.Column(db.Integer, nullable=False, default=0)
+    targeted_responses = db.Column(db.Integer, nullable=False, default=0)
+    # 'uncalibrated' | 'provisional' | 'estimated' | 'calibrated' — how much
+    # evidence there is. Derived from `responses` and `information` on every
+    # update by `calibration.status_for`; stored so a consumer can filter in SQL
+    # without recomputing it per row.
+    status = db.Column(db.String(20), nullable=False, default="uncalibrated", index=True)
+    # 'responses' | 'simulated' | 'imported' | 'official' — where the evidence
+    # came from. Separate from `status` because fifty real responses and fifty
+    # from a demo seeder are the same amount of evidence and not the same
+    # evidence, and only one of them should ever reach a student.
+    origin = db.Column(db.String(20), nullable=False, default="responses", index=True)
+    first_response_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_response_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    question = db.relationship("Question", back_populates="calibration")
+
+
+class LearnerRating(db.Model):
+    """The other side of the match: one student's ability, in the same logits.
+
+    Not a score and not shown to anybody. It exists because an item's difficulty
+    cannot be estimated from raw accuracy — a question is not hard because weak
+    students missed it — so every update needs an opponent rating to be
+    surprised relative to.
+
+    Scoped per section. A single θ per student would let weakness at Reading
+    Comprehension make Logical Reasoning items look easy, which is precisely the
+    confound the item rating exists to remove.
+    """
+
+    __tablename__ = "learner_ratings"
+    __table_args__ = (UniqueConstraint("user_id", "scope", name="uq_learner_rating_scope"),)
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # A `Question.section` value today. A string rather than an enum so a later
+    # per-question-type ability does not need a migration to exist.
+    scope = db.Column(db.String(60), nullable=False)
+    rating = db.Column(db.Float, nullable=False, default=0.0)
+    information = db.Column(db.Float, nullable=False, default=0.0)
+    responses = db.Column(db.Integer, nullable=False, default=0)
+    correct = db.Column(db.Integer, nullable=False, default=0)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
 

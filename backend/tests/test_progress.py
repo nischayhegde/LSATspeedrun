@@ -36,7 +36,6 @@ def add_question(index: int, section: str, question_type: str = "Inference") -> 
             passage_id=passage_id,
             section=section,
             question_type=question_type,
-            difficulty=3,
             stimulus=stimulus,
             stem=f"Which answer is best for progress question {index}?",
             correct_answer="C",
