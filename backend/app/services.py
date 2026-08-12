@@ -1031,7 +1031,32 @@ def create_study_session(
     # the run instead of stacked at the start, which is what the old
     # `repairs + fresh` concatenation did — and which leaks "these first four
     # are the ones you got wrong" before the student has read a word.
-    questions = scheduling.interleave(repairs, fresh, question_type=question_type)
+    #
+    # A quarter of the runs where the two orderings differ get the front-loaded
+    # one, which is the app's own previous behaviour rather than a degraded
+    # arm invented for the trial. The draw only happens where there is
+    # something to compare: with no reviews or no fresh material `interleave`
+    # returns the list untouched and the two arms produce the same run, so
+    # enrolling those would dilute the comparison with questions on which the
+    # treatment is a no-op.
+    #
+    # The reading is taken on the *next* time these questions come round, not
+    # on this run, and it is reported per section and never pooled. Both of
+    # those are properties of the layer rather than of this call site; see
+    # `run_ordering` in `app/experiments.py` for why each one matters, and
+    # `scheduling.BLOCKED_SECTIONS` for the Reading Comprehension decision the
+    # arms are now measured around.
+    if repairs and fresh:
+        ordering = experiments.assign(
+            "run_ordering", user.id, exposure=Exposure.run(session_id)
+        )
+        questions = (
+            scheduling.interleave(repairs, fresh, question_type=question_type)
+            if ordering.on
+            else scheduling.front_load(repairs, fresh)
+        )
+    else:
+        questions = scheduling.interleave(repairs, fresh, question_type=question_type)
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
 

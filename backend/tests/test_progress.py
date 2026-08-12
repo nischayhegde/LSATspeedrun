@@ -1255,6 +1255,58 @@ def test_interleaving_keeps_passage_mates_together(app):
     assert passage_positions[-1] - passage_positions[0] == 2
 
 
+def test_reading_comprehension_is_blocked_on_purpose_and_not_by_accident(app):
+    """The type-discrimination pass leaves Reading Comprehension alone.
+
+    Not because passages are expensive to re-read — that is true, and it is
+    what `_blocks` already handles — but because
+    `research/01-learning-science.md` puts interleaving at g = 0.01 on
+    expository text against g = 0.42 overall. Moving Reading Comprehension
+    blocks around to break up repeated types would be buying a benefit the
+    evidence says is not there.
+
+    The distinction this asserts is between the two halves of interleaving.
+    Reading Comprehension keeps its review items distributed through the run,
+    because that half is about not leaking which questions were missed and
+    applies to any material. It does not get de-blocked by type.
+    """
+    from app.scheduling import interleave, is_blocked_section
+
+    class Item:
+        def __init__(self, name, question_type, section, passage_id=None):
+            self.name = name
+            self.question_type = question_type
+            self.section = section
+            self.passage_id = passage_id
+
+    # Two same-type Reading Comprehension blocks back to back, with a Logical
+    # Reasoning block available to swap in. The de-blocking pass would take it
+    # for a Logical Reasoning pair, and must not here.
+    fresh = [
+        Item("rcA", "Detail", "Reading Comprehension", "p1"),
+        Item("rcB", "Detail", "Reading Comprehension", "p2"),
+        Item("lr1", "Flaw", "Logical Reasoning"),
+    ]
+    reviews = [Item("rev", "Assumption", "Logical Reasoning")]
+    names = [item.name for item in interleave(reviews, fresh)]
+    assert names.index("rcA") < names.index("rcB")
+    assert names.index("rcB") - names.index("rcA") == 1
+    # The other half of the treatment still applies: the review is not first.
+    assert names[0] != "rev"
+
+    # Same shape, Logical Reasoning throughout, and the pass does fire.
+    fresh = [
+        Item("a", "Flaw", "Logical Reasoning"),
+        Item("b", "Flaw", "Logical Reasoning"),
+        Item("c", "Assumption", "Logical Reasoning"),
+    ]
+    names = [item.name for item in interleave(reviews, fresh)]
+    assert abs(names.index("a") - names.index("b")) > 1
+
+    assert is_blocked_section(fresh[0]) is False
+    assert is_blocked_section(Item("x", "Detail", "Reading Comprehension")) is True
+
+
 def test_practice_runs_never_expose_the_scheduler(app):
     """The student presses practice; no rating, deck, or due-date UI appears."""
     client = app.test_client()

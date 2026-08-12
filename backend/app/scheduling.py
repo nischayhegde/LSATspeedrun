@@ -404,6 +404,55 @@ def queue_pressure(user_id: str, *, now: datetime | None = None) -> dict:
 # problem. Front-loading every review item at the start of a run reproduces
 # exactly that — the first four questions are "the ones I got wrong", which is
 # itself a hint. Distributing them, and separating same-type items, removes it.
+#
+# Which is a result about *mathematics problems*, and this app serves two
+# sections rather than one.
+#
+# `research/01-learning-science.md` carries Brunmair and Richter's
+# meta-analysis (Psychological Bulletin 145(11), 2019) of the whole
+# interleaving literature: g = 0.42 overall, g = 0.34 for mathematics — Rohrer
+# above — and g = 0.01, a null, for expository text. Word lists come out at
+# g = −0.39, where blocking wins outright. The moderator is whether the
+# categories being practised are similar enough to be confusable: Strengthen
+# against Weaken against Assumption against Flaw is close to the best case the
+# meta-analysis reports, and reading four questions about one passage is not a
+# category-discrimination task at all. The repository's own note beside that
+# entry says it in one line: Reading Comprehension is the case where
+# interleaving buys nothing.
+#
+# Reading Comprehension has in fact always been blocked here, because a
+# passage's questions travel together so the run reads the passage once. That
+# was a cost decision about re-reading 450 words, and it happened to land on
+# the same answer the evidence gives. Landing on the right answer for an
+# unrelated reason is not the same as having decided, and the difference shows
+# up the moment someone optimises the cost away.
+#
+# So it is a decision now, named below, cited, and reachable from the layer
+# that measures it. `run_ordering` in `app/experiments.py` reports the two
+# sections separately and never pools them, which is what makes the prediction
+# falsifiable rather than decorative: if Reading Comprehension turns out to
+# have an interleaving effect after all, that stratum is where it appears.
+
+# Sections whose questions are ordered by their passage and never by
+# type-discrimination. One entry, and the entry is a claim about the material
+# rather than about the code.
+BLOCKED_SECTIONS = ("Reading Comprehension",)
+
+
+def is_blocked_section(question) -> bool:
+    return getattr(question, "section", None) in BLOCKED_SECTIONS
+
+
+def front_load(reviews: list, fresh: list) -> list:
+    """Reviews first, then fresh material, in the order each arrived.
+
+    The off arm of `run_ordering`, and the app's own behaviour until
+    `interleave` replaced it. Kept as a named function rather than written
+    inline at the call site so the comparison is between two orderings the
+    codebase can both point at, and so the thing being measured is not a
+    concatenation somebody could tidy away without noticing it was an arm.
+    """
+    return list(reviews) + list(fresh)
 
 
 def _blocks(questions: list) -> list[list]:
@@ -483,11 +532,23 @@ def _separate_same_type(sequence: list[list], *, question_type=None) -> list[lis
     Skipped entirely for a type-filtered drill: the student explicitly asked
     for twenty Assumption questions, and shuffling types into that would be
     overriding them, not helping.
+
+    Skipped for a blocked section's blocks too, and for a different reason.
+    This pass is the type-discrimination half of interleaving — the half
+    Brunmair and Richter measure at g = 0.01 on expository text. Applying it to
+    Reading Comprehension would move passages around to buy a benefit the
+    evidence says is not there. The review-distribution half above still
+    applies to Reading Comprehension, because that half is about not leaking
+    "these are the ones you got wrong" and has nothing to do with category
+    discrimination. See `BLOCKED_SECTIONS`.
     """
     if question_type:
         return sequence
     result = list(sequence)
+    movable = [not any(is_blocked_section(question) for question in block) for block in result]
     for index in range(1, len(result)):
+        if not movable[index]:
+            continue
         previous_type = result[index - 1][-1].question_type
         if result[index][0].question_type != previous_type:
             continue
@@ -495,10 +556,11 @@ def _separate_same_type(sequence: list[list], *, question_type=None) -> list[lis
             (
                 candidate
                 for candidate in range(index + 1, len(result))
-                if result[candidate][0].question_type != previous_type
+                if movable[candidate] and result[candidate][0].question_type != previous_type
             ),
             None,
         )
         if swap_with is not None:
             result[index], result[swap_with] = result[swap_with], result[index]
+            movable[index], movable[swap_with] = movable[swap_with], movable[index]
     return result

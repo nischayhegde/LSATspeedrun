@@ -75,7 +75,7 @@ from dataclasses import dataclass
 from flask import current_app
 
 from .extensions import db
-from .models import Attempt, LayerAssignment, SessionItem, StudySession
+from .models import Attempt, LayerAssignment, Question, SessionItem, StudySession
 from .scoring import PRIOR_STRENGTH, shrink_toward_prior
 
 # What a draw is allowed to vary over, which is the same thing as what the
@@ -146,6 +146,28 @@ class Layer:
     `design_version` moves whenever the arms or their shares move. Rows carry
     it, and nothing pools two versions, because a share retuned midway is two
     experiments rather than a longer one.
+
+    `instrument` is how the layer is read, and it is not always a holdout. One
+    layer here is measured by calibration instead, because its off arm would
+    have to be shipped to a quarter of students for the life of the experiment
+    and the experiment cannot finish at this app's scale. Declaring that in the
+    registry rather than leaving the layer in `unmeasured` is the difference
+    between "nobody got to it" and "here is the instrument, and here is why it
+    is not a randomisation".
+
+    `outcome_window` is *when* the effect is expected to show. `immediate`
+    means the answers given inside the assigned run. `delayed` means the
+    answers given when those same questions come back through the review
+    queue, in some later run. The distinction is not a refinement: for
+    interleaving the immediate reading is expected to point the wrong way, and
+    a layer that declares `delayed` and gets read `immediate` will report a
+    real benefit as a harm.
+
+    `strata` names a variable the reading must never pool over. Reading
+    Comprehension and Logical Reasoning are the case: the repository's own
+    evidence file predicts an effect in one and a null in the other, so a
+    pooled figure would average them and understate both. Setting this makes
+    the split the default rather than something an analyst remembers.
     """
 
     key: str
@@ -159,25 +181,33 @@ class Layer:
     assigned_by: str = "app/experiments.py"
     status: str = "live"
     outcome_join: str = "session"
+    instrument: str = "holdout"
+    outcome_window: str = "immediate"
+    strata: str | None = None
+    population: str | None = None
 
     def share(self, arm: str) -> float:
         total = sum(self.arms.values())
         return (self.arms.get(arm, 0.0) / total) if total > 0 else 0.0
 
 
-# Every adaptive layer in the product, in four states:
+# Every adaptive layer in the product, in five states:
 #
 #   live       drawn, recorded, and estimable today
+#   calibrated read by a proper scoring rule rather than by a holdout, because
+#              the holdout was judged indefensible — see `review_scheduling`
 #   seam       registered and waiting for the code it wraps to land
 #   planned    the signal it needs does not exist yet
 #   unmeasured shipped and deciding, with nothing drawing an off arm for it
 #
-# The last state is the uncomfortable one and it is why the list includes
+# `unmeasured` is the uncomfortable state and it is why the list includes
 # layers this module does not touch. A census that only counted what was
 # already measured would report a fully measured system, which is exactly the
-# kind of instrument that agrees with whoever points it. Three of the eight
-# entries below are `unmeasured`: that is the honest headline, and each of them
-# names the reason in its own `without_signal`.
+# kind of instrument that agrees with whoever points it. This registry has had
+# three entries in that state; the three of them are the substance of this
+# change, and no entry is in it now. Two became `live` and one became
+# `calibrated`, which is a weaker instrument honestly labelled rather than a
+# holdout nobody believes in.
 #
 # A holdback of a quarter is the same figure the strategy trial's control arm
 # uses, and for the same reason: it is the smallest share that fills a
@@ -243,27 +273,91 @@ LAYERS: dict[str, Layer] = {
             without_signal="A card with no stability reports retrievability 0 and "
             "sorts to the front, which is the right place for a question just missed. "
             "The scheduler has no state to be missing — only state it has not gathered.",
-            arms={"fsrs": 0.75, "ladder": 0.25},
+            arms={"fsrs": 1.0, "ladder": 0.0},
             off_arm="ladder",
-            design_version="unmeasured",
-            assigned_by="nothing draws this",
-            status="unmeasured",
+            design_version="2026-08-12-calibration",
+            assigned_by="nobody: this layer is calibrated, not randomised",
+            status="calibrated",
+            instrument="calibration",
+            # Why the holdout is not here, in the place a reader looking for it
+            # will look. Two independent reasons, and either alone is enough.
+            #
+            # The arithmetic. The exposure has to be per student, because a
+            # schedule cannot coherently flip between runs — a card put on a
+            # 21-day interval by one arm is still on it when the next run
+            # starts, so a per-run draw would measure a blend of both
+            # schedulers and call it neither. Per student means the sample
+            # grows at the rate accounts are opened, not at the rate questions
+            # are answered, and the answers inside one account are heavily
+            # correlated. `tools/audit/measurement_cost.py` puts the holdout at
+            # roughly three and a half thousand students for a three-point
+            # difference in review accuracy. This app does not have them, and
+            # will not for a long time.
+            #
+            # The cost. The off arm is not a milder version of the treatment,
+            # it is a scheduler the team believes is worse, shipped to a
+            # quarter of students for the entire life of a trial that cannot
+            # finish. Nobody can be released from it early either, for the same
+            # reason the exposure is per student. That is a control arm nobody
+            # would believe in and it should not be shipped.
+            #
+            # What is here instead is stronger than it sounds. FSRS predicts a
+            # retrievability for every card at the moment it is served, so the
+            # scheduler makes a falsifiable claim on every single review and
+            # the claim can be scored against what happened without any
+            # comparison group at all. See `scheduling.review_calibration`. The
+            # part most likely to be wrong here is not FSRS — it is
+            # `derive_grade`, which is this app's own invention, mapping pace,
+            # confidence, explanation quality and whether the answer was
+            # changed onto the four grades FSRS expects. A wrong grade mapping
+            # produces wrong stabilities, and wrong stabilities show up as a
+            # calibration curve that is displaced or flat. A flat one is a null
+            # result for the whole layer, obtainable at a few thousand reviews
+            # rather than a few thousand students.
         ),
         Layer(
             key="run_ordering",
             unit=UNIT_RUN,
             question="Does distributing review items through a run, and separating "
-            "same-type questions, beat serving reviews first?",
+            "same-type questions, beat serving reviews first — measured on those "
+            "questions' next return, and never pooled across the two sections?",
             signal="Which questions came from the review queue, and each question's "
             "type. See `scheduling.interleave`.",
             without_signal="A run with no review items, or one type-filtered by the "
-            "student, is returned untouched. The de-blocking pass is skipped outright "
-            "on a filtered drill because the student asked for the block.",
+            "student, is returned untouched, and no arm is drawn for it. The "
+            "de-blocking pass is skipped outright on a filtered drill because the "
+            "student asked for the block.",
             arms={"interleaved": 0.75, "front_loaded": 0.25},
             off_arm="front_loaded",
-            design_version="unmeasured",
-            assigned_by="nothing draws this",
-            status="unmeasured",
+            design_version="2026-08-12",
+            outcome_window="delayed",
+            strata="section",
+            # Both of these fields are load-bearing and both were arrived at
+            # from the repository's own evidence file rather than from taste.
+            #
+            # `outcome_window="delayed"`. Rohrer's result, and the whole
+            # desirable-difficulty literature under it, is about performance on
+            # a *later* test. Interleaved practice reliably looks worse while
+            # it is happening: the student is switching between question types
+            # instead of grooving one, so within-run accuracy goes down even
+            # where retention goes up. Reading this layer on the answers given
+            # inside the assigned run would therefore report a working
+            # treatment as a harmful one, confidently, with a large sample. The
+            # reading is taken on the same questions' next return through the
+            # review queue instead. That window is still available on
+            # `immediate` for anyone who wants to see the trade rather than
+            # only the payoff, and both are reported.
+            #
+            # `strata="section"`. `research/01-learning-science.md` carries
+            # Brunmair and Richter's meta-analysis: interleaving at g = 0.42
+            # overall, and g = 0.01 — a null — on expository text, with the
+            # repository's own note beside it saying Reading Comprehension is
+            # the case where interleaving buys nothing. A pooled figure would
+            # average a Logical Reasoning effect against a Reading
+            # Comprehension null and understate both, so this layer does not
+            # have a pooled figure. The prediction is on the record before the
+            # first observation, which is the only time a prediction is worth
+            # anything.
         ),
         Layer(
             key="strategy_selection",
@@ -275,13 +369,47 @@ LAYERS: dict[str, Layer] = {
             "runway on the types the last mega-litigation marked weak.",
             without_signal="Under the coverage target the draw is already uniform over "
             "the least-sampled candidates, so a cold student is getting the off arm by "
-            "default — which is why this gap has never shown up as a bug.",
+            "default — which is why this gap has never shown up as a bug. No arm is "
+            "drawn there, nor on a question with a single candidate, where the two "
+            "arms would pick the same approach and add a row that dilutes.",
             arms={"ranked": 0.75, "uniform": 0.25},
             off_arm="uniform",
-            design_version="unmeasured",
+            design_version="2026-08-12",
             assigned_by="app/strategies.py",
-            status="unmeasured",
             outcome_join="attempt_columns",
+            population="questions in the prompt arm of `strategy_offer`",
+            # The nesting, which is the whole difficulty of this layer.
+            #
+            # A student in the control arm of `strategy_offer` is shown no
+            # approach, so "which approach" has no effect on them and reading
+            # this layer over everybody would dilute it by exactly the control
+            # share. The analysis population is therefore the treated arm only,
+            # which `population` above declares and
+            # `strategies.strategy_selection_health` checks per student rather
+            # than in a pooled share, because a pooled share is precisely the
+            # instrument that cannot see this go wrong.
+            #
+            # The mechanism is not nested, and that is deliberate. The obvious
+            # implementation — draw this arm only when the offer arm came out
+            # `prompt` — breaks the offer trial. `_section_reading` compares a
+            # given approach's prompt rows against that same approach's control
+            # rows, so a control row carries the approach that *would* have
+            # been offered. If the treated rows' approaches were chosen by a
+            # mixture of ranked and uniform while the control rows' were chosen
+            # by ranked alone, the two arms would no longer be labelled by the
+            # same process: approach A on the treated side would include
+            # occasions where A is not this student's leader, and approach A on
+            # the control side would not. The comparison stops being about the
+            # offer.
+            #
+            # So the draw happens on every eligible question, in both offer
+            # arms, and the two randomisations are independent by construction
+            # — `assign_strategy_trial` no longer feeds the chosen approach
+            # into the offer arm's hash, which it used to. Independent draws
+            # mean restricting to the treated arm does not disturb this layer's
+            # own randomisation, and identical labelling means this layer does
+            # not disturb the offer trial's. Both estimates stay clean, which
+            # the nested-mechanism version cannot manage.
         ),
         Layer(
             key="strategy_offer",
@@ -294,7 +422,11 @@ LAYERS: dict[str, Layer] = {
             "all; the mega-litigation is deliberately left clean.",
             arms={"prompt": 0.75, "control": 0.25},
             off_arm="control",
-            design_version="strategies.py",
+            # The shares have not moved. The mechanism has: the arm used to be
+            # a hash that included the chosen approach, and no longer is, so
+            # that it is independent of `strategy_selection` above. Same
+            # propensity, different draw, and a draw is what a version names.
+            design_version="2026-08-12",
             assigned_by="app/strategies.py",
             outcome_join="attempt_columns",
         ),
@@ -414,6 +546,51 @@ def _draw(spec: Layer, subject_id: str, exposure: Exposure) -> tuple[str, float]
     return last, shares[last] / total
 
 
+def _check_callable(spec: Layer, exposure: Exposure) -> None:
+    if spec.instrument != "holdout":
+        raise ValueError(
+            f"layer {spec.key!r} is read by {spec.instrument}, not by a holdout; "
+            "it has no arm to draw"
+        )
+    if exposure.kind != spec.unit:
+        raise ValueError(
+            f"layer {spec.key!r} is randomised per {spec.unit}, so it needs an "
+            f"Exposure.{spec.unit}(...); got Exposure.{exposure.kind}(...)"
+        )
+    if not exposure.token:
+        raise ValueError(f"layer {spec.key!r} was given an empty exposure")
+
+
+def draw(layer_key: str, subject_id: str, *, exposure: Exposure) -> Assignment:
+    """This layer's arm for this encounter, without writing a row.
+
+    The same hash, the same share overrides and the same realised propensity as
+    `assign`; the only difference is where the answer is kept. Some layers
+    already have somewhere better to keep it than `layer_assignments`: the
+    strategy trial's arms live in columns on the question that was served, next
+    to the outcome they will be compared on, so an analysis joins nothing. For
+    those, a central row would be a second copy to keep consistent and — since
+    the strategy layers draw once per question — ten extra statements on the
+    path that builds a run, which is already the most expensive request in the
+    app.
+
+    What must not vary between those layers and the rest is the *convention*:
+    one hashing scheme, one definition of the recorded propensity, one place a
+    holdback override is honoured. That is what this function is for. A caller
+    that keeps its own arm still gets its arm from here.
+
+    The caller is then responsible for recording `arm` and `propensity`
+    somewhere an estimator can find them, and for the layer declaring
+    `outcome_join="attempt_columns"` so the census says where that is.
+    """
+    spec = layer(layer_key)
+    _check_callable(spec, exposure)
+    if not _configured(spec.key).get("enabled", True):
+        return Assignment(spec.key, spec.off_arm, 1.0, exposure.token, randomised=False)
+    arm, propensity = _draw(spec, subject_id, exposure)
+    return Assignment(spec.key, arm, propensity, exposure.token, randomised=True)
+
+
 def assign(
     layer_key: str,
     subject_id: str,
@@ -443,24 +620,17 @@ def assign(
     lets the draw precede question selection.
     """
     spec = layer(layer_key)
-    if spec.assigned_by != "app/experiments.py":
-        # A registry entry is a description, not a switch. The census carries
-        # layers this module does not draw so the holes are visible, and the
-        # cost of that honesty is that `LAYERS` now contains keys which look
-        # callable and are not: drawing `review_scheduling` here would write
-        # rows under a design nothing implements and leave an analysis reading
-        # arms no student was ever in.
+    if spec.outcome_join != "session":
+        # A registry entry is a description, not a switch. The strategy layers
+        # keep their arms in columns beside the outcome and draw them through
+        # `draw` above; writing a second copy here would leave two records of
+        # one draw and no rule about which an estimator should believe.
         raise ValueError(
-            f"layer {spec.key!r} is drawn by {spec.assigned_by}, not here; "
-            "it is registered so the census is complete, not so it can be assigned"
+            f"layer {spec.key!r} records its arm on {spec.outcome_join}, and is drawn "
+            f"by {spec.assigned_by} through experiments.draw(); assign() would write a "
+            "second, competing copy of the same draw"
         )
-    if exposure.kind != spec.unit:
-        raise ValueError(
-            f"layer {spec.key!r} is randomised per {spec.unit}, so it needs an "
-            f"Exposure.{spec.unit}(...); got Exposure.{exposure.kind}(...)"
-        )
-    if not exposure.token:
-        raise ValueError(f"layer {spec.key!r} was given an empty exposure")
+    _check_callable(spec, exposure)
     if not _configured(spec.key).get("enabled", True):
         return Assignment(spec.key, spec.off_arm, 1.0, exposure.token, randomised=False)
 
@@ -541,49 +711,26 @@ def _shrink_toward(rate: float, sample: int, centre: float) -> float:
     return (PRIOR_STRENGTH * centre + sample * rate) / (PRIOR_STRENGTH + sample)
 
 
-def layer_reading(layer_key: str, *, user_id: str | None = None) -> dict:
-    """What the record says about one layer, per arm, on the answers filed under it.
+def _naive(value):
+    """Comparable datetimes out of a store that may or may not keep the zone."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
 
-    Intention-to-treat, and only that. Membership is the arm the run was
-    assigned, never what the run turned out to contain: a personalised run that
-    happened to come out looking like a default one still counts as
-    personalised, because the alternative — reclassifying on what was
-    delivered — selects on an outcome of the assignment and stops being a
-    comparison.
 
-    Both arms are shrunk toward the pooled rate rather than reported raw. The
-    centre is the null: if the layer changes nothing, that is where both arms
-    sit, so a thin comparison reports something near zero rather than something
-    dramatic. It moves off the null in proportion to evidence, which for a
-    layer whose holdback is a quarter of runs takes a while, and saying so is
-    more useful than a number that swings on the third run.
-
-    Returns arms in registry order with their own samples, so a reader can see
-    a comparison that has not filled yet as an empty denominator rather than as
-    a difference of zero.
-    """
-    spec = layer(layer_key)
-    if spec.outcome_join != "session":
-        return {
-            "layer": spec.key,
-            "status": spec.status,
-            "assigned_by": spec.assigned_by,
-            "measured_elsewhere": True,
-            "note": (
-                "This layer draws and records its own arms on `attempts`; read it "
-                "through `strategies.strategy_performance`."
-            ),
-        }
-
+def _immediate_rows(spec: Layer, user_id: str | None) -> list[tuple]:
+    """Answers given inside the run the arm was drawn for."""
     query = (
         db.session.query(
             LayerAssignment.arm,
             LayerAssignment.propensity,
             LayerAssignment.subject_id,
             Attempt.is_correct,
+            Question.section,
         )
         .join(StudySession, StudySession.id == LayerAssignment.session_id)
         .join(SessionItem, SessionItem.session_id == StudySession.id)
+        .join(Question, Question.id == SessionItem.question_id)
         .join(Attempt, Attempt.session_item_id == SessionItem.id)
         .filter(
             LayerAssignment.layer == spec.key,
@@ -592,12 +739,114 @@ def layer_reading(layer_key: str, *, user_id: str | None = None) -> dict:
     )
     if user_id:
         query = query.filter(LayerAssignment.subject_id == user_id)
-    rows = query.all()
+    return [
+        (arm, propensity, subject, bool(correct), section)
+        for arm, propensity, subject, correct, section in query.all()
+    ]
 
+
+def _delayed_rows(spec: Layer, user_id: str | None) -> list[tuple]:
+    """Answers given when the assigned run's questions came *back*.
+
+    The delayed test the interleaving literature actually measures, assembled
+    out of what the app already stores rather than out of a new experiment:
+    a question served in an assigned run, returning through the review queue in
+    some later run, and answered there. The arm credited is the most recent
+    assigned run that served the question before the answer, because that is
+    the treatment closest in time to the outcome — and because crediting the
+    first one would keep charging a run from three weeks ago for orderings the
+    student has met four times since.
+
+    Two properties this has to hold, and both are enforced below rather than
+    assumed. Each returning answer is credited to exactly one assignment, so no
+    outcome is counted twice under two arms. And the answer must fall in a
+    different run from the assignment, so the interval is a real one; an
+    immediate re-ask inside the same sitting is the other window's business.
+
+    The interval is whatever FSRS chose, so this is not a fixed-delay test and
+    should not be described as one. It is unbiased for all that: the scheduler
+    does not know the arm, so the delay it picks cannot be correlated with it.
+    """
+    served = (
+        db.session.query(
+            LayerAssignment.subject_id,
+            LayerAssignment.arm,
+            LayerAssignment.propensity,
+            LayerAssignment.session_id,
+            SessionItem.question_id,
+            StudySession.started_at,
+        )
+        .join(StudySession, StudySession.id == LayerAssignment.session_id)
+        .join(SessionItem, SessionItem.session_id == StudySession.id)
+        .filter(
+            LayerAssignment.layer == spec.key,
+            LayerAssignment.design_version == spec.design_version,
+        )
+    )
+    if user_id:
+        served = served.filter(LayerAssignment.subject_id == user_id)
+    exposures: dict[tuple[str, str], list[tuple]] = {}
+    for subject, arm, propensity, run_id, question_id, started in served.all():
+        exposures.setdefault((subject, question_id), []).append(
+            (_naive(started), run_id, arm, propensity)
+        )
+    if not exposures:
+        return []
+    for entries in exposures.values():
+        entries.sort(key=lambda entry: (entry[0] is None, entry[0]))
+
+    returns = (
+        db.session.query(
+            Attempt.user_id,
+            SessionItem.question_id,
+            SessionItem.session_id,
+            Attempt.created_at,
+            Attempt.is_correct,
+            Question.section,
+        )
+        .join(SessionItem, SessionItem.id == Attempt.session_item_id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .filter(SessionItem.from_review_queue.is_(True))
+    )
+    if user_id:
+        returns = returns.filter(Attempt.user_id == user_id)
+
+    rows = []
+    for subject, question_id, run_id, answered_at, correct, section in returns.all():
+        entries = exposures.get((subject, question_id))
+        if not entries:
+            continue
+        answered = _naive(answered_at)
+        prior = [
+            entry
+            for entry in entries
+            if entry[1] != run_id and entry[0] is not None and answered is not None and entry[0] < answered
+        ]
+        if not prior:
+            continue
+        _, _, arm, propensity = prior[-1]
+        rows.append((arm, propensity, subject, bool(correct), section))
+    return rows
+
+
+def _summarise(spec: Layer, rows: list[tuple]) -> dict:
+    """One arm-by-arm reading over an already-selected set of answers.
+
+    Both arms are shrunk toward the pooled rate rather than reported raw. The
+    centre is the null: if the layer changes nothing, that is where both arms
+    sit, so a thin comparison reports something near zero rather than something
+    dramatic. It moves off the null in proportion to evidence, which for a
+    layer whose holdback is a quarter of runs takes a while, and saying so is
+    more useful than a number that swings on the third run.
+
+    Arms come back in registry order with their own samples, so a reader can
+    see a comparison that has not filled yet as an empty denominator rather
+    than as a difference of zero.
+    """
     by_arm: dict[str, list[tuple[bool, float]]] = {arm: [] for arm in spec.arms}
     subjects: dict[str, set[str]] = {arm: set() for arm in spec.arms}
-    for arm, propensity, subject, correct in rows:
-        by_arm.setdefault(arm, []).append((bool(correct), propensity))
+    for arm, propensity, subject, correct, _section in rows:
+        by_arm.setdefault(arm, []).append((correct, propensity))
         subjects.setdefault(arm, set()).add(subject)
 
     answers = sum(len(values) for values in by_arm.values())
@@ -636,19 +885,110 @@ def layer_reading(layer_key: str, *, user_id: str | None = None) -> dict:
     control_rate = _shrink_toward(_hajek(by_arm.get(spec.off_arm, [])), control, centre)
     effective = contrast_sample(treated, control)
     return {
-        "layer": spec.key,
-        "status": spec.status,
-        "question": spec.question,
-        "design_version": spec.design_version,
-        "unit": spec.unit,
         "arms": arms,
         "answers": answers,
         "baseline_accuracy": round(centre * 100, 1),
         "adjusted_lift": round((treated_rate - control_rate) * 100, 1) if effective else None,
         "contrast_sample": round(effective, 1),
+    }
+
+
+def layer_reading(layer_key: str, *, user_id: str | None = None, window: str | None = None) -> dict:
+    """What the record says about one layer, per arm, on the answers filed under it.
+
+    Intention-to-treat, and only that. Membership is the arm the run was
+    assigned, never what the run turned out to contain: a personalised run that
+    happened to come out looking like a default one still counts as
+    personalised, because the alternative — reclassifying on what was
+    delivered — selects on an outcome of the assignment and stops being a
+    comparison.
+
+    Two things this function will not do, both of them because doing them
+    quietly is how a measurement comes out backwards.
+
+    It will not read a layer in a window the layer did not declare, unless
+    asked in as many words. `window` defaults to `spec.outcome_window`. For
+    `run_ordering` that is `delayed`, because interleaving is expected to cost
+    accuracy while it is happening and repay it later; the immediate reading is
+    available by passing `window="immediate"` and is reported beside the
+    declared one, labelled, so the trade is visible rather than deniable.
+
+    It will not report a pooled lift for a layer that declares `strata`. The
+    per-stratum readings are there instead. For interleaving the strata are the
+    two sections and the reason is on the record in advance: the repository's
+    evidence file predicts a real Logical Reasoning effect against a Reading
+    Comprehension null, and one number covering both would understate each.
+    """
+    spec = layer(layer_key)
+    if spec.instrument != "holdout":
+        return {
+            "layer": spec.key,
+            "status": spec.status,
+            "instrument": spec.instrument,
+            "measured_elsewhere": True,
+            "note": (
+                "This layer has no arms to read. It is scored against its own "
+                "predictions; see `scheduling.review_calibration`."
+            ),
+        }
+    if spec.outcome_join != "session":
+        return {
+            "layer": spec.key,
+            "status": spec.status,
+            "assigned_by": spec.assigned_by,
+            "measured_elsewhere": True,
+            "note": (
+                "This layer draws through `experiments.draw` and records its own arms "
+                "on `attempts`; read it through `strategies.strategy_performance` and "
+                "`strategies.strategy_selection_reading`."
+            ),
+        }
+
+    window = window or spec.outcome_window
+    rows = _delayed_rows(spec, user_id) if window == "delayed" else _immediate_rows(spec, user_id)
+    overall = _summarise(spec, rows)
+
+    strata = []
+    if spec.strata == "section":
+        by_section: dict[str, list[tuple]] = {}
+        for row in rows:
+            by_section.setdefault(row[4] or "unknown", []).append(row)
+        strata = [
+            {"stratum": section, **_summarise(spec, values)}
+            for section, values in sorted(by_section.items())
+        ]
+
+    reading = {
+        "layer": spec.key,
+        "status": spec.status,
+        "question": spec.question,
+        "design_version": spec.design_version,
+        "unit": spec.unit,
+        "window": window,
+        "declared_window": spec.outcome_window,
+        "strata_by": spec.strata,
+        "strata": strata,
+        **overall,
         "basis": "intention-to-treat over the assigned arm, Hájek-weighted by the "
         "recorded propensity, both arms shrunk toward no difference",
     }
+    if window != spec.outcome_window:
+        reading["window_note"] = (
+            f"Read in the {window} window; this layer declares {spec.outcome_window}. "
+            "The declared window is the one its effect is expected in."
+        )
+    if spec.strata:
+        # The pooled number is withheld rather than merely discouraged. A
+        # figure present in a payload gets read, and this one would average an
+        # effect against a null.
+        reading["adjusted_lift"] = None
+        reading["pooled_lift_withheld"] = (
+            f"This layer is stratified by {spec.strata} and has no pooled lift. Pooling "
+            "would average a Logical Reasoning effect against a Reading Comprehension "
+            "null — predicted at g = 0.01 for expository text in "
+            "`research/01-learning-science.md` — and understate both."
+        )
+    return reading
 
 
 # A student's realised share of an arm may differ from the design's share by
@@ -773,6 +1113,10 @@ def registry_reading() -> list[dict]:
             "off_arm": spec.off_arm,
             "assigned_by": spec.assigned_by,
             "design_version": spec.design_version,
+            "instrument": spec.instrument,
+            "outcome_window": spec.outcome_window,
+            "strata": spec.strata,
+            "population": spec.population,
         }
         for spec in LAYERS.values()
     ]

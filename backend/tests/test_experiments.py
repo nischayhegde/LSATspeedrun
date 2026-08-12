@@ -397,15 +397,268 @@ def test_a_run_with_nothing_to_target_is_left_out_of_the_comparison(app, monkeyp
         assert LayerAssignment.query.filter_by(subject_id=user.id).count() == 0
 
 
+# ---------------------------------------------------------------------------
+# run_ordering: the interleaving layer
+#
+# Two properties carry this layer and neither is about the draw. Reading it in
+# the wrong window reports a working treatment as a harmful one, and pooling
+# the two sections averages a predicted effect against a predicted null. Both
+# are asserted below against hand-built history, because both are the kind of
+# mistake that produces a confident number rather than an error.
+# ---------------------------------------------------------------------------
+
+
+def _ordered_run(user, *, arm: str, questions: list, started, review_of=None, assigned=True):
+    """One run under a recorded `run_ordering` arm, fully answered.
+
+    `review_of` marks the items as review returns, which is what makes the
+    delayed window pick them up. Those runs are built with `assigned=False`,
+    because a run made entirely of review items has no fresh material to
+    interleave them through and the real call site does not enrol it.
+    """
+    from app.models import Attempt, SessionItem
+    from app.models import StudySession as Run
+
+    run = Run(
+        user_id=user.id,
+        mode="practice",
+        practice_style="cases",
+        feedback_policy="immediate",
+        target_minutes=20,
+        total_items=len(questions),
+        started_at=started,
+    )
+    db.session.add(run)
+    db.session.flush()
+    if assigned:
+        db.session.add(
+            LayerAssignment(
+                layer="run_ordering",
+                subject_id=user.id,
+                unit="run",
+                exposure=run.id,
+                session_id=run.id,
+                arm=arm,
+                propensity=0.75 if arm == "interleaved" else 0.25,
+                design_version=LAYERS["run_ordering"].design_version,
+            )
+        )
+    for position, (question, correct) in enumerate(questions):
+        item = SessionItem(
+            session_id=run.id,
+            question_id=question.id,
+            position=position,
+            from_review_queue=bool(review_of),
+        )
+        db.session.add(item)
+        db.session.flush()
+        db.session.add(
+            Attempt(
+                user_id=user.id,
+                session_item_id=item.id,
+                idempotency_key=f"{item.id}-attempt",
+                selected_label="C",
+                is_correct=correct,
+                server_elapsed_ms=90_000,
+                created_at=started,
+            )
+        )
+    db.session.flush()
+    return run
+
+
+def _two_section_bank():
+    from app.models import Question as Item
+
+    made = []
+    for index in range(4):
+        section = "Logical Reasoning" if index % 2 == 0 else "Reading Comprehension"
+        question = Item(
+            id=f"hf-lsat-ordering-{index}",
+            section=section,
+            question_type="Flaw" if section == "Logical Reasoning" else "Detail",
+            difficulty=3,
+            stimulus=f"Stimulus {index}.",
+            stem=f"Stem {index}?",
+            correct_answer="C",
+            source=f"{SOURCE_PREFIX}mixed · train",
+            license_status="upstream_terms_apply",
+            review_status="published",
+        )
+        db.session.add(question)
+        made.append(question)
+    db.session.flush()
+    return made
+
+
+def test_the_ordering_layer_is_read_on_the_next_encounter_not_the_one_it_ordered(app):
+    """The delayed window, and the reason it is the declared one.
+
+    Interleaved practice reliably looks *worse* while it is happening — that is
+    the whole desirable-difficulty claim — and repays it later. History here is
+    built to that shape: under the interleaved arm the student answers badly in
+    the run itself and well when the questions come back, and under the
+    front-loaded arm the reverse. A layer read in the immediate window would
+    report interleaving as a harm with a perfectly good sample.
+    """
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    with app.app_context():
+        questions = _two_section_bank()
+        start = utcnow() - timedelta(days=30)
+        for index in range(8):
+            user = make_user(f"delayed-{index}@example.test")
+            arm = "interleaved" if index % 2 == 0 else "front_loaded"
+            wrong_now = arm == "interleaved"
+            _ordered_run(
+                user,
+                arm=arm,
+                questions=[(question, not wrong_now) for question in questions],
+                started=start,
+            )
+            # Half the run comes back, which is what a review queue does. It
+            # also keeps the two windows reading visibly different rows.
+            _ordered_run(
+                user,
+                arm=arm,
+                questions=[(question, wrong_now) for question in questions[:2]],
+                started=start + timedelta(days=7),
+                review_of=True,
+                assigned=False,
+            )
+        db.session.commit()
+
+        delayed = layer_reading("run_ordering")
+        immediate = layer_reading("run_ordering", window="immediate")
+        assert delayed["window"] == "delayed"
+        assert immediate["window"] == "immediate"
+        assert "declares delayed" in immediate["window_note"]
+
+        # Same runs, same arms, opposite verdicts. Per section, since this
+        # layer has no pooled figure.
+        def lift(reading, section):
+            entry = next(item for item in reading["strata"] if item["stratum"] == section)
+            return entry["adjusted_lift"]
+
+        assert lift(delayed, "Logical Reasoning") > 0
+        assert lift(immediate, "Logical Reasoning") < 0
+
+        # The delayed window reads the returns and nothing else: sixteen
+        # returning answers across eight students, not the thirty-two answered.
+        assert delayed["answers"] == 16
+        assert immediate["answers"] == 32
+
+
+def test_the_interleaving_reading_refuses_to_pool_the_two_sections(app):
+    """No pooled lift for a layer that declares strata.
+
+    The figure is withheld rather than merely deprecated. `research/01`
+    predicts g = 0.42 for confusable categories and g = 0.01 for expository
+    text, so one number covering Logical Reasoning and Reading Comprehension
+    would understate both — and a number present in a payload gets read.
+    """
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    with app.app_context():
+        questions = _two_section_bank()
+        start = utcnow() - timedelta(days=30)
+        for index in range(6):
+            user = make_user(f"strata-{index}@example.test")
+            arm = "interleaved" if index % 2 == 0 else "front_loaded"
+            _ordered_run(
+                user,
+                arm=arm,
+                questions=[(question, True) for question in questions],
+                started=start,
+            )
+            _ordered_run(
+                user,
+                arm=arm,
+                # Logical Reasoning improves under the treated arm; Reading
+                # Comprehension is a flat null in both, as predicted.
+                questions=[
+                    (
+                        question,
+                        arm == "interleaved" if question.section == "Logical Reasoning" else True,
+                    )
+                    for question in questions
+                ],
+                started=start + timedelta(days=7),
+                review_of=True,
+                assigned=False,
+            )
+        db.session.commit()
+
+        reading = layer_reading("run_ordering")
+        assert reading["strata_by"] == "section"
+        assert reading["adjusted_lift"] is None
+        assert "understate both" in reading["pooled_lift_withheld"]
+
+        sections = {entry["stratum"]: entry for entry in reading["strata"]}
+        assert set(sections) == {"Logical Reasoning", "Reading Comprehension"}
+        assert sections["Logical Reasoning"]["adjusted_lift"] > 0
+        assert sections["Reading Comprehension"]["adjusted_lift"] == 0.0
+
+
+def test_a_returning_answer_is_credited_to_one_arm_only(app):
+    """The delayed join has to be a join, not a fan-out.
+
+    A question served in three assigned runs and answered once on its return
+    is one observation, credited to the most recent ordering before the answer.
+    Crediting all three would triple the sample and let one student outvote a
+    cohort.
+    """
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    with app.app_context():
+        questions = _two_section_bank()[:1]
+        start = utcnow() - timedelta(days=30)
+        user = make_user("credit@example.test")
+        _ordered_run(user, arm="front_loaded", questions=[(questions[0], True)], started=start)
+        _ordered_run(
+            user,
+            arm="front_loaded",
+            questions=[(questions[0], True)],
+            started=start + timedelta(days=1),
+        )
+        _ordered_run(
+            user,
+            arm="interleaved",
+            questions=[(questions[0], True)],
+            started=start + timedelta(days=2),
+        )
+        _ordered_run(
+            user,
+            arm="interleaved",
+            questions=[(questions[0], True)],
+            started=start + timedelta(days=9),
+            review_of=True,
+            assigned=False,
+        )
+        db.session.commit()
+
+        reading = layer_reading("run_ordering")
+        assert reading["answers"] == 1
+        credited = next(entry for entry in reading["arms"] if entry["answers"])
+        assert credited["arm"] == "interleaved"
+
+
 def test_the_registry_describes_every_layer_including_the_ones_it_does_not_draw(app):
     """The census is the point: one list of what decides what a student sees."""
     with app.app_context():
         reading = registry_reading()
         keys = {entry["layer"] for entry in reading}
         assert {"strategy_offer", "strategy_forcing"} <= keys
-        # The three that ship deciding and are compared against nothing. They
-        # are the reason the census exists; a list that held only the measured
-        # layers would report a fully measured system.
+        # The three that used to ship deciding and be compared against
+        # nothing. They are why the census exists, and the census having made
+        # them visible is not the same as their being measured, so this asserts
+        # the second thing.
         assert {"review_scheduling", "run_ordering", "strategy_selection"} <= keys
         for entry in reading:
             assert entry["off_arm"] in entry["arms"]
@@ -415,24 +668,46 @@ def test_the_registry_describes_every_layer_including_the_ones_it_does_not_draw(
         assert layer_reading("strategy_offer")["measured_elsewhere"] is True
 
 
+def test_no_layer_is_left_shipping_and_unmeasured(app):
+    """The census may not go back to having holes in it.
+
+    Every entry has to name an instrument that could return a negative result.
+    `unmeasured` is the state this whole module exists to retire, and a new
+    layer arriving in it is the regression worth failing a build over — it is
+    also the easy thing to do, since adding a dictionary entry with the reason
+    written in the prose is much less work than measuring the thing.
+    """
+    with app.app_context():
+        for entry in registry_reading():
+            assert entry["status"] != "unmeasured", (
+                f"{entry['layer']} ships and decides with nothing measuring it"
+            )
+            assert entry["instrument"] in {"holdout", "calibration"}
+            if entry["instrument"] == "holdout":
+                assert entry["assigned_by"] in {"app/experiments.py", "app/strategies.py"}
+
+
 def test_a_layer_this_module_does_not_draw_cannot_be_drawn_through_it(app):
     """A registry entry is a description, not a switch.
 
-    The cost of a complete census is that `LAYERS` holds keys which look
-    callable and are not. Assigning one would write rows under a design nothing
-    implements, and a later reading would report arms no student was in — which
-    is a worse failure than the hole the entry was added to expose, because it
-    would look like data.
+    Two ways a key in `LAYERS` can look callable here and not be, and both of
+    them would produce something worse than the hole they replaced, because
+    both would look like data.
+
+    `review_scheduling` has no arms at all: the holdout was judged
+    indefensible and the layer is scored against its own predicted
+    retrievability instead. Rows drawn for it would describe a comparison no
+    student is in.
+
+    The strategy layers do have arms, and keep them in columns on the question
+    that was served. Writing a central row here as well would leave two records
+    of one draw and no rule about which an estimator should believe.
     """
     with app.app_context():
         user = make_user("census@example.test")
-        for key in ("review_scheduling", "run_ordering", "strategy_selection"):
-            unit = LAYERS[key].unit
-            exposure = {
-                "student": Exposure.student(user.id),
-                "run": Exposure.run("session-1"),
-                "item": Exposure.item("session-1", 0),
-            }[unit]
-            with pytest.raises(ValueError, match="not here"):
-                assign(key, user.id, exposure=exposure)
+        with pytest.raises(ValueError, match="no arm to draw"):
+            assign("review_scheduling", user.id, exposure=Exposure.student(user.id))
+        for key in ("strategy_selection", "strategy_offer", "strategy_forcing"):
+            with pytest.raises(ValueError, match="second, competing copy"):
+                assign(key, user.id, exposure=Exposure.item("session-1", 0))
         assert LayerAssignment.query.count() == 0

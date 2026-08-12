@@ -4111,6 +4111,33 @@ def _queue_due_question(user_id: str, question_id: str) -> None:
     db.session.commit()
 
 
+def _run_origins(app, email, *, holdback):
+    """Which positions of a six-question run came from the review queue.
+
+    `holdback` pins `run_ordering` to one arm, which this test has to do now
+    that the ordering is drawn rather than fixed: at the shipped quarter, one
+    run in four is front-loaded on purpose and an unpinned assertion about the
+    order would fail on those. Pinning is not a workaround for the layer — it
+    is the only way to test either arm, and both are tested below.
+    """
+    client = app.test_client()
+    headers = login(client, email)
+    create_game(client, headers)
+    with app.app_context():
+        user = User.query.filter_by(email=email).one()
+        for question in Question.query.order_by(Question.id).limit(5).all():
+            _queue_due_question(user.id, question.id)
+
+    app.config["ADAPTIVE_LAYERS"] = {"run_ordering": {"holdback": holdback}}
+    try:
+        session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
+    finally:
+        app.config.pop("ADAPTIVE_LAYERS", None)
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        return [item.from_review_queue for item in items]
+
+
 def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
     """Repairs fill at most half a run, spread through it rather than stacked.
 
@@ -4118,21 +4145,24 @@ def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
     leaks the answer key: "the first three are the ones you got wrong" is a cue
     the student reads before the stem. See `app/scheduling.interleave`.
     """
-    client = app.test_client()
-    headers = login(client, "folded-repairs@example.test")
-    create_game(client, headers)
-    with app.app_context():
-        user = User.query.filter_by(email="folded-repairs@example.test").one()
-        for question in Question.query.order_by(Question.id).limit(5).all():
-            _queue_due_question(user.id, question.id)
+    origins = _run_origins(app, "folded-repairs@example.test", holdback=0.0)
+    assert sum(origins) == 3
+    assert origins != [True, True, True, False, False, False]
+    assert origins[0] is False
 
-    session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
-    with app.app_context():
-        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        origins = [item.from_review_queue for item in items]
-        assert sum(origins) == 3
-        assert origins != [True, True, True, False, False, False]
-        assert origins[0] is False
+
+def test_the_front_loaded_arm_really_front_loads(app):
+    """The off arm of `run_ordering` has to actually be off.
+
+    An arm that is never off measures nothing, and an arm that is nominally off
+    while still receiving the treatment measures worse than nothing: the
+    comparison fills, reports a difference near zero, and reads as evidence
+    that interleaving does not work. This is the assertion that would catch the
+    off arm quietly still calling `interleave`.
+    """
+    origins = _run_origins(app, "front-loaded-arm@example.test", holdback=1.0)
+    assert sum(origins) == 3
+    assert origins == [True, True, True, False, False, False]
 
 
 def test_an_empty_review_queue_still_produces_a_full_run(app):
