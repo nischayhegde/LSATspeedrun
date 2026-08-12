@@ -416,7 +416,19 @@ svg.lucide { stroke-width: 2.35; }
 /* Cartoon courtroom case experience */
 .client-portrait { width: 82px; height: 88px; display: grid; place-items: center; position: relative; flex: 0 0 auto; filter: drop-shadow(0 7px 8px rgba(16,31,38,.18)); }
 .client-portrait svg { width: 100%; height: 100%; overflow: visible; }
-.client-portrait > span { width: 24px; height: 24px; display: grid; place-items: center; position: absolute; right: -2px; bottom: 2px; border: 2px solid #f8ebce; border-radius: 50%; color: #f8e1a8; background: var(--navy); font-family: Georgia, serif; font-size: 12px; font-weight: 800; }
+/* The initial badge used to be `.client-portrait > span`, and the rule that
+   drew it lived here. `ClientPortrait` now draws that badge as `> b`, styled in
+   `art.css`, and its first child is the `Bust` — a `<span>`. So the old rule
+   stopped describing a badge and started describing the 3D portrait itself, at
+   a specificity (0,1,1) that beat every `.av-bust` rule in `art.css` (0,1,0).
+   Measured on /office: it forced `border-radius: 50%` over the dome the
+   portrait camera is framed for, which cut the top and left of the head; added
+   a 2px `#f8ebce` ring, which is why the canvas was 82×88 inside an 86×92
+   bust; offset the bust 2px right and 2px up through `right: -2px; bottom: 2px`
+   on a `position: absolute` meant for a 24px badge; and replaced the client's
+   own backdrop colour with `var(--navy)`, so every client was rendered against
+   the same blue. Nothing renders a `<span>` badge any more, so the rule goes
+   rather than gains a `:not()`. */
 .client-portrait.mood-happy { animation: client-happy 1.8s ease-in-out infinite; }
 .client-portrait.mood-unhappy { animation: client-unhappy 2.8s ease-in-out infinite; }
 @keyframes client-happy { 0%,100% { transform: rotate(-1deg) translateY(0); } 50% { transform: rotate(1deg) translateY(-4px); } }
@@ -978,7 +990,7 @@ details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg
    absolutely positioned, so neither widens the track — `--portrait-overhang`
    reserves the room they hang outside the circle. */
 .client-quest-card .client-portrait { margin-right: var(--portrait-overhang); }
-.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }.client-quest-card span, .daily-quest-card span { color: #945b30; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
+.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }.client-quest-card span, .daily-quest-card span { color: var(--brass-deep); font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
 .empire-game-page { width: 100%; min-height: calc(100vh - 68px); padding: 27px clamp(16px, 2.7vw, 44px) 48px; color: #f6e8bb; background: #101724; }
 /* Just the page title here — the map's own headquarters panel just below
    carries every stat, so this bar stays plain text with no boxed card. */
