@@ -144,6 +144,30 @@ The tab icon counts. It was a stroked line drawing on a navy disc long after
 the interface stopped drawing anything that way, and it is the one mark a
 reader sees before the app has loaded at all.
 
+### Cascade
+
+Two things about this tree's load order are load-bearing, and both have
+silently eaten fixes before.
+
+**`art.css` is last.** It is on the entry sheet and route sheets are injected
+before it, so at equal specificity `art.css` wins. A route sheet that wants to
+change something `art.css` styles needs one more class than `art.css` used, not
+just a more specific-looking selector. The portrait is where this keeps
+happening: `art.css` sizes and positions it through
+`.client-portrait.av-portrait`, so a rule written as
+`.some-card .client-portrait` (0,2,0) loses and does nothing at all.
+`firm-page.css` and `office-page.css` both carry the extra `.av-portrait`, and
+both say why.
+
+**A selector outlives the element it was written for.** `ClientPortrait` used
+to draw its initial badge as `> span`; it now draws it as `> b`, and its first
+child is the `Bust`, which is a `<span>`. The old badge rule kept matching, at
+a specificity that beat every `.av-bust` rule in `art.css`, and spent months
+cropping the head off every 3D client portrait in the app with a
+`border-radius: 50%` meant for a 24px circle. When a component's markup
+changes, the rules that named its old elements are not dead — they are
+pointing at something else.
+
 ### Motion
 
 Already decided and documented in the motion block at the foot of

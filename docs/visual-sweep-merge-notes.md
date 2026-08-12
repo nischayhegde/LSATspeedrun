@@ -83,8 +83,37 @@ no 3D scene file, no render pipeline.
    is a colour, a border, a radius, a shadow or a font token, so the other
    branch's edit is almost certainly about something else in the same string.
 
+## The office contract card, on its own branch
+
+`cursor/office-contract-card-9124`, cut from the head of this branch so the
+dashboard work can land first without dragging it along. Four files:
+
+| File | What changed | Conflict risk |
+| --- | --- | --- |
+| `frontend/src/styles.css` | Deleted `.client-portrait > span`, a dead 2D badge rule that had started matching the 3D bust; `.client-quest-card span` eyebrow onto `--brass-deep` | **High** — shared sheet, and the deleted rule is one line inside a region other branches edit |
+| `frontend/src/office-page.css` | `.client-quest-card` recomposed: name in Fraunces, the two contract figures as chips, an on-hold state, the portrait's title pill sized to fit | Medium — the interface branch may also be in this sheet |
+| `frontend/src/pages/office-page.tsx` | The contract card's terms split into two elements and an `is-on-hold` class on the article. Same fields, same words | Medium — same reason |
+| `frontend/src/mobile/office-page.css` | The portrait's title pill stood down on the phone brief sheet, where it hung 15px outside the sheet's border | **High** — the responsiveness branch owns the mobile sheets |
+
+The one that reaches beyond this card is the `styles.css` deletion. It changes
+every `ClientPortrait` in the app — the office card, the Firm tab's retainer
+panel and client roster, the Practice docket header, the case session's matter
+banner — because that rule was silently overriding `art.css` on all of them.
+Each gets back the frame the portrait camera is actually composed for, the
+client's own backdrop colour instead of `var(--navy)`, and 2px of bust that a
+badge border had been eating. If it conflicts, keep the deletion: the rule
+describes an element (`.client-portrait > span` as a 24px initial badge) that
+no component has rendered since `ClientPortrait` moved to `<b>`.
+
 ## Handed to the other branches
 
+- **Mobile, not mine to fix:** the phone's form of the contract card,
+  `.office-mobile-current-case` in `office-page.tsx`, never renders the on-hold
+  branch. It reads `{cases_remaining} files · {fee} base` unconditionally, so a
+  player whose reputation has fallen under their client's requirement is shown
+  a walk-in's name and fee with no indication that their real contract is
+  suspended. The desktop card and the Firm tab's retainer panel both say so.
+  One conditional, in a component the responsiveness branch owns.
 - **Layout, not mine to fix:** on `/story` at 1440, the always-on live ledger
   overlay sits on top of the first resource card. Same overlay clips the
   bottom-left of `/progress` and `/cases`. It is correctly styled; it is
