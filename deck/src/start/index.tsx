@@ -36,7 +36,7 @@ export function StartGate({ children }: { children: React.ReactNode }) {
     if (!gate.showing) return
     // Toggle variants included, and the omission was not academic.
     // `demo-office-transformation` is scripted as a toggle: `O` swaps the embed
-    // to tier 14, and `demo-office-tier14.png` is both that beat's still and the
+    // to tier 14, and `demo-office-tier14.webp` is both that beat's still and the
     // panic-button image for it. Reading only `demo.still` warmed the tier-0
     // frame and left the toggled-to one cold, so the one keystroke the slide
     // exists for pulled a multi-megabyte file off disk in front of the room —
