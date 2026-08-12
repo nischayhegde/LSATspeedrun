@@ -199,11 +199,16 @@ export function createHeroScene(context: SceneContext): DeckScene {
   })()
 
   const pmrem = new THREE.PMREMGenerator(context.renderer)
-  const environment = environmentTexture ? pmrem.fromEquirectangular(environmentTexture).texture : null
+  // The whole render target is kept, not just its texture. `fromEquirectangular`
+  // returns a `WebGLRenderTarget`, and disposing the texture off it leaves the
+  // target itself allocated — which would leak one per build, and the deck
+  // rebuilds a scene whenever the LRU has evicted it and the presenter comes
+  // back. `WebGLRenderTarget.dispose()` releases the texture with it.
+  const environmentTarget = environmentTexture ? pmrem.fromEquirectangular(environmentTexture) : null
   environmentTexture?.dispose()
   pmrem.dispose()
-  if (environment) {
-    scene.environment = environment
+  if (environmentTarget) {
+    scene.environment = environmentTarget.texture
     // Held well below 1: this is a night exterior and the environment is here to
     // give the metal a horizon, not to relight the scene. The hard spot is still
     // the key.
@@ -610,7 +615,7 @@ export function createHeroScene(context: SceneContext): DeckScene {
     },
 
     dispose() {
-      environment?.dispose()
+      environmentTarget?.dispose()
       disposeTree(scene)
       for (const material of [...materials, ...shaftMaterials, hazeMaterial, moteMaterial, ...wordMaterials]) {
         material.dispose()
