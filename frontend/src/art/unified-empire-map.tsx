@@ -118,10 +118,10 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const secure = useMutation({
     mutationFn: (districtKey: string) => api.secureDistrict(districtKey),
-    onSuccess: ({ game: next, retainer }) => {
+    onSuccess: ({ game: next, counsel }) => {
       queryClient.setQueryData(['game'], { game: next })
       void queryClient.invalidateQueries({ queryKey: ['game'] })
-      void play(retainer.region_swept ? 'bonus' : 'purchase', { seed: retainer.district, intensity: .55 })
+      void play(counsel.region_swept ? 'bonus' : 'purchase', { seed: counsel.district, intensity: .55 })
       setPendingKey(null)
     },
     onError: () => setPendingKey(null),
@@ -174,7 +174,7 @@ function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, hi
                   <strong>{district.name}</strong>
                   <b>{district.owned ? 'HELD' : formatMoney(district.cost, true)}</b>
                 </div>
-                <em>Counsel to {district.retainer}</em>
+                <em>Counsel to {district.counsel}</em>
                 {district.owned
                   ? <small>+{district.standing.toFixed(2)} standing · {(district.rent_relief_bps / 100).toFixed(1)}% of the lease</small>
                   : district.locks.length
@@ -271,7 +271,7 @@ function DistrictBrief({ landmark, game, chosen, onOpenLedger }: {
       <p>{landmark.detail}</p>
       <div className="uw-district-brief-head">
         <b>{district.owned ? 'COUNSEL HELD' : district.available ? 'COUNSEL OPEN' : 'COUNSEL LOCKED'}</b>
-        <span>{district.retainer}</span>
+        <span>{district.counsel}</span>
       </div>
       <dl className="uw-district-brief-terms">
         <div><dt>Standing</dt><dd>+{district.standing.toFixed(1)}</dd></div>
@@ -560,7 +560,6 @@ export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistr
   const travelToLandmarkKey = useCallback((key: string) => {
     const landmark = landmarks.find((candidate) => candidate.key === key)
     if (landmark) travelToLandmark(landmark)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landmarks])
 
   // A district named by the ledger cannot be flown to until the scene has

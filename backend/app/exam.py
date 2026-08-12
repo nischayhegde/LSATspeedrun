@@ -133,13 +133,6 @@ def next_pending_section(session: StudySession) -> SessionSection | None:
     return None
 
 
-def section_of_position(session: StudySession, position: int) -> SessionSection | None:
-    for section in sections_of(session):
-        if section.start_position <= position <= section.end_position:
-            return section
-    return None
-
-
 def intermission_ends_at(session: StudySession) -> datetime | None:
     started = _aware(session.intermission_started_at)
     if not started:

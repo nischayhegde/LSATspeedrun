@@ -411,7 +411,7 @@ def secure_game_district():
         result = secure_district(profile, district_key)
     except ValueError as exc:
         return _game_error(str(exc))
-    return jsonify({"retainer": result, "game": serialize_game(profile)})
+    return jsonify({"counsel": result, "game": serialize_game(profile)})
 
 
 @api.get("/trial")

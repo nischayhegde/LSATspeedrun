@@ -97,7 +97,7 @@ function DistrictPlot({ district, signing, justSigned, asked, gate, onSign, onSh
           </button>
         )}
       </div>
-      <em>Counsel to {district.retainer}</em>
+      <em>Counsel to {district.counsel}</em>
       {district.owned ? (
         <p className="retainer-plot-yield">
           <span>+{district.standing.toFixed(2)} standing</span>
@@ -200,13 +200,13 @@ export function RetainerLedger({ game, highlightKey, onShowOnMap, onShowGate }: 
 
   const secure = useMutation({
     mutationFn: (districtKey: string) => api.secureDistrict(districtKey),
-    onSuccess: ({ game: next, retainer }) => {
+    onSuccess: ({ game: next, counsel }) => {
       storeGame(queryClient, next)
       void queryClient.invalidateQueries({ queryKey: ['game'] })
-      void play(retainer.region_swept ? 'bonus' : 'purchase', { seed: retainer.district, intensity: .6 })
+      void play(counsel.region_swept ? 'bonus' : 'purchase', { seed: counsel.district, intensity: .6 })
       setPendingKey(null)
-      setJustSigned(retainer.district)
-      window.setTimeout(() => setJustSigned((current) => (current === retainer.district ? null : current)), SIGNED_HOLD_MS)
+      setJustSigned(counsel.district)
+      window.setTimeout(() => setJustSigned((current) => (current === counsel.district ? null : current)), SIGNED_HOLD_MS)
     },
     onError: () => setPendingKey(null),
   })

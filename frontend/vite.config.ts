@@ -148,9 +148,107 @@ for(var i=0;i<R.length;i++){if(!new RegExp(R[i][0]).test(p))continue;
 for(var j=0;j<R[i][1].length;j++){var e=document.createElement('link');
 e.rel='modulepreload';e.href=R[i][1][j];e.crossOrigin='anonymous';document.head.appendChild(e);}
 for(var k=0;k<R[i][2].length;k++){var c=document.createElement('link');
-c.rel='preload';c.as='style';c.href=R[i][2][k];document.head.appendChild(c);}
+c.rel='preload';c.as='style';c.href=R[i][2][k];c.crossOrigin='anonymous';document.head.appendChild(c);}
 return;}
 }catch(e){}};
+}catch(e){}})();`
+        return {
+          html,
+          tags: [{ tag: 'script', children: script, injectTo: 'head' as const }],
+        }
+      },
+    },
+  }
+}
+
+/**
+ * Lets a route that *is* named by the url ask for its own script as early as
+ * it already asks for its own stylesheet.
+ *
+ * `lsat-route-stylesheets` writes a real `<link>` for each of the current
+ * path's sheets at the top of `<head>`, so they are discovered before the
+ * parser has even reached the entry sheet — measured, at about 204 ms. The
+ * route's *script* had no equivalent. It is requested by
+ * `routeForPath(...)?.preload()` in `main.tsx`, which cannot run until the
+ * entry chunk and the framework chunk have both been downloaded, parsed and
+ * executed. Measured signed-in on `/firm` at 390px, 4x CPU and 1.6 Mbps
+ * against a server compressing the way production's CloudFront does, that put
+ * the request at 1580 ms: about 1.38 s after the browser already knew, from
+ * the url alone, exactly which chunk it was going to need.
+ *
+ * Everything needed to close that was already here. `ROUTE_ENTRY_CHUNKS` names
+ * the chunk, `staticClosure` walks it, and `redirectRouteHints` emits exactly
+ * these hints — but only for the one path that cannot know its screen from the
+ * url, and only once the server has named it. The eight paths that *can* know
+ * their screen were the ones left out.
+ *
+ * Three things this deliberately does not do:
+ *
+ *  - It does not hint `/office` or `/map`. `scenePreloadHints` already emits
+ *    their page chunk, first in its list, and a second `modulepreload` for the
+ *    same href is a duplicate request.
+ *  - It does not hint `/login`, and that one is measured rather than inherited.
+ *    Every other route wins: /story −404 ms to content, /firm −219, /onboarding
+ *    −165, /cases −131, /progress −67, each winning at least 8 of 9 interleaved
+ *    pairs. `/login` alone loses, by 20 ms across 7 of 7 pairs. It is the one
+ *    screen that cannot draw until a *network* answer arrives — `auth-config`
+ *    decides whether the dev button is shown — so its chunk is never what it is
+ *    waiting for, and ~10 kB of hinted bytes is pure contention on the reply.
+ *    That is the same shape as, and much smaller than, the 5.6 s that hinting
+ *    three.js on this route once cost; see above `SCENE_ENTRY_CHUNKS`.
+ *  - It does not reach the scene modules. The closure is over *static* imports
+ *    of the page chunk, and `office-three` and `map-three-scene` are dynamic
+ *    imports, so ~717 kB of three.js is not in it. That is the same line
+ *    `redirectRouteHints` draws, for the reason recorded above
+ *    `SCENE_ENTRY_CHUNKS`: hinting three.js on a screen where the scene is not
+ *    the subject cost 5.6 s there.
+ *
+ * Anything the document already hints is dropped rather than hinted twice.
+ * Every page chunk statically imports React, so `framework` — 272 kB, and the
+ * largest thing Vite already emits a `modulepreload` for — is in all nine
+ * closures, and a second link for the same href is a duplicate request the
+ * browser has to reconcile and 3.5 kB the document does not need to carry.
+ * Reading it back out of the emitted html rather than recomputing the entry's
+ * closure keeps the two definitions of "already hinted" from drifting apart.
+ *
+ * The hints are `modulepreload` only, so nothing here decides execution order
+ * or the cascade. The route still starts running when `main.tsx` asks for it;
+ * what changes is that by then the bytes have arrived.
+ */
+const HINT_LOSES = ['login-page']
+
+function routeScriptHints(): Plugin {
+  let config: ResolvedConfig
+  return {
+    name: 'lsat-route-script-hints',
+    apply: 'build',
+    configResolved(resolved) { config = resolved },
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        const bundle = ctx.bundle
+        if (!bundle) return html
+        const base = config.base === './' ? '/' : config.base
+        const alreadyHinted = new Set([...Object.values(SCENE_ENTRY_CHUNKS).flat(), ...HINT_LOSES])
+        const inDocument = new Set(
+          [...html.matchAll(/<link[^>]+rel="modulepreload"[^>]+href="([^"]+)"/g)].map((m) => m[1]),
+        )
+
+        const byRoute: [string, string[]][] = []
+        for (const [pattern, name] of ROUTE_ENTRY_CHUNKS) {
+          if (alreadyHinted.has(name)) continue
+          const js = staticClosure(bundle as never, base, [name]).js
+            .filter((href) => !inDocument.has(href))
+          if (js.length) byRoute.push([pattern.source, js])
+        }
+        if (!byRoute.length) return html
+
+        const script = `(function(){try{
+var R=${JSON.stringify(byRoute)},p=location.pathname.replace(/\\/$/,'')||'/';
+for(var i=0;i<R.length;i++){if(!new RegExp(R[i][0]).test(p))continue;
+for(var j=0;j<R[i][1].length;j++){var e=document.createElement('link');
+e.rel='modulepreload';e.href=R[i][1][j];e.crossOrigin='anonymous';document.head.appendChild(e);}
+return;}
 }catch(e){}})();`
         return {
           html,
@@ -204,6 +302,19 @@ function scenePreloadHints(): Plugin {
          * render-blocking would hand back the first-paint win that moving them
          * out of the entry bought. The runtime `<link>` Vite injects then
          * resolves from cache.
+         *
+         * `crossOrigin` is what makes that last sentence true. A preload is
+         * only reused if the real request matches it on URL, `as` *and
+         * credentials mode*, and Vite's `__vitePreload` sets `crossOrigin=""`
+         * on every link it creates — so a hint without it is discarded and the
+         * sheet is fetched a second time. `office-three`'s stylesheet was
+         * measured being requested twice on `/office` for exactly this reason:
+         * the hint meant to make the route faster was buying it an extra
+         * download. Every CSS hint and every stylesheet this config injects
+         * therefore declares the same anonymous mode Vite uses, so they all
+         * match each other. Same-origin requests pass the CORS check with no
+         * server change, and the entry `<script type="module" crossorigin>`
+         * Vite already emits puts the deployment under the same requirement.
          */
         const hints: Record<string, { js: string[]; css: string[] }> = {}
         for (const [route, names] of Object.entries(SCENE_ENTRY_CHUNKS)) {
@@ -218,7 +329,7 @@ var h=H[k];if(!h)return;
 for(var i=0;i<h.js.length;i++){var e=document.createElement('link');
 e.rel='modulepreload';e.href=h.js[i];e.crossOrigin='anonymous';document.head.appendChild(e);}
 for(var j=0;j<h.css.length;j++){var c=document.createElement('link');
-c.rel='preload';c.as='style';c.href=h.css[j];document.head.appendChild(c);}
+c.rel='preload';c.as='style';c.href=h.css[j];c.crossOrigin='anonymous';document.head.appendChild(c);}
 }catch(e){}})();`
         return {
           html,
@@ -458,11 +569,11 @@ var R=${JSON.stringify(byRoute)},B=${JSON.stringify(before)},A=${JSON.stringify(
 var p=location.pathname.replace(/\\/$/,'')||'/',own=[[],[]];
 for(var i=0;i<R.length;i++){if(new RegExp(R[i][0]).test(p)){own=[R[i][1],R[i][2]];break;}}
 for(var j=0;j<own[0].length;j++){var l=document.createElement('link');
-l.rel='stylesheet';l.href=own[0][j];document.head.appendChild(l);}
+l.rel='stylesheet';l.href=own[0][j];l.crossOrigin='anonymous';document.head.appendChild(l);}
 var waiting=[];
 for(var k=0;k<own[1].length;k++){var w=document.createElement('link');
-w.rel='preload';w.as='style';w.href=own[1][k];document.head.appendChild(w);
-var s=document.createElement('link');s.rel='stylesheet';s.href=own[1][k];waiting.push(s);}
+w.rel='preload';w.as='style';w.href=own[1][k];w.crossOrigin='anonymous';document.head.appendChild(w);
+var s=document.createElement('link');s.rel='stylesheet';s.href=own[1][k];s.crossOrigin='anonymous';waiting.push(s);}
 function entry(){return document.querySelector('link[rel="stylesheet"][href="'+E+'"]');}
 function place(e){if(!waiting.length)return;var host=e?e.parentNode:document.head,
 next=e?e.nextSibling:null;
@@ -561,7 +672,7 @@ function openWithAPlate(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), scenePreloadHints(), redirectRouteHints(), routeStylesheets(), openWithAPlate()],
+  plugins: [react(), scenePreloadHints(), redirectRouteHints(), routeScriptHints(), routeStylesheets(), openWithAPlate()],
   build: {
     target: ['es2020', 'safari15'],
     cssTarget: 'safari15',

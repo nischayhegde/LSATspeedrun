@@ -220,6 +220,52 @@ let renderCursor = 0
 let lastFrameTime = 0
 
 /**
+ * Ambient repainting is held while the page is being scrolled.
+ *
+ * Measured on the Firm tab's Staff panel, which puts one rig on screen per
+ * member of staff: scrolling it ran at a 150 ms median frame against 17 ms on
+ * the counsel ledger and the catalog on the same screen, with a long task on
+ * 149 of 149 frames. The panel was not doing anything wrong. Eight characters
+ * a frame is the render budget below, and eight WebGL renders plus eight
+ * canvas copies is simply more than a scrolling frame has.
+ *
+ * Nothing is lost by not doing it. A scrolling reader is looking at where the
+ * page has got to, the compositor moves the pixels that are already in each
+ * canvas, and a breath advanced by 16 ms mid-flick is not a thing anyone can
+ * see. Only the render and the copy are held: `animateRig` and the director
+ * keep running at display rate, so the rigs are exactly where they should be
+ * when the scroll stops, and the catch-up is one ordinary frame rather than a
+ * jump.
+ *
+ * `scroll` does not bubble, so this listens in the capture phase to catch the
+ * roster's own horizontal strip as well as the document.
+ */
+const SCROLL_QUIET_MS = 90
+let scrollingUntil = 0
+let scrollListening = false
+
+function onAnyScroll() {
+  scrollingUntil = performance.now() + SCROLL_QUIET_MS
+  // The loop parks itself whenever nothing wants painting, so the frame that
+  // eventually clears the hold has to be asked for. Cheap: a pending frame
+  // makes this a single null check.
+  requestCharacterFrame()
+}
+
+function listenForScroll() {
+  if (scrollListening || typeof document === 'undefined') return
+  scrollListening = true
+  document.addEventListener('scroll', onAnyScroll, { capture: true, passive: true })
+}
+
+function stopListeningForScroll() {
+  if (!scrollListening) return
+  scrollListening = false
+  scrollingUntil = 0
+  document.removeEventListener('scroll', onAnyScroll, { capture: true })
+}
+
+/**
  * One director for every character on the page.
  *
  * Sharing it is not only cheaper, it is the thing that keeps a grid of
@@ -581,9 +627,16 @@ function runCharacterFrame(now: number) {
   }
   runCharacterProbe(now)
 
+  // See `SCROLL_QUIET_MS`. A `dirty` entry still paints, because dirty means
+  // the canvas is currently wrong — a resize, a first paint, a gaze move — and
+  // leaving a wrong canvas on screen for the length of a scroll is visible in
+  // a way that a held breath is not.
+  const held = now < scrollingUntil
+
   const visible = Array.from(entries).filter((entry) => {
     if (!entry.visible || entry.disposed || (entry.reduced && !entry.dirty)) return false
     if (entry.dirty) return true
+    if (held) return false
     // The single hero/full character (and anyone actually walking) follows the
     // display refresh rate. Standing "scene" rigs share their pace with
     // portraits instead: several can be on screen at once (staff roster, world
@@ -882,6 +935,7 @@ function disposeEntry(entry: CharacterEntry) {
   })
   geometries.forEach((geometry) => geometry.dispose())
   materials.forEach((material) => material.dispose())
+  if (!entries.size) stopListeningForScroll()
 }
 
 export function StylizedCharacter({
@@ -926,6 +980,7 @@ export function StylizedCharacter({
     if (!entry) return
     entryRef.current = entry
     entries.add(entry)
+    listenForScroll()
 
     const onPointerMove = (event: PointerEvent) => {
       entry.pointerActive = true

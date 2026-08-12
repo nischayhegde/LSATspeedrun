@@ -272,12 +272,15 @@ export type WardrobeCatalog = {
   categories: CosmeticCategory[]
 }
 
-/** One district the firm can hold a standing retainer over.
+/** One district the firm can be appointed standing counsel to.
  *
  *  `landmark_key` is an optional join onto the 3D scene's own district
  *  directory (`MapLandmark.key`). The backend owns this catalog, so a district
  *  stays purchasable and legible even when the procedural planner lays the
- *  region out differently or renames a place. */
+ *  region out differently or renames a place.
+ *
+ *  `counsel` is the body being advised ("the duty roster"), not a fee. A
+ *  client retainer is the other thing entirely, and pays per case. */
 export type TerritoryDistrict = {
   key: string
   name: string
@@ -286,7 +289,7 @@ export type TerritoryDistrict = {
   landmark_key: string | null
   tier: number
   reputation: number
-  retainer: string
+  counsel: string
   description: string
   cost: number
   standing: number

@@ -226,7 +226,7 @@ export const api = {
   purchase: (assetKey: string) =>
     request<{ game: GameState }>('/game/purchases', { method: 'POST', body: JSON.stringify({ asset_key: assetKey }) }),
   secureDistrict: (districtKey: string) =>
-    request<{ retainer: SecuredDistrict; game: GameState }>('/game/territory', {
+    request<{ counsel: SecuredDistrict; game: GameState }>('/game/territory', {
       method: 'POST',
       body: JSON.stringify({ district_key: districtKey }),
     }),
