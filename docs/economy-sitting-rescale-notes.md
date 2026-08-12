@@ -3,7 +3,7 @@
 Branch `cursor/shorten-case-and-rescale-economy-508c`, based on
 `integration/all-features` at `82acaf6`.
 
-Three changes, in order.
+Four changes, in order.
 
 **One:** a practice run is six questions instead of ten, and every constant that
 was counted in whole runs was re-expressed so that neither the campaign's length
@@ -25,6 +25,17 @@ student is treated exactly as before, and each bounded at both ends. The last of
 the three also closes a positional cue that was measured at its worst: the final
 question of a run used to be a repeat 99% of the time. See "The run's shape is
 now read off the student" below.
+
+**Four:** the length of a run no longer decides how much of the exam is in it.
+An audit measured 0% Reading Comprehension at run sizes 3 and 5 — a reading case
+could not be built that short, so the run silently came back all arguments, the
+right length and missing a third of the exam. Looking at the callers turned out
+to matter more than the server: three of the four surfaces that start a run were
+hardcoding a length and none used the configured one, two of them asking for ten
+while their own copy said six. Reading is now reachable at every length a run
+can be, lengths that cannot hold a passage are refused outright, and the client
+no longer picks. See "The run length had stopped deciding how long a run is"
+below.
 
 ---
 
@@ -488,6 +499,172 @@ field should not mean rewriting them.
 
 ---
 
+## The run length had stopped deciding how long a run is and started deciding what is in it
+
+An independent audit measured **0% Reading Comprehension across every session
+started at sizes 3 and 5**. At the shipped size of six it measured 38% and 41%
+over two runs of 25 fresh sessions, which agrees with the 33.7% reported above,
+so the section case works where it ships. Below six it did not exist: a reading
+case is one passage, `RC_CASE_MIN_SITTING` refused to build one under six
+questions, and the fallback was an ordinary argument run.
+
+The failure mode is the thing to notice. The run came back the length it was
+asked for, full of valid questions, and a third of the exam had silently stopped
+being practised. Nothing logged, nothing to see in the interface. That is the
+same shape as the bug this branch already fixed, which is why it was worth
+fixing rather than noting.
+
+### What actually asked for a short run, which turned out to be the real finding
+
+The audit could only see the server. Looking at the callers first changed the
+problem, because **three of the four surfaces that start a run were hardcoding a
+size and none of them used the configured one**:
+
+| Surface | Asked for | The problem |
+|---|---|---|
+| Practice tab (`cases-page.tsx`) | `size: 10` | Its own copy says "About 6 questions" |
+| Dashboard (`dashboard-page.tsx`) | `size: 10` | Its own button reads "Start 6 cases" |
+| Office (`office-page.tsx`) | `size: 3` | A short run when a run was ten; now below the floor |
+| End-of-run review (`case-session-page.tsx`) | `size: min(5, due)` | 1 to 5 — the exact range that served no reading |
+| Type drill (`dashboard-page.tsx`) | `size: 3` + `question_type` | Legitimate, and left alone |
+
+So this was not one configuration change away from returning. It had already
+happened, four times, and the shipped six-question sitting the audit measured
+was reachable only by a caller that passed no size at all. The two surfaces
+asking for ten were also quietly contradicting their own copy.
+
+All four now send no size, and the server decides. The type drill keeps its
+three, which is the one place a client-chosen length is still right: it has
+declared its scope, so it has no section left to drop.
+
+### Making a cut passage resumable, which is what allows a short reading case
+
+`_reading_case_from_passage` already cut a passage at a ceiling and sorted
+unseen questions first, so a second visit continued where the first stopped.
+That mechanism was built for the two sixteen-question passages and treated as an
+exception for four passages out of 349.
+
+It had a hole that did not matter at that scale. Nothing *steered* the student
+back: the next passage was drawn uniformly from every passage with anything
+unread, so a cut passage had a 1-in-349 chance of ever being resumed. The honest
+description is that a cut passage was abandoned, and it was survivable only
+because cutting was rare.
+
+At short run sizes cutting is not rare, it is normal — at five the ceiling is 6
+and 208 of 349 passages are longer — so the hole had to be closed before cutting
+could be relied on. The fresh-led branch now prefers a passage already started
+over an untouched one. It is self-limiting rather than a trap, because finishing
+a passage removes it from the started list, and it costs an honest re-read that
+`_target_time_seconds` already charges at 330s for the first question of every
+visit.
+
+This is the change that also improves the shipped size, which is usually a sign
+the rule is the right one: the sixteen-question passages are now finished on the
+next reading case rather than by luck.
+
+### `RC_CASE_MIN_SITTING`, 6 → 4
+
+With cutting reliable, the sitting only has to be long enough that a reading
+case still feels like the same sitting. Against an argument case's 150s a
+question:
+
+| run size | cut at | reading case | argument case | ratio |
+|---:|---:|---:|---:|---:|
+| 3 | 4 | 12.3 min | 7.5 min | 1.63x |
+| **4** | **5** | **14.5 min** | **10.0 min** | **1.45x** |
+| 5 | 6 | 16.8 min | 12.5 min | 1.34x |
+| 6 | 8 | 19.0 min | 15.0 min | 1.27x |
+
+Six already accepts 1.27x and calls it near enough the same sitting. Four is the
+last size where that is still true. At three the fixed cost of reading has
+stopped being amortised and a student who asked for a short run gets a long one.
+
+### And below four, nothing can ask
+
+Reachability alone would have left the defect one edit away, so the invalid
+region is closed rather than merely made unlikely:
+
+* **`routes.start_study_session`** refuses a general run below
+  `RC_CASE_MIN_SITTING`. Refused, not rounded up: a caller handed six questions
+  when it asked for three has been overruled without being told.
+* **`create_app`** refuses to boot when `PRACTICE_SESSION_SIZE` is below it,
+  checked *after* test overrides so an env file and a test config are held to
+  the same rule. This is the one with the blast radius — a number in an env file
+  would remove a section from every run in the deployment, with no request to
+  reject.
+* **A type-filtered drill is exempt from both**, at any length.
+
+### The other end of the same defect, found by measuring across sizes
+
+Sweeping every size rather than checking the boundary showed the identical bug
+approached from above. A reading case was one passage *however long the run
+was*, so a twelve-question run that drew one came back seven questions long —
+and because the argument runs it is averaged against were all their full twelve,
+the section mix went with it.
+
+A reading case is now as many passages as the run has room for, where room worth
+another passage is `RC_CASE_MIN_SITTING` — already the answer to "is this many
+questions worth reading a passage for", which is exactly what the leftover room
+asks, so it is reused rather than given a twin that could drift from it.
+
+**The shipped sitting cannot be affected, and this is arithmetic rather than a
+preference:** the shortest passage in the bank carries four questions, so a
+six-question run has at most two questions of room, and two is below the floor.
+`test_the_shipped_sitting_is_one_passage_and_cannot_become_two` pins both halves
+of that.
+
+### Measured, per size, so the boundary is visible rather than assumed
+
+150 runs per cohort per size, real 6,886-question bank, via
+`tools/audit/rc_reachability_probe.py --sweep-cases 150`:
+
+| size | RC share before (cold / mid) | RC share after (cold / mid) | q/run before → after |
+|---:|---|---|---|
+| 1–3 | 0.0% / 0.0% | **refused** | — |
+| 4 | 0.0% / 0.0% | **39.9% / 33.4%** | 4.00 → 4.35 |
+| 5 | 0.0% / 0.0% | **39.9% / 31.8%** | 5.00 → 5.33 |
+| 6 | 39.0% / 34.4% | 41.0% / 39.1% | 6.23 → 6.30 |
+| 7 | 26.2% / 37.2% | 35.6% / 31.5% | 6.83 → 6.96 |
+| 8 | 26.1% / 36.6% | 27.6% / 24.0% | 7.65 → 7.66 |
+| 9 | 31.0% / 39.2% | 34.9% / 27.8% | 8.17 → 8.39 |
+| 10 | 29.7% / 28.0% | 25.9% / 40.7% | 8.81 → 9.63 |
+| 11 | 25.5% / 20.7% | 33.2% / 29.5% | 9.55 → 11.19 |
+| 12 | 25.6% / 18.5% | 36.7% / 34.8% | 10.11 → 12.51 |
+
+The bank is 34.4%. Before, the curve ran 0% up to five, peaked at the one size it
+was tuned for, and slid to 18–26% by twelve. After, every reachable size sits in
+a band around the bank and the run is the length it asked for.
+
+Two honesties about this table. The per-size before/after is approximate rather
+than controlled, because the new code draws reading cases at sizes 4 and 5 where
+the old code drew none, which shifts the random stream for every size after it —
+size 6 is the same code on both sides and differs only by that. And the residual
+shortfall at sizes 7 to 9 is deliberate: the case stops adding passages once the
+room left is under `RC_CASE_MIN_SITTING`, so a run can still come back up to
+three questions short rather than read a passage for two questions.
+
+### What this did to the shipped size, controlled
+
+Run alone at size 6 so the random stream is not disturbed, against `44dd0dd`:
+
+| cohort | RC share | q/run | s/question |
+|---|---|---|---|
+| cold | 37.8% → **37.8%** | 6.28 → 6.28 | 155.2 → 155.2 |
+| mid | 34.1% → **35.1%** | 6.07 → 6.08 | 155.6 → 155.7 |
+| warmed | 39.5% → **35.6%** | 6.53 → 6.29 | 154.3 → 154.7 |
+
+Cold is identical to the digit, as it must be: with no history there is no
+started passage and the preference is a no-op. The warmed cohort moves most, and
+**toward** the bank's 34.4% rather than away — its review queue was previously
+inflated with Reading Comprehension (46.7% of everything it reviewed) precisely
+because passages were being left half-read and re-entering the queue. That is
+now 32.9%, against a 34.4% bank.
+
+`SERVED_SECONDS_PER_CASE` stays at 154.5; the measured pace moved by 0.26%. The
+simulated campaign curve is **bit-identical** to `44dd0dd`, diffed in full.
+
+---
+
 ## Every variable that moved
 
 | Constant | Was | Now | Unit | Why |
@@ -503,6 +680,10 @@ field should not mean rewriting them.
 | `services.PASSAGE_OVERSHOOT_ALLOWANCE` | (didn't exist; hard 0) | **2**, bounded to a third of the run | questions | Keeps 97.8% of RC reachable |
 | `daily_docket` "substantial run" | `5` literal | **`round(session_size / 2)`** = 3 | questions | Was most of a ten-run, is more than half a six-run |
 | `daily_docket` cases target and label | `10`, "Start 10 cases" | **`session_size`** | questions | Copy tracks the constant |
+| `services.RC_CASE_MIN_SITTING` | (didn't exist; then `6`) | **4** | questions | Below this a run served no reading at all; four is where a reading case is still the same sitting |
+| Minimum general run at the API | `1` | **`RC_CASE_MIN_SITTING`** | questions | A shorter run drops a section silently; a type drill stays exempt |
+| Minimum `PRACTICE_SESSION_SIZE` at boot | `1` | **`RC_CASE_MIN_SITTING`** | questions | Same rule, applied to the value every caller gets by default |
+| Client-chosen run sizes (4 surfaces) | `10`, `10`, `3`, `min(5, due)` | **none — the server decides** | questions | Two contradicted their own copy; two were below the floor |
 
 ### Two the user named by hand
 
@@ -610,9 +791,9 @@ backend/tests/{test_flow,test_progress,test_game_catalog}.py   variable run leng
 backend/.env.example                           stops pinning 10
 deploy/ec2/cloudformation.yaml                 stops pinning 10 (one deleted line)
 frontend/src/api.ts                            session_size on two response types
-frontend/src/pages/{cases,dashboard}-page.tsx  copy reads the served size; stops promising a repair count
+frontend/src/pages/{cases,dashboard,office,case-session}-page.tsx  stop choosing run lengths
 frontend/src/guided-tour.tsx                   three sentences, numbers and the reading case
-tools/audit/rc_reachability_probe.py           new; per-cohort personalisation and per-slot review rates
+tools/audit/rc_reachability_probe.py           new; per-cohort personalisation, per-slot review, size sweep
 ```
 
 `tools/audit/rc_reachability_probe.py` is written to live in the QA agent's
@@ -637,9 +818,13 @@ passages of five and six now, and `test_flow`'s bank grew from 4 RC questions to
   Resolve by keeping the deletion. Leaving `PRACTICE_SESSION_SIZE=10` in the
   user-data means production keeps ten-question runs while everything else in the
   app is built for six, which is worse than either choice on its own.
-- `frontend/src/guided-tour.tsx` and the two page files, against the interface /
+- `frontend/src/guided-tour.tsx` and the four page files, against the interface /
   mobile / tutorial branch. My edits are numbers and one added clause; if that
   branch has rewritten the surrounding copy, take theirs and re-check the number.
+  The one edit there to keep whatever else happens is the removal of `size:` from
+  the four `startPractice` calls: any surface that names its own run length is
+  both contradicting the configured size and able to ask for one that serves no
+  reading. If that branch has added a new start button, it should pass no size.
 - `backend/tests/test_flow.py` and `test_progress.py`, against the QA branch. The
   edits there are all the same shape: a test that assumed a run is exactly `size`
   questions now reads `session["total_items"]`, or uses
@@ -669,10 +854,14 @@ passages of five and six now, and `test_flow`'s bank grew from 4 RC questions to
 6. Start a dozen runs and note which position the first repeat lands on. It
    should move around. Before this change it was position 2 nearly every time on
    a six-question run, and the last question was a repeat 99% of the time.
-7. `backend/.venv/bin/python -m pytest` from the repo root: 423 pass. Note the
+7. Every button that starts a run — Practice tab, dashboard, office, and the
+   "start priority review" button at the end of a run — should give the same
+   length. Before this change the first two started ten-question runs while
+   saying six, and the last two started runs of one to five.
+8. `backend/.venv/bin/python -m pytest` from the repo root: 429 pass. Note the
    suite must run from the repo root, not from `backend/` — `pytest.ini` sets
    `pythonpath = backend` and two tests import `backend.app.game` directly.
-8. To re-measure the section mix and the personalisation end to end, seed a
+9. To re-measure the section mix and the personalisation end to end, seed a
    scratch database and run the probe:
 
    ```
@@ -685,6 +874,13 @@ passages of five and six now, and `test_flow`'s bank grew from 4 RC questions to
    Read the per-cohort block below the table: the three cohorts differing from
    each other is the result. 1,200 runs takes about four minutes; 300 is enough
    for the shape but its means carry about 2.7 points of noise.
+
+   The last table is the size sweep, and it is the one to look at if anyone ever
+   changes a run length. Every reachable size should sit in a band around the
+   bank's 34.4%, and the sizes below `RC_CASE_MIN_SITTING` should read `refused`
+   rather than `0.0%`. A `0.0%` on a startable size is the defect this section
+   is about, and it is invisible from inside the app because the run still comes
+   back the right length.
 
 ## One unrelated fix carried on this branch
 
