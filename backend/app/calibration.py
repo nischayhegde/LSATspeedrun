@@ -140,7 +140,10 @@ from __future__ import annotations
 
 import hashlib
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
+from typing import Iterator
 
 from .extensions import db
 from .models import LearnerRating, Question, QuestionCalibration, utcnow
@@ -198,6 +201,44 @@ ORIGIN_RESPONSES = "responses"
 ORIGIN_SIMULATED = "simulated"
 ORIGIN_IMPORTED = "imported"
 ORIGIN_OFFICIAL = "official"
+ORIGINS = frozenset({ORIGIN_RESPONSES, ORIGIN_SIMULATED, ORIGIN_IMPORTED, ORIGIN_OFFICIAL})
+# Origins whose evidence came from somebody actually sitting the question.
+TRUSTED_ORIGINS = frozenset({ORIGIN_RESPONSES, ORIGIN_OFFICIAL, ORIGIN_IMPORTED})
+
+# Set for the duration of a synthetic run, so that a writer which goes through
+# the ordinary attempt path cannot produce ratings that look earned. A
+# ContextVar rather than a module global because a request-handling process
+# must never inherit one request's marker into the next.
+_ambient_origin: ContextVar[str | None] = ContextVar("calibration_origin", default=None)
+
+
+@contextmanager
+def responses_marked(origin: str) -> Iterator[None]:
+    """Declare that every response recorded inside this block is `origin`.
+
+    For writers that answer questions through the real code path — the demo
+    seeders call `services.submit_attempt`, which is the point of them — and so
+    cannot pass an origin down to `record_response` themselves. Wrapping the run
+    is the whole obligation:
+
+        with calibration.responses_marked(calibration.ORIGIN_SIMULATED):
+            seed_demo(email)
+
+    The alternative was letting a seeder's forty thousand invented answers
+    accumulate under `responses` and be indistinguishable from a cohort's. This
+    project has already shipped a demo seeder that bypassed the real selector
+    and test fixtures describing a bank that could not exist; an instrument that
+    cannot tell its own dry run from the real thing is the same mistake with
+    better arithmetic.
+    """
+    if origin not in ORIGINS:
+        raise ValueError(f"unknown origin: {origin}")
+    token = _ambient_origin.set(origin)
+    try:
+        yield
+    finally:
+        _ambient_origin.reset(token)
+
 
 # Below twelve responses the standard error is above ~0.6 logits, which is most
 # of a band, so the value is directional at best.
@@ -443,7 +484,7 @@ def record_response(
     is_correct: bool,
     *,
     exposure: str = EXPOSURE_BLIND,
-    origin: str = ORIGIN_RESPONSES,
+    origin: str | None = None,
     now: datetime | None = None,
 ) -> QuestionCalibration:
     """One match, applied to both ratings. The whole online cost of this feature.
@@ -454,12 +495,16 @@ def record_response(
     only two places an attempt comes into existence.
 
     `origin` is how a caller that is not a student — the demo seeder, a
-    simulation — says so. It is sticky: a row that has ever taken a simulated
-    response can never call itself `responses` again, because it cannot be
-    unmixed afterwards.
+    simulation — says so, either as this argument or by running inside
+    `responses_marked`. It is sticky in the direction of less trust: a row that
+    has ever taken a simulated response can never call itself `responses` again,
+    because the two cannot be unmixed afterwards.
     """
     if exposure not in EXPOSURE_POLICIES:
         raise ValueError(f"unknown exposure policy: {exposure}")
+    origin = origin or _ambient_origin.get() or ORIGIN_RESPONSES
+    if origin not in ORIGINS:
+        raise ValueError(f"unknown origin: {origin}")
     moment = now or utcnow()
     scope = _scope(question)
     learner = learner_rating(user_id, scope, create=True)
@@ -555,7 +600,7 @@ def signal(question: Question | None, calibration: QuestionCalibration | None = 
     centred = row.rating - origin
     error = standard_error(row.information)
     status = row.status or status_for(row.responses, row.information)
-    trustworthy_origin = row.origin in {ORIGIN_RESPONSES, ORIGIN_OFFICIAL, ORIGIN_IMPORTED}
+    trustworthy_origin = row.origin in TRUSTED_ORIGINS
     unbiased_rating = (row.blind_rating - origin) if row.blind_responses else None
     return {
         "published": published,
@@ -600,6 +645,14 @@ def bank_summary() -> dict:
         "provisional": counts.get(STATUS_PROVISIONAL, 0),
         "estimated": counts.get(STATUS_ESTIMATED, 0),
         "calibrated": counts.get(STATUS_CALIBRATED, 0),
+        # Rows carrying at least one invented response. Reported next to the
+        # status counts rather than folded into them, because a bank that looks
+        # calibrated because a seeder answered it is the failure this number
+        # exists to make visible.
+        "synthetic": db.session.query(db.func.count(QuestionCalibration.question_id))
+        .filter(QuestionCalibration.origin.notin_(tuple(TRUSTED_ORIGINS)))
+        .scalar()
+        or 0,
         "published": db.session.query(db.func.count(Question.id))
         .filter(Question.published_difficulty.isnot(None))
         .scalar()

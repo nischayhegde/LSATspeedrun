@@ -255,6 +255,58 @@ def test_a_simulated_response_permanently_marks_the_row(app):  # noqa: F811
         assert calibration.signal(question, row)["usable_for_targeting"] is False
 
 
+def test_a_marked_block_taints_every_response_recorded_inside_it(app):  # noqa: F811
+    """The seeders answer through `submit_attempt` and cannot pass an origin.
+
+    So the origin has to reach `record_response` some other way, and the marker
+    is it. Outside the block the default is unchanged, which is what stops a
+    process that ran a seeder once from marking the rest of its life synthetic.
+    """
+    with app.app_context():
+        inside, outside = Question.query.limit(2).all()
+        with calibration.responses_marked(calibration.ORIGIN_SIMULATED):
+            calibration.record_response(student("ambient-1"), inside, True)
+        calibration.record_response(student("ambient-2"), outside, True)
+        db.session.flush()
+        assert inside.calibration.origin == "simulated"
+        assert outside.calibration.origin == "responses"
+
+
+def test_an_unknown_origin_is_refused(app):  # noqa: F811
+    with app.app_context():
+        with pytest.raises(ValueError):
+            calibration.responses_marked("plausible").__enter__()
+        with pytest.raises(ValueError):
+            calibration.record_response(student("bad-origin"), Question.query.first(), True, origin="vibes")
+
+
+def test_the_marker_is_restored_even_when_the_run_fails(app):  # noqa: F811
+    with app.app_context():
+        with pytest.raises(RuntimeError):
+            with calibration.responses_marked(calibration.ORIGIN_SIMULATED):
+                raise RuntimeError("seeding blew up halfway through")
+        calibration.record_response(student("after-failure"), Question.query.first(), True)
+        db.session.flush()
+        assert Question.query.first().calibration.origin == "responses"
+
+
+def test_every_seeder_declares_its_answers_synthetic():
+    """A demo account's forty thousand invented answers are not evidence.
+
+    Both seeders write attempts — one by hand, one through `submit_attempt` —
+    and both therefore move the difficulty ratings. Neither may do so under an
+    origin that a consumer is allowed to steer on.
+    """
+    scripts = Path(__file__).resolve().parents[1] / "scripts"
+    for name in ("seed_demo.py", "seed_demo_learner.py"):
+        source = (scripts / name).read_text(encoding="utf-8")
+        assert "responses_marked(calibration.ORIGIN_SIMULATED)" in source, (
+            f"{name} writes attempts without declaring them synthetic"
+        )
+        # Re-running a seeder must not stack a second history on the first.
+        assert "delete(QuestionCalibration)" in source, f"{name} does not clear the ratings it wrote"
+
+
 def test_recording_a_response_writes_both_sides_of_the_match(app):  # noqa: F811
     with app.app_context():
         question = Question.query.filter_by(section="Logical Reasoning").first()

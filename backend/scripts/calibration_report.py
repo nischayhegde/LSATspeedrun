@@ -56,6 +56,11 @@ def _summary(args) -> int:
     print(f"  published difficulty {counts['published']:,}  (a rating the test maker stated)")
     for status in STATUS_ORDER:
         print(f"  {status:<21}{counts[status]:,}")
+    if counts["synthetic"]:
+        print(
+            f"  of which seeded      {counts['synthetic']:,}  (a seeder or a simulation "
+            "answered these, so no consumer may steer on them)"
+        )
     if counts["centre"] is not None:
         print(f"  scale centre         {counts['centre']} logits")
     if not counts["provisional"] and not counts["estimated"] and not counts["calibrated"]:
