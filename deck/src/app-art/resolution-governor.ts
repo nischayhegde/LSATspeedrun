@@ -41,7 +41,14 @@ import type { IllustratedRenderPass } from './render-style'
  *
  * It will only ever reduce below the ratio it was constructed at, never above —
  * the caller has already decided what full quality means for its own canvas, and
- * this is allowed to disagree in one direction.
+ * this is allowed to disagree in one direction. How far it may disagree is
+ * `FLOOR_FRACTION` of that ratio rather than an absolute number, which is the
+ * distinction that matters when the same scene is a panel in a page upstream and
+ * the entire projected frame here.
+ *
+ * The budget resets when `restart` is called — i.e. each time the scene comes
+ * back on screen — because the reason a scene was slow the first time is usually
+ * something that was happening around it and is not happening now.
  *
  * ## The first second is not evidence
  *
@@ -51,8 +58,42 @@ import type { IllustratedRenderPass } from './render-style'
  * frame in which it happened.
  */
 
-/** Below this the bands themselves start to stair and no frame rate is worth it. */
-const FLOOR = .42
+/**
+ * How much of the ratio it started at the governor may take away.
+ *
+ * ## Why this is a fraction and not, as it was, an absolute 0.42
+ *
+ * An absolute floor is a floor on the wrong quantity. It answers "how few
+ * device pixels per CSS pixel is tolerable", which is a question about a
+ * *panel*, and this is a decision about a *picture*: what matters is how far the
+ * drawing buffer has fallen below the surface it is being stretched over, and
+ * the initial ratio is the only thing that knows that.
+ *
+ * The office is the case that proves it. In the deck its surface is the whole
+ * frame, so it starts at a ratio of about 1, and 0.42 of that is a 806×453
+ * buffer upscaled 2.4× on each axis to fill 1920×1080 — 18% of the pixels the
+ * frame has. That is not a soft picture, it is a visibly blocky one, and it is
+ * exactly what came back from the walkthrough. Inside the app the identical
+ * constant means something entirely different, because the office is a panel
+ * there and starts at 2: the same 0.42 would be a floor of *one fifth* of the
+ * available quality rather than 0.42 of it.
+ *
+ * 0.72 in each axis is a little over half the pixels. On the office's own
+ * numbers that is roughly a halving of fill cost, which is the whole of the
+ * range the governor was ever able to buy anything in — the second and third
+ * steps were spending sharpness on a fixed cost that no amount of shrinking
+ * removes, which the "did it pay" rule below already knows.
+ *
+ * A deck is also not a game: this scene is a held product shot with a text plate
+ * over it and no camera move, and a sharp 40fps shot of it is worth more to the
+ * room than a mushy 60fps one. That is the trade being made deliberately here,
+ * and it is the opposite of the right trade upstream, where the same scene is
+ * being dragged around by a mouse.
+ */
+const FLOOR_FRACTION = .72
+
+/** And never below this in absolute terms, whatever the caller started at. */
+const ABSOLUTE_FLOOR = .42
 
 /** 16.7ms is the target; the trigger sits above it so a scene that is merely at
  *  the edge is left alone rather than nudged forever. */
@@ -78,8 +119,17 @@ const SETTLE = 8
 const WINDOW = 18
 
 /** Enough to cross a factor of two, and few enough that the last one lands
- *  inside the first few seconds of the slide. */
+ *  inside the first few seconds of the slide.
+ *
+ *  Reductions only. Recovery used to be counted against the same budget, which
+ *  made it unreachable by construction: climbing back at 12% a step from a floor
+ *  of 0.42 to an initial ratio of 0.88 needs seven of them, and there were four
+ *  in total for the whole life of the scene. A governor whose recovery path
+ *  cannot be walked is a governor that only ever goes one way. */
 const MAX_STEPS = 4
+
+/** Recovery steps, counted separately for the reason above. */
+const MAX_RECOVERIES = 8
 
 export type ResolutionGovernor = {
   /** Call once per rendered frame with the frame's delta in seconds. */
@@ -103,13 +153,17 @@ export function createResolutionGovernor(options: {
   enabled?: boolean
 }): ResolutionGovernor {
   const { renderer, stylePass, measure, initialRatio } = options
+  const floor = Math.min(initialRatio, Math.max(ABSOLUTE_FLOOR, initialRatio * FLOOR_FRACTION))
   let ratio = initialRatio
   let steps = 0
+  let recoveries = 0
   let seen = 0
   const window_: number[] = []
   const enabled = options.enabled !== false
   /** The median that prompted the last reduction, and the ratio before it. */
   let before: { median: number; ratio: number } | null = null
+  /** The lowest ratio already measured as too slow. Recovery stops below it. */
+  let ceiling = Infinity
   let stopped = false
 
   const apply = (next: number) => {
@@ -123,12 +177,36 @@ export function createResolutionGovernor(options: {
   return {
     get ratio() { return ratio },
     get steps() { return steps },
+    /**
+     * Discard the current window, and re-open the question.
+     *
+     * This used to clear only the samples, which meant a scene that had retired
+     * — either by spending its four steps or by taking the "that reduction did
+     * not pay" exit, both of which latch for the life of the mount — stayed
+     * retired at whatever ratio it happened to be holding, for ever, however
+     * much the situation changed underneath it. In the deck the situation
+     * changes constantly: this is called when the office comes back on screen,
+     * and what made it slow the first time is very often the transition that was
+     * animating over the top of it, or the outgoing scene's `WebGLRenderer`
+     * still being alive beside it, or a second scene warming next door. None of
+     * those is true on the second visit, and the first visit's verdict was being
+     * carried forward anyway.
+     *
+     * Re-opening it cannot oscillate: the floor bounds one direction, the
+     * initial ratio bounds the other, and `ceiling` below remembers a ratio that
+     * has already been proven too slow so recovery does not climb back into it.
+     */
     restart() {
       seen = 0
       window_.length = 0
+      stopped = false
+      steps = 0
+      recoveries = 0
+      before = null
     },
     sample(deltaSeconds: number) {
-      if (!enabled || stopped || steps >= MAX_STEPS) return
+      if (!enabled || stopped) return
+      if (steps >= MAX_STEPS && recoveries >= MAX_RECOVERIES) return
       seen += 1
       if (seen <= SETTLE) return
       // A frame longer than a tenth of a second is a stall — a scene build, a
@@ -175,10 +253,14 @@ export function createResolutionGovernor(options: {
           stopped = true
           return
         }
+        // Whatever else is true, the ratio it was at when the frame came back
+        // over budget is a ratio this machine cannot hold. Recovery may
+        // approach it and must not climb back into it.
+        ceiling = Math.min(ceiling, before.ratio * .92)
         before = null
       }
 
-      if (median > TOO_SLOW_MS && ratio > FLOOR) {
+      if (median > TOO_SLOW_MS && ratio > floor && steps < MAX_STEPS) {
         // Damped, because frame time is not perfectly linear in pixel count —
         // there is a fixed cost per frame that no amount of shrinking removes,
         // and correcting as though there were none overshoots into a soft
@@ -193,13 +275,15 @@ export function createResolutionGovernor(options: {
         const ideal = Math.sqrt(TARGET_MS / median)
         const damped = median > TARGET_MS * 1.5 ? ideal : 1 - (1 - ideal) * .8
         before = { median, ratio }
-        apply(Math.max(FLOOR, ratio * Math.max(.66, damped)))
+        apply(Math.max(floor, ratio * Math.max(.66, damped)))
         steps += 1
-      } else if (median < FAST_ENOUGH_MS && ratio < initialRatio) {
+      } else if (median < FAST_ENOUGH_MS && ratio < Math.min(initialRatio, ceiling) && recoveries < MAX_RECOVERIES) {
         // Recovering resolution is allowed but deliberately timid: an audience
-        // notices a picture getting softer far less than one that pulses.
-        apply(Math.min(initialRatio, ratio * 1.12))
-        steps += 1
+        // notices a picture getting softer far less than one that pulses. The
+        // ceiling is a ratio already measured as too slow, so this walks up
+        // toward it and stops short rather than rediscovering it.
+        apply(Math.min(initialRatio, ceiling, ratio * 1.12))
+        recoveries += 1
       }
     },
   }
