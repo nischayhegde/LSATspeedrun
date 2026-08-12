@@ -490,6 +490,37 @@ def test_a_logical_reasoning_gate_still_sends_the_stimulus_and_no_passage(app):
     assert "passage" not in data and "passage_parts" not in data
 
 
+def test_the_variety_check_that_could_never_run_now_runs(app):
+    """The other half of the defect, and the half that had no visible symptom.
+
+    `paragraph_function` asks for a function per part and refuses a labelling that
+    gives every part the same one. That check needs more than one segment before it
+    has anything to compare, and there was never more than one, so it was skipped
+    on every question in the section — a student could label the single unit
+    "Introduces" and pass a gate whose whole point is reading for the change.
+    """
+    from app import enforcement
+
+    with app.app_context():
+        attempt = _rc_attempt("paragraph_function")
+        item = attempt.session_item
+        item.strategy_key = "paragraph_function"
+        item.strategy_enforcement_level = enforcement.LEVEL_FULL
+        gate = enforcement.build_gate(item)
+        parts = len(gate["fields"][0]["segments"])
+        assert parts > 1
+
+        uniform = {str(index): "Introduces" for index in range(parts)}
+        varied = dict(uniform, **{"1": "Counters"})
+        turn = "It shifts from the claim about the archive to the objection raised against it."
+
+        with pytest.raises(enforcement.GateRejection) as refused:
+            enforcement.validate_artifact(item, {"fields": {"functions": uniform, "turn": turn}}, "C")
+        assert "same job" in refused.value.errors[0]["message"]
+
+        enforcement.validate_artifact(item, {"fields": {"functions": varied, "turn": turn}}, "C")
+
+
 def test_the_main_grader_is_told_which_approach_was_assigned(app):
     from app.coaching import _assigned_approach
 
