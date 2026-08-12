@@ -208,6 +208,10 @@
    in cold near-black, a mint three points off `--verdigris`, and a
    composition drawn for the state that has no score. */
 .diagnostic-lab {
+  /* Read by `.diagnostic-lab-body` below. Both values are declared here, on
+     one element, so the cascade picks between them; declaring the default on
+     the body itself would beat the inherited override every time. */
+  --lab-columns: minmax(0,1.42fr) minmax(230px,.58fr);
   margin: 20px 0;
   padding: clamp(20px,3vw,34px);
   display: grid;
@@ -226,8 +230,8 @@
    rather than being fixed to a side. The order is carried on a variable so
    that the rule reading it stays a single class: the stacking rule below, and
    anything in `mobile.css` after it, can still win with one selector. */
-.diagnostic-lab-body { --lab-columns: minmax(0,1.42fr) minmax(230px,.58fr); display: grid; grid-template-columns: var(--lab-columns); gap: clamp(18px,2.4vw,34px); align-items: start; }
 .diagnostic-lab.has-result { --lab-columns: minmax(230px,.58fr) minmax(0,1.42fr); }
+.diagnostic-lab-body { display: grid; grid-template-columns: var(--lab-columns); gap: clamp(18px,2.4vw,34px); align-items: start; }
 .diagnostic-copy p { max-width: var(--prose-measure); margin: 0; color: #d0c6ae; font-size: 13.5px; line-height: 1.6; }
 
 /* The result, set as the panel's own figure rather than boxed as a widget
