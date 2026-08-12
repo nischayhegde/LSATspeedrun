@@ -972,6 +972,31 @@ details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg
    Standing it down here also takes the covering hit-test off the two heaviest
    routes in the app. */
 .wide-scene-shell .economy-ledger { display: none; }
+
+/* No desktop equivalent of `--mobile-dock-clearance`, and this note is here so
+   the next person does not add one on the same reasoning I did.
+   
+   The phone token reserves a lane at the end of the page because the strip
+   spans the width and the page used to end flush underneath it, leaving the
+   last row covered at maximum scroll with nothing left to scroll. The obvious
+   move is to reserve the same lane for the desktop card. Measured at maximum
+   scroll, area of page text still under the card, before adding one:
+   
+     Story  0 at every width    Progress  0 at every width
+     Firm   0 at every width    Practice  12,366 at 1024 · 9,719 at 1440
+   
+   Three of the four already end clear, so the lane buys them nothing, and it
+   does not fix the fourth: what sits in Practice's corner is inside
+   `.run-queue-list`, a panel with its own scrollbar, and page padding cannot
+   move content that is not on the page's scroll. Adding the lane changed
+   Practice from 12,366 to 11,784 and gave every other desktop route 96px of
+   empty footer for it.
+   
+   The card yields there instead, which is what the yield rule is for. A lane
+   is the right answer for full-width chrome and the wrong one for a pane in a
+   corner: one reserves space at an edge the page owns, the other would have to
+   reserve it in the middle of the layout. */
+
 @media (prefers-reduced-motion: reduce) {
   /* No travel, but the card still has to get out of the way — the request was
      for less motion, not for the readout to keep covering the sentence. */
