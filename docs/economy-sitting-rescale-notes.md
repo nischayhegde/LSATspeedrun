@@ -458,6 +458,22 @@ of the review-share knob was calibrated against that, which is to say against a
 student who cannot exist. An instrument that agrees with whatever it is pointed
 at is the recurring hazard in this area of the code.
 
+### One thing this broke in the interface, and the smallest correct fix
+
+The Practice lobby promised a number: *"5 review items included."* The client
+computed it as `Math.min(5, dueReviews)` — the ten-question run's fixed half,
+written down a second time on the client, and so already wrong by two the moment
+a run became six questions. It is now not derivable there at all, because how
+much of a run is review is read off the student's queue and a reading case
+carries whichever of its passage's questions happened to be due.
+
+It could be served, the way `session_size` already is. It is not, because it
+would cost `sequencing_profile`'s two queries on every load of a hot endpoint to
+produce a number that a reading case would then make wrong anyway. The copy says
+*"Some will be repairs from your queue"* instead, and the Help panel gains one
+clause explaining that the further behind the queue gets the more of a run it
+takes back — which is now true, and is the only part of this a student needs.
+
 ### The seam left open for question difficulty
 
 Every question in the bank is difficulty 3 and nothing in the adaptive path
@@ -594,7 +610,7 @@ backend/tests/{test_flow,test_progress,test_game_catalog}.py   variable run leng
 backend/.env.example                           stops pinning 10
 deploy/ec2/cloudformation.yaml                 stops pinning 10 (one deleted line)
 frontend/src/api.ts                            session_size on two response types
-frontend/src/pages/{cases,dashboard}-page.tsx  copy reads the served size
+frontend/src/pages/{cases,dashboard}-page.tsx  copy reads the served size; stops promising a repair count
 frontend/src/guided-tour.tsx                   three sentences, numbers and the reading case
 tools/audit/rc_reachability_probe.py           new; per-cohort personalisation and per-slot review rates
 ```
