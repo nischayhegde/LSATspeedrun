@@ -48,6 +48,7 @@ import unicodedata
 from flask import current_app
 
 from .models import Attempt, Question
+from .passage_structure import paragraphs_from_offsets
 
 
 # Bumped whenever a gate's required operations change. Attempts carry it so an
@@ -204,6 +205,14 @@ def split_sentences(text: str | None) -> list[str]:
 
 
 def split_paragraphs(text: str | None) -> list[str]:
+    """The parts of a text that carries its own breaks.
+
+    Kept for stimuli and for any passage stored without a segmentation. It is not
+    the path Reading Comprehension takes any more: no passage in this bank has a
+    newline in it, so this returned the whole passage as one unit on all 2,366
+    Reading Comprehension questions, and `passage_parts` below reads the
+    boundaries `passage_structure` derived instead.
+    """
     cleaned = (text or "").strip()
     if not cleaned:
         return []
@@ -212,6 +221,22 @@ def split_paragraphs(text: str | None) -> list[str]:
         return parts
     parts = [part.strip() for part in cleaned.split("\n") if part.strip()]
     return parts if len(parts) > 1 else [cleaned]
+
+
+def passage_parts(passage) -> list[str]:
+    """How a passage divides, preferring the segmentation stored on it.
+
+    A passage with offsets is divided by them. A passage without falls back to
+    whatever breaks its own text carries, which for this bank means one part —
+    the behaviour that shipped before the offsets existed, so a database that has
+    not been backfilled is degraded rather than broken.
+    """
+    if passage is None:
+        return []
+    stored = paragraphs_from_offsets(passage.canonical_text, passage.paragraph_offsets)
+    if len(stored) > 1:
+        return stored
+    return split_paragraphs(passage.canonical_text)
 
 
 # ---------------------------------------------------------------------------
@@ -710,19 +735,26 @@ GATES: dict[str, dict] = {
         kind="sequence_reveal",
         strength="strong",
         hides_choices=True,
-        instruction="The choices are hidden. Give each paragraph its job in three to twelve words, then they unlock.",
+        # "Part", not "paragraph", everywhere a student can read it. This bank
+        # stores no paragraph breaks and the derived boundaries are topical rather
+        # than authored — they find the region of a real break far better than
+        # chance and the exact sentence no better than chance — so naming them
+        # paragraphs would assert a structure the evidence does not support. What
+        # the technique is actually for survives the rename: a student still has to
+        # read for structure and say what each stretch of the passage is doing.
+        instruction="The choices are hidden. Give each part of the passage its job in three to twelve words, then they unlock.",
         confirm="Map built. Go back to the text for details.",
         fields=(
             _segment_notes(
                 "notes",
-                "What is each paragraph doing?",
+                "What is each part of the passage doing?",
                 source="paragraphs",
                 min_words=3,
                 max_words=12,
                 help="Its job, not its contents. You are building an index, not a summary.",
-                length_message="Paragraph {index} needs three to twelve words. You have {count}.",
-                copy_message="Paragraph {index} is the paragraph's own sentence. Say its job in your words.",
-                duplicate_message="Paragraphs {index} and {other} have the same note. They are doing different jobs.",
+                length_message="Part {index} needs three to twelve words. You have {count}.",
+                copy_message="Part {index} is the passage's own sentence. Say its job in your words.",
+                duplicate_message="Parts {index} and {other} have the same note. They are doing different jobs.",
             ),
         ),
     ),
@@ -760,21 +792,24 @@ GATES: dict[str, dict] = {
         kind="annotate_source",
         strength="moderate",
         weakness=(
-            "The per-paragraph function is a dropdown, and a plausible pattern can be guessed from paragraph "
-            "position alone. Only the free-text turn field forces the student back into the passage."
+            "The per-part function is a dropdown, and a plausible pattern can be guessed from position "
+            "alone. Only the free-text turn field forces the student back into the passage. The parts "
+            "themselves are derived by lexical cohesion rather than authored, so a boundary can fall a "
+            "sentence early or late; what the field asks for survives that, but the divisions are the "
+            "application's reading of the passage and not the writer's."
         ),
         hides_choices=False,
-        instruction="Give each paragraph a function, then say what changes at the turn.",
+        instruction="Give each part of the passage a function, then say what changes at the turn.",
         confirm="Structure labelled. Use it to predict the purpose answers.",
         fields=(
             _segment_label(
                 "functions",
-                "What is each paragraph for?",
+                "What is each part of the passage for?",
                 source="paragraphs",
                 options=("Introduces", "Supports", "Complicates", "Counters", "Illustrates", "Concludes"),
                 not_all_same=True,
-                missing_message="Every paragraph gets a function. {count} left.",
-                variety_message="Every paragraph cannot be doing the same job. Read for the change.",
+                missing_message="Every part gets a function. {count} left.",
+                variety_message="Every part cannot be doing the same job. Read for the change.",
             ),
             _text(
                 "turn",
@@ -895,8 +930,8 @@ GATES: dict[str, dict] = {
 
 def _passage_sentences(question: Question) -> list[str]:
     lines: list[str] = []
-    for paragraph in split_paragraphs(question.passage.canonical_text if question.passage else None):
-        lines.extend(split_sentences(paragraph))
+    for part in passage_parts(question.passage):
+        lines.extend(split_sentences(part))
     return lines
 
 
@@ -904,7 +939,7 @@ def _sources(question: Question) -> dict[str, list[str]]:
     passage_text = question.passage.canonical_text if question.passage else ""
     return {
         "stimulus": split_sentences(question.stimulus or passage_text),
-        "paragraphs": split_paragraphs(passage_text or question.stimulus),
+        "paragraphs": passage_parts(question.passage) or split_paragraphs(question.stimulus),
         "proof_lines": _passage_sentences(question) or split_sentences(question.stimulus),
     }
 
@@ -1158,6 +1193,10 @@ You are not grading the answer and you cannot see whether it was right. You are 
 
 Rate only this: does the artifact do the operation the approach asked for, on this question?
 
+Where the student annotated numbered pieces of text, those pieces are supplied as a numbered object — `passage_parts` for the parts of a passage, `passage_lines` for its sentences, `stimulus_sentences` for a stimulus — listed exactly as the student saw them. An artifact keyed by number is keyed by those numbers: the entry under "0" is about item 0. Judge each entry against the piece it is keyed to.
+
+The parts of a passage were derived by this application, not marked by the passage's author, so treat their boundaries as approximate. Never fault a student for a division they did not choose.
+
 - 0.0 to 0.3: it does not engage with this question at all.
 - 0.4 to 0.6: it engages, but it does the operation loosely or partially.
 - 0.7 to 1.0: it does the operation the approach named.
@@ -1165,6 +1204,57 @@ Rate only this: does the artifact do the operation the approach asked for, on th
 Formulaic phrasing, textbook wording, and plainly imitating a worked example are all fine and are never defects. Beginners have not developed a voice yet. Rate what they did, not how it reads. When you are torn, rate higher.
 
 Return exactly: {"quality": number between 0 and 1, "note": one short sentence for the student}"""
+
+
+# What each annotatable source is called in the artifact-review payload. Named
+# after the source rather than after the field, so a gate that adds a second field
+# on the same text does not invent a second name for it.
+_ARTIFACT_SOURCE_KEYS = {
+    "paragraphs": "passage_parts",
+    "proof_lines": "passage_lines",
+    "stimulus": "stimulus_sentences",
+}
+
+
+def _artifact_question_data(question: Question, definition: dict) -> dict:
+    """The text the artifact has to be judged against, including the passage.
+
+    This used to be `section`, `stimulus` and `stem`, which on Reading
+    Comprehension meant `stimulus: null` and no passage at all: the model was
+    asked how well a map of a passage mapped it, was shown neither the passage nor
+    the segmentation, and returned a confident number that went into the student's
+    debrief. `stimulus` is null on all 2,366 Reading Comprehension questions and
+    all six Reading Comprehension approaches are gated, so that was the whole
+    section.
+
+    Sending the raw passage alone would not have fixed it. A `passage_map`
+    artifact is `{"0": "...", "1": "..."}`, keyed by part index, and a model given
+    3,000 unbroken characters cannot tell which stretch note "0" was written
+    about. So what goes out is the segmentation the student actually annotated,
+    numbered the same way the client numbered it, which is the only form in which
+    the keys mean anything.
+
+    The passage is sent whole only when no field is sourced from it, since
+    `paragraphs` and `proof_lines` between them already carry every word — one
+    copy of a 3,000-character passage per rating rather than two, on a call that
+    exists to add a sentence to a debrief.
+    """
+    data = {
+        "section": question.section,
+        "stimulus": question.stimulus,
+        "stem": question.stem,
+    }
+    sources = _sources(question)
+    annotated = {
+        field["source"]
+        for field in definition["fields"]
+        if field["kind"] in {"segment_pick", "segment_label", "segment_notes"}
+    }
+    for source in sorted(annotated):
+        data[_ARTIFACT_SOURCE_KEYS[source]] = dict(enumerate(sources.get(source, [])))
+    if question.passage and not annotated & {"paragraphs", "proof_lines"}:
+        data["passage"] = question.passage.canonical_text
+    return data
 
 
 def review_artifact(attempt) -> float | None:
@@ -1199,11 +1289,7 @@ def review_artifact(attempt) -> float | None:
             "instruction": definition["instruction"],
             "required_operations": [field["label"] for field in definition["fields"]],
         },
-        "question": {
-            "section": question.section,
-            "stimulus": question.stimulus,
-            "stem": question.stem,
-        },
+        "question": _artifact_question_data(question, definition),
         "student_artifact": artifact,
     }
     try:
