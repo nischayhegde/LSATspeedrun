@@ -206,13 +206,33 @@ export type TracesFigure = {
   baselineLabel: string
 }
 
-/** Slide 10 — the catalogue, the one method handed over, and whether it worked. */
+/**
+ * Slide 10 — the card the app hands you inside a question, and the record that
+ * decides whether it stays.
+ *
+ * Rebuilt twice. The first version was a fan of fourteen cards over a greeked
+ * question; the second laid the whole catalogue, the method and the verdict out
+ * as three columns, and the founder's note on that one was *"way too much text
+ * and clutter, not aesthetic, no dynamic animations"*. He was right about the
+ * count: it carried seven blocks — headline, deck sentence, fourteen names,
+ * five triggers, a named method, three steps, two numbers, a qualifier and two
+ * footer claims — for one idea.
+ *
+ * The idea is a mechanism with two ends, so the figure now draws exactly two
+ * objects and they are both the product's: the `strategy-tip` card from
+ * `frontend/src/case-flow.tsx` as it appears mid-question, and the WITH IT /
+ * WITHOUT IT tiles from the dashboard's Approaches panel in
+ * `frontend/src/strategy-sections.tsx`. The catalogue is a count in a chip. See
+ * `method-lab.tsx` for what each field has to match.
+ */
 export type MethodLabFigure = {
   kind: 'method-lab'
-  /** The whole catalogue, in the app's own order. Drawn in full; none of it leaves. */
-  methods: string[]
-  /** Which one this question handed over. Index into `methods`. */
-  keep: number
+  /**
+   * How many approaches the app ships. Printed as a chip, not enumerated —
+   * fourteen names on screen is a list nobody reads and a count the room can
+   * check in one glance.
+   */
+  catalogSize: number
   /**
    * The card the student is actually given. Every string here is the app's own
    * copy from `backend/app/strategies.py` — this figure must not paraphrase a
@@ -224,9 +244,30 @@ export type MethodLabFigure = {
     trigger: string
     /** The three things it asks for, in order. */
     steps: string[]
+    /** The button the student presses to take it. The app's own label. */
+    take: string
+    /** The one they press to refuse. Drawn unpressed, because the arm matters. */
+    refuse: string
   }
-  /** The verdict bars: this student, prompted vs. their own unprompted attempts. */
-  lift: { prompted: number; baseline: number; note: string }
+  /**
+   * The two arms of this student's own trial, as *counts*.
+   *
+   * Counts and not percentages, and this is load-bearing rather than a style
+   * choice. `backend/app/strategies.py` sets `PERCENTAGE_DISPLAY_MIN_SAMPLE =
+   * 30` and prints `13/16` rather than `81%` below it, on the stated grounds
+   * that "a control sample of 4 can only ever read 0/25/50/75/100%, so any
+   * whole-point percentage at this scale is fiction". A slide that prints a
+   * percentage the product itself refuses to print is a slide that loses an
+   * argument with anyone who opens the app.
+   *
+   * `of` is the arm's size, `hit` the number correct. The bars are drawn from
+   * the ratio, so the comparison is still instant; only the printed figure is
+   * the honest one.
+   */
+  trial: {
+    with: { label: string; hit: number; of: number }
+    without: { label: string; hit: number; of: number }
+  }
 }
 
 /** Slide 11 — the per-question ring that completes, and the full-form ring that does not. */

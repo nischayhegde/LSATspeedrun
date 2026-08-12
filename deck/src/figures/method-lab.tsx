@@ -2,186 +2,158 @@ import type { MethodLabFigure } from './types'
 import { pct, usePhase, vars, type FigureBody } from './kit'
 
 /**
- * SLIDE 10 — `method-lab`. The catalogue, the one method handed over, and the
- * measurement that decides whether it stays.
+ * SLIDE 10 — `method-lab`. The card the app hands you inside a question, and
+ * the record that decides whether it stays.
  *
- * ## What this replaced, and why
+ * ## The complaint this answers
  *
- * This slide used to be a fan of fourteen cards that swept, fell away, and left
- * one card docked against a *greeked question* — a bordered box of grey rules
- * with A–E down the side. Two things were wrong with it, and both are on the
- * founders' list.
- *
- * The first is that a column of grey bars is the universal drawing of a loading
- * skeleton, and structure does not rescue it. The previous pass added the
- * letters on the reasoning that "a column of bars is a component that has not
- * loaded, and the same column with A–E down its left edge is a multiple-choice
- * question". On a projector it is not. It is a component that has not loaded,
- * with letters. The only reliable way to stop a box reading as a placeholder is
- * to put real words in it.
- *
- * The second is that the fan's *resting* state was almost empty. Thirteen cards
- * fall away 430ms in, so for the remaining twenty seconds of an eleven-second
- * slide — and in every screenshot, and for anyone who looked up late — the
- * frame held one small tab reading "Prephrase", a skeleton, and two bars. The
- * slide's own fragment claimed fourteen methods; the slide showed one. A figure
- * has to be judged at rest, because at rest is where the room reads it.
+ * *"Way too much text on this slide and clutter, and not aesthetic or using
+ * dynamic animations at all."* The count was the substance of it. The previous
+ * arrangement put nine things on one slide for one idea: a two-line headline, a
+ * two-line deck sentence, fourteen catalogue names in two columns, a five-item
+ * trigger list, a method name, three numbered steps, two percentages with bars,
+ * a small-print qualifier, and two footer claims. Every one of them was
+ * defensible on its own and together they were a page rather than a slide.
  *
  * ## What it draws now
  *
- * The catalogue, legibly, all fourteen of it — so "fourteen in the catalog" is
- * a thing the audience can see rather than a thing they are told. Then the one
- * that was handed over on this question, opened out beside it as the card the
- * student actually gets: the trigger that fired it and the three steps it asks
- * for, in the app's own words. Then, under a rule, the two accuracies that
- * decide whether it survives.
+ * The idea — *a method is handed to you at the moment you need it, and your own
+ * record decides whether it stays* — is a mechanism with two ends, so the
+ * figure is two objects and nothing else. Both are the product's, drawn as the
+ * product draws them, which is the other half of the founder's note: he asked
+ * for the app's visual language in place of diagrams.
  *
- * Left to right that is catalogue, method, verdict, which is the sentence the
- * slide is making. Nothing on it is greeked and nothing is a placeholder: every
- * string comes from the registry, and the registry took them from
- * `backend/app/strategies.py`.
+ *   - **Left, the tip card.** `frontend/src/case-flow.tsx` renders a
+ *     `.strategy-tip` section mid-question: a `PARTNER TIP` rule, the method's
+ *     name, its three steps numbered by a counter, and two buttons — *Use it*
+ *     and *Skip this one*. That is what a student sees at the moment of need,
+ *     and it is what is on the screen in the live demo four slides later, so
+ *     the room recognises it when it gets there.
+ *   - **Right, the record.** `frontend/src/strategy-sections.tsx` renders the
+ *     dashboard's comparison as `WITH IT` and `WITHOUT IT` tiles under an
+ *     `APPROACHES` heading. Same two tiles here, same order, same names.
+ *
+ * The catalogue is a chip reading `1 of 14 approaches` instead of fourteen
+ * names. It was the largest block on the slide and it was the least argument:
+ * nobody reads a list of method names off a projector, and the only fact in it
+ * — how many there are — survives at a tenth of the size.
+ *
+ * ## Why the record is drawn in counts
+ *
+ * The two numbers this slide used to print were `71%` and `58%`. They are not
+ * measurements of anything. They are the worked example in an internal design
+ * document — `docs/superpowers/specs/2026-07-27-strategy-flow-simplification-design.md`
+ * illustrates the copy format with *"You get 71% right with it and 58% right
+ * without it"* — and somewhere between that spec and this deck they were read
+ * as data.
+ *
+ * What the demo account actually holds for `prephrase` is in
+ * `backend/scripts/seed_demo.py`: sixteen prompted attempts with thirteen
+ * correct, seven control attempts with four. And the shipped product would not
+ * print those as percentages even though it could: `strategies.py` sets
+ * `PERCENTAGE_DISPLAY_MIN_SAMPLE = 30` and falls back to `13/16`, because "a
+ * control sample of 4 can only ever read 0/25/50/75/100%, so any whole-point
+ * percentage at this scale is fiction."
+ *
+ * So the figure prints the counts and sizes the bars from the ratio. The
+ * comparison is still read in one glance — that is the bar's job — and the
+ * number under it is one the room can check against the app. A pitch slide
+ * quoting a statistic the product itself refuses to display is the single
+ * cheapest way to lose a technical audience.
  *
  * ## The choreography
  *
- * The filter sweep survives, because the argument is that methods are *tested*
- * and a filter passing over the catalogue says so in one gesture. What changed
- * is where it ends: the thirteen dim rather than leave. A catalogue that empties
- * itself is a catalogue the audience can no longer count, and the honest claim
- * is that thirteen are still in rotation — they lost this question, not their
- * place in the app.
+ * Left to right, in the order the mechanism runs, and each beat is one object:
+ * the question is under way → the card arrives → its steps land → the student
+ * takes it → the take travels the rule into the record → the arm it landed in
+ * fills → the control fills against it. Seven beats inside 1.9s. The eye is
+ * never asked to choose where to look, which is what "leads the eye through the
+ * argument" means and what a figure that fades in all at once cannot do.
  */
 
 /**
- * Cumulative milliseconds: catalogue in, sweep across, verdict, card, bars.
+ * Cumulative milliseconds. Steps and bars stagger inside their own beats.
  *
- * Settled inside 700ms. The old fan ran 2.9s plus a 900ms tail, which is fine
- * when a slide is spoken to and wrong when it is arrowed past — a presenter at
- * speed caught it mid-scatter every time, and a scatter on its way somewhere
- * looks exactly like a scatter that is broken.
+ * Longer than the 620ms the three-column version ran to, and deliberately: that
+ * one had nothing to sequence, because three panes appearing in turn is three
+ * things appearing, not an argument unfolding. This is under two seconds
+ * against an eleven-second budget and the last beat is the one the speaker
+ * lands on.
  */
-const MARKS = [40, 200, 340, 470, 620] as const
+const MARKS = [40, 260, 520, 900, 1180, 1420, 1660] as const
 
-/** Down the columns rather than across the rows. */
-const COLUMNS = 2
+/** Between the three steps. Fast: they are one object arriving, not a list. */
+const STEP_STAGGER_MS = 90
 
 export function MethodLab({ spec, active, reduced }: FigureBody<MethodLabFigure>) {
   const phase = usePhase(active, reduced, MARKS)
-  const methods = spec.methods
-  const keep = Math.min(Math.max(spec.keep, 0), methods.length - 1)
+  const { handed, trial } = spec
 
-  // Percentages, so the bars stay comparable to each other rather than each
-  // filling its own track. A value over 1 is taken as already scaled.
-  const scale = Math.max(spec.lift.prompted, spec.lift.baseline) <= 1
-    ? 1
-    : Math.max(spec.lift.prompted, spec.lift.baseline)
-
-  const rows = Math.ceil(methods.length / COLUMNS)
+  const taken = phase >= 4
+  const rate = (arm: { hit: number; of: number }) => (arm.of > 0 ? arm.hit / arm.of : 0)
 
   return (
-    <div className="fig-ml" data-swept={phase >= 3 ? 'true' : 'false'}>
-      {/* ── the catalogue ──────────────────────────────────────────────── */}
-      <div className="fig-ml-catalog">
-        <p className="fig-ml-pane-head">
-          {/* Counted from the array rather than written down, because a
-              hand-written count beside a list is a caption that goes stale the
-              first time somebody adds a method. */}
-          <span>The catalog</span>
-          <b>{methods.length}</b>
-        </p>
+    <div className="fig-ml">
+      {/* ── the moment of need ───────────────────────────────────────────
+          The card does not appear out of nowhere; it appears *on a
+          question*. One line of the app's own trigger list, above the card
+          and in the pixel face the app uses for its own metadata, is the
+          whole of what "at the moment you need it" needs. */}
+      <p className="fig-ml-trigger" style={{ opacity: phase >= 1 ? 1 : 0 }}>
+        <span className="fig-ml-chip">1 of {spec.catalogSize} approaches</span>
+        {handed.trigger}
+      </p>
 
-        <ol className="fig-ml-catalog-list" style={vars({ '--fig-rows': String(rows) })}>
-          {methods.map((method, index) => (
-            <li
-              key={method}
-              className="fig-ml-method"
-              data-kept={index === keep ? 'true' : 'false'}
-              style={vars({
-                opacity: phase >= 1 ? 1 : 0,
-                // Down the column the eye is already travelling, 16ms a step,
-                // so the fourteenth is in place well before the sweep starts.
-                '--fig-delay': `${(index % rows) * 16 + Math.floor(index / rows) * 40}ms`,
-              })}
-            >
-              {method}
-            </li>
-          ))}
-        </ol>
-
-        {/* The filter: one pass, left to right, then gone — and gone from the
-            document, not merely transparent.
-            
-            A parked sweep is not free. This element is wider than its pane and
-            lives outside it at both ends of its travel, so as a permanent child
-            it added its own off-frame width to the scroll box for the whole
-            slide: 137px on the catalogue, and 250px on the figure back when it
-            was a child of the figure. Nothing shows it — the pane clips — but a
-            layout audit that asks "does anything here overflow its frame" can
-            no longer tell this apart from a real fault, and the next person to
-            run one wastes their afternoon the way this one did.
-            
-            Mounting it for the one phase it is visible means its travel has to
-            be a keyframe rather than a transition, since there is no previous
-            style to transition from on the frame it appears. */}
-        {phase === 2 ? <span className="fig-ml-sweep" /> : null}
-      </div>
-
-      {/* ── the one that was handed over ───────────────────────────────── */}
-      <div className="fig-ml-handed" style={{ opacity: phase >= 4 ? 1 : 0 }}>
-        <p className="fig-ml-pane-head">
-          <span>Handed over on</span>
-        </p>
-        <p className="fig-ml-trigger">{spec.handed.trigger}</p>
-        <h4 className="fig-ml-name">{spec.handed.name}</h4>
-        <ol className="fig-ml-steps">
-          {spec.handed.steps.map((step, index) => (
-            <li key={step} style={vars({ '--fig-delay': `${index * 70}ms`, opacity: phase >= 4 ? 1 : 0 })}>
+      {/* ── the card, as the app hands it ────────────────────────────── */}
+      <div className="fig-ml-tip" data-taken={taken ? 'true' : 'false'} style={{ opacity: phase >= 2 ? 1 : 0 }}>
+        <p className="fig-ml-tip-head">Partner tip</p>
+        <h4 className="fig-ml-tip-name">{handed.name}</h4>
+        <ol className="fig-ml-tip-steps">
+          {handed.steps.map((step, index) => (
+            <li key={step} style={vars({ opacity: phase >= 3 ? 1 : 0, '--fig-delay': `${index * STEP_STAGGER_MS}ms` })}>
               {step}
             </li>
           ))}
         </ol>
+        {/* Both buttons, and only one of them is pressed. Drawing the refusal
+            is not decoration: the control arm on the right is made of the
+            questions where a student pressed the other one, and a card with a
+            single button would leave the room wondering where "without it"
+            comes from. */}
+        <div className="fig-ml-tip-actions" style={{ opacity: phase >= 3 ? 1 : 0 }}>
+          <span className="fig-ml-tip-btn" data-pressed={taken ? 'true' : 'false'}>{handed.take}</span>
+          <span className="fig-ml-tip-btn" data-role="refuse">{handed.refuse}</span>
+        </div>
       </div>
 
-      {/* ── and whether it worked ──────────────────────────────────────── */}
-      <div className="fig-ml-lift" style={{ opacity: phase >= 5 ? 1 : 0 }}>
-        <p className="fig-ml-pane-head">
-          <span>Did it work</span>
-        </p>
+      {/* ── the press travels into the record ───────────────────────────
+          One rule, drawn left to right from the pressed button to the tile
+          it lands in. It is the only thing on the slide that moves between
+          the two objects, and it is what makes them one mechanism rather
+          than a before and an after set side by side. */}
+      <span className="fig-ml-wire" style={{ transform: `scaleX(${phase >= 5 ? 1 : 0})` }} />
+
+      {/* ── the record ─────────────────────────────────────────────────── */}
+      <div className="fig-ml-record" style={{ opacity: phase >= 5 ? 1 : 0 }}>
+        <p className="fig-ml-record-head">Approaches · what works for you</p>
         {[
-          { key: 'prompted', name: 'with the method', value: spec.lift.prompted },
-          { key: 'baseline', name: 'their own attempts without it', value: spec.lift.baseline },
-        ].map((row, index) => (
-          <div
-            className="fig-ml-lift-row"
-            key={row.key}
-            data-role={row.key}
-            style={vars({ '--fig-delay': `${index * 140}ms` })}
-          >
-            {/* The name leads, above the number, rather than sitting beside
-                it. Beside it, "their own attempts without it" had to share a
-                line with a 60px numeral inside a 410px column, so it wrapped
-                into the numeral's second line and the two collided. */}
-            <p className="fig-ml-lift-name">{row.name}</p>
-            <p className="fig-ml-lift-head">
-              <b className="fig-ml-lift-value">{formatLift(row.value)}</b>
-              <span className="fig-ml-lift-track">
-                <span
-                  className="fig-ml-lift-run"
-                  style={{ width: phase >= 5 ? pct(Math.max(row.value, 0) / scale) : '0%' }}
-                />
+          { key: 'with', arm: trial.with, at: 6 },
+          { key: 'without', arm: trial.without, at: 7 },
+        ].map(({ key, arm, at }) => (
+          <div className="fig-ml-arm" key={key} data-role={key}>
+            <p className="fig-ml-arm-name">{arm.label}</p>
+            <p className="fig-ml-arm-read">
+              {/* "13 of 16", not "13/16" and not "81%". The solidus is the
+                  app's, and it is right in a dashboard table and wrong at
+                  display size, where it reads as a date. */}
+              <b className="fig-ml-arm-count">{arm.hit} <i>of</i> {arm.of}</b>
+              <span className="fig-ml-arm-track">
+                <span className="fig-ml-arm-run" style={{ width: phase >= at ? pct(rate(arm)) : '0%' }} />
               </span>
             </p>
           </div>
         ))}
-        <p className="fig-ml-lift-note">{spec.lift.note}</p>
       </div>
     </div>
   )
-}
-
-/**
- * Accuracies arrive as fractions and are read out as percentages, which is how
- * the app's own Method Lab reports them. A value above 1 is already scaled.
- */
-function formatLift(value: number): string {
-  return value <= 1 ? `${Math.round(value * 100)}%` : value.toFixed(0)
 }

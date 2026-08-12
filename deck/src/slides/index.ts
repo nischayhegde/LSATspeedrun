@@ -803,7 +803,13 @@ export const SLIDES: readonly SlideSpec[] = [
     field: 'beige',
     eyebrow: 'Act III — Spiky POV 04',
     headline: 'Strategies get taught. They should get tested.',
-    deck: 'One method, handed to you at the moment you need it, kept only if your own data says it works.',
+    // Was: "One method, handed to you at the moment you need it, kept only if
+    // your own data says it works." Eighteen words over two lines, and the
+    // rebuilt figure now draws both halves of it — the card arriving on the
+    // question is the handing over, and the two arms beside it are the own
+    // data. What is left is the bridge between the headline and the picture,
+    // in one line.
+    deck: 'One method per question, and your own record decides if it stays.',
     // Two of the four fragments went when the figure was rebuilt, because the
     // rebuilt figure draws them. `14 in the catalog` is now the catalogue's own
     // heading, set against the fourteen names it counts, which is a better
@@ -820,56 +826,84 @@ export const SLIDES: readonly SlideSpec[] = [
     // inside a question — so "nobody prompts a method" would be false, while
     // "nobody measures whether it worked for this student" is the finding §4
     // actually supports across all seven products.
+    // `One per question` went into the deck line above. What is left is the
+    // deck's second competitive line, which uses the same device as the one on
+    // `pov-reasoning-is-the-work`: a bare sentence, arriving last, naming
+    // nobody.
     points: [
-      'One per question',
       'Nobody else measures whether it worked',
     ],
-    // The fourteen are the app's real catalog keys, in the app's own order.
+    // REBUILT, on the founder's note that this slide was "way too much text and
+    // clutter, not aesthetic, no dynamic animations." It carried nine blocks for
+    // one idea. It now carries the two ends of the mechanism and nothing else,
+    // both lifted from real product surfaces — see `method-lab.tsx`.
+    //
+    // WHAT CAME OFF THE SCREEN. The fourteen catalogue names are a chip reading
+    // `1 of 14 approaches`: nobody reads a list of method names off a
+    // projector, and the only fact in that list is its length.
     // `comparative_matrix` is in the catalog but unreachable today because the
     // dataset never marks comparative passages — say "fourteen in the catalog,
     // thirteen currently in rotation" if anyone presses, and never claim all
-    // fourteen are being trialed. The one handed over is `prephrase`, which is
-    // also the method staged on the live demo case.
+    // fourteen are being trialed.
     //
     // `handed` is `prephrase` as the app defines it in
-    // `backend/app/strategies.py`: the trigger is that strategy's `best_for`
-    // and the three steps are its `steps`, verbatim. They are quoted rather
-    // than written because the figure sets them as the card the student is
-    // handed, and a paraphrase of a real product string on a pitch slide is a
-    // thing somebody can walk into the app and catch.
+    // `backend/app/strategies.py`: `name` is that entry's `title`, `trigger` is
+    // its `best_for`, the three steps are its `steps`, and `take` / `refuse`
+    // are the two button labels in `frontend/src/case-flow.tsx`. All verbatim,
+    // because the figure sets them as the card the student is handed and a
+    // paraphrase of a real product string on a pitch slide is a thing somebody
+    // can walk into the app and catch.
+    //
+    // `trial` REPLACES A PAIR OF NUMBERS THAT WERE NOT MEASUREMENTS. This slide
+    // used to show `71%` with the method against `58%` without it. Neither
+    // figure exists anywhere in this repository as data. They are the worked
+    // example in an internal design document —
+    // `docs/superpowers/specs/2026-07-27-strategy-flow-simplification-design.md`
+    // illustrates the copy format with "You get 71% right with it and 58% right
+    // without it" — and they were read into the deck as findings.
+    //
+    // These are the demo account's real record for `prephrase`, straight off
+    // `STRATEGY_PLAN` in `backend/scripts/seed_demo.py`: 16 prompted attempts,
+    // 13 correct; 7 control attempts, 4 correct. They are counts and not
+    // percentages because the product refuses to print percentages here —
+    // `strategies.py` sets `PERCENTAGE_DISPLAY_MIN_SAMPLE = 30` and falls back
+    // to `13/16` on the grounds that a whole-point percentage at this sample is
+    // fiction. Do not "improve" these into 81% and 57%.
     figure: {
       kind: 'method-lab',
+      catalogSize: 14,
       handed: {
         name: 'Prephrase Before Choices',
-        trigger: 'assumption · inference · strengthen · weaken · point-at-issue',
+        trigger: 'fires on assumption · inference · strengthen · weaken · point-at-issue',
         steps: [
           'Name the question task',
           'Predict the needed effect',
           'Use choices to verify, not invent',
         ],
+        take: 'Use it',
+        refuse: 'Skip this one',
       },
-      methods: [
-        'Argument core',
-        'Prephrase',
-        'Negation test',
-        'Causal audit',
-        'Conditional chain',
-        'Flaw abstraction',
-        'Scope precision',
-        'Role map',
-        'Passage map',
-        'Viewpoint ledger',
-        'Paragraph function',
-        'Textual proof',
-        'Comparative matrix',
-        'Main point synthesis',
-      ],
-      keep: 1,
-      lift: { prompted: 0.71, baseline: 0.58, note: 'this student, prompted vs. their own unprompted attempts' },
+      trial: {
+        with: { label: 'with the method', hit: 13, of: 16 },
+        without: { label: 'their own attempts without it', hit: 4, of: 7 },
+      },
     },
+    // The credit carries what the small print under the old bars carried, and
+    // says the quiet part: these are running counts on one account, not a
+    // result. That is the app's own position — `strategies.py` never writes the
+    // word "confirmed" about a per-student contrast — and stating it is what
+    // makes the slide's competitive claim survive a hostile room.
+    credit: 'One student’s own record in the app · running counts, not a proven effect',
     notes:
       'Everyone sells strategies and leaves you with them. We prompt one method inside the question '
-      + 'and test it against your own unprompted attempts. Nobody else measures whether it worked.',
+      + 'and test it against your own unprompted attempts. Nobody else measures whether it worked.'
+      + ' ⟢ THE NUMBERS ARE COUNTS ON PURPOSE. Thirteen of sixteen with it, four of seven without, on the demo '
+      + 'account. If anyone asks why not a percentage: the product will not print one under thirty attempts an arm, '
+      + 'because at that size a percentage is noise with a decimal point. That refusal is the pitch. '
+      + '⟢ IF PRESSED ON SAMPLE — right, and that is the point of the mechanism rather than of this student: every '
+      + 'prompted question is randomised against a control arm of their own unprompted ones, so the estimate is '
+      + 'thin on day one and gets better every session. This account alone is twelve approaches over 166 measured '
+      + 'questions. Nobody else in the market has the event to attach a measurement to.',
     speaker: 'Alan',
     budgetSeconds: 11,
     scene: { id: 'none', framing: 'drift' },

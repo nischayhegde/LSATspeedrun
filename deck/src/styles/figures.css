@@ -1468,44 +1468,214 @@
 }
 
 /* ================================================================
-   10 · method-lab — the catalogue, the one handed over, the verdict
-   ================================================================ */
+   10 · method-lab — the app's own tip card, and the app's own record
+   ================================================================
+   Rebuilt with the figure, and the block it replaces was three
+   columns wide: a fourteen-name catalogue, a method pane and a
+   verdict pane, plus a filter sweep across the first of them. The
+   founder's note was clutter and no animation, and the column count
+   was most of the first half of that.
 
-/* Three panes across a band that is 1674 by 430 at 1920 — very wide and not at
-   all tall. That shape is the whole reason this is columns rather than a card
-   with things stacked under it: the previous arrangement put the trigger, the
-   name, three steps and two bars in one column, came to 508px, and lost its
-   last 78px inside `.figure-stage`, which clips. The bottom bar and the note
-   under it were simply not on the slide.
-   
-   Left to right the panes are catalogue, method, verdict, which is the sentence
-   the slide is making: here is everything we have, here is the one this
-   question handed over, here is whether it worked.
+   Two objects now, on the same 1674 by 430 band. Both are lifts of
+   real product surfaces — `.strategy-tip` from the case flow and the
+   `.strategy-comparison` tiles from the dashboard — because the slide
+   argues about something the app does and the app has already drawn
+   it. Nothing here invents a visual language for the mechanism.
 
-   `text-align: left` because the slide body is centred and three columns of
-   centred ragged text is the look of a page that has no grid. */
+   The grid is `card / wire / record`. The wire is a track rather than
+   a gap so that the rule between the two objects has somewhere
+   definite to be at every width, and so the two panes cannot drift
+   into each other at 1366. */
+
 .fig-ml {
   position: relative;
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-columns: 31fr 37fr 25fr;
-  column-gap: 3.2em;
-  align-items: start;
+  grid-template-columns: 46fr 7fr 47fr;
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  column-gap: 0;
   text-align: left;
-  overflow: hidden;
 }
 
-/* One heading treatment for all three panes, because three panes that label
-   themselves three different ways are three objects rather than one figure.
-   The rule under each runs the full width of its column, which is what makes
-   the columns read as columns without a single vertical line on the slide. */
-.fig-ml-pane-head {
+/* ---- the moment of need ---------------------------------------------- */
+
+/* One line across the whole band, above both objects. It was the card's
+   column only, which is 46% of 1674 and not enough for the app's trigger
+   list: the line wrapped to two, took 110px of a 470px band, and pushed
+   the card's own buttons off the bottom of the stage. Full width it sets
+   in one line at both viewports, and reading as a caption over the pair
+   is also truer — the trigger is the condition the whole mechanism runs
+   under, not a property of the card.
+
+   The app's trigger list, verbatim; the chip in front of it is all that
+   is left of the fourteen-name catalogue. */
+.fig-ml-trigger {
+  grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: .8em;
-  margin: 0 0 .8em;
+  flex-wrap: wrap;
+  gap: .9em;
+  margin: 0 0 1.1em;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  line-height: 1.4;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.fig-ml-chip {
+  flex: none;
+  padding: .25em .7em;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---- the card the app hands you -------------------------------------- */
+
+/* A real bordered card, because the product's is one and because the
+   thing being claimed is that this arrives *inside* something else. The
+   left rule is heavier than the other three: that is how `.strategy-tip`
+   is drawn in the app, and it is the detail that makes the shape
+   recognisable when the same card turns up in the live demo. */
+.fig-ml-tip {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: center;
+  padding: 1em 1.3em 1.1em;
+  border: 1px solid color-mix(in srgb, var(--on-field) 26%, transparent);
+  border-left: 3px solid var(--on-field);
+  background: color-mix(in srgb, var(--on-field) 4%, transparent);
+  transition:
+    opacity var(--mo-3) var(--ease-out),
+    border-color var(--mo-2) var(--ease-out),
+    background-color var(--mo-2) var(--ease-out);
+}
+
+/* The card firms up when the student takes it. A colour change and
+   nothing else — a card that moves on being pressed would pull the eye
+   back left at the exact moment the wire is taking it right. */
+.fig-ml-tip[data-taken='true'] {
+  border-color: color-mix(in srgb, var(--on-field) 52%, transparent);
+  background: color-mix(in srgb, var(--on-field) 8%, transparent);
+}
+
+.fig-ml-tip-head {
+  margin: 0 0 .5em;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+}
+
+.fig-ml-tip-name {
+  margin: 0 0 .7em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fig-lead);
+  line-height: 1.05;
+  letter-spacing: -.015em;
+  color: var(--on-field);
+}
+
+/* Numbered by the counter rather than by written digits, so the numerals
+   hang outside the text column and the three steps align on one edge. */
+.fig-ml-tip-steps {
+  margin: 0 0 .9em;
+  padding: 0;
+  list-style: none;
+  counter-reset: fig-ml-step;
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+}
+
+.fig-ml-tip-steps li {
+  counter-increment: fig-ml-step;
+  display: grid;
+  grid-template-columns: 1.5em 1fr;
+  align-items: baseline;
+  font-size: var(--fig-strong);
+  line-height: 1.28;
+  color: var(--on-field);
+  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+}
+
+.fig-ml-tip-steps li::before {
+  content: counter(fig-ml-step);
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  color: var(--on-field-dim);
+}
+
+.fig-ml-tip-actions {
+  display: flex;
+  align-items: stretch;
+  gap: .7em;
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.fig-ml-tip-btn {
+  padding: .4em 1em;
+  border: 1px solid color-mix(in srgb, var(--on-field) 40%, transparent);
+  font-size: var(--fig-label);
+  line-height: 1.2;
+  color: var(--on-field-dim);
+  transition:
+    background-color var(--mo-2) var(--ease-out),
+    color var(--mo-2) var(--ease-out),
+    border-color var(--mo-2) var(--ease-out);
+}
+
+/* Filled, not outlined, and it is the only filled control on the slide.
+   The press is the event the whole right-hand pane is downstream of. */
+.fig-ml-tip-btn[data-pressed='true'] {
+  border-color: var(--on-field);
+  background: var(--on-field);
+  color: var(--field);
+  font-weight: 600;
+}
+
+.fig-ml-tip-btn[data-role='refuse'] {
+  border-color: color-mix(in srgb, var(--on-field) 22%, transparent);
+  color: color-mix(in srgb, var(--on-field) 55%, transparent);
+}
+
+/* ---- the wire between them ------------------------------------------- */
+
+/* One hairline across the middle column, drawn left to right after the
+   press. Solid, because everything else horizontal on this slide is a
+   bar in a track; a dash here would read as a third kind of measurement.
+   No arrowhead — the direction is carried by the draw. */
+.fig-ml-wire {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  height: 0;
+  border-top: 1px solid color-mix(in srgb, var(--on-field) 45%, transparent);
+  transform-origin: left center;
+  transition: transform 420ms var(--ease-out);
+}
+
+/* ---- the record ------------------------------------------------------ */
+
+.fig-ml-record {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2em;
+  transition: opacity var(--mo-2) var(--ease-out);
+}
+
+.fig-ml-record-head {
+  margin: 0;
   padding-bottom: .45em;
   border-bottom: 1px solid color-mix(in srgb, currentColor 24%, transparent);
   font-family: var(--font-pixel);
@@ -1515,187 +1685,61 @@
   color: var(--on-field-dim);
 }
 
-.fig-ml-pane-head b {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-lead);
-  letter-spacing: 0;
-  line-height: 1;
-  color: var(--on-field);
-}
-
-/* ---- the catalogue --------------------------------------------------- */
-
-.fig-ml-catalog {
-  position: relative;
-  overflow: hidden;
-}
-
-/* Column-major, so the names read top to bottom in catalogue order rather than
-   zig-zagging across two columns. `grid-auto-flow: column` against an explicit
-   row count is what makes that a property of the layout rather than a
-   re-sorted array. */
-.fig-ml-catalog-list {
-  display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(var(--fig-rows), auto);
-  grid-auto-columns: 1fr;
-  column-gap: 1.1em;
-  row-gap: .3em;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.fig-ml-method {
-  font-size: var(--fig-note);
-  line-height: 1.3;
-  color: var(--on-field-dim);
-  transition:
-    opacity 200ms var(--ease-out) var(--fig-delay),
-    color 260ms var(--ease-out);
-}
-
-/* Thirteen go quiet; they do not leave. A catalogue that empties itself is a
-   catalogue the audience can no longer count, and the honest claim is that the
-   other thirteen are still in rotation — they lost this question, not their
-   place in the app. */
-.fig-ml[data-swept='true'] .fig-ml-method[data-kept='false'] {
-  color: color-mix(in srgb, currentColor 42%, transparent);
-}
-
-.fig-ml[data-swept='true'] .fig-ml-method[data-kept='true'] {
-  color: var(--on-field);
-  font-weight: 600;
-}
-
-/* The filter. Inside the catalogue pane, which is where it belongs — the
-   catalogue is the thing being filtered — and mounted only for the phase it
-   crosses, so that at rest it contributes nothing to the pane's scroll box.
-   See the note in `method-lab.tsx`. */
-.fig-ml-sweep {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -16%;
-  width: 22%;
-  opacity: .34;
-  background: linear-gradient(90deg, transparent, currentColor, transparent);
-  pointer-events: none;
-  animation: fig-ml-sweep 190ms linear both;
-}
-
-@keyframes fig-ml-sweep {
-  from { transform: translateX(0); }
-  to { transform: translateX(600%); }
-}
-
-/* ---- the one that was handed over ------------------------------------ */
-
-.fig-ml-handed {
-  transition: opacity 260ms var(--ease-out);
-}
-
-/* Why the method fired, above the method. This is the slide's "at the moment
-   you need it", and it is the app's own trigger list for `prephrase` rather
-   than a description of one. */
-.fig-ml-trigger {
-  margin: 0 0 .5em;
-  font-family: var(--font-pixel);
-  font-size: var(--fig-note);
-  line-height: 1.4;
-  letter-spacing: .01em;
-  color: var(--on-field-dim);
-}
-
-.fig-ml-name {
-  margin: 0 0 .6em;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-lead);
-  line-height: 1.05;
-  letter-spacing: -.015em;
-  color: var(--on-field);
-}
-
-/* The three steps, numbered by the counter rather than by written digits, so
-   the numerals stay out of the text column and the steps hang under each
-   other. */
-.fig-ml-steps {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: fig-ml-step;
+.fig-ml-arm {
   display: flex;
   flex-direction: column;
-  gap: .45em;
+  gap: .15em;
 }
 
-.fig-ml-steps li {
-  counter-increment: fig-ml-step;
-  display: grid;
-  grid-template-columns: 1.5em 1fr;
-  align-items: baseline;
-  font-size: var(--fig-strong);
-  line-height: 1.28;
-  color: var(--on-field);
-  transition: opacity 220ms var(--ease-out) var(--fig-delay);
-}
-
-.fig-ml-steps li::before {
-  content: counter(fig-ml-step);
-  font-family: var(--font-pixel);
-  font-size: var(--fig-note);
-  color: var(--on-field-dim);
-}
-
-/* ---- and whether it worked ------------------------------------------- */
-
-/* Its own pane, not a footnote under the method. This is the evidence for the
-   slide's competitive claim — "nobody else measures whether it worked" — and
-   under the steps it was a pair of bars in the gutter. */
-.fig-ml-lift {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1em;
-  transition: opacity 220ms var(--ease-out);
-}
-
-.fig-ml-lift-row {
-  display: flex;
-  flex-direction: column;
-  gap: .1em;
-}
-
-/* The numeral and its bar on one line, the bar taking whatever the numeral
-   leaves. Baseline-aligned rather than centred, so the bar sits on the
-   numeral's own baseline and the two read as one measurement. */
-.fig-ml-lift-head {
-  display: flex;
-  align-items: baseline;
-  gap: .55em;
-  margin: 0;
-}
-
-/* At display scale. These two numbers are the evidence for the last fragment's
-   claim; set as a pixel-font caption they were a footnote to a diagram of a
-   filter, which inverts the slide's priorities. */
-.fig-ml-lift-value {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--fig-num);
-  line-height: 1;
-  color: var(--on-field);
-}
-
-.fig-ml-lift-name {
+.fig-ml-arm-name {
   margin: 0;
   font-size: var(--fig-label);
   line-height: 1.25;
   color: var(--on-field-dim);
 }
 
-.fig-ml-lift-track {
+/* The count and its bar on one line, baseline-aligned, the bar taking
+   whatever the count leaves. */
+.fig-ml-arm-read {
+  display: flex;
+  align-items: baseline;
+  gap: .7em;
+  margin: 0;
+}
+
+/* Display scale. These two are the evidence for the slide's competitive
+   claim and they are allowed to be the largest thing in the figure.
+
+   `of` rather than a solidus, set smaller and lighter so the two
+   numerals stay the figures being compared. A slide reading "13/16" at
+   this size reads as a date before it reads as a proportion. */
+.fig-ml-arm-count {
+  flex: none;
+  /* The two counts are different widths — "13 of 16" against "4 of 7" —
+     and without a floor under them the two tracks begin at different x
+     and end at the same one. That is not a cosmetic problem: the arms
+     are then drawn on different scales, so 81% of a short track came out
+     *shorter* than it should be against 57% of a long one, and the
+     figure understated its own comparison. One width, both tracks
+     aligned at both ends, and the bars are finally to scale. */
+  min-width: 3.4em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fig-num);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--on-field);
+}
+
+.fig-ml-arm-count i {
+  font-family: var(--font-body);
+  font-style: normal;
+  font-weight: 400;
+  font-size: .42em;
+  color: var(--on-field-dim);
+}
+
+.fig-ml-arm-track {
   display: block;
   flex: 1;
   min-width: 0;
@@ -1703,26 +1747,18 @@
   box-shadow: inset 0 0 0 1px var(--on-field-dim);
 }
 
-.fig-ml-lift-run {
+.fig-ml-arm-run {
   display: block;
   height: 100%;
   background: currentColor;
-  transition: width 300ms var(--ease-out) var(--fig-delay);
+  transition: width 520ms var(--ease-out);
 }
 
-/* The control, at half weight. `--on-field-dim` is a hairline colour and over a
-   solid bar it read as an empty track — which put the comparison's second
-   number on screen with nothing to compare against. */
-.fig-ml-lift-row[data-role='baseline'] .fig-ml-lift-run {
-  background: color-mix(in srgb, currentColor 40%, transparent);
-}
-
-.fig-ml-lift-note {
-  margin: .2em 0 0;
-  font-family: var(--font-pixel);
-  font-size: var(--fig-note);
-  line-height: 1.3;
-  color: var(--on-field-dim);
+/* The control arm at part weight. `--on-field-dim` is a hairline colour
+   and over a solid bar it reads as an empty track, which would put the
+   comparison's second number on screen with nothing under it. */
+.fig-ml-arm[data-role='without'] .fig-ml-arm-run {
+  background: color-mix(in srgb, currentColor 38%, transparent);
 }
 
 /* ================================================================
