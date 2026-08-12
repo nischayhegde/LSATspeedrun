@@ -123,14 +123,17 @@ FALLBACK_SECONDS_PER_CASE = 210.5
 #
 # The blend above is the *catalog* mix. It is not the mix the selector serves,
 # and the comment two paragraphs up claiming it is "blended over the section mix
-# the selector actually serves" was never true. Selection draws indivisible
-# blocks, and the bank has 4,520 single-question Logical Reasoning blocks against
-# 349 Reading Comprehension passages, so a shuffled draw is overwhelmingly LR. A
-# ten-question run measures 17.8% RC, not 34%, and 152.7 s/q, not 210.5.
-# Reproduce with `scripts/measure_served_section_mix.py`.
+# the selector actually serves" was never true. It is much closer to true now
+# than it was: practice serves Reading Comprehension as whole-passage cases, a
+# third of sittings, so the served mix is 33.7% RC against the catalog's 34.4%
+# (`tools/audit/rc_reachability_probe.py`, warmed cohort). What is still wrong is
+# the per-question figure, because a passage served whole amortises its reading —
+# only the first question is charged 330s and the rest are charged 135s, which is
+# *cheaper* than a Logical Reasoning question's 150s. So the right blend is not
+# .66 * 150 + .34 * 328 but 154.5, measured.
 #
-# So every hour this script prints is about 38% high, and the campaign it calls
-# 122 hours is nearer 88 hours of question time.
+# So every hour this script prints is about 36% high, and the campaign it calls
+# 122 hours is nearer 90 hours of question time.
 #
 # It is left alone anyway, and the reason is not inertia. 210.5s is the constant
 # the shipped pace band was tuned against: TIER_EFFORT_BASE was moved 5.16 ->
@@ -145,7 +148,14 @@ FALLBACK_SECONDS_PER_CASE = 210.5
 # What follows from that: this script's hours are a *unit of comparison*, not a
 # claim about a clock. Two curves measured in it can be compared to each other.
 # Neither can be quoted to a player.
-SERVED_SECONDS_PER_CASE = 152.7
+#
+# The measured figure, updated when the reading case arrived. It was 152.7 when
+# the selector served 17.8% Reading Comprehension and it is 154.5 now that it
+# serves 33.7%, which is the entire wall-clock cost of nearly doubling the share
+# of the slower section: 1.2%. Measure it with
+# `tools/audit/rc_reachability_probe.py`, which reads `target_time_seconds` off
+# real runs rather than modelling it.
+SERVED_SECONDS_PER_CASE = 154.5
 
 
 def seconds_per_case(db_path: Path = DEFAULT_DB) -> tuple[float, str]:

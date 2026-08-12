@@ -4149,10 +4149,16 @@ def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
     Front-loading is what the old `repairs + fresh` concatenation did, and it
     leaks the answer key: "the first three are the ones you got wrong" is a cue
     the student reads before the stem. See `app/scheduling.interleave`.
+
+    Interleaving is a property of the argument case, so that is the shape asked
+    for. A reading case is one passage and has nothing to interleave: its review
+    is whichever of the passage's own questions were due, and they arrive in the
+    passage's order because that is the order the passage reads in.
     """
     client = app.test_client()
     headers = login(client, "folded-repairs@example.test")
     create_game(client, headers)
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
     with app.app_context():
         user = User.query.filter_by(email="folded-repairs@example.test").one()
         for question in Question.query.order_by(Question.id).limit(5).all():

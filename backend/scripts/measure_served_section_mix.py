@@ -1,16 +1,28 @@
-"""Measure what a practice run actually serves, and what it therefore costs in time.
+"""Measure what the general filler serves, and what it therefore costs in time.
 
-This is the evidence behind two numbers that everything else in the economy
-leans on, and neither of them is what it looks like from the catalog.
+**Superseded in part; read this first.** This script models one code path,
+`_fill_blocks` over a mixed pool, and that path is no longer how Reading
+Comprehension reaches a student. Practice now builds one of two case shapes: an
+argument case, which is Logical Reasoning only, and a reading case, which is one
+whole passage. The mixed fill this measures is what a type-filtered drill uses,
+and it is the *reason* the reading case exists -- the tables below are the
+evidence that no allowance over a mixed pool was ever going to be enough.
 
-**What the run serves.** A Reading Comprehension question is not a question on
-its own -- the passage is most of the work -- so passage-mates form one
-indivisible block (`services._passage_blocks`). A run is filled with whole
+For what a student is actually served, use `tools/audit/rc_reachability_probe.py`,
+which builds real runs through `create_study_session` and reads their recorded
+pace budgets rather than modelling them. Measured there: 33.7% Reading
+Comprehension and 154.5 s/question.
+
+**What the mixed fill serves.** A Reading Comprehension question is not a
+question on its own -- the passage is most of the work -- so passage-mates form
+one indivisible block (`services._passage_blocks`). A run is filled with whole
 blocks, so a run that may never exceed its target can only ever serve a passage
 *shorter* than the target. RC passages in this bank run 4 to 16 questions with a
 median of 7. At the ten-question run this app used to serve that cost almost
 nothing; at six it strands most of Reading Comprehension, which is why
-`services.PASSAGE_OVERSHOOT_ALLOWANCE` exists.
+`services.PASSAGE_OVERSHOOT_ALLOWANCE` exists -- and why, on its own, the
+allowance was not enough. Widening the crack a passage has to squeeze through
+still leaves it squeezing.
 
 **What a question costs in wall-clock time.** `services._target_time_seconds`
 budgets 150s for a Logical Reasoning question, 330s for the first question on an
@@ -23,9 +35,9 @@ shuffled draw is overwhelmingly LR. Measured, a ten-question run serves about
 
 That gap matters beyond this script: `simulate_economy_curve.py` converts played
 cases to hours at 210.5s, which is `.66 * 150 + .34 * 328` -- the *catalog* mix.
-Against the served mix the figure is about 152.6s, so every hour that script
-quotes is roughly 38% high. See its docstring; the constant is deliberately not
-changed here, because it is the figure the shipped pace band was tuned against
+Against what is really served the figure is 154.5s, so every hour that script
+quotes is roughly 36% high. See its docstring; the constant is deliberately not
+changed there, because it is the figure the shipped pace band was tuned against
 and moving it would repace the whole ladder rather than measure it.
 
 Reads the question bank from disk, so it needs no database and no seeded app.

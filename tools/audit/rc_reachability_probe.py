@@ -259,6 +259,7 @@ def probe_cases(user: User, cases: int, size: int) -> dict:
     runs_with_rc = 0
     review_questions = 0
     rc_review = 0
+    seconds = 0
     lengths = []
     seen_before = {
         question_id
@@ -286,6 +287,12 @@ def probe_cases(user: User, cases: int, size: int) -> dict:
         total_questions += len(items)
         runs_with_rc += rc > 0
         lengths.append(len(items))
+        # The pace budget the run was actually written with, rather than a
+        # model of it. `_target_time_seconds` charges 330s for the first
+        # question on a passage, 135s for each one after it and 150s for a
+        # Logical Reasoning question, so this is the whole of what the section
+        # mix costs in wall-clock time.
+        seconds += sum(item.target_time_seconds for item in items)
         for item in items:
             if item.question_id in seen_before:
                 review_questions += 1
@@ -301,6 +308,8 @@ def probe_cases(user: User, cases: int, size: int) -> dict:
         "longest": max(lengths),
         "review_per_run": review_questions / cases,
         "rc_review_share": rc_review / max(1, review_questions),
+        "seconds_per_question": seconds / max(1, total_questions),
+        "minutes_per_run": seconds / cases / 60,
     }
 
 
@@ -331,7 +340,7 @@ def main() -> int:
         print(f"\n\n{args.cases} runs of size {args.size} built through create_study_session\n")
         head = (
             f"{'cohort':<22} {'RC share':>9} {'runs with any RC':>18} {'q/run':>8} "
-            f"{'range':>8} {'rev/run':>8} {'RC of rev':>10}"
+            f"{'range':>8} {'rev/run':>8} {'RC of rev':>10} {'s/q':>7} {'min/run':>8}"
         )
         print(head)
         print("-" * len(head))
@@ -355,7 +364,8 @@ def main() -> int:
                 f"{label:<22} {row['rc_share']:>8.1%} "
                 f"{f'{row['runs_with_rc']} of {row['cases']}':>18} {row['mean_length']:>8.2f} "
                 f"{f'{row['shortest']}-{row['longest']}':>8} {row['review_per_run']:>8.2f} "
-                f"{row['rc_review_share']:>9.1%}"
+                f"{row['rc_review_share']:>9.1%} {row['seconds_per_question']:>7.1f} "
+                f"{row['minutes_per_run']:>8.1f}"
             )
         print(
             f"\ntarget is the bank's own {rc_share:.1%}; see services.RC_CASE_SHARE for why "
