@@ -42,6 +42,7 @@ from app.models import (
 )
 from app.seed import SOURCE_PREFIX
 from app.services import create_study_session
+from app.type_focus import FocusType
 
 
 LAYER = "weak_type_targeting"
@@ -326,7 +327,10 @@ def _stock_bank() -> None:
 def _runs_with_focus(app, monkeypatch, *, holdback: float, runs: int) -> tuple[list[str], list[str]]:
     """Practice runs for students the rolling signal calls weak at one type."""
     app.config["ADAPTIVE_LAYERS"] = {LAYER: {"holdback": holdback}}
-    monkeypatch.setattr("app.services.rolling_focus", lambda _user_id: ["Flaw"])
+    monkeypatch.setattr(
+        "app.services.rolling_focus",
+        lambda _user_id: [FocusType("Logical Reasoning", "Flaw")],
+    )
     served: list[str] = []
     users: list[str] = []
     for index in range(runs):
@@ -768,7 +772,11 @@ def test_the_draw_writes_down_the_signal_because_it_will_not_be_true_later(app, 
         users, _served = _runs_with_focus(app, monkeypatch, holdback=0.0, runs=1)
 
         row = LayerAssignment.query.filter_by(subject_id=users[0]).one()
-        assert row.signal == "Flaw"
+        # Section-qualified, because "Flaw" alone did not say which section's
+        # Flaw and four type names exist in both. The whole point of the column
+        # is that the signal is unrecoverable later, so a token that cannot be
+        # read back to one weakness fails at the one job it has.
+        assert row.signal == "Logical Reasoning:Flaw"
         assert LAYERS[LAYER].restricted_by_signal is True
 
 

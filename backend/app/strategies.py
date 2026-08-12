@@ -1150,10 +1150,11 @@ def assign_strategy_trial(
     only such surface, that reason is gone, and trialling every question makes
     the prompt-versus-control comparison converge about four times faster.
 
-    `focus_types` are the question types the last mega-litigation marked weak.
-    On those, coverage runs longer before the trial starts exploiting its
-    leader: a wrong early winner is most costly exactly where the student is
-    weakest, and that is where the extra exploration buys the most.
+    `focus_types` are the `type_focus.FocusType` pairs marked weak, each naming
+    the section its weakness was measured in. On those, coverage runs longer
+    before the trial starts exploiting its leader: a wrong early winner is most
+    costly exactly where the student is weakest, and that is where the extra
+    exploration buys the most.
 
     Intention-to-treat, not `strategy_applied`. Both the coverage count and the
     exploit-phase posterior below are built from every attempt *assigned* to
@@ -1209,8 +1210,16 @@ def assign_strategy_trial(
     seed = f"{user_id}:{question.id}:{position}:{exposure}"
     minimum = min((len(grouped[key]) for key in candidates), default=0)
     under_sampled = [key for key in candidates if len(grouped[key]) == minimum]
+    # Matched with the section, because `type_focus.rolling_focus` measures a
+    # type against the rest of its own section and hands back the pair. Matching
+    # on the name alone gave a Reading Comprehension Inference question the
+    # longer coverage earned by a weakness in Logical Reasoning Inference, which
+    # spends the trial's scarce observation budget on the wrong questions.
+    focus = {(entry.section, entry.question_type) for entry in focus_types or ()}
     coverage_target = (
-        FOCUS_COVERAGE_TRIALS if question.question_type in (focus_types or ()) else BASE_COVERAGE_TRIALS
+        FOCUS_COVERAGE_TRIALS
+        if (question.section, question.question_type) in focus
+        else BASE_COVERAGE_TRIALS
     )
     if minimum < coverage_target:
         index = int(_stable_fraction(f"coverage:{seed}") * len(under_sampled)) % len(under_sampled)

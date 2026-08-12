@@ -46,6 +46,7 @@ from app.models import (
 )
 from app.seed import SOURCE_PREFIX, seed_questions
 from app.story import QUESTS, STORY_CHAPTERS
+from app.type_focus import FocusType
 
 
 def add_question(index: int, section: str) -> None:
@@ -5730,15 +5731,43 @@ def test_a_focused_case_run_draws_most_of_its_questions_from_those_types(app):
             select_random_questions,
         )
 
+        weakness = FocusType("Logical Reasoning", "Flaw")
         size = 5
         for _ in range(8):
-            picked = select_random_questions(size, focus_types=["Flaw"])
+            picked = select_random_questions(size, focus_types=[weakness])
             # A run reaches its size and may pass it only far enough to finish a
             # Reading Comprehension passage, focus quota or no focus quota.
             assert size <= len(picked) <= size + passage_overshoot_allowance(size)
             focused = sum(question.question_type == "Flaw" for question in picked)
             assert focused >= round(size * FOCUS_FILL_RATIO)
             assert focused < len(picked)
+
+        # The same name in the other section is a different weakness, and the
+        # quota must be filled from the section the weakness was found in. This
+        # is the whole point of carrying the section: four type names exist in
+        # both sections, so matching on the name alone let a Logical Reasoning
+        # weakness be "satisfied" by Reading Comprehension passages that merely
+        # shared the name.
+        #
+        # Stated as "the quota is filled from Logical Reasoning" rather than "no
+        # Reading Comprehension appears", because the second would be testing
+        # the overshoot ceiling instead: this call is not section-narrowed, so
+        # the *unfocused* remainder may draw a passage whenever one fits, and
+        # whether one fits at this size is the ceiling's business, not the
+        # match's.
+        for question in Question.query.filter_by(section="Reading Comprehension").all():
+            question.question_type = "Flaw"
+        db.session.commit()
+        for _ in range(8):
+            picked = select_random_questions(size, focus_types=[weakness])
+            from_weakness = sum(
+                question.section == "Logical Reasoning" and question.question_type == "Flaw"
+                for question in picked
+            )
+            assert from_weakness >= round(size * FOCUS_FILL_RATIO), (
+                f"only {from_weakness} of the quota came from Logical Reasoning Flaw; "
+                "the bias followed the type name into the other section"
+            )
 
         # No focus, no bias — the run is a plain sample of everything eligible.
         unfocused = [
@@ -5838,7 +5867,7 @@ def test_a_weak_type_keeps_exploring_strategies_after_others_have_settled(app):
         focused = {
             assign_strategy_trial(
                 user.id, question, 1, exposure=f"run-{index}",
-                focus_types=[question.question_type],
+                focus_types=[FocusType(question.section, question.question_type)],
             )["key"]
             for index in range(12)
         }
@@ -5847,11 +5876,26 @@ def test_a_weak_type_keeps_exploring_strategies_after_others_have_settled(app):
         elsewhere = {
             assign_strategy_trial(
                 user.id, question, 1, exposure=f"run-{index}",
-                focus_types=["Some Other Type"],
+                focus_types=[FocusType(question.section, "Some Other Type")],
             )["key"]
             for index in range(12)
         }
         assert elsewhere - {starved}
+        # And by section as well as type. The same type name in the other
+        # section is a different weakness, and spending the longer coverage
+        # runway on it would spend the trial's observation budget on questions
+        # the student was never shown to be weak at.
+        other_section = (
+            "Reading Comprehension" if question.section == "Logical Reasoning" else "Logical Reasoning"
+        )
+        across = {
+            assign_strategy_trial(
+                user.id, question, 1, exposure=f"run-{index}",
+                focus_types=[FocusType(other_section, question.question_type)],
+            )["key"]
+            for index in range(12)
+        }
+        assert across - {starved}
         app.config.pop("ADAPTIVE_LAYERS", None)
 
 

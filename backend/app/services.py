@@ -1441,6 +1441,34 @@ def _weight_toward_focus(
     material if any of its questions is a focus type, which is the only sensible
     reading for a passage whose questions are of several types.
 
+    **A focus type is matched with its section, not by name alone**, and this is
+    a fix rather than a refinement. `type_focus` measures a type against the
+    rest of *its own section* precisely so that the Logical Reasoning / Reading
+    Comprehension balance stays owned by the section-mix knob. Matching on the
+    name alone threw that away: four type names exist in both sections and
+    Inference is the second commonest Logical Reasoning type, so a weakness
+    found in Logical Reasoning Inference made every Reading Comprehension
+    passage carrying an Inference question `preferred` material, and the first
+    and largest fill stage spent its quota on them.
+
+    What that cost depends on the run length, and it is worth being exact about
+    which way it went. Fed the whole bank with a Logical Reasoning Inference
+    weakness, this function returned runs that were 52.1% Reading Comprehension
+    at size 6 and 58.5% at size 9 — the passages were mostly *admitted*, not
+    refused, and a run that asked for arguments came back more than half
+    reading. Only at the short end did the ceiling refuse them, and there the
+    quota went unspent instead: 4.1% at size 4. Either way the weak type itself
+    was under-served, at 47.0% of a run against the 62.4% the same fill reaches
+    once the section travels with the type.
+
+    None of that was reachable through `create_study_session`, which is why it
+    survived: the argument case passes `section=LOGICAL_REASONING`, and the one
+    call that does not — a type-filtered drill — has no focus types to match
+    with. The two conditions are exclusive, so the pool that shows this is one
+    only `tools/audit/type_targeting.py` ever built. That makes it a latent bug
+    rather than a live one, and it is fixed here rather than left resting on an
+    invariant two call sites away that nothing states or tests.
+
     Every fill shares one ceiling — `count` plus the whole-passage allowance —
     rather than each stage carrying its own. The focus stage's budget is a share
     of the run, but the *run* is what may not overrun, so a passage admitted to
@@ -1450,11 +1478,15 @@ def _weight_toward_focus(
         return []
     blocks = _passage_blocks(pool)
     random.shuffle(blocks)
-    wanted = set(focus_types or ())
+    wanted = {(focus.section, focus.question_type) for focus in focus_types or ()}
     ceiling = count + passage_overshoot_allowance(count)
     selected: list[list[QuestionFact]] = []
     if wanted:
-        preferred = [block for block in blocks if any(question.question_type in wanted for question in block)]
+        preferred = [
+            block
+            for block in blocks
+            if any((question.section, question.question_type) in wanted for question in block)
+        ]
         preferred_ids = {id(block) for block in preferred}
         others = [block for block in blocks if id(block) not in preferred_ids]
         _fill_blocks(preferred, round(count * FOCUS_FILL_RATIO), selected, ceiling=ceiling)

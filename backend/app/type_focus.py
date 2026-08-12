@@ -56,6 +56,15 @@ the section the type is, and it makes the two rates correlated, so the interval
 in `_half_width` is computed on a covariance it ignores. Both errors point the
 same way and together they roughly doubled the evidence a real weakness needed.
 
+That per-section reading only holds if it survives the trip to the selector, so
+the section travels with the type in `FocusType` rather than being computed here
+and dropped one call later. It used to be dropped: `rolling_focus` returned bare
+names, and both consumers — the fill in `services._weight_toward_focus` and the
+coverage runway in `strategies.assign_strategy_trial` — matched on the name.
+Four names exist in both sections, so a weakness this module was careful to
+scope to Logical Reasoning arrived at the selector meaning both sections, which
+is the gradient the paragraph above hands to the section knob, handed back.
+
 
 ## Recent, not total
 
@@ -125,9 +134,37 @@ rest from the ordinary pool, where placeholders appear at whatever rate the bank
 gives them. So their share of a run falls by at most the targeted share and
 never to zero. `tools/audit/type_targeting.py` measures that under both arms
 rather than leaving it to this paragraph: on the shipped bank, targeting the two
-commonest Logical Reasoning types takes placeholders from 10.5% of an untargeted
-run to 4.6% of a targeted one, a 56% relative reduction against the 60% the fill
-ratio allows.
+commonest Logical Reasoning types takes placeholders from 11.5% of an untargeted
+run to 4.5% of a targeted one, a 61% relative reduction, and takes weak types
+from 20.6% of a run to 62.4%.
+
+    python3 tools/audit/type_targeting.py --runs 1000 --seed 7
+
+That reduction sits just inside the 60% the fill ratio allows rather than well
+under it, and it is where it is because the fill now spends its quota on
+material it can use. Before `FocusType` carried the section, the same invocation
+reported 9.6% placeholders and only 47.0% weak types: the quota was going on
+Reading Comprehension passages selected because they happened to contain a
+question named "Inference". Targeting a Logical-Reasoning-only type reported
+3.9%, and the gap between the two was that pull-in. It is closed rather than
+narrowed — an exclusive type and a shared one now report 4.4% and 4.6%, which is
+the same number twice.
+
+That pull-in was never reachable through `create_study_session`; see
+`services._weight_toward_focus`, which is where the reachability argument
+belongs and where the fix is. It mattered anyway, because "no RC block is ever
+in a pool that also has focus types" was true by accident of two call sites and
+was not written down or tested anywhere.
+
+Targeting a *Reading Comprehension* type is the asymmetric case, and worth
+stating because it is only expressible now that a weakness names its section.
+Weak-type share reaches 16.5% rather than 62.4% and the placeholder share goes
+*up*, to 16.6%. Neither is a fault: a reading weakness can only be practised by
+reading a passage, and a passage arrives whole, bringing its other eleven
+question types and its own placeholders with it. The bound in the paragraph
+above is a bound on being squeezed out, which still holds — what does not hold
+for Reading Comprehension is the assumption that a 60% quota can be met at all
+at whole-passage granularity.
 
 
 ## Relationship to the layer already registered
@@ -158,10 +195,38 @@ who had never sat one was ineligible forever.
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import NamedTuple
 
 from .models import Attempt, Question, SessionItem, utcnow
 from .question_types import SOURCE_PLACEHOLDER, SOURCE_UNRECORDED
 from .scoring import EVIDENCE_WEIGHT, PRIOR_STRENGTH, RECENCY_HALF_LIFE_DAYS
+
+
+class FocusType(NamedTuple):
+    """A weakness, with the section it was detected in attached to it.
+
+    The section travels because the *signal* is per-section — a type is weak
+    relative to the rest of its own section, see the module docstring — and a
+    consumer that drops it asks a different question from the one that was
+    answered. Four type names exist in both sections (Inference, Weaken,
+    Strengthen, Principle) and Inference is the second commonest Logical
+    Reasoning type, so dropping the section is not a rare edge: a weakness in
+    Logical Reasoning Inference pulled Reading Comprehension passages into runs
+    that had no business holding them.
+
+    A pair rather than a bare name for exactly that reason. It is deliberately
+    not a string like "Logical Reasoning:Inference", which would be one
+    `split` away from the same bug.
+    """
+
+    section: str
+    question_type: str
+
+    def __str__(self) -> str:
+        # What `experiments.signal_tokens` records. Qualified, because an
+        # "Inference" token in that column did not say which section's
+        # Inference and so could not be read back unambiguously.
+        return f"{self.section}:{self.question_type}"
 
 
 # A row whose type came from either of these is not making a claim about a
@@ -487,8 +552,15 @@ def _detail(rows, now) -> dict:
     }
 
 
-def rolling_focus(user_id: str) -> list[str]:
-    return rolling_focus_detail(user_id)["types"]
+def rolling_focus(user_id: str) -> list[FocusType]:
+    """The weak types, each carrying the section it was found in.
+
+    Section-qualified because that is what the selector needs and this function
+    has exactly one production caller, which is the selector. The unqualified
+    names are still on `rolling_focus_detail`, which is what the student-facing
+    reading uses, and each entry there has carried its `section` all along.
+    """
+    return [FocusType(entry["section"], entry["type"]) for entry in rolling_focus_detail(user_id)["weak"]]
 
 
 # How much history a student has, in first encounters, and what the signal can

@@ -139,26 +139,48 @@ def print_census(facts, placeholders: set[str]) -> None:
             print(f"      {question_type:<28}{count:>7}{count / total:>8.1%}{thin}")
 
 
-def print_composition(facts, placeholders: set[str], *, runs: int, weak_types: list[str]) -> None:
-    from app.services import FOCUS_FILL_RATIO, _weight_toward_focus
+def print_composition(
+    facts,
+    placeholders: set[str],
+    *,
+    runs: int,
+    weak_types: list[str],
+    weak_section: str,
+) -> None:
+    """Realised composition under both arms, targeting types in one section.
 
-    wanted = set(weak_types)
+    Targeting is section-qualified because the signal is: `type_focus` measures
+    a type against the rest of its own section and hands the selector a
+    `FocusType` pair. Naming a bare type here would be a second thing this file
+    means by "weakness" and would stop measuring what the app does — which is
+    how the cross-section pull-in went unnoticed, since "Inference" read as a
+    weakness in both sections at once.
+    """
+    from app.services import FOCUS_FILL_RATIO, _weight_toward_focus
+    from app.type_focus import FocusType
+
+    focus_types = [FocusType(weak_section, question_type) for question_type in sorted(set(weak_types))]
+    wanted = {(focus.section, focus.question_type) for focus in focus_types}
+
+    def is_weak(fact) -> bool:
+        return (fact.section, fact.question_type) in wanted
+
     bank_placeholder = len(placeholders) / len(facts)
-    bank_weak = sum(1 for fact in facts if fact.question_type in wanted) / len(facts)
+    bank_weak = sum(1 for fact in facts if is_weak(fact)) / len(facts)
 
     print(f"\nRUN COMPOSITION: {runs} runs of {RUN_SIZE} per arm")
-    print(f"  targeting {', '.join(sorted(wanted))}")
+    print(f"  targeting {', '.join(focus.question_type for focus in focus_types)} in {weak_section}")
     print(f"  fill takes {FOCUS_FILL_RATIO:.0%} of the run from weak types\n")
     print(f"  {'arm':<14}{'weak-type share':>18}{'placeholder share':>20}")
     print(f"  {'(bank)':<14}{bank_weak:>17.1%}{bank_placeholder:>19.1%}")
 
     shares = {}
-    for arm, focus in (("untargeted", []), ("targeted", sorted(wanted))):
+    for arm, focus in (("untargeted", []), ("targeted", focus_types)):
         weak_seen = placeholder_seen = served = 0
         for _ in range(runs):
             chosen = _weight_toward_focus(list(facts), RUN_SIZE, focus)
             served += len(chosen)
-            weak_seen += sum(1 for fact in chosen if fact.question_type in wanted)
+            weak_seen += sum(1 for fact in chosen if is_weak(fact))
             placeholder_seen += sum(1 for fact in chosen if fact.id in placeholders)
         shares[arm] = (weak_seen / served, placeholder_seen / served)
         print(f"  {arm:<14}{weak_seen / served:>17.1%}{placeholder_seen / served:>19.1%}")
@@ -245,6 +267,12 @@ def main() -> None:
         default=[],
         help="a type to target; repeatable. Defaults to the commonest two in LR.",
     )
+    parser.add_argument(
+        "--weak-section",
+        default="Logical Reasoning",
+        choices=[section for _slug, section in DATASETS],
+        help="which section the weakness was detected in; applies to every --weak-type",
+    )
     parser.add_argument("--seed", type=int, default=20260812)
     args = parser.parse_args()
 
@@ -260,10 +288,16 @@ def main() -> None:
         counts = Counter(
             fact.question_type
             for fact in facts
-            if fact.section == "Logical Reasoning" and fact.id not in placeholders
+            if fact.section == args.weak_section and fact.id not in placeholders
         )
         weak_types = [question_type for question_type, _count in counts.most_common(2)]
-    print_composition(facts, placeholders, runs=args.runs, weak_types=weak_types)
+    print_composition(
+        facts,
+        placeholders,
+        runs=args.runs,
+        weak_types=weak_types,
+        weak_section=args.weak_section,
+    )
     if args.database_url:
         print_cohort(args.database_url)
     print()

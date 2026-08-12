@@ -24,7 +24,7 @@ from app.extensions import db
 from app.models import Attempt, Question, QuestionChoice, SessionItem, StudySession, User, utcnow
 from app.question_types import SOURCE_INFERRED, SOURCE_PLACEHOLDER
 from app.seed import SOURCE_PREFIX
-from app.type_focus import MAX_FOCUS_TYPES, rolling_focus, rolling_focus_detail
+from app.type_focus import FocusType, MAX_FOCUS_TYPES, rolling_focus, rolling_focus_detail
 
 
 LOGICAL = "Logical Reasoning"
@@ -174,7 +174,7 @@ def test_a_student_who_has_improved_stops_being_fed_the_old_weakness(app):
         _answers(user, "Flaw", correct=28, wrong=12)
         _answers(user, "Assumption", correct=2, wrong=18, days_ago=30)
 
-        assert rolling_focus(user.id) == ["Assumption"]
+        assert rolling_focus(user.id) == [FocusType(LOGICAL, "Assumption")]
 
         _answers(user, "Assumption", correct=16, wrong=4)
         assert rolling_focus(user.id) == []
@@ -262,7 +262,7 @@ def test_the_section_gradient_is_left_to_the_section_knob(app):
         # And a type that *is* unusual within Reading Comprehension is found,
         # at a rate well above the student's Logical Reasoning weak bar.
         _answers(user, "Passage Relationship", correct=3, wrong=17, section=READING)
-        assert rolling_focus(user.id) == ["Passage Relationship"]
+        assert rolling_focus(user.id) == [FocusType(READING, "Passage Relationship")]
 
 
 def test_three_wrong_out_of_four_is_not_a_weakness(app):
@@ -281,7 +281,7 @@ def test_three_wrong_out_of_four_is_not_a_weakness(app):
         thick = _user("thick@example.test")
         _answers(thick, "Flaw", correct=28, wrong=12)
         _answers(thick, "Parallel Reasoning", correct=10, wrong=30)
-        assert rolling_focus(thick.id) == ["Parallel Reasoning"]
+        assert rolling_focus(thick.id) == [FocusType(LOGICAL, "Parallel Reasoning")]
 
 
 def test_a_placeholder_type_can_never_be_a_weakness_but_still_counts_as_evidence(app):
