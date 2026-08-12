@@ -499,6 +499,22 @@ def test_the_coaching_prompt_no_longer_asserts_a_difficulty(app):  # noqa: F811
         assert "not published by the test maker" in measured["note"]
 
 
+def test_the_coaching_prompt_refuses_a_difficulty_built_from_invented_answers(app):  # noqa: F811
+    """Twenty seeded answers are twenty facts about a seeder, not about an item."""
+    from app.coaching import _question_data
+
+    with app.app_context():
+        question = Question.query.offset(1).first()
+        with calibration.responses_marked(calibration.ORIGIN_SIMULATED):
+            for index in range(20):
+                calibration.record_response(student(f"fake-coach-{index}"), question, index % 3 == 0)
+        db.session.flush()
+        db.session.expire(question)
+        measured = _question_data(question)["measured_difficulty"]
+        assert measured["status"] == "uncalibrated"
+        assert "band_1_easiest_to_5_hardest" not in measured
+
+
 # ---------------------------------------------------------------------------
 # Does it predict? The check that decides whether any of the above matters
 # ---------------------------------------------------------------------------

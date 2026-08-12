@@ -344,6 +344,13 @@ def _difficulty_for_prompt(question: Question) -> dict:
     row = question.calibration
     if row is None or not row.responses:
         return {"status": calibration.STATUS_UNCALIBRATED, "note": "No difficulty data for this item."}
+    if row.origin not in calibration.TRUSTED_ORIGINS:
+        # A seeded or simulated rating is a number about a fiction. Sending it
+        # would be the old constant again, dressed as evidence.
+        return {
+            "status": calibration.STATUS_UNCALIBRATED,
+            "note": "The only answers on record for this item are synthetic. Treat it as unmeasured.",
+        }
     if row.status not in {calibration.STATUS_ESTIMATED, calibration.STATUS_CALIBRATED}:
         return {
             "status": row.status,
