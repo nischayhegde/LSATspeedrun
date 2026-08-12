@@ -1030,8 +1030,23 @@ def create_study_session(
     )
     db.session.add(session)
     db.session.flush()
+    # The run's own id is the exposure token: it is what distinguishes meeting a
+    # question in this run from meeting the same question at the same slot in the
+    # next one, which is the difference every draw inside the trial is a draw
+    # over. Passing the session means a returning review question is randomised
+    # afresh each time it comes back rather than repeating the arm it drew the
+    # first time — see `assign_strategy_trial`. It is available here because the
+    # session was flushed above, and it is stable for the encounter because the
+    # assignment is written onto the item below and never recomputed.
     trials = [
-        (position, question, assign_strategy_trial(user.id, question, practice_style, position, focus_types=focus_types))
+        (
+            position,
+            question,
+            assign_strategy_trial(
+                user.id, question, practice_style, position,
+                exposure=session.id, focus_types=focus_types,
+            ),
+        )
         for position, question in enumerate(questions)
     ]
     # Which questions make their approach mandatory is decided for the run as a

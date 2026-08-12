@@ -26,6 +26,25 @@ from .scoring import PRIOR_STRENGTH, shrink_toward_prior
 BASE_COVERAGE_TRIALS = 3
 FOCUS_COVERAGE_TRIALS = 5
 
+# How often the exploit phase deals a challenger instead of its leader. Held at
+# the value it has always had; what changed is which candidates a challenger
+# draw can reach — see `assign_strategy_trial`.
+EXPLORE_PROBABILITY = 0.30
+
+# How much of a candidate's score may come from how little is known about it
+# rather than from how well it has done. The performance terms are all in [0, 1]
+# and this bonus is on the same scale, so the weight is readable as "the largest
+# head start an unexplored approach can be given over a well-measured one".
+#
+# It is set low on purpose. At 0.20, a candidate sitting on the coverage minimum
+# of three observations carries roughly 0.2 more than one measured over fifty,
+# which is enough to overturn a modest performance gap and not enough to
+# overturn a decisive one. The term grows with the log of the student's total
+# observations on the question's candidate set, so it is unbounded and any fixed
+# gap is eventually overcome, but it grows slowly enough that a genuinely better
+# approach keeps its place for a long time first.
+UNCERTAINTY_WEIGHT = 0.20
+
 STRATEGY_SOURCES = {
     "lsac_lr": {
         "label": "LSAC · Suggested Approach for Logical Reasoning",
@@ -274,6 +293,26 @@ def serialize_strategy(key: str | None) -> dict | None:
 def _stable_fraction(value: str) -> float:
     digest = hashlib.sha256(value.encode("utf-8")).digest()
     return int.from_bytes(digest[:8], "big") / float(2**64 - 1)
+
+
+def _weighted_pick(options: list[str], weights: list[float], fraction: float) -> str:
+    """The option `fraction` lands on, with each option's share set by its weight.
+
+    `fraction` comes from `_stable_fraction`, so the choice is a draw in the
+    same sense the rest of this module means it: uniform across the hash space
+    and fixed for a given input. Weights that are all zero degenerate to a
+    uniform pick rather than raising.
+    """
+    total = sum(weights)
+    if total <= 0:
+        return options[min(int(fraction * len(options)), len(options) - 1)]
+    target = fraction * total
+    cumulative = 0.0
+    for option, weight in zip(options, weights):
+        cumulative += weight
+        if target < cumulative:
+            return option
+    return options[-1]
 
 
 # A comparative reading set is two passages printed together as one set, and
@@ -1042,6 +1081,7 @@ def assign_strategy_trial(
     practice_style: str,
     position: int,
     *,
+    exposure: str,
     focus_types: list[str] | None = None,
 ) -> dict | None:
     """Assign a balanced within-student strategy trial on every question.
@@ -1050,6 +1090,31 @@ def assign_strategy_trial(
     Early trials force coverage across the candidate approaches; later trials
     favor the best posterior performer while preserving a challenger and a 25%
     control condition.
+
+    `exposure` names *this encounter* with this question — in practice the id of
+    the run being built. Every draw below is a threshold on a hash, so a draw is
+    only a draw across whatever the hash is allowed to vary over, and until this
+    argument existed the hash varied over (student, question, slot, style) and
+    nothing else. A question returning to the same slot therefore repeated its
+    entire assignment: the same arm, the same explore-or-exploit decision, the
+    same approach, every time, forever. That is invisible bank-wide, where the
+    control arm still measures 25% across the hash space, and severe for one
+    student, because review slots are fixed and the review half of a run is a
+    small recirculating set: a simulated student with roughly 900 attempts drew
+    control on 2.0% of their repeated questions against 25% by design, so the
+    student who practises most is the one whose control arm empties fastest and
+    who is told there is not enough evidence to name an approach. It also made
+    the `propensity` returned below untrue for exactly those questions — the
+    design's 0.25, where the mechanism's own probability conditional on
+    (question, slot) had collapsed to 0 or 1.
+
+    It is required rather than defaulted because that is the whole defect: a
+    draw that cannot say which encounter it belongs to is not a draw. Passing
+    the same value twice deliberately returns the same assignment, which is the
+    property that must not be lost — a student is never flipped mid-question —
+    and in the application the assignment is written onto the `SessionItem` once
+    at session creation and read from the row afterwards, so nothing recomputes
+    it mid-question in any case.
 
     The control condition used to be invisible: a quarter of questions simply
     arrived with nothing on them. It is now visible and neutral — a card still
@@ -1121,7 +1186,7 @@ def assign_strategy_trial(
     for observation in observations:
         grouped[observation.strategy_key].append(observation)
 
-    seed = f"{user_id}:{question.id}:{position}:{practice_style}"
+    seed = f"{user_id}:{question.id}:{position}:{practice_style}:{exposure}"
     minimum = min((len(grouped[key]) for key in candidates), default=0)
     under_sampled = [key for key in candidates if len(grouped[key]) == minimum]
     coverage_target = (
@@ -1131,7 +1196,12 @@ def assign_strategy_trial(
         index = int(_stable_fraction(f"coverage:{seed}") * len(under_sampled)) % len(under_sampled)
         key = under_sampled[index]
     else:
-        def score(candidate: str) -> float:
+        # Total prompt-arm observations this student has on this question's
+        # candidate set, which is what the uncertainty term below measures each
+        # candidate's own count against.
+        total_observations = sum(len(grouped[candidate]) for candidate in candidates)
+
+        def performance(candidate: str) -> float:
             values = grouped[candidate]
             correct = sum(value.is_correct for value in values)
             posterior_accuracy = (correct + 1) / (len(values) + 2)
@@ -1149,19 +1219,96 @@ def assign_strategy_trial(
             explanation_mean = sum(value.explanation_score for value in graded) / len(graded)
             return posterior_accuracy * .50 + explanation_mean * .30 + pace * .14 + calibrated * .06
 
+        def uncertainty(candidate: str) -> float:
+            """How much of this candidate's score it earns by being under-measured.
+
+            The standard UCB1 bonus, `sqrt(ln N / n)`, scaled. Nothing in
+            `performance` above grows as a candidate goes unsampled, so before
+            this term existed a candidate was never chosen *because* little was
+            known about it — only ever because it had done well, on however few
+            observations that verdict rested. Three observations is a very thin
+            basis for a verdict and it was a permanent one: an approach that
+            went 0 for 3 by luck sat at a posterior mean of 0.20 against a rival
+            at 0.80 and had no way back.
+
+            Two consequences worth being explicit about. When every candidate
+            carries the same number of observations the bonus is identical and
+            cancels, so this changes no ranking that a plain mean would have got
+            right; it only bites where the counts are lopsided. And because it
+            grows with `ln` of the total while each candidate's own count stays
+            put unless it is dealt, a candidate that keeps not being dealt keeps
+            gaining ground — so starvation is self-correcting rather than
+            self-reinforcing.
+
+            The coverage phase guarantees every candidate has at least
+            `BASE_COVERAGE_TRIALS` observations by the time this runs, so the
+            usual "infinity for an unplayed arm" case cannot arise here; the
+            guard is for safety, not for a reachable state.
+            """
+            played = len(grouped[candidate])
+            if not played:
+                return UNCERTAINTY_WEIGHT
+            return UNCERTAINTY_WEIGHT * math.sqrt(math.log(total_observations + 1) / played)
+
+        def score(candidate: str) -> float:
+            return performance(candidate) + uncertainty(candidate)
+
+        # Ties break toward the less-sampled candidate, for the same reason the
+        # bonus exists.
         ranked = sorted(candidates, key=lambda candidate: (score(candidate), -len(grouped[candidate]), candidate), reverse=True)
-        explore = _stable_fraction(f"explore:{seed}") < .30
-        key = ranked[1 if explore and len(ranked) > 1 else 0]
+        if len(ranked) > 1 and _stable_fraction(f"explore:{seed}") < EXPLORE_PROBABILITY:
+            # The challenger is drawn from the whole tail, not just rank 1.
+            #
+            # This is the other half of the same defect. `ranked[1]` was the only
+            # challenger the exploit phase could ever deal, so on a question with
+            # four candidates two of them were unreachable and on one with six,
+            # four were — measured, on the widest question in this bank, as four
+            # of six approaches taking zero of 400 draws. Unreachable is worse
+            # than unfavoured, because a candidate that is never dealt never
+            # gains an observation, so its rank can never change and the
+            # exclusion is permanent on whatever three observations produced it.
+            #
+            # It also made the eligibility rules next door dangerous in a way
+            # they should not be. Widening a three-candidate set to four pushed
+            # whatever was rank 1 down to rank 2 and out of reach, so a spurious
+            # candidate that got lucky on its three coverage observations
+            # displaced a real approach for good — and nothing downstream could
+            # notice, because an approach that does not fit the question looks
+            # exactly like an approach that does not work.
+            #
+            # Weighting by the uncertainty bonus rather than picking uniformly
+            # sends the challenger draw at the least-measured candidate first,
+            # which is where a challenger is worth the most. Every candidate
+            # keeps a positive share, so nothing is locked out and nothing stays
+            # starved: `EXPLORE_PROBABILITY` is now spread across the tail
+            # instead of landing entirely on one member of it.
+            challengers = ranked[1:]
+            key = _weighted_pick(
+                challengers,
+                [uncertainty(candidate) for candidate in challengers],
+                _stable_fraction(f"challenger:{seed}"),
+            )
+        else:
+            key = ranked[0]
 
     variant = (
         VARIANT_CONTROL_VISIBLE
         if _stable_fraction(f"control:{seed}:{key}") < CONTROL_PROBABILITY
         else VARIANT_PROMPT
     )
-    # The assignment draw above is a single uniform threshold test, so the
-    # propensity of landing in the observed arm is exactly this constant —
-    # logged per-observation now so a later IPW/CACE fit (P1-6) does not have
-    # to reconstruct it from the hashing scheme after the fact.
+    # The assignment draw above is a single uniform threshold test over a hash
+    # that includes `exposure`, so the propensity of landing in the observed arm
+    # is exactly this constant on every encounter — logged per-observation so a
+    # later IPW/CACE fit (P1-6) does not have to reconstruct it from the hashing
+    # scheme after the fact.
+    #
+    # The `exposure` term in the seed is what makes that sentence true, and it
+    # was not true before. With the hash fixed for a (student, question, slot),
+    # a repeated question's arm was settled the first time it was met, so the
+    # mechanism's probability of control on every later encounter was 0 or 1
+    # while this column went on recording 0.25 or 0.75 — a number the mechanism
+    # had stopped using, on exactly the rows a heavy user has most of. The stored
+    # propensity now matches the draw that actually produced the arm.
     propensity = CONTROL_PROBABILITY if variant in CONTROL_VARIANTS else 1 - CONTROL_PROBABILITY
     return {"key": key, "variant": variant, "propensity": propensity, "candidates_n": len(candidates)}
 

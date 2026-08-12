@@ -515,7 +515,7 @@ def test_a_form_arms_no_strategy_prompt_and_leaves_the_estimator_alone(app):
         # No form question can be dealt an approach even if something asked for
         # one, so nothing downstream has to remember to exclude them.
         question = items[0].question
-        assert assign_strategy_trial(user.id, question, "diagnostic", 0) is None
+        assert assign_strategy_trial(user.id, question, "diagnostic", 0, exposure="form") is None
         # And a form's attempts are invisible to the estimator, which reads
         # only rows that carry a strategy key.
         assert strategy_performance(user.id)["results"] == []
