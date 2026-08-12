@@ -52,11 +52,12 @@ class TypefacePen(BasePen):
         self.commands = []
 
     def _n(self, value):
-        # Whole font units, at a resolution of 1000 per em. The headline is set
-        # at about 86 pixels of cap height on a 1920 frame, which puts one unit
-        # at under a tenth of a pixel — two orders below what the renderer's own
-        # antialiasing resolves. Keeping the decimals cost a fifth of the file
-        # for detail that cannot reach the screen.
+        # Whole font units, at a resolution of 1000 per em. The headline is the
+        # largest thing this draws and it renders at 138 pixels per world unit
+        # on a 1920 frame, so its em is about 127 pixels and one font unit is an
+        # eighth of a pixel — below what the renderer's own antialiasing
+        # resolves. Keeping the decimals cost a fifth of the file for detail
+        # that cannot reach the screen.
         return round(value * self.scale)
 
     def _moveTo(self, pt):

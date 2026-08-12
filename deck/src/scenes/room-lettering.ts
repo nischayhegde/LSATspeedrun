@@ -164,7 +164,7 @@ export function buildLettering(items: readonly LetteringItem[]): Lettering {
       outside it. What is left inside the frame falls in the strip of floor the
       letter itself occludes from this camera.
 
-      So it cost three draw calls and 10,468 triangles on every frame of a
+      So it cost three draw calls and 10,480 triangles on every frame of a
       slide that is held for the whole question period, to change no pixels.
       Left explicit rather than left to the default, so that restoring
       `item.depth > 0` here is a decision rather than a tidy-up.
@@ -201,17 +201,17 @@ function lineGeometry(font: Font, line: LetteringLine): THREE.BufferGeometry {
 
       This is per *curve command in the outline*, not per bowl, and a display
       face is drawn with a lot of short ones — Archivo's `O` spends a dozen on
-      its outer contour alone. So the segment length is already small and the
-      chord error scales with the square of it: at the headline's 86 pixels of
-      cap height at 1920, four segments leaves each curve under a pixel from
-      the true outline, which is less than the render's own antialiasing.
+      its outer contour alone. So the segment length is already small before
+      anything is subdivided. Measured rather than assumed: sampling every
+      curve in the headline at four divisions and again at 256, the furthest
+      the coarse polyline ever falls from the true outline is 8.0e-4 world
+      units. The headline renders at 138 pixels per unit on a 1920 frame, so
+      that is 0.11 of a pixel — under the renderer's own antialiasing, and the
+      reason the third-scale test cannot tell the two apart.
 
-      It is worth caring about because the cost is paid three times over. The
-      lettering is drawn once for the picture, once more for the contour pass
-      that `render-style.ts` reads depth and normals out of, and a third time
-      into the shadow map for the lines that cast. Twelve segments put the
-      close 90,000 triangles over where it started for a difference nobody in
-      the room could see.
+      The whole block is 28,912 triangles at four. Three's default of twelve
+      makes it 81,616, which is 52,704 triangles a frame — nearly doubling the
+      scene — for a tenth of a pixel nobody in the room could see.
     */
     curveSegments: 4,
     bevelEnabled: false,

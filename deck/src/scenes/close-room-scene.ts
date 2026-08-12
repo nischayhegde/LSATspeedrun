@@ -63,18 +63,20 @@ import type { DeckScene, SceneContext } from './types'
  * that fits the theme of the slideshow", and the theme's blue is `--blue`.
  */
 const ROOM_PALETTE = {
-  /** `--blue`. The deck's field blue, and the room's reference. */
+  /** `--blue`. The deck's field blue, and here the back wall. */
   blue: 0x1b2f6b,
   /**
-   * Every surface the audience can see.
+   * The floor, and the value the whole frame is aiming at.
    *
    * `--blue` taken down about a fifth, which lands it between it and
    * `--blue-deep` — and, not by coincidence, exactly on the value the floor was
    * already painted. The founders picked the target themselves: "make the
    * entire slide that dark blue" was said about the navy below the old horizon,
-   * which is this. Painting the walls with it means the half of the frame they
-   * approved does not move at all and the half they objected to comes down to
-   * meet it, rather than both drifting to a new value nobody has seen.
+   * which is this. So the half of the frame they approved does not move at all
+   * and the half they objected to comes down to meet it, rather than both
+   * drifting to a new value nobody has seen. What the back wall has to be
+   * painted for it to *arrive* at this value is a separate question, and the
+   * answer is at `wallBack`.
    */
   field: 0x142455,
   /** `--blue-deep`. The ceiling and the far corners, so the box has a top. */
@@ -480,26 +482,35 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   // of six draw calls and twelve triangles for the entire set.
   const wall = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .92, metalness: 0 })
   /*
-    ONE FIELD, SEPARATED BY LIGHT RATHER THAN BY PAINT.
+    ONE FIELD, AND THE REASON IT TAKES TWO PAINTS TO GET ONE COLOUR.
 
-    The back wall used to be `--blue-lit`, twice the floor's luminance, which
-    split the frame into a bright band across the top third and a navy floor
-    under it with the skirting as the border between two colours. The founders
-    asked for the whole slide to be the darker blue.
+    The back wall used to be `--blue-lit`, and against the navy floor that split
+    the frame into a bright band across the top third with a gold hairline on
+    the seam. The founders asked for the whole slide to be the darker blue, and
+    for floor and wall to be separated "by a few percent rather than by a hard
+    line".
 
-    It is the same albedo as the floor and the sides now. What still separates
-    them is the only thing that should: a wall is vertical and a floor is
-    horizontal, so a key 36° above the floor meets them at different angles and
-    `N·L` returns different fractions of the same paint. That is a real depth
-    cue and it costs nothing, where a second colour was a drawn line pretending
-    to be one. Measured off the settled frame, the wall comes out at 37.0 mean
-    luma against the floor's 40.6 — the floor is the brighter of the two, which
-    is the right way round for a key this high and is not something a painted
-    horizon would have got right by accident. Nine per cent is enough that the
-    eye still reads a corner and the shadow still has a plane to lie on, and
-    far too little to read as a second colour.
+    Painting the wall `field` as well — literally one colour — was tried first
+    and is the obvious reading of the request. It fails, and it fails
+    *measurably*: a key 36° above the floor meets a horizontal plane and a
+    vertical one at very different incidences, so identical paint came back at
+    29 luma on the wall against 37 on the floor, a 20% step. That is not one
+    field, it is the old horizon with its polarity flipped — the band is dark
+    now instead of bright, which is less objectionable but is the same defect.
+
+    What "a few percent" specifies is rendered value, not pigment, so the paint
+    has to be pre-divided by the incidence. The wall is `--blue` and the floor
+    is `--blue` taken down a fifth; the wall's extra albedo is very nearly
+    exactly what its shallower `N·L` takes back out. Swept across five values
+    either side, `--blue` is the one that lands: wall 34.6 against floor 36.9,
+    a 6.3% step, with the floor the brighter of the two, which is the right way
+    round for a key this high. Close enough that the frame reads as one navy,
+    far enough that the corner is still there for the shadow to lie against.
+
+    The happy part is that no colour was invented for this. Both values are
+    already in `theme.css`, and the room turns out to want them adjacent.
   */
-  const wallBack = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .94, metalness: 0 })
+  const wallBack = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blue, roughness: .94, metalness: 0 })
   const floorMaterial = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .78, metalness: .04 })
   const ceiling = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blueDeep, roughness: .96, metalness: 0 })
   // Groups are ordered +x, -x, +y, -y, +z, -z. The +z face is behind the lens.
@@ -528,7 +539,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
     headline's cap height; rendered side by side, the version with the line is
     the one that looks unfinished.
 
-    Nothing is lost. The junction still reads, off the nine per cent of luma
+    Nothing is lost. The junction still reads, off the six per cent of luma
     that separates wall from floor, and the shadow — the reason the junction
     has to read at all — is pixel-for-pixel unchanged either way. The deck's
     gold is still spent, on the eyebrow, the rule under the deck sentence and
