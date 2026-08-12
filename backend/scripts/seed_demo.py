@@ -36,6 +36,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app import create_app
+from app import calibration
 from app.enforcement import (
     ENFORCEMENT_VERSION,
     LEVEL_FULL,
@@ -66,8 +67,10 @@ from app.models import (
     Attempt,
     AttemptSettlement,
     DailyProgress,
+    LearnerRating,
     PlayerProfile,
     Question,
+    QuestionCalibration,
     ReviewQueueItem,
     SessionItem,
     SkillProgress,
@@ -216,6 +219,24 @@ def _backup_database() -> str | None:
     return str(target)
 
 
+def _reset_calibration(user: User) -> None:
+    """Undo the difficulty ratings a previous run of this script invented.
+
+    Deleting the attempts is not enough: a rating is an accumulator, so a second
+    seeding would stack another eleven weeks of invented answers on top of the
+    first and hand the bank a confidence nothing earned. Every row this removes
+    is one whose origin says it came from a seeder, and the demo seeder is the
+    only thing in the repository that writes those, so a real cohort's ratings
+    in the same database survive untouched.
+    """
+    db.session.execute(delete(LearnerRating).where(LearnerRating.user_id == user.id))
+    db.session.execute(
+        delete(QuestionCalibration).where(
+            QuestionCalibration.origin.notin_(tuple(calibration.TRUSTED_ORIGINS))
+        )
+    )
+
+
 def _reset_learner(user: User) -> None:
     """Remove this learner's study and game state, keeping the account itself.
 
@@ -225,6 +246,7 @@ def _reset_learner(user: User) -> None:
     """
     db.session.execute(delete(ReviewQueueItem).where(ReviewQueueItem.user_id == user.id))
     db.session.execute(delete(SkillProgress).where(SkillProgress.user_id == user.id))
+    _reset_calibration(user)
     db.session.execute(delete(AiJob).where(AiJob.user_id == user.id))
     db.session.execute(delete(AttemptSettlement).where(AttemptSettlement.user_id == user.id))
     for session in StudySession.query.filter_by(user_id=user.id).all():
@@ -875,6 +897,18 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
                 created_at=completed_at,
             )
             db.session.add(attempt)
+            # This path builds its attempts by hand rather than going through
+            # `submit_attempt`, so the difficulty rating has to be told about
+            # them here or eleven weeks of demo history would leave the bank as
+            # uncalibrated as it started. `seed_demo` runs inside
+            # `responses_marked`, which is what stops these counting as earned.
+            calibration.record_response(
+                user.id,
+                question,
+                is_correct,
+                exposure=item.exposure_policy or calibration.EXPOSURE_BLIND,
+                now=completed_at,
+            )
 
             if trial:
                 stats["trials"] += trial["variant"] == "prompt" and trial["applied"] is True
@@ -1293,6 +1327,12 @@ def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -
                         coached_at=utcnow(),
                     )
                 )
+                calibration.record_response(
+                    user.id,
+                    question,
+                    True,
+                    exposure=pre.exposure_policy or calibration.EXPOSURE_BLIND,
+                )
                 db.session.flush()
             session.current_index = 2
             session.pending_attempt_id = None
@@ -1455,9 +1495,15 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
         problems.append("nothing is affordable for a live purchase")
     if not live.get("renders_prompt"):
         problems.append("staged live session does not render a prompt")
+    bank = calibration.bank_summary()
+    if bank["synthetic"] != bank["provisional"] + bank["estimated"] + bank["calibrated"]:
+        # A rated row this seeder did not mark would be one a demo answer had
+        # smuggled into the earned pile.
+        problems.append("a rated question is not marked as seeded")
 
     return {
         "problems": problems,
+        "difficulty_bank": bank,
         "attempts": performance["overall"]["attempts"],
         "accuracy": performance["overall"]["accuracy"],
         "accuracy_delta": performance["overall"]["accuracy_delta"],
@@ -1525,6 +1571,16 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
 
 
 def seed_demo(email: str) -> dict:
+    # Everything below invents answers, so everything below is declared
+    # synthetic before it writes one. The marker reaches the ratings written
+    # through `submit_attempt` inside `_stage_live_trial` as well as the ones
+    # written by hand in `_write_history`, which is why it sits here and not at
+    # the individual call sites.
+    with calibration.responses_marked(calibration.ORIGIN_SIMULATED):
+        return _seed_demo(email)
+
+
+def _seed_demo(email: str) -> dict:
     user = User.query.filter_by(email=email).first()
     if not user:
         user = User(email=email, display_name="Local Student")

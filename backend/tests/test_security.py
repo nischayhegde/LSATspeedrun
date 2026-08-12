@@ -63,7 +63,6 @@ def add_question(index: int, section: str = "Logical Reasoning") -> None:
         passage_id=passage_id,
         section=section,
         question_type="Inference",
-        difficulty=3,
         stimulus=stimulus,
         stem=f"Which answer is best for sample question {index}?",
         correct_answer="C",

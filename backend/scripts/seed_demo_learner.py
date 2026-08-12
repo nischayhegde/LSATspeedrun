@@ -16,6 +16,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app import create_app
+from app import calibration
 from app.extensions import db
 from app.game import (
     FIRM_TIERS,
@@ -31,7 +32,9 @@ from app.models import (
     AiJob,
     Attempt,
     DailyProgress,
+    LearnerRating,
     PlayerProfile,
+    QuestionCalibration,
     ReviewQueueItem,
     SessionItem,
     SkillProgress,
@@ -181,6 +184,15 @@ def _reset_learner(user: User) -> None:
     db.session.execute(delete(ReviewQueueItem).where(ReviewQueueItem.user_id == user.id))
     db.session.execute(delete(SkillProgress).where(SkillProgress.user_id == user.id))
     db.session.execute(delete(AiJob).where(AiJob.user_id == user.id))
+    # Difficulty ratings accumulate, so a re-run would otherwise stack a second
+    # set of invented answers on the first. Only rows a seeder wrote are
+    # removed; a real cohort's ratings in the same database are left alone.
+    db.session.execute(delete(LearnerRating).where(LearnerRating.user_id == user.id))
+    db.session.execute(
+        delete(QuestionCalibration).where(
+            QuestionCalibration.origin.notin_(tuple(calibration.TRUSTED_ORIGINS))
+        )
+    )
     for session in StudySession.query.filter_by(user_id=user.id).all():
         db.session.delete(session)
     db.session.execute(delete(LedgerEntry).where(LedgerEntry.user_id == user.id))
@@ -534,6 +546,15 @@ def _verify(user: User) -> dict:
 
 
 def seed_demo_learner(email: str, *, replace: bool) -> dict:
+    # This seeder answers through `submit_attempt`, which is what makes its
+    # history trustworthy as a demo and untrustworthy as evidence about how hard
+    # any question is. The marker is what keeps the difficulty ratings it writes
+    # from being read as a cohort's.
+    with calibration.responses_marked(calibration.ORIGIN_SIMULATED):
+        return _seed_demo_learner(email, replace=replace)
+
+
+def _seed_demo_learner(email: str, *, replace: bool) -> dict:
     user = User.query.filter_by(email=email).first()
     if not user:
         user = User(email=email, display_name="Local Student", onboarding_complete=True, story_intro_seen=True)

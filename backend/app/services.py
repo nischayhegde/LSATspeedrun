@@ -23,7 +23,7 @@ from .game import (
     settle_attempt,
     snapshot_case_context,
 )
-from . import enforcement, exam, scheduling
+from . import calibration, enforcement, exam, scheduling
 from .models import (
     AiJob,
     Attempt,
@@ -2027,6 +2027,29 @@ def _update_skill(user_id: str, question: Question, is_correct: bool, elapsed_ms
     stat.recent_mistakes = 0 if is_correct else stat.recent_mistakes + 1
 
 
+def _record_response(user_id: str, item: SessionItem, is_correct: bool, elapsed_ms: int) -> None:
+    """Everything one answered question teaches, other than the attempt row itself.
+
+    Two ledgers, kept together because they must never diverge: the per-type
+    accuracy the dashboard reads, and the item's difficulty rating. Both are
+    written before the `Attempt` exists, and both are reached only after the
+    idempotency and already-graded guards in the two callers, so replaying a
+    submit cannot double-count either.
+
+    `exposure_policy` travels with the item rather than being inferred here.
+    Today it is 'blind' on every row because selection does not read difficulty;
+    the day it does, this is the value that keeps the estimate honest, and
+    inferring it at this point would be inventing it.
+    """
+    _update_skill(user_id, item.question, is_correct, elapsed_ms)
+    calibration.record_response(
+        user_id,
+        item.question,
+        is_correct,
+        exposure=item.exposure_policy or calibration.EXPOSURE_BLIND,
+    )
+
+
 def _attempt_band(attempt: Attempt) -> str | None:
     """Economy band for a graded explanation, or None while the grade is missing.
 
@@ -2187,7 +2210,7 @@ def grade_exam_answer(session: StudySession, item: SessionItem, *, ended_at) -> 
     # the other cannot produce.
     elapsed_ms = max(1000, min(item.active_elapsed_ms or 0, 15 * 60 * 1000))
     is_correct = label == question.correct_answer
-    _update_skill(session.user_id, question, is_correct, elapsed_ms)
+    _record_response(session.user_id, item, is_correct, elapsed_ms)
     attempt = Attempt(
         user_id=session.user_id,
         session_item_id=item.id,
@@ -2201,6 +2224,7 @@ def grade_exam_answer(session: StudySession, item: SessionItem, *, ended_at) -> 
         # Measured rather than reported: free navigation means the server sees
         # every replacement.
         answer_changed=bool(item.answer_revisions),
+        exposure_policy=item.exposure_policy or calibration.EXPOSURE_BLIND,
         evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "diagnostic")),
         server_elapsed_ms=elapsed_ms,
         client_elapsed_ms=None,
@@ -2357,7 +2381,7 @@ def submit_attempt(
                     raise
     elapsed_ms = max(1000, min(_elapsed_ms(item), 15 * 60 * 1000))
     is_correct = selected_label == item.question.correct_answer
-    _update_skill(user.id, item.question, is_correct, elapsed_ms)
+    _record_response(user.id, item, is_correct, elapsed_ms)
 
     attempt = Attempt(
         user_id=user.id,
@@ -2382,6 +2406,7 @@ def submit_attempt(
         strategy_artifact_json=strategy_artifact or None,
         strategy_propensity=item.strategy_propensity,
         strategy_candidates_n=item.strategy_candidates_n,
+        exposure_policy=item.exposure_policy or calibration.EXPOSURE_BLIND,
         evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "coached_practice")),
         server_elapsed_ms=elapsed_ms,
         client_elapsed_ms=None,

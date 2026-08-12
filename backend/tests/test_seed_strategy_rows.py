@@ -46,7 +46,6 @@ def make_question(index: int, section: str) -> Question:
         id=f"hf-lsat-seed:{index}",
         section=section,
         question_type="Flaw" if not reading else "Reading Comprehension",
-        difficulty=3,
         stimulus=None if reading else LR_STIMULUS,
         stem=(
             "The primary purpose of the passage is to"

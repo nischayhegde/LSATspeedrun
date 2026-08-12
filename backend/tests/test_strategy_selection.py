@@ -91,7 +91,6 @@ def app():
                 id="hf-lsat-lr:selection-wide",
                 section="Logical Reasoning",
                 question_type="Principle",
-                difficulty=3,
                 stimulus=WIDE_STIMULUS,
                 stem=WIDE_STEM,
                 correct_answer="C",

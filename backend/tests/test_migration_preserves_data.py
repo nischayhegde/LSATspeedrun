@@ -45,6 +45,18 @@ PLANT_AT = "0012_lawyer_tycoon"
 PLANTED: dict[str, dict[str, object]] = {
     "users": {"id": "u-keep", "email": "keep@localhost.test"},
     "questions": {"id": "q-keep", "section": "Logical Reasoning", "correct_answer": "A"},
+    # `questions` is a cascade parent too, and until `0037_difficulty_calibration`
+    # renamed a column on it no revision had ever recreated it — so the whole
+    # bank's answer choices sat behind a guard nothing exercised. One row here
+    # is what makes the guard in `migrations/env.py` load-bearing rather than
+    # decorative for this half of the schema.
+    "question_choices": {
+        "id": "qc-keep",
+        "question_id": "q-keep",
+        "label": "A",
+        "canonical_text": "A choice that must survive the upgrade.",
+        "position": 0,
+    },
     "study_sessions": {"id": "s-keep", "user_id": "u-keep", "mode": "practice", "status": "completed"},
     "session_items": {"id": "i-keep", "session_id": "s-keep", "question_id": "q-keep"},
     "attempts": {

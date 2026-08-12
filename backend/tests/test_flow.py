@@ -79,7 +79,6 @@ def add_question(index: int, section: str) -> None:
         passage_id=passage_id,
         section=section,
         question_type="Inference",
-        difficulty=3,
         stimulus=stimulus,
         stem=f"Which answer is best for sample question {index}?",
         correct_answer="C",
@@ -1353,7 +1352,7 @@ def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monke
     assert coaching["reasoning_verdict"] == "mostly_correct"
     assert len(coaching["answer_analysis"]["choice_explanations"]) == 5
     assert {choice["label"] for choice in coaching["answer_analysis"]["choice_explanations"]} == set("ABCDE")
-    assert coaching["prompt_version"] == "coaching-v3-invalid-is-a-finding"
+    assert coaching["prompt_version"] == "coaching-v4-difficulty-is-measured-or-absent"
     assert captured["request"]["reasoning_effort"] == "xhigh"
     assert "one decisive bottom-line sentence" in captured["request"]["messages"][0]["content"]
     assert coaching_response.json["reward"]["explanation_grade"] == "Excellent"
