@@ -694,11 +694,7 @@ def contrast_sample(treated: int, control: int) -> float:
     against four controls is a four-observation comparison wearing a large
     number, and this is the quantity that says so.
 
-    Identical to `strategies._contrast_sample`, which is one copy too many. The
-    duplication is deliberate and temporary: that function is private to a file
-    another change is actively rewriting, and importing across that seam now
-    would trade a two-line repetition for a merge conflict in an estimator. The
-    merge note asks for the strategy module to import this one.
+    `strategies._contrast_sample` is now a call to this, so there is one copy.
     """
     if treated <= 0 or control <= 0:
         return 0.0

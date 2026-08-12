@@ -17,6 +17,9 @@ from .enforcement import (
     STATUS_SKIPPED,
     STATUS_STOOD_DOWN,
 )
+from . import experiments
+from .experiments import Exposure
+from .extensions import db
 from .models import Attempt, Question, SessionItem, StudySession, utcnow
 from .scoring import PRIOR_STRENGTH, shrink_toward_prior
 
@@ -431,6 +434,7 @@ def assign_strategy_trial(
     practice_style: str,
     position: int,
     *,
+    exposure: str,
     focus_types: list[str] | None = None,
 ) -> dict | None:
     """Assign a balanced within-student strategy trial on every question.
@@ -495,10 +499,21 @@ def assign_strategy_trial(
     rather than self-reported finally makes a per-protocol or CACE fit
     possible, but that is a downstream analysis over `strategy_gate_status`. It
     is not what allocates the next trial.
+
+    `exposure` is what makes the draw below a draw. The arm used to be a hash
+    of (student, question, slot, style), which randomises across the space of
+    those four things and does *not* randomise across encounters: a review
+    question returning to the same slot re-drew the same arm forever. Bank-wide
+    that measured a healthy 25% control; for an individual heavy user it
+    collapsed to 2%, and the propensity column went on claiming 0.25 while the
+    mechanism's actual probability was 0 or 1. Passing the run's id makes each
+    encounter its own draw. It is keyword-only and has no default so the
+    substitution cannot be made again by omission. See `app/experiments.py`.
     """
     if practice_style == "diagnostic":
         return None
     candidates = _candidate_keys(question)
+    selection = None
     observations = (
         Attempt.query.filter(
             Attempt.user_id == user_id,
@@ -510,7 +525,7 @@ def assign_strategy_trial(
     for observation in observations:
         grouped[observation.strategy_key].append(observation)
 
-    seed = f"{user_id}:{question.id}:{position}:{practice_style}"
+    seed = f"{user_id}:{question.id}:{position}:{practice_style}:{exposure}"
     minimum = min((len(grouped[key]) for key in candidates), default=0)
     under_sampled = [key for key in candidates if len(grouped[key]) == minimum]
     coverage_target = (
@@ -541,10 +556,53 @@ def assign_strategy_trial(
         ranked = sorted(candidates, key=lambda candidate: (score(candidate), -len(grouped[candidate]), candidate), reverse=True)
         explore = _stable_fraction(f"explore:{seed}") < .30
         key = ranked[1 if explore and len(ranked) > 1 else 0]
+        # Everything above is the `strategy_selection` layer's *treated* arm:
+        # the whole apparatus of posteriors, pace, calibration and explanation
+        # quality, deciding which of this question's candidate approaches the
+        # student is dealt. Until now it had no off arm, so nothing in the
+        # product could say whether ranking the candidates beats picking one of
+        # them at random. A quarter of eligible questions now do the latter.
+        #
+        # Eligible is narrow on purpose. Under the coverage target the code
+        # above is already drawing uniformly over the least-sampled
+        # candidates, so an arm there would be labelling two identical
+        # procedures; on a single-candidate question both arms return that
+        # candidate. Neither has a counterfactual, so neither is enrolled, and
+        # `selection` stays None for both.
+        if len(candidates) > 1:
+            selection = experiments.draw(
+                "strategy_selection", user_id, exposure=Exposure.item(exposure, position)
+            )
+            if not selection.on:
+                index = int(_stable_fraction(f"uniform:{seed}") * len(candidates)) % len(candidates)
+                key = candidates[index]
 
+    # The offer arm. Note what is no longer in this hash: the chosen approach.
+    #
+    # It used to read `control:{seed}:{key}`, which was harmless while the key
+    # was a deterministic function of history, and is not harmless now that the
+    # key depends on the `strategy_selection` draw above. Two randomisations
+    # sharing an input are not independent, and the whole argument for reading
+    # the selection layer inside the treated population — that conditioning on
+    # an independently drawn arm cannot confound — rests on them being so.
+    # Dropping the key from the hash costs nothing: the propensity is the same
+    # constant it always was, and the arm is no less random for depending on
+    # one thing fewer.
+    #
+    # The reason the selection draw happens above in *both* offer arms, rather
+    # than only in the treated one, is on the `strategy_selection` entry in
+    # `app/experiments.py`. Briefly: a control row carries the approach that
+    # would have been offered, and `_section_reading` compares an approach's
+    # prompt rows against that same approach's control rows. If the treated
+    # side's approaches were chosen by a mixture of ranked and uniform while
+    # the control side's were chosen by ranked alone, the two arms would be
+    # labelled by different processes and the offer comparison would stop being
+    # about the offer. The selection arm changes which approach a control
+    # question is filed under; it never changes what a control student sees,
+    # which is why the layer's own reading is restricted to the treated arm.
     variant = (
         VARIANT_CONTROL_VISIBLE
-        if _stable_fraction(f"control:{seed}:{key}") < CONTROL_PROBABILITY
+        if _stable_fraction(f"control:{seed}") < CONTROL_PROBABILITY
         else VARIANT_PROMPT
     )
     # The assignment draw above is a single uniform threshold test, so the
@@ -552,7 +610,14 @@ def assign_strategy_trial(
     # logged per-observation now so a later IPW/CACE fit (P1-6) does not have
     # to reconstruct it from the hashing scheme after the fact.
     propensity = CONTROL_PROBABILITY if variant in CONTROL_VARIANTS else 1 - CONTROL_PROBABILITY
-    return {"key": key, "variant": variant, "propensity": propensity, "candidates_n": len(candidates)}
+    return {
+        "key": key,
+        "variant": variant,
+        "propensity": propensity,
+        "candidates_n": len(candidates),
+        "selection_arm": selection.arm if selection else None,
+        "selection_propensity": selection.propensity if selection else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1002,10 +1067,13 @@ def _contrast_sample(prompt_sample: int, control_sample: int) -> float:
     by the *smaller* arm. 200 prompted questions against 4 controls is a
     four-observation comparison wearing a large number, and this is the
     quantity that says so.
+
+    One implementation, in `experiments`, now that this module imports it. It
+    was briefly copied there while both files were being rewritten at once; two
+    copies of an estimator is two things to keep in step and the merge note
+    asked for this.
     """
-    if prompt_sample <= 0 or control_sample <= 0:
-        return 0.0
-    return 1.0 / (1.0 / prompt_sample + 1.0 / control_sample)
+    return experiments.contrast_sample(prompt_sample, control_sample)
 
 
 def _contrast_grade(effective: float) -> str:
@@ -1535,5 +1603,240 @@ def strategy_performance(user_id: str) -> dict:
             "We show your running totals, not a verdict. Telling a real personal effect from luck takes far more questions than one person usually "
             "answers, so no approach here is ever labelled \u201cconfirmed\u201d \u2014 including this one, and including the one at the top of this "
             "list. This measures your own practice, not your score."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Reading a trial across students
+#
+# Everything above this line answers "what is this student's running total?"
+# and is careful never to call it a verdict, for a reason `strategy_performance`
+# states plainly: a per-student verdict on one of twelve approaches needs
+# thousands of observations, which one person will not answer.
+#
+# A cohort fills a comparison far faster than a person does, and these readings
+# are the ones that use that. Nothing here changes a draw, a card, a schedule
+# or a panel. They are queries.
+# ---------------------------------------------------------------------------
+
+
+def _student_stratified(rows: list[Attempt], treated, control) -> dict:
+    """The within-student difference, averaged over students.
+
+    The trial randomises *within* a student, so the plain pooled difference is
+    already unbiased and this is not a correction for bias. It is a check, and
+    a more efficient estimator besides.
+
+    Students differ enormously in accuracy, and they contribute wildly
+    different numbers of rows. Pooling therefore weights the overall difference
+    toward whoever answered most, and if that student's arm mix happens to be
+    lopsided the pooled figure inherits it. Computing each student's own
+    prompt-minus-control first, then averaging, cannot do that: every student
+    is compared only against themselves.
+
+    The two estimates should agree closely. When they do not, something is
+    wrong with the allocation rather than with the approach, and the gap is
+    reported beside them rather than resolved by preferring one — a divergence
+    is the finding.
+    """
+    per_student: dict[str, list[Attempt]] = defaultdict(list)
+    for row in rows:
+        per_student[row.user_id].append(row)
+
+    total_weight = 0.0
+    weighted = 0.0
+    students = 0
+    for values in per_student.values():
+        prompted = [value for value in values if treated(value)]
+        controls = [value for value in values if control(value)]
+        weight = _contrast_sample(len(prompted), len(controls))
+        if not weight:
+            continue
+        students += 1
+        total_weight += weight
+        weighted += weight * (_arm_rate(prompted) - _arm_rate(controls))
+    if not total_weight:
+        return {"lift": None, "students": 0, "answers_used": 0}
+    used = sum(
+        len(values)
+        for values in per_student.values()
+        if _contrast_sample(
+            sum(treated(value) for value in values),
+            sum(control(value) for value in values),
+        )
+    )
+    return {
+        "lift": round(weighted / total_weight * 100, 1),
+        "students": students,
+        "answers_used": used,
+    }
+
+
+# ---------------------------------------------------------------------------
+# The nested layer: which approach, given that one is offered
+# ---------------------------------------------------------------------------
+
+
+def strategy_selection_reading() -> dict:
+    """Ranked selection against uniform selection, inside the treated arm only.
+
+    The restriction is the whole design. A student in the control arm of the
+    offer trial is shown no approach, so which approach the selector picked
+    changed nothing they experienced; including those rows would add pure noise
+    in proportion to the control share and pull any real difference toward
+    zero. The arm is drawn in both offer arms — see `assign_strategy_trial` for
+    why it must be — and read in one.
+
+    Conditioning here is safe because the two draws are independent by
+    construction rather than by inspection: the offer hash no longer contains
+    the chosen approach. `strategy_selection_health` is the check on that, and
+    it is a per-student check, because the pooled share stays at a healthy
+    quarter in exactly the failure that matters.
+    """
+    rows = (
+        Attempt.query.options(
+            joinedload(Attempt.session_item).joinedload(SessionItem.question)
+        )
+        .filter(
+            Attempt.strategy_selection_arm.isnot(None),
+            Attempt.strategy_variant.in_(PROMPT_VARIANTS),
+        )
+        .all()
+    )
+    by_section: dict[str, list[Attempt]] = defaultdict(list)
+    for row in rows:
+        by_section[row.session_item.question.section].append(row)
+
+    def rate(values):
+        return _arm_rate(values, propensity=lambda value: value.strategy_selection_propensity)
+
+    sections = []
+    for section, short_label in SECTIONS:
+        values = by_section.get(section, [])
+        trials = len(values)
+        observed = sum(value.is_correct for value in values) / trials if trials else 0.0
+        baseline = shrink_toward_prior(observed, trials)
+        ranked = [value for value in values if value.strategy_selection_arm == "ranked"]
+        uniform = [value for value in values if value.strategy_selection_arm == "uniform"]
+        effective = _contrast_sample(len(ranked), len(uniform))
+        stratified = _student_stratified(
+            values,
+            lambda value: value.strategy_selection_arm == "ranked",
+            lambda value: value.strategy_selection_arm == "uniform",
+        )
+        sections.append(
+            {
+                "section": section,
+                "short_label": short_label,
+                "trials": trials,
+                "students": len({value.user_id for value in values}),
+                "ranked_sample": len(ranked),
+                "uniform_sample": len(uniform),
+                "baseline_accuracy": round(baseline * 100, 1),
+                "contrast_sample": round(effective, 1),
+                "contrast_evidence": _contrast_grade(effective),
+                "eligible": effective >= MIN_CONTRAST_SAMPLE,
+                "pooled_lift": round(
+                    (
+                        _shrink_toward(rate(ranked), len(ranked), baseline)
+                        - _shrink_toward(rate(uniform), len(uniform), baseline)
+                    )
+                    * 100,
+                    1,
+                )
+                if effective
+                else None,
+                "within_student_lift": stratified["lift"],
+            }
+        )
+    return {
+        "layer": "strategy_selection",
+        "population": "questions in the prompt arm of the offer trial",
+        "sections": sections,
+        "basis": (
+            "intention-to-treat over the selection arm, restricted to offered questions, "
+            "Hájek-weighted by the recorded selection propensity"
+        ),
+    }
+
+
+def _selection_shares(rows) -> dict:
+    """Realised uniform-arm share, split by which offer arm the row was in."""
+    per_student: dict[str, dict[str, list[int]]] = defaultdict(
+        lambda: {"prompt": [], "control": []}
+    )
+    for user_id, arm, variant in rows:
+        side = "prompt" if variant in PROMPT_VARIANTS else "control"
+        per_student[user_id][side].append(arm == "uniform")
+    return per_student
+
+
+def strategy_selection_health() -> dict:
+    """Whether the selection draw is still a draw, and still independent.
+
+    Two failures, and the second is the one the structure of this layer was
+    argued over.
+
+    *The draw stops drawing.* Per student, because that is the quantity that
+    broke last time: the strategy trial's control arm read 25.0% across the
+    bank while individual heavy users sat near 2%, and no aggregate could see
+    it. `min_uniform_share` is the number.
+
+    *The draw stops being independent of the offer draw.* If the two arms were
+    ever coupled — by the offer hash taking the chosen approach back as an
+    input, which is exactly what it used to do — then the uniform share inside
+    the prompt arm would drift away from the uniform share inside the control
+    arm. Both would still average to a healthy quarter overall, which is why
+    `pooled_uniform_share` is reported and is not the check. `max_arm_gap` is
+    the check: the largest per-student difference between those two shares. It
+    should be sampling noise and nothing else.
+    """
+    rows = (
+        db.session.query(
+            Attempt.user_id, Attempt.strategy_selection_arm, Attempt.strategy_variant
+        )
+        .filter(Attempt.strategy_selection_arm.isnot(None))
+        .all()
+    )
+    per_student = _selection_shares(rows)
+    draws = len(rows)
+    uniform = sum(1 for _user, arm, _variant in rows if arm == "uniform")
+
+    shares = []
+    gaps = []
+    for sides in per_student.values():
+        both = sides["prompt"] + sides["control"]
+        if len(both) >= experiments.HEALTH_MIN_DRAWS:
+            shares.append(sum(both) / len(both))
+        if (
+            len(sides["prompt"]) >= experiments.HEALTH_MIN_DRAWS
+            and len(sides["control"]) >= experiments.HEALTH_MIN_DRAWS
+        ):
+            gaps.append(
+                abs(
+                    sum(sides["prompt"]) / len(sides["prompt"])
+                    - sum(sides["control"]) / len(sides["control"])
+                )
+            )
+    design = experiments.LAYERS["strategy_selection"].share("uniform")
+    return {
+        "layer": "strategy_selection",
+        "students": len(per_student),
+        "draws": draws,
+        "design_uniform_share": round(design, 3),
+        "pooled_uniform_share": round(uniform / draws, 3) if draws else None,
+        "students_measured": len(shares),
+        "min_uniform_share": round(min(shares), 3) if shares else None,
+        "max_uniform_share": round(max(shares), 3) if shares else None,
+        "students_off_design": sum(
+            1 for share in shares if abs(share - design) > experiments.HEALTH_TOLERANCE * design
+        ),
+        "students_with_both_offer_arms": len(gaps),
+        "max_arm_gap": round(max(gaps), 3) if gaps else None,
+        "min_draws_for_a_student_reading": experiments.HEALTH_MIN_DRAWS,
+        "note": (
+            "`max_arm_gap` is the independence check. The pooled share cannot see the "
+            "failure it exists for: two coupled draws still average to the design."
         ),
     }

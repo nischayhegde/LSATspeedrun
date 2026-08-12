@@ -1089,7 +1089,18 @@ def create_study_session(
     db.session.add(session)
     db.session.flush()
     trials = [
-        (position, question, assign_strategy_trial(user.id, question, practice_style, position, focus_types=focus_types))
+        (
+            position,
+            question,
+            assign_strategy_trial(
+                user.id,
+                question,
+                practice_style,
+                position,
+                exposure=session.id,
+                focus_types=focus_types,
+            ),
+        )
         for position, question in enumerate(questions)
     ]
     # Which questions make their approach mandatory is decided for the run as a
@@ -1124,6 +1135,16 @@ def create_study_session(
                 # of the second draw is its own column beside it.
                 strategy_propensity=strategy_trial["propensity"] if strategy_trial else None,
                 strategy_candidates_n=strategy_trial["candidates_n"] if strategy_trial else None,
+                # Which of the two ways this question's approach was picked,
+                # and the probability of that arm. Recorded on control-arm
+                # questions as well as prompt-arm ones, because it decides
+                # which approach a control question is filed under and both
+                # arms have to be labelled by the same process. Null where the
+                # two arms would agree anyway.
+                strategy_selection_arm=strategy_trial["selection_arm"] if strategy_trial else None,
+                strategy_selection_propensity=(
+                    strategy_trial["selection_propensity"] if strategy_trial else None
+                ),
                 strategy_stratum=drawn.get("stratum"),
                 strategy_forcing_propensity=drawn.get("forcing_propensity"),
                 # Fixed here rather than at serve time so the gate a student
@@ -2016,6 +2037,8 @@ def submit_attempt(
         strategy_artifact_json=strategy_artifact or None,
         strategy_propensity=item.strategy_propensity,
         strategy_candidates_n=item.strategy_candidates_n,
+        strategy_selection_arm=item.strategy_selection_arm,
+        strategy_selection_propensity=item.strategy_selection_propensity,
         evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "coached_practice")),
         server_elapsed_ms=elapsed_ms,
         client_elapsed_ms=None,

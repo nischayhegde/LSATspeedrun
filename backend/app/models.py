@@ -246,6 +246,18 @@ class SessionItem(db.Model):
     # P0-8 / assign_strategy_trial.
     strategy_propensity = db.Column(db.Float, nullable=True)
     strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # --- Which approach (see the `strategy_selection` layer) -----------------
+    # Whether this question's approach was chosen by the student's own record
+    # or drawn uniformly from the same candidate set, and the probability of
+    # the arm that was drawn. Written on control-arm questions too: the arm
+    # decides which approach a control question is *filed under*, and if the
+    # two offer arms were labelled by different processes the offer trial's own
+    # comparison would stop being about the offer. Null where the two arms
+    # would pick the same approach anyway — under the coverage target, or on a
+    # question with a single candidate — because a row with no counterfactual
+    # takes no part in a comparison.
+    strategy_selection_arm = db.Column(db.String(12), nullable=True)
+    strategy_selection_propensity = db.Column(db.Float, nullable=True)
     # --- Mandatory approaches (see strategies.plan_forced_arms) --------------
     # The approach-by-question-type cell this assignment is charged to, and the
     # probability this question had of being drawn as a mandatory one. The
@@ -318,6 +330,10 @@ class Attempt(db.Model):
     strategy_prompt_ms = db.Column(db.Integer, nullable=False, default=0)
     strategy_propensity = db.Column(db.Float, nullable=True)
     strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # Copied off the session item at answer time, like every other arm on this
+    # row. See `SessionItem.strategy_selection_arm`.
+    strategy_selection_arm = db.Column(db.String(12), nullable=True, index=True)
+    strategy_selection_propensity = db.Column(db.Float, nullable=True)
     # --- Enforced strategy use (see app/enforcement.py) ----------------------
     # `strategy_applied` above is a self-report about a private mental act.
     # These columns are the observable version of the same claim. `satisfied`

@@ -3127,8 +3127,8 @@ def test_the_diagnostic_still_has_no_strategy_trial(app):
 
         user = User.query.filter_by(email="diagnostic-no-trial@example.test").one()
         question = Question.query.order_by(Question.id).first()
-        assert assign_strategy_trial(user.id, question, "diagnostic", 2) is None
-        assert assign_strategy_trial(user.id, question, "cases", 1) is not None
+        assert assign_strategy_trial(user.id, question, "diagnostic", 2, exposure="run-1") is None
+        assert assign_strategy_trial(user.id, question, "cases", 1, exposure="run-1") is not None
 
 
 def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
@@ -3141,12 +3141,33 @@ def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
 
         user = User.query.filter_by(email="strategy-stable@example.test").one()
         question = Question.query.order_by(Question.id).first()
-        first = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
-        second = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
+        first = [
+            assign_strategy_trial(user.id, question, "cases", position, exposure="run-1")
+            for position in range(6)
+        ]
+        second = [
+            assign_strategy_trial(user.id, question, "cases", position, exposure="run-1")
+            for position in range(6)
+        ]
         assert first == second
         # The control arm still exists alongside the prompts. It is visible now
         # rather than hidden, but it is still an arm that offers no technique.
         assert {trial["variant"] for trial in first} <= {"prompt", "control_visible"}
+
+        # Deterministic within a run, and *not* deterministic across runs.
+        # This is the whole exposure defect in two lines: the arm used to be a
+        # hash of student, question, slot and style, so the same question
+        # returning to the same slot re-drew the same arm forever and a heavy
+        # user's realised control share collapsed toward zero while the
+        # bank-wide figure stayed at a healthy quarter. One question in one
+        # slot across sixty runs has to produce both arms.
+        across = {
+            assign_strategy_trial(
+                user.id, question, "cases", 0, exposure=f"run-{index}"
+            )["variant"]
+            for index in range(60)
+        }
+        assert across == {"prompt", "control_visible"}
 
 
 def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monkeypatch):
@@ -3169,7 +3190,7 @@ def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monke
         user = User.query.filter_by(email="strategy-control@example.test").one()
         question = Question.query.order_by(Question.id).first()
         monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.0)
-        assigned = assign_strategy_trial(user.id, question, "deep", 2)
+        assigned = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
         assert assigned["variant"] == "control_visible"
         assert assigned["key"] in {"argument_core", "prephrase", "scope_precision", "conditional_chain"}
         # The arm's propensity is untouched by making it visible, so the
@@ -4494,13 +4515,19 @@ def test_strategy_scoring_weighs_explanation_quality(app, monkeypatch):
         db.session.commit()
 
         monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.5)
+        # Which approach the ranking picks is only defined on the ranked arm of
+        # `strategy_selection`; the uniform arm picks a candidate regardless of
+        # score, on purpose, and that is the comparison. Pinning the arm is how
+        # this test says which of the two it is about.
+        app.config["ADAPTIVE_LAYERS"] = {"strategy_selection": {"holdback": 0.0}}
 
         from app.strategies import assign_strategy_trial
 
-        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        trial = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
         assert trial is not None
         assert trial["variant"] == "prompt"
         assert trial["key"] == best
+        assert trial["selection_arm"] == "ranked"
 
 
 def test_strategy_scoring_falls_back_without_graded_attempts(app):
@@ -4553,7 +4580,7 @@ def test_strategy_scoring_falls_back_without_graded_attempts(app):
         from app.strategies import assign_strategy_trial
 
         # Must not raise (a naive mean over None would) and must still assign.
-        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        trial = assign_strategy_trial(user.id, question, "deep", 2, exposure="run-1")
         assert trial is not None
         assert trial["key"] in {"argument_core", "prephrase", "scope_precision", "role_map"}
 
@@ -5592,13 +5619,19 @@ def test_a_weak_type_keeps_exploring_strategies_after_others_have_settled(app):
         db.session.commit()
 
         assert BASE_COVERAGE_TRIALS < FOCUS_COVERAGE_TRIALS
-        assert assign_strategy_trial(user.id, question, "cases", 1)["key"] != starved
+        # The first call lands in the exploit branch, where `strategy_selection`
+        # has arms. Pinned to ranked, because "the settled leader is preferred
+        # over the starved candidate" is a statement about that arm.
+        app.config["ADAPTIVE_LAYERS"] = {"strategy_selection": {"holdback": 0.0}}
+        assert assign_strategy_trial(user.id, question, "cases", 1, exposure="run-1")["key"] != starved
         focused = assign_strategy_trial(
-            user.id, question, "cases", 1, focus_types=[question.question_type]
+            user.id, question, "cases", 1, exposure="run-1", focus_types=[question.question_type]
         )
         assert focused["key"] == starved
         # The focus list is read by question type, not applied to everything.
-        elsewhere = assign_strategy_trial(user.id, question, "cases", 1, focus_types=["Some Other Type"])
+        elsewhere = assign_strategy_trial(
+            user.id, question, "cases", 1, exposure="run-1", focus_types=["Some Other Type"]
+        )
         assert elsewhere["key"] != starved
 
 
