@@ -63,16 +63,26 @@ import type { DeckScene, SceneContext } from './types'
  * that fits the theme of the slideshow", and the theme's blue is `--blue`.
  */
 const ROOM_PALETTE = {
-  /** `--blue`. Every surface the audience can see. */
+  /** `--blue`. The deck's field blue, and the room's reference. */
   blue: 0x1b2f6b,
+  /**
+   * Every surface the audience can see.
+   *
+   * `--blue` taken down about a fifth, which lands it between it and
+   * `--blue-deep` — and, not by coincidence, exactly on the value the floor was
+   * already painted. The founders picked the target themselves: "make the
+   * entire slide that dark blue" was said about the navy below the old horizon,
+   * which is this. Painting the walls with it means the half of the frame they
+   * approved does not move at all and the half they objected to comes down to
+   * meet it, rather than both drifting to a new value nobody has seen.
+   */
+  field: 0x142455,
   /** `--blue-deep`. The ceiling and the far corners, so the box has a top. */
   blueDeep: 0x0d1734,
   /** `--gold`. Spent once, on one hairline. */
   gold: 0xc89b4b,
   /** `--beige`, for the key's own colour rather than a neutral white. */
   beige: 0xefe6d6,
-  /** `--beige-dim`. The deck sentence, a step under the headline as in the DOM. */
-  beigeDim: 0xd8cbb4,
 } as const
 
 /**
@@ -332,7 +342,7 @@ function letteringLines(): readonly LetteringItem[] {
   // measures are the width each has before it would reach the figure — the
   // headline is the widest thing on the slide and gets nearly all of it.
   const headline = setCopy(slide?.headline ?? '', HEADLINE_SIZE, 6.4)
-  const deck = setCopy(slide?.deck ?? '', DECK_SIZE, 5.2)
+  const deck = setCopy(slide?.deck ?? '', DECK_SIZE, 5.6)
 
   const lines: LetteringItem[] = []
 
@@ -381,12 +391,30 @@ function letteringLines(): readonly LetteringItem[] {
       text,
       size: DECK_SIZE,
       depth: 0,
-      color: ROOM_PALETTE.beigeDim,
+      /*
+        `--beige` where the DOM set `--beige-dim`, plus a little emission, and
+        the reason is that the scrim can no longer help.
+
+        The old plate was DOM copy drawn *over* a gradient that darkened the
+        room behind it — the field lost a third of its value and the type kept
+        all of its own, which is where its contrast came from. Copy that lives
+        in the scene is under the gradient rather than over it, so a scrim now
+        dims the letters and the floor by the same factor and moves the ratio
+        the wrong way. It is gone, and this line has to hold its own contrast.
+
+        Measured on the settled frame: stroke peak against the floor behind it
+        was 191:38 on the old plate and is 206:50 here. The founders traded some
+        of that when they asked for one field with no dark band in it; this
+        recovers what could be recovered without making the sentence shout at
+        the headline.
+      */
+      color: ROOM_PALETTE.beige,
+      glow: .18,
       lead: index === 0 ? .72 : .42,
     })
   }
 
-  lines.push({ lead: .46, width: 5.2, thickness: .022, color: ROOM_PALETTE.gold, glow: .5 })
+  lines.push({ lead: .46, width: 5.4, thickness: .022, color: ROOM_PALETTE.gold, glow: .5 })
 
   if (slide?.pull) {
     lines.push({
@@ -409,7 +437,7 @@ function letteringLines(): readonly LetteringItem[] {
 
 /** Sizes the copy has to be measured at before its lines can be built. */
 const HEADLINE_SIZE = .92
-const DECK_SIZE = .3
+const DECK_SIZE = .32
 
 export function createCloseRoomScene(context: SceneContext): DeckScene {
   const scene = new THREE.Scene()
@@ -450,7 +478,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   // One inverted box. A `BoxGeometry` carries six material groups, so the
   // floor, the ceiling and the walls can each be their own value at the cost
   // of six draw calls and twelve triangles for the entire set.
-  const wall = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blue, roughness: .92, metalness: 0 })
+  const wall = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .92, metalness: 0 })
   /*
     ONE FIELD, SEPARATED BY LIGHT RATHER THAN BY PAINT.
 
@@ -471,8 +499,8 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
     eye still reads a corner and the shadow still has a plane to lie on, and
     far too little to read as a second colour.
   */
-  const wallBack = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blue, roughness: .94, metalness: 0 })
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blue, roughness: .78, metalness: .04 })
+  const wallBack = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .94, metalness: 0 })
+  const floorMaterial = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .78, metalness: .04 })
   const ceiling = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blueDeep, roughness: .96, metalness: 0 })
   // Groups are ordered +x, -x, +y, -y, +z, -z. The +z face is behind the lens.
   const shell = new THREE.Mesh(
