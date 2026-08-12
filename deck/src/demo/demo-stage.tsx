@@ -77,9 +77,12 @@ import './demo-stage.css'
  *
  * ## Where it sits
  *
- * `position: fixed` at the live slot's measured rect, at z-index 4: over the
- * slide layer that owns the slot, under the transition's letterbox bars, and
- * under the grain and scanlines. See `demo-stage.css`.
+ * `position: fixed` at the live slot's measured rect, under the transition's
+ * letterbox bars and under the grain and scanlines, and on one of two sides of
+ * the slide layers depending on the slide: z-index 4 for a demo framed inside a
+ * slide's own chrome, and z-index 2 — below the layers — for the full-bleed demo
+ * slides, where the app *is* the field and the layer above it holds nothing but a
+ * plate of type. `data-under` carries which; `demo-stage.css` has the reasoning.
  *
  * The callouts moved up here with it, because they have to be over the frame and
  * the frame is now over the slide. They are still positioned in percentages of
@@ -157,8 +160,34 @@ type Props = {
 const LEGIBILITY_WIDTH = 1400
 /** Used only when a slide names no width at all. */
 const DEFAULT_WIDTH = 1400
-/** 16:10 rather than 16:9 — the app's dashboard is tall, and a 16:9 slot crops it. */
-const ASPECT = 16 / 10
+
+/**
+ * The shape the app is laid out at, which is now the shape of the hole rather
+ * than a constant.
+ *
+ * This was `16 / 10`, and that one number was the letterbox. The frame is scaled
+ * to *contain* — the app must never be cropped — so a logical box of one aspect
+ * inside a slot of another leaves a band on two edges, and no amount of layout
+ * work upstream can close it. Measured on the full-bleed slides before this
+ * change, in stills mode at 1920x1080: the app occupied 77.2% of the viewport
+ * height with 125px of black above it and 125px below. The founders' words were
+ * "no vertical bars — have it take full viewport height."
+ *
+ * Deriving the logical height from the slot's own measured rect closes the band
+ * arithmetically rather than by cropping or by zooming: both terms of the `min`
+ * below become equal, so the frame lands exactly on the slot at every viewport
+ * and every projector aspect. What changes for the app is the *shape* of the
+ * viewport it is handed — 1250x703 rather than 1250x781 on a 16:9 screen — which
+ * is a viewport it would meet on any laptop, and nothing about it is cut off.
+ *
+ * The clamp is for a slot nothing here anticipated. Below 1.2 the app would be
+ * given a nearly square viewport, above 2.1 a letterbox slit; either is a shape
+ * the app was not authored for, and a small band is better than a squashed
+ * layout. Neither bound is reachable on any projector in the runbook — a 4:3
+ * stage is 1.33 and an ultrawide is 2.39.
+ */
+const MIN_ASPECT = 1.2
+const MAX_ASPECT = 2.1
 
 /** How long after the last load to keep the cover up if `load` never fires. */
 const COVER_TIMEOUT_MS = 6000
@@ -239,6 +268,16 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
    */
   const tracked = useRef<DemoSpec | null>(null)
   /**
+   * Whether the slide the frame is serving is one of the full-bleed demo slides,
+   * held through the fade-out for the same reason `tracked` is.
+   *
+   * It decides which side of the slide layers the embed sits on — see
+   * `data-under` and the long note in `demo-stage.css`. A `split` slide that
+   * carried a demo would be framed inside its own chrome, and that chrome is
+   * opaque, so it keeps the embed above the layer exactly as before.
+   */
+  const trackedBleed = useRef(false)
+  /**
    * Where we believe the frame currently is, which is not the same as what React
    * put in `src`: the presenter navigates inside it, and `continuesFrom` is the
    * slide saying so.
@@ -294,6 +333,7 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
 
     setLeaving(false)
     tracked.current = demo
+    trackedBleed.current = slide?.kind === 'demo'
 
     // A still is showing, so there is no live frame to manage — but the stage
     // stays mounted, because it owns the callouts and they have to be over
@@ -534,9 +574,12 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
   const logicalWidth = Math.round(
     Math.min(spec?.width ?? DEFAULT_WIDTH, LEGIBILITY_WIDTH) / (spec?.zoom ?? 1),
   )
-  const logicalHeight = Math.round(logicalWidth / ASPECT)
-  // Contain, not cover: the app must never be cropped, and the slot's own
-  // proportions come from the slide layout rather than from the app.
+  const aspect = Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, rect.width / rect.height))
+  const logicalHeight = Math.round(logicalWidth / aspect)
+  // Contain, not cover: the app must never be cropped. With the logical box taken
+  // from the slot's own aspect the two terms are equal, so containing and filling
+  // are the same thing — and on the one shape that clamps, containing is what
+  // keeps the app whole.
   const scale = Math.min(rect.width / logicalWidth, rect.height / logicalHeight)
 
   return (
@@ -545,6 +588,11 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
       ref={host}
       data-leaving={leaving ? '' : undefined}
       data-loading={loading && run ? '' : undefined}
+      // A full-bleed demo slide puts the app *under* its slide layer rather than
+      // over it, because at full bleed the app is the slide's field and the only
+      // thing left in the layer is type that has to be readable on top of it.
+      // See the long note in `demo-stage.css`.
+      data-under={(demo ? slide?.kind === 'demo' : trackedBleed.current) ? '' : undefined}
       // No live frame: the slide is showing its still, which is painted by the
       // chrome in the layer below. The stage has to become a sheet of glass
       // rather than a surface, or it would cover it.

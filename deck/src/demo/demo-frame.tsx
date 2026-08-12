@@ -31,6 +31,18 @@ import { describeSurface, presenterChrome, registerSlot, runtimeVersion, subscri
  * the slide layout — owned by the narrative, in `slides/layouts.tsx` — still
  * decides where and how big the demo is, exactly as before.
  *
+ * ## The two shapes this can take
+ *
+ * `bleed` is the demo slides: the app owns the viewport and the only deck
+ * furniture on screen is a plate of type over it. The title bar is not drawn
+ * here in that case — it is `DemoRoute`, rendered into that plate — because a
+ * strip of deck chrome above a full-bleed app is a black band above the app's own
+ * header, which is exactly the letterboxing the founders objected to.
+ *
+ * Without `bleed` the frame is a window inside a slide, with its own bar, border
+ * and drop shadow. Nothing in the deck asks for that today; `SplitBody` is the
+ * layout that would.
+ *
  * ## The three things that make it safe on stage
  *
  * 1. **A health probe with a hard timeout**, in the stage, once for the deck.
@@ -70,13 +82,65 @@ type Props = {
   annotations: number
   /** False for a slide that is warm but not on screen. */
   active: boolean
+  /**
+   * The frame is the whole slide rather than a window inside one.
+   *
+   * Set by `DemoBody`, and it drops the title bar. The bar exists to say "this is
+   * the product, and this is where in it we are", which is worth a strip of a
+   * slide that also has a copy column — and is a 71px black band across the top
+   * of the screen once the app owns the viewport, sitting directly above the app's
+   * *own* header bar. The audience read two title bars stacked and the founders
+   * read the top one as letterboxing.
+   *
+   * So on a full-bleed slide the same line is rendered by `DemoRoute` at the head
+   * of the copy plate instead, where it is deck furniture among deck furniture.
+   * Nothing is lost and no selector disappears — see `DemoRoute`.
+   */
+  bleed?: boolean
 }
 
-export function DemoFrame({ demo, stills, active }: Props) {
+/**
+ * The frame's title line: the product's mark, where in the app we are, and the
+ * presenter's live-versus-still lamp.
+ *
+ * Split out of `DemoFrame` so that a full-bleed slide can put it in its copy
+ * plate rather than in a band over the app. It keeps the `.demo-bar` class and
+ * the `<code>` inside it, which is not cosmetic conservatism: the bar's type is
+ * already the app's chrome language in `styles/deck.css`, and
+ * `scripts/verify-office-toggle.mjs` reads `.demo-bar code` to prove that the
+ * `O` toggle actually changed the route the slide claims to be showing. A
+ * renamed element would have quietly turned that gate into a null check.
+ */
+export function DemoRoute({ demo, stills }: { demo: DemoSpec; stills: boolean }) {
+  useSyncExternalStore(subscribeRuntime, runtimeVersion)
+  const { label, caption } = describeSurface(demo, stills)
+  return (
+    <header className="demo-bar engraved">
+      <span className="demo-chip bevel" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path
+            d="M7 20h10v2H7z M10 18h4v2h-4z M11 7h2v11h-2z M10 3h4v3h-4z M3 6h18v2H3z M4 8h1v3H4z M19 8h1v3h-1z M1 11h7l-1.75 3.25h-3.5z M16 11h7l-1.75 3.25h-3.5z"
+            fill="currentColor"
+          />
+        </svg>
+      </span>
+      {/* `caption`, never `route`: the route is a dev URL and one of them
+          carries the answer key. See `DemoSurface.caption`. */}
+      <code>{caption}</code>
+      {/* Presenter-only: see `presenterChrome`. The audience has no use for
+          "live" versus "stills" and reads the chip as a debug badge. */}
+      {presenterChrome ? (
+        <span className={`demo-lamp is-${label.replace(/\s+/g, '-')}`} title={label}>{label}</span>
+      ) : null}
+    </header>
+  )
+}
+
+export function DemoFrame({ demo, stills, active, bleed }: Props) {
   useSyncExternalStore(subscribeRuntime, runtimeVersion)
   const slot = useRef<HTMLDivElement | null>(null)
 
-  const { showStill, label, caption, still } = describeSurface(demo, stills)
+  const { showStill, caption, still } = describeSurface(demo, stills)
 
   /**
    * Published under this slide's own `DemoSpec`, and only while this layer is the
@@ -99,28 +163,13 @@ export function DemoFrame({ demo, stills, active }: Props) {
   }, [active, demo])
 
   return (
-    <figure className="demo">
+    <figure className={`demo${bleed ? ' is-bleed' : ''}`}>
       <div className="demo-chrome">
         {/* The title bar is the app's own chrome language: an engine-turned navy
-            plate, a gold bevelled chip for the mark, monospace for the route. */}
-        <header className="demo-bar engraved">
-          <span className="demo-chip bevel" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path
-                d="M7 20h10v2H7z M10 18h4v2h-4z M11 7h2v11h-2z M10 3h4v3h-4z M3 6h18v2H3z M4 8h1v3H4z M19 8h1v3h-1z M1 11h7l-1.75 3.25h-3.5z M16 11h7l-1.75 3.25h-3.5z"
-                fill="currentColor"
-              />
-            </svg>
-          </span>
-          {/* `caption`, never `route`: the route is a dev URL and one of them
-              carries the answer key. See `DemoSurface.caption`. */}
-          <code>{caption}</code>
-          {/* Presenter-only: see `presenterChrome`. The audience has no use for
-              "live" versus "stills" and reads the chip as a debug badge. */}
-          {presenterChrome ? (
-            <span className={`demo-lamp is-${label.replace(/\s+/g, '-')}`} title={label}>{label}</span>
-          ) : null}
-        </header>
+            plate, a gold bevelled chip for the mark, monospace for the route.
+            Not on a full-bleed slide, where it would be a band over the app's own
+            header — the copy plate carries the same line there. */}
+        {bleed ? null : <DemoRoute demo={demo} stills={stills} />}
 
         {/* Measured by the stage, which positions the live embed over it. The
             still is painted here rather than there so that it transitions with

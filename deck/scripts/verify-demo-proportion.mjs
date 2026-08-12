@@ -35,11 +35,25 @@
  *   - **Uncut.** The painted frame inside its slot's bounds. The slot clips with
  *     `overflow: hidden`, so anything outside it is not letterboxed, it is gone.
  *
- * And it reports one number rather than asserting it: the frame's share of the
- * viewport, against the founders' "should literally take up half, if not more".
- * That is reported and not failed because it is a judgement about a slide's
- * layout — the slot's size is the slide's business, and this script is not the
+ * And it reports rather than asserts three numbers: the frame's share of the
+ * viewport by area, and — the two the founders actually asked about — its width
+ * and height each as a percentage of the viewport's. Reported and not failed
+ * because it is a judgement about a slide's layout, and this script is not the
  * place to legislate it. A number per size, in a table, is the useful form.
+ *
+ * The two axes are separate columns because they fail separately, and the
+ * founders' complaint was axial: *"no vertical bars — have it take full viewport
+ * height."* An area share cannot tell letterboxing from a narrow slot. 100% of
+ * the height with 78% of the width is a slide with bars down the sides; the
+ * reverse is the one that was on screen.
+ *
+ * ## Running it with no app stack
+ *
+ * `--stills` appends `?stills=1` and skips the sign-in, so the whole sweep runs
+ * against the deck alone. Every demo slide then paints its captured frame, and
+ * the still is painted into the same slot the live embed is positioned over — so
+ * the *geometry* being measured is the same geometry, which is what makes this
+ * usable on a machine that cannot run the product.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -57,6 +71,7 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
 const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
 const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
 const EMAIL = flags.get('email') || 'student@localhost.test'
+const STILLS = flags.has('stills')
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots/proportion')
 mkdirSync(OUT, { recursive: true })
 
@@ -86,10 +101,13 @@ const context = await browser.newContext({
   viewport: { width: SIZES[0].w, height: SIZES[0].h },
   deviceScaleFactor: 1,
 })
-{
+// Nothing to sign in to in a stills pass: no iframe is mounted, so no cookie has
+// to cross an origin. Same reasoning `shoot.mjs` gives for skipping it.
+if (!STILLS) {
   const response = await context.request.post(`${APP}/v1/auth/dev`, { data: { email: EMAIL } })
   if (!response.ok()) {
-    console.error(`verify-demo-proportion: could not sign in (${response.status()}). Backend up with DEV_AUTH_ENABLED=true?`)
+    console.error(`verify-demo-proportion: could not sign in (${response.status()}). Backend up with DEV_AUTH_ENABLED=true?`
+      + '\nPass --stills to measure the geometry against the captured frames instead.')
     await browser.close()
     process.exit(2)
   }
@@ -99,6 +117,8 @@ const context = await browser.newContext({
 // listed here, so a slide added or renamed in `slides/index.ts` is covered
 // without this file being touched. `measure-embed.mjs` hardcodes five and has
 // been missing `demo-clients-walk-in` since it was added.
+const QUERY = STILLS ? '?stills=1' : ''
+
 const probe = await context.newPage()
 await probe.goto(`${BASE}/?start=0`, { waitUntil: 'domcontentloaded', timeout: 30000 })
 await probe.waitForSelector('.deck-layer.is-live', { timeout: 20000 })
@@ -115,8 +135,8 @@ for (const size of SIZES) {
   await page.setViewportSize({ width: size.w, height: size.h })
 
   for (const id of ids) {
-    await page.goto(`${BASE}/#/${id}`, { waitUntil: 'domcontentloaded', timeout: 30000 })
-    const live = await page.waitForSelector('.demo-stage-frame', { timeout: 15000 })
+    await page.goto(`${BASE}/${QUERY}#/${id}`, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    const live = await page.waitForSelector('.demo-stage-frame', { timeout: STILLS ? 1200 : 15000 })
       .then(() => true).catch(() => false)
     // Long enough for the app inside to paint and for the stage's own
     // ResizeObserver to settle on the new viewport; the scale is computed from
@@ -135,8 +155,28 @@ for (const size of SIZES) {
       const still = document.querySelector('.demo-still')
       const painted = frame || still
       const slot = document.querySelector('.deck-layer.is-live .demo-screen')
-      const paintedRect = painted?.getBoundingClientRect()
+      /**
+       * What the audience sees, which for a still is not the element's box.
+       *
+       * `.demo-still` is `inset: 0` with `object-fit: contain`, so its border box
+       * is the slot's box whatever the picture's shape — and every still in
+       * `public/stills/` is a 16:9 capture. Measuring the box therefore reported
+       * a still as filling a slot it was letterboxed inside, which is exactly the
+       * band the founders are pointing at. The content rect is derived from the
+       * intrinsic size the same way `contain` derives it.
+       */
+      const contentRect = (element, rect) => {
+        if (!rect || !(element instanceof HTMLImageElement)) return rect
+        const nw = element.naturalWidth
+        const nh = element.naturalHeight
+        if (!nw || !nh) return rect
+        const fit = Math.min(rect.width / nw, rect.height / nh)
+        const w = nw * fit
+        const h = nh * fit
+        return new DOMRect(rect.left + (rect.width - w) / 2, rect.top + (rect.height - h) / 2, w, h)
+      }
       const slotRect = slot?.getBoundingClientRect()
+      const paintedRect = contentRect(painted, painted?.getBoundingClientRect())
       const pc = centre(paintedRect)
       const sc = centre(slotRect)
       return {
@@ -161,10 +201,21 @@ for (const size of SIZES) {
       ? (seen.painted.w * seen.painted.h) / (seen.viewport.w * seen.viewport.h)
       : 0
     const pct = (share * 100).toFixed(1)
-    rows.push({ size: `${size.w}x${size.h}`, id, ...seen, share: Number(pct) })
+    // The two axes, which is what "full viewport height" is a claim about.
+    const wide = ((seen.painted.w / seen.viewport.w) * 100).toFixed(1)
+    const tall = ((seen.painted.h / seen.viewport.h) * 100).toFixed(1)
+    rows.push({
+      size: `${size.w}x${size.h}`,
+      id,
+      ...seen,
+      share: Number(pct),
+      widthPct: Number(wide),
+      heightPct: Number(tall),
+    })
 
     console.log(`  ${id.padEnd(28)} ${String(seen.painted.w).padStart(4)}x${String(seen.painted.h).padStart(4)}`
-      + `  ${String(pct).padStart(5)}% of screen  offset ${seen.offset.x >= 0 ? '+' : ''}${seen.offset.x},`
+      + `  w ${String(wide).padStart(5)}%  h ${String(tall).padStart(5)}%  area ${String(pct).padStart(5)}%`
+      + `  offset ${seen.offset.x >= 0 ? '+' : ''}${seen.offset.x},`
       + `${seen.offset.y >= 0 ? '+' : ''}${seen.offset.y}  (${seen.kind})`)
 
     // 1px, because the two centres are computed from fractional rects and
@@ -188,16 +239,20 @@ for (const size of SIZES) {
 // The share table, which is the number the founders asked about. Reported per
 // slide per size rather than averaged, because "half the viewport" is a claim
 // about the worst one.
-console.log('\nshare of viewport, by slide and size')
-const header = ['slide'.padEnd(28), ...SIZES.map((s) => `${s.w}x${s.h}`.padStart(10))].join('')
-console.log(`  ${header}`)
-for (const id of ids) {
-  const cells = SIZES.map((s) => {
-    const row = rows.find((r) => r.id === id && r.size === `${s.w}x${s.h}`)
-    return `${row ? `${row.share}%` : '-'}`.padStart(10)
-  })
-  console.log(`  ${id.padEnd(28)}${cells.join('')}`)
+const table = (label, read) => {
+  console.log(`\n${label}, by slide and size`)
+  console.log(`  ${['slide'.padEnd(28), ...SIZES.map((s) => `${s.w}x${s.h}`.padStart(12))].join('')}`)
+  for (const id of ids) {
+    const cells = SIZES.map((s) => {
+      const row = rows.find((r) => r.id === id && r.size === `${s.w}x${s.h}`)
+      return `${row ? `${read(row)}%` : '-'}`.padStart(12)
+    })
+    console.log(`  ${id.padEnd(28)}${cells.join('')}`)
+  }
 }
+table('HEIGHT as % of viewport height', (row) => row.heightPct)
+table('WIDTH as % of viewport width', (row) => row.widthPct)
+table('area share of viewport', (row) => row.share)
 const shares = rows.map((r) => r.share)
 if (shares.length) {
   const worst = Math.min(...shares)
