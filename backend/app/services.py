@@ -126,6 +126,65 @@ MEGA_LITIGATION_PROMOTION_ACCURACY = 0.70
 # rest stay random so practice keeps covering the whole test.
 FOCUS_FILL_RATIO = 0.6
 
+# The two sections this bank ships, spelled once. Both are compared against
+# `Question.section` all over this module as bare strings; these are here because
+# the case-shape code below turns on them and a typo would silently produce a
+# run with no Reading Comprehension in it, which is the exact bug being fixed.
+LOGICAL_REASONING = "Logical Reasoning"
+READING_COMPREHENSION = "Reading Comprehension"
+
+# What share of practice cases are Reading Comprehension cases.
+#
+# A third, and the number is over-determined: the bank is 34.4% Reading
+# Comprehension (2,366 of 6,886), the scored exam is about the same (27 RC
+# against 51 LR), and the form the mega-litigation imitates is literally one
+# section in three — LR I, RC, LR II. A practice diet of one reading case in
+# three is the same diet, at the scale of a sitting.
+#
+# In *questions* that is about 36%, not 34.4%, because a reading case is a
+# little longer than an argument case: a passage averages 6.8 questions where an
+# argument case is 6. Stated rather than tuned away. Landing exactly on the bank
+# share would want a share of 0.316, and buying 1.6 points of precision with a
+# number nobody can read off the design is a bad trade — particularly for a
+# section that was being served at 0.0%.
+#
+# It exists because the general filler cannot reach Reading Comprehension at
+# all. A passage is indivisible and 88.3% of passages are six questions or
+# longer, so a whole passage has to win a slot race against ~4,520 single
+# Logical Reasoning questions inside a budget that is usually 3. Measured with
+# `tools/audit/rc_reachability_probe.py` before this change, at fresh budgets of
+# 2, 3 and 5 the RC share was 0.0% over 40 runs each. Since fresh selection
+# served no RC, no new RC entered the review queue either, so the section
+# emptied out of practice entirely from about a student's tenth question onward.
+#
+# Raising the overshoot allowance was the first attempt and it is not enough: at
+# a budget of 3 an allowance of 2 admits passages of five or fewer, which is 41
+# of 349, and those still have to win the same race. Measured, budget 3 stayed
+# at 0.0%. The section needs its own case shape, not a bigger crack to squeeze
+# through.
+RC_CASE_SHARE = 1 / 3
+
+# The shortest sitting that can be a reading case at all.
+#
+# A reading case is one passage, so the sitting has to be able to hold one. Six,
+# because `reading_case_ceiling(6)` is 8 and the passages in this bank run 4 to
+# 16 with a median of 7 — at five the ceiling is 6 and the median passage no
+# longer fits, so what came back would be either a runt passage or nothing.
+#
+# Below this the ordinary argument shape is used. That is the right answer
+# rather than a concession: the entry points that ask for fewer than six are the
+# three-question quick drill and the "continue review" button, and a passage
+# does not fit in three questions under any rule. The sitting the game actually
+# hands out, and the one the daily goals are denominated in, is six.
+RC_CASE_MIN_SITTING = 6
+
+# Share of a case's questions that come from the review queue rather than fresh
+# material. Half, which is what `create_study_session` has always used for the
+# Logical Reasoning case (`session_size // 2`), named here because the Reading
+# Comprehension case has to apply the same split across cases rather than inside
+# one — a passage is one unit and cannot be half review.
+REVIEW_SHARE = 0.5
+
 
 def reasoning_min_chars(session: StudySession) -> int:
     """Characters of written explanation a session demands before an answer counts."""
@@ -678,7 +737,9 @@ class QuestionFact(NamedTuple):
     section: str | None
 
 
-def _eligible_question_facts(question_type: str | None) -> list[QuestionFact]:
+def _eligible_question_facts(
+    question_type: str | None, section: str | None = None
+) -> list[QuestionFact]:
     query = db.session.query(
         Question.id,
         Question.question_type,
@@ -687,6 +748,8 @@ def _eligible_question_facts(question_type: str | None) -> list[QuestionFact]:
     ).filter(Question.source.like(f"{SOURCE_PREFIX}%"))
     if question_type:
         query = query.filter(Question.question_type == question_type)
+    if section:
+        query = query.filter(Question.section == section)
     return [QuestionFact(*row) for row in query.all()]
 
 
@@ -723,13 +786,16 @@ def select_random_questions(
     user_id: str | None = None,
     exclude_ids: set[str] | None = None,
     focus_types: list[str] | None = None,
+    section: str | None = None,
 ) -> list[Question]:
     # Excluding here rather than from `unseen` alone matters: the fallback below
     # widens the pool to already-seen questions, and a question seeded as a
     # repair is by definition seen. Filtering only `unseen` would let it come
     # back through the fallback and appear twice in one run.
     blocked = exclude_ids or set()
-    eligible = [fact for fact in _eligible_question_facts(question_type) if fact.id not in blocked]
+    eligible = [
+        fact for fact in _eligible_question_facts(question_type, section) if fact.id not in blocked
+    ]
     if not eligible:
         return []
     # Hoisted out of the comprehension below: calling this once here instead of
@@ -762,19 +828,250 @@ def _passage_blocks(pool: list[QuestionFact]) -> list[list[QuestionFact]]:
     return [sorted(block, key=lambda question: question.id) for block in grouped.values()]
 
 
-def _fill_blocks(blocks: list[list[QuestionFact]], budget: int, selected: list[list[QuestionFact]]) -> None:
+# How far past its target a run may run to finish a Reading Comprehension
+# passage whole.
+#
+# A block is indivisible and RC passages in this bank are 4 to 16 questions with
+# a median of 7, so a run that may never exceed its target can only ever serve a
+# passage shorter than the target. At the ten-question runs this app used to
+# serve that cost nothing visible: 98.6% of the RC bank fitted. At six it is
+# ruinous — a flat six-question run can reach 33.5% of the RC bank, and a flat
+# five-question run 8.6%. The rest of Reading Comprehension simply stops being
+# served.
+#
+# That is not only a content problem, it moves the campaign's length. Reading
+# Comprehension is budgeted at 330s for the first question on a passage against
+# 150s for a Logical Reasoning question (`_target_time_seconds`), so squeezing RC
+# out of the mix makes the average question cheaper in wall-clock time and the
+# whole campaign quietly shorter. Reproduce the table below with
+# `scripts/measure_served_section_mix.py` at its defaults (4,000 generated runs
+# per setting against the real bank, seed 20260811):
+#
+#     target 10, no allowance (was)   10.00 q/run   18.2% RC   152.7 s/q   25.5 min
+#     target  6, no allowance          6.00 q/run    3.4% RC   150.7 s/q   15.1 min
+#     target  5, no allowance          5.00 q/run    0.9% RC   150.2 s/q   12.5 min
+#     target  5, allowance 3           5.32 q/run   18.0% RC   152.8 s/q   13.6 min
+#     target  6, allowance 2           6.20 q/run   16.7% RC   152.6 s/q   15.8 min
+#     target  6, allowance 4           6.59 q/run   26.5% RC   153.9 s/q   16.9 min
+#
+# Six with an allowance of two is the setting that holds the served mix, and so
+# the campaign's wall-clock length, closest to what ships: 152.6s against 152.7s,
+# a difference of 0.1%. It also keeps the run tight, 6 to 8 questions, where a
+# five-question target puts a 5-question run beside an 8-question one.
+#
+# And it does the thing this change exists to do: the run goes from 25.5 budgeted
+# minutes to 15.8.
+#
+# The four passages longer than eight questions (one of 9, one of 10, two of 16;
+# 51 questions, 2.2% of the RC bank) are not reachable at this target and were
+# reachable at ten. That is the price of the shorter run and it is paid
+# knowingly: a sixteen-question passage is not a six-question case under any
+# allowance that leaves the run short.
+PASSAGE_OVERSHOOT_ALLOWANCE = 2
+
+
+def passage_overshoot_allowance(count: int) -> int:
+    """How far past ``count`` a run of that size may go to finish a passage.
+
+    PASSAGE_OVERSHOOT_ALLOWANCE, but never more than a third of the run. The
+    flat allowance is sized for the run the app actually serves and is nonsense
+    applied to a small one: a caller asking for two questions and being handed
+    four has not had its run stretched, it has had a different run built. Runs
+    that small are only ever requested explicitly — by the queue-cap path and by
+    tests — and they must come back the length they asked for.
+
+    A third is exactly PASSAGE_OVERSHOOT_ALLOWANCE at the shipped six-question
+    run, so this bounds the small cases without changing the shipped one.
+    """
+    return max(0, min(PASSAGE_OVERSHOOT_ALLOWANCE, count // 3))
+
+
+def reading_case_ceiling(count: int) -> int:
+    """The most questions one Reading Comprehension case may serve.
+
+    The same ceiling the overshoot allowance already defines, reused rather than
+    given a constant of its own, because it answers the same question: how long
+    a sitting may run when a passage is what it is made of. At the shipped
+    six-question case that is 8, which serves 345 of 349 passages (97.8% of the
+    Reading Comprehension bank) whole in a single case.
+
+    In time rather than questions, 8 is where the two case shapes stay
+    comparable. `_target_time_seconds` budgets 330s for the first question on a
+    passage and 135s for each one after it, so an eight-question reading case is
+    21.3 minutes against a six-question argument case's 15.0. The common
+    passage, six or seven questions, is 16.8 to 18.1 minutes — near enough the
+    same sitting. Serving all sixteen questions of the longest passage in one go
+    would be 39 minutes, which is worse than the ten-question run this whole
+    change removed.
+    """
+    return count + passage_overshoot_allowance(count)
+
+
+def reading_case_floor(count: int) -> int:
+    """The fewest questions a passage must carry to be a case on its own.
+
+    Half the sitting that was asked for. A reading case is as long as its
+    passage, which is the point — but a passage has to be enough of a sitting to
+    be worth sitting down to, and two questions is not a case, it is an
+    interruption.
+
+    On the shipped bank this never fires: passages run 4 to 16 questions and the
+    floor at a six-question sitting is 3. It exists for the banks that are not
+    the shipped one — most of the test suite runs on a handful of hand-written
+    questions, and a deployment could ship stub content — where the alternative
+    is that asking for six questions quietly returns two.
+    """
+    return max(2, count // 2)
+
+
+def _reading_case_from_passage(
+    block: list[QuestionFact],
+    ceiling: int,
+    *,
+    prefer_first: set[str],
+) -> list[QuestionFact]:
+    """One passage's questions, in the order this case should serve them.
+
+    `prefer_first` is whatever this case is being built around — the unseen
+    questions on a fresh-led case, the due review cards on a review-led one.
+    Everything else follows in the passage's own order, and the case is cut at
+    `ceiling`.
+
+    This is what happens when a sixteen-question passage meets a six-question
+    sitting, and it is why nothing needs to be stored to make it work. The
+    passage is not split into a fragment and an orphan: each visit serves that
+    one passage and nothing else, and because the questions the student has not
+    answered sort first, a second visit picks up where the first left off. The
+    passage text is attached to every one of its questions, so no question is
+    ever served without it — the invariant the passage-mate fix established.
+    Four passages in this bank need a second visit (one of 9, one of 10, two of
+    16); the other 345 are finished in one.
+    """
+    preferred = [question for question in block if question.id in prefer_first]
+    rest = [question for question in block if question.id not in prefer_first]
+    return (preferred + rest)[:ceiling]
+
+
+def select_reading_comprehension_case(
+    count: int,
+    *,
+    user_id: str | None = None,
+    exclude_ids: set[str] | None = None,
+    due_ids: list[str] | None = None,
+) -> list[Question]:
+    """One passage, whole, as a case in its own right.
+
+    The Reading Comprehension case exists because a passage cannot compete for
+    slots in a mixed run: it is indivisible, it is usually longer than the whole
+    fresh budget, and it is outnumbered roughly thirteen to one by single
+    Logical Reasoning questions in the shuffle. See RC_CASE_SHARE for the
+    measurement. Rather than widen the crack, this builds the case out of the
+    passage and lets the passage decide how long the case is.
+
+    Which passage, and the one rule that keeps this honest:
+
+    * **Review-led**, when the student has due Reading Comprehension cards and
+      the coin (REVIEW_SHARE) says so: build on the passage carrying the weakest
+      due card, oldest memory first. Re-reading a passage you are close to
+      forgetting and answering its questions again is the strongest form review
+      can take in this section, and it is the *only* way an RC card ever comes
+      back — an argument case will not take one, because a lone reading question
+      dropped among six arguments is the 450-words-with-no-warning bug that was
+      fixed once already.
+    * **Fresh-led** otherwise: a passage the student still has unseen questions
+      on.
+
+    Splitting it this way, across cases rather than inside one, is forced: a
+    passage is one unit, so a case built on it cannot be half review the way an
+    argument case is. Half of reading cases being re-reads is the same diet, and
+    it is what stops the section collapsing in either direction — all-fresh
+    would never return an RC card, all-review would never put a new one in.
+
+    Returns [] when there is no Reading Comprehension material to build on, and
+    the caller falls back to an ordinary run. A bank with no passages in it is a
+    real configuration: most of the test suite runs on one.
+    """
+    if count <= 0:
+        return []
+    blocked = exclude_ids or set()
+    ceiling = reading_case_ceiling(count)
+    floor = reading_case_floor(count)
+    facts = [
+        fact
+        for fact in _eligible_question_facts(None, READING_COMPREHENSION)
+        if fact.passage_id and fact.id not in blocked
+    ]
+    if not facts:
+        return []
+    grouped: dict[str, list[QuestionFact]] = defaultdict(list)
+    for fact in facts:
+        grouped[fact.passage_id].append(fact)
+    passages = {
+        passage_id: sorted(block, key=lambda question: question.id)
+        for passage_id, block in grouped.items()
+        if len(block) >= floor
+    }
+    if not passages:
+        return []
+
+    seen_ids = _seen_question_ids(user_id) if user_id else set()
+
+    # Review-led: the passage under the weakest due card. `due_ids` arrives
+    # already ranked by retrievability, so the first one whose passage is still
+    # available is the weakest memory this case can rebuild.
+    if due_ids and random.random() < REVIEW_SHARE:
+        due_by_passage = {fact.id: fact.passage_id for fact in facts}
+        for question_id in due_ids:
+            passage_id = due_by_passage.get(question_id)
+            if passage_id and passage_id in passages:
+                return _load_questions_in_order(
+                    _reading_case_from_passage(
+                        passages[passage_id], ceiling, prefer_first=set(due_ids)
+                    )
+                )
+
+    # Fresh-led: a passage with unseen questions, or any passage at all if the
+    # student has worked the whole section. Shuffled rather than ranked, because
+    # there is no signal here worth ranking on and a stable order would serve
+    # the same passages to everybody.
+    with_unseen = [
+        passage_id
+        for passage_id, block in passages.items()
+        if any(question.id not in seen_ids for question in block)
+    ]
+    candidates = with_unseen or list(passages)
+    passage_id = random.choice(candidates)
+    unseen = {question.id for question in passages[passage_id] if question.id not in seen_ids}
+    return _load_questions_in_order(
+        _reading_case_from_passage(passages[passage_id], ceiling, prefer_first=unseen)
+    )
+
+
+def _fill_blocks(
+    blocks: list[list[QuestionFact]],
+    budget: int,
+    selected: list[list[QuestionFact]],
+    *,
+    ceiling: int | None = None,
+) -> None:
     """Add whole blocks to `selected` until `budget` questions are chosen.
 
-    Never overshoots and never splits a block, so a run comes out at the
-    requested size whenever the pool contains any single-question material to
-    round it out — which, with an LR bank in the thousands, is always.
+    Never splits a block. Stops as soon as the budget is met, and never admits a
+    block that would take the run past `ceiling` — which defaults to the budget,
+    the no-overshoot rule this had before, and is raised by
+    PASSAGE_OVERSHOOT_ALLOWANCE on the practice path so a passage can be served
+    whole. A run therefore comes out at exactly the requested size whenever the
+    pool contains single-question material to round it out — which, with an LR
+    bank in the thousands, is always — or a little over it when the block that
+    reached the budget was a passage.
     """
+    limit = budget if ceiling is None else max(budget, ceiling)
     chosen = {id(block) for block in selected}
     total = sum(len(block) for block in selected)
     for block in blocks:
         if total >= budget:
             return
-        if id(block) in chosen or total + len(block) > budget:
+        if id(block) in chosen or total + len(block) > limit:
             continue
         selected.append(block)
         total += len(block)
@@ -795,23 +1092,29 @@ def _weight_toward_focus(
     focus bias can never separate passage-mates. A block counts as focus
     material if any of its questions is a focus type, which is the only sensible
     reading for a passage whose questions are of several types.
+
+    Every fill shares one ceiling — `count` plus the whole-passage allowance —
+    rather than each stage carrying its own. The focus stage's budget is a share
+    of the run, but the *run* is what may not overrun, so a passage admitted to
+    satisfy the focus quota still has to fit the run it is being built for.
     """
     if count <= 0:
         return []
     blocks = _passage_blocks(pool)
     random.shuffle(blocks)
     wanted = set(focus_types or ())
+    ceiling = count + passage_overshoot_allowance(count)
     selected: list[list[QuestionFact]] = []
     if wanted:
         preferred = [block for block in blocks if any(question.question_type in wanted for question in block)]
         preferred_ids = {id(block) for block in preferred}
         others = [block for block in blocks if id(block) not in preferred_ids]
-        _fill_blocks(preferred, round(count * FOCUS_FILL_RATIO), selected)
-        _fill_blocks(others, count, selected)
+        _fill_blocks(preferred, round(count * FOCUS_FILL_RATIO), selected, ceiling=ceiling)
+        _fill_blocks(others, count, selected, ceiling=ceiling)
         # Not enough off-focus material to round the run out; top up from focus.
-        _fill_blocks(preferred, count, selected)
+        _fill_blocks(preferred, count, selected, ceiling=ceiling)
     else:
-        _fill_blocks(blocks, count, selected)
+        _fill_blocks(blocks, count, selected, ceiling=ceiling)
     if not selected and blocks:
         # The only material left is a passage longer than the whole run. Serving
         # it whole and slightly long beats serving a fragment of it, and beats
@@ -907,15 +1210,20 @@ def select_diagnostic_questions(count: int) -> tuple[list[Question], list[int], 
     return questions, section_indexes, plan
 
 
-def _questions_due_for_review(user_id: str, count: int) -> list[Question]:
+def _questions_due_for_review(
+    user_id: str, count: int, *, section: str | None = None
+) -> list[Question]:
     """The weakest cards in this student's queue, ranked by retrievability.
 
     Delegates to `scheduling.due_for_review`, which deliberately does not gate
     on `due_at <= now`: a student who sits down to work at any hour is handed
     the material they are closest to forgetting rather than an empty queue and
     a date. See the module docstring in `app/scheduling.py`.
+
+    `section` narrows the queue to one section, because the two case shapes take
+    their review from different halves of it.
     """
-    return scheduling.due_for_review(user_id, count)
+    return scheduling.due_for_review(user_id, count, section=section)
 
 
 def _pause_other_active_practice_sessions(user_id: str, *, exclude_id: str | None = None) -> None:
@@ -959,13 +1267,66 @@ def create_study_session(
 
     if practice_style not in PRACTICE_STYLES:
         raise ValueError("invalid_practice_style")
-    policy = "immediate"
 
     session_size = count if count is not None else int(current_app.config["PRACTICE_SESSION_SIZE"])
+
+    # Which shape of case this is. A reading case is one passage and is built
+    # entirely differently — see `select_reading_comprehension_case` for why the
+    # section needs a case of its own rather than a bigger share of a mixed one.
+    #
+    # Drawn per run rather than rotated. A rotation would need a counter that
+    # survives across sessions, and up to PRACTICE_QUEUE_MAX runs can be queued
+    # and abandoned before any of them is answered, so the only counter cheap
+    # enough to reach here (`profile.total_cases`, which moves on settlement)
+    # would hand every queued run the same shape. A draw needs no state and
+    # converges on RC_CASE_SHARE over the 347 sittings a campaign takes; the
+    # cost is variance early on, where a student has a (1 - 1/3)^5 = 13% chance
+    # of seeing no reading case in their first five. That is worth saying out
+    # loud, and it is still the entire section arriving instead of none of it.
+    #
+    # A type-filtered run is the student overriding the weighting by hand, so it
+    # keeps the ordinary shape whatever the draw says, and so does any sitting
+    # too short to hold a passage.
+    #
+    # The share is read from config so a test can pin the shape it means to
+    # exercise. Nothing sets it; the default is the constant.
+    rc_share = float(current_app.config.get("PRACTICE_RC_CASE_SHARE", RC_CASE_SHARE))
+    reading_case = (
+        not question_type and session_size >= RC_CASE_MIN_SITTING and random.random() < rc_share
+    )
+    if reading_case:
+        # Ranked review cards for this section, handed to the case builder so it
+        # can decide between a re-read and a new passage. Asked for generously
+        # rather than at the review budget: the builder needs enough ranked
+        # candidates to find one whose passage is still available, and it serves
+        # a whole passage regardless of how many of its cards are due.
+        due = _questions_due_for_review(
+            user.id, reading_case_ceiling(session_size), section=READING_COMPREHENSION
+        )
+        questions = select_reading_comprehension_case(
+            session_size, user_id=user.id, due_ids=[question.id for question in due]
+        )
+        if questions:
+            return _build_practice_session(
+                user, profile, questions, practice_style=practice_style, question_type=None
+            )
+        # No Reading Comprehension in this bank. Most of the test suite runs on
+        # one of those, and so would a deployment that shipped LR only.
+
     # Repairs fill at most half a run so a large queue can never turn practice
     # into pure repetition. A type-filtered run is a focused drill; mixing
     # off-type repairs into it would defeat the filter the student asked for.
-    repairs = [] if question_type else _questions_due_for_review(user.id, session_size // 2)
+    #
+    # Restricted to Logical Reasoning cards now that reading has a case of its
+    # own. An RC card arriving alone in an argument case is a passage the
+    # student has to re-read for one question, which is the cost the passage-
+    # mate fix removed from fresh material and should not be reintroduced here;
+    # RC cards come back on their own passage, in a reading case.
+    repairs = (
+        []
+        if question_type
+        else _questions_due_for_review(user.id, session_size // 2, section=LOGICAL_REASONING)
+    )
     # Due passage-mates travel together so the run reads the passage once. Only
     # the ones the scheduler already chose — see `cluster_passage_mates`.
     repairs = scheduling.cluster_passage_mates(repairs)
@@ -987,18 +1348,62 @@ def create_study_session(
                 Question.passage_id.in_(repair_passages)
             )
         }
+    # Logical Reasoning only, when the shape draw chose an argument case. Not a
+    # restriction so much as the other half of the split: with reading served as
+    # whole passages, leaving RC in the general filler as well would put the
+    # section's share back at the mercy of the review queue's size — measured,
+    # 46.5% RC for a student with no queue against 41.5% for one with a queue,
+    # neither of them the 34.4% asked for — and would do it by serving the
+    # occasional stray passage inside an argument case, which is the shape this
+    # change exists to stop building.
+    #
+    # A type-filtered drill is exempt. `question_type` is its own filter and
+    # 1,373 questions in this bank carry "Reading Comprehension" as their type,
+    # so narrowing by section as well would hand those drills an empty pool.
     fresh = select_random_questions(
         session_size - len(repairs),
         question_type,
         user_id=user.id,
         exclude_ids=blocked_ids,
         focus_types=focus_types,
+        section=None if question_type else LOGICAL_REASONING,
     )
     # Genuine interleaving, not front-loading. Reviews are distributed through
     # the run instead of stacked at the start, which is what the old
     # `repairs + fresh` concatenation did — and which leaks "these first four
     # are the ones you got wrong" before the student has read a word.
     questions = scheduling.interleave(repairs, fresh, question_type=question_type)
+    return _build_practice_session(
+        user,
+        profile,
+        questions,
+        practice_style=practice_style,
+        question_type=question_type,
+        repair_ids=repair_ids,
+        focus_types=focus_types,
+    )
+
+
+def _build_practice_session(
+    user: User,
+    profile,
+    questions: list[Question],
+    *,
+    practice_style: str,
+    question_type: str | None,
+    repair_ids: set[str] | None = None,
+    focus_types: list[str] | None = None,
+) -> StudySession:
+    """Write a chosen list of questions out as a run.
+
+    Everything from here down is the same whichever shape chose the questions —
+    the strategy trial, the forced-arm plan, the pace budget and the row writes.
+    Extracted when the reading case arrived so the two shapes share it rather
+    than growing a second copy that drifts.
+    """
+    repair_ids = repair_ids or set()
+    focus_types = focus_types or []
+    policy = "immediate"
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
 
@@ -1460,8 +1865,13 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
         .order_by(StudySession.completed_at.desc())
         .all()
     )
+    session_size = int(current_app.config["PRACTICE_SESSION_SIZE"])
+    # "A real run rather than a one-off", expressed as most of a run rather than
+    # as a literal five, which was most of a ten-question run and is more than
+    # one of six.
+    substantial_run = max(2, round(session_size / 2))
     completed_cases = next(
-        (item for item in completed_today if item.mode == "practice" and item.total_items >= 5),
+        (item for item in completed_today if item.mode == "practice" and item.total_items >= substantial_run),
         None,
     )
     active = find_resumable_session(user)
@@ -1482,7 +1892,7 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
     elif brief_state == "ready":
         next_action = {"kind": "open_brief", "session_id": completed_cases.id, "label": "Open Deep Brief"}
     elif cases_state == "ready":
-        next_action = {"kind": "start_cases", "label": "Start 10 cases"}
+        next_action = {"kind": "start_cases", "label": f"Start {session_size} cases"}
     else:
         next_action = {"kind": "done", "label": "Daily docket complete"}
 
@@ -1492,7 +1902,7 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
         "active_session": serialize_session(active, False) if active else None,
         "cases": {
             "state": cases_state,
-            "target": 10,
+            "target": session_size,
             "repairs_due": queue["due"],
             "session_id": (active.id if active else completed_cases.id if completed_cases else None),
             "summary": completed_cases.summary_json if completed_cases else None,

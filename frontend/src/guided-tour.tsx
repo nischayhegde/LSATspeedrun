@@ -122,7 +122,7 @@ const steps: TourStep[] = [
     facts: [
       'About 51 scored LR questions against 27 in RC',
       'A mega-litigation is 75 questions in the form’s own order: LR I, RC, LR II',
-      'A run of cases is ten questions, untimed per question but paced against a target',
+      'A run of cases is six questions, or one whole reading passage, untimed per question but paced against a target',
     ],
   },
   {
@@ -148,7 +148,7 @@ const steps: TourStep[] = [
     chapter: 'practice',
     eyebrow: 'PRACTICE',
     title: 'The docket knows the next right move.',
-    body: 'One button always points at today’s work. A run is ten cases — ten real LSAT questions wrapped in a client and a fee — mixing unseen questions with whatever repairs have come due, so review happens without you scheduling it.',
+    body: 'One button always points at today’s work. A run is six cases — six real LSAT questions wrapped in a client and a fee — mixing unseen questions with whatever repairs have come due, so review happens without you scheduling it. Roughly one run in three is a reading case instead: a single passage and all its questions, which comes out at five to eight.',
     target: '[data-tour="nav-cases"]',
     route: '/cases',
     cue: 'Practice',

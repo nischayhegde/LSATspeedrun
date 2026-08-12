@@ -169,6 +169,7 @@ export function PerformancePage() {
     ? diagnosticSession.mode === 'blind_review' ? 'Resume blind review' : diagnosticSession.status === 'completed' ? 'Start blind review' : 'Resume mega-litigation'
     : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'
   const activePractice = current.data?.session
+  const sessionSize = current.data?.session_size ?? 6
   const evidenceCopy = {
     baseline: 'Fewer than 10 questions. Provisional.',
     emerging: 'Early patterns only.',
@@ -379,7 +380,7 @@ export function PerformancePage() {
         </p>
         {activeRunChip}
         <div className="dash-actions">
-          <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10 cases'} <ArrowRight /></button>
+          <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : `Start ${sessionSize} cases`} <ArrowRight /></button>
           <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {megaLitigationLabel}</button>
         </div>
       </section>

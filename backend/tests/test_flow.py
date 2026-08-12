@@ -12,6 +12,7 @@ from app.game import (
     ASSETS,
     ASSET_BY_KEY,
     CLIENT_BY_KEY,
+    DAILY_REWARD_MULTIPLIERS,
     FINAL_CASE_KEY,
     FIRM_TIERS,
     TIER_GATED_ASSET_TYPES,
@@ -52,7 +53,15 @@ def add_question(index: int, section: str) -> None:
     passage_id = None
     stimulus = f"Argument stimulus {index}."
     if section == "Reading Comprehension":
-        passage_id = f"sample-passage-{index // 2}"
+        # Six questions to a passage, and enough passages to choose between.
+        # The shipped bank has nothing shorter than four and a median of seven,
+        # so the two-question passages this fixture used to build described a
+        # bank that cannot exist — and one where no passage is long enough to be
+        # a reading case, so the end-to-end suite would never have built the
+        # shape practice now serves a third of the time. That is precisely how
+        # the section went missing in the first place: `seed_demo.py` fabricates
+        # a balanced history the real selector never produces.
+        passage_id = f"sample-passage-{(index - 8) // 6}"
         passage = db.session.get(Passage, passage_id)
         if not passage:
             db.session.add(
@@ -116,7 +125,7 @@ def app():
     with application.app_context():
         for index in range(8):
             add_question(index, "Logical Reasoning")
-        for index in range(8, 12):
+        for index in range(8, 20):
             add_question(index, "Reading Comprehension")
         db.session.commit()
     return application
@@ -521,24 +530,29 @@ def test_claiming_every_daily_goal_is_a_bonus_not_a_free_office(app):
     headers = login(client, "daily-rewards@example.test")
     created = create_game(client, headers)
 
-    expected = {milestone: daily_reward_for_tier(0, milestone) for milestone in (5, 10, 20)}
-    assert [goal["reward"] for goal in created["daily"]["goals"]] == [expected[5], expected[10], expected[20]]
+    # Read off the catalog rather than retyped as 5/10/20: the milestones are
+    # one, two and three sittings and moved when the sitting did.
+    milestones = sorted(DAILY_REWARD_MULTIPLIERS)
+    smallest, middle, largest = milestones
+    expected = {milestone: daily_reward_for_tier(0, milestone) for milestone in milestones}
+    assert [goal["reward"] for goal in created["daily"]["goals"]] == [expected[m] for m in milestones]
     assert not any(goal["complete"] for goal in created["daily"]["goals"])
 
     # Nothing is claimable before the cases are actually worked.
-    refused = client.post("/v1/game/daily-rewards/5/claim", headers=headers)
+    refused = client.post(f"/v1/game/daily-rewards/{smallest}/claim", headers=headers)
     assert refused.status_code == 409 and refused.json["error"]["code"] == "goal_incomplete"
-    invalid = client.post("/v1/game/daily-rewards/7/claim", headers=headers)
+    not_a_goal = next(value for value in range(1, 100) if value not in DAILY_REWARD_MULTIPLIERS)
+    invalid = client.post(f"/v1/game/daily-rewards/{not_a_goal}/claim", headers=headers)
     assert invalid.status_code == 409 and invalid.json["error"]["code"] == "invalid_milestone"
 
     with app.app_context():
         profile = PlayerProfile.query.filter_by(id=created["id"]).one()
         progress = DailyProgress.query.filter_by(profile_id=profile.id).one()
-        progress.cases_completed = 20
+        progress.cases_completed = largest
         db.session.commit()
 
     banked = 0
-    for milestone in (5, 10, 20):
+    for milestone in milestones:
         response = client.post(f"/v1/game/daily-rewards/{milestone}/claim", headers=headers)
         assert response.status_code == 200, response.json
         assert response.json["claimed"] == expected[milestone]
@@ -546,9 +560,9 @@ def test_claiming_every_daily_goal_is_a_bonus_not_a_free_office(app):
         repeated = client.post(f"/v1/game/daily-rewards/{milestone}/claim", headers=headers)
         assert repeated.status_code == 409 and repeated.json["error"]["code"] == "already_claimed"
 
-    # Escalating, so the twenty-case goal is the one worth staying for.
-    assert expected[5] < expected[10] < expected[20]
-    assert expected[20] > banked / 2
+    # Escalating, so the last goal of the day is the one worth staying for.
+    assert expected[smallest] < expected[middle] < expected[largest]
+    assert expected[largest] > banked / 2
 
     # And the whole day is a fraction of the cheapest thing the ladder makes
     # the player buy, rather than the whole of it.
@@ -569,9 +583,9 @@ def test_claiming_every_daily_goal_is_a_bonus_not_a_free_office(app):
         db.session.commit()
     promoted = client.get("/v1/game", headers=headers).json["game"]
     assert [goal["reward"] for goal in promoted["daily"]["goals"]] == [
-        daily_reward_for_tier(3, milestone) for milestone in (5, 10, 20)
+        daily_reward_for_tier(3, milestone) for milestone in milestones
     ]
-    assert promoted["daily"]["goals"][2]["reward"] > expected[20]
+    assert promoted["daily"]["goals"][2]["reward"] > expected[largest]
 
 
 def test_the_working_day_streak_counts_finished_cases_not_page_loads(app):
@@ -886,7 +900,8 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
 
     active_list = client.get("/v1/study-sessions/active", headers=headers)
     assert active_list.status_code == 200
-    assert active_list.json["queue_cap"] == 8
+    assert active_list.json["queue_cap"] == app.config["PRACTICE_QUEUE_MAX"]
+    assert active_list.json["session_size"] == app.config["PRACTICE_SESSION_SIZE"]
     active_ids = {entry["id"] for entry in active_list.json["sessions"]}
     assert active_ids == {session["id"], second_session["id"]}
 
@@ -901,8 +916,11 @@ def test_practice_queue_cap_and_single_active_timer(app):
     headers = login(client, "queue-cap@example.test")
     create_game(client, headers)
 
+    # The cap is derived from how much queued work is allowed, in questions, so
+    # it moves whenever the run length does — see `PRACTICE_QUEUE_QUESTIONS`.
+    cap = app.config["PRACTICE_QUEUE_MAX"]
     started_ids = []
-    for _ in range(8):
+    for _ in range(cap):
         response = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
         assert response.status_code == 201
         started_ids.append(response.json["session"]["id"])
@@ -925,7 +943,7 @@ def test_practice_queue_cap_and_single_active_timer(app):
 
     active = client.get("/v1/study-sessions/active", headers=headers)
     assert active.status_code == 200
-    assert active.json["queue_cap"] == 8
+    assert active.json["queue_cap"] == cap
     assert {entry["id"] for entry in active.json["sessions"]} == set(started_ids)
 
     # Explicitly resuming an older paused run must re-pause whatever else was
@@ -1115,7 +1133,10 @@ def test_daily_docket_drives_cases_into_priority_deep_brief(app, monkeypatch):
     assert docket["next_action"]["kind"] == "start_cases"
 
     session = client.post("/v1/study-sessions", json={"size": 5}, headers=headers).json["session"]
-    for index in range(5):
+    # `total_items`, not the 5 requested: a run that had to serve a Reading
+    # Comprehension passage whole comes back a question longer, and leaving the
+    # last one unanswered would leave the docket mid-run rather than complete.
+    for index in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
         answer = "A" if index == 0 else "C"
         response = client.post(
@@ -1253,7 +1274,7 @@ def test_completed_run_stops_at_training_lab_boundary(app, monkeypatch):
     assert completed.status_code == 200
     assert completed.json["run_complete"] is True
     assert completed.json["session"]["status"] == "completed"
-    assert client.get("/v1/study-sessions/current", headers=headers).json == {"session": None}
+    assert client.get("/v1/study-sessions/current", headers=headers).json["session"] is None
 
 
 def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monkeypatch):
@@ -2980,32 +3001,43 @@ def test_every_case_carries_a_strategy_trial(app):
 
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        # Every position, not just the old position % 4 == 2 cadence.
-        assert [item.position for item in items if item.strategy_key] == [0, 1, 2, 3, 4, 5, 6]
+        # Every position, not just the old position % 4 == 2 cadence. Counted
+        # off the run rather than written out, because a run that served a
+        # Reading Comprehension passage whole is a question or two longer than
+        # the seven it asked for.
+        assert [item.position for item in items if item.strategy_key] == list(range(len(items)))
         assert all(item.strategy_variant in {"prompt", "control_visible"} for item in items)
 
 
-def test_every_item_in_a_ten_question_run_arrives_with_a_card(app):
-    """End to end, over a real run of ten: no question arrives with nothing.
+def test_every_item_in_a_long_run_arrives_with_a_card(app):
+    """End to end, over a real run: no question arrives with nothing.
 
     This is the whole point of the visible control. A quarter of these carry the
     neutral card instead of a technique, which is what keeps the control arm —
     and therefore the approach ranking, which is a difference against it —
     alive. What the student must never see is a question with no card at all.
 
-    Ten is the production `PRACTICE_SESSION_SIZE`, and the size is requested
-    explicitly because the fixture runs smaller runs everywhere else.
+    A ten-question run is requested explicitly, twice the shipped
+    `PRACTICE_SESSION_SIZE`, so that a run long enough to reach both arms is
+    exercised and so that the fixture's smaller default runs are not what this
+    is measured on.
+
+    The length is a floor and not an equality. A reading case is one passage and
+    is therefore as long as its passage rather than as long as the number that
+    was asked for, so a request for ten can come back as a seven-question
+    passage. What this test is about is that every item has a card, so it takes
+    the run it was given and checks all of it.
     """
-    from app.services import serialize_item
+    from app.services import reading_case_ceiling, reading_case_floor, serialize_item
 
     client = app.test_client()
-    headers = login(client, "ten-question-cards@example.test")
+    headers = login(client, "long-run-cards@example.test")
     create_game(client, headers)
     session = client.post("/v1/study-sessions", json={"size": 10}, headers=headers).json["session"]
 
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        assert len(items) == 10
+        assert reading_case_floor(10) <= len(items) <= reading_case_ceiling(10)
 
         cards = []
         for item in items:
@@ -3022,8 +3054,8 @@ def test_every_item_in_a_ten_question_run_arrives_with_a_card(app):
                 assert payload["strategy_gate"] is None
                 assert item.strategy_enforcement_level == "none"
 
-        assert len(cards) == 10
-        # Both arms are reachable in a run of ten, which is what makes this a
+        assert len(cards) == len(items)
+        # Both arms are reachable in a long run, which is what makes this a
         # trial rather than a universal prompt wearing one.
         assert set(cards) <= {"prompt", "neutral"}
 
@@ -4117,10 +4149,16 @@ def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
     Front-loading is what the old `repairs + fresh` concatenation did, and it
     leaks the answer key: "the first three are the ones you got wrong" is a cue
     the student reads before the stem. See `app/scheduling.interleave`.
+
+    Interleaving is a property of the argument case, so that is the shape asked
+    for. A reading case is one passage and has nothing to interleave: its review
+    is whichever of the passage's own questions were due, and they arrive in the
+    passage's order because that is the order the passage reads in.
     """
     client = app.test_client()
     headers = login(client, "folded-repairs@example.test")
     create_game(client, headers)
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
     with app.app_context():
         user = User.query.filter_by(email="folded-repairs@example.test").one()
         for question in Question.query.order_by(Question.id).limit(5).all():
@@ -4136,6 +4174,8 @@ def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
 
 
 def test_an_empty_review_queue_still_produces_a_full_run(app):
+    from app.services import passage_overshoot_allowance
+
     client = app.test_client()
     headers = login(client, "no-repairs@example.test")
     create_game(client, headers)
@@ -4143,7 +4183,7 @@ def test_an_empty_review_queue_still_produces_a_full_run(app):
     assert response.status_code == 201
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=response.json["session"]["id"]).all()
-        assert len(items) == 4
+        assert 4 <= len(items) <= 4 + passage_overshoot_allowance(4)
         assert not any(item.from_review_queue for item in items)
 
 
@@ -5476,15 +5516,21 @@ def test_a_focused_case_run_draws_most_of_its_questions_from_those_types(app):
             question.question_type = "Flaw"
         db.session.commit()
 
-        from app.services import FOCUS_FILL_RATIO, select_random_questions
+        from app.services import (
+            FOCUS_FILL_RATIO,
+            passage_overshoot_allowance,
+            select_random_questions,
+        )
 
         size = 5
         for _ in range(8):
             picked = select_random_questions(size, focus_types=["Flaw"])
-            assert len(picked) == size
+            # A run reaches its size and may pass it only far enough to finish a
+            # Reading Comprehension passage, focus quota or no focus quota.
+            assert size <= len(picked) <= size + passage_overshoot_allowance(size)
             focused = sum(question.question_type == "Flaw" for question in picked)
             assert focused >= round(size * FOCUS_FILL_RATIO)
-            assert focused < size
+            assert focused < len(picked)
 
         # No focus, no bias — the run is a plain sample of everything eligible.
         unfocused = [

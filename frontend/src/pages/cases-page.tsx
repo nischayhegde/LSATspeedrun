@@ -113,7 +113,11 @@ export function CasesLobbyPage() {
   const game = gameQuery.data!.game!
   const workingClient = effectiveClient(game)
   const runs = activeSessions.data?.sessions ?? []
-  const queueCap = activeSessions.data?.queue_cap ?? 8
+  const queueCap = activeSessions.data?.queue_cap ?? 13
+  // A run may finish a question or two over this to serve a Reading
+  // Comprehension passage whole, so the copy says "questions" rather than
+  // promising an exact count of them.
+  const sessionSize = activeSessions.data?.session_size ?? 6
   const queueFull = runs.length >= queueCap
   const dueReviews = reviews.data?.review_queue.due ?? 0
   const daily = docketQuery.data?.daily_docket
@@ -241,13 +245,17 @@ export function CasesLobbyPage() {
                   onClick={() => startNewRun()}
                   disabled={start.isPending || queueFull}
                 >
-                  <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : 'Start 10 cases'} <ArrowRight />
+                  <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : `Start ${sessionSize} cases`} <ArrowRight />
                 </button>
+                {/* "About", because a reading case is one whole passage and is
+                    therefore as long as its passage — five to eight questions
+                    where an argument case is six. The shape is drawn when the
+                    run is built, so this can only describe the range. */}
                 <p className="practice-action-shape">{queueFull
                   ? `Queue full (${runs.length}/${queueCap}). Discard a run below to start another.`
                   : repairsIncluded
-                    ? `10 questions. ${repairsIncluded} review item${repairsIncluded === 1 ? '' : 's'} included.`
-                    : '10 unseen questions.'}</p>
+                    ? `About ${sessionSize} questions, or one whole passage. ${repairsIncluded} review item${repairsIncluded === 1 ? '' : 's'} included.`
+                    : `About ${sessionSize} unseen questions, or one whole passage.`}</p>
               </div>
               {daily && daily.next_action.kind !== 'start_cases' && (
                 <div className="practice-run-alt">
@@ -345,7 +353,7 @@ export function CasesLobbyPage() {
         <div className="practice-guide-body">
           <section>
             <h2>Cases</h2>
-            <p>10 questions{repairsIncluded ? `. ${repairsIncluded} review item${repairsIncluded === 1 ? '' : 's'} included` : ''}. Written explanation on each, then coaching.</p>
+            <p>About {sessionSize} questions{repairsIncluded ? `, ${repairsIncluded} of them review` : ''}. A reading case is one whole passage, so it runs to whatever length its passage is. Written explanation on each, then coaching.</p>
           </section>
           {daily && daily.deep_brief.priority_count > 0 && (
             <section>

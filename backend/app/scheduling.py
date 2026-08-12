@@ -333,7 +333,13 @@ def card_retrievability(card: ReviewQueueItem, now: datetime | None = None) -> f
     return retrievability(card.stability, elapsed_days_for(card, now))
 
 
-def due_for_review(user_id: str, count: int, *, now: datetime | None = None) -> list[Question]:
+def due_for_review(
+    user_id: str,
+    count: int,
+    *,
+    now: datetime | None = None,
+    section: str | None = None,
+) -> list[Question]:
     """The `count` weakest questions in this student's queue, right now.
 
     Deliberately *not* `WHERE due_at <= now`. Ordering is by current
@@ -342,6 +348,14 @@ def due_for_review(user_id: str, count: int, *, now: datetime | None = None) -> 
     being told nothing is due. Items already above the retention target still
     sort last and will not displace anything genuinely weak, which is the
     behaviour the old date gate was really trying to buy.
+
+    `section` restricts the queue to one section's cards. Practice asks for
+    Logical Reasoning cards when it is building an argument case and Reading
+    Comprehension cards when it is building a reading case, because the two
+    sections are now served in differently shaped sittings and a card can only
+    come back inside a sitting its section belongs to. Ranking still happens
+    across the whole of whatever is asked for, so this narrows the queue rather
+    than reordering it.
     """
     if count <= 0:
         return []
@@ -349,7 +363,12 @@ def due_for_review(user_id: str, count: int, *, now: datetime | None = None) -> 
     cards = ReviewQueueItem.query.filter(
         ReviewQueueItem.user_id == user_id,
         ReviewQueueItem.status != "retired",
-    ).all()
+    )
+    if section:
+        cards = cards.join(Question, Question.id == ReviewQueueItem.question_id).filter(
+            Question.section == section
+        )
+    cards = cards.all()
     ranked = sorted(
         cards,
         key=lambda card: (card_retrievability(card, now), _aware(card.due_at) if card.due_at else now),
