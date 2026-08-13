@@ -682,7 +682,7 @@ Resources:
               git init
               git remote add origin ${GitRepository}
               git config core.sparseCheckout true
-              printf 'backend/\nfrontend/\ndeck/\n' > .git/info/sparse-checkout
+              printf 'backend/\nfrontend/\ndeck/\ndocs/demos/\n' > .git/info/sparse-checkout
               git fetch --depth 1 origin ${GitCommit}
               git checkout --detach FETCH_HEAD
 
