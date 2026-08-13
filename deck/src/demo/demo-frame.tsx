@@ -107,10 +107,8 @@ type Props = {
  * Split out of `DemoFrame` so that a full-bleed slide can put it in its copy
  * plate rather than in a band over the app. It keeps the `.demo-bar` class and
  * the `<code>` inside it, which is not cosmetic conservatism: the bar's type is
- * already the app's chrome language in `styles/deck.css`, and
- * `scripts/verify-office-toggle.mjs` reads `.demo-bar code` to prove that the
- * `O` toggle actually changed the route the slide claims to be showing. A
- * renamed element would have quietly turned that gate into a null check.
+ * already the app's chrome language in `styles/deck.css` and existing harnesses
+ * use `.demo-bar code` to read the route the slide claims to be showing.
  */
 export function DemoRoute({ demo, stills }: { demo: DemoSpec; stills: boolean }) {
   useSyncExternalStore(subscribeRuntime, runtimeVersion)
@@ -142,6 +140,8 @@ export function DemoFrame({ demo, stills, active, bleed }: Props) {
   const slot = useRef<HTMLDivElement | null>(null)
 
   const { showStill, caption, still, toggled } = describeSurface(demo, stills)
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const recording = showStill && !reducedMotion ? demo.recording : undefined
 
   /**
    * Published under this slide's own `DemoSpec`, and only while this layer is the
@@ -176,7 +176,18 @@ export function DemoFrame({ demo, stills, active, bleed }: Props) {
             still is painted here rather than there so that it transitions with
             the slide it belongs to. */}
         <div className="demo-screen" ref={slot}>
-          {demo.stillOnly && demo.toggle ? (
+          {recording ? (
+            <>
+              <img className="demo-still" src={publicUrl(`stills/${still}`)} alt="" aria-hidden="true" />
+              <img
+                key={`${recording}-${active ? 'active' : 'idle'}`}
+                className="demo-still demo-recording"
+                src={recording}
+                alt={demo.caption ?? caption}
+                onError={(event) => { event.currentTarget.style.display = 'none' }}
+              />
+            </>
+          ) : demo.stillOnly && demo.toggle ? (
             <div className="demo-office-wipe" data-toggled={toggled ? 'true' : 'false'}>
               <img className="demo-still demo-office-before" src={publicUrl(`stills/${demo.still}`)} alt="The founding office" />
               <img className="demo-still demo-office-after" src={publicUrl(`stills/${demo.toggle.still}`)} alt="The fully built firm" />

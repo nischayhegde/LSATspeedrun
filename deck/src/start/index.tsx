@@ -29,24 +29,20 @@ export function StartGate({ children }: { children: React.ReactNode }) {
   // needs that as much as one who starts at the top. The card only *displays* it.
   useEffect(() => { void preflight() }, [])
 
-  // Fetched and decoded while the card is up, then stopped. The stills are the
-  // panic button's ammunition: `S` swaps every live embed for one of these, and
-  // the moment that is wanted is not a moment to be pulling two megabytes off
-  // disk. Deduplicated because several slides share a still.
+  // Fetched and decoded while the card is up, then stopped. Captured recordings
+  // are warmed first because they are the public pitch's product walkthrough;
+  // the stills remain the reduced-motion and load-error fallback.
   useEffect(() => {
     if (!gate.showing) return
-    // Toggle variants included, and the omission was not academic.
-    // `demo-office-transformation` is scripted as a toggle: `O` swaps the embed
-    // to tier 14, and `demo-office-tier14.webp` is both that beat's still and the
-    // panic-button image for it. Reading only `demo.still` warmed the tier-0
-    // frame and left the toggled-to one cold, so the one keystroke the slide
-    // exists for pulled a multi-megabyte file off disk in front of the room —
-    // the exact stall this warm-up was written to prevent, on the exact slide
-    // that most needs it.
-    const stills = [...new Set(
+    const recordings = [...new Set(
+      SLIDES.map((slide) => slide.demo?.recording)
+        .filter((recording): recording is string => Boolean(recording)),
+    )]
+    const fallbackStills = [...new Set(
       SLIDES.flatMap((slide) => [slide.demo?.still, slide.demo?.toggle?.still])
         .filter((still): still is string => Boolean(still)),
     )].map((still) => publicUrl(`stills/${still}`))
+    const stills = reduced ? fallbackStills : [...recordings, ...fallbackStills]
     // The two app routes whose scene modules Vite has to transform on first
     // request. Warmed here so the office slide does not open with a nine-second
     // stall — the job the runbook used to hand to the presenter.
@@ -69,7 +65,7 @@ export function StartGate({ children }: { children: React.ReactNode }) {
       `${demoConfig.appOrigin}/map?deck-warm=1`,
     ]
     return startWarmUp({ stills, routes })
-  }, [gate.showing])
+  }, [gate.showing, reduced])
 
   return (
     <>

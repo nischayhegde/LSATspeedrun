@@ -907,7 +907,6 @@ one thing below is a known red and one claim is untested. Both are named.
 | `verify-demo-proportion.mjs` | centred and uncut on all 7, at all 4 sizes |
 | `verify-cold-start.mjs` | all green from an empty cookie jar |
 | `verify-still-only.mjs` | all green |
-| `verify-office-toggle.mjs` | all green, both live and stills, plus an eyeball on the four frames |
 | `walk.mjs` (forward, backward, 25-press mash) | no problems, renderer memory plateaus |
 | Arrow-key walk of the whole deck, three times | all 7 demo slides on their routes, nothing blank, no embed outliving its slide |
 

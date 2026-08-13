@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-08-08T00:49:00.349Z",
+  "base_url": "http://127.0.0.1:5173",
+  "browser": "chrome.exe",
+  "demos": [
+    {
+      "file": "dashboard-metrics.gif",
+      "frames": 13,
+      "duration_ms": 4257,
+      "bytes": 694300,
+      "width": 960,
+      "height": 600
+    },
+    {
+      "file": "strategy-methods.gif",
+      "frames": 15,
+      "duration_ms": 4503,
+      "bytes": 786959,
+      "width": 960,
+      "height": 600
+    },
+    {
+      "file": "game-money-upgrades.gif",
+      "frames": 18,
+      "duration_ms": 5433,
+      "bytes": 1306491,
+      "width": 960,
+      "height": 600
+    },
+    {
+      "file": "game-office.gif",
+      "frames": 26,
+      "duration_ms": 4975,
+      "bytes": 5961122,
+      "width": 960,
+      "height": 600
+    },
+    {
+      "file": "game-career-map.gif",
+      "frames": 33,
+      "duration_ms": 5473,
+      "bytes": 9686789,
+      "width": 960,
+      "height": 600
+    },
+    {
+      "file": "practice-exam.gif",
+      "frames": 19,
+      "duration_ms": 6022,
+      "bytes": 1050431,
+      "width": 960,
+      "height": 600
+    },
+    {
+      "file": "answer-feedback-loop.gif",
+      "frames": 19,
+      "duration_ms": 4991,
+      "bytes": 891893,
+      "width": 960,
+      "height": 600
+    },
+    {
+      "file": "llm-reasoning-feedback.gif",
+      "frames": 18,
+      "duration_ms": 6329,
+      "bytes": 1030151,
+      "width": 960,
+      "height": 600
+    }
+  ]
+}

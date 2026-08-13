@@ -121,36 +121,7 @@ export type DemoStep = {
   action: string
 }
 
-/**
- * A second state one demo slide can be put into on stage, and the key that does
- * it.
- *
- * Exists for `demo-office-transformation`, which is scripted as a *toggle* —
- * a rundown tier-0 office becoming a fully built tier-14 one while the presenter
- * says nothing — and which had no mechanism to perform that script. A `DemoSpec`
- * carries one `route` and one `still`, so the slide could only ever show the
- * "before": the entire before/after, which is the whole point of the slide, was
- * unreachable.
- *
- * ## Why a second route on the spec rather than a scene
- *
- * `scenes/registry.ts` declares an `office-transform` scene that no slide asks
- * for, and animating the deck's own 3D art would be the richer effect. It would
- * also be a different claim. Every other demo slide in this act frames the real
- * running product, and this slide's line — *every object in this room was bought
- * with LSAT questions* — is a claim about the app's own save state. A deck-side
- * recreation of the room is a video of software rather than the software, which
- * is the trade `demo-frame.tsx` argues against at length. So the toggle stays in
- * the demo layer and points at the app's two real tier overrides.
- *
- * ## Both halves have a still, and that is the requirement, not a nicety
- *
- * The base `still` stands in for `route` and this `still` stands in for this
- * `route`, so the before/after survives the stack dying — which is the one state
- * in which the slide most needs to work, and the state in which it previously
- * degraded to showing tier 0 twice. `?stills=1` is a supported way to present
- * this slide, not merely a fallback from it.
- */
+/** Optional second state for a future live demo that needs an on-stage toggle. */
 export type DemoToggle = {
   /** Route on the app origin for the toggled-to state. Same substitutions as `route`. */
   route: string
@@ -162,14 +133,8 @@ export type DemoToggle = {
    * and the presenter overlay all name the same key as the handler binds, and a
    * collision with the deck's own keymap is one edit to fix.
    *
-   * Collisions are real and they are silent. The first key tried here was `T`,
-   * which `start/use-start-gate.ts` already binds in the *capture* phase with a
-   * `stopPropagation()` to bring the start card back — so it won every time and
-   * nothing downstream ever saw the key. Keys already spoken for, across
-   * `engine/use-deck.ts`, `start/`, and `demo/demo-stage.tsx`: the arrows, space,
-   * page up/down, enter, backspace, home, end, escape, and
-   * `A` `F` `G` `L` `P` `Q` `R` `S` `T`. `scripts/verify-office-toggle.mjs`
-   * checks this key against that list rather than trusting it.
+   * Callers must avoid keys already owned by the deck, including arrows, space,
+   * page navigation, and `A` `F` `G` `L` `P` `Q` `R` `S` `T`.
    */
   key: string
   /** Names the toggled-to state for the presenter overlay. Never on the audience screen. */
@@ -186,8 +151,15 @@ export type DemoSpec = {
   /** Still under `public/stills/` used when the app is unreachable or `?stills=1`. */
   still: string
   /**
-   * A second state this demo can be toggled into, live or as a still. Absent on
-   * every slide but one; see `DemoToggle`.
+   * Captured product walkthrough used in place of `still` when the live app is
+   * unavailable. This is an emitted Vite asset URL rather than a filename under
+   * `public/stills/`; the static frame remains the reduced-motion and load-error
+   * fallback.
+   */
+  recording?: string
+  /**
+   * A second state this demo can be toggled into, live or as a still. No current
+   * slide uses it; the capability remains available for a future live demo.
    */
   toggle?: DemoToggle
   /**
@@ -200,12 +172,10 @@ export type DemoSpec = {
   width?: number
   caption?: string
   /**
-   * Never embed the live app for this slide — always paint `still`, even when
-   * the origin is healthy. Distinct from the deck-wide `?stills=1` override,
-   * which is a fallback for when something is broken: this is an editorial
-   * decision that a beat is not worth live time, and it should survive a
-   * perfectly working app. The budget bar and click path still render, because
-   * the presenter is still talking to a picture on a clock.
+   * Never embed the live app for this slide — always show its captured media,
+   * even when the origin is healthy. `recording` is preferred and `still` is its
+   * deterministic fallback. Distinct from the deck-wide `?stills=1` override,
+   * this is an editorial decision that the authored capture is the slide.
    */
   stillOnly?: boolean
   /** Revealed one at a time with `A`, so the presenter can point without narrating. */

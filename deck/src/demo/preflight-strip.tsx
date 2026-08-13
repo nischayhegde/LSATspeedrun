@@ -58,7 +58,7 @@ export function PreflightStrip() {
   // nothing to fix. One line saying what the deck is, rather than five red dots
   // and a repair plate addressed to someone who is not reading this.
   if (result.mode === 'stills') {
-    return <span className="pf-strip" aria-live="polite"><i className="pf-dot is-ok" />Showing captured stills</span>
+    return <span className="pf-strip" aria-live="polite"><i className="pf-dot is-ok" />Showing captured product demos</span>
   }
 
   const checks = ORDER

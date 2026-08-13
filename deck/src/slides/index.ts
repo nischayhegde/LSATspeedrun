@@ -1,5 +1,12 @@
 import type { SlideSpec } from './types'
 
+import answerFeedbackRecording from '../../../docs/demos/answer-feedback-loop.gif?url'
+import careerMapRecording from '../../../docs/demos/game-career-map.gif?url'
+import moneyUpgradesRecording from '../../../docs/demos/game-money-upgrades.gif?url'
+import officeRecording from '../../../docs/demos/game-office.gif?url'
+import reasoningFeedbackRecording from '../../../docs/demos/llm-reasoning-feedback.gif?url'
+import strategyMethodsRecording from '../../../docs/demos/strategy-methods.gif?url'
+
 /**
  * THE SLIDE REGISTRY
  *
@@ -79,6 +86,7 @@ export const SLIDES: readonly SlideSpec[] = [
     demo: {
       route: '{autoplay}',
       still: 'demo-case-answered.webp',
+      recording: answerFeedbackRecording,
       width: 1440,
       zoom: 0.96,
       budgetSeconds: 22,
@@ -108,6 +116,7 @@ export const SLIDES: readonly SlideSpec[] = [
     demo: {
       route: '{autoplay}',
       still: 'demo-case-answered.webp',
+      recording: reasoningFeedbackRecording,
       width: 1440,
       zoom: 0.96,
       budgetSeconds: 20,
@@ -136,6 +145,7 @@ export const SLIDES: readonly SlideSpec[] = [
     demo: {
       route: '/progress',
       still: 'demo-progress.webp',
+      recording: strategyMethodsRecording,
       width: 1440,
       zoom: 0.94,
       budgetSeconds: 18,
@@ -163,6 +173,7 @@ export const SLIDES: readonly SlideSpec[] = [
     demo: {
       route: '/firm?tab=decor&deckDemo=treasury',
       still: 'demo-firm.png',
+      recording: moneyUpgradesRecording,
       width: 1440,
       zoom: 1,
       budgetSeconds: 12,
@@ -207,6 +218,7 @@ export const SLIDES: readonly SlideSpec[] = [
     demo: {
       route: '/office',
       still: 'demo-office.webp',
+      recording: officeRecording,
       width: 1440,
       zoom: 0.9,
       budgetSeconds: 12,
@@ -225,32 +237,27 @@ export const SLIDES: readonly SlideSpec[] = [
     eyebrow: 'Product walkthrough · 06',
     headline: 'Progress to higher-tier law firms and earn more.',
     notes:
-      'The goal is to earn enough virtual currency to progress to the most expensive law firm. The game is paced to be completed in about two months if a student answers twenty questions correctly each day. ⟢ Say the first sentence over the starting office. Then stop talking and let the room transform.',
+      'The goal is to earn enough virtual currency to progress to the most expensive law firm. The game is paced to be completed in about two months if a student answers twenty questions correctly each day. ⟢ Say the first sentence over the career route. Then stop talking and let the animated map show the progression.',
     speaker: 'Alan',
     budgetSeconds: 18,
     scene: { id: 'none', framing: 'still' },
     transition: 'camera',
     demo: {
-      route: '/office?officeTier=0',
-      still: 'demo-office-tier0.webp',
+      route: '/map',
+      still: 'demo-map.webp',
+      recording: careerMapRecording,
       stillOnly: true,
-      toggle: {
-        route: '/office?officeTier=14&officeAll=1',
-        still: 'demo-office-tier14.webp',
-        key: 'o',
-        label: 'tier 14 — the built firm',
-      },
       width: 1440,
       zoom: 1.06,
       budgetSeconds: 12,
-      context: 'Context A, two pre-staged save states',
+      context: 'Captured product walkthrough',
       clickPath: [
-        { start: 0, end: 3, action: 'Tier 0 office. Establish the starting point.' },
-        { start: 3, end: 9, action: 'The deck automatically transforms the room to tier 14. Say nothing.' },
-        { start: 9, end: 12, action: 'Hold on the completed firm.' },
+        { start: 0, end: 3, action: 'Establish the current office on the career route.' },
+        { start: 3, end: 9, action: 'Let the recorded map movement reveal the higher-tier firms. Say nothing.' },
+        { start: 9, end: 12, action: 'Hold on the full progression path.' },
       ],
       skip: ['naming individual upgrades', 'staff hiring', 'the intermediate tiers'],
-      staging: 'The slide uses the captured tier-0 and tier-14 offices so the before/after remains reliable without the app stack.',
+      staging: 'The slide uses the captured career-map walkthrough embedded in the original pitch.',
     },
   },
   {

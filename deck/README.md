@@ -1,8 +1,9 @@
 # Lawyer Tycoon — the deck
 
 A 12-slide pitch deck that follows the original `Lawyer Tycoon .pptx` and its
-embedded speaker notes. Five slides frame the real product live; a sixth demo is
-a reliable captured office transformation. 4:25 of talk, 1:24 inside the app.
+embedded speaker notes. Its six product beats use the same screen recordings as
+the original pitch on the public deck; local rehearsal can still frame the first
+five routes live. 4:25 of talk, 1:24 of product walkthrough.
 
 This file is the runbook. Read **Start-up** before presentation day and
 **Troubleshooting** on it.
@@ -133,7 +134,7 @@ npm run verify
 ```
 
 It checks the 12-slide/4:25 registry, cold sign-in, demo sizing, full-bleed
-proportions, still fallbacks, the office transformation, and clipping. Do not
+proportions, captured-media fallbacks, and clipping. Do not
 present from a build that fails this command.
 
 ### Why there is no sign-in step
@@ -315,11 +316,11 @@ The id is the one in the timing table below. Browser back and forward work.
 
 ---
 
-## Forcing the still-image fallback
+## Forcing the captured-media fallback
 
 Three ways, in increasing order of commitment:
 
-1. **`S`, any time.** Swaps every demo in the deck to its captured still,
+1. **`S`, any time.** Swaps every demo in the deck to its captured walkthrough,
    immediately. Press it again to go back. This is the on-stage escape hatch: if a
    demo misbehaves, it is one keystroke away.
 2. **`?stills=1` on the URL.** Same thing, from the first frame:
@@ -328,18 +329,19 @@ Three ways, in increasing order of commitment:
    a machine with no stack running at all.
 
 The deck also does this on its own: each demo frame probes the app origin on
-mount, and swaps to a still if it is not answering. The small lamp in the frame's
-title bar says which you are looking at — `live`, `stills`, `connecting`,
+mount, and swaps to captured media if it is not answering. The small lamp in the
+frame's title bar says which you are looking at — `live`, `stills`, `connecting`,
 `app not running`, or `no seeded session`.
 
-The stills are real captures of this seeded account, in `public/stills/`, and they
+The animated captures live in `docs/demos/` and are bundled into the deck by
+Vite. Static frames in `public/stills/` remain behind them as reduced-motion and
+load-error fallbacks. Both are real captures of the seeded account, and they
 are the images the slides were composed against. They are a real fallback, not a
 theoretical one — which is why they are 2.0 MB of WebP rather than the 12.4 MB of
-PNG they used to be. A fallback the room waits for is a poor fallback, and
-`demo-office-tier14.webp` in particular is fetched at the instant the presenter
-presses `O`. Regenerate them with `node scripts/recapture-stills.mjs`, which needs
-`cwebp` on `PATH` (`brew install webp`, or `apt install webp`) and will tell you so
-rather than writing PNGs.
+PNG they used to be. A fallback the room waits for is a poor fallback. Regenerate
+them with `node scripts/recapture-stills.mjs`, which needs `cwebp` on `PATH`
+(`brew install webp`, or `apt install webp`) and will tell you so rather than
+writing PNGs.
 
 ---
 
@@ -455,8 +457,8 @@ bounded to the facts and main points in the original PPTX.
 
 ## Timing table
 
-4:25 total. Five slides use the live app; the office transformation uses two
-captured product states so its before/after remains reliable.
+4:25 total. The public pitch uses six captured product walkthroughs; local
+rehearsal can still use the live app for the first five.
 
 | # | Slide id | Speaker | Seconds | Cumulative |
 | --- | --- | --- | ---: | ---: |
@@ -473,9 +475,10 @@ captured product states so its before/after remains reliable.
 | 11 | `why-lawyer-tycoon` | Nischay | 30 | 4:15 |
 | 12 | `thanks-and-questions` | Nischay | 10 | 4:25 |
 
-Bold demo slides frame the live product. The italic slide deliberately uses
-captured tier-0 and tier-14 states. Every demo carries a written click path and
-skip list; rehearse those local budgets rather than improvising a product tour.
+Bold demo slides can frame the live product during local rehearsal. The italic
+slide deliberately uses the authored career-map recording in every mode. Every
+demo carries a written click path and skip list; rehearse those local budgets
+rather than improvising a product tour.
 
 ---
 
@@ -486,7 +489,7 @@ in this order:
 
 | # | Slide | Saves | What replaces it |
 | --- | --- | ---: | --- |
-| 1 | `demo-your-law-firm` | −15 | Carry its visible-progress sentence into the office transformation. |
+| 1 | `demo-your-law-firm` | −15 | Carry its visible-progress sentence into the career-progression walkthrough. |
 | 2 | `game-research-backed` | −10 | Read the 1.3×–3.7× result once; keep the study design for Q&A. |
 | 3 | `demo-feedback-every-question` | −8 | Name the rubric feedback and let the audience read one line. |
 

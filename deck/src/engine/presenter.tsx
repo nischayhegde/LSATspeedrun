@@ -97,7 +97,9 @@ export function Presenter({ slides, index, elapsed, frameMs, memory, stills, onC
                   the audience is not looking at. */}
               <dt>showing</dt>
               <dd className={surface?.showStill ? 'is-warn' : 'is-on'}>
-                {surface?.showStill ? `still · ${slide.demo.still}` : 'live app'}
+                {surface?.showStill
+                  ? slide.demo.recording ? 'captured walkthrough' : `still · ${slide.demo.still}`
+                  : 'live app'}
                 {surface ? ` · ${surface.label}` : ''}
               </dd>
             </>
@@ -128,7 +130,7 @@ export function Presenter({ slides, index, elapsed, frameMs, memory, stills, onC
         <li><kbd>P</kbd> these notes</li>
         <li><kbd>Q</kbd> Q&amp;A panel</li>
         <li><kbd>A</kbd> next callout</li>
-        <li><kbd>S</kbd> force stills</li>
+        <li><kbd>S</kbd> force captured media</li>
         <li><kbd>F</kbd> fullscreen</li>
         <li><kbd>R</kbd> reset clock</li>
       </ul>

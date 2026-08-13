@@ -17,7 +17,7 @@ export const CUT_ORDER: readonly CutItem[] = [
     slideId: 'demo-your-law-firm',
     action: 'drop',
     secondsSaved: 15,
-    how: 'The next slide already shows the office transformation. Alan carries the visible-progress sentence into it.',
+    how: 'The next slide already shows career progression. Alan carries the visible-progress sentence into it.',
   },
   {
     order: 2,

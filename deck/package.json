@@ -20,10 +20,9 @@
     "verify:sizing": "node scripts/verify-demo-sizing.mjs",
     "verify:proportion": "node scripts/verify-demo-proportion.mjs",
     "verify:still-only": "node scripts/verify-still-only.mjs",
-    "verify:office-toggle": "node scripts/verify-office-toggle.mjs",
     "verify:clipping": "node scripts/measure-clipping.mjs",
     "verify:counsel-pull": "node scripts/verify-counsel-pull.mjs",
-    "verify": "npm run verify:registry && npm run verify:cold-start && npm run verify:sizing && npm run verify:proportion && npm run verify:still-only && npm run verify:office-toggle && npm run verify:clipping"
+    "verify": "npm run verify:registry && npm run verify:cold-start && npm run verify:sizing && npm run verify:proportion && npm run verify:still-only && npm run verify:clipping"
   },
   "dependencies": {
     "react": "^19.2.8",

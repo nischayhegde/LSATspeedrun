@@ -155,8 +155,8 @@ The goal is to earn enough virtual currency to progress to the most expensive
 law firm. The game is paced to be completed in about two months if a student
 answers twenty questions correctly each day.
 
-Delivery: say the first sentence over the starting office. Then stop talking and
-let the room transform.
+Delivery: say the first sentence over the career route. Then stop talking and
+let the animated map show the progression.
 
 ### 11. Why Lawyer Tycoon — Nischay
 
