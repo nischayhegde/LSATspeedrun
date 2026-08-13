@@ -1,5 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 
+import { publicUrl } from '../public-url'
 import type { DemoSpec } from '../slides/types'
 import { describeSurface, presenterChrome, registerSlot, runtimeVersion, subscribeRuntime } from './demo-runtime'
 
@@ -177,8 +178,8 @@ export function DemoFrame({ demo, stills, active, bleed }: Props) {
         <div className="demo-screen" ref={slot}>
           {demo.stillOnly && demo.toggle ? (
             <div className="demo-office-wipe" data-toggled={toggled ? 'true' : 'false'}>
-              <img className="demo-still demo-office-before" src={`/stills/${demo.still}`} alt="The founding office" />
-              <img className="demo-still demo-office-after" src={`/stills/${demo.toggle.still}`} alt="The fully built firm" />
+              <img className="demo-still demo-office-before" src={publicUrl(`stills/${demo.still}`)} alt="The founding office" />
+              <img className="demo-still demo-office-after" src={publicUrl(`stills/${demo.toggle.still}`)} alt="The fully built firm" />
               <span className="demo-office-state before">01 · FOUNDING OFFICE</span>
               <span className="demo-office-state after">02 · BUILT WITH CASES</span>
               <div className="demo-office-loop" aria-hidden="true">
@@ -190,7 +191,7 @@ export function DemoFrame({ demo, stills, active, bleed }: Props) {
             // and the fallback has to follow the toggle or the before/after
             // collapses to "before" twice over — which is the state this slide
             // was in, and the reason it could not perform its own script.
-            <img className="demo-still" src={`/stills/${still}`} alt={demo.caption ?? caption} />
+            <img className="demo-still" src={publicUrl(`stills/${still}`)} alt={demo.caption ?? caption} />
           ) : null}
         </div>
       </div>
