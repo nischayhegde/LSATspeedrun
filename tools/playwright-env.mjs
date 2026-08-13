@@ -45,7 +45,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const TOOLS_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(TOOLS_DIR, '..')
@@ -136,7 +136,7 @@ export async function importPlaywright() {
   const tried = []
   for (const candidate of MODULE_CANDIDATES) {
     if (!existsSync(candidate)) { tried.push(candidate); continue }
-    return await import(candidate)
+    return await import(pathToFileURL(candidate).href)
   }
   try {
     return await import('playwright')

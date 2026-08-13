@@ -1,14 +1,14 @@
 # Lawyer Tycoon — the deck
 
-A 25-slide pitch deck that frames the real product, live, on six of its slides —
-a seventh demo slide is a deliberate still rather than an embed.
-5:00 of talk, 1:22 of it inside a running app.
+A 12-slide pitch deck that follows the original `Lawyer Tycoon .pptx` and its
+embedded speaker notes. Five slides frame the real product live; a sixth demo is
+a reliable captured office transformation. 4:25 of talk, 1:24 inside the app.
 
 This file is the runbook. Read **Start-up** before presentation day and
 **Troubleshooting** on it.
 
 - The narrative, verbatim, with visual direction and speaker notes: [`NARRATIVE.md`](./NARRATIVE.md)
-- The fact-check behind every number: [`CITATIONS.md`](./CITATIONS.md)
+- The historical research appendix from the superseded long-form deck: [`CITATIONS.md`](./CITATIONS.md)
 - What was measured against the real stack: [`DEMO-NOTES.md`](./DEMO-NOTES.md)
 - The slides themselves: [`src/slides/index.ts`](./src/slides/index.ts)
 
@@ -132,9 +132,9 @@ cd deck
 npm run verify
 ```
 
-It checks the 25-slide/5:00 registry, cold sign-in, iframe continuity and sizing,
-full-bleed proportions, still-only behavior, the office transformation toggle,
-and clipping. Do not present from a build that fails this command.
+It checks the 12-slide/4:25 registry, cold sign-in, demo sizing, full-bleed
+proportions, still fallbacks, the office transformation, and clipping. Do not
+present from a build that fails this command.
 
 ### Why there is no sign-in step
 
@@ -288,7 +288,7 @@ to match the one the data is seeded under.
 | `→` `↓` `space` `PageDown` `enter` | Next slide |
 | `←` `↑` `PageUp` `backspace` | Previous slide |
 | `Home` / `End` | First / last slide |
-| `G` | Grid overview of all 25 slides — click one to jump |
+| `G` | Grid overview of all 12 slides — click one to jump |
 | `P` | Presenter notes: this slide's notes, what's next, the clock, ahead/behind |
 | `Q` | Q&A panel: ammunition, evidence warnings, the cut list — searchable |
 | `A` | Reveal the next demo callout |
@@ -306,9 +306,9 @@ still images from the first frame.
 Every slide is a hash route, so any of these can be a bookmark or a jump mid-talk:
 
 ```
-http://localhost:5180/#/turn-nothing-to-teach
-http://localhost:5180/#/demo-case-answer
-http://localhost:5180/#/close-one-stop-shop
+http://localhost:5180/#/spiky-point-of-view
+http://localhost:5180/#/demo-mcq-and-justification
+http://localhost:5180/#/thanks-and-questions
 ```
 
 The id is the one in the timing table below. Browser back and forward work.
@@ -423,7 +423,7 @@ reword a slide the night before.
 
 **Do not change `id`, `section`, `kind`, `field`, `figure`, `scene`, `demo` or
 `transition`.** Those are staging. `id` is the deep link, so changing one breaks a bookmark the
-presenter may already have and silently changes which slide `#/pov-real-clock`
+presenter may already have and silently changes which slide `#/spiky-point-of-view`
 lands on. The other five re-choreograph the deck: `transition` decides how a slide
 arrives, `scene` decides what is behind it, and two consecutive slides naming the
 same scene get a continuous camera move instead of a cut — so changing one slide's
@@ -436,129 +436,63 @@ time so it will take noticeably longer to land. The deck's whole design premise 
 that the founders carry the room by speaking: if a detail will not fit, it belongs
 in `notes`.
 
-`dashboard-everything` is the one deliberate exception, with twelve signals. The
-founders asked for the complete list on a single slide, so it is drawn as a
-radial diagram — the Speedrun Index at the centre, the other eleven as nodes on
-two rings — rather than set as body copy. Those twelve labels live in that
-slide's `figure.nodes`, not in `points`, because printing them in both places
-would put the whole list next to itself at half the size.
-
-**The figures.** Twelve slides carry a `figure`, which is the graphic that
-*is* the argument on that slide: the two bars on `problem-coaching-tax`, the
-four re-sorting tiles on `pov-confidence-signal`, the paired Clark bars on
-`game-by-design`. The numbers inside them are copy in every sense that matters —
-several are figures `CITATIONS.md` had to correct — so they sit in this registry
-rather than inside the components, and correcting 0.22 or `$65–$425` is a
-one-line edit here. Changing the *shape* of a figure (its `kind`, or which
-fields it has) is a layout change and belongs with staging.
+**The figures.** The spiky POV uses the existing claim seal, and the evidence
+slide uses the animated `1.3×–3.7×` numeral. Those values are slide copy in every
+sense that matters, so they live in the registry rather than the component.
+Changing a figure's `kind` is a layout change and belongs with staging.
 
 **Budgets.** `budgetSeconds` on each slide drives the pacing bar in the presenter
-overlay, and the seven demo slides carry a second, harder budget inside their
+overlay, and the six demo slides carry a second, harder budget inside their
 `demo` block, alongside the click path and the skip list. If you change a slide's
 copy enough to change how long it takes to say, change `budgetSeconds` with it —
 the overlay's ahead/behind figure is only as honest as those numbers.
 
-Speaker notes and Q&A material live apart from the slides, in
-[`src/notes/`](./src/notes): the Q&A ammunition, the evidence-integrity warnings
-with their one open action, and the cut list. Same rule — it is data, edit the
-data.
+Speaker notes live on each slide object. Presenter-only Q&A answers, evidence
+guardrails, and the cut list live in [`src/notes/`](./src/notes). All of them are
+bounded to the facts and main points in the original PPTX.
 
 ---
 
 ## Timing table
 
-5:00 total. 1:22 of it live in the app, across the six bolded slides.
+4:25 total. Five slides use the live app; the office transformation uses two
+captured product states so its before/after remains reliable.
 
 | # | Slide id | Speaker | Seconds | Cumulative |
 | --- | --- | --- | ---: | ---: |
-| 1 | `title-lawyer-tycoon` | Nischay | 7 | 0:07 |
-| 2 | `problem-coaching-tax` | Nischay | 12 | 0:19 |
-| 3 | `problem-hours-and-price` | Nischay | 11 | 0:30 |
-| 4 | `turn-nothing-to-teach` | Nischay | 12 | 0:42 |
-| 5 | `thesis-speedrun` | Nischay | 10 | 0:52 |
-| 6 | `pov-reasoning-is-the-work` | Nischay | 14 | 1:06 |
-| 7 | `market-in-their-own-words` | Nischay | 10 | 1:16 |
-| 8 | `pov-confidence-signal` | Nischay | 11 | 1:27 |
-| 9 | `pov-volume-is-the-constraint` | Nischay | 21 | 1:48 |
-| 10 | `concept-lawyer-tycoon` | Nischay | 14 | 2:02 |
-| 11 | `pov-ai-never-answers` | Alan | 13 | 2:15 |
-| 12 | `pov-strategy-inside-the-question` | Alan | 11 | 2:26 |
-| 13 | `pov-real-clock` | Alan | 10 | 2:36 |
-| 14 | `demo-case-answer` | Alan | **30** | 3:06 |
-| 15 | `demo-case-verdict-review` | Alan | **13** | 3:19 |
-| 16 | `demo-mega-litigation` | Alan | **14** | 3:33 |
-| 17 | `dashboard-everything` | Alan | 8 | 3:41 |
-| 18 | `pov-virtual-currency` | Alan | 13 | 3:54 |
-| 19 | `game-by-design` | Alan | 8 | 4:02 |
-| 20 | `demo-clients-walk-in` | Alan | **9** | 4:11 |
-| 21 | `demo-office-transformation` | Alan | **9** | 4:20 |
-| 22 | `demo-map-and-firm` | Alan | **8** | 4:28 |
-| 23 | `demo-focus-mode` | Alan | *8* | 4:36 |
-| 24 | `game-never-gates` | Alan | 11 | 4:47 |
-| 25 | `close-one-stop-shop` | Nischay | 13 | 5:00 |
+| 1 | `title-lawyer-tycoon` | Nischay | 20 | 0:20 |
+| 2 | `spiky-point-of-view` | Nischay | 25 | 0:45 |
+| 3 | `goal-faster-improvement` | Nischay | 35 | 1:20 |
+| 4 | `demo-mcq-and-justification` | Alan | **22** | 1:42 |
+| 5 | `demo-feedback-every-question` | Alan | **20** | 2:02 |
+| 6 | `demo-adaptive-selection` | Alan | **25** | 2:27 |
+| 7 | `demo-office-treasury` | Alan | **20** | 2:47 |
+| 8 | `game-research-backed` | Alan | 25 | 3:12 |
+| 9 | `demo-your-law-firm` | Alan | **15** | 3:27 |
+| 10 | `demo-office-transformation` | Alan | *18* | 3:45 |
+| 11 | `why-lawyer-tycoon` | Nischay | 30 | 4:15 |
+| 12 | `thanks-and-questions` | Nischay | 10 | 4:25 |
 
-Slide 23's figure is *italicised* rather than bolded because it is not a live
-embed: `demo-focus-mode` carries `stillOnly`, and its eight seconds are speech
-over a frozen frame. The six bolded slides are the live ones.
-
-Pacing assumes roughly 150 spoken words per minute, and no slide exceeds 170.
-Every figure is derived from its slide's note length, so a slower speaker scales
-the whole table. `NARRATIVE.md` §C carries the same table with the per-slide word
-counts the seconds are computed from.
-
-**Demo overrun is the thing that breaks this deck.** `demo-case-answer`,
-`demo-case-verdict-review`, `demo-mega-litigation`, `demo-clients-walk-in`,
-`demo-office-transformation`, `demo-map-and-firm` and `demo-focus-mode` each
-carry a written click path with per-beat seconds and an explicit list of what to
-skip. Rehearse against those, not against the total. (They are named by id rather
-than by index because the deck gets renumbered often enough that a written
-"slide 12" goes stale — the convention `DEMO-NOTES.md` §3 states.)
+Bold demo slides frame the live product. The italic slide deliberately uses
+captured tier-0 and tier-14 states. Every demo carries a written click path and
+skip list; rehearse those local budgets rather than improvising a product tour.
 
 ---
 
 ## Cut list
 
-**There is no cut list any more, and that is deliberate** — see §C of
-[`NARRATIVE.md`](./NARRATIVE.md), which governs. At 5:00 the current cut uses the
-entire target, so every slide
-is now short enough that there is nothing to trim inside one: it is either said
-or it is not. The order below is what to do if a cut is forced anyway. Each entry
-saves exactly that slide's current budget, no single one buys much, and all six
-together buy 52 seconds at the cost of six beats.
+At 4:25, the deck already fits a five-minute slot. If the room starts late, cut
+in this order:
 
 | # | Slide | Saves | What replaces it |
 | --- | --- | ---: | --- |
-| 1 | `pov-real-clock` | −10 | Fold into the mega-litigation demo, which already shows the clock. Alan adds "timed to real pacing from day one, and full forms are optional" over the click path. |
-| 2 | `pov-confidence-signal` | −11 | Fold the confidence claim into `pov-reasoning-is-the-work` as one sentence. |
-| 3 | `game-by-design` | −8 | Alan names two of the four Clark splits over the office transformation instead. |
-| 4 | `demo-map-and-firm` | −8 | Describe the map and the firm tab in one sentence over the preceding slide's last frame. |
-| 5 | `dashboard-everything` | −8 | The twelve signals go unshown, and the calibration argument goes with them into Q&A. |
-| 6 | `title-lawyer-tycoon` | −7 | Nischay says the names and the product category over slide 2's opening frame. |
+| 1 | `demo-your-law-firm` | −15 | Carry its visible-progress sentence into the office transformation. |
+| 2 | `game-research-backed` | −10 | Read the 1.3×–3.7× result once; keep the study design for Q&A. |
+| 3 | `demo-feedback-every-question` | −8 | Name the rubric feedback and let the audience read one line. |
 
-**Never cut, under any circumstances:** `turn-nothing-to-teach`,
-`pov-reasoning-is-the-work`, `pov-volume-is-the-constraint`,
-`pov-ai-never-answers`, `demo-case-answer`, `demo-office-transformation`,
-`game-never-gates`, `close-one-stop-shop`.
-
-**Do not trim `problem-hours-and-price` either.** Every corrected number in the
-problem act lives there — the attributed hours, the competitors' own published
-curricula, and the real price ladder. Cutting it for time is how a wrong figure
-gets improvised back in.
-
----
-
-## The morning of the pitch
-
-One item, and it is the only thing in the evidence review that is still open:
-
-**Re-check both competitor pricing pages** — <https://7sage.com/self-study/pricing>
-and <https://www.lsatlab.com/pricing> — and update the price ribbon on
-`problem-hours-and-price` and the pricing answer in `src/notes/qa.ts` if anything
-moved. 7Sage was running a $79 first-month promotion on the Live tier as of
-2026-08-10, and promotional pricing changes without notice. This is the one line
-in the deck that anyone in the room can falsify from a phone in four seconds.
-
-Everything else in the evidence review is closed; press `Q` to read it.
+Never cut the spiky POV, product overview, first MCQ demo, office
+transformation, differentiation slide, or Q&A close. Press `Q` for the same cut
+order, the original-pitch Q&A answers, and the claim guardrails.
 
 ---
 

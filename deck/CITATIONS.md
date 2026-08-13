@@ -1,5 +1,11 @@
 # Lawyer Tycoon — Citations & Evidence Check
 
+> **Historical appendix.** The current 12-slide pitch follows
+> `Lawyer Tycoon .pptx` and uses only that presentation's facts and main points.
+> This file documents the superseded research-heavy deck and is not a source of
+> additional on-stage claims. See [`NARRATIVE.md`](./NARRATIVE.md) for the
+> current content boundary and speaker script.
+
 **Prepared 2026-08-10.** Read this before rehearsing. It covers the 610 SAT claim on `turn-610-reader`, ranked replacements for it, the competitor and study-hour claims on `problem-hours-and-price`, and a full competitor reference for the seven products a questioner may name (§4), including LSAT Demon, Kaplan, PowerScore and Khan Academy.
 
 **§6, §7 and §8 were added when the founders asked whether the deck actually answers two questions: *why gamification* and *why us rather than them*.** §6 is the gamification evidence and, more usefully, its limits. §7 is LSAC's own study of a prep platform — the source behind the new `pov-volume-is-the-constraint` slide and the best citation in the deck. §8 is the register of every sentence the deck says about a competitor while the audience is watching.

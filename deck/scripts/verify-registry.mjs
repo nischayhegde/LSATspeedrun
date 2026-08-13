@@ -3,7 +3,7 @@
 import { launchChromium } from './playwright-env.mjs'
 
 const BASE = (process.env.DECK_BASE || 'http://localhost:5180').replace(/\/$/, '')
-const EXPECTED_SLIDES = 23
+const EXPECTED_SLIDES = 12
 
 const browser = await launchChromium()
 const page = await browser.newPage()

@@ -9,7 +9,7 @@ import { OPEN_ACTIONS, WARNINGS } from './warnings'
  *
  * ## Why it is one panel and not three
  *
- * The three things in here — the Q&A ammunition, the evidence warnings and the
+ * The three things in here — the Q&A answers, evidence guardrails and the
  * cut list — are needed at three different moments, but they are needed under the
  * same conditions: on stage, in front of a room, with one hand on a clicker. A
  * presenter in that state will not navigate a tab bar to find out whether the
@@ -100,13 +100,13 @@ export function QaPanel({ onClose }: Props) {
       }}
     >
       <header className="deck-qa-head">
-        <h2 className="deck-qa-title">Q&amp;A · evidence · cuts</h2>
+        <h2 className="deck-qa-title">Q&amp;A · guardrails · cuts</h2>
         <input
           className="deck-qa-search"
           ref={search}
           type="search"
           value={query}
-          placeholder="Search — pricing, 1989, Anki, blind review…"
+          placeholder="Search — practice, feedback, game, timing…"
           aria-label="Search the Q and A"
           onChange={(event) => setQuery(event.target.value)}
         />

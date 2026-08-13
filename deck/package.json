@@ -23,7 +23,7 @@
     "verify:office-toggle": "node scripts/verify-office-toggle.mjs",
     "verify:clipping": "node scripts/measure-clipping.mjs",
     "verify:counsel-pull": "node scripts/verify-counsel-pull.mjs",
-    "verify": "npm run verify:registry && npm run verify:cold-start && npm run verify:continuity && npm run verify:sizing && npm run verify:proportion && npm run verify:clipping && npm run verify:counsel-pull"
+    "verify": "npm run verify:registry && npm run verify:cold-start && npm run verify:sizing && npm run verify:proportion && npm run verify:still-only && npm run verify:office-toggle && npm run verify:clipping"
   },
   "dependencies": {
     "react": "^19.2.8",
