@@ -906,6 +906,9 @@ try {
     if ($indexResponse.StatusCode -ne 200 -or $indexResponse.Content -notmatch '<title>Lawyer Tycoon</title>') {
         throw "CloudFront is not serving the Lawyer Tycoon frontend."
     }
+    if ([string]$indexResponse.Headers["X-Frame-Options"] -ne "SAMEORIGIN") {
+        throw "The deployed frontend cannot be framed by the same-origin pitch deck."
+    }
     if ($indexResponse.Content -notmatch 'createDemoCursor|deckDemo|autoplay') {
         $assetMatches = [regex]::Matches($indexResponse.Content, '/assets/[^"]+\.js')
         $foundDemoHook = $false

@@ -236,6 +236,11 @@ recently carried none of those — the application page could be framed by any
 site. `deploy/ec2/cloudformation.yaml` now writes
 `/etc/nginx/lsat-security-headers.conf` and includes it in the two locations
 nginx answers itself, adding `Permissions-Policy` and HSTS as well.
+Those nginx-served documents and assets use `X-Frame-Options: SAMEORIGIN`:
+the product and `/pitch/` deliberately share one CloudFront origin so the
+presentation can frame live product routes, while third-party sites remain
+unable to frame either surface. API responses remain `DENY` because no pitch
+slide frames an API response directly.
 
 It is an include per location rather than one block at server level because of
 two nginx behaviours: `add_header` inside a location replaces every inherited

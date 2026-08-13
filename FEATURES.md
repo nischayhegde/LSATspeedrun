@@ -798,8 +798,10 @@ sessions get two cookies: `lsat_session`, an httpOnly opaque token stored only a
 request. Native clients instead receive an opaque bearer token backed by the same hashed, revocable table (90
 days by default), and bearer-authenticated requests skip the CSRF check because they cannot rely on cookies.
 Development sign-in can impersonate any email, so it must be enabled explicitly and `create_app` refuses to
-start if it is enabled in production. Responses carry `nosniff`, `DENY` framing, a strict referrer policy, and
-`no-store`, plus gzip compression added in-app (the large game-state payload shrinks by roughly 85%).
+start if it is enabled in production. API responses carry `nosniff`, `DENY` framing, a strict referrer policy,
+and `no-store`; nginx-served product pages use `SAMEORIGIN` so the co-hosted pitch can frame its live demos
+without allowing third-party embedding. Gzip compression is added in-app (the large game-state payload shrinks
+by roughly 85%).
 
 **The async job system.** Covered in §4.3: an `AiJob` table with dedup keys and leases, SQS delivery, and a
 Lambda consumer using partial-batch failures. Notably the same `run_attempt_coaching` code runs in both the sync

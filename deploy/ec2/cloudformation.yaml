@@ -785,7 +785,11 @@ Resources:
               # without breaking sign-in and the route hints.
               cat > /etc/nginx/lsat-security-headers.conf <<'HEADERS'
               add_header X-Content-Type-Options "nosniff" always;
-              add_header X-Frame-Options "DENY" always;
+              # The product and its pitch share this CloudFront origin. The
+              # pitch frames product routes for its live demo slides, so allow
+              # only that same-origin embedding while still rejecting every
+              # third-party framing attempt.
+              add_header X-Frame-Options "SAMEORIGIN" always;
               add_header Referrer-Policy "strict-origin-when-cross-origin" always;
               add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
               add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
