@@ -248,6 +248,8 @@ export class OfficeRoomBatch {
   readonly group = new THREE.Group()
   readonly census: OfficeRoomBatchCensus
   private readonly batches: Array<{ mesh: THREE.InstancedMesh; instances: Instance[] }> = []
+  /** Meshes handed back to the scene graph by `release`. */
+  private readonly released = new Set<THREE.Mesh>()
 
   constructor(root: THREE.Object3D) {
     this.group.name = 'office-room-batch'
@@ -366,6 +368,97 @@ export class OfficeRoomBatch {
   }
 
   /**
+   * Hand a subtree back to the scene graph, so it is free to move.
+   *
+   * The room is batched on the theory that furniture stays where it was put,
+   * and the player can now pick some of it up. The obvious way to allow that
+   * is `batchSkip` on everything draggable, which pays for the possibility of
+   * a drag on every frame of every session whether or not anyone ever drags
+   * anything — measured on the top-tier Practice Floor, the seven movable
+   * cosmetics are 116 meshes, most of which do batch.
+   *
+   * So they stay batched until they are actually grabbed. This drops each of
+   * the subtree's instances to a zero scale — the cheapest way to remove one
+   * instance from a batch without rebuilding the buffer — and turns the real
+   * mesh back on in its place. The cost of a movable object is therefore paid
+   * by the player who moves it, at the moment they move it, and a room nobody
+   * has rearranged submits exactly what it submitted before.
+   *
+   * Returns how many meshes were handed back, which is how a harness can tell
+   * a release that did nothing from one that worked.
+   */
+  release(root: THREE.Object3D) {
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0)
+    const inside = new Set<THREE.Object3D>()
+    root.traverse((node) => inside.add(node))
+    let restored = 0
+    for (const batch of this.batches) {
+      let touched = false
+      for (let index = 0; index < batch.instances.length; index += 1) {
+        const instance = batch.instances[index]
+        if (!inside.has(instance.node) || this.released.has(instance.node)) continue
+        batch.mesh.setMatrixAt(index, zero)
+        instance.node.visible = true
+        this.released.add(instance.node)
+        touched = true
+        restored += 1
+      }
+      if (touched) batch.mesh.instanceMatrix.needsUpdate = true
+    }
+    return restored
+  }
+
+  /**
+   * Fold a released subtree back into its batches, wherever it now stands.
+   *
+   * The other half of `release`, and the reason a rearranged room costs what
+   * an untouched one does. Dropping a piece ends the only period in which it
+   * needs its own submissions: it is furniture again, standing still, at a new
+   * matrix instead of its old one. So the instance is rewritten from where the
+   * mesh actually is and the mesh goes back to being invisible.
+   *
+   * The bounding sphere is recomputed because it is the thing that decides
+   * whether the batch is drawn at all: a batch culled against where its
+   * instances used to be would drop a piece the player has just carried out of
+   * that volume, at whatever camera angle happens to expose it.
+   *
+   * Returns how many meshes were folded back in.
+   */
+  reclaim(root: THREE.Object3D) {
+    const inside = new Set<THREE.Object3D>()
+    root.traverse((node) => inside.add(node))
+    const local = new THREE.Matrix4()
+    const sizing = new THREE.Matrix4()
+    this.group.updateWorldMatrix(true, false)
+    const toGroup = new THREE.Matrix4().copy(this.group.matrixWorld).invert()
+    let folded = 0
+    for (const batch of this.batches) {
+      let touched = false
+      for (let index = 0; index < batch.instances.length; index += 1) {
+        const instance = batch.instances[index]
+        if (!inside.has(instance.node) || !this.released.has(instance.node)) continue
+        instance.node.updateWorldMatrix(true, false)
+        sizing.makeScale(instance.scale.x, instance.scale.y, instance.scale.z)
+        batch.mesh.setMatrixAt(index, local.multiplyMatrices(toGroup, instance.node.matrixWorld).multiply(sizing))
+        instance.node.visible = false
+        this.released.delete(instance.node)
+        touched = true
+        folded += 1
+      }
+      if (touched) {
+        batch.mesh.instanceMatrix.needsUpdate = true
+        batch.mesh.computeBoundingSphere()
+      }
+    }
+    return folded
+  }
+
+  /** Meshes currently out of their batch and drawing themselves. */
+  get releasedCount() {
+    return this.released.size
+  }
+
+  /**
    * Anything that has moved or been hidden since its matrix was captured.
    *
    * A static batch is a bet that the room stands still, and the cost of losing
@@ -383,6 +476,10 @@ export class OfficeRoomBatch {
     for (const batch of this.batches) {
       for (let index = 0; index < batch.instances.length; index += 1) {
         const instance = batch.instances[index]
+        // A released instance is *meant* to have left its batch behind, so it
+        // is not drift. It is the one case where the mesh moving and the
+        // matrix not following is the intended outcome.
+        if (this.released.has(instance.node)) continue
         instance.node.updateWorldMatrix(true, false)
         sizing.makeScale(instance.scale.x, instance.scale.y, instance.scale.z)
         current.multiplyMatrices(toGroup, instance.node.matrixWorld).multiply(sizing)

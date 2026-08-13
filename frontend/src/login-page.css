@@ -33,5 +33,111 @@
   .login-copy h1 { font-size: clamp(42px, 12vw, 65px); }
   .login-scene { max-height: 420px; }
   .login-panel-wrap { padding: 55px 22px 42px; } }
-.login-page { color: #f5e8bd; background: #101725; }
-.login-nav { border-bottom: 4px solid #080c13; background: #111a29; }.login-hero { background-color: #17283a; background-image: linear-gradient(90deg, rgba(105,153,157,.05) 2px, transparent 2px), linear-gradient(rgba(105,153,157,.05) 2px, transparent 2px), radial-gradient(circle at 20% 10%, #2b5662, transparent 38%); background-size: 18px 18px, 18px 18px, auto; }.login-copy h1 { font-family: var(--font-pixel); font-size: clamp(38px, 4.5vw, 68px); font-weight: 900; text-transform: uppercase; text-shadow: 5px 5px #0a111d; }.login-copy h1 em { color: #f0c65c; font-style: normal; }.login-copy > p { color: #b4c9ce; }.feature-list { font-family: var(--font-pixel); font-size: 10.5px; }.login-panel-wrap { color: #2e2a25; background-color: #d5c89f; background-image: linear-gradient(90deg, rgba(49,40,32,.06) 1px, transparent 1px), linear-gradient(rgba(49,40,32,.06) 1px, transparent 1px); background-size: 8px 8px; }.login-panel { border: 4px solid #141721; border-radius: 0; background: #f3e4ba; box-shadow: inset 0 0 0 3px #c59b58, 9px 9px #141721; }.login-panel h2 { font-family: var(--font-pixel); font-size: 26px; font-weight: 900; text-transform: uppercase; }.login-scene { border: 4px solid #080c13; border-radius: 0; box-shadow: 10px 10px #080c13; transform: none; }@media (max-width: 620px) {.login-copy h1 { font-size: 38px; } }
+/* ---------------------------------------------------------------------------
+   The sign-in screen, in the illustrated register.
+
+   This block used to be the Pixel Empire pass over the prestige-print rules
+   above: an 18px cyan graph-paper grid behind the hero, a headline set in the
+   HUD face at 68px uppercase with a 5px hard drop, an 8px grid on the panel
+   well, and a sign-in card that was a 4px pure-black box with a `9px 9px`
+   offset. It is the first screen anyone sees and the last one still drawn
+   entirely in a hand the rest of the app has left.
+
+   What replaces it is what the app already is: warm ink outlines, the brass
+   plate, Fraunces for the display line, and the same laid-paper field the
+   shell paints on every other route — the same 64px fibre tile as
+   `.app-shell` in `styles.css`, re-inked for a dark ground so the hero reads
+   as paper in low light rather than as engineering graph paper.
+   --------------------------------------------------------------------------- */
+
+.login-page { color: #f5e8bd; background: var(--night); }
+.login-nav {
+  border-bottom: 1px solid var(--ink);
+  background-color: #111a29;
+  /* The same engine-turned wave the app header carries, so the strip above
+     the fold is the same worked metal before and after sign-in. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4Q3 0 6 4T12 4T18 4T24 4' fill='none' stroke='%23ffffff' stroke-opacity='.037' stroke-width='1'/%3E%3C/svg%3E");
+  box-shadow: inset 0 -1px rgba(232, 200, 124, .22), var(--el-1);
+}
+.login-nav > span { color: #93a9b3; font-family: var(--font-hud); font-size: 11px; letter-spacing: .05em; }
+.login-hero {
+  background-color: #14202f;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23e8d7a8' stroke-opacity='.045' stroke-linecap='round'%3E%3Cpath d='M3 9h9M21 4h14M44 12h11M8 25h17M33 29h8M52 33h9M6 44h12M26 47h15M47 52h13M15 58h10M38 61h12M57 20h5'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(circle at 18% 4%, rgba(123, 200, 189, .16), transparent 42%),
+    radial-gradient(circle at 88% 92%, rgba(200, 155, 75, .1), transparent 46%);
+  background-size: 64px 64px, auto, auto;
+  background-repeat: repeat, no-repeat, no-repeat;
+}
+/* Fraunces, sentence case. The uppercase HUD face at 68px was the loudest
+   type in the app by a wide margin and the only display line not set in the
+   display face; the emphasis line keeps the brass it always had. */
+.login-copy h1 {
+  font-family: var(--font-display);
+  font-size: clamp(40px, 4.8vw, 70px);
+  font-weight: 620;
+  line-height: 1.02;
+  letter-spacing: -.022em;
+  text-transform: none;
+  text-shadow: 0 2px 0 rgba(6, 11, 20, .45);
+}
+.login-copy h1 em { color: var(--brass-lit); font-style: normal; }
+.login-copy > p { color: #b4c9ce; }
+.feature-list { font-family: var(--font-hud); font-size: 11.5px; letter-spacing: .02em; }
+.feature-list svg { color: var(--brass-bright); }
+/* The panel well is parchment, the paper the scenes' own documents are made
+   of, with the shell's fibre rather than an 8px pixel grid. */
+.login-panel-wrap {
+  color: #2e2a25;
+  background-color: var(--parchment);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23473c2a' stroke-opacity='.075' stroke-linecap='round'%3E%3Cpath d='M3 9h9M21 4h14M44 12h11M8 25h17M33 29h8M52 33h9M6 44h12M26 47h15M47 52h13M15 58h10M38 61h12M57 20h5'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(rgba(255, 250, 235, .34), rgba(255, 250, 235, 0) 62%);
+  background-size: 64px 64px, auto;
+  background-repeat: repeat, no-repeat;
+}
+/* A filed document on the desk, not a plastic box: card radius, one ink
+   hairline, a brass rule inside it, and a real drop. */
+.login-panel {
+  border: 1px solid var(--ink-line-strong);
+  border-radius: var(--r-card);
+  background: linear-gradient(168deg, #fbf1d6, #f0e2ba 74%);
+  box-shadow: inset 0 0 0 1px rgba(200, 155, 75, .5), var(--el-3);
+}
+.login-panel h2 {
+  color: #23212b;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 620;
+  letter-spacing: -.018em;
+  text-transform: none;
+}
+.login-panel > p { color: #6a6152; }
+.login-panel > small { color: #857c6a; }
+.config-note { border: 1px solid rgba(27, 26, 36, .14); border-radius: var(--r-control); color: #6a6152; background: rgba(200, 155, 75, .1); }
+/* The firm's plaque, the same brass plate as the header's. It carried a
+   `lucide` scale until now, which is the one place in the app where a line
+   icon stood in for the hand-drawn crest beside it. */
+.crest {
+  border: 1px solid var(--ink-line-strong);
+  border-radius: 14px;
+  color: #2a1e06;
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-2);
+  /* The engraved relief the marks draw when they sit on metal, the same value
+     `.brand-mark` and `.legal-spinner` use. */
+  --mark-relief: rgba(104, 68, 16, .42);
+}
+.crest svg { width: 31px; height: 31px; }
+/* The scene is a framed picture over the desk. A hairline and a soft drop,
+   not a 4px black box on a 10px hard offset. */
+.login-scene {
+  /* The canvas is a child, so without this it paints over the frame's own
+     corners and the radius is drawn but never seen. */
+  overflow: hidden;
+  border: 1px solid var(--ink-line-strong);
+  border-radius: var(--r-card);
+  box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .22), var(--el-3);
+  transform: none;
+}
+@media (max-width: 620px) {.login-copy h1 { font-size: 38px; } }

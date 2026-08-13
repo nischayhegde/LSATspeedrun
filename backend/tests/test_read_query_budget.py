@@ -233,3 +233,30 @@ def test_the_focus_read_does_not_scale_with_the_form_it_reads(loaded_account):
     assert detail["session_id"] is not None, "the fixture's completed diagnostic was not found"
     # One statement to find the form, one to read its answers' types.
     assert len(counter.statements) == 2, counter.statements
+
+
+def test_the_rolling_focus_read_is_one_statement_however_much_history_there_is(loaded_account):
+    """The signal that replaced `diagnostic_focus` reads far more and must not
+    read it row by row.
+
+    The old one was bounded by one form. This one is bounded by the account's
+    whole history, which is exactly the shape that turns a lazy relationship
+    walk into a per-answer query — the failure this module exists to catch, and
+    the one that put 162 of 174 statements on a single `/performance` request.
+    It runs while a run is being built, so a regression here is paid on every
+    question served, not only on a dashboard load.
+    """
+    application, _client, counter, _headers = loaded_account
+    from app.type_focus import rolling_focus_detail
+
+    with application.app_context():
+        user = User.query.filter_by(email="query-budget@example.test").one()
+        counter.statements.clear()
+        counter.armed = True
+        try:
+            detail = rolling_focus_detail(user.id)
+        finally:
+            counter.armed = False
+
+    assert detail["first_encounters"] > 0, "the fixture's practice history was not found"
+    assert len(counter.statements) == 1, counter.statements

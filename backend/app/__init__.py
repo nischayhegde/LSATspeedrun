@@ -18,11 +18,22 @@ from sqlalchemy.engine import Engine
 from .auth import init_auth
 from .db_secret import DatabaseSecret, attach_rotation_recovery
 from .extensions import db
+from .game import SITTING_QUESTIONS
 from .routes import api
+from .services import RC_CASE_MIN_SITTING
 from .scoring import FORM_ITEMS
 from .seed import seed_questions
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
+
+#: What `SECRET_KEY` falls back to when nothing sets it. Development only —
+#: `create_app` refuses to boot a production process that still holds it.
+LOCAL_SECRET_KEY = "local-only-change-me"
+
+# How much unfinished practice a student may have queued at once, in questions.
+# Eighty is the eight ten-question runs the queue used to allow; see
+# PRACTICE_QUEUE_MAX for why the cap converts rather than staying at eight.
+PRACTICE_QUEUE_QUESTIONS = 80
 
 
 @event.listens_for(Engine, "connect")
@@ -129,6 +140,19 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
     dev_auth_requested = os.getenv("DEV_AUTH_ENABLED", "false").lower() == "true"
     if is_production and dev_auth_requested:
         raise RuntimeError("DEV_AUTH_ENABLED must be false in production.")
+    secret_key = os.getenv("SECRET_KEY", "").strip()
+    if is_production and (not secret_key or secret_key == LOCAL_SECRET_KEY):
+        # The placeholder is in a public repository, so a production process
+        # holding it is holding a published key. It signs nothing today —
+        # sessions are opaque tokens hashed in `auth_sessions`, not Flask's
+        # signed cookie — but that is a property of the current code rather
+        # than a guarantee, and the failure is silent: the app boots, serves,
+        # and looks healthy. Refuse at startup instead, where a deployment
+        # notices. The stack under `deploy/` already generates one.
+        raise RuntimeError(
+            "SECRET_KEY must be set to a generated secret in production; "
+            "the development placeholder is published in this repository."
+        )
     database_secret = _database_secret()
     database_url = _database_url(database_secret)
     if database_url.startswith("postgres://"):
@@ -137,7 +161,7 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
     app.config.from_mapping(
-        SECRET_KEY=os.getenv("SECRET_KEY", "local-only-change-me"),
+        SECRET_KEY=secret_key or LOCAL_SECRET_KEY,
         SQLALCHEMY_DATABASE_URI=database_url,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         FRONTEND_ORIGIN=os.getenv("FRONTEND_ORIGIN", "http://localhost:5173"),
@@ -151,12 +175,35 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         # must be enabled explicitly and can never run in production.
         DEV_AUTH_ENABLED=dev_auth_requested and not is_production,
         AUTO_SEED=os.getenv("AUTO_SEED", auto_seed_default).lower() == "true",
-        PRACTICE_SESSION_SIZE=max(1, int(os.getenv("PRACTICE_SESSION_SIZE", "10"))),
+        # How many questions one practice run asks for. Defaulted from
+        # `game.SITTING_QUESTIONS` rather than repeated as a literal here,
+        # because the economy counts contract lengths and daily goals in
+        # sittings and the two must not be able to disagree. A run may finish
+        # slightly over this to serve a Reading Comprehension passage whole —
+        # see `services.PASSAGE_OVERSHOOT_ALLOWANCE`.
+        #
+        # Checked against `services.RC_CASE_MIN_SITTING` below, after any test
+        # override, because a run too short to hold a reading case is a run with
+        # a third of the exam missing.
+        PRACTICE_SESSION_SIZE=max(1, int(os.getenv("PRACTICE_SESSION_SIZE", str(SITTING_QUESTIONS)))),
         # A student may keep this many practice runs (Sprint/Infinite/Method Lab/
         # Review) queued at once — paused or in progress — before another start
         # request is rejected with "queue_full". Diagnostics are unaffected;
         # they keep the single-active-run rule enforced separately.
-        PRACTICE_QUEUE_MAX=max(1, int(os.getenv("PRACTICE_QUEUE_MAX", "8"))),
+        #
+        # The cap is a limit on *queued work*, not on how many times the student
+        # has pressed start, so it is quoted in questions and converted. Eight
+        # ten-question runs was eighty questions of unfinished work; leaving the
+        # cap at eight while the run shortens would silently cut that to
+        # forty-eight and would bite precisely the student a shorter run is meant
+        # to help — the one who picks a case up often.
+        PRACTICE_QUEUE_MAX=max(
+            1,
+            int(
+                os.getenv("PRACTICE_QUEUE_MAX")
+                or round(PRACTICE_QUEUE_QUESTIONS / SITTING_QUESTIONS)
+            ),
+        ),
         # Whether choosing a suggested approach also commits the student to
         # doing it (see app/enforcement.py). On by default. This is a kill
         # switch rather than an experiment knob: enforcement changes what the
@@ -213,6 +260,26 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
     )
     if test_config:
         app.config.update(test_config)
+
+    # Checked here rather than where the default is read, so that a test config
+    # and an environment variable are held to the same rule. A run shorter than
+    # this cannot hold a Reading Comprehension passage, so every general run in
+    # the deployment would come out Logical Reasoning only and a third of the
+    # exam would go unpractised with nothing logged. An audit measured exactly
+    # that at sizes 3 and 5: 0% Reading Comprehension across every session
+    # started, on a configuration nobody had thought of as a change to the
+    # curriculum.
+    #
+    # Loud rather than clamped, for the same reason the form-size check below is
+    # loud: a caller who asked for three questions and silently got six has been
+    # overruled without being told.
+    if app.config["PRACTICE_SESSION_SIZE"] < RC_CASE_MIN_SITTING:
+        raise RuntimeError(
+            f"PRACTICE_SESSION_SIZE={app.config['PRACTICE_SESSION_SIZE']} is shorter than the "
+            f"{RC_CASE_MIN_SITTING} questions a reading case needs, so practice would serve no "
+            "Reading Comprehension at all. Raise it, or lower services.RC_CASE_MIN_SITTING "
+            "deliberately and re-measure the section mix."
+        )
 
     if app.config["DIAGNOSTIC_SESSION_SIZE"] != FORM_ITEMS:
         # Deliberately loud rather than silent. A short form still scores

@@ -37,6 +37,16 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app import create_app
+from app import calibration
+from app.enforcement import (
+    ENFORCEMENT_VERSION,
+    LEVEL_FULL,
+    MASTERY_MIN_SATISFIED,
+    STAND_DOWN_AFTER_REJECTIONS,
+    STATUS_SATISFIED,
+    STATUS_SKIPPED,
+    STATUS_STOOD_DOWN,
+)
 from app.extensions import db
 from app.game import (
     ASSET_BY_KEY,
@@ -58,8 +68,10 @@ from app.models import (
     Attempt,
     AttemptSettlement,
     DailyProgress,
+    LearnerRating,
     PlayerProfile,
     Question,
+    QuestionCalibration,
     ReviewQueueItem,
     SessionItem,
     SkillProgress,
@@ -75,7 +87,14 @@ from app.services import (
     serialize_item,
 )
 from app.story import QUEST_BY_KEY, ensure_story_state
-from app.strategies import STRATEGIES, _candidate_keys, strategy_performance
+from app.strategies import (
+    SESSION_FORCED_CAP,
+    STRATEGIES,
+    VARIANT_PROMPT_REQUIRED,
+    _candidate_keys,
+    strategy_performance,
+    stratum_key,
+)
 
 SEED_VERSION = "demo-seed-v2"
 DEFAULT_EMAIL = "student@localhost.test"
@@ -155,6 +174,22 @@ STRATEGY_PLAN = (
 # still vary so the demo history does not look mechanically uniform.
 CASES_SIZES = (12, 16, 10, 8)
 
+# How often a seeded run deals mandatory approaches, and how wide the pool it
+# draws them from.
+#
+# The history writer lays its own rows down rather than calling
+# `create_study_session`, so nothing here ever went past `plan_forced_arms` and
+# the mandatory sub-arm was absent from the account entirely: not a thin sample
+# but no rows at all, which left the panel that contrasts insisted-upon
+# approaches against merely offered ones with nothing to draw and the whole
+# read path unexercised. These deal it at roughly the rate the planner does —
+# `SESSION_FORCED_CAP` of a three-question pool, in one run out of five, which
+# stays inside the daily cap even on the two-sitting days.
+FORCED_EVERY_NTH_RUN = 5
+FORCED_POOL = 3
+# How often a mandatory approach is taken as far as the way out of it.
+FORCED_STAND_DOWN_EVERY = 4
+
 
 def _fraction(*parts: object) -> float:
     """Stable pseudo-random value in [0, 1) for reproducible seeding."""
@@ -189,6 +224,24 @@ def _backup_database() -> str | None:
     return str(target)
 
 
+def _reset_calibration(user: User) -> None:
+    """Undo the difficulty ratings a previous run of this script invented.
+
+    Deleting the attempts is not enough: a rating is an accumulator, so a second
+    seeding would stack another eleven weeks of invented answers on top of the
+    first and hand the bank a confidence nothing earned. Every row this removes
+    is one whose origin says it came from a seeder, and the demo seeder is the
+    only thing in the repository that writes those, so a real cohort's ratings
+    in the same database survive untouched.
+    """
+    db.session.execute(delete(LearnerRating).where(LearnerRating.user_id == user.id))
+    db.session.execute(
+        delete(QuestionCalibration).where(
+            QuestionCalibration.origin.notin_(tuple(calibration.TRUSTED_ORIGINS))
+        )
+    )
+
+
 def _reset_learner(user: User) -> None:
     """Remove this learner's study and game state, keeping the account itself.
 
@@ -198,6 +251,7 @@ def _reset_learner(user: User) -> None:
     """
     db.session.execute(delete(ReviewQueueItem).where(ReviewQueueItem.user_id == user.id))
     db.session.execute(delete(SkillProgress).where(SkillProgress.user_id == user.id))
+    _reset_calibration(user)
     db.session.execute(delete(AiJob).where(AiJob.user_id == user.id))
     db.session.execute(delete(AttemptSettlement).where(AttemptSettlement.user_id == user.id))
     for session in StudySession.query.filter_by(user_id=user.id).all():
@@ -528,6 +582,125 @@ def _target_seconds(question: Question, previous_passage_id: str | None) -> int:
 # --------------------------------------------------------------------------
 
 
+def _repair_question(
+    review_pool: list[tuple[str, str]],
+    trial: dict | None,
+    salt: object,
+    candidates: dict[str, list[str]],
+) -> Question | None:
+    """A review-queue question this run's planned approach genuinely fits.
+
+    The bug this closes. A trial token is drawn first and a question is then
+    chosen for it, but a repair *replaced* that question without the token being
+    reconsidered — so an approach picked for a Logical Reasoning question landed
+    on whatever the review queue happened to offer, and "Compare the two
+    passages" ended up recorded against a Logical Reasoning question. It made 85
+    such rows on the demo account, and they show in the Methods panel.
+
+    The live path cannot do this: `services.create_study_session` settles the
+    whole question list first and only then calls `assign_strategy_trial` on
+    each question. This restores the same ordering the only way a script that
+    plans its arms in advance can — by keeping the plan and moving the question,
+    scanning the pool from a stable offset for one the approach is a candidate
+    for. Returns None when the pool holds none, which leaves the position as
+    fresh material rather than as a mismatch.
+    """
+    if not review_pool:
+        return None
+    start = int(_fraction(SEED_VERSION, "review", salt) * len(review_pool))
+    for offset in range(len(review_pool)):
+        question_id, _reason = review_pool[(start + offset) % len(review_pool)]
+        question = db.session.get(Question, question_id)
+        if question is None:
+            continue
+        if trial is None:
+            return question
+        if question_id not in candidates:
+            candidates[question_id] = _candidate_keys(question)
+        if trial["key"] in candidates[question_id]:
+            return question
+    return None
+
+
+def _stage_forced_arms(
+    rows: list[tuple[SessionItem, Attempt, Question, dict]],
+    salt: object,
+    satisfied_by_key: dict[str, int],
+    stats: dict,
+) -> None:
+    """Make some of a run's approaches mandatory, the way the planner would.
+
+    Takes `FORCED_POOL` of the run's prompted questions as the pool, gives every
+    member of it the one inclusion probability the pool had, and draws
+    `SESSION_FORCED_CAP` of them on a hash of the run — the same shape as
+    `plan_forced_arms`, so the rows support the same weighted contrast rather
+    than merely carrying its column names.
+
+    One drawn question in every `FORCED_STAND_DOWN_EVERY` staged run is let out
+    of the approach instead of working it, which is the only part of this that
+    overrides the A/B plan: that attempt's takeup flips to declined. It has to,
+    because a stand-down *is* a declined offer — the student met the gate, was
+    refused twice, and took the way out — and a mandatory arm in which nobody
+    ever reaches the exit would leave the one path here that cannot be tested by
+    inspection looking like it works.
+
+    Every other gate outcome follows from what the token already says the learner
+    did, so the takeup and accuracy the A/B plan fixes stay as written: a
+    question they worked is `satisfied` and one they declined is `skipped`.
+
+    Runs are skipped rather than trimmed when a member would carry an approach
+    past `MASTERY_MIN_SATISFIED` cleared gates, because that is the point at
+    which the live gate relaxes to an attestation. Leaving the demo below it
+    keeps the operations on screen where they can be shown.
+    """
+    if len(rows) < FORCED_POOL:
+        return
+    pool = rows[:FORCED_POOL]
+    would_satisfy: dict[str, int] = defaultdict(int)
+    for item, _attempt, _question, trial in pool:
+        if trial["applied"] is not False:
+            would_satisfy[item.strategy_key] += 1
+    if any(
+        satisfied_by_key.get(key, 0) + count >= MASTERY_MIN_SATISFIED
+        for key, count in would_satisfy.items()
+    ):
+        return
+
+    propensity = SESSION_FORCED_CAP / len(pool)
+    drawn = sorted(
+        range(len(pool)), key=lambda index: _fraction(SEED_VERSION, "force", salt, index)
+    )[:SESSION_FORCED_CAP]
+    stands_down = drawn[0] if stats["forced_runs"] % FORCED_STAND_DOWN_EVERY == 0 else None
+    stats["forced_runs"] += 1
+
+    for index, (item, attempt, question, trial) in enumerate(pool):
+        required = index in set(drawn)
+        item.strategy_stratum = attempt.strategy_stratum = stratum_key(item.strategy_key, question)
+        item.strategy_forcing_propensity = attempt.strategy_forcing_propensity = propensity
+        item.strategy_enforcement_level = attempt.strategy_enforcement_level = LEVEL_FULL
+        attempt.strategy_enforcement_version = ENFORCEMENT_VERSION
+        if required:
+            item.strategy_variant = attempt.strategy_variant = VARIANT_PROMPT_REQUIRED
+        # Time inside the panel is part of the question's recorded time, not
+        # added to it, because pace scoring subtracts it back out.
+        gate_ms = min(50_000, int(attempt.server_elapsed_ms * .34))
+        if index == stands_down:
+            attempt.strategy_applied = False
+            attempt.strategy_gate_status = STATUS_STOOD_DOWN
+            attempt.strategy_gate_ms = gate_ms
+            item.strategy_gate_rejections = attempt.strategy_gate_rejections = (
+                STAND_DOWN_AFTER_REJECTIONS
+            )
+            stats["stood_down"] += 1
+        elif trial["applied"] is not False:
+            attempt.strategy_gate_status = STATUS_SATISFIED
+            attempt.strategy_gate_ms = gate_ms
+            satisfied_by_key[item.strategy_key] = satisfied_by_key.get(item.strategy_key, 0) + 1
+        else:
+            attempt.strategy_gate_status = STATUS_SKIPPED
+        stats["forced" if required else "forced_pool"] += 1
+
+
 def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
     calendar = _study_calendar(now)
     plan = _session_plan(len(calendar))
@@ -536,14 +709,26 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
     type_cycle = pool.type_cycle()
     type_cursor = 0
     review_pool: list[tuple[str, str]] = []  # (question_id, reason_code)
+    # Candidate approaches per question, for the repair scan below. The pool's
+    # own index cannot answer this: it is keyed the other way round, approach to
+    # questions, and it only holds unspent questions.
+    candidates: dict[str, list[str]] = {}
     stats = {
         "sessions": 0,
         "attempts": 0,
         "trials": 0,
         "controls": 0,
         "skips": 0,
+        "repairs": 0,
+        "repairs_declined": 0,
+        "mismatched": 0,
+        "forced": 0,
+        "forced_pool": 0,
+        "forced_runs": 0,
+        "stood_down": 0,
         "by_style": defaultdict(int),
     }
+    satisfied_by_key: dict[str, int] = {}
 
     # Count eligible slots up front so the trial plan can be stretched to fill
     # every one of them; every question in a cases run carries a trial in the
@@ -596,6 +781,7 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
 
         cursor = started_at
         previous_passage_id: str | None = None
+        prompted_rows: list[tuple[SessionItem, Attempt, Question, dict]] = []
         for position in range(size):
             salt = (slot_index, position)
             trial: dict | None = None
@@ -610,10 +796,8 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
             )
             repair_question = None
             if is_repair:
-                question_id, _reason = review_pool[
-                    int(_fraction(SEED_VERSION, "review", salt) * len(review_pool))
-                ]
-                repair_question = db.session.get(Question, question_id)
+                repair_question = _repair_question(review_pool, trial, salt, candidates)
+                stats["repairs" if repair_question is not None else "repairs_declined"] += 1
             if repair_question is not None:
                 question = repair_question
             elif trial:
@@ -632,6 +816,12 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
             section_index = 0
             if style == "diagnostic":
                 section_index = 0 if position < 25 else 1 if position < 52 else 2
+
+            # Counted rather than asserted, so one stale row cannot stop a seed
+            # that takes minutes — but `_verify` refuses to report success while
+            # it is non-zero, which is what makes this a check.
+            if trial and STRATEGIES[trial["key"]]["section"] != question.section:
+                stats["mismatched"] += 1
 
             item = SessionItem(
                 session_id=session.id,
@@ -712,11 +902,25 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
                 created_at=completed_at,
             )
             db.session.add(attempt)
+            # This path builds its attempts by hand rather than going through
+            # `submit_attempt`, so the difficulty rating has to be told about
+            # them here or eleven weeks of demo history would leave the bank as
+            # uncalibrated as it started. `seed_demo` runs inside
+            # `responses_marked`, which is what stops these counting as earned.
+            calibration.record_response(
+                user.id,
+                question,
+                is_correct,
+                exposure=item.exposure_policy or calibration.EXPOSURE_BLIND,
+                now=completed_at,
+            )
 
             if trial:
                 stats["trials"] += trial["variant"] == "prompt" and trial["applied"] is True
                 stats["controls"] += trial["variant"] == "control"
                 stats["skips"] += trial["applied"] is False
+                if trial["variant"] == "prompt":
+                    prompted_rows.append((item, attempt, question, trial))
 
             # Mirror _schedule_review's reason codes so the queue looks earned.
             if not (is_repair and repair_question is not None):
@@ -732,6 +936,9 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
 
             cursor = completed_at
             stats["attempts"] += 1
+
+        if style == "cases" and slot_index % FORCED_EVERY_NTH_RUN == 0:
+            _stage_forced_arms(prompted_rows, slot_index, satisfied_by_key, stats)
 
         session.completed_at = cursor
         session.current_index = size
@@ -1074,14 +1281,20 @@ def _refresh_daily(user: User) -> None:
 # --------------------------------------------------------------------------
 
 
-def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -> dict:
+def _stage_live_trial(user: User, *, attempts: int = 60) -> dict:
     """Leave one live session whose third question carries a prompted trial.
 
-    Variant assignment is a hash of user, question, position, and style, so a
-    fresh session lands on the invisible control arm about a quarter of the
+    Variant assignment is a hash of user, question, position and the run's own
+    id, so a fresh session lands on the control arm about a quarter of the
     time. Sessions are created and discarded here until one has a `prompt`
     variant at position 2, and that session is left open. `create_study_session`
     returns the resumable session, so the demo cannot draw a different one.
+
+    The run id in that hash is what makes the retry loop below terminate
+    quickly. Before it was there, the arm was a function of the student, the
+    question and the slot alone, so every discarded session redrew exactly the
+    same arm and the loop's only source of variation was the questions the
+    sampler happened to pick.
 
     Positions 0 and 1 are pre-answered, leaving the learner one question away
     from the brief.
@@ -1094,7 +1307,7 @@ def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -
     db.session.commit()
 
     for round_index in range(attempts):
-        session = create_study_session(user, count=8, practice_style=style)
+        session = create_study_session(user, count=8)
         item = SessionItem.query.filter_by(session_id=session.id, position=2).first()
         if item and item.strategy_variant == "prompt" and item.strategy_key:
             for position in (0, 1):
@@ -1116,7 +1329,7 @@ def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -
                         strategy_key=pre.strategy_key,
                         strategy_variant=pre.strategy_variant,
                         strategy_prompt_ms=0,
-                        evidence_class=EVIDENCE_CLASS[style],
+                        evidence_class=EVIDENCE_CLASS["cases"],
                         server_elapsed_ms=elapsed,
                         client_elapsed_ms=elapsed,
                         feedback_json=_feedback_payload(question, question.correct_answer, True, None),
@@ -1124,6 +1337,12 @@ def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -
                         coaching_model=SEED_VERSION,
                         coached_at=utcnow(),
                     )
+                )
+                calibration.record_response(
+                    user.id,
+                    question,
+                    True,
+                    exposure=pre.exposure_policy or calibration.EXPOSURE_BLIND,
                 )
                 db.session.flush()
             session.current_index = 2
@@ -1135,7 +1354,7 @@ def _stage_live_trial(user: User, *, style: str = "cases", attempts: int = 60) -
             payload = serialize_item(item)
             return {
                 "session_id": session.id,
-                "practice_style": style,
+                "practice_style": "cases",
                 "position": item.position,
                 "question_number": item.position + 1,
                 "strategy_key": item.strategy_key,
@@ -1175,6 +1394,50 @@ def _lab_status(result: dict) -> str:
     return "forming"
 
 
+def _cross_section_rows(user: User) -> int:
+    """Rows recording an approach against a question from the other section.
+
+    Read back off the database rather than trusted from the writer, because the
+    thing being checked is what a student would see in the Methods panel. The
+    live path cannot produce one of these — it picks the question first — so any
+    count above zero is this script having put it there.
+    """
+    rows = (
+        SessionItem.query.with_entities(SessionItem.strategy_key, Question.section)
+        .join(Question, Question.id == SessionItem.question_id)
+        .join(StudySession, SessionItem.session_id == StudySession.id)
+        .filter(StudySession.user_id == user.id, SessionItem.strategy_key.isnot(None))
+        .all()
+    )
+    return sum(
+        1
+        for key, section in rows
+        if key in STRATEGIES and STRATEGIES[key]["section"] != section
+    )
+
+
+def _forced_arm_rows(user: User) -> dict:
+    """What the mandatory sub-arm looks like on the record, read back.
+
+    The sub-arm had no rows anywhere before this seed wrote them, so the panel
+    that contrasts insisted-upon approaches against offered ones has never been
+    seen with data in it. These counts are checked rather than reported so an
+    empty one is a seeding failure instead of an empty panel in a demo.
+    """
+    rows = (
+        Attempt.query.with_entities(
+            Attempt.strategy_variant, Attempt.strategy_gate_status, Attempt.strategy_forcing_propensity
+        )
+        .filter(Attempt.user_id == user.id, Attempt.strategy_key.isnot(None))
+        .all()
+    )
+    return {
+        "required": sum(variant == VARIANT_PROMPT_REQUIRED for variant, _status, _p in rows),
+        "stood_down": sum(status == STATUS_STOOD_DOWN for _variant, status, _p in rows),
+        "pooled": sum(propensity is not None for _variant, _status, propensity in rows),
+    }
+
+
 def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
     performance = performance_snapshot(user)
     game = serialize_game(user.game_profile, include_catalog=True)
@@ -1201,6 +1464,19 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
         problems.append("no skipped strategy prompts")
     if unplaced:
         problems.append(f"{unplaced} planned strategy trials had no eligible session slot")
+    mismatched = _cross_section_rows(user)
+    if mismatched:
+        problems.append(
+            f"{mismatched} questions carry an approach from the other section — "
+            "a Reading Comprehension approach on a Logical Reasoning question, or the reverse"
+        )
+    forced = _forced_arm_rows(user)
+    if not forced["required"]:
+        problems.append("no mandatory approaches on the record")
+    elif forced["pooled"] <= forced["required"]:
+        problems.append("mandatory approaches with nothing in their pool to compare against")
+    if not forced["stood_down"]:
+        problems.append("nobody was ever let out of a mandatory approach")
     if len(performance["skills"]) < 12:
         problems.append(f"only {len(performance['skills'])} skills in the breakdown")
     thin = [skill["name"] for skill in performance["skills"] if skill["attempts"] < 5]
@@ -1230,9 +1506,15 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
         problems.append("nothing is affordable for a live purchase")
     if not live.get("renders_prompt"):
         problems.append("staged live session does not render a prompt")
+    bank = calibration.bank_summary()
+    if bank["synthetic"] != bank["provisional"] + bank["estimated"] + bank["calibrated"]:
+        # A rated row this seeder did not mark would be one a demo answer had
+        # smuggled into the earned pile.
+        problems.append("a rated question is not marked as seeded")
 
     return {
         "problems": problems,
+        "difficulty_bank": bank,
         "attempts": performance["overall"]["attempts"],
         "accuracy": performance["overall"]["accuracy"],
         "accuracy_delta": performance["overall"]["accuracy_delta"],
@@ -1248,6 +1530,8 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
         "strategy_lab": {
             "trials_completed": lab["trials_completed"],
             "strategies_tested": lab["strategies_tested"],
+            "cross_section_rows": mismatched,
+            "mandatory": forced,
             "supported": [
                 {
                     "title": result["title"],
@@ -1298,6 +1582,16 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
 
 
 def seed_demo(email: str) -> dict:
+    # Everything below invents answers, so everything below is declared
+    # synthetic before it writes one. The marker reaches the ratings written
+    # through `submit_attempt` inside `_stage_live_trial` as well as the ones
+    # written by hand in `_write_history`, which is why it sits here and not at
+    # the individual call sites.
+    with calibration.responses_marked(calibration.ORIGIN_SIMULATED):
+        return _seed_demo(email)
+
+
+def _seed_demo(email: str) -> dict:
     user = User.query.filter_by(email=email).first()
     if not user:
         user = User(email=email, display_name="Local Student")

@@ -45,17 +45,24 @@ export class ApiError extends Error {
    * than showing one generic sentence for six required operations.
    */
   fields?: Array<{ field: string | null; message: string }>
+  /**
+   * Only on a refused mandatory approach: whether the server will now accept a
+   * withdrawal. It rides on the refusal because the refusal is what earns it.
+   */
+  standDown?: boolean
 
   constructor(
     message: string,
     status: number,
     code = 'request_failed',
     fields?: Array<{ field: string | null; message: string }>,
+    standDown?: boolean,
   ) {
     super(message)
     this.status = status
     this.code = code
     this.fields = fields
+    this.standDown = standDown
   }
 }
 
@@ -86,13 +93,21 @@ function takeBootstrapped(path: string): Promise<BootstrapResult | null> | null 
 }
 
 function unwrap<T>(result: BootstrapResult): T {
-  const data = (result.body ?? {}) as { error?: { message?: string; code?: string; fields?: Array<{ field: string | null; message: string }> } }
+  const data = (result.body ?? {}) as {
+    error?: {
+      message?: string
+      code?: string
+      fields?: Array<{ field: string | null; message: string }>
+      stand_down?: boolean
+    }
+  }
   if (!result.ok) {
     throw new ApiError(
       data?.error?.message || 'The request could not be completed.',
       result.status,
       data?.error?.code,
       data?.error?.fields,
+      data?.error?.stand_down,
     )
   }
   return result.body as T
@@ -121,6 +136,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       response.status,
       data?.error?.code,
       data?.error?.fields,
+      data?.error?.stand_down,
     )
   }
   return data as T
@@ -210,7 +226,7 @@ export const api = {
   purchase: (assetKey: string) =>
     request<{ game: GameState }>('/game/purchases', { method: 'POST', body: JSON.stringify({ asset_key: assetKey }) }),
   secureDistrict: (districtKey: string) =>
-    request<{ retainer: SecuredDistrict; game: GameState }>('/game/territory', {
+    request<{ counsel: SecuredDistrict; game: GameState }>('/game/territory', {
       method: 'POST',
       body: JSON.stringify({ district_key: districtKey }),
     }),
@@ -242,8 +258,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ rival_key: rivalKey, operation_key: operationKey }),
     }),
-  currentSession: () => request<{ session: StudySession | null }>('/study-sessions/current'),
-  activeSessions: () => request<{ sessions: StudySession[]; queue_cap: number }>('/study-sessions/active'),
+  // `session_size` is how many questions "Start N cases" starts. It is served
+  // rather than held as a constant here because it is deployment-configurable
+  // and because it has moved once already (ten to six).
+  currentSession: () => request<{ session: StudySession | null; session_size: number }>('/study-sessions/current'),
+  activeSessions: () => request<{ sessions: StudySession[]; queue_cap: number; session_size: number }>('/study-sessions/active'),
   dailyDocket: () => request<{ daily_docket: DailyDocket }>(`/daily-docket?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`),
   performance: () => request<{ performance: PerformanceSnapshot }>('/performance'),
   currentDiagnostic: () => request<{
@@ -297,6 +316,43 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(draft),
     }),
+  /* The sectioned mega-litigation. Marking an answer is not submitting it:
+     nothing is graded until a section closes, which is why these four are
+     separate from `submitAttempt` rather than options on it. */
+  startExamSection: (sessionId: string, sectionIndex: number) =>
+    request<{ session: StudySession; summary?: PracticeSummary }>(
+      `/study-sessions/${sessionId}/sections/${sectionIndex}/start`,
+      { method: 'POST' },
+    ),
+  submitExamSection: (sessionId: string, sectionIndex: number) =>
+    request<{ session: StudySession; summary?: PracticeSummary }>(
+      `/study-sessions/${sessionId}/sections/${sectionIndex}/submit`,
+      { method: 'POST' },
+    ),
+  /** The running section's questions, fetched once so navigation costs no clock. */
+  examSection: (sessionId: string) =>
+    request<{ items: import('./types').ExamPaper[]; exam: import('./types').ExamState }>(
+      `/study-sessions/${sessionId}/section`,
+    ),
+  /** Mark, change, clear (`null`) or flag one answer on the running sheet. */
+  recordExamAnswer: (
+    sessionId: string,
+    itemId: string,
+    body: { selected_label?: string | null; flagged?: boolean },
+  ) =>
+    request<{
+      saved: boolean
+      answer: { item_id: string; position: number; selected_label: string | null; flagged: boolean }
+      exam: import('./types').ExamState
+    }>(`/study-sessions/${sessionId}/answers/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  focusExamItem: (sessionId: string, position: number) =>
+    request<{ session: StudySession; summary?: PracticeSummary }>(
+      `/study-sessions/${sessionId}/focus/${position}`,
+      { method: 'POST' },
+    ),
   submitAttempt: (
     sessionId: string,
     body: {

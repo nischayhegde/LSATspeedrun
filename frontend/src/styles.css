@@ -107,16 +107,8 @@
   from { opacity: 0; transform: translateY(-6px); }
 }
 :root {
-  /* The three faces, declared once, here.
-     They used to be split across two sheets and one of them was declared
-     twice with different values: this file set `--font-pixel` to a Courier
-     New stack and `art/art.css` set it to Archivo, so which face every HUD
-     label in the app rendered in came down to which sheet loaded last. Archivo
-     won and nothing looked wrong, which is what made it worth removing rather
-     than leaving — the Courier declaration was one import-order change away
-     from being visible on ~100 labels. `gate-harness-main.tsx` is the case
-     where it already was: it imports this sheet and not `art.css`, so the
-     harness had no display or label face at all.
+  /* The three faces, as the base layer. `art/art.css` remains the illustrated
+     token authority. `gate-harness-main.tsx` imports this sheet and not art.css.
 
      `--font-body` is new only as a name. The stack was already written out
      longhand on the line below, and seven declarations across four sheets
@@ -131,7 +123,12 @@
   background: #f2eee5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #182027;
+  /* `--ink` used to be declared here as `#182027`, a cool near-black, and
+     again in `art/art.css` as `#1b1a24`, the warm contour colour the scenes
+     draw every silhouette in. `art.css` loads after this sheet and won, so the
+     value here had no effect and only made the token look like it had two
+     meanings. The illustrated palette is declared in one place; see the block
+     at the top of `art/art.css` and `docs/visual-language.md`. */
   --navy: #102735;
   --navy-2: #18394a;
   /* The contrast-bumped value from the visual overhaul. It lived in
@@ -250,6 +247,11 @@ h1, h2, h3, p { text-wrap: pretty; }
 .header-economy > span { min-height: 32px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border: 1px solid #ded7ca; border-radius: 999px; background: white; color: var(--navy); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
 .header-economy svg { color: var(--gold-dark); }
 .header-economy .streak { color: #9a4a2c; background: #fff3e7; border-color: #f0c9a9; }
+/* Shown only while the win streak is actually holding a reputation floor up, so
+   the header gains a glyph at the moment there is something to defend rather
+   than carrying a permanent zero. */
+.header-economy .streak.is-holding { border-color: #cfae7a; }
+.streak-standing { margin-left: 6px; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border-radius: 999px; color: #3f6b52; background: #e6f1e6; font-variant-numeric: tabular-nums; }
 .header-economy .streak .streak-count { display: inline-block; }
 .header-economy .streak.is-lit { animation: streak-glow-pulse .85s ease-out; }
 .header-economy .streak.is-lit svg { animation: streak-flame-kick .85s ease-out; }
@@ -294,11 +296,14 @@ h1, h2, h3, p { text-wrap: pretty; }
   justify-items: center;
   gap: 8px;
   text-align: center;
-  border: 3px solid #171d28;
+  /* Diegetic paper, so it keeps the weight and the cast offset the chapter
+     prompt and the epilogue sheet have. Ink retuned from the cold `#171d28`
+     to the app's own. */
+  border: 3px solid var(--ink);
   border-radius: 4px;
   color: #2b2a20;
   background: linear-gradient(168deg, #f8efd8, #ece0c0 78%);
-  box-shadow: inset 0 0 0 2px #cbb27e, 8px 9px 0 #0c1119, 0 30px 70px rgba(0, 0, 0, .5);
+  box-shadow: inset 0 0 0 2px #cbb27e, 8px 9px 0 rgba(27, 26, 36, .82), 0 30px 70px rgba(0, 0, 0, .5);
   animation: streak-welcome-in .4s cubic-bezier(.2, 1.1, .4, 1) both;
 }
 .streak-welcome-close { position: absolute; right: 8px; top: 8px; color: #8b7c58; }
@@ -309,11 +314,14 @@ h1, h2, h3, p { text-wrap: pretty; }
   margin-bottom: 4px;
   display: grid;
   place-items: center;
-  border: 3px solid #171d28;
+  /* The lit-lamp brown of the Focus plate in the header, which is the app's
+     one warm accent, drawn with a top-edge highlight instead of the pixel
+     hand's two-corner bevel. */
+  border: 1px solid rgba(224, 152, 118, .42);
   border-radius: 50%;
   color: #ffe1ad;
-  background: #653a36;
-  box-shadow: inset -3px -3px #3d211f, inset 2px 2px #ffb98f;
+  background: linear-gradient(170deg, #78453f, #55302d);
+  box-shadow: inset 0 1px 0 rgba(255, 205, 175, .22), var(--el-1);
   animation: streak-welcome-flame-loop 1.8s ease-in-out .35s both;
 }
 .streak-welcome-count {
@@ -377,7 +385,10 @@ h1, h2, h3, p { text-wrap: pretty; }
 .secondary-button.full, .primary-button.full { width: 100%; }
 .secondary-button.compact { min-height: 37px; padding: 0 13px; font-size: 12px; }.loading-screen { min-height: 65vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; color: var(--muted); font-family: var(--font-display); font-size: 17px; }
 .legal-spinner { width: 54px; height: 54px; display: grid; place-items: center; color: var(--gold); border: 1px solid #d6c7a9; border-radius: 50%; background: white; animation: legal-pulse 1.3s ease-in-out infinite; }
-@keyframes legal-pulse { 50% { transform: scale(1.06); box-shadow: 0 0 0 9px rgba(200,155,75,.1); } }
+/* The halo has to carry the plate's own bevel and drop with it: a keyframe
+   replaces `box-shadow` outright, so stating only the ring made the plate go
+   flat at the top of every breath and come back at the bottom of it. */
+@keyframes legal-pulse { 50% { transform: scale(1.06); box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-2), 0 0 0 9px rgba(200, 155, 75, .1); } }
 .spinner { width: 20px; height: 20px; border: 2px solid #d7d2c8; border-top-color: var(--gold-dark); border-radius: 50%; animation: spin .8s linear infinite; flex: 0 0 auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -390,6 +401,20 @@ h1, h2, h3, p { text-wrap: pretty; }
    rather than printed on it; surfaces that are not metal turn it off. */
 .mark { flex: 0 0 auto; }
 .mark-relief { fill: var(--mark-relief, transparent); }
+
+/* The other icon family, held to the same weight.
+   `lucide-react` draws at `stroke-width: 2`, which is a hairline once an icon
+   is rendered at the 15–19px the interface actually uses it at, and the marks
+   beside it are solid fills. That mismatch is the "generic icon set looks thin
+   next to the cel-shaded scenes" problem the marks file was written about — the
+   marks fixed the eight glyphs they replaced and left the ~100 lucide icons
+   around them alone. One rule fixes the rest, and it is a rule rather than a
+   prop on every call site because there are well over a hundred of them.
+   2.35 rather than 2.5: at 2.5 the denser icons (Building2, BarChart3) start to
+   fill in at 15px. Surfaces that already ask for a heavier stroke — the firm
+   tab icons at 2.6, the sound controls at 2.5, the brand mark at 3 — are more
+   specific and keep theirs. */
+svg.lucide { stroke-width: 2.35; }
 .brand-mark, .legal-spinner { --mark-relief: rgba(104,68,16,.42); }
 .brand-mark .mark-scales, .legal-spinner .mark-scales { width: 24px; height: 24px; }
 .legal-spinner .mark-scales { width: 30px; height: 30px; }
@@ -505,8 +530,11 @@ h1, h2, h3, p { text-wrap: pretty; }
    settled into the top third with dead space below it. */
 
 /* Firm management */
-.tier-buy .primary-button { color: var(--navy); background: #e6c77f; }
-@keyframes bought-flash { 0%,70% { opacity: 1; } 100% { opacity: 0; pointer-events: none; } }
+/* This used to flatten the shared button to a plain `#e6c77f` fill in the
+   prestige-print navy, and it is more specific than `.primary-button`, so the
+   one control that buys a whole office tier was the only primary button in the
+   app without the plate. There is nothing local to say here, so it says
+   nothing. */
 .requirements { margin-top: 13px; color: #82847f; font-size: 8.5px; text-transform: capitalize; }
 .requirements.missing { color: #a55449; }
 .requirements.met { color: var(--green); }
@@ -521,7 +549,19 @@ h1, h2, h3, p { text-wrap: pretty; }
 /* Cartoon courtroom case experience */
 .client-portrait { width: 82px; height: 88px; display: grid; place-items: center; position: relative; flex: 0 0 auto; filter: drop-shadow(0 7px 8px rgba(16,31,38,.18)); }
 .client-portrait svg { width: 100%; height: 100%; overflow: visible; }
-.client-portrait > span { width: 24px; height: 24px; display: grid; place-items: center; position: absolute; right: -2px; bottom: 2px; border: 2px solid #f8ebce; border-radius: 50%; color: #f8e1a8; background: var(--navy); font-family: Georgia, serif; font-size: 12px; font-weight: 800; }
+/* The initial badge used to be `.client-portrait > span`, and the rule that
+   drew it lived here. `ClientPortrait` now draws that badge as `> b`, styled in
+   `art.css`, and its first child is the `Bust` — a `<span>`. So the old rule
+   stopped describing a badge and started describing the 3D portrait itself, at
+   a specificity (0,1,1) that beat every `.av-bust` rule in `art.css` (0,1,0).
+   Measured on /office: it forced `border-radius: 50%` over the dome the
+   portrait camera is framed for, which cut the top and left of the head; added
+   a 2px `#f8ebce` ring, which is why the canvas was 82×88 inside an 86×92
+   bust; offset the bust 2px right and 2px up through `right: -2px; bottom: 2px`
+   on a `position: absolute` meant for a 24px badge; and replaced the client's
+   own backdrop colour with `var(--navy)`, so every client was rendered against
+   the same blue. Nothing renders a `<span>` badge any more, so the rule goes
+   rather than gains a `:not()`. */
 .client-portrait.mood-happy { animation: client-happy 1.8s ease-in-out infinite; }
 .client-portrait.mood-unhappy { animation: client-unhappy 2.8s ease-in-out infinite; }
 @keyframes client-happy { 0%,100% { transform: rotate(-1deg) translateY(0); } 50% { transform: rotate(1deg) translateY(-4px); } }
@@ -550,7 +590,6 @@ h1, h2, h3, p { text-wrap: pretty; }
 @keyframes reward-pop { from { opacity: 0; transform: scale(.7) rotate(-4deg); } }
 @keyframes coin-fly { 0% { opacity: 0; transform: translate(0, 18px) rotate(0); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(190px, -45px) rotate(420deg); } }
 @keyframes client-card-activate { 50% { transform: translateY(-6px) rotate(.4deg); } }
-@keyframes activated-flash { 0%,68% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
 
 @media (max-width: 1120px) {
   .desktop-nav a { padding-inline: 10px; }
@@ -675,13 +714,16 @@ h1, h2, h3 { letter-spacing: -.01em; }
   height: 68px;
   padding: 0 clamp(14px, 3vw, 44px);
   border: 0;
-  border-bottom: 4px solid #080c13;
+  /* One ink line under the engraved plate, in the app's ink rather than the
+     4px cold-black slab the pixel hand used, and a real drop instead of the
+     hard 5px offset that ran the width of every screen. */
+  border-bottom: 1px solid var(--ink);
   color: #f7ebc7;
   background: #111a29;
-  box-shadow: inset 0 -2px #2f4860, 0 5px 0 rgba(9,12,19,.2);
+  box-shadow: inset 0 -1px rgba(232, 200, 124, .22), var(--el-1);
   backdrop-filter: none;
 }
-.app-header::before { content: ""; position: absolute; inset: 4px 0 auto; height: 1px; background: rgba(255,255,255,.08); }
+.app-header::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: rgba(255,255,255,.08); }
 /* An engine-turned wave, the way a share certificate or a banknote is engraved,
    at an opacity where you register the surface as worked metal rather than see
    a pattern. One 24x8 tile inlined as a data URI: no request, no element, and
@@ -692,59 +734,64 @@ h1, h2, h3 { letter-spacing: -.01em; }
   background-repeat: repeat;
 }
 .brand { gap: 11px; color: #ffefbd; }
+/* The firm's plaque. Same brass plate as the primary button, the office floor
+   selector and the map's site marks — one piece of brass, drawn one way. */
 .brand-mark {
   width: 40px;
   height: 40px;
-  border: 3px solid #080c13;
-  border-radius: 2px;
-  color: #132033;
-  background: var(--pixel-gold);
-  box-shadow: inset -4px -4px #c48a36, inset 3px 3px #fff0a5, 4px 4px 0 #080c13;
+  border: 1px solid var(--ink-line-strong);
+  border-radius: 9px;
+  color: #2a1e06;
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1);
 }
 .brand-mark svg { width: 21px; stroke-width: 3; }
-.brand-word strong { font-family: var(--font-pixel); font-size: 15px; letter-spacing: .03em; text-shadow: 2px 2px 0 #080c13; }
-.brand-word small { margin-top: 5px; color: #82d2c4; font-family: var(--font-pixel); font-size: 10.5px; letter-spacing: .25em; }
+.brand-word strong { font-family: var(--font-hud); font-size: 15px; letter-spacing: .03em; text-shadow: 0 1px 0 rgba(6, 10, 16, .55); }
+.brand-word small { margin-top: 5px; color: #82d2c4; font-family: var(--font-hud); font-size: 10.5px; letter-spacing: .25em; }
 .desktop-nav { gap: 8px; }
 .desktop-nav a {
   height: 42px;
   padding: 0 13px;
-  border: 2px solid transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
   color: #99acb7;
-  font-family: var(--font-pixel);
+  font-family: var(--font-hud);
   font-size: 11.5px;
   font-weight: 900;
   letter-spacing: .03em;
 }
 .desktop-nav a::after { display: none; }
 .desktop-nav a:hover { color: #ffe9a0; background: #1c2b40; }
+/* The lit tab is the same brass plate as the brand plaque beside it and the
+   primary button below it, so "you are here" is drawn in the app's own metal
+   rather than in a bevelled pixel key. */
 .desktop-nav a.active {
-  border-color: #070b12;
-  color: #172131;
-  background: #efc65e;
-  box-shadow: inset -3px -3px #b87b2d, inset 2px 2px #ffeb98, 3px 3px 0 #070b12;
+  border-color: var(--ink-line-strong);
+  color: #2a1e06;
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1);
 }
-.desktop-nav a svg { shape-rendering: crispEdges; }
 .header-right { gap: 13px; }
 .header-economy { gap: 7px; }
 .header-economy > span {
   min-height: 34px;
-  padding: 0 10px;
-  border: 2px solid #080c13;
-  border-radius: 2px;
+  padding: 0 11px;
+  border: 1px solid rgba(232, 200, 124, .22);
+  border-radius: var(--r-chip);
   color: #f8e8ba;
-  background: #203147;
-  box-shadow: inset 0 -3px #152236;
-  font-family: var(--font-pixel);
+  background: rgba(32, 49, 71, .82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+  font-family: var(--font-hud);
   font-size: 11.5px;
   white-space: nowrap;
   flex-shrink: 0;
 }
-.header-economy svg { color: var(--pixel-gold); }
-.header-economy .streak { color: #ffe1ad; border-color: #080c13; background: #653a36; }
-.account-menu { color: #9cb0bb; font-family: var(--font-pixel); font-size: 11px; }
-.account-menu img, .avatar-fallback { border: 2px solid #e7bd5d; border-radius: 2px; image-rendering: auto; }
-.avatar-fallback { color: #172131; background: #e7bd5d; }
-.icon-button { border-radius: 2px; color: #9cb0bb; }
+.header-economy svg { color: var(--brass-bright); }
+.header-economy .streak { color: #ffe1ad; border-color: rgba(224, 152, 118, .34); background: rgba(101, 58, 54, .9); }
+.account-menu { color: #9cb0bb; font-family: var(--font-hud); font-size: 11px; }
+.account-menu img, .avatar-fallback { border: 1px solid var(--hairline-strong); border-radius: 9px; image-rendering: auto; }
+.avatar-fallback { color: #2a1e06; background: var(--brass-plate); }
+.icon-button { border-radius: 8px; color: #9cb0bb; }
 .icon-button:hover { color: #ffe394; background: #26384c; }
 /* Focus Mode's plate is deliberately not the solid brass of `.desktop-nav
    a.active`: that treatment belongs to "you are on this screen", and reusing it
@@ -759,44 +806,49 @@ h1, h2, h3 { letter-spacing: -.01em; }
      each — most visible against the lit tab, which is the one plate in the row
      that is always filled. */
   height: 42px;
-  border: 2px solid #080c13;
-  border-radius: 2px;
+  border: 1px solid rgba(232, 200, 124, .22);
+  border-radius: var(--r-control);
   color: #9cb0bb;
-  background: #203147;
-  box-shadow: inset 0 -3px #152236;
-  font-family: var(--font-pixel);
+  background: rgba(32, 49, 71, .82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+  font-family: var(--font-hud);
   font-size: 10.5px;
   letter-spacing: .04em;
 }
 /* The gap this hairline divides is 16px — 8px of nav gap plus the button's 8px
    margin — so it only reads as centred at -8px. */
 .header-focus-toggle::before { left: -8px; background: rgba(148,178,196,.25); }
-.header-focus-toggle:hover:not(:disabled) { color: #ffe394; border-color: #080c13; background: #26384c; }
+.header-focus-toggle:hover:not(:disabled) { color: #ffe394; border-color: var(--hairline); background: #26384c; }
 .header-focus-toggle.is-on {
   color: #ffe1ad;
-  border-color: #080c13;
-  background: #653a36;
-  box-shadow: inset 0 -3px #40211f, inset 2px 2px #8a5148;
+  border-color: rgba(224, 152, 118, .42);
+  background: linear-gradient(170deg, #78453f, #55302d);
+  box-shadow: inset 0 1px 0 rgba(255, 205, 175, .18), var(--el-1);
 }
-.header-focus-toggle .mark-focus { width: 18px; height: 18px; shape-rendering: crispEdges; }
-.header-focus-toggle.is-on .mark-focus { color: var(--pixel-gold); }
-/* The tour replay and sign out moved off the header row and
-   into this dropdown, so the account avatar/name is the only header-right
-   control that opens something. Same card language as `.mobile-site-menu`
-   (dark plate, brass hairline, blocky shadow), just small and anchored. */
-.account-menu-trigger { padding: 3px 8px 3px 3px; border: 2px solid transparent; border-radius: 2px; color: #9cb0bb; background: transparent; }
-.account-menu-trigger:hover, .account-menu.is-open .account-menu-trigger { color: #ffe394; border-color: #080c13; background: #203147; box-shadow: inset 0 -3px #152236; }
+.header-focus-toggle .mark-focus { width: 18px; height: 18px; }
+.header-focus-toggle.is-on .mark-focus { color: var(--brass-bright); }
+/* The tour replay and sign out moved off the header row and into this
+   dropdown, so the account avatar/name is the only header-right control that
+   opens something. The comment here said it shared a card language with
+   `.mobile-site-menu` — dark plate, brass hairline, blocky shadow — and only
+   two of those three were ever true of both. The phone sheet has been a
+   hairline and a soft drop since the illustrated pass; this one was still a
+   2px cold-black box with square corners on a 4px printed offset, which is
+   the same menu drawn by two different hands. Now it is the phone sheet,
+   small and anchored, and the sentence above is true. */
+.account-menu-trigger { padding: 3px 8px 3px 3px; border: 1px solid transparent; border-radius: var(--r-control); color: #9cb0bb; background: transparent; }
+.account-menu-trigger:hover, .account-menu.is-open .account-menu-trigger { color: #ffe394; border-color: var(--hairline); background: #203147; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); }
 .account-menu-chevron { color: #7f909a; }
 .account-menu-panel {
   width: 250px;
   padding: 7px;
-  border: 2px solid #080c13;
-  border-radius: 2px;
+  border: 1px solid rgba(225, 194, 118, .36);
+  border-radius: var(--r-control);
   color: #eadfc4;
   background: linear-gradient(155deg, #142637, #0d1928 72%);
-  box-shadow: 4px 4px 0 #080c13;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), var(--el-3);
 }
-.account-menu-item { border-radius: 2px; color: #eadfc4; }
+.account-menu-item { border-radius: 8px; color: #eadfc4; }
 .account-menu-item:hover { background: rgba(255,255,255,.06); }
 .account-menu-item svg { color: #d8b75f; }
 .account-menu-item strong { font-family: var(--font-pixel); font-size: 10.5px; }
@@ -804,17 +856,23 @@ h1, h2, h3 { letter-spacing: -.01em; }
 .account-menu-item.active { color: #ffe1ad; background: #653a36; }
 .account-menu-item.active svg { color: #ffe1ad; }
 .account-menu-item.sign-out svg { color: #d97a6b; }
+/* The sound block sits in the header between four rounded chips and a rounded
+   avatar, and was the last square-cornered pixel key left in that row: a 2px
+   `#080c13` outline, a `inset 0 -3px` bevel and a hard `2px 2px` offset. It is
+   now the same recessed chip as the standing badges two elements along, so the
+   whole right-hand group reads as one set of controls. */
 .sound-controls {
-  height: 38px;
+  height: 34px;
   min-width: 0;
-  padding: 3px;
+  padding: 2px 4px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 2px solid #080c13;
+  border: 1px solid rgba(232, 200, 124, .22);
+  border-radius: var(--r-chip);
   color: #9cb0bb;
-  background: #203147;
-  box-shadow: inset 0 -3px #152236, 2px 2px #080c13;
+  background: rgba(32, 49, 71, .82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
 }
 .sound-control-button {
   width: 28px;
@@ -824,17 +882,21 @@ h1, h2, h3 { letter-spacing: -.01em; }
   place-items: center;
   flex: 0 0 auto;
   border: 0;
+  border-radius: var(--r-chip);
   color: #9cb0bb;
   background: transparent;
-  font-family: var(--font-pixel);
-  font-size: 9px;
+  font-family: var(--font-hud);
+  font-size: 9.5px;
 }
-.sound-control-button:hover { color: #ffe394; background: #263f56; }
-.sound-control-button svg { width: 16px; height: 16px; stroke-width: 2.5; }
-.sound-reduced-button.active { color: #172131; background: #efc65e; box-shadow: inset -2px -2px #b87b2d; }
-.sound-ambient-button.active { color: #172131; background: #75c5b6; box-shadow: inset -2px -2px #3f847b; }
+.sound-control-button:hover { color: #ffe394; background: rgba(255, 255, 255, .07); }
+.sound-control-button svg { width: 16px; height: 16px; stroke-width: 2.35; }
+/* Lit, these are the same two plates the rest of the app lights things with:
+   brass for "held down by you", verdigris for "running". Both were bevelled
+   pixel keys with a two-pixel inner shadow on the bottom-right. */
+.sound-reduced-button.active { color: #2a1e06; background: var(--brass-plate); box-shadow: inset 0 1px 0 rgba(255, 246, 220, .6); }
+.sound-ambient-button.active { color: #10322e; background: linear-gradient(170deg, #a5ded4, var(--verdigris)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45); }
 .sound-volume-control { width: 62px; display: inline-flex; align-items: center; }
-.sound-volume-control input { width: 100%; height: 20px; accent-color: #efc65e; cursor: pointer; }
+.sound-volume-control input { width: 100%; height: 20px; accent-color: var(--brass-bright); cursor: pointer; }
 .sound-volume-control input:disabled { cursor: default; opacity: .35; }
 
 /* The eyebrow, in one place.
@@ -847,18 +909,93 @@ h1, h2, h3 { letter-spacing: -.01em; }
    tracking sixteen other sheets already use, and the one `.pixel-kicker` was
    already rendering at. */
 .eyebrow, .pixel-kicker { font-family: var(--font-pixel); font-size: 11px; font-weight: 900; line-height: 1.2; letter-spacing: .14em; }
+
+/* Disclosures, drawn once.
+
+   Ten `<details>` are open in the app and four of them suppress the platform's
+   marker and draw their own chevron. The other six — the answer log's passage,
+   the three strategy-lab notes, the case audit's source and the five-choice
+   audit — were left with the native ▶/▼: a glyph whose size, weight, colour
+   and baseline are decided by whichever face the platform substituted, sitting
+   a few hundred pixels from a chevron the app drew itself.
+
+   So the marker goes everywhere and the chevron is drawn everywhere, in the
+   summary's own colour and turning on the same easing the rest of the app
+   turns on. The four surfaces that draw their own are more specific and keep
+   theirs; `:has(svg)` steps aside for the two summaries that already carry a
+   real icon (the trophy case's award, the strategy row's lucide chevron), so
+   nothing ends up with two affordances for one action. */
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary:not(:has(svg)) {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+summary:not(:has(svg))::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin: -3px 2px 0 auto;
+  flex: 0 0 auto;
+  /* Subordinate to the label it belongs to, in the label's own colour. The
+     alpha is in the border rather than in `opacity` so that the four surfaces
+     which set their own `border-color` here are not quietly dimmed by it. */
+  border: 1.5px solid color-mix(in srgb, currentColor 62%, transparent);
+  border-width: 0 1.5px 1.5px 0;
+  rotate: 45deg;
+  transition: rotate var(--mo-2) var(--mo-out);
+}
+details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg; }
+
+/* The two buttons the whole app is built out of.
+   They used to be pixel keys: a 3px pure-black outline, a 2px radius, an inner
+   bevel and a 4px hard offset shadow. That was the Pixel Empire hand, and the
+   newest surface in the app had already stopped agreeing with it — read the
+   comment at `.case-instrument .verdict-button` in `case-instrument.css`, which
+   says in as many words that the surface "strips the pixel key's offset shadow"
+   and has to restate `box-shadow: none` on press because "the global pixel-key
+   press outranks this panel's flat rest style". A shared control that every new
+   screen has to fight is the definition of a stale one.
+   So this is the brass plate `art.css` already draws everywhere else — the
+   office floor selector's storey disc, the map's site marks, the judge's gavel:
+   `linear-gradient(170deg, #f2d791, #c89b4b)` inside a light hairline, on a
+   warm ink outline. The key travel is kept, because it is good and it is
+   documented; what changes is that it is now a plate lifting off paper rather
+   than a plastic key standing on a hard black shadow. */
 .primary-button, .secondary-button {
-  border: 3px solid #171923;
-  border-radius: 2px;
-  font-family: var(--font-pixel);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-control);
+  font-family: var(--font-hud);
   font-size: 11px;
   letter-spacing: .02em;
-  box-shadow: 4px 4px 0 #171923;
+  box-shadow: var(--el-1);
 }
-.primary-button { color: #172033; background: #efc557; box-shadow: inset -4px -4px #bb7d2d, inset 2px 2px #ffeca0, 4px 4px 0 #171923; }
-.primary-button:hover:not(:disabled) { transform: translate(2px, 2px); color: #172033; background: #ffdc73; box-shadow: inset -3px -3px #bb7d2d, inset 2px 2px #fff2b3, 2px 2px 0 #171923; }
-.secondary-button { color: #eef5e8; border-color: #10141d; background: #284459; box-shadow: inset -3px -3px #182b3b, 4px 4px 0 #10141d; }
-.secondary-button:hover:not(:disabled) { transform: translate(1px, 1px); color: #fff1b0; background: #335971; }.error-notice { border: 3px solid #5a2728; border-radius: 2px; color: #ffe8cf; background: #8d3c3d; box-shadow: 4px 4px 0 #331b1c; font-family: var(--font-pixel); font-size: 11.5px; }
+.primary-button {
+  color: #2a1e06;
+  border-color: var(--ink-line-strong);
+  background: var(--brass-plate);
+  box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1);
+}
+.primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  color: #2a1e06;
+  background: linear-gradient(170deg, #f8e3ae, #d3a856);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 235, .72), var(--el-2);
+}
+.secondary-button {
+  color: #eef5e8;
+  border-color: var(--hairline);
+  background: linear-gradient(170deg, #24404f, #172c3a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), var(--el-1);
+}
+.secondary-button:hover:not(:disabled) { transform: translateY(-1px); color: #fff1b0; border-color: var(--hairline-strong); background: linear-gradient(170deg, #2d4f61, #1d3849); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), var(--el-2); }
+/* A returned filing, not a fire alarm. The banner was a hard-edged crimson slab
+   with a 4px offset shadow — the loudest object on any screen it appeared on,
+   and the only one still drawn in the pixel hand. It keeps its seal and its
+   weight; it loses the shout. */
+.error-notice { border: 1px solid rgba(198, 122, 108, .5); border-radius: var(--r-control); color: #f6dcd0; background: linear-gradient(170deg, #6b2e30, #4d2224); box-shadow: inset 0 1px 0 rgba(255, 220, 200, .1), var(--el-1); font-family: var(--font-hud); font-size: 11.5px; }
 /* The banner used to open with bare copy, which is how an interruption ends up
    looking like body text. A stamped seal gives it something to scan to and
    costs no second line. It is the first child, so the message has to be the
@@ -866,10 +1003,12 @@ h1, h2, h3 { letter-spacing: -.01em; }
 .error-notice { gap: 9px 11px; }
 .error-notice > span { flex: 1 1 auto; }
 .error-notice .mark-alert-seal { width: 20px; height: 20px; align-self: flex-start; margin-top: 1px; opacity: .82; }
-.error-notice-retry { border-width: 2px; border-radius: 2px; font-family: inherit; font-size: 10.5px; }
+.error-notice-retry { border-width: 1px; border-color: rgba(246, 220, 208, .55); border-radius: 8px; font-family: inherit; font-size: 10.5px; }
 .error-notice-retry:hover:not(:disabled) { color: #3a1a1b; background: #ffd9b8; }
-.loading-screen { color: #f6dfaa; background: #111a29; font-family: var(--font-pixel); font-size: 12px; }
-.legal-spinner { border: 3px solid #090d15; border-radius: 2px; color: #172131; background: #f1c85f; box-shadow: 5px 5px 0 #090d15; }.pp-head { width: 23px; height: 20px; left: 6px; top: 2px; border: 2px solid #11151c; box-shadow: inset -3px -2px rgba(78,34,25,.17); }
+.loading-screen { color: #f6dfaa; background: var(--night); font-family: var(--font-hud); font-size: 12px; }
+/* The loading plate carries the firm's own mark, so it is drawn as the same
+   brass plate as every other one rather than as a pixel key with a hard shadow. */
+.legal-spinner { border: 1px solid var(--ink-line-strong); border-radius: 12px; color: #2a1e06; background: var(--brass-plate); box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-2); }.pp-head { width: 23px; height: 20px; left: 6px; top: 2px; border: 2px solid #11151c; box-shadow: inset -3px -2px rgba(78,34,25,.17); }
 @keyframes pixel-step-left { 50% { transform: translateY(3px); } }
 @keyframes pixel-step-right { 50% { transform: translateY(-2px); } }
 @keyframes pixel-arm-left { 50% { transform: translateY(-2px); } }
@@ -914,6 +1053,64 @@ h1, h2, h3 { letter-spacing: -.01em; }
      the rest is only ever visual — the card can never swallow a press meant
      for a tab or a button beneath it. */
   pointer-events: none;
+  /* The yield below. Translate and opacity only, so the whole movement is one
+     composited layer and nothing underneath is laid out or repainted for it. */
+  transition: translate .26s var(--mo-out, cubic-bezier(.2,.7,.3,1)), opacity .2s linear;
+}
+/* Off the words it is sitting on.
+   Click-through was half the answer to a fixed panel on a scrolling page; the
+   other half is reading, and measuring what sits under this card found it over
+   real text at almost every route and width — 35% of its own area over the
+   heading "Accuracy by question type" at 1024, 69% over the mega-litigation
+   line at 1180. `economy-ledger.tsx` sets this while the page is scrolling and
+   while the card has come to rest on top of words, and clears it when a fine
+   pointer reaches for the corner or when one of the four figures moves. It
+   leaves along its own short edge rather than fading in place: a
+   half-transparent panel over text is harder to read past than an opaque one. */
+.economy-ledger[data-yield] { translate: calc(-100% - 18px) 0; opacity: 0; }
+/* Not on the office and not on the world map, at any width.
+   
+   Both run their scene edge to edge and put their own economy readout in this
+   corner — the office lease and operating account on one, the headquarters
+   panel on the other — so the card is a second copy of figures already on
+   screen. It used to stand down on a phone only. On a desktop the yield rule
+   kept it out of the way at rest, but a refetch fires the announcement and
+   pops it over "OFFICE LEASE / Operating account" for three and a half
+   seconds, which is how the sweep caught it at 960, 1280 and 1600.
+   
+   Standing it down here also takes the covering hit-test off the two heaviest
+   routes in the app. */
+.wide-scene-shell .economy-ledger { display: none; }
+
+/* No desktop equivalent of `--mobile-dock-clearance`, and this note is here so
+   the next person does not add one on the same reasoning I did.
+   
+   The phone token reserves a lane at the end of the page because the strip
+   spans the width and the page used to end flush underneath it, leaving the
+   last row covered at maximum scroll with nothing left to scroll. The obvious
+   move is to reserve the same lane for the desktop card. Measured at maximum
+   scroll, area of page text still under the card, before adding one:
+   
+     Story  0 at every width    Progress  0 at every width
+     Firm   0 at every width    Practice  12,366 at 1024 · 9,719 at 1440
+   
+   Three of the four already end clear, so the lane buys them nothing, and it
+   does not fix the fourth: what sits in Practice's corner is inside
+   `.run-queue-list`, a panel with its own scrollbar, and page padding cannot
+   move content that is not on the page's scroll. Adding the lane changed
+   Practice from 12,366 to 11,784 and gave every other desktop route 96px of
+   empty footer for it.
+   
+   The card yields there instead, which is what the yield rule is for. A lane
+   is the right answer for full-width chrome and the wrong one for a pane in a
+   corner: one reserves space at an edge the page owns, the other would have to
+   reserve it in the middle of the layout. */
+
+@media (prefers-reduced-motion: reduce) {
+  /* No travel, but the card still has to get out of the way — the request was
+     for less motion, not for the readout to keep covering the sentence. */
+  .economy-ledger { transition: opacity .12s linear; }
+  .economy-ledger[data-yield] { translate: none; }
 }
 .economy-reading { min-width: 0; position: relative; display: grid; gap: 1px; }
 .economy-reading small { overflow: hidden; color: #7cb6ac; font-family: var(--font-pixel); font-size: 6.5px; font-weight: 900; letter-spacing: .11em; text-overflow: ellipsis; white-space: nowrap; }
@@ -950,18 +1147,50 @@ h1, h2, h3 { letter-spacing: -.01em; }
   .economy-delta { animation: economy-delta-hold 1.6s steps(1) both; }
   @keyframes economy-delta-hold { from { opacity: 1; } 99% { opacity: 1; } to { opacity: 0; } }
 }
-.game-viewport { position: relative; overflow: hidden; border: 4px solid #080c13; background: #172538; box-shadow: inset 0 0 0 3px #34465a, 10px 10px 0 #080c13; isolation: isolate; }
+/* The frame around the explorable office. It was a 4px cold-black box on a
+   `10px 10px` hard offset with a steel inner bevel — a pixel cabinet holding an
+   illustrated room. `art.css` has drawn the real frame since the illustrated
+   pass landed (`.game-viewport.av-viewport`, one hairline and a real drop) and
+   the markup always carries both classes, so this rule has been invisible for
+   a while; it is restated in the same hand so the two agree if the modifier
+   ever comes off. */
+.game-viewport { position: relative; overflow: hidden; isolation: isolate; border: 1px solid var(--ink-line-strong); border-radius: var(--r-card); background: var(--night); box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .18), var(--el-3); }
 /* Taller than it was: with the greeting band gone, the room is what the freed
    height is for. */
 .office-explorer { aspect-ratio: 16 / 9.4; min-height: 640px; }@keyframes office-cloud { to { transform: translateX(420px); } }@keyframes office-rain { to { transform: translate(-12px, 180px); } }@keyframes lamp-pixel-flicker { 46% { opacity: 1; } 48% { opacity: .25; } 50% { opacity: .8; } }@keyframes screen-glow { 50% { color: #f4c95e; background: #2b5660; } }@keyframes printer-blink { 50% { background: #edc45d; } }
 .trophy-case { width: 13%; height: 18%; padding: 9px; position: absolute; z-index: 3; left: 67%; top: 6%; display: flex; align-items: end; justify-content: space-around; border: 4px solid #35261c; background: rgba(28,43,51,.82); box-shadow: inset 0 0 0 3px #bc8d3d; }
 .trophy-case i { color: #f0bd50; font-family: var(--font-pixel); font-size: 19px; font-style: normal; text-shadow: 3px 3px #7d5527; }@keyframes clock-hand { to { transform: rotate(360deg); } }@keyframes npc-idle { 50% { transform: translateY(-2px); } }
 @keyframes client-wait { 50% { transform: rotate(2deg); } }@keyframes quest-bounce { 50% { transform: translateY(-5px); } }.world-zone { width: 32px; height: 32px; padding: 0; position: absolute; z-index: 18; transform: translate(-50%, -50%); border: 0; background: transparent; }
-.world-zone > i { width: 18px; height: 10px; display: block; position: absolute; left: 7px; top: 11px; border: 3px solid #f4cd66; border-radius: 50%; background: rgba(238,196,89,.18); box-shadow: 0 0 0 4px rgba(244,205,102,.08); animation: zone-pulse 1.4s steps(3) infinite; }
-.world-zone > span { min-width: 175px; padding: 8px 10px; display: none; position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); border: 3px solid #0e131d; color: #f7e8b9; background: #17283a; box-shadow: inset 0 0 0 2px #40576a, 4px 4px #0e131d; font-family: var(--font-pixel); text-align: left; }
+/* The ring keeps its weight and its gold — it is a marker painted onto the
+   floor of a drawn room and it has to survive being read at 18px over
+   furniture — but it is the one brass the app uses now, and it breathes
+   instead of ticking in three frames. */
+.world-zone > i { width: 18px; height: 10px; display: block; position: absolute; left: 7px; top: 11px; border: 3px solid var(--brass-bright); border-radius: 50%; background: rgba(232, 200, 124, .18); box-shadow: 0 0 0 4px rgba(232, 200, 124, .08); animation: zone-pulse 1.6s ease-in-out infinite; }
+/* Its label was the last pixel tooltip in the app: a 3px cold-black box with a
+   steel inner bevel on a 4px hard offset, floating over the illustrated room.
+   Same panel, hairline and drop as every other thing that hovers. */
+.world-zone > span { min-width: 175px; padding: 9px 11px; display: none; position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); border: 1px solid var(--hairline); border-radius: var(--r-control); color: #f7e8b9; background: linear-gradient(170deg, #1d3245, #132433); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), var(--el-2); font-family: var(--font-hud); text-align: left; }
 .world-zone:hover > span { display: block; }
-.world-zone b, .world-zone small { display: block; }.world-zone b { color: #f2c75b; font-size: 10.5px; text-transform: uppercase; }.world-zone small { margin-top: 4px; color: #a9c0c7; font-size: 10px; }
+.world-zone b, .world-zone small { display: block; }.world-zone b { color: var(--brass-bright); font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; }.world-zone small { margin-top: 4px; color: #a9c0c7; font-size: 10px; }
 @keyframes zone-pulse { 50% { transform: scale(1.35); opacity: .5; } }
+
+/* Four 32px buttons float over the 3D office, and each one is 32px in which
+   the room behind it cannot be hovered, pointed at or dragged — the office's
+   own installations sit under two of them, which is why the chesterfield and
+   the grandfather clock could be hovered for a cursor but never picked up.
+   What is drawn is the 18x10 ring inside; the rest is transparent margin. On a
+   mouse the pointer is precise enough for the target to be the thing that is
+   visible, so the margin stops swallowing events and the room underneath comes
+   back. Coarse pointers keep the whole button — 32px, or 44px on the client
+   anchor per mobile.css — because there the margin *is* the target, and a
+   phone reaches the same installations by tapping them rather than by hovering
+   under a zone marker. */
+@media (hover: hover) and (pointer: fine) {
+  .world-zone { pointer-events: none; }
+  /* The ring and its tooltip stay clickable, and `:hover` still resolves on
+     the button itself, so the label opens exactly as before. */
+  .world-zone > i, .world-zone > span { pointer-events: auto; }
+}
 .zone-case { margin: 29px 0 0 -20px; }.zone-firm { margin: 6px 0 0 20px; }.zone-empire { margin: 19px 0 0 -12px; }@keyframes dust-float { from { transform: translate(0, 18px); opacity: 0; } 30% { opacity: .8; } to { transform: translate(17px, -45px); opacity: 0; } }
 /* The portrait track is intrinsic rather than a fixed 76px. The rendered
    portrait is `av-portrait`, which art.css sizes to 86px and wins on load
@@ -970,13 +1199,23 @@ h1, h2, h3 { letter-spacing: -.01em; }
    absolutely positioned, so neither widens the track — `--portrait-overhang`
    reserves the room they hang outside the circle. */
 .client-quest-card .client-portrait { margin-right: var(--portrait-overhang); }
-.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }.client-quest-card span, .daily-quest-card span { color: #945b30; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
+.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }.client-quest-card span, .daily-quest-card span { color: var(--brass-deep); font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
 .empire-game-page { width: 100%; min-height: calc(100vh - 68px); padding: 27px clamp(16px, 2.7vw, 44px) 48px; color: #f6e8bb; background: #101724; }
 /* Just the page title here — the map's own headquarters panel just below
    carries every stat, so this bar stays plain text with no boxed card. */
-@keyframes water-shimmer { 50% { transform: translateX(12px); } }@keyframes boat-bob { 50% { transform: translateY(5px); } }@keyframes map-train { from { transform: translate(-220px, 55px); } to { transform: translate(1150px, -120px); } }@keyframes map-cloud { to { transform: translateX(1500px); } }/* Pixel treatment for the rest of the game */.crest { border: 4px solid #141721; border-radius: 0; background: #1e3548; box-shadow: inset 0 0 0 2px #dbad4e, 5px 5px #141721; }
-.office-scene.pixel-scene { border: 4px solid #080c13; border-radius: 0; box-shadow: inset 0 0 0 3px #34465a, 8px 8px #080c13; }
-.case-lobby, .firm-page { color: #2a2830; }.active-matter-copy > span, .active-matter-fee > span, .matter-tag small, .question-progress, .case-timer small { font-family: var(--font-pixel); }.choice { border: 3px solid #544937; border-radius: 0; box-shadow: 3px 3px #544937; }
+@keyframes water-shimmer { 50% { transform: translateX(12px); } }@keyframes boat-bob { 50% { transform: translateY(5px); } }@keyframes map-train { from { transform: translate(-220px, 55px); } to { transform: translate(1150px, -120px); } }@keyframes map-cloud { to { transform: translateX(1500px); } }
+/* What was left of a block headed "Pixel treatment for the rest of the game".
+   Three of its four rules were square-cornered pixel boxes drawn over surfaces
+   that have since been redrawn — the crest (`login-page.css` now draws it as
+   the firm's brass plaque), the scene frame (`art.css` hangs it, and nothing
+   has carried `.pixel-scene` for some time) and the answer choice
+   (`case-instrument.css` draws it as a hairline row inside the case file). All
+   three lost to the later sheet on load order, so removing them changes
+   nothing on screen today and removes three traps for the next person who
+   wonders why their card has square corners. What is kept is the pair of
+   colour and type rules the block also carried, which nothing else states. */
+.case-lobby, .firm-page { color: #2a2830; }
+.active-matter-copy > span, .active-matter-fee > span, .matter-tag small, .question-progress, .case-timer small { font-family: var(--font-hud); }
 
 @media (max-width: 1120px) {
   .office-explorer { min-height: 520px; }}
@@ -1025,8 +1264,14 @@ h1, h2, h3 { letter-spacing: -.01em; }
 /* One long lawyer name may not decide whether the row fits. */
 .account-name { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-header { gap: 18px; }
-.desktop-nav a { padding-inline: 13px; }
-.desktop-nav a::after { left: 13px; right: 13px; }
+/* Ellipsizing a label is the correct last resort (see above), but at 1440 --
+   an ordinary desktop width, not a squeeze -- every one of the five was landing
+   2 to 4px short and reading as "Dashbo...". The row needs about 15px in total,
+   so the tabs give back 2px of padding each side: 20px across five tabs, which
+   clears all five with a little slack and leaves the ellipsis to widths that
+   genuinely have no room. */
+.desktop-nav a { padding-inline: 11px; }
+.desktop-nav a::after { left: 11px; right: 11px; }
 
 /* Putting Focus Mode back in the row costs it 38px, and measured across the
    widths, the band from the 1360px reflow up to about 1500px had no 38px to
@@ -1080,10 +1325,42 @@ h1, h2, h3 { letter-spacing: -.01em; }
   .account-menu-sound .sound-volume-control { flex: 1 1 auto; width: auto; }
 }
 
+/* ---------------------------------------------------------------------------
+   901px to 1035px: the band where every nav label was an ellipsis.
+
+   The reflow above stops at 1360 and the phone sheet does not start until 900,
+   so 460px of laptop and small-desktop widths had no step of their own. The
+   right-hand cluster is `flex: 0 0 auto` and never gives, which is correct, so
+   the nav was the only thing left to squeeze — and it squeezed all the way
+   down. Measured with each label's `scrollWidth` against its `clientWidth`
+   (tools/ui-qa/nav-fit.mjs): at 1020 all five were 2-4px short, at 1000 all
+   five were 5-9px short, and at 920 "Dashboard" was 31px short and rendered
+   "Dashbo…" beside "Practi…", "Offi…", "Fi…" and "Wo…". Two of those are not
+   words.
+
+   What gives instead is the two standing badges, in the order the 900px block
+   below already states: question count first, accuracy second. Both are spelled
+   out in full on the Dashboard, which is one tab away and is the screen this
+   band is most often used to reach; the streak stays, because it is the only
+   one of the three that can move on a day the student has not opened the app.
+
+   Chosen over the two alternatives on the same measurement. Icon-only tabs fit
+   at 901 but cost the labels at every width in the band, not just where the row
+   is genuinely full. A desktop hamburger fits too, and is pre-authorised, but
+   it buys room this band does not need once the badges are out of it and it
+   would put five destinations two clicks away to save a percentage sign.
+   --------------------------------------------------------------------------- */
+@media (max-width: 1120px) {
+  .header-economy > .standing-questions { display: none; }
+}
+@media (max-width: 1040px) {
+  .header-economy > .standing-accuracy { display: none; }
+}
+
 @media (max-width: 900px) {
   .app-shell { padding-bottom: 66px; }
   .mobile-nav { height: 66px; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); border: 0; border-top: 4px solid #080c13; background: #111a29; backdrop-filter: none; box-shadow: inset 0 3px #2f4860; }
-  .mobile-nav a { color: #91a7b1; font-family: var(--font-pixel); font-size: 10px; }.mobile-nav a.active { color: #f2c75b; background: #1d2d41; }
+  .mobile-nav a { color: #91a7b1; font-family: var(--font-pixel); font-size: 10px; }.mobile-nav a.active { color: var(--brass-bright); background: #1d2d41; }
   .office-explorer { min-height: 480px; aspect-ratio: 4 / 3; }}
 
 @media (max-width: 620px) {
@@ -1152,9 +1429,14 @@ h1, h2, h3 { letter-spacing: -.01em; }
 @keyframes tier-building-rise { 50% { translate: 0 -4px; filter: drop-shadow(0 4px #966f2e); } }
 @keyframes available-pulse { 50% { box-shadow: 2px 2px #18141a, 0 0 0 3px rgba(240,200,92,.28); } }
 @keyframes effect-spark { 50% { rotate: 12deg; scale: 1.16; } }
-.asset-card .purchase-row .primary-button { min-height: 39px; border: 3px solid #17141a; border-radius: 0; color: #222019; background: #eac459; box-shadow: inset -4px -4px #b67b2e, 3px 3px #17141a; font-family: var(--font-pixel); font-size: 10px; }
-.asset-card .purchase-row .primary-button:not(:disabled):hover { translate: 0 -2px; background: #f3d675; box-shadow: inset -4px -4px #bd8737, 3px 5px #17141a; }
-.asset-card .purchase-row .primary-button:disabled { color: #716456; background: #b9a889; box-shadow: inset -3px -3px #927f65, 2px 2px #31271f; }
+/* This is the shared primary button, so it should not have been rebuilt here
+   at all: it was a second, private pixel key that only the Firm catalog drew,
+   and it outranked the global control on the one page that has thirty-five of
+   them. It now carries the same plate, and overrides only the two things that
+   are genuinely local — a shorter row and smaller type. */
+.asset-card .purchase-row .primary-button { min-height: 39px; font-size: 10px; }
+.asset-card .purchase-row .primary-button:not(:disabled):hover { translate: 0 -1px; }
+.asset-card .purchase-row .primary-button:disabled { color: #716456; border-color: rgba(27, 26, 36, .34); background: linear-gradient(170deg, #c3b79b, #a89b80); box-shadow: none; }
 
 /* Shared pixel-art card stage */
 .pixel-asset-art { height: 184px; position: relative; overflow: hidden; border: 4px solid #171820; color: #f4da95; background: #29485a; box-shadow: inset 0 0 0 3px #5a7180, 4px 4px #3e2c20; image-rendering: auto; isolation: isolate; }
@@ -1200,7 +1482,7 @@ h1, h2, h3 { letter-spacing: -.01em; }
 /* ================================================================
    THE MERCER FILES — cinematic campaign, dossiers and war room
    ================================================================ */
-.cutscene-overlay{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);box-sizing:border-box;position:fixed;inset:0;z-index:300;display:grid;grid-template-rows:42px 1fr 42px;color:#f4e8c6;background:#05080d;font-family:var(--font-pixel);animation:cinema-in .45s steps(6) both}.cutscene-letterbox{position:relative;z-index:5;background:#020306}.cutscene-letterbox.bottom{display:flex;align-items:center;justify-content:center;border-top:1px solid #2d261e;color:#796f5b;font-size:9.5px;letter-spacing:.18em}.cutscene-frame{width:min(1180px,100%);min-height:0;margin:auto;display:grid;grid-template-columns:minmax(0,1.22fr) minmax(350px,.78fr);position:relative;overflow:hidden;border:3px solid #171d28;background:#0b111a;box-shadow:0 0 0 1px #3e3425,0 28px 90px #000}.cutscene-art{min-height:620px;position:relative;overflow:hidden;isolation:isolate;background:linear-gradient(#14283a 0 60%,#171a20 60%);image-rendering:auto}.cutscene-dialogue{min-width:0;padding:52px 44px 38px;position:relative;z-index:10;border-left:5px solid #070a10;background:linear-gradient(145deg,#172537,#0c121c 76%);box-shadow:inset 2px 0 #3e5264}.cutscene-dialogue>span{display:block;color:#65d0c6;font-size:10px;line-height:1.8;letter-spacing:.08em}.cutscene-dialogue h2{margin:12px 0 24px;color:#f2c969;font-family:var(--font-display);font-size:clamp(34px,4vw,58px);font-weight:800;line-height:.95}.dialogue-beats p,.cutscene-resolution p{margin:0 0 15px;color:#d4d7cf;font-family:var(--font-body);font-size:15px;line-height:1.55}.dialogue-beats p:last-child{color:#fff1c2;font-weight:800}.cutscene-choices{margin-top:25px;display:grid;gap:10px}.cutscene-choices button,.cutscene-continue{padding:14px 15px;display:flex;align-items:center;justify-content:space-between;gap:14px;border:3px solid #090c13;color:#f7e7b7;background:#263c4c;box-shadow:inset 0 0 0 2px #56707c,4px 4px #06080c;text-align:left;transition:translate .15s,background .15s}.cutscene-choices button:hover,.cutscene-continue:hover{translate:2px -2px;background:#315467}.cutscene-choices strong{font-size:10.5px;line-height:1.55}.cutscene-choices span{max-width:48%;color:#ebbf5b;font-size:9.5px;line-height:1.6;text-align:right}.cutscene-resolution{margin-top:45px;padding:22px;border:3px solid #8c713e;background:#211f1d;box-shadow:inset 0 0 0 3px #3b3427}.cutscene-continue{width:100%;margin-top:22px;color:#111a23;background:#e3b957;box-shadow:inset -3px -3px #9d742d,4px 4px #06080c;font-family:var(--font-pixel);font-size:10.5px}.cutscene-act{padding:9px 12px;position:absolute;z-index:22;left:18px;top:17px;border:3px solid #070a0f;background:#152536;box-shadow:4px 4px #07090d}.cutscene-act span,.cutscene-act small{display:block}.cutscene-act span{color:#f0c45e;font-size:10.5px}.cutscene-act small{margin-top:5px;color:#a5bdc4;font-size:9.5px}@keyframes cinema-in{from{opacity:0;transform:scale(1.03)}to{opacity:1;transform:none}}@keyframes cinema-rain{to{transform:translate(50px,700px)}}.thread{height:4px;position:absolute;z-index:2;background:#b83535;box-shadow:0 1px #3d1111;transform-origin:left}.thread::before,.thread::after{content:"";width:10px;height:10px;position:absolute;top:-3px;border-radius:50%;background:#d3b258;border:2px solid #3d2c13}.thread::after{right:0}.t1{width:48%;left:21%;top:32%;transform:rotate(5deg)}.t2{width:34%;left:28%;top:57%;transform:rotate(-20deg)}.t3{width:28%;left:54%;top:65%;transform:rotate(-41deg)}.quest-shelf-shadow>header{color:#dcc7c5;background:#311d25;box-shadow:4px 5px #130b0e}.quest-shelf-shadow>header svg{color:#d05b63}.quest-shelf-shadow>header small{color:#b9a1a5}.quest-grid button,.operation-grid button{min-height:39px;margin-top:15px;border:3px solid #161a1d;color:#f5dc92;background:#294957;box-shadow:inset -3px -3px #172c34;font-family:var(--font-pixel);font-size:9.5px}.quest-grid button:disabled,.operation-grid button:disabled{color:#8c887f;background:#c5bda8;box-shadow:none}.quest-shelf-shadow .quest-grid article{color:#d3cbbe;border-color:#0b0b0e;background:linear-gradient(105deg,transparent 0 29px,#211c22 30px);box-shadow:5px 6px #5e3038}.quest-shelf-shadow .quest-grid h3{color:#e2c55d}.quest-shelf-shadow .quest-grid p{color:#a99da1}.quest-shelf-shadow .quest-grid article::before{color:rgba(240,73,85,.13);content:"REDACTED"}.quest-shelf-shadow .quest-grid>article>strong{color:#d28485}.quest-shelf-shadow .quest-reward{color:#cba552}
+.cutscene-overlay{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);box-sizing:border-box;position:fixed;inset:0;z-index:300;display:grid;grid-template-rows:42px 1fr 42px;color:#f4e8c6;background:#05080d;font-family:var(--font-pixel);animation:cinema-in .45s var(--mo-out) both}.cutscene-letterbox{position:relative;z-index:5;background:#020306}.cutscene-letterbox.bottom{display:flex;align-items:center;justify-content:center;border-top:1px solid #2d261e;color:#796f5b;font-size:9.5px;letter-spacing:.18em}.cutscene-frame{width:min(1180px,100%);min-height:0;margin:auto;display:grid;grid-template-columns:minmax(0,1.22fr) minmax(350px,.78fr);position:relative;overflow:hidden;border:1px solid var(--ink);border-radius:var(--r-card);background:#0b111a;box-shadow:inset 0 0 0 1px rgba(232,200,124,.24),0 28px 90px rgba(0,0,0,.72)}.cutscene-art{min-height:620px;position:relative;overflow:hidden;isolation:isolate;background:linear-gradient(#14283a 0 60%,#171a20 60%);image-rendering:auto}.cutscene-dialogue{min-width:0;padding:52px 44px 38px;position:relative;z-index:10;border-left:1px solid var(--ink);background:linear-gradient(145deg,#172537,#0c121c 76%);box-shadow:inset 1px 0 rgba(232,200,124,.26)}.cutscene-dialogue>span{display:block;color:#65d0c6;font-size:10px;line-height:1.8;letter-spacing:.08em}.cutscene-dialogue h2{margin:12px 0 24px;color:#f2c969;font-family:var(--font-display);font-size:clamp(34px,4vw,58px);font-weight:800;line-height:.95}.dialogue-beats p,.cutscene-resolution p{margin:0 0 15px;color:#d4d7cf;font-family:var(--font-body);font-size:15px;line-height:1.55}.dialogue-beats p:last-child{color:#fff1c2;font-weight:800}.cutscene-choices{margin-top:25px;display:grid;gap:10px}.cutscene-choices button,.cutscene-continue{padding:14px 15px;display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid var(--hairline);border-radius:var(--r-control);color:#f7e7b7;background:linear-gradient(170deg,#24404f,#172c3a);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),var(--el-1);text-align:left;transition:translate var(--mo-2) var(--mo-brass),box-shadow var(--mo-2) var(--mo-brass),border-color var(--mo-2) var(--mo-out),background var(--mo-1) linear}.cutscene-choices button:hover,.cutscene-continue:hover{translate:0 -1px;border-color:var(--hairline-strong);background:linear-gradient(170deg,#2d4f61,#1d3849);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),var(--el-2)}.cutscene-choices strong{font-size:10.5px;line-height:1.55}.cutscene-choices span{max-width:48%;color:#ebbf5b;font-size:9.5px;line-height:1.6;text-align:right}.cutscene-resolution{margin-top:45px;padding:22px;border:1px solid var(--hairline-strong);border-radius:var(--r-control);background:#211f1d;box-shadow:inset 0 1px 0 rgba(255,240,205,.08)}.cutscene-continue{width:100%;margin-top:22px;color:#2a1e06;border-color:var(--ink-line-strong);background:var(--brass-plate);box-shadow:inset 0 1px 0 rgba(255,246,220,.62),var(--el-1);font-family:var(--font-hud);font-size:10.5px}.cutscene-continue:hover{background:linear-gradient(170deg,#f8e3ae,#d3a856);box-shadow:inset 0 1px 0 rgba(255,250,235,.72),var(--el-2)}.cutscene-act{padding:9px 12px;position:absolute;z-index:22;left:18px;top:17px;border:1px solid var(--hairline);border-radius:var(--r-control);background:rgba(21,37,54,.92);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),var(--el-2)}.cutscene-act span,.cutscene-act small{display:block}.cutscene-act span{color:#f0c45e;font-size:10.5px}.cutscene-act small{margin-top:5px;color:#a5bdc4;font-size:9.5px}@keyframes cinema-in{from{opacity:0;transform:scale(1.03)}to{opacity:1;transform:none}}@keyframes cinema-rain{to{transform:translate(50px,700px)}}.thread{height:4px;position:absolute;z-index:2;background:#b83535;box-shadow:0 1px #3d1111;transform-origin:left}.thread::before,.thread::after{content:"";width:10px;height:10px;position:absolute;top:-3px;border-radius:50%;background:#d3b258;border:2px solid #3d2c13}.thread::after{right:0}.t1{width:48%;left:21%;top:32%;transform:rotate(5deg)}.t2{width:34%;left:28%;top:57%;transform:rotate(-20deg)}.t3{width:28%;left:54%;top:65%;transform:rotate(-41deg)}.quest-shelf-shadow>header{color:#dcc7c5;background:#311d25;box-shadow:var(--el-2)}.quest-shelf-shadow>header svg{color:#d05b63}.quest-shelf-shadow>header small{color:#b9a1a5}.quest-grid button,.operation-grid button{min-height:39px;margin-top:15px;border:1px solid var(--hairline);border-radius:var(--r-control);color:#f5dc92;background:linear-gradient(170deg,#24404f,#172c3a);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),var(--el-1);font-family:var(--font-hud);font-size:9.5px}.quest-grid button:disabled,.operation-grid button:disabled{color:#8c887f;background:#c5bda8;box-shadow:none}.quest-shelf-shadow .quest-grid article{color:#d3cbbe;border-color:rgba(27,26,36,.72);background:linear-gradient(105deg,transparent 0 29px,#211c22 30px);box-shadow:4px 5px 0 rgba(94,48,56,.5),var(--el-2)}.quest-shelf-shadow .quest-grid h3{color:#e2c55d}.quest-shelf-shadow .quest-grid p{color:#a99da1}.quest-shelf-shadow .quest-grid article::before{color:rgba(240,73,85,.13);content:"REDACTED"}.quest-shelf-shadow .quest-grid>article>strong{color:#d28485}.quest-shelf-shadow .quest-reward{color:#cba552}
 .rival-war-room{margin-inline:0;padding:45px 32px 38px;border:5px solid #080b11;color:#d9d6ca;background:radial-gradient(circle at 80% 0,#243d4a,#111923 44%,#0b1017);box-shadow:inset 0 0 0 2px #334959,8px 9px #1d1713}.operation-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.operation-grid article{min-height:294px;padding:17px;display:flex;flex-direction:column;border:3px solid #080b10;background:#1d2a35;box-shadow:inset 0 0 0 2px #3d4e59}.operation-grid article>div{display:flex;justify-content:space-between;color:#69cbbf;font-family:var(--font-pixel);font-size:9px;text-transform:uppercase}.operation-grid article>div strong{color:#f0c760;font-size:10.5px}.operation-grid h3{margin:16px 0 7px;color:#ecddaa;font-family:var(--font-display);font-size:23px}.operation-grid p{color:#9faeb0;font-size:12px;line-height:1.5}.operation-grid article>small{margin-top:auto;color:#e0b758;font-weight:800}.operation-grid em{margin-top:8px;color:#d1817b;font-size:11.5px;font-style:normal}.operation-grid .completed{opacity:.55}.zone-story{margin:8px 0 0 8px}.zone-story>i{border-radius:0;transform:rotate(45deg);background:rgba(117,206,191,.2)}@keyframes pending-file{50%{box-shadow:0 0 0 5px rgba(220,177,67,.23)}}
 
 @media(max-width:1100px){.cutscene-frame{grid-template-columns:1fr .9fr}.cutscene-dialogue{padding:36px 28px}.cutscene-art{min-height:570px}.operation-grid{grid-template-columns:repeat(3,1fr)}}
@@ -1336,7 +1618,7 @@ select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible {
-  outline: 3px solid var(--pixel-gold);
+  outline: 3px solid var(--brass-bright);
   outline-offset: 3px;
   transition: outline-offset var(--mo-2) var(--mo-out);
 }
@@ -1346,22 +1628,24 @@ summary:focus-visible,
 
 /* ------------------------------------------------- press physics */
 
-/* The pixel buttons carry a hard offset shadow, so they already look
-   like a physical key standing proud of the page. Hover moves them
-   halfway down that offset; press takes them the rest of the way and
-   removes the shadow entirely, so the key bottoms out. --mo-brass is
-   deliberately slow to start and hard to stop: it reads as weight. */
+/* A plate sits proud of the paper. Hover lifts it a further pixel and
+   deepens the drop; press seats it flat and takes the drop away
+   entirely, so the plate bottoms out against the page. Same grammar as
+   the pixel key it replaces — lift, then seat — but expressed in
+   elevation rather than in a hard offset shadow, which is what the
+   illustrated register uses everywhere else. --mo-brass is deliberately
+   slow to start and hard to stop: it reads as weight. */
 .primary-button,
 .secondary-button {
-  transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), background var(--mo-1) linear;
+  transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), border-color var(--mo-2) var(--mo-out), background var(--mo-1) linear;
 }
 .primary-button:active:not(:disabled) {
-  transform: translate(4px, 4px);
-  box-shadow: inset -2px -2px #bb7d2d, inset 2px 2px #ffeca0;
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(74, 48, 8, .35);
 }
 .secondary-button:active:not(:disabled) {
-  transform: translate(4px, 4px);
-  box-shadow: inset -2px -2px #182b3b;
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(4, 10, 16, .5);
 }
 .icon-button,
 .sound-control-button,
@@ -1379,9 +1663,12 @@ summary:focus-visible,
 .desktop-nav a {
   transition: color var(--mo-1) linear, background var(--mo-1) linear, transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass);
 }
+/* Which is a 1px seat into an inner shadow, not the 3px diagonal slide onto a
+   two-tone bevel this used to do — that was the pixel key the button above it
+   stopped being, and a claim of sameness the rule did not keep. */
 .desktop-nav a.active:active {
-  transform: translate(3px, 3px);
-  box-shadow: inset -3px -3px #b87b2d, inset 2px 2px #ffeb98;
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(74, 48, 8, .35);
 }
 
 /* ------------------------------------------------------- entrance */

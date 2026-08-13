@@ -44,6 +44,8 @@ type Segment = {
   dx: number; dz: number
   length: number
   halfWidth: number
+  /** The corridor's `label`, carried through so an intrusion can name it. */
+  label?: string
 }
 
 export type ClearanceField = {
@@ -79,7 +81,7 @@ export function prepareClearance(corridors: ClearanceCorridor[], cellSize = 4): 
       const dz = z1 - z0
       const length = Math.hypot(dx, dz)
       if (length < 1e-4) continue
-      segments.push({ x0, z0, dx: dx / length, dz: dz / length, length, halfWidth: corridor.halfWidth })
+      segments.push({ x0, z0, dx: dx / length, dz: dz / length, length, halfWidth: corridor.halfWidth, label: corridor.label })
     }
   }
   const field: ClearanceField = {
@@ -133,6 +135,19 @@ export type Intrusion = {
   /** Unit direction to push along to get out, away from the centreline. */
   x: number
   z: number
+  /**
+   * Which corridor it is standing in, where it is, and how wide it keeps.
+   *
+   * A parcel that cannot be sited is the hardest thing in this area to
+   * diagnose: the ground looks empty from above and each audit tool answers a
+   * different question. Asking the field to name the offender is what
+   * identified the Old Quarter's blockers as the ward lanes rather than the
+   * avenues everyone had assumed.
+   */
+  label?: string
+  atX?: number
+  atZ?: number
+  halfWidth?: number
 }
 
 /**
@@ -224,9 +239,10 @@ export function clearanceIntrusion(
         // normal is used: a prop dropped exactly on a street still has to pick
         // a side, and either side is equally correct.
         const scale = distance > 1e-4 ? 1 / distance : 0
+        const named = { label: segment.label, atX: nearestX, atZ: nearestZ, halfWidth: segment.halfWidth }
         deepest = scale
-          ? { depth, x: awayX * scale, z: awayZ * scale }
-          : { depth, x: -segment.dz, z: segment.dx }
+          ? { depth, x: awayX * scale, z: awayZ * scale, ...named }
+          : { depth, x: -segment.dz, z: segment.dx, ...named }
       }
     }
   }
@@ -261,13 +277,19 @@ function emptyReport(): ClearanceReport {
  * Iterated, because clearing one street can push something into the next one
  * along — which is common at a crossroads, where two corridors overlap and the
  * only clear ground is diagonally out of both. Four passes settles every case
- * in these districts; the fifth has never moved anything.
+ * in these districts; the fifth has never moved one.
+ *
+ * A caller working against the *pedestrian* network needs more. A district grid
+ * puts a second street behind the first, so leaving one pavement is commonly
+ * entering another, and the clear ground is two or three corridors away rather
+ * than one. `passes` is therefore the caller's, and only the callers that ask
+ * for more get more.
  */
-function escape(field: ClearanceField, x: number, z: number, radius: number, limit: number, footprint?: Footprint) {
+function escape(field: ClearanceField, x: number, z: number, radius: number, limit: number, footprint?: Footprint, passes = 4) {
   let atX = x
   let atZ = z
   let first = 0
-  for (let pass = 0; pass < 4; pass += 1) {
+  for (let pass = 0; pass < passes; pass += 1) {
     const intrusion = clearanceIntrusion(field, atX, atZ, radius, footprint)
     if (!intrusion) return { x: atX, z: atZ, first, cleared: true, travelled: Math.hypot(atX - x, atZ - z) }
     if (pass === 0) first = intrusion.depth
@@ -295,8 +317,16 @@ function escape(field: ClearanceField, x: number, z: number, radius: number, lim
  * point when no clear ground is within `limit`, so a caller that cannot honour the
  * correction still gets a usable answer.
  */
-export function escapeCorridors(field: ClearanceField, x: number, z: number, radius: number, limit = 1.6, footprint?: Footprint) {
-  const result = escape(field, x, z, radius, limit, footprint)
+export function escapeCorridors(
+  field: ClearanceField,
+  x: number,
+  z: number,
+  radius: number,
+  limit = 1.6,
+  footprint?: Footprint,
+  passes?: number,
+) {
+  const result = escape(field, x, z, radius, limit, footprint, passes)
   return { x: result.x, z: result.z, moved: result.travelled, cleared: result.cleared, before: result.first }
 }
 

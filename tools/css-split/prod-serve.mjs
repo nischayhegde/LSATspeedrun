@@ -62,11 +62,23 @@ const MAX_BYTES = 10_000_000
  * `index.html` back for `/v1/me`, which is a 200 with an HTML body — the app
  * reads that as a signed-in reader whose game state is an empty object and
  * renders a screen no real visitor ever sees.
+ *
+ * `apiOrigin` overrides that with a proxy to a real backend, which is the only
+ * way to measure a route behind the sign-in wall. A 401 sends every protected
+ * screen to `/login`, so a run without this measures the login page no matter
+ * which route it asked for — see `tools/perf/FINDINGS.md`. The proxy hop is
+ * loopback and outside the emulated link, but it is on the same side of the
+ * throttle as production's origin fetch, so a request the app makes still
+ * blocks the app exactly as it does in the browser.
  */
-export function serveLikeProd(root, { compress = 'auto', api = true } = {}) {
+export function serveLikeProd(root, { compress = 'auto', api = true, apiOrigin = null } = {}) {
   const cache = new Map()
   const server = createServer(async (req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0])
+    if (apiOrigin && url.startsWith('/v1/')) {
+      await proxy(req, res, apiOrigin, compress)
+      return
+    }
     if (api && url.startsWith('/v1/')) {
       res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       res.end(JSON.stringify({ detail: 'unauthorized', code: 'unauthorized' }))
@@ -100,6 +112,77 @@ export function serveLikeProd(root, { compress = 'auto', api = true } = {}) {
     } catch { res.writeHead(404); res.end('no') }
   })
   return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ server, port: server.address().port })))
+}
+
+/**
+ * Forwards one `/v1` call to a real backend, headers and body both ways.
+ *
+ * Cookies matter more than anything else here: the session cookie is how an
+ * authenticated run stays authenticated, and `set-cookie` is how it becomes
+ * authenticated in the first place, so both are passed through untouched. The
+ * hop-by-hop headers are dropped because they describe this connection rather
+ * than the message.
+ */
+/** What CloudFront compresses, of the things a `/v1` answer can be. */
+const PROXY_COMPRESSIBLE = new Set(['application/json', 'text/plain', 'text/html'])
+
+const HOP_BY_HOP = new Set([
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+  'te', 'trailer', 'transfer-encoding', 'upgrade', 'host',
+])
+
+async function proxy(req, res, origin, compress) {
+  const chunks = []
+  for await (const chunk of req) chunks.push(chunk)
+  const headers = {}
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (!HOP_BY_HOP.has(k.toLowerCase()) && v != null) headers[k] = v
+  }
+  // The backend must not answer compressed: this server compresses on the way
+  // out and would otherwise hand the browser a doubly-encoded body.
+  headers['accept-encoding'] = 'identity'
+  try {
+    const upstream = await fetch(new URL(req.url, origin), {
+      method: req.method,
+      headers,
+      body: chunks.length ? Buffer.concat(chunks) : undefined,
+      redirect: 'manual',
+    })
+    const out = {}
+    upstream.headers.forEach((value, key) => {
+      if (key.toLowerCase() === 'content-encoding' || key.toLowerCase() === 'content-length') return
+      out[key] = value
+    })
+    const setCookie = upstream.headers.getSetCookie?.() ?? []
+    if (setCookie.length) out['set-cookie'] = setCookie
+    /**
+     * The API answer is compressed on the way out for the same reason the
+     * assets are, and it matters more here than anywhere else. `application/json`
+     * is on CloudFront's compressible list and `/v1/game` is 165 kB raw against
+     * 26 kB brotli — so a proxy that forwards it raw spends 6.4x the real
+     * bandwidth on the single largest response in the load, on the same 1.6 Mbps
+     * pipe as everything else, and every conclusion drawn from that waterfall is
+     * about a link that does not exist. This is the uncompressed-assets trap from
+     * `tools/perf/FINDINGS.md` wearing a different hat.
+     */
+    let body = Buffer.from(await upstream.arrayBuffer())
+    const type = (out['content-type'] || '').split(';')[0].trim()
+    const offered = req.headers['accept-encoding'] || ''
+    const wants = compress === false ? null
+      : compress === 'gzip' ? (/gzip/.test(offered) ? 'gzip' : null)
+        : /\bbr\b/.test(offered) ? 'br' : /gzip/.test(offered) ? 'gzip' : null
+    if (wants && PROXY_COMPRESSIBLE.has(type) && body.length >= MIN_BYTES && body.length <= MAX_BYTES) {
+      body = wants === 'br'
+        ? brotliCompressSync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 5, [constants.BROTLI_PARAM_SIZE_HINT]: body.length } })
+        : gzipSync(body, { level: 6 })
+      out['content-encoding'] = wants
+    }
+    res.writeHead(upstream.status, out)
+    res.end(body)
+  } catch (err) {
+    res.writeHead(502, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ detail: `api proxy failed: ${err.message}`, code: 'proxy_failed' }))
+  }
 }
 
 /** How a run should describe the wire it measured over. */

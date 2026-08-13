@@ -37,4 +37,77 @@
   .character-choice { gap: 8px; }
   .character-choice button { min-height: 190px; }
   .name-fields { grid-template-columns: 1fr; } }
-.onboarding-page { background: #101725; }.onboarding-scene-wrap { background-color: #17283a; background-image: linear-gradient(90deg, rgba(105,153,157,.06) 2px, transparent 2px), linear-gradient(rgba(105,153,157,.06) 2px, transparent 2px); background-size: 18px 18px; }.opening-caption h2, .onboarding-panel h1 { font-family: var(--font-pixel); font-weight: 900; text-transform: uppercase; }.onboarding-panel { background-color: #d8cba4; background-image: linear-gradient(90deg, rgba(49,40,32,.06) 1px, transparent 1px), linear-gradient(rgba(49,40,32,.06) 1px, transparent 1px); background-size: 8px 8px; }.character-choice button { border: 3px solid #171923; border-radius: 0; background: #f3e4ba; box-shadow: 4px 4px #171923; font-family: var(--font-pixel); font-size: 10.5px; }.character-choice button.selected { border: 4px solid #171923; background: #f1d990; box-shadow: inset 0 0 0 3px #bd8b3e, 5px 5px #171923; }.name-fields label { font-family: var(--font-pixel); font-size: 10px; }.name-fields input { border: 3px solid #171923; border-radius: 0; background: #f8edcf; box-shadow: inset 3px 3px #c7ad78; font-family: var(--font-pixel); font-size: 11.5px; }
+/* ---------------------------------------------------------------------------
+   Character creation, in the illustrated register.
+
+   The pixel pass this replaces put an 18px cyan graph grid behind the scene,
+   an 8px grid on the panel, both headings in the HUD face uppercase, and
+   character cards that were 3px black boxes with a 4px hard offset — the
+   selected one going to 4px and 5px, so choosing a character made the card
+   jump a pixel in both axes. Everything here is the same field, plate and
+   hairline as the sign-in screen next door, which is the screen this one
+   follows immediately.
+   --------------------------------------------------------------------------- */
+
+.onboarding-page { background: var(--night); }
+.onboarding-scene-wrap {
+  background-color: #14202f;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23e8d7a8' stroke-opacity='.045' stroke-linecap='round'%3E%3Cpath d='M3 9h9M21 4h14M44 12h11M8 25h17M33 29h8M52 33h9M6 44h12M26 47h15M47 52h13M15 58h10M38 61h12M57 20h5'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(circle at 30% 12%, rgba(123, 200, 189, .15), transparent 42%);
+  background-size: 64px 64px, auto;
+  background-repeat: repeat, no-repeat;
+}
+.opening-caption span { color: var(--brass-bright); font-family: var(--font-hud); }
+.opening-caption h2, .onboarding-panel h1 {
+  font-family: var(--font-display);
+  font-weight: 620;
+  letter-spacing: -.022em;
+  text-transform: none;
+}
+.onboarding-panel {
+  background-color: var(--parchment);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23473c2a' stroke-opacity='.075' stroke-linecap='round'%3E%3Cpath d='M3 9h9M21 4h14M44 12h11M8 25h17M33 29h8M52 33h9M6 44h12M26 47h15M47 52h13M15 58h10M38 61h12M57 20h5'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(rgba(255, 250, 235, .34), rgba(255, 250, 235, 0) 62%);
+  background-size: 64px 64px, auto;
+  background-repeat: repeat, no-repeat;
+}
+.onboarding-panel h1 { color: #23212b; }
+.step-indicator { color: #8a6a24; font-family: var(--font-hud); }
+/* Two cards on a desk. Selection is drawn as a brass rule and a lift, not as
+   a border that grows a pixel and shoves the artwork sideways. */
+.character-choice button {
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-card);
+  background: linear-gradient(168deg, #fbf1d6, #f0e2ba 74%);
+  box-shadow: var(--el-1);
+  font-family: var(--font-hud);
+  font-size: 11.5px;
+  transition: transform var(--mo-2) var(--mo-brass), box-shadow var(--mo-2) var(--mo-brass), border-color var(--mo-2) var(--mo-out);
+}
+.character-choice button:hover:not(.selected) { transform: translateY(-1px); box-shadow: var(--el-2); }
+.character-choice button.selected {
+  border: 1px solid var(--ink-line-strong);
+  transform: translateY(-1px);
+  background: linear-gradient(168deg, #fdf3d3, #f3e2ae 74%);
+  box-shadow: inset 0 0 0 2px rgba(200, 155, 75, .62), var(--el-2);
+}
+.character-choice button > svg:last-child { color: #2a1e06; background: var(--brass); }
+.name-fields label { color: #6a6152; font-family: var(--font-hud); font-size: 10.5px; }
+.name-fields input {
+  border: 1px solid rgba(27, 26, 36, .3);
+  border-radius: var(--r-control);
+  color: #23212b;
+  background: #fdf7e6;
+  box-shadow: inset 0 1px 2px rgba(74, 48, 8, .12);
+  font-family: var(--font-hud);
+  font-size: 13px;
+}
+.name-fields input:focus { border-color: var(--brass-deep); outline: 3px solid rgba(200, 155, 75, .25); }
+/* The date field's picker glyph is drawn by the browser in flat black, which
+   is the one pure black on a page inked entirely in warm brown. It cannot be
+   replaced, but it can be brought down to the weight of the label above it. */
+.name-fields input::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .5; }
+.name-fields input:hover::-webkit-calendar-picker-indicator { opacity: .75; }
+.field-error { color: #a84645; }

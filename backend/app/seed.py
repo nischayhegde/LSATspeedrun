@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,6 +11,8 @@ from flask import current_app
 
 from .extensions import db
 from .models import Passage, Question, QuestionChoice
+from .passage_structure import derive_paragraphs
+from .question_types import classify
 from .strategies import detect_comparative
 
 
@@ -49,34 +50,6 @@ def _iter_snapshot_rows(dataset: str, split: str) -> Iterator[dict] | None:
                 yield row
 
     return read_rows()
-
-
-def _question_type(section: str, stem: str) -> str:
-    value = stem.casefold()
-    if section == "Reading Comprehension":
-        patterns = (
-            (r"main (?:idea|point|purpose)|primarily concerned", "Main Point"),
-            (r"author.*attitude|tone of the passage", "Author's Perspective"),
-            (r"function|role played|serves primarily to", "Function"),
-            (r"infer|suggest|most strongly support", "Inference"),
-            (r"analog|similar|parallel", "Analogy"),
-        )
-        fallback = "Reading Comprehension"
-    else:
-        patterns = (
-            (r"most strengthens|strengthen", "Strengthen"),
-            (r"most weakens|weaken|cast doubt", "Weaken"),
-            (r"assumption|required by|depends on", "Assumption"),
-            (r"flaw|vulnerable to criticism", "Flaw"),
-            (r"parallel|most like|similar.*reasoning", "Parallel Reasoning"),
-            (r"must (?:also )?be true|properly inferred|most strongly supported", "Inference"),
-            (r"principle", "Principle"),
-            (r"resolve|reconcile|explain", "Resolve the Paradox"),
-            (r"main conclusion|main point", "Main Conclusion"),
-            (r"role played|method.*reasoning|argument proceeds", "Argument Structure"),
-        )
-        fallback = "Logical Reasoning"
-    return next((name for pattern, name in patterns if re.search(pattern, value)), fallback)
 
 
 def _iter_dataset_rows(dataset: str, split: str) -> Iterator[dict]:
@@ -212,8 +185,13 @@ def _upsert_row(
         # Recomputed on the update branch as well as the insert one: the id is a
         # hash of the text, so a passage whose text changed is a different row,
         # but a re-ingest that rewrites `canonical_text` must not leave a flag
-        # behind that describes text this passage no longer has.
+        # behind that describes text this passage no longer has. The paragraph
+        # offsets are positions in that same text and go stale the same way, so
+        # they are rewritten here too rather than only backfilled.
         passage.comparative = detect_comparative(context, passage.passage_type)
+        offsets, paragraph_source = derive_paragraphs(context)
+        passage.paragraph_offsets = offsets or None
+        passage.paragraph_source = paragraph_source if offsets else None
         passages[passage_id] = passage
 
     question = questions.get(question_id)
@@ -223,8 +201,19 @@ def _upsert_row(
         questions[question_id] = question
     question.passage_id = passage_id
     question.section = section
-    question.question_type = _question_type(section, stem)
-    question.difficulty = 3
+    # Type and provenance are written together, at ingest, from the stem. See
+    # `app/question_types.py`: the type is read once when the row is created
+    # rather than re-derived by every consumer, and the source column says
+    # whether a rule actually matched or the row fell through to the section's
+    # own name — which is the difference between a type and a placeholder, and
+    # was invisible on 45.8% of this bank.
+    question.question_type, question.question_type_source, _rule = classify(section, stem)
+    # `published_difficulty` is deliberately not written. These rows are the
+    # whole of `tasksource/lsat-lr` and `tasksource/lsat-rc`, whose schema is
+    # five fields and contains no difficulty at any revision, so there is no
+    # published rating to record. This line used to read `question.difficulty =
+    # 3`, which put the same invented number on all 6,886 items. An estimate is
+    # earned per response in `app/calibration.py`; nothing may be asserted here.
     question.stimulus = stimulus
     question.stem = stem
     question.correct_answer = CHOICE_LABELS[label]

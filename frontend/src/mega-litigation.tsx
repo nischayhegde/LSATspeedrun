@@ -407,13 +407,14 @@ export function MegaLitigationPanel({
       <div className="mega-panel-body">
         <div className="mega-panel-copy">
           <p>
-            {size} LR and RC questions in three blocks under a single {minutes}-minute clock, with results
-            held to the end. It is the only measurement here that pays nothing, prompts nothing and coaches
-            nothing — which is exactly why it is the one your projected score is anchored on.
+            {size} LR and RC questions administered the way the real test is: three separately timed
+            35-minute sections with a 10-minute intermission after the second, results held to the end. It
+            is the only measurement here that pays nothing, prompts nothing and coaches nothing — which is
+            exactly why it is the one your projected score is anchored on.
           </p>
           <ul className="mega-terms">
-            <li><Clock3 /><div><strong>One clock, about {minutes} minutes</strong><small>Spend it across the {size} questions however you like.</small></div></li>
-            <li><ShieldAlert /><div><strong>One sitting, no pause</strong><small>Anything unanswered at zero is submitted blank.</small></div></li>
+            <li><Clock3 /><div><strong>35 minutes a section</strong><small>Move freely inside a section and change answers; the clock is the server's.</small></div></li>
+            <li><ShieldAlert /><div><strong>A section ends hard</strong><small>Anything blank at the bell stays blank, and you cannot go back to it.</small></div></li>
             <li><Trophy /><div><strong>Above 70% promotes your firm</strong><small>Prerequisite upgrades for that tier unlock free.</small></div></li>
             <li><Target /><div><strong>It sets what you practise</strong><small>What it finds is what your case runs drill next.</small></div></li>
           </ul>
@@ -449,7 +450,7 @@ export function MegaLitigationPanel({
             <>
               <small>{live ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small>
               <Gauge className="mega-score-glyph" />
-              <span>{size} questions · about {minutes} min</span>
+              <span>{size} questions · 3 × 35 min · {minutes} min of testing</span>
               <p>Scaled-score projections stay withheld until a form has a validated conversion.</p>
             </>
           )}

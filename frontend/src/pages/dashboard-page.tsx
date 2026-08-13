@@ -36,6 +36,11 @@ const ScoreProjectionPanel = lazy(() =>
 const AnswerLogPanel = lazy(() =>
   import('../progress-history').then((module) => ({ default: module.AnswerLogPanel })),
 )
+// The section read-out only renders for an account that has sat a sectioned
+// form, so it is split out on the same grounds as the two above.
+const ExamSectionReportPanel = lazy(() =>
+  import('../exam-report').then((module) => ({ default: module.ExamSectionReportPanel })),
+)
 
 /* The four deployed tabs, in their deployed order and under their deployed
    names, then the two panels built since — the projected-score band and the
@@ -153,7 +158,10 @@ export function PerformancePage() {
     },
   })
   const startCases = useMutation({
-    mutationFn: () => api.startPractice({ size: 10 }),
+    // No size: the server owns how long a run is. This asked for ten, the run
+    // length from before it became six, so the button's own label read
+    // "Start 6 cases" and then started a ten-question run.
+    mutationFn: () => api.startPractice(),
     onSuccess: ({ session }) => navigate(`/cases/${session.id}`),
   })
   const startFocus = useMutation({
@@ -231,6 +239,7 @@ export function PerformancePage() {
     ? diagnosticSession.mode === 'blind_review' ? 'Resume blind review' : diagnosticSession.status === 'completed' ? 'Start blind review' : 'Resume mega-litigation'
     : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'
   const activePractice = current.data?.session
+  const sessionSize = current.data?.session_size ?? 6
   const evidenceCopy = {
     baseline: 'Fewer than 10 questions. Provisional.',
     emerging: 'Early patterns only.',
@@ -245,7 +254,15 @@ export function PerformancePage() {
     if (diagnosticSession) navigate(`/cases/${diagnosticSession.id}`)
     else setGateOpen(true)
   }
-  const focus = performance.focus ?? { types: [], session_id: null, completed_at: null, baseline_accuracy: null, explanation: '' }
+  const focus = performance.focus ?? {
+    types: [],
+    weak: [],
+    section_baselines: {},
+    first_encounters: 0,
+    half_life_days: 30,
+    sitting: { types: [], session_id: null, completed_at: null, baseline_accuracy: null },
+    explanation: '',
+  }
   const pauseActiveRun = () => {
     if (!activePractice) return
     void play('pause', { id: `dashboard-pause:${activePractice.id}`, seed: activePractice.id, intensity: .45 })
@@ -437,11 +454,18 @@ export function PerformancePage() {
         <p className="dash-focus-note">
           Practice is weighted {focus.types.length ? `toward ${focus.types.join(' · ')}` : 'evenly across the test'}.
           {focus.explanation ? ` ${focus.explanation}` : ''}
-          {focus.baseline_accuracy !== null ? ` Measured against your own ${focus.baseline_accuracy}% on that form.` : ''}
+          {/* The baseline each weak type was measured against, rather than the
+              old "your own N% on that form" — the comparison is no longer
+              against one sitting. It is the rest of the section rather than
+              the whole of it, so the sentence is a comparison the student
+              could make by hand. */}
+          {focus.weak.length
+            ? ` ${focus.weak[0].type} is running ${focus.weak[0].gap} points under your ${focus.weak[0].section_baseline}% on the rest of ${focus.weak[0].section}.`
+            : ''}
         </p>
         {activeRunChip}
         <div className="dash-actions">
-          <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : 'Start 10 cases'} <ArrowRight /></button>
+          <button className="primary-button" onClick={openPrimaryTraining} disabled={startCases.isPending}><TimerReset /> {activePractice ? 'Resume current run' : `Start ${sessionSize} cases`} <ArrowRight /></button>
           <button className="secondary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}><Target /> {megaLitigationLabel}</button>
         </div>
       </section>
@@ -553,19 +577,58 @@ export function PerformancePage() {
         )}
 
         {tab === 'mega' && (
-          <section className="diagnostic-lab">
-            <div className="diagnostic-copy">
-              <span className="eyebrow">MEGA-LITIGATION</span>
-              <h2>{performance.diagnostic ? 'Your baseline is set.' : 'A full practice LSAT.'}</h2>
-              <p>{diagnosticSize} LR and RC questions in three blocks, one {diagnosticMinutes}-minute clock, results held to the end. One sitting, no pause.</p>
-              <ul><li>Above 70% promotes your firm a tier</li><li>Prerequisite upgrades unlocked free</li><li>Sets what your case runs practice</li><li>Pays nothing, prompts nothing, coaches nothing</li></ul>
-              <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>{diagnosticSession ? diagnosticSession.mode === 'blind_review' ? 'Return to the blind review' : diagnosticSession.status === 'completed' ? 'Start blind review' : 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight /></button>
-              <p className="diagnostic-crosslink">Past sittings are on the Practice tab, under Mega-litigation.</p>
+          <>
+          {/* The student's score is the subject of this panel, so it is the
+              first thing in it — but only once there is one. Before the first
+              sitting there is no result to lead with and the invitation is the
+              subject instead, which is the composition this panel was
+              originally drawn for and then kept after a score existed. */}
+          <section className={`diagnostic-lab${performance.diagnostic ? ' has-result' : ''}`}>
+            <div className="panel-heading">
+              <div><span>MEGA-LITIGATION</span><h2>{performance.diagnostic ? 'Your baseline is set.' : 'A full practice LSAT.'}</h2></div>
+              <Target />
             </div>
-            <div className={`diagnostic-score${performance.diagnostic ? '' : ' diagnostic-score-empty'}`}>
-              {performance.diagnostic ? <><small>LAST FORM SCORE</small><strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong><span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span><p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p></> : <><small>{blindReviewPending ? 'ANSWERS SEALED' : diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small><Gauge className="diagnostic-score-glyph" /><span>{diagnosticSize} questions · about {diagnosticMinutes} min</span><p>No scaled score until a form has a validated conversion.</p></>}
+            <div className="diagnostic-lab-body">
+              {performance.diagnostic && (
+                <div className="diagnostic-score">
+                  <small>LAST FORM SCORE</small>
+                  <strong>{performance.diagnostic.raw_correct ?? performance.diagnostic.summary.correct}/{performance.diagnostic.form_total ?? performance.diagnostic.raw_total}</strong>
+                  <span>{performance.diagnostic.form_accuracy ?? performance.diagnostic.summary.accuracy}% of the whole form · {performance.diagnostic.budget_used_percent}% of the clock spent</span>
+                  <p>{performance.diagnostic.promotion ? `Cleared: your firm was promoted to ${performance.diagnostic.promotion.name}.` : performance.diagnostic.projection_note}</p>
+                </div>
+              )}
+              <div className="diagnostic-copy">
+                <p>{diagnosticSize} LR and RC questions administered as three separately timed 35-minute sections with a 10-minute intermission, results held to the end.</p>
+                {/* The four terms describe what sitting one does, so they are
+                    the action's terms and are read with it rather than as a
+                    strip floating between two paragraphs. */}
+                <div className="diagnostic-next">
+                  <span>WHAT A SITTING DOES</span>
+                  <ul><li>Above 70% promotes your firm a tier</li><li>Prerequisite upgrades unlocked free</li><li>Sets what your case runs practice</li><li>Pays nothing, prompts nothing, coaches nothing</li></ul>
+                  {blindReviewPending && <p className="diagnostic-review-cue">A sat form is waiting on its blind review: every question you missed reopens, untimed and with the answers still hidden.</p>}
+                  <button className="primary-button" onClick={openDiagnostic} disabled={startDiagnostic.isPending}>{diagnosticSession ? diagnosticSession.mode === 'blind_review' ? 'Return to the blind review' : diagnosticSession.status === 'completed' ? 'Start blind review' : 'Return to the mega-litigation' : performance.diagnostic ? 'Sit a new mega-litigation' : 'Sit a mega-litigation'} <ArrowRight /></button>
+                </div>
+                <p className="diagnostic-crosslink">Past sittings are on the Practice tab, under Mega-litigation.</p>
+              </div>
+              {!performance.diagnostic && (
+                <div className="diagnostic-score diagnostic-score-empty">
+                  <small>{blindReviewPending ? 'ANSWERS SEALED' : diagnosticSession ? 'FORM IN PROGRESS' : 'NO FORM SAT YET'}</small>
+                  <Gauge className="diagnostic-score-glyph" />
+                  <span>{diagnosticSize} questions · about {diagnosticMinutes} min</span>
+                  <p>No scaled score until a form has a validated conversion.</p>
+                </div>
+              )}
             </div>
           </section>
+          {/* Only for a form actually administered in sections. A sitting from
+              before them had no bell and no halves, so there is nothing here to
+              back-fill and a blank panel would imply there was. */}
+          {performance.diagnostic?.exam && (
+            <Suspense fallback={<PanelFallback label="Loading the section read-out…" />}>
+              <ExamSectionReportPanel report={performance.diagnostic.exam} />
+            </Suspense>
+          )}
+          </>
         )}
 
         {tab === 'evidence' && (

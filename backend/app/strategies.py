@@ -5,9 +5,22 @@ import math
 import re
 from collections import defaultdict
 
+from flask import current_app
 from sqlalchemy.orm import joinedload
 
-from .models import Attempt, Question, SessionItem
+from .enforcement import (
+    DECLINED_STATUSES,
+    GATED_STATUSES,
+    MASTERY_MIN_ACCURACY,
+    MASTERY_MIN_SATISFIED,
+    STATUS_SATISFIED,
+    STATUS_SKIPPED,
+    STATUS_STOOD_DOWN,
+)
+from . import experiments
+from .experiments import Exposure
+from .extensions import db
+from .models import Attempt, Question, SessionItem, StudySession, utcnow
 from .scoring import PRIOR_STRENGTH, shrink_toward_prior
 
 
@@ -15,6 +28,25 @@ from .scoring import PRIOR_STRENGTH, shrink_toward_prior
 # exploiting its leader. Measured weaknesses get the longer runway.
 BASE_COVERAGE_TRIALS = 3
 FOCUS_COVERAGE_TRIALS = 5
+
+# How often the exploit phase deals a challenger instead of its leader. Held at
+# the value it has always had; what changed is which candidates a challenger
+# draw can reach — see `assign_strategy_trial`.
+EXPLORE_PROBABILITY = 0.30
+
+# How much of a candidate's score may come from how little is known about it
+# rather than from how well it has done. The performance terms are all in [0, 1]
+# and this bonus is on the same scale, so the weight is readable as "the largest
+# head start an unexplored approach can be given over a well-measured one".
+#
+# It is set low on purpose. At 0.20, a candidate sitting on the coverage minimum
+# of three observations carries roughly 0.2 more than one measured over fifty,
+# which is enough to overturn a modest performance gap and not enough to
+# overturn a decisive one. The term grows with the log of the student's total
+# observations on the question's candidate set, so it is unbounded and any fixed
+# gap is eventually overcome, but it grows slowly enough that a genuinely better
+# approach keeps its place for a long time first.
+UNCERTAINTY_WEIGHT = 0.20
 
 STRATEGY_SOURCES = {
     "lsac_lr": {
@@ -137,7 +169,7 @@ STRATEGIES = {
             "Translate only the operative sufficient and necessary conditions, then use the contrapositive lawfully.",
             "Translate the if-then statements, connect the shared terms, and flip them correctly.",
             ("Mark sufficient → necessary", "Link only shared terms", "Test the contrapositive; reject reversals"),
-            "Must-be-true, parallel, inference, and principle questions",
+            "Must-be-true, parallel, inference, principle, and sufficient-assumption questions",
             ("lsac_lr", "powerscore_lr"),
         ),
         _strategy(
@@ -266,6 +298,26 @@ def _stable_fraction(value: str) -> float:
     return int.from_bytes(digest[:8], "big") / float(2**64 - 1)
 
 
+def _weighted_pick(options: list[str], weights: list[float], fraction: float) -> str:
+    """The option `fraction` lands on, with each option's share set by its weight.
+
+    `fraction` comes from `_stable_fraction`, so the choice is a draw in the
+    same sense the rest of this module means it: uniform across the hash space
+    and fixed for a given input. Weights that are all zero degenerate to a
+    uniform pick rather than raising.
+    """
+    total = sum(weights)
+    if total <= 0:
+        return options[min(int(fraction * len(options)), len(options) - 1)]
+    target = fraction * total
+    cumulative = 0.0
+    for option, weight in zip(options, weights):
+        cumulative += weight
+        if target < cumulative:
+            return option
+    return options[-1]
+
+
 # A comparative reading set is two passages printed together as one set, and
 # this bank labels none of them: every Reading Comprehension passage carries the
 # literal `passage_type` "Reading Comprehension", and no `question_type` has
@@ -327,54 +379,677 @@ def is_comparative(question: Question) -> bool:
     return bool(question.passage and question.passage.comparative)
 
 
-def _candidate_keys(question: Question) -> list[str]:
-    question_type = (question.question_type or "").lower()
-    stem = (question.stem or "").lower()
-    if question.section == "Reading Comprehension":
-        passage_text = (question.passage.canonical_text or "").lower() if question.passage else ""
-        candidates = ["passage_map", "textual_proof"]
-        if is_comparative(question):
-            candidates.insert(0, "comparative_matrix")
-        if any(token in f"{question_type} {stem}" for token in ("purpose", "function", "organization", "method")):
-            candidates.insert(0, "paragraph_function")
-        if any(token in f"{question_type} {stem}" for token in ("main", "primary purpose", "title", "central point")):
-            candidates.insert(0, "main_point_synthesis")
-        if any(token in f"{question_type} {stem}" for token in ("attitude", "viewpoint", "perspective", "agree", "author most likely")) or any(
-            token in passage_text for token in ("some scholars", "critics", "proponents", "one view", "another view")
-        ):
-            candidates.insert(0, "viewpoint_ledger")
-        return list(dict.fromkeys(candidates))
+# ---------------------------------------------------------------------------
+# What the question is asking
+#
+# Matching reads the stem, and reads it with word boundaries. Both halves of
+# that sentence were bought expensively.
+#
+# The stem, because `question_type` is not a description of the task on most of
+# this bank. `seed._question_type` derives it from ten regexes and falls back to
+# the section's own name, and it falls back on 3,157 of 6,886 questions — 46% of
+# the bank carries a "type" that only repeats what section it is in. A matcher
+# keyed on that field is blind on half the bank, which is why 45% of questions
+# were eligible for exactly two approaches and a student practising a lot met
+# the same two generic cards over and over.
+#
+# Word boundaries, because substring matching on English is a false-positive
+# machine and every measured failure in the matching audit was one instance of
+# it. `"cause" in stem` fires on "because", so "Antoine's response is
+# ineffective because" was offered a strategy whose first step is "Name cause
+# and effect" — 287 of the 426 questions that offered it had no cause in them.
+# `" all "` and `" no "` in the stimulus made a conditional-logic strategy a
+# candidate on 189 questions with no conditional in them, and that one carries a
+# gate demanding two if-then rules sharing a term. `"main" in stem` matches
+# "remain", "mainly" and "domain".
+#
+# So every pattern below is anchored, and every one of them is measured over the
+# whole bank by `backend/scripts/audit_strategy_matching.py` before and after
+# any change to this section. A rule that removes false positives while quietly
+# dropping true matches looks like a fix on one question card and is a
+# regression across the bank; that script is how the difference is told.
+# ---------------------------------------------------------------------------
 
+# -- Logical Reasoning tasks ------------------------------------------------
+
+# Must-be-true and its relatives. What these have in common is that the answer
+# has to be *proved* by the stimulus, which is what makes quantifier and force
+# discipline pay.
+_TASK_INFERENCE = re.compile(
+    # "Must on the basis of them also be true" is the same question as "must
+    # also be true", with the basis spelled out in the middle.
+    r"\bmust\b[^.?]{0,40}\bbe true\b|\bmust be false\b|\bcannot be (?:true|which)\b"
+    r"|\bmust also\b|\bcompatible with\b|\bconsequence of\b"
+    r"|\bproperly (?:be )?(?:inferred|drawn|concluded)\b|\bvalidly (?:be )?(?:inferred|drawn|concluded)\b"
+    # Either order: "follows logically" and "logically follows" are the same
+    # question, and the adverb-last version was the only one being read.
+    r"|\bfollows? logically\b|\blogically follows?\b"
+    # "Can most reasonably be concluded" puts three words between the modal and
+    # the verb, in an order the fixed slots could not take.
+    r"|\bcan(?:not)?\b[^.?]{0,30}\b(?:infer|inferred|conclude|concluded|deduce|deduced|expected|drawn)\b"
+    r"|\binferred from\b|\blogically (?:concluded|inferred)\b|\bstrictly implied\b"
+    r"|\binference\b[^.?]{0,25}\b(?:drawn|made)\b"
+    # Squaring an answer with what the stimulus says, in either direction. The
+    # copula is required: "explains the discovery in a way most consistent with
+    # the hypothesis" is an explain question that happens to use the word.
+    r"|\b(?:is|are|would be) (?:in)?consistent with\b|\bconflicts? with\b"
+    r"|\b(?:reason|grounds) for accepting\b|\bproper inference\b"
+    r"|\bwould (?:also )?have to be true\b"
+    # Completing the passage, which is a must-be-true question about its last
+    # sentence. Guarded by the adverb, because "falls short of offering a
+    # complete solution" is not this question and shares the word.
+    r"|\blogical(?:ly)? complet\w+\b|\bcomplet\w+\b[^.?]{0,25}\bmost logical(?:ly)?\b"
+    r"|\b(?:most )?(?:logically|reasonably) (?:complet\w+|conclude\w+)\b"
+    r"|\b(?:logically|best) completes\b"
+)
+# What a speaker's own statements oblige them to accept, which is a must-be-true
+# question aimed at a position rather than at the world. Held apart from the
+# family above because "committed to disagreeing about which one of the
+# following" is the same words in the service of a point-at-issue question.
+_TASK_COMMITMENT = re.compile(r"\b(?:commits?|committed)\b[^.?]{0,30}\bto which\b")
+# "Support" points both ways, and which way it points is the difference between
+# two questions that want opposite things. `_support_direction` below decides
+# it, and these are the three pieces it reads.
+#
+# The passive is unambiguous: whatever is "supported by" the stimulus is being
+# asked for, so the question is an inference question.
+_SUPPORT_PASSIVE = re.compile(r"\bsupported\b")
+# The active is not. "The statements above most strongly support which one of
+# the following" and "which one of the following most strongly supports the
+# representative's position" are the same words in the same order, and only
+# word order says that the first is asking what the stimulus proves while the
+# second is asking what would help an argument.
+# "Evidence for" runs the same way and is decided the same way: "the
+# observations above provide most evidence for the conclusion that" is an
+# inference stem, and "which one of the following provides the strongest
+# evidence for the conclusion" is a strengthen stem.
+_SUPPORT_ACTIVE = re.compile(r"\bsupports?\b|\bsupport (?:for|to)\b|\bevidence for\b")
+# The answer choices, as the subject of a sentence. The lookbehinds keep out
+# the prepositional uses — "in which one of the following instances does the
+# lease support" is not the choices doing the supporting.
+_ANSWER_CHOICES = re.compile(
+    r"(?<!\bin )(?<!\bof )(?<!\bon )(?<!\bto )(?<!\bfor )"
+    r"\b(?:which|each|all|any|none) (?:one )?of the following\b"
+)
+# Principles, and the general statements that are principles under another
+# name. Plurals matter: "which one of the following propositions" and "which
+# one of the following generalizations" are how the bank asks this most often,
+# and the singular-only pattern read neither.
+_TASK_PRINCIPLE = re.compile(
+    r"\bprinciples?\b|\bpropositions?\b|\bgeneraliz\w+\b"
+    # "Conforms most closely to" is the commonest form and the adjacent-words
+    # version could not read it.
+    r"|\billustrat\w+\b|\bconform\w*\b[^.?]{0,20}\bto\b"
+    # A standard set out in the stimulus and applied to cases: "an example of
+    # efficiency as described above", "the most advanced kind of moral
+    # motivation, as described by the ethicist". Attributed or named as an
+    # example, because a bare "as described above" is how a great many stems
+    # point back at the stimulus without setting out any standard at all.
+    r"|\bas described by\b|\bis an example of\b"
+    # A rule invoked to settle a case, in either order: "which university
+    # policies most justifies the decision", "justifies the above application of
+    # the policy". Paired with the verb, because "the difference in fuel
+    # requirements" names a quantity.
+    r"|\b(?:polic(?:y|ies)|regulations?|guidelines?|codes?)\b[^.?]{0,30}"
+    r"\b(?:justif\w+|appl\w+|permits?|prohibits?|requires?|allows?)\b"
+    r"|\b(?:justif\w+|appl\w+)\b[^.?]{0,30}\b(?:polic(?:y|ies)|regulations?|guidelines?|codes?)\b"
+    # Applying a stated rule to cases, which is the same work under another
+    # name: which situation breaks the regulation, which applicant fails the
+    # requirement. The rule has to be paired with a verb of conformance, because
+    # "the difference in fuel requirements" names a quantity, not a rule.
+    r"|\bviolat\w+\b"
+    r"|\b(?:meets?|satisfies|satisfy|compl(?:y|ies) with|fails? to meet)\b"
+    r"[^.?]{0,30}\b(?:requirements?|polic(?:y|ies)|regulations?|guidelines?|standards?|criteria)\b"
+)
+_TASK_PARALLEL = re.compile(
+    r"\bparallel\w*\b|\bmost (?:closely )?similar\b|\bsimilar to (?:that|the)\b"
+    r"|\breasoning (?:above |in the argument )?is most\b|\bflawed in a way most similar\b"
+    r"|\bmost (?:closely )?resembles\b|\banalog(?:y|ies|ous)\b"
+    r"|\bmost appropriate (?:for|in) which\b"
+)
+_TASK_STRENGTHEN = re.compile(
+    r"\bstrengthens?\b|\bstrengthening\b|\bjustif\w+\b|\bmost helps? to (?:support|justify)\b"
+    # Evidence for a position, and holding a position against an objection.
+    # Both are strengthen questions wearing other vocabulary.
+    r"|\b(?:strongest|best|most convincing) (?:evidence|defense)\b"
+    r"|\bbest evidence (?:that|for|of)\b|\bevidence \w+ would (?:strongly )?favor\b"
+    # Arguing for something, and defending it. The against-facing mirrors are
+    # weaken and are read there.
+    r"|\bargues?\b[^.?]{0,25}\b(?:for|in favor of)\b|\bin favor of\b|\bdefense of\b"
+)
+_TASK_WEAKEN = re.compile(
+    # "Calls the conclusion above into question" and "would be most seriously
+    # called into question if" are the same question as "calls into question",
+    # which is all the adjacent-words version could read.
+    r"\bweaken\w*\b|\bundermin\w+\b|\bcall(?:s|ed)?\b[^.?]{0,35}\binto question\b"
+    # "Casts the most doubt", "cast the most serious doubt", "casts
+    # considerable doubt on". The adjacent-words version read none of them and
+    # only matched the bare "casts doubt".
+    r"|\bcasts?\b[^.?]{0,25}\bdoubt\b"
+    r"|\bmost damaging\b|\bchalleng\w+\b|\binvalidat\w+\b|\brebut\w+\b"
+    # Countering something is weakening it, except where the stem trails off in
+    # "by" — "the pilot counters the conservationist by" wants the technique
+    # named, which is a method question and is claimed as one just below.
+    r"|\bcounter(?:s|ing)?\b(?![^.?]*\bby\s*$)"
+    r"|\b(?:strongest|most serious|best|gravest) objection\b|\breconsider\w*\b"
+    # Arguing or evidencing against something, and rejecting or refuting it. The
+    # mirror phrasings ("argues most strongly for") are strengthen and are read
+    # there, so the direction has to be named rather than assumed.
+    r"|\bargues?\b[^.?]{0,25}\bagainst\b|\bevidence against\b|\brefut\w+\b"
+    r"|\b(?:reason|reasons|basis|grounds)\b[^.?]{0,20}\brejecting\b"
+    r"|\blimits? the effectiveness\b|\bineffective\b|\bnot be effective\b"
+    # A stem that says the answer shows something falling short is a weaken
+    # stem: "most strongly indicates that the theory is at least incomplete",
+    # "indicates that the precaution might not have the result".
+    r"|\bindicat\w+\b[^.?]{0,80}\b(?:not|never|incomplete|inaccurate|unreliable|fails?)\b"
+)
+_TASK_EXPLAIN = re.compile(
+    # "Resolution" as well as "resolve": the stem that asks for "a resolution to
+    # the apparent inconsistency" is the plainest form of this question and the
+    # verb-only pattern could not read the noun.
+    r"\bexplain\w*\b|\bexplanation\b|\bresol(?:v\w+|ution)\b|\breconcil\w+\b|\bparadox\w*\b"
+    r"|\bdiscrepanc\w+\b|\baccounts? for\b|\bapparent conflict\b|\bsurprising\b"
+    # The noun only. "A view that is inconsistent with the principle stated in
+    # the editorial" is not a question about reconciling two facts.
+    r"|\binconsistenc\w+\b|\bboth be (?:correct|true)\b"
+)
+_TASK_EVALUATE = re.compile(
+    r"\bevaluat\w+\b|\bmost (?:useful|helpful|important) (?:to|in|for) "
+    r"(?:know|knowing|determine|determining|establish|establishing|decide|deciding)\b"
+)
+# Point at issue. Two jobs: held apart from strengthen, because "the editors'
+# dialogue provides the most support for the claim that they disagree about
+# whether" is asking what the two speakers differ on rather than what would help
+# an argument; and claimed for the scope-and-force reading, because the credited
+# answer is a statement one speaker affirms and the other denies, and the
+# standard wrong answer overstates the difference or reaches past what one of
+# them actually said.
+_TASK_POINT_AT_ISSUE = re.compile(
+    r"\bdisagree\w*\b|\bagree with each other\b|\bpoint at issue\b|\bat issue\b"
+    # "In dispute" and "the dispute", not any inflection: "the traditional
+    # attribution of a disputed painting" is subject matter, not a disagreement
+    # between two speakers.
+    r"|\bcommitted to (?:disagreeing|agreeing)\b|\b(?:in|the) dispute\b|\bdispute between\b"
+    r"|\bissue between\b"
+    r"|\bviews? differ\b|\bdiffers? (?:on|about|over) whether\b"
+)
+_TASK_EXCEPT = re.compile(r"\bexcept\b")
+_TASK_ROLE = re.compile(
+    # Plurals included, because "plays which one of the following roles in the
+    # argument" and "uses which one of the following techniques" are the two
+    # commonest phrasings of exactly this question.
+    r"\broles?\b|\bfigures? in\b|\bmethods?\b|\btechniques?\b|\bstrateg\w+\b"
+    r"|\bargument proceeds\b|\bproceeds by\b"
+    # A stem that trails off in "by" wants the move named, which is this
+    # question whichever verb it used: "Debbie attempts to counter Carl's
+    # argument by", "Maria objects to Pedro's argument by".
+    r"|\b(?:counters?|objects?|repl(?:y|ies)|answers?|rebuts?|attacks?|argues?|derives?|advances?)\b"
+    r"(?=[^.?]*\bby\s*$)"
+    # And the shapes that ask what somebody did without naming a verb at all.
+    r"|\bdoes which one of the following\b|\bin advancing\b|^in responding to\b"
+    # "Mentions" and "mentioning", but not "mentioned": the gerund is the thing
+    # being asked about, while "the increase mentioned above" is only a pointer
+    # back to the stimulus.
+    r"|\bseeks to do\b|\bas an objection to\b|\butiliz\w+\b|\bmention(?:s|ing)\b"
+    r"|\bis used to\s*$"
+    r"|\bin which one of the following ways\b|\bpart of the argument\b"
+    # What a named statement is doing where it sits. "Serves which one of the
+    # following functions in the argument" and "functions primarily in the
+    # argument to" are the two commonest phrasings, and "function of" read
+    # neither. Tied to the argument, because "supports the conclusion regarding
+    # a signaling function" is about the subject matter and not about structure,
+    # and so is a claim "offered in support of the conclusion".
+    r"|\bfunction of\b|\bfunctions?\b[^.?]{0,40}\bargument\b|\bserves? (?:in|as)\b"
+    r"|\boffered in\b[^.?]{0,25}\bargument\b"
+    # How one statement stands to another, which is this question asked about a
+    # pair: "how is Judy's response related to John's argument".
+    r"|\brelationship (?:of|between)\b|\brelated to\b[^.?]{0,30}\bargument\b"
+)
+# One speaker answering another, which is nearly always a question about how the
+# answer was made: "Smith responds to Jones by", "characterizes David's response
+# to Alice's statement". Held apart from the rest of the family because it is the
+# one role phrasing that also appears in questions about something else — "the
+# art critic's response to the curator would provide the strongest support for
+# which one of the following" names whose statements to reason from, and the
+# question is what follows from them.
+_ROLE_RESPONSE = re.compile(r"\bresponds? to\b|\bresponse to\b")
+_TASK_MAIN_CONCLUSION = re.compile(
+    r"\bmain (?:conclusion|point)\b|\bconclusion (?:drawn|of the argument)\b"
+    # The possessive is the commonest form — "the argument's conclusion" — and
+    # requiring "the conclusion" adjacent read only the other one.
+    r"|\bmost accurately (?:expresses|states|describes)\b[^.?]{0,25}\bconclusion\b"
+    r"|\boverall conclusion\b|\bpoint of the argument\b|\bpoint made by\b"
+    # A stem describing the argument as aimed at something is asking what it
+    # concludes: "the argument is structured to lead to which conclusion".
+    # The subject has to be the argument itself. "The reasoning that leads to the
+    # conclusion that the first sentence is false is flawed because" names which
+    # reasoning is meant; it is not asking what the conclusion is.
+    r"|\bstructured\b[^.?]{0,25}\blead(?:s)? to\b"
+    r"|\b(?:argument|passage|reply|dialogue)\b[^.?]{0,12}\bleads? to the conclusion\b"
+    r"|\bseeks to (?:establish|show|prove)\b|\bis arguing that\b"
+)
+
+# The flaw family, which the word "flaw" covers less than half of. The LSAT's
+# most common phrasing is "most vulnerable to criticism", and "an error in
+# reasoning", "a major weakness" and "questionable because" are all standard.
+# Keying on the literal word left 65 flaw questions with no flaw strategy.
+_TASK_FLAW = re.compile(
+    # "An error in reasoning" and "an error in the author's reasoning" are the
+    # same question, and only the first had the two words adjacent.
+    # Either order: "an error in the author's reasoning" and "the senator's
+    # reasoning contains which one of the following errors" are the same
+    # question.
+    r"\bflaw\w*\b|\bvulnerable to\b|\berrors? (?:of|in)\b[^.?]{0,25}\breasoning\b|\breasoning errors?\b"
+    r"|\breasoning\b[^.?]{0,40}\berrors?\b"
+    r"|\bidentifies a problem\b|\bproblem with (?:the|his|her|their)\b"
+    r"|\bquestionable\b|\bweakness\b|\bcriticiz\w+\b|\bcriticism\w*\b|\bfallac\w+\b"
+    r"|\bfails? to (?:consider|establish|address|rule out|take into account|account for)\b"
+    r"|\breasoning is (?:most )?(?:unsound|not sound|flawed|questionable)\b"
+    r"|\bis (?:not sound|unsound)\b|\bdoes not follow\b|\bmistakes? \w+ for\b"
+    r"|\bconfuses?\b|\btreats?\b.{0,40}\bas (?:if|though)\b"
+    # The rest of the vocabulary for a broken argument. None of these contains
+    # the word "flaw" and each is a standard stem: "the reasoning is in error
+    # because", "the argument is faulty because it ignores the possibility",
+    # "the inference drawn above is unwarranted".
+    r"|\bin error\b|\bfaulty\b|\bunwarranted\b|\bincorrectly (?:drawn|concluded|inferred)\b"
+    r"|\bmistake in\b|\bmisleading\b|\binadequate\b|\bignores? the possibility\b"
+    r"|\boverlooks?\b|\bambiguity\b|\bequivocat\w+\b|\bmisinterpret\w+\b|\bfalls? short\b"
+    # What one speaker took another to mean. The credited answer is the reading
+    # that went wrong, which is this approach's work: name the misstep, then
+    # find the choice that commits it.
+    r"|\binterpret\w+\b[^.?]{0,40}\bto (?:mean|imply|be)\b"
+)
+
+# The necessary-assumption family. Two shapes: an assumption named alongside a
+# necessity word, in either order, and the two fixed idioms. This is where the
+# literal "depends on" was costing the most — the LSAT's single most common
+# phrasing is "an assumption on which the argument depends", where the
+# preposition is at the front, so the substring never appeared and 169
+# textbook questions never met the negation test.
+_TASK_NECESSARY_ASSUMPTION = re.compile(
+    # "Rely" as well as "relies": "upon which one of the following assumptions
+    # does the author rely" is the same question as "an assumption on which the
+    # argument relies", and the inflection was the only thing keeping it out.
+    r"assum\w*[^.?]{0,120}?\b(?:depends?|depended|requir\w+|necessary|presuppos\w+|rel(?:y|ies|ying)|rests?|based)\b"
+    r"|\b(?:depends?|depended|requir\w+|necessary|presuppos\w+|rel(?:y|ies|ying)|rests?|based on)\b[^.?]{0,120}?assum\w*"
+    r"|\bdepends? (?:on|upon) which one of the following\b"
+    r"|\bmust be assumed\b|\btakes? for granted\b|\bpresuppos\w+\b"
+    # The bare form, with no necessity word anywhere: "The argument assumes
+    # which one of the following?" Read as a necessary assumption, which is how
+    # it is taught and how the credited answers behave — the sufficient version
+    # of the question always says so ("if assumed", "allows the conclusion"),
+    # and that phrasing is held apart just below.
+    r"|\bassumes which\b|\bassumes that\b|\bis assumed (?:in|by) the\b"
+    r"|\bassumptions? (?:made )?(?:in|of|by) (?:the|this|his|her|their|\w+'s)\b"
+    r"|\bassumptions? would have to be made\b"
+    # "Makes which one of the following assumptions", with the noun spelled out
+    # because "makes which one of the following errors of reasoning" is the same
+    # shape and is a flaw question. The repeated "of the" is not a typo: one
+    # stem in the bank reads "must make which of the of the following".
+    r"|\b(?:must )?makes? which (?:one )?(?:of the )+following assumptions?\b"
+    # "Anson bases his conclusion about Dr. Ladlow on which one of the
+    # following?" — the answer is the premise the argument needs.
+    r"|\bbases? (?:his|her|its|their|the) conclusion\b[^?]{0,40}\bon which\b"
+    # An assumption named as something the argument makes, in either order:
+    # "an assumption that the argument makes", "the argument makes the
+    # assumption that".
+    r"|\bassumptions?\b[^.?]{0,30}\bmakes?\b|\bmakes? (?:the|an) assumption\b"
+    r"|\bwould have to be assumed\b|\bmust\b[^.?]{0,30}\bassume\b"
+    # "Unless which one of the following is true" and "would not follow if the"
+    # both name what the argument cannot do without, which is what the negation
+    # test is for.
+    r"|\bunless which one of the following\b|\bwould not follow if\b"
+)
+# Sufficient assumption, held apart on purpose. "Which one of the following, if
+# assumed, allows the conclusion to be properly drawn" is a different question,
+# and the negation test is the wrong tool on it: denying a merely sufficient
+# assumption need not break the argument, so the procedure's own ruling —
+# "keep it only if the argument collapses" — throws away the credited answer.
+_TASK_SUFFICIENT_ASSUMPTION = re.compile(
+    r"\bif assumed\b|\bif (?:it is )?assumed\b|\ballows? the conclusion\b|\benables? the conclusion\b"
+    r"|\bfollows? logically if\b|\bproperly (?:drawn|inferred|concluded) if\b"
+    r"|\bassumption that would (?:permit|allow|enable|(?:serve to )?justify)\b"
+    # "An assumption that would make the conclusion a logical one" is asking for
+    # enough, not for what is needed, so it belongs on this side.
+    r"|\bassumption that would make the conclusion\b"
+    r"|\bif which one of the following is assumed\b"
+)
+
+# A causal claim, as opposed to the word "cause" appearing somewhere. Read on
+# the stimulus, where the claim lives.
+_CAUSAL_CLAIM = re.compile(
+    r"\bcaus(?:e|es|ed|ing|al|ally|ation)\b"
+    r"|\bdue to\b|\bbecause of\b|\bowing to\b"
+    r"|\bleads? to\b|\bleading to\b|\bled to\b"
+    r"|\bresults? (?:in|from)\b|\bresulted (?:in|from)\b|\bresulting (?:in|from)\b"
+    r"|\bresponsible for\b|\bbrought about\b|\bbrings? about\b"
+    r"|\battributable to\b|\battribut(?:e|es|ed) \w+ to\b"
+    r"|\bstems? from\b|\bstemmed from\b|\barises? from\b|\barising from\b"
+    r"|\bgives? rise to\b|\bcontribut(?:e|es|ed) to\b"
+    r"|\beffects? (?:of|on)\b|\bno effect\b"
+    r"|\bexplains? why\b|\bexplanation for\b|\breason (?:for|why)\b"
+)
+
+# The same thing read on the stem, which needs to be narrower. A stem is about
+# an argument, so its verbs of consequence are usually about reasoning rather
+# than about the world: "the reasoning leading to the prediction" and "the
+# argument is structured to lead to which conclusion" are not causal questions,
+# and "the author's reason for mentioning" is a role question. What is left is
+# the vocabulary that can only be about causation.
+_CAUSAL_TASK = re.compile(
+    r"\bcaus(?:e|es|ed|ing|al|ally|ation)\b"
+    r"|\bdue to\b|\bbecause of\b|\bowing to\b|\bresponsible for\b"
+    r"|\bbrought about\b|\bbrings? about\b|\battributable to\b|\bgives? rise to\b"
+    r"|\beffects? (?:of|on)\b|\bno effect\b|\bexplains? why\b|\breason why\b"
+)
+
+# Conditional operators, and deliberately not bare "all" or "no". A universal
+# claim does translate to a conditional, so the quantified forms are kept — but
+# as quantifiers with something quantified ("all X are Y", "no X is Y"), not as
+# the two commonest words in English. "all the evidence", "no doubt" and "not
+# all of them" are not rules, and a strategy whose gate demands two if-then
+# rules that share a term cannot be offered on a question that has none.
+_CONDITIONAL_OPERATOR = re.compile(
+    r"\bif\b|\bunless\b|\bwhenever\b|\bprovided that\b|\bas long as\b"
+    r"|\brequir(?:e|es|ed|ement)\b|\bnecessary\b|\bsufficient\b|\bprerequisite\b"
+    r"|\bessential (?:to|for)\b|\bindispensable (?:to|for)\b"
+    r"|\ball\s+(?:\w+\s+){0,2}?(?:are|is|was|were|have|has|must|will|can|do|does)\b"
+    r"|\bno\s+\w+\s+(?:is|are|was|were|can|will|has|have|ever|may|would|could)\b"
+    r"|\bevery\b|\bnone of\b"
+    r"|\ban(?:y|yone|ything|body)\s+(?:who|whom|that|which|with|without|lacking|having)\b"
+    # "Without trust there can be no meaningful connection" is a conditional
+    # written the other way round, and it is how the LSAT states a necessary
+    # condition without using the word.
+    r"|\bwithout\s+\w+(?:\s+\w+){0,2},?\s+(?:there (?:can|will|would|is|are)|cannot|could not|nobody|no one|nothing)\b"
+    r"|\bonly\s+(?:if|those|when|by|a\s+person|people\s+who)\b|\bin order (?:to|for)\b"
+)
+
+# -- Reading Comprehension tasks -------------------------------------------
+
+# Why something is where it is: the passage's organisation, or one paragraph's
+# or line's job in it. Deliberately the purpose sense only — a bare "the author
+# mentions" is a detail question, and "in order to" is what turns it into a
+# question about function.
+_RC_PURPOSE = re.compile(
+    r"\bpurpose\b|\bfunction\b|\bin order to\b|\bserves? (?:primarily )?to\b"
+    r"|\borganiz\w+\b|\bstructure(?:d)?\b|\bwhy the author\b"
+    # "Role" only where the passage's own furniture is what has the role. Read
+    # bare it also matches "the role that Wheatley played in the evolution of
+    # the form", which is a question about the subject matter.
+    r"|\broles?\b(?=[^.?]*\b(?:passage|paragraph|sentence|line|lines|quotation|reference|discussion|example|statement)\b)"
+    r"|\bprimarily (?:in order )?to\b|\bmost probably (?:in order )?to\b"
+)
+_RC_MAIN_POINT = re.compile(
+    r"\bmain (?:point|idea|concern|focus|conclusion|thesis)\b|\bprimary purpose\b"
+    r"|\bcentral (?:point|idea|claim|thesis|argument)\b"
+    r"|\bprimarily concerned\b|\btitles?\b"
+    r"|\bmost accurately (?:expresses|states|summarizes) the\b|\bpassage as a whole\b"
+)
+# The author's or a party's stance, asked about by the question. This is the
+# trigger that used to be read off the passage: a passage containing the word
+# "critics" made a viewpoint strategy a candidate on every question printed
+# with it, so 344 plain detail questions were offered a strategy about
+# competing viewpoints. The passage is still consulted, but only as a
+# precondition below — never as the trigger.
+_RC_VIEWPOINT = re.compile(
+    r"\battitude\b|\bviewpoint\b|\bpoint of view\b|\bperspective\b"
+    # An opinion someone holds, not a judicial opinion or a juror's dissenting
+    # one. Three of the bank's ten "opinion" stems are the legal sense.
+    r"|\bopinions? (?:of|about|on|regarding|with)\b|\b(?:author|critic|writer|scholar)(?:'s|s')? opinion\b"
+    r"|\bagree\w*\b|\bdisagree\w*\b|\bstance\b|\btone\b"
+    r"|\bwould (?:most likely|probably|be most likely|most probably|consider|regard)\b"
+    r"|\bregards?\b|\bregarded\b|\bcharacteriz\w+\b|\bendorse\w*\b|\bsympath\w+\b"
+)
+# A claim the question attributes to somebody. On its own this is too broad to
+# trigger on — "the passage suggests that Posner argues" and "the author
+# mentions" are the same shape — so it only counts where the passage actually
+# stages more than one position.
+_RC_ATTRIBUTION = re.compile(
+    r"\bcritics?\b|\bproponents?\b|\bopponents?\b|\badvocates?\b|\bsupporters?\b"
+    r"|\bdetractors?\b|\bscholars?\b|\btheorists?\b|\bcommentators?\b|\bhistorians?\b"
+    r"|\bdefenders?\b|\bskeptics?\b|\bsceptics?\b|\bauthorities\b"
+    r"|\bargues?\b|\bclaims?\b|\bmaintains?\b|\bcontends?\b|\basserts?\b|\bbelieves?\b"
+    r"|\bholds that\b|\bposition\b|\bconcedes?\b|\bobjects?\b"
+)
+# A passage that stages a debate: two or more distinct parties or attributed
+# positions. Counted distinctly, so one word repeated is one party.
+_PASSAGE_PARTIES = re.compile(
+    r"\bcritics?\b|\bproponents?\b|\bopponents?\b|\badvocates?\b|\bsupporters?\b"
+    r"|\bdetractors?\b|\bscholars?\b|\btheorists?\b|\bcommentators?\b|\bhistorians?\b"
+    r"|\bdefenders?\b|\bskeptics?\b|\bsceptics?\b"
+    r"|\bsome (?:\w+ )?(?:argue|believe|claim|maintain|contend|hold|say|assert|suggest)\b"
+    r"|\bothers? (?:argue|believe|claim|maintain|contend|hold|say|assert|suggest)\b"
+    r"|\bone view\b|\banother view\b|\btraditional view\b|\bconventional view\b"
+    r"|\bit (?:has been|is often) (?:argued|claimed|held|assumed)\b"
+)
+# How many distinct parties make a passage a debate rather than a passage that
+# happens to mention somebody. Two, because the strategy's own gate refuses a
+# ledger with fewer than two rows in it.
+_MIN_PASSAGE_PARTIES = 2
+
+
+def _stored_type(question: Question) -> str:
+    """The bank's own label for the task, where it has one.
+
+    Consulted alongside the stem for the same reason `detect_comparative`
+    consults `passage_type` first: a bank that labels the task should be
+    believed rather than re-derived. This one labels it on 54% of questions and
+    repeats the section name on the rest, so the stem is the primary signal and
+    this is corroboration.
+    """
+    stored = (question.question_type or "").strip().lower()
+    return "" if stored in ("logical reasoning", "reading comprehension") else stored
+
+
+def _support_direction(stem: str) -> str | None:
+    """Which way a stem's talk of support runs, or `None` if it has none.
+
+    `"stimulus"` — the stimulus does the supporting and the answer is what gets
+    supported, which is an inference question. `"answer"` — an answer choice
+    does the supporting, which is a strengthen question.
+
+    Decided by word order rather than by listing the nouns that can follow
+    "support for", because the list is open — argument, conclusion, claim,
+    contention, position, hypothesis, prediction, proposal, thesis, somebody's
+    name — while the grammar is not. Whichever side the answer choices sit on
+    is the side doing the supporting.
+    """
+    if _SUPPORT_PASSIVE.search(stem):
+        return "stimulus"
+    active = _SUPPORT_ACTIVE.search(stem)
+    if not active:
+        return None
+    choices = _ANSWER_CHOICES.search(stem)
+    return "answer" if choices and choices.start() < active.start() else "stimulus"
+
+
+def _task_tags(question: Question) -> frozenset[str]:
+    """What this question asks the student to do.
+
+    Derived from the stem, corroborated by `question_type`. Everything that
+    decides an approach's appropriateness below reads these tags rather than
+    searching raw text, so a phrasing is added in one place and every approach
+    that depends on it picks it up.
+    """
+    stem = (question.stem or "").lower()
+    stored = _stored_type(question)
+    labelled = f"{stored} {stem}"
+    tags: set[str] = set()
+    if question.section == "Reading Comprehension":
+        if _RC_MAIN_POINT.search(labelled) or stored in ("main point", "main idea"):
+            tags.add("main_point")
+        if _RC_PURPOSE.search(labelled) or stored in ("function", "purpose"):
+            tags.add("purpose")
+        if _RC_VIEWPOINT.search(labelled) or stored == "author's perspective":
+            tags.add("viewpoint")
+        if _RC_ATTRIBUTION.search(stem):
+            tags.add("attribution")
+        return frozenset(tags)
+
+    disputed = bool(_TASK_POINT_AT_ISSUE.search(stem))
+    if disputed:
+        tags.add("point_at_issue")
+    attacked = bool(_TASK_WEAKEN.search(labelled) or _TASK_FLAW.search(labelled) or stored == "weaken")
+    # Consulted only where the stem does not already say it is an attack. "Most
+    # seriously weakens the support for the conclusion" puts the answer choices
+    # on the supporting side of the sentence and is still a weaken question.
+    support = None if attacked else _support_direction(stem)
+    # A commitment counts as an inference only where the stem is not asking what
+    # two speakers differ on, which is the other thing "committed to" introduces.
+    committed = bool(_TASK_COMMITMENT.search(stem)) and not disputed
+    if _TASK_INFERENCE.search(labelled) or committed or stored == "inference" or support == "stimulus":
+        tags.add("inference")
+    if _TASK_PRINCIPLE.search(labelled) or stored == "principle":
+        tags.add("principle")
+    if _TASK_PARALLEL.search(labelled) or stored == "parallel reasoning":
+        tags.add("parallel")
+    if (_TASK_STRENGTHEN.search(labelled) or stored == "strengthen" or support == "answer") and not disputed:
+        tags.add("strengthen")
+    if _TASK_WEAKEN.search(labelled) or stored == "weaken":
+        tags.add("weaken")
+    if _TASK_EXPLAIN.search(labelled) or stored == "resolve the paradox":
+        tags.add("explain")
+    if _TASK_EVALUATE.search(labelled):
+        tags.add("evaluate")
+    if _TASK_EXCEPT.search(stem):
+        tags.add("except")
+    # A reply is being asked about, unless the stem asks what follows from it.
+    replied = _ROLE_RESPONSE.search(labelled) and support != "stimulus"
+    if _TASK_ROLE.search(labelled) or replied or stored == "argument structure":
+        tags.add("role")
+    if _TASK_MAIN_CONCLUSION.search(labelled) or stored == "main conclusion":
+        tags.add("main_conclusion")
+    if _TASK_FLAW.search(labelled) or stored == "flaw":
+        tags.add("flaw")
+    # Sufficient first, because its phrasings are the explicit ones. "The
+    # farmer's conclusion is properly drawn if the argument assumes that" says
+    # both — "properly drawn if" and a bare "assumes that" — and it is the
+    # marker rather than the bare form that knows which question this is.
+    if _TASK_SUFFICIENT_ASSUMPTION.search(stem):
+        tags.add("sufficient_assumption")
+        # Supplying the missing premise is not inferring from the premises
+        # given, and "the conclusion follows logically if which one of the
+        # following is assumed" says both. The scope-and-force procedure is
+        # written for proving an answer from the stimulus, so the chain gets
+        # this question and the proof reading does not.
+        tags.discard("inference")
+    elif _TASK_NECESSARY_ASSUMPTION.search(stem):
+        tags.add("necessary_assumption")
+    if _CAUSAL_TASK.search(stem):
+        tags.add("causal_stem")
+    return frozenset(tags)
+
+
+def _reading_candidates(question: Question, tags: frozenset[str]) -> list[str]:
+    """Approaches for one Reading Comprehension question.
+
+    `passage_map` and `textual_proof` are unconditional, which is what
+    guarantees every Reading Comprehension question has at least two eligible
+    approaches and never falls back.
+    """
+    candidates = ["passage_map", "textual_proof"]
+    if is_comparative(question):
+        candidates.insert(0, "comparative_matrix")
+    if "purpose" in tags:
+        candidates.insert(0, "paragraph_function")
+    if "main_point" in tags:
+        candidates.insert(0, "main_point_synthesis")
+    # An explicit question about somebody's stance always earns the ledger. An
+    # attributed claim earns it only on a passage that actually stages two or
+    # more positions, because a ledger of one view is not a ledger and the gate
+    # will refuse it.
+    if "viewpoint" in tags or ("attribution" in tags and _passage_stages_a_debate(question)):
+        candidates.insert(0, "viewpoint_ledger")
+    return list(dict.fromkeys(candidates))
+
+
+def _passage_stages_a_debate(question: Question) -> bool:
+    # Case-folded, like every other pattern here. Read raw, a party named at the
+    # start of a sentence — "Critics of the reform argue" — does not match, so
+    # whether a passage stages a debate would depend on where in the sentence
+    # its parties happen to appear.
+    text = (question.passage.canonical_text or "" if question.passage else "").lower()
+    if not text:
+        return False
+    return len({match.group(0) for match in _PASSAGE_PARTIES.finditer(text)}) >= _MIN_PASSAGE_PARTIES
+
+
+def _reasoning_candidates(question: Question, tags: frozenset[str]) -> list[str]:
+    """Approaches for one Logical Reasoning question.
+
+    `argument_core` and `prephrase` are unconditional — every Logical Reasoning
+    question has an argument to split and an answer worth predicting — which is
+    what guarantees a non-empty candidate set here.
+    """
     stimulus = (question.stimulus or "").lower()
-    task_language = f"{question_type} {stem}"
     candidates = ["argument_core", "prephrase"]
-    if any(token in task_language for token in ("must", "infer", "strongly supported", "except", "principle")):
+    if tags & {"inference", "principle", "except", "point_at_issue"}:
         candidates.insert(0, "scope_precision")
-    if "assumption" in question_type and any(token in stem for token in ("required", "depends on", "necessary", "must be assumed")):
+    if "necessary_assumption" in tags:
         candidates.insert(0, "negation_test")
-    causal_stimulus = any(
-        token in stimulus
-        for token in ("cause", "caused", "causal", "resulted in", "led to", "leads to", "due to", "responsible for")
-    )
-    if "cause" in task_language or (causal_stimulus and any(token in task_language for token in ("strengthen", "weaken", "flaw", "explain"))):
+    # Either the task names causation, or the stimulus makes a causal claim and
+    # the task is one that acts on it. A causal stimulus under a "must be true"
+    # stem is not a causal question.
+    if "causal_stem" in tags or (
+        _CAUSAL_CLAIM.search(stimulus)
+        and tags & {"strengthen", "weaken", "flaw", "explain", "evaluate", "necessary_assumption"}
+    ):
         candidates.insert(0, "causal_audit")
-    conditional_stimulus = any(
-        token in f" {stimulus} "
-        for token in (" if ", " only if ", " unless ", " whenever ", " requires ", " all ", " no ")
-    )
-    if "conditional" in task_language or (conditional_stimulus and any(token in task_language for token in ("must", "parallel", "principle", "infer"))):
+    # Sufficient assumption belongs here rather than with the negation test.
+    # "Which one of the following, if assumed, allows the conclusion to be
+    # properly drawn" is asking for the missing link in a chain, which is what
+    # this approach builds; denying it, which is what the negation test does,
+    # answers a different question.
+    if _CONDITIONAL_OPERATOR.search(stimulus) and tags & {
+        "inference",
+        "parallel",
+        "principle",
+        "sufficient_assumption",
+    }:
         candidates.insert(0, "conditional_chain")
-    if "flaw" in task_language:
+    if "flaw" in tags:
         candidates.insert(0, "flaw_abstraction")
-    if any(token in task_language for token in ("role", "method", "conclusion")):
+    if tags & {"role", "main_conclusion"}:
         candidates.insert(0, "role_map")
     return list(dict.fromkeys(candidates))
+
+
+def _candidate_keys(question: Question) -> list[str]:
+    """Every approach eligible for one question, most specific first.
+
+    Two invariants hold by construction and are asserted over the whole bank by
+    `backend/scripts/audit_strategy_matching.py`:
+
+    * The section guarantee. A Reading Comprehension question only ever gets
+      Reading Comprehension approaches and a Logical Reasoning question only
+      ever gets Logical Reasoning ones, because the two branches below share no
+      keys.
+    * Never empty. Each branch opens with two unconditional approaches, so
+      `assign_strategy_trial` can never be handed an empty candidate list and
+      no fallback is ever needed.
+    """
+    tags = _task_tags(question)
+    if question.section == "Reading Comprehension":
+        return _reading_candidates(question, tags)
+    return _reasoning_candidates(question, tags)
 
 
 CONTROL_PROBABILITY = 0.25
 
 # The prompt arm: a named technique, and the only arm enforcement ever gates.
 VARIANT_PROMPT = "prompt"
+# The same offer, made mandatory. A named technique is suggested exactly as it
+# is on the prompt arm, and the gate refuses the answer until the operations
+# are on the record — there is no "Skip this one" on this arm.
+#
+# Deliberately a sub-arm of the prompt side rather than a fourth thing beside
+# control. `assign_strategy_trial` still draws prompt-versus-control at one
+# fixed threshold, so the propensity of *being offered a technique at all* is
+# still `1 - CONTROL_PROBABILITY` on every question in every stratum, and the
+# contrast the dashboard ranks on is identified by exactly the argument it was
+# identified by before. Which of the two prompt sub-arms a question lands on is
+# a second, separate draw made in `plan_forced_arms`.
+VARIANT_PROMPT_REQUIRED = "prompt_required"
 # The control arm as it is drawn today — a card appears on the question and
 # deliberately names no technique.
 VARIANT_CONTROL_VISIBLE = "control_visible"
@@ -393,21 +1068,64 @@ VARIANT_CONTROL_HIDDEN = "control"
 # than an accident of both having been called "control".
 CONTROL_VARIANTS = frozenset({VARIANT_CONTROL_HIDDEN, VARIANT_CONTROL_VISIBLE})
 
+# Both prompt labels are the same *offer* — a named technique appeared — and
+# both therefore belong on the treated side of the contrast that ranks
+# approaches. They differ in whether the offer could be declined, which is a
+# difference in the strength of the treatment rather than in who received it,
+# and the labels are kept apart on the row so that difference stays
+# recoverable. Everything that asks "was a technique offered here" reads this
+# set; only `plan_forced_arms` and the gate read the two labels apart.
+PROMPT_VARIANTS = frozenset({VARIANT_PROMPT, VARIANT_PROMPT_REQUIRED})
+
 
 def assign_strategy_trial(
     user_id: str,
     question: Question,
-    practice_style: str,
     position: int,
     *,
+    exposure: str,
     focus_types: list[str] | None = None,
 ) -> dict | None:
     """Assign a balanced within-student strategy trial on every question.
 
     The mega-litigation stays a clean measurement surface and gets no trial.
+    That used to be enforced here, by a `practice_style == "diagnostic"` guard
+    on an argument the only caller always passed as `"cases"` — a guard against
+    a call nobody makes, reading a parameter that had one legal value. The
+    invariant is real and is held where it is true: `create_diagnostic_session`
+    and the sectioned-form path build their items without ever coming here.
+    `test_exam.py` and `test_flow.py` assert it on the items, which is the
+    property that matters, rather than on this function's willingness to
+    refuse.
+
     Early trials force coverage across the candidate approaches; later trials
-    favor the best posterior performer while preserving a challenger and a 25%
-    control condition.
+    favor the best performer while keeping every other candidate reachable as a
+    challenger, and a 25% control condition throughout.
+
+    `exposure` names *this encounter* with this question — in practice the id of
+    the run being built. Every draw below is a threshold on a hash, so a draw is
+    only a draw across whatever the hash is allowed to vary over, and until this
+    argument existed the hash varied over (student, question, slot, style) and
+    nothing else. A question returning to the same slot therefore repeated its
+    entire assignment: the same arm, the same explore-or-exploit decision, the
+    same approach, every time, forever. That is invisible bank-wide, where the
+    control arm still measures 25% across the hash space, and severe for one
+    student, because review slots are fixed and the review half of a run is a
+    small recirculating set: a simulated student with roughly 900 attempts drew
+    control on 2.0% of their repeated questions against 25% by design, so the
+    student who practises most is the one whose control arm empties fastest and
+    who is told there is not enough evidence to name an approach. It also made
+    the `propensity` returned below untrue for exactly those questions — the
+    design's 0.25, where the mechanism's own probability conditional on
+    (question, slot) had collapsed to 0 or 1.
+
+    It is required rather than defaulted because that is the whole defect: a
+    draw that cannot say which encounter it belongs to is not a draw. Passing
+    the same value twice deliberately returns the same assignment, which is the
+    property that must not be lost — a student is never flipped mid-question —
+    and in the application the assignment is written onto the `SessionItem` once
+    at session creation and read from the row afterwards, so nothing recomputes
+    it mid-question in any case.
 
     The control condition used to be invisible: a quarter of questions simply
     arrived with nothing on them. It is now visible and neutral — a card still
@@ -432,10 +1150,11 @@ def assign_strategy_trial(
     only such surface, that reason is gone, and trialling every question makes
     the prompt-versus-control comparison converge about four times faster.
 
-    `focus_types` are the question types the last mega-litigation marked weak.
-    On those, coverage runs longer before the trial starts exploiting its
-    leader: a wrong early winner is most costly exactly where the student is
-    weakest, and that is where the extra exploration buys the most.
+    `focus_types` are the `type_focus.FocusType` pairs marked weak, each naming
+    the section its weakness was measured in. On those, coverage runs longer
+    before the trial starts exploiting its leader: a wrong early winner is most
+    costly exactly where the student is weakest, and that is where the extra
+    exploration buys the most.
 
     Intention-to-treat, not `strategy_applied`. Both the coverage count and the
     exploit-phase posterior below are built from every attempt *assigned* to
@@ -464,32 +1183,54 @@ def assign_strategy_trial(
     rather than self-reported finally makes a per-protocol or CACE fit
     possible, but that is a downstream analysis over `strategy_gate_status`. It
     is not what allocates the next trial.
+
+    `exposure` is what makes the draw below a draw. The arm used to be a hash
+    of (student, question, slot, style), which randomises across the space of
+    those four things and does *not* randomise across encounters: a review
+    question returning to the same slot re-drew the same arm forever. Bank-wide
+    that measured a healthy 25% control; for an individual heavy user it
+    collapsed to 2%, and the propensity column went on claiming 0.25 while the
+    mechanism's actual probability was 0 or 1. Passing the run's id makes each
+    encounter its own draw. It is keyword-only and has no default so the
+    substitution cannot be made again by omission. See `app/experiments.py`.
     """
-    if practice_style == "diagnostic":
-        return None
     candidates = _candidate_keys(question)
+    selection = None
     observations = (
         Attempt.query.filter(
             Attempt.user_id == user_id,
             Attempt.strategy_key.in_(candidates),
-            Attempt.strategy_variant == VARIANT_PROMPT,
+            Attempt.strategy_variant.in_(PROMPT_VARIANTS),
         ).all()
     )
     grouped: dict[str, list[Attempt]] = defaultdict(list)
     for observation in observations:
         grouped[observation.strategy_key].append(observation)
 
-    seed = f"{user_id}:{question.id}:{position}:{practice_style}"
+    seed = f"{user_id}:{question.id}:{position}:{exposure}"
     minimum = min((len(grouped[key]) for key in candidates), default=0)
     under_sampled = [key for key in candidates if len(grouped[key]) == minimum]
+    # Matched with the section, because `type_focus.rolling_focus` measures a
+    # type against the rest of its own section and hands back the pair. Matching
+    # on the name alone gave a Reading Comprehension Inference question the
+    # longer coverage earned by a weakness in Logical Reasoning Inference, which
+    # spends the trial's scarce observation budget on the wrong questions.
+    focus = {(entry.section, entry.question_type) for entry in focus_types or ()}
     coverage_target = (
-        FOCUS_COVERAGE_TRIALS if question.question_type in (focus_types or ()) else BASE_COVERAGE_TRIALS
+        FOCUS_COVERAGE_TRIALS
+        if (question.section, question.question_type) in focus
+        else BASE_COVERAGE_TRIALS
     )
     if minimum < coverage_target:
         index = int(_stable_fraction(f"coverage:{seed}") * len(under_sampled)) % len(under_sampled)
         key = under_sampled[index]
     else:
-        def score(candidate: str) -> float:
+        # Total prompt-arm observations this student has on this question's
+        # candidate set, which is what the uncertainty term below measures each
+        # candidate's own count against.
+        total_observations = sum(len(grouped[candidate]) for candidate in candidates)
+
+        def performance(candidate: str) -> float:
             values = grouped[candidate]
             correct = sum(value.is_correct for value in values)
             posterior_accuracy = (correct + 1) / (len(values) + 2)
@@ -507,21 +1248,400 @@ def assign_strategy_trial(
             explanation_mean = sum(value.explanation_score for value in graded) / len(graded)
             return posterior_accuracy * .50 + explanation_mean * .30 + pace * .14 + calibrated * .06
 
-        ranked = sorted(candidates, key=lambda candidate: (score(candidate), -len(grouped[candidate]), candidate), reverse=True)
-        explore = _stable_fraction(f"explore:{seed}") < .30
-        key = ranked[1 if explore and len(ranked) > 1 else 0]
+        def uncertainty(candidate: str) -> float:
+            """How much of this candidate's score it earns by being under-measured.
 
+            The standard UCB1 bonus, `sqrt(ln N / n)`, scaled. Nothing in
+            `performance` above grows as a candidate goes unsampled, so before
+            this term existed a candidate was never chosen *because* little was
+            known about it — only ever because it had done well, on however few
+            observations that verdict rested. Three observations is a very thin
+            basis for a verdict and it was a permanent one: an approach that
+            went 0 for 3 by luck sat at a posterior mean of 0.20 against a rival
+            at 0.80 and had no way back.
+
+            Two consequences worth being explicit about. When every candidate
+            carries the same number of observations the bonus is identical and
+            cancels, so this changes no ranking that a plain mean would have got
+            right; it only bites where the counts are lopsided. And because it
+            grows with `ln` of the total while each candidate's own count stays
+            put unless it is dealt, a candidate that keeps not being dealt keeps
+            gaining ground — so starvation is self-correcting rather than
+            self-reinforcing.
+
+            The coverage phase guarantees every candidate has at least
+            `BASE_COVERAGE_TRIALS` observations by the time this runs, so the
+            usual "infinity for an unplayed arm" case cannot arise here; the
+            guard is for safety, not for a reachable state.
+            """
+            played = len(grouped[candidate])
+            if not played:
+                return UNCERTAINTY_WEIGHT
+            return UNCERTAINTY_WEIGHT * math.sqrt(math.log(total_observations + 1) / played)
+
+        def score(candidate: str) -> float:
+            return performance(candidate) + uncertainty(candidate)
+
+        # Ties break toward the less-sampled candidate, for the same reason the
+        # bonus exists.
+        ranked = sorted(candidates, key=lambda candidate: (score(candidate), -len(grouped[candidate]), candidate), reverse=True)
+        if len(ranked) > 1 and _stable_fraction(f"explore:{seed}") < EXPLORE_PROBABILITY:
+            # The challenger is drawn from the whole tail, not just rank 1.
+            #
+            # This is the other half of the same defect. `ranked[1]` was the only
+            # challenger the exploit phase could ever deal, so on a question with
+            # four candidates two of them were unreachable and on one with six,
+            # four were — measured, on the widest question in this bank, as four
+            # of six approaches taking zero of 400 draws. Unreachable is worse
+            # than unfavoured, because a candidate that is never dealt never
+            # gains an observation, so its rank can never change and the
+            # exclusion is permanent on whatever three observations produced it.
+            #
+            # It also made the eligibility rules next door dangerous in a way
+            # they should not be. Widening a three-candidate set to four pushed
+            # whatever was rank 1 down to rank 2 and out of reach, so a spurious
+            # candidate that got lucky on its three coverage observations
+            # displaced a real approach for good — and nothing downstream could
+            # notice, because an approach that does not fit the question looks
+            # exactly like an approach that does not work.
+            #
+            # Weighting by the uncertainty bonus rather than picking uniformly
+            # sends the challenger draw at the least-measured candidate first,
+            # which is where a challenger is worth the most. Every candidate
+            # keeps a positive share, so nothing is locked out and nothing stays
+            # starved: `EXPLORE_PROBABILITY` is now spread across the tail
+            # instead of landing entirely on one member of it.
+            challengers = ranked[1:]
+            key = _weighted_pick(
+                challengers,
+                [uncertainty(candidate) for candidate in challengers],
+                _stable_fraction(f"challenger:{seed}"),
+            )
+        else:
+            key = ranked[0]
+
+        # Everything above is the `strategy_selection` layer's *treated* arm:
+        # the whole apparatus of posteriors, pace, calibration and explanation
+        # quality, deciding which of this question's candidate approaches the
+        # student is dealt. Until now it had no off arm, so nothing in the
+        # product could say whether ranking the candidates beats picking one of
+        # them at random. A quarter of eligible questions now do the latter.
+        #
+        # Eligible is narrow on purpose. Under the coverage target the code
+        # above is already drawing uniformly over the least-sampled
+        # candidates, so an arm there would be labelling two identical
+        # procedures; on a single-candidate question both arms return that
+        # candidate. Neither has a counterfactual, so neither is enrolled, and
+        # `selection` stays None for both.
+        if len(candidates) > 1:
+            selection = experiments.draw(
+                "strategy_selection", user_id, exposure=Exposure.item(exposure, position)
+            )
+            if not selection.on:
+                index = int(_stable_fraction(f"uniform:{seed}") * len(candidates)) % len(candidates)
+                key = candidates[index]
+
+    # The offer arm. Note what is no longer in this hash: the chosen approach.
+    #
+    # It used to read `control:{seed}:{key}`, which was harmless while the key
+    # was a deterministic function of history, and is not harmless now that the
+    # key depends on the `strategy_selection` draw above. Two randomisations
+    # sharing an input are not independent, and the whole argument for reading
+    # the selection layer inside the treated population — that conditioning on
+    # an independently drawn arm cannot confound — rests on them being so.
+    # Dropping the key from the hash costs nothing: the propensity is the same
+    # constant it always was, and the arm is no less random for depending on
+    # one thing fewer.
+    #
+    # The reason the selection draw happens above in *both* offer arms, rather
+    # than only in the treated one, is on the `strategy_selection` entry in
+    # `app/experiments.py`. Briefly: a control row carries the approach that
+    # would have been offered, and `_section_reading` compares an approach's
+    # prompt rows against that same approach's control rows. If the treated
+    # side's approaches were chosen by a mixture of ranked and uniform while
+    # the control side's were chosen by ranked alone, the two arms would be
+    # labelled by different processes and the offer comparison would stop being
+    # about the offer. The selection arm changes which approach a control
+    # question is filed under; it never changes what a control student sees,
+    # which is why the layer's own reading is restricted to the treated arm.
     variant = (
         VARIANT_CONTROL_VISIBLE
-        if _stable_fraction(f"control:{seed}:{key}") < CONTROL_PROBABILITY
+        if _stable_fraction(f"control:{seed}") < CONTROL_PROBABILITY
         else VARIANT_PROMPT
     )
-    # The assignment draw above is a single uniform threshold test, so the
-    # propensity of landing in the observed arm is exactly this constant —
-    # logged per-observation now so a later IPW/CACE fit (P1-6) does not have
-    # to reconstruct it from the hashing scheme after the fact.
+    # The assignment draw above is a single uniform threshold test over a hash
+    # that includes `exposure`, so the propensity of landing in the observed arm
+    # is exactly this constant on every encounter — logged per-observation so a
+    # later IPW/CACE fit (P1-6) does not have to reconstruct it from the hashing
+    # scheme after the fact.
+    #
+    # The `exposure` term in the seed is what makes that sentence true, and it
+    # was not true before. With the hash fixed for a (student, question, slot),
+    # a repeated question's arm was settled the first time it was met, so the
+    # mechanism's probability of control on every later encounter was 0 or 1
+    # while this column went on recording 0.25 or 0.75 — a number the mechanism
+    # had stopped using, on exactly the rows a heavy user has most of. The stored
+    # propensity now matches the draw that actually produced the arm.
     propensity = CONTROL_PROBABILITY if variant in CONTROL_VARIANTS else 1 - CONTROL_PROBABILITY
-    return {"key": key, "variant": variant, "propensity": propensity, "candidates_n": len(candidates)}
+    return {
+        "key": key,
+        "variant": variant,
+        "propensity": propensity,
+        "candidates_n": len(candidates),
+        "selection_arm": selection.arm if selection else None,
+        "selection_propensity": selection.propensity if selection else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Mandatory approaches
+#
+# Two decisions, and the whole design is in keeping them apart.
+#
+# WHICH STRATA to spend a mandatory question on is chosen to buy the most
+# information: the approach-by-question-type cells where the current estimate
+# is weakest. That is a legitimate adaptive-design choice and it is where
+# "enrich the strategy data" is actually satisfied.
+#
+# WHICH QUESTION inside those strata is made mandatory is a uniform draw. This
+# is the part that cannot be optimised without destroying the thing being
+# measured: if the mandatory questions were picked *because* of what they are,
+# assignment would correlate with question difficulty and the comparison would
+# stop supporting a causal reading — more data, worse recommendations, and a
+# dashboard that looked better while getting worse.
+#
+# Three properties hold the identification together.
+#
+# 1. Forcing never touches the prompt-versus-control draw. That draw is still
+#    the single fixed threshold in `assign_strategy_trial`, so the propensity
+#    of being offered a technique is `1 - CONTROL_PROBABILITY` on every
+#    question in every stratum, and the ranking in `_section_reading` rests on
+#    exactly the argument it rested on yesterday. What changes is the content
+#    of the offer on some of the treated questions, not who is treated.
+# 2. Inside the pool the draw is uniform without replacement, so every pool
+#    member shares one known inclusion probability, `quota / len(pool)`. Both
+#    winners and losers carry it, which is what makes the losers the honest
+#    comparison group for the winners.
+# 3. Pool membership is decided from the student's history and the question's
+#    stratum — both fixed before this question is served — and never from
+#    anything about this question's outcome. The need score below reads
+#    denominators and compliance. It never reads accuracy.
+# ---------------------------------------------------------------------------
+
+# Mandatory questions per run, and per day across runs. A run is eight to ten
+# questions, so two is roughly one in five: enough that a student meets the
+# mechanism most sessions, few enough that it reads as structure rather than as
+# the app having switched into a mode. The daily cap exists because three runs
+# in an evening is a normal evening.
+SESSION_FORCED_CAP = 2
+DAILY_FORCED_CAP = 6
+
+# How many weak cells one run invests in. Concentrating on the weakest few is
+# the point — spreading two mandatory questions across every stratum a run
+# touches would buy a little dose everywhere and never lift one cell over the
+# line — and three is small enough to concentrate while leaving the pool wide
+# enough that the draw inside it is not a formality.
+TARGET_STRATA = 3
+
+
+def stratum_key(strategy_key: str, question: Question) -> str:
+    """The cell an assignment is charged to.
+
+    Approach by question type, which is finer than the (section, approach) cell
+    `_section_reading` ranks on. Deliberately: the same approach behaves
+    differently on a necessary-assumption question and on a parallel-flaw one,
+    so that is the grain at which a gap in the record is worth spending a
+    mandatory question on. Being finer than the estimator's cell is safe in the
+    direction that matters — every stratum sits entirely inside exactly one
+    estimator cell, so investing in a stratum never mixes two cells together.
+    """
+    return f"{strategy_key}|{question.section}|{question.question_type or 'unspecified'}"
+
+
+def _census(user_id: str) -> tuple[dict[str, dict], set[str]]:
+    """Per-stratum counts, and the approaches this student has already proven.
+
+    One statement. Walking mapped `Attempt` rows to reach `.session_item.question`
+    would cost two lazy reads per answer on a path that runs every time a run is
+    created, which is the bill `focus.py` already documents paying once.
+    """
+    rows = (
+        Attempt.query.with_entities(
+            Attempt.strategy_key,
+            Attempt.strategy_variant,
+            Attempt.strategy_gate_status,
+            Attempt.is_correct,
+            Question.section,
+            Question.question_type,
+        )
+        .join(SessionItem, Attempt.session_item_id == SessionItem.id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .filter(Attempt.user_id == user_id, Attempt.strategy_key.isnot(None))
+        .all()
+    )
+    strata: dict[str, dict] = defaultdict(
+        lambda: {"prompt": 0, "control": 0, "gated": 0, "declined": 0}
+    )
+    proven: dict[str, list[bool]] = defaultdict(list)
+    for row in rows:
+        stratum = f"{row.strategy_key}|{row.section}|{row.question_type or 'unspecified'}"
+        cell = strata[stratum]
+        if row.strategy_variant in PROMPT_VARIANTS:
+            cell["prompt"] += 1
+            if row.strategy_gate_status in GATED_STATUSES:
+                cell["gated"] += 1
+                if row.strategy_gate_status in DECLINED_STATUSES:
+                    cell["declined"] += 1
+        elif row.strategy_variant in CONTROL_VARIANTS:
+            cell["control"] += 1
+        if row.strategy_gate_status == STATUS_SATISFIED:
+            proven[row.strategy_key].append(bool(row.is_correct))
+    mastered = {
+        key
+        for key, outcomes in proven.items()
+        if len(outcomes) >= MASTERY_MIN_SATISFIED
+        and sum(outcomes) / len(outcomes) >= MASTERY_MIN_ACCURACY
+    }
+    return strata, mastered
+
+
+def information_need(cell: dict) -> float:
+    """How much a mandatory question in this stratum is worth.
+
+    The product of two factors, and neither of them is an accuracy.
+
+    The first is the posterior variance of the cell's difference, up to the
+    constant p(1−p) that is near enough common across cells to drop:
+    Var(p̂₁ − p̂₀) ∝ 1 / `_contrast_sample`, and the prior strength in the
+    denominator is the same shrinkage `_shrink_toward` applies, so an empty
+    cell scores a finite maximum instead of dividing by zero. This is the
+    "fewest observations / weakest estimate" half of the rule.
+
+    The second is dilution. Forcing does not add rows — the run is the length
+    it is and the arms are drawn at the same rates either way — so what it buys
+    is *dose*. An intention-to-treat difference measured where half the offers
+    are declined is roughly half the effect of the technique, and needs four
+    times the sample to resolve. Where an offer is already taken up every time,
+    a mandatory question buys nothing at all and only costs the student a
+    minute, so the factor takes it to near zero. Smoothed as (declined + 1) /
+    (gated + 2), which puts a stratum nobody has been gated in yet at one half:
+    unknown compliance is worth investing in, but not as much as compliance
+    known to be poor.
+    """
+    effective = _contrast_sample(cell["prompt"], cell["control"])
+    dilution = (cell["declined"] + 1) / (cell["gated"] + 2)
+    return dilution / (PRIOR_STRENGTH + effective)
+
+
+def forced_today(user_id: str) -> int:
+    """Mandatory questions already dealt to this student since midnight UTC.
+
+    Counted on assignment rather than on completion. A student who starts three
+    runs and finishes none has still been asked three times, and the cap is
+    about how often the app insists, not about how much work got done.
+    """
+    since = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return (
+        SessionItem.query.join(StudySession, SessionItem.session_id == StudySession.id)
+        .filter(
+            StudySession.user_id == user_id,
+            StudySession.started_at >= since,
+            SessionItem.strategy_variant == VARIANT_PROMPT_REQUIRED,
+        )
+        .count()
+    )
+
+
+def plan_forced_arms(
+    user_id: str,
+    seed: str,
+    assignments: list[tuple[int, Question, dict | None]],
+    *,
+    already_forced_today: int | None = None,
+) -> dict[int, dict]:
+    """Choose which of a run's questions make their approach mandatory.
+
+    Returns one entry per position that carries a trial:
+
+    * `stratum` — the cell the assignment is charged to, recorded on every
+      trialled question including the control arm, so a later analysis can
+      condition on it without reconstructing it from the catalogue.
+    * `forcing_propensity` — the probability this position had of being drawn,
+      recorded on winners and losers alike. `None` means the position was never
+      in a pool and has no counterfactual: it is not part of the mandatory
+      comparison, only of the offer-versus-nothing one.
+    * `required` — whether it was drawn.
+
+    The whole run is planned at once rather than question by question because
+    the cap is a property of the run. Deciding position by position would make
+    each draw conditional on the ones before it, which is still a valid
+    sequential randomization but leaves every position carrying a different
+    propensity for reasons that have nothing to do with the stratum. Drawing a
+    fixed quota from a fixed pool gives every pool member the same probability,
+    exactly, and it is a probability that can be written down rather than
+    reconstructed.
+    """
+    plan: dict[int, dict] = {}
+    trialled = [
+        (position, question, trial)
+        for position, question, trial in assignments
+        if trial and trial.get("key")
+    ]
+    if not trialled:
+        return plan
+    # An arm label has to describe the treatment that was actually delivered.
+    # With gates switched off there is nothing to be mandatory about, so the
+    # run gets strata on its rows and no draw — rather than a required arm that
+    # required nothing.
+    forcing_on = current_app.config.get("STRATEGY_ENFORCEMENT_ENABLED", True)
+
+    strata, mastered = _census(user_id)
+    for position, question, trial in trialled:
+        plan[position] = {
+            "stratum": stratum_key(trial["key"], question),
+            "forcing_propensity": None,
+            "required": False,
+        }
+
+    eligible = [
+        position
+        for position, _question, trial in (trialled if forcing_on else ())
+        # Only the treated side can be made mandatory: gating the control arm
+        # would put a technique on it and there would be no control arm.
+        if trial["variant"] in PROMPT_VARIANTS
+        # Scaffolding a student has already cleared eight times at three
+        # quarters accuracy is a tax, and a stratum whose offers are already
+        # taken up has nothing left for a mandatory question to buy.
+        and trial["key"] not in mastered
+    ]
+    if not eligible:
+        return plan
+
+    ranked = sorted(
+        {plan[position]["stratum"] for position in eligible},
+        key=lambda stratum: (-information_need(strata[stratum]), stratum),
+    )
+    targeted = set(ranked[:TARGET_STRATA])
+    pool = [position for position in eligible if plan[position]["stratum"] in targeted]
+    remaining_today = DAILY_FORCED_CAP - (
+        forced_today(user_id) if already_forced_today is None else already_forced_today
+    )
+    quota = max(0, min(SESSION_FORCED_CAP, remaining_today, len(pool)))
+    if not quota:
+        return plan
+
+    propensity = quota / len(pool)
+    # Uniform without replacement, by ranking the pool on a hash of the run and
+    # the position. Every member's chance of finishing in the first `quota` is
+    # the same by symmetry, so the propensity above is exact rather than
+    # nominal, and a reload cannot redraw it.
+    drawn = set(
+        sorted(pool, key=lambda position: _stable_fraction(f"force:{seed}:{position}"))[:quota]
+    )
+    for position in pool:
+        plan[position]["forcing_propensity"] = propensity
+        plan[position]["required"] = position in drawn
+    return plan
 
 
 # Below this many observations *in a single arm*, a swing in the raw accuracy
@@ -657,28 +1777,36 @@ CONTRAST_EVIDENCE_GRADES: tuple[tuple[int, str], ...] = ((10, "baseline"), (25, 
 MIN_CONTRAST_SAMPLE = CONTRAST_EVIDENCE_GRADES[0][0]
 
 
-def _arm_rate(sample: list[Attempt]) -> float:
+def _arm_rate(sample: list[Attempt], propensity=lambda value: value.strategy_propensity) -> float:
     """Accuracy of one arm, inverse-propensity weighted.
 
-    The Hájek estimator: Σ(y/π) / Σ(1/π) over the arm, with `strategy_propensity`
+    The Hájek estimator: Σ(y/π) / Σ(1/π) over the arm, with a logged propensity
     as π. That column is logged per observation at assignment time precisely so
     a weighted fit does not have to reconstruct the hashing scheme after the
     fact (P0-8), and this is that fit.
 
-    Today `assign_strategy_trial` draws against a single constant threshold, so
-    π is the same for every observation inside an arm and the weights cancel
-    exactly — this returns the plain mean, which is the correct answer for a
-    constant propensity rather than a coincidence. It stops being a no-op the
-    moment the allocation is ever made to vary, which is the situation the
-    column exists for. Observations predating the column, or carrying a
-    nonsensical one, fall back to unit weight rather than being dropped:
-    dropping them would break intention-to-treat.
+    For the offer-versus-nothing contrast, π is `strategy_propensity`:
+    `assign_strategy_trial` still draws that against a single constant
+    threshold in every stratum, so the weights cancel exactly and this returns
+    the plain mean — the correct answer for a constant propensity rather than a
+    coincidence.
+
+    For the mandatory-versus-optional contrast it is
+    `strategy_forcing_propensity`, and there the weights do not cancel: that
+    draw allocates a fixed quota over a pool whose size varies from run to run,
+    on purpose, because the pool is chosen to be the strata worth investing in.
+    Weighting is what makes those observations comparable, and this is the case
+    the column was added for.
+
+    Observations predating a column, or carrying a nonsensical one, fall back
+    to unit weight rather than being dropped: dropping them would break
+    intention-to-treat.
     """
     if not sample:
         return 0.0
     weights = [
-        1.0 / value.strategy_propensity
-        if value.strategy_propensity and 0 < value.strategy_propensity <= 1
+        1.0 / propensity(value)
+        if propensity(value) and 0 < propensity(value) <= 1
         else 1.0
         for value in sample
     ]
@@ -712,10 +1840,13 @@ def _contrast_sample(prompt_sample: int, control_sample: int) -> float:
     by the *smaller* arm. 200 prompted questions against 4 controls is a
     four-observation comparison wearing a large number, and this is the
     quantity that says so.
+
+    One implementation, in `experiments`, now that this module imports it. It
+    was briefly copied there while both files were being rewritten at once; two
+    copies of an estimator is two things to keep in step and the merge note
+    asked for this.
     """
-    if prompt_sample <= 0 or control_sample <= 0:
-        return 0.0
-    return 1.0 / (1.0 / prompt_sample + 1.0 / control_sample)
+    return experiments.contrast_sample(prompt_sample, control_sample)
 
 
 def _contrast_grade(effective: float) -> str:
@@ -748,6 +1879,79 @@ def _contrast(prompted: list[Attempt], controls: list[Attempt], baseline: float)
         "contrast_evidence": _contrast_grade(effective),
         "eligible": effective >= MIN_CONTRAST_SAMPLE,
     }
+
+
+def _in_forcing_pool(value: Attempt) -> bool:
+    """Whether this observation took part in a mandatory draw at all.
+
+    A propensity strictly between zero and one means the question was in a pool
+    and could have gone either way, which is the only situation in which the
+    two mandatory arms are comparable. Three kinds of row are excluded and each
+    for the same reason — no counterfactual:
+
+    * `None` — never in a pool. Most questions, and every row written before
+      mandatory approaches existed.
+    * `1.0` — a pool no larger than the quota, so every member was drawn. Rare,
+      and it happens when a run only touches one weak stratum at one position.
+    * `0.0` — never written, but excluded by the same rule rather than by
+      trusting that it never will be.
+    """
+    propensity = value.strategy_forcing_propensity
+    return propensity is not None and 0.0 < propensity < 1.0
+
+
+def _forcing_contrast(prompted: list[Attempt], baseline: float) -> dict:
+    """Mandatory approaches against optional ones, inside the pool.
+
+    A second, narrower estimand than the one the dashboard ranks on, and a
+    different question: not "does an offer help" but "does insisting on it
+    help". It exists because insisting is now a thing the app does, and a
+    mechanism that changes what students do should be measurable rather than
+    merely believed in.
+
+    Two restrictions do all the identification work.
+
+    Restricted to the pool. A mandatory question was drawn from a set chosen
+    for being weakly measured, so comparing it against every optional question
+    on the record would compare weak strata against strong ones and call the
+    difference enforcement. Only questions that were in a pool — which is to
+    say, that could have been drawn and were not — are the comparison group.
+
+    Weighted by the draw's own probability. Inside a pool every member shares
+    one inclusion probability, but pools differ in size and quota across runs,
+    so the arms are balanced by Hájek weights rather than by assumption.
+
+    Both arms are shrunk toward the section baseline exactly as the main
+    contrast is, so a thin comparison reports something near zero rather than
+    something dramatic.
+    """
+    pooled = [value for value in prompted if _in_forcing_pool(value)]
+    required = [value for value in pooled if value.strategy_variant == VARIANT_PROMPT_REQUIRED]
+    optional = [value for value in pooled if value.strategy_variant == VARIANT_PROMPT]
+    effective = _contrast_sample(len(required), len(optional))
+    result = {
+        "required_sample": len(required),
+        "optional_sample": len(optional),
+        "required_complied": sum(value.strategy_gate_status == STATUS_SATISFIED for value in required),
+        "optional_complied": sum(value.strategy_gate_status == STATUS_SATISFIED for value in optional),
+        "stood_down": sum(value.strategy_gate_status == STATUS_STOOD_DOWN for value in required),
+        "contrast_sample": round(effective, 1),
+        "adjusted_lift": None,
+    }
+    if not effective:
+        return result
+    adjusted_required = _shrink_toward(
+        _arm_rate(required, lambda value: value.strategy_forcing_propensity),
+        len(required),
+        baseline,
+    )
+    adjusted_optional = _shrink_toward(
+        _arm_rate(optional, lambda value: 1.0 - value.strategy_forcing_propensity),
+        len(optional),
+        baseline,
+    )
+    result["adjusted_lift"] = round((adjusted_required - adjusted_optional) * 100, 1)
+    return result
 
 
 def _other_arm(sample: int) -> int:
@@ -828,7 +2032,8 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
         by_key[attempt.strategy_key].append(attempt)
 
     trials = len(attempts)
-    prompt_trials = sum(attempt.strategy_variant == VARIANT_PROMPT for attempt in attempts)
+    prompt_trials = sum(attempt.strategy_variant in PROMPT_VARIANTS for attempt in attempts)
+    required_trials = sum(attempt.strategy_variant == VARIANT_PROMPT_REQUIRED for attempt in attempts)
     observed = sum(attempt.is_correct for attempt in attempts) / trials if trials else 0.0
     # Where both arms sit under the null. Shrunk toward the population itself so
     # that a section holding six answers does not hand the arms a centre that is
@@ -844,13 +2049,15 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
         if not strategy:
             continue
         result = _strategy_result(key, strategy, values)
+        prompted = [value for value in values if value.strategy_variant in PROMPT_VARIANTS]
         result.update(
             _contrast(
-                [value for value in values if value.strategy_variant == VARIANT_PROMPT],
+                prompted,
                 [value for value in values if value.strategy_variant in CONTROL_VARIANTS],
                 baseline,
             )
         )
+        result["forcing"] = _forcing_contrast(prompted, baseline)
         results.append(result)
     results.sort(
         key=lambda result: (
@@ -866,6 +2073,7 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
         "short_label": short_label,
         "trials": trials,
         "prompt_trials": prompt_trials,
+        "required_trials": required_trials,
         "control_trials": trials - prompt_trials,
         "strategies_tested": len(results),
         "minimum_contrast_sample": MIN_CONTRAST_SAMPLE,
@@ -890,6 +2098,22 @@ def _section_reading(section: str, short_label: str, attempts: list[Attempt]) ->
             "note": (
                 "Counted by which questions offered the approach, not by whether you said you used "
                 "it — sorting on that would quietly compare the questions you recognised."
+            ),
+            # What the ranking above now assumes, written down where an analyst
+            # reading the payload will find it. Both prompt sub-arms are pooled
+            # on the treated side, because both are the same offer and the
+            # draw that separates them happens after the one being estimated
+            # here. The estimand is therefore the effect of the offer *regime*
+            # as it is currently deployed — a mixture of suggestions and
+            # requirements whose proportions move as strata fill up — rather
+            # than the effect of a fixed treatment. `strategy_variant` and
+            # `strategy_stratum` are on every row so a later analysis can
+            # split the mixture instead of inheriting this choice.
+            "treated_arms": sorted(PROMPT_VARIANTS),
+            "regime_note": (
+                "Suggested and required questions are pooled as one offer. Which of the two a "
+                "question became was drawn separately, after this comparison's own draw, and "
+                "never changed the odds of being offered anything at all."
             ),
         },
     }
@@ -993,18 +2217,17 @@ def _strategy_result(key: str, strategy: dict, values: list[Attempt]) -> dict:
     `_section_reading` instead of the latter being a display-time slice of the
     former.
     """
-    prompted = [value for value in values if value.strategy_variant == VARIANT_PROMPT]
+    prompted = [value for value in values if value.strategy_variant in PROMPT_VARIANTS]
     controls = [value for value in values if value.strategy_variant in CONTROL_VARIANTS]
     applied = sum(value.strategy_applied is True for value in prompted)
     skipped = sum(value.strategy_applied is False for value in prompted)
     # Verified compliance, kept strictly apart from the self-reported kind
     # above. `enforced` is how many prompt-arm questions actually carried a
     # gate, so a rate built from these two is a rate of observed behaviour.
-    enforced = sum(
-        value.strategy_gate_status in {"satisfied", "skipped", "attested"} for value in prompted
-    )
-    gate_satisfied = sum(value.strategy_gate_status == "satisfied" for value in prompted)
-    gate_skipped = sum(value.strategy_gate_status == "skipped" for value in prompted)
+    enforced = sum(value.strategy_gate_status in GATED_STATUSES for value in prompted)
+    gate_satisfied = sum(value.strategy_gate_status == STATUS_SATISFIED for value in prompted)
+    gate_skipped = sum(value.strategy_gate_status == STATUS_SKIPPED for value in prompted)
+    gate_stood_down = sum(value.strategy_gate_status == STATUS_STOOD_DOWN for value in prompted)
 
     def metrics(sample: list[Attempt]) -> tuple[int, int, int, int | None, int | None, int]:
         if not sample:
@@ -1062,6 +2285,10 @@ def _strategy_result(key: str, strategy: dict, values: list[Attempt]) -> dict:
         "enforced": enforced,
         "gate_satisfied": gate_satisfied,
         "gate_skipped": gate_skipped,
+        "gate_stood_down": gate_stood_down,
+        "required_sample": sum(
+            value.strategy_variant == VARIANT_PROMPT_REQUIRED for value in prompted
+        ),
         "ranking_score": round(ranking_score, 2),
         **_result_copy(
             strategy, correct, sample, control_correct, control_sample, applied, sample, gate_satisfied, enforced
@@ -1149,5 +2376,428 @@ def strategy_performance(user_id: str) -> dict:
             "We show your running totals, not a verdict. Telling a real personal effect from luck takes far more questions than one person usually "
             "answers, so no approach here is ever labelled \u201cconfirmed\u201d \u2014 including this one, and including the one at the top of this "
             "list. This measures your own practice, not your score."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Reading the trial across students
+#
+# Everything above this line answers "what is this student's running total?"
+# and is careful never to call it a verdict, for a reason the file states in
+# `strategy_performance`: a per-student verdict on one of twelve approaches
+# needs thousands of observations, which one person will not answer.
+#
+# The awkward consequence, and the reason this section exists: the app has been
+# running a randomised trial whose per-student output it knows is unusable,
+# while never computing the estimate the same randomisation fully supports. The
+# randomisation needs no repair for it. Arms are drawn independently per
+# encounter, the propensity is on the row, intention-to-treat is held
+# throughout, and prompt and control labels are kept apart. The only thing
+# missing was a query without a `WHERE user_id =` clause.
+#
+# These functions are that query. Nothing here changes a draw, a card, a
+# schedule or a panel. Read them from `tools/audit/strategy_trial_population.py`.
+# ---------------------------------------------------------------------------
+
+# A cell needs both arms and enough of each before it is worth printing a
+# difference for. Same threshold as the per-student panel, applied to the same
+# quantity, so a cohort reading and a personal one are not graded on different
+# scales.
+POPULATION_MIN_STUDENTS = 2
+
+
+def _student_stratified(rows: list[Attempt], treated, control) -> dict:
+    """The within-student difference, averaged over students.
+
+    The trial randomises *within* a student, so the plain pooled difference is
+    already unbiased and this is not a correction for bias. It is a check, and
+    a more efficient estimator besides.
+
+    Students differ enormously in accuracy, and they contribute wildly
+    different numbers of rows. Pooling therefore weights the overall difference
+    toward whoever answered most, and if that student's arm mix happens to be
+    lopsided the pooled figure inherits it. Computing each student's own
+    prompt-minus-control first, then averaging, cannot do that: every student
+    is compared only against themselves.
+
+    The two estimates should agree closely. When they do not, something is
+    wrong with the allocation rather than with the approach, and the gap is
+    reported beside them rather than resolved by preferring one — a divergence
+    is the finding.
+    """
+    per_student: dict[str, list[Attempt]] = defaultdict(list)
+    for row in rows:
+        per_student[row.user_id].append(row)
+
+    total_weight = 0.0
+    weighted = 0.0
+    students = 0
+    for values in per_student.values():
+        prompted = [value for value in values if treated(value)]
+        controls = [value for value in values if control(value)]
+        weight = _contrast_sample(len(prompted), len(controls))
+        if not weight:
+            continue
+        students += 1
+        total_weight += weight
+        weighted += weight * (_arm_rate(prompted) - _arm_rate(controls))
+    if not total_weight:
+        return {"lift": None, "students": 0, "answers_used": 0}
+    used = sum(
+        len(values)
+        for values in per_student.values()
+        if _contrast_sample(
+            sum(treated(value) for value in values),
+            sum(control(value) for value in values),
+        )
+    )
+    return {
+        "lift": round(weighted / total_weight * 100, 1),
+        "students": students,
+        "answers_used": used,
+    }
+
+
+def _half_width(treated: list[Attempt], control: list[Attempt]) -> float | None:
+    """95% half-width, in points, on the difference of the two arms' rates.
+
+    A threshold on the effective sample answers "is this worth printing". It
+    does not answer "is this distinguishable from zero", and at cohort scale
+    the two come apart badly: `MIN_CONTRAST_SAMPLE` is set for a student's
+    running total, and a pooled cell clears it by an order of magnitude while
+    still being pure noise. So the cohort readings carry an interval.
+
+    1.96·√(p₁(1−p₁)/n₁ + p₀(1−p₀)/n₀), on the unweighted rates. That is exact
+    while the propensity is a constant within the arm, which is the case for
+    both draws read here — the Hájek weights cancel and the estimate is the
+    plain mean. It would understate the width if a propensity ever varied
+    within an arm, and the note beside it says so rather than the interval
+    quietly getting it wrong.
+    """
+    if not treated or not control:
+        return None
+    variance = 0.0
+    for arm in (treated, control):
+        rate = sum(1 for value in arm if value.is_correct) / len(arm)
+        variance += rate * (1 - rate) / len(arm)
+    return round(1.96 * (variance**0.5) * 100, 1)
+
+
+def _population_cell(rows: list[Attempt], baseline: float) -> dict:
+    """One approach in one section, pooled across every student who met it."""
+    prompted = [row for row in rows if row.strategy_variant in PROMPT_VARIANTS]
+    controls = [row for row in rows if row.strategy_variant in CONTROL_VARIANTS]
+    effective = _contrast_sample(len(prompted), len(controls))
+    pooled_with = _shrink_toward(_arm_rate(prompted), len(prompted), baseline)
+    pooled_without = _shrink_toward(_arm_rate(controls), len(controls), baseline)
+    stratified = _student_stratified(
+        rows,
+        lambda row: row.strategy_variant in PROMPT_VARIANTS,
+        lambda row: row.strategy_variant in CONTROL_VARIANTS,
+    )
+    pooled_lift = round((pooled_with - pooled_without) * 100, 1) if effective else None
+    half_width = _half_width(prompted, controls)
+    return {
+        "sample": len(prompted),
+        "control_sample": len(controls),
+        "students": len({row.user_id for row in rows}),
+        "students_with_both_arms": stratified["students"],
+        "contrast_sample": round(effective, 1),
+        "contrast_evidence": _contrast_grade(effective),
+        "eligible": effective >= MIN_CONTRAST_SAMPLE
+        and stratified["students"] >= POPULATION_MIN_STUDENTS,
+        "half_width": half_width,
+        "separates_from_zero": bool(
+            pooled_lift is not None and half_width is not None and abs(pooled_lift) > half_width
+        ),
+        "pooled_lift": pooled_lift,
+        "within_student_lift": stratified["lift"],
+        # The two estimators disagreeing is a statement about the allocation,
+        # not about the approach. Reported as its own number so it is read.
+        "estimator_gap": (
+            round(abs(pooled_lift - stratified["lift"]), 1)
+            if pooled_lift is not None and stratified["lift"] is not None
+            else None
+        ),
+    }
+
+
+def strategy_population_reading() -> dict:
+    """The trial, read across every student at once, per section and approach.
+
+    Intention-to-treat on the offer, exactly as the per-student panel is: an
+    attempt belongs to the arm it was assigned, and `strategy_applied` is not
+    consulted. Hájek-weighted by the recorded propensity. Both arms shrunk
+    toward the section's own accuracy, which is where they sit if the offer
+    changes nothing.
+
+    Sections are kept apart for the reason `strategy_performance` keeps them
+    apart — they are measured on different approaches — and never pooled into a
+    single number.
+
+    Two estimates per cell rather than one, and the reason is in
+    `_student_stratified`. Read-only, with no route and nothing cached.
+    """
+    observations = (
+        Attempt.query.options(
+            joinedload(Attempt.session_item).joinedload(SessionItem.question)
+        )
+        .filter(Attempt.strategy_key.isnot(None))
+        .order_by(Attempt.created_at.asc())
+        .all()
+    )
+    by_section: dict[str, list[Attempt]] = defaultdict(list)
+    for observation in observations:
+        by_section[observation.session_item.question.section].append(observation)
+
+    sections = []
+    for section, short_label in SECTIONS:
+        rows = by_section.get(section, [])
+        trials = len(rows)
+        observed = sum(row.is_correct for row in rows) / trials if trials else 0.0
+        baseline = shrink_toward_prior(observed, trials)
+        by_key: dict[str, list[Attempt]] = defaultdict(list)
+        for row in rows:
+            by_key[row.strategy_key].append(row)
+        results = []
+        for key, values in by_key.items():
+            strategy = STRATEGIES.get(key)
+            if not strategy:
+                continue
+            results.append(
+                {
+                    "key": key,
+                    "title": strategy["title"],
+                    **_population_cell(values, baseline),
+                }
+            )
+        results.sort(
+            key=lambda result: (
+                result["eligible"],
+                result["pooled_lift"] if result["pooled_lift"] is not None else -1e3,
+            ),
+            reverse=True,
+        )
+        sections.append(
+            {
+                "section": section,
+                "short_label": short_label,
+                "students": len({row.user_id for row in rows}),
+                "trials": trials,
+                "baseline_accuracy": round(baseline * 100, 1),
+                "minimum_contrast_sample": MIN_CONTRAST_SAMPLE,
+                "results": results,
+                # Two different claims, kept apart the way `_section_reading`
+                # keeps them apart. "Measured" means both arms of that cell
+                # have filled enough for a difference to be worth printing;
+                # it says nothing about the direction. "Leading" is the subset
+                # that is ahead *and* whose interval clears zero. A cell can be
+                # well measured and level, which is a result rather than an
+                # absence of one.
+                #
+                # The interval, not just the threshold, because the threshold
+                # is the per-student one and a pooled cell clears it by an
+                # order of magnitude while still being noise. Without the
+                # second condition this list named a three-point difference on
+                # a ±8-point interval.
+                "measured": [result["key"] for result in results if result["eligible"]],
+                "leading": [
+                    result["key"]
+                    for result in results
+                    if result["eligible"]
+                    and (result["pooled_lift"] or 0) >= 0.5
+                    and result["separates_from_zero"]
+                ],
+            }
+        )
+    return {
+        "students": len({row.user_id for row in observations}),
+        "trials": len(observations),
+        "sections": sections,
+        "basis": (
+            "intention-to-treat on the offer, Hájek-weighted by the recorded propensity, "
+            "both arms shrunk toward the section's own accuracy, reported per section and "
+            "never pooled across them"
+        ),
+        "note": (
+            "A cohort reading. It says nothing about any individual student, and the "
+            "per-student panel is unchanged by its existence."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# The nested layer: which approach, given that one is offered
+# ---------------------------------------------------------------------------
+
+
+def strategy_selection_reading() -> dict:
+    """Ranked selection against uniform selection, inside the treated arm only.
+
+    The restriction is the whole design. A student in the control arm of the
+    offer trial is shown no approach, so which approach the selector picked
+    changed nothing they experienced; including those rows would add pure noise
+    in proportion to the control share and pull any real difference toward
+    zero. The arm is drawn in both offer arms — see `assign_strategy_trial` for
+    why it must be — and read in one.
+
+    Conditioning here is safe because the two draws are independent by
+    construction rather than by inspection: the offer hash no longer contains
+    the chosen approach. `strategy_selection_health` is the check on that, and
+    it is a per-student check, because the pooled share stays at a healthy
+    quarter in exactly the failure that matters.
+    """
+    rows = (
+        Attempt.query.options(
+            joinedload(Attempt.session_item).joinedload(SessionItem.question)
+        )
+        .filter(
+            Attempt.strategy_selection_arm.isnot(None),
+            Attempt.strategy_variant.in_(PROMPT_VARIANTS),
+        )
+        .all()
+    )
+    by_section: dict[str, list[Attempt]] = defaultdict(list)
+    for row in rows:
+        by_section[row.session_item.question.section].append(row)
+
+    def rate(values):
+        return _arm_rate(values, propensity=lambda value: value.strategy_selection_propensity)
+
+    sections = []
+    for section, short_label in SECTIONS:
+        values = by_section.get(section, [])
+        trials = len(values)
+        observed = sum(value.is_correct for value in values) / trials if trials else 0.0
+        baseline = shrink_toward_prior(observed, trials)
+        ranked = [value for value in values if value.strategy_selection_arm == "ranked"]
+        uniform = [value for value in values if value.strategy_selection_arm == "uniform"]
+        effective = _contrast_sample(len(ranked), len(uniform))
+        stratified = _student_stratified(
+            values,
+            lambda value: value.strategy_selection_arm == "ranked",
+            lambda value: value.strategy_selection_arm == "uniform",
+        )
+        sections.append(
+            {
+                "section": section,
+                "short_label": short_label,
+                "trials": trials,
+                "students": len({value.user_id for value in values}),
+                "ranked_sample": len(ranked),
+                "uniform_sample": len(uniform),
+                "baseline_accuracy": round(baseline * 100, 1),
+                "contrast_sample": round(effective, 1),
+                "contrast_evidence": _contrast_grade(effective),
+                "eligible": effective >= MIN_CONTRAST_SAMPLE,
+                "half_width": _half_width(ranked, uniform),
+                "pooled_lift": round(
+                    (
+                        _shrink_toward(rate(ranked), len(ranked), baseline)
+                        - _shrink_toward(rate(uniform), len(uniform), baseline)
+                    )
+                    * 100,
+                    1,
+                )
+                if effective
+                else None,
+                "within_student_lift": stratified["lift"],
+            }
+        )
+    for section in sections:
+        section["separates_from_zero"] = bool(
+            section["pooled_lift"] is not None
+            and section["half_width"] is not None
+            and abs(section["pooled_lift"]) > section["half_width"]
+        )
+    return {
+        "layer": "strategy_selection",
+        "population": "questions in the prompt arm of the offer trial",
+        "sections": sections,
+        "basis": (
+            "intention-to-treat over the selection arm, restricted to offered questions, "
+            "Hájek-weighted by the recorded selection propensity"
+        ),
+    }
+
+
+def _selection_shares(rows) -> dict:
+    """Realised uniform-arm share, split by which offer arm the row was in."""
+    per_student: dict[str, dict[str, list[int]]] = defaultdict(
+        lambda: {"prompt": [], "control": []}
+    )
+    for user_id, arm, variant in rows:
+        side = "prompt" if variant in PROMPT_VARIANTS else "control"
+        per_student[user_id][side].append(arm == "uniform")
+    return per_student
+
+
+def strategy_selection_health() -> dict:
+    """Whether the selection draw is still a draw, and still independent.
+
+    Two failures, and the second is the one the structure of this layer was
+    argued over.
+
+    *The draw stops drawing.* Per student, because that is the quantity that
+    broke last time: the strategy trial's control arm read 25.0% across the
+    bank while individual heavy users sat near 2%, and no aggregate could see
+    it. `min_uniform_share` is the number.
+
+    *The draw stops being independent of the offer draw.* If the two arms were
+    ever coupled — by the offer hash taking the chosen approach back as an
+    input, which is exactly what it used to do — then the uniform share inside
+    the prompt arm would drift away from the uniform share inside the control
+    arm. Both would still average to a healthy quarter overall, which is why
+    `pooled_uniform_share` is reported and is not the check. `max_arm_gap` is
+    the check: the largest per-student difference between those two shares. It
+    should be sampling noise and nothing else.
+    """
+    rows = (
+        db.session.query(
+            Attempt.user_id, Attempt.strategy_selection_arm, Attempt.strategy_variant
+        )
+        .filter(Attempt.strategy_selection_arm.isnot(None))
+        .all()
+    )
+    per_student = _selection_shares(rows)
+    draws = len(rows)
+    uniform = sum(1 for _user, arm, _variant in rows if arm == "uniform")
+
+    shares = []
+    gaps = []
+    for sides in per_student.values():
+        both = sides["prompt"] + sides["control"]
+        if len(both) >= experiments.HEALTH_MIN_DRAWS:
+            shares.append(sum(both) / len(both))
+        if (
+            len(sides["prompt"]) >= experiments.HEALTH_MIN_DRAWS
+            and len(sides["control"]) >= experiments.HEALTH_MIN_DRAWS
+        ):
+            gaps.append(
+                abs(
+                    sum(sides["prompt"]) / len(sides["prompt"])
+                    - sum(sides["control"]) / len(sides["control"])
+                )
+            )
+    design = experiments.LAYERS["strategy_selection"].share("uniform")
+    return {
+        "layer": "strategy_selection",
+        "students": len(per_student),
+        "draws": draws,
+        "design_uniform_share": round(design, 3),
+        "pooled_uniform_share": round(uniform / draws, 3) if draws else None,
+        "students_measured": len(shares),
+        "min_uniform_share": round(min(shares), 3) if shares else None,
+        "max_uniform_share": round(max(shares), 3) if shares else None,
+        "students_off_design": sum(
+            1 for share in shares if abs(share - design) > experiments.HEALTH_TOLERANCE * design
+        ),
+        "students_with_both_offer_arms": len(gaps),
+        "max_arm_gap": round(max(gaps), 3) if gaps else None,
+        "min_draws_for_a_student_reading": experiments.HEALTH_MIN_DRAWS,
+        "note": (
+            "`max_arm_gap` is the independence check. The pooled share cannot see the "
+            "failure it exists for: two coupled draws still average to the design."
         ),
     }

@@ -68,10 +68,12 @@ right now always gets their weakest material; the schedule decides the
 from __future__ import annotations
 
 import math
+import random
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import joinedload
 
+from .extensions import db
 from .models import Attempt, Question, ReviewQueueItem, utcnow
 
 
@@ -272,7 +274,10 @@ def derive_grade(attempt: Attempt) -> int:
 
 
 def elapsed_days_for(card: ReviewQueueItem, now: datetime | None = None) -> float:
-    now = now or utcnow()
+    # `now` is normalised as well as the reference, because a caller may hand
+    # over a timestamp read back off a row rather than one it just made, and
+    # SQLite returns those without a zone.
+    now = _aware(now) if now else utcnow()
     reference = card.last_reviewed_at or card.created_at
     if reference is None:
         return 0.0
@@ -310,6 +315,66 @@ def apply_review(card: ReviewQueueItem, attempt: Attempt, *, now: datetime | Non
     return grade
 
 
+# --- Calibration: the scheduler scored against its own predictions ----------
+#
+# `review_scheduling` is the one layer in `app/experiments.py` with no holdout,
+# and the reason is on its registry entry rather than here. In short: the
+# exposure would have to be per student, because a card put on a 21-day
+# interval by one arm is still on it when the next run starts; per-student
+# means the sample grows at the rate accounts are opened rather than the rate
+# questions are answered; and the off arm is not a milder treatment but a
+# scheduler the team believes is worse, shipped for the whole life of a trial
+# that cannot finish. `tools/audit/measurement_cost.py` puts it near three and
+# a half thousand students. That is a control arm nobody would believe in.
+#
+# What is here instead is not a consolation prize. FSRS is a *predictive*
+# model: at the moment a card is served it says, in a number, how likely the
+# student is to recall it. That is a falsifiable claim on every single review,
+# and scoring it needs no comparison group at all — a student on their own
+# supplies both the prediction and the outcome.
+#
+# It also happens to point at the part most likely to be wrong. FSRS itself is
+# fitted on hundreds of millions of reviews and is not this app's invention.
+# `derive_grade` is: it maps correctness, pace, confidence, explanation quality
+# and whether the answer was changed onto the four grades FSRS expects, with
+# weights chosen here. Wrong grades give wrong stabilities, and wrong
+# stabilities give a calibration curve that is displaced or flat.
+#
+# Displaced and flat are different findings and the reading separates them. A
+# curve that is monotone but sits below the diagonal means the grades are too
+# generous and the intervals too long — a tuning problem. A flat curve means
+# the per-card memory state carries no information about recall at all, which
+# is a null result for the whole layer, and one no holdout was needed to get.
+
+
+def predicted_recall(card: ReviewQueueItem, now: datetime | None = None) -> float | None:
+    """FSRS's own claim about this card, right now, or None if it makes none.
+
+    Deliberately the raw forgetting curve rather than `card_retrievability`.
+    That function reports 0.0 for a relearning card because 0.0 is where a
+    just-missed question belongs in a queue; here the question is what the
+    model predicts, and overriding the prediction before scoring it would make
+    the score a test of the override.
+
+    None where there is no memory state yet. A card the model has never graded
+    is one it has not made a claim about, and scoring it against an invented
+    0.0 would fill the bottom bucket with first encounters and make the whole
+    curve look well calibrated for a reason that has nothing to do with FSRS.
+    """
+    if not card.stability or card.stability <= 0:
+        return None
+    if card.last_reviewed_at is None:
+        return None
+    return retrievability(card.stability, elapsed_days_for(card, now))
+
+
+# Buckets of predicted recall. Uneven on purpose: the schedule aims at
+# `DESIRED_RETENTION`, so almost every review lands high and even buckets would
+# put nine reviews in ten into one of them. The narrow bands at the top are
+# where the scheduler actually operates and where being wrong costs the most.
+CALIBRATION_BANDS = ((0.0, 0.5), (0.5, 0.7), (0.7, 0.85), (0.85, 0.92), (0.92, 0.96), (0.96, 1.01))
+
+
 def in_relearning(card: ReviewQueueItem) -> bool:
     """True while the last answer on this card was wrong.
 
@@ -333,7 +398,13 @@ def card_retrievability(card: ReviewQueueItem, now: datetime | None = None) -> f
     return retrievability(card.stability, elapsed_days_for(card, now))
 
 
-def due_for_review(user_id: str, count: int, *, now: datetime | None = None) -> list[Question]:
+def due_for_review(
+    user_id: str,
+    count: int,
+    *,
+    now: datetime | None = None,
+    section: str | None = None,
+) -> list[Question]:
     """The `count` weakest questions in this student's queue, right now.
 
     Deliberately *not* `WHERE due_at <= now`. Ordering is by current
@@ -342,6 +413,14 @@ def due_for_review(user_id: str, count: int, *, now: datetime | None = None) -> 
     being told nothing is due. Items already above the retention target still
     sort last and will not displace anything genuinely weak, which is the
     behaviour the old date gate was really trying to buy.
+
+    `section` restricts the queue to one section's cards. Practice asks for
+    Logical Reasoning cards when it is building an argument case and Reading
+    Comprehension cards when it is building a reading case, because the two
+    sections are now served in differently shaped sittings and a card can only
+    come back inside a sitting its section belongs to. Ranking still happens
+    across the whole of whatever is asked for, so this narrows the queue rather
+    than reordering it.
     """
     if count <= 0:
         return []
@@ -349,7 +428,12 @@ def due_for_review(user_id: str, count: int, *, now: datetime | None = None) -> 
     cards = ReviewQueueItem.query.filter(
         ReviewQueueItem.user_id == user_id,
         ReviewQueueItem.status != "retired",
-    ).all()
+    )
+    if section:
+        cards = cards.join(Question, Question.id == ReviewQueueItem.question_id).filter(
+            Question.section == section
+        )
+    cards = cards.all()
     ranked = sorted(
         cards,
         key=lambda card: (card_retrievability(card, now), _aware(card.due_at) if card.due_at else now),
@@ -404,6 +488,55 @@ def queue_pressure(user_id: str, *, now: datetime | None = None) -> dict:
 # problem. Front-loading every review item at the start of a run reproduces
 # exactly that — the first four questions are "the ones I got wrong", which is
 # itself a hint. Distributing them, and separating same-type items, removes it.
+#
+# Which is a result about *mathematics problems*, and this app serves two
+# sections rather than one.
+#
+# `research/01-learning-science.md` carries Brunmair and Richter's
+# meta-analysis (Psychological Bulletin 145(11), 2019) of the whole
+# interleaving literature: g = 0.42 overall, g = 0.34 for mathematics — Rohrer
+# above — and g = 0.01, a null, for expository text. Word lists come out at
+# g = −0.39, where blocking wins outright. The moderator is whether the
+# categories being practised are similar enough to be confusable: Strengthen
+# against Weaken against Assumption against Flaw is close to the best case the
+# meta-analysis reports, and reading four questions about one passage is not a
+# category-discrimination task at all. The repository's own note beside that
+# entry says it in one line: Reading Comprehension is the case where
+# interleaving buys nothing.
+#
+# Reading Comprehension has in fact always been blocked here, because a
+# passage's questions travel together so the run reads the passage once. That
+# was a cost decision about re-reading 450 words, and it happened to land on
+# the same answer the evidence gives. Landing on the right answer for an
+# unrelated reason is not the same as having decided, and the difference shows
+# up the moment someone optimises the cost away.
+#
+# So it is a decision now, named below, cited, and reachable from the layer
+# that measures it. `run_ordering` in `app/experiments.py` reports the two
+# sections separately and never pools them, which is what makes the prediction
+# falsifiable rather than decorative: if Reading Comprehension turns out to
+# have an interleaving effect after all, that stratum is where it appears.
+
+# Sections whose questions are ordered by their passage and never by
+# type-discrimination. One entry, and the entry is a claim about the material
+# rather than about the code.
+BLOCKED_SECTIONS = ("Reading Comprehension",)
+
+
+def is_blocked_section(question) -> bool:
+    return getattr(question, "section", None) in BLOCKED_SECTIONS
+
+
+def front_load(reviews: list, fresh: list) -> list:
+    """Reviews first, then fresh material, in the order each arrived.
+
+    The off arm of `run_ordering`, and the app's own behaviour until
+    `interleave` replaced it. Kept as a named function rather than written
+    inline at the call site so the comparison is between two orderings the
+    codebase can both point at, and so the thing being measured is not a
+    concatenation somebody could tidy away without noticing it was an arm.
+    """
+    return list(reviews) + list(fresh)
 
 
 def _blocks(questions: list) -> list[list]:
@@ -446,14 +579,65 @@ def cluster_passage_mates(questions: list) -> list:
     return [question for block in grouped.values() for question in block]
 
 
+def _review_slots(total: int, count: int) -> set[int]:
+    """Which positions in a run of `total` blocks carry its `count` reviews.
+
+    Systematic sampling with a random start: one offset `u` is drawn for the
+    whole run and the reviews land at `floor((i + u) * total / count)`. That
+    keeps the spread — consecutive slots are always a full stretch apart, so
+    reviews can never bunch at one end — while making every position in the run
+    carry exactly the same probability of being one, `count / total`.
+
+    Both halves matter and a simpler jitter gets only one of them. Drawing each
+    review independently from inside its own stretch also spreads them, but when
+    `total` is not a multiple of `count` the stretches come out unequal at fixed
+    places: at four reviews in a run of six, positions 0 and 3 are the whole of
+    their stretch and are therefore certain. Measured, that showed up as
+    0:72%, 3:62% against 4:17%. Sliding all the stretches together by one random
+    offset rotates which positions are the tight ones, and the rate comes out
+    flat.
+
+    The jitter is the point. This used to be
+    `round((index + .5) * total / count)`, the midpoint of each stretch, which
+    is fully determined by the run's length and the number of reviews in it. On
+    a ten-question run that produced a measured per-slot review rate of
+    0:0%, 1:100%, 3:60%, 5:70%, 7:75%, 9:90% — the first question was never a
+    repeat and the second always was. That is a positional cue, and a student
+    who notices it can start answering from where a question sits in the run
+    instead of from what it says. Which is precisely the failure the comment
+    above cites Rohrer for: blocking is harmful because it lets the learner
+    infer the method from the assignment's position. Front-loading reviews was
+    the obvious version of that mistake and was fixed; placing them at fixed
+    positions is the same mistake, quieter.
+
+    `research/12` §2 specified this jitter term. It was never implemented.
+
+    Equal probability at every position is the strongest form of "no cue":
+    there is nothing to learn from where a question sits, because where it sits
+    carries no information.
+
+    Two slots can never collide, which would silently drop a review. Successive
+    values differ by `total / count`, which is at least 1 whenever there are no
+    more reviews than questions, so their floors are strictly increasing.
+    """
+    if count <= 0 or total <= 0:
+        return set()
+    if count >= total:
+        return set(range(total))
+    stretch = total / count
+    offset = random.random()
+    return {min(total - 1, int((index + offset) * stretch)) for index in range(count)}
+
+
 def interleave(reviews: list, fresh: list, *, question_type=None) -> list:
     """Distribute review items evenly through the fresh ones, then de-block.
 
     Two passes over passage-preserving blocks. The first spreads reviews across
-    the run at even fractional positions instead of stacking them at the front.
-    The second swaps any block that repeats the previous block's question type
-    with the next differently-typed one, so a run does not accidentally block
-    by skill either.
+    the run — one to each equal stretch of it, at a jittered position inside
+    that stretch, rather than stacked at the front or pinned to the middle of
+    each stretch. The second swaps any block that repeats the previous block's
+    question type with the next differently-typed one, so a run does not
+    accidentally block by skill either.
     """
     if not reviews:
         return list(fresh)
@@ -462,9 +646,7 @@ def interleave(reviews: list, fresh: list, *, question_type=None) -> list:
 
     review_blocks, fresh_blocks = _blocks(reviews), _blocks(fresh)
     total = len(review_blocks) + len(fresh_blocks)
-    # Even fractional spacing: with 3 reviews in a run of 10 they land at
-    # roughly positions 1, 4, and 7 rather than 0, 1, 2.
-    slots = {round((index + 0.5) * total / len(review_blocks)) for index in range(len(review_blocks))}
+    slots = _review_slots(total, len(review_blocks))
     sequence: list[list] = []
     for position in range(total):
         if position in slots and review_blocks:
@@ -483,11 +665,23 @@ def _separate_same_type(sequence: list[list], *, question_type=None) -> list[lis
     Skipped entirely for a type-filtered drill: the student explicitly asked
     for twenty Assumption questions, and shuffling types into that would be
     overriding them, not helping.
+
+    Skipped for a blocked section's blocks too, and for a different reason.
+    This pass is the type-discrimination half of interleaving — the half
+    Brunmair and Richter measure at g = 0.01 on expository text. Applying it to
+    Reading Comprehension would move passages around to buy a benefit the
+    evidence says is not there. The review-distribution half above still
+    applies to Reading Comprehension, because that half is about not leaking
+    "these are the ones you got wrong" and has nothing to do with category
+    discrimination. See `BLOCKED_SECTIONS`.
     """
     if question_type:
         return sequence
     result = list(sequence)
+    movable = [not any(is_blocked_section(question) for question in block) for block in result]
     for index in range(1, len(result)):
+        if not movable[index]:
+            continue
         previous_type = result[index - 1][-1].question_type
         if result[index][0].question_type != previous_type:
             continue
@@ -495,10 +689,116 @@ def _separate_same_type(sequence: list[list], *, question_type=None) -> list[lis
             (
                 candidate
                 for candidate in range(index + 1, len(result))
-                if result[candidate][0].question_type != previous_type
+                if movable[candidate] and result[candidate][0].question_type != previous_type
             ),
             None,
         )
         if swap_with is not None:
             result[index], result[swap_with] = result[swap_with], result[index]
+            movable[index], movable[swap_with] = movable[swap_with], movable[index]
     return result
+
+
+def review_calibration(user_id: str | None = None) -> dict:
+    """Score the scheduler against what it predicted, per band and overall.
+
+    Three readings, and they answer three different questions.
+
+    `bands` is the calibration curve: for reviews the model put at 90-96%, how
+    many were actually right? A well-calibrated scheduler tracks the diagonal.
+    Systematically below it means the grades feeding `derive_grade` are too
+    generous and every interval is a little too long.
+
+    `brier` is the mean squared error of the prediction, which is the standard
+    proper scoring rule for exactly this and the quantity FSRS's own optimiser
+    minimises. Lower is better; it is reported next to `brier_baseline`,
+    because on its own it is unreadable.
+
+    `brier_baseline` is what a model that knows nothing per card would score:
+    predict the overall review accuracy for every card, every time. This is the
+    comparison that makes the whole reading a test rather than a description.
+    If FSRS cannot beat a constant, then the per-card stability and difficulty
+    it maintains carry no information about whether the student will recall the
+    card — which is a negative result about the layer, obtained without ever
+    withholding the scheduler from anybody.
+
+    `skill` is the fraction of the baseline's error the model removes. Zero is
+    a flat curve. Negative means the memory state is actively misleading.
+
+    Report-only, and it needs a column that only exists going forward: the
+    prediction has to be written down at review time, because the card's state
+    has moved on by the time anyone asks. Reviews answered before that column
+    landed carry null and are not in this reading.
+    """
+    query = db.session.query(Attempt.predicted_retrievability, Attempt.is_correct).filter(
+        Attempt.predicted_retrievability.isnot(None)
+    )
+    if user_id:
+        query = query.filter(Attempt.user_id == user_id)
+    rows = [(float(predicted), bool(correct)) for predicted, correct in query.all()]
+
+    reviews = len(rows)
+    if not reviews:
+        return {
+            "instrument": "calibration",
+            "reviews": 0,
+            "bands": [],
+            "brier": None,
+            "brier_baseline": None,
+            "skill": None,
+            "note": (
+                "No scored reviews yet. The prediction is recorded when a review is "
+                "answered, so this fills at the rate the queue is worked."
+            ),
+        }
+
+    observed = sum(1 for _predicted, correct in rows if correct) / reviews
+    brier = sum((predicted - correct) ** 2 for predicted, correct in rows) / reviews
+    baseline = sum((observed - correct) ** 2 for _predicted, correct in rows) / reviews
+
+    bands = []
+    for low, high in CALIBRATION_BANDS:
+        values = [row for row in rows if low <= row[0] < high]
+        bands.append(
+            {
+                "band": f"{int(low * 100)}–{min(100, int(high * 100))}%",
+                "reviews": len(values),
+                "mean_predicted": round(
+                    sum(predicted for predicted, _correct in values) / len(values) * 100, 1
+                )
+                if values
+                else None,
+                "realised": round(
+                    sum(1 for _predicted, correct in values if correct) / len(values) * 100, 1
+                )
+                if values
+                else None,
+            }
+        )
+    for band in bands:
+        band["gap"] = (
+            round(band["realised"] - band["mean_predicted"], 1)
+            if band["reviews"] and band["mean_predicted"] is not None
+            else None
+        )
+
+    filled = [band for band in bands if band["reviews"]]
+    return {
+        "instrument": "calibration",
+        "reviews": reviews,
+        "observed_accuracy": round(observed * 100, 1),
+        "bands": bands,
+        "brier": round(brier, 4),
+        "brier_baseline": round(baseline, 4),
+        "skill": round((baseline - brier) / baseline, 3) if baseline > 0 else None,
+        # The flat-curve test, stated as a number rather than left to the eye.
+        # A scheduler whose lowest-predicted band comes back at the same rate
+        # as its highest-predicted one is not ranking anything.
+        "band_spread": round(filled[-1]["realised"] - filled[0]["realised"], 1)
+        if len(filled) > 1
+        else None,
+        "basis": (
+            "the retrievability FSRS predicted at review time against what happened, "
+            "scored by Brier against a constant-rate baseline"
+        ),
+    }

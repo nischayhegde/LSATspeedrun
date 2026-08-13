@@ -48,6 +48,7 @@ import unicodedata
 from flask import current_app
 
 from .models import Attempt, Question
+from .passage_structure import is_sentence_break, paragraphs_from_offsets
 
 
 # Bumped whenever a gate's required operations change. Attempts carry it so an
@@ -72,6 +73,40 @@ STATUS_SATISFIED = "satisfied"
 STATUS_SKIPPED = "skipped"
 STATUS_ATTESTED = "attested"
 STATUS_UNENFORCED = "unenforced"
+# The way out of a *mandatory* approach. Held apart from `skipped` because the
+# two are different facts: skipping declined an offer that could be declined,
+# while standing down left one that could not. Pooling them would report a
+# student who was stuck as a student who could not be bothered.
+STATUS_STOOD_DOWN = "stood_down"
+
+# A gate was actually armed on this question, whatever became of it. The
+# denominator of every compliance rate in the app.
+GATED_STATUSES = frozenset({STATUS_SATISFIED, STATUS_SKIPPED, STATUS_ATTESTED, STATUS_STOOD_DOWN})
+# ...and the part of that denominator where the operations did not happen.
+DECLINED_STATUSES = frozenset({STATUS_SKIPPED, STATUS_STOOD_DOWN})
+
+# What it takes to be let out of a mandatory approach.
+#
+# Forcing has to shape behaviour without creating a dead end, and those two
+# pull in opposite directions: an exit that is always one click away is the
+# skip button again under another name, and an exit that never opens strands
+# anybody whose input method the gate cannot drive, or who simply cannot see
+# what the question wants today.
+#
+# So the exit opens on evidence of trying, by either of two routes. Two
+# server-side refusals is the strong one: the artifact was submitted, the
+# checks in this module read it, and they said no — that is the app's own
+# record of an attempt, and it cannot be manufactured by a client that never
+# rendered the gate. Ninety seconds inside the panel is the weak one, and it is
+# weak on purpose: it is client-reported time, so a determined browser can lie
+# about it. That is the right trade. The threat model here is a student
+# avoiding work in their own study app, where the cost of being wrong is that
+# one attempt is recorded as stood down instead of satisfied — against the cost
+# of the strict version, which is a person locked out of a question with no way
+# forward. `strategy_applied` has been an unverified self-report for the whole
+# life of this feature; this is a strictly smaller thing to take on trust.
+STAND_DOWN_AFTER_MS = 90_000
+STAND_DOWN_AFTER_REJECTIONS = 2
 
 # Answer-choice labels never count as words a student "wrote", and single
 # letters break every word-count floor, so text fields normalise them away.
@@ -153,11 +188,24 @@ def split_sentences(text: str | None) -> list[str]:
     The client renders these by index and posts indices back, so this function
     is the shared contract: a student can only ever mark a sentence the server
     also believes exists.
+
+    A full stop inside an abbreviation does not end a sentence. Without that check
+    this split 227 times across the bank where it should not have, most visibly
+    turning the citation "Charrier v. Bell" into two lines and offering a student
+    "Bell, a United States appellate court ruled ..." as something to cite.
     """
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
     if not cleaned:
         return []
-    parts = [part.strip() for part in _SENTENCE_RE.split(cleaned) if part.strip()]
+    parts: list[str] = []
+    start = 0
+    for match in _SENTENCE_RE.finditer(cleaned):
+        if not is_sentence_break(cleaned, match.start()):
+            continue
+        parts.append(cleaned[start: match.start()])
+        start = match.end()
+    parts.append(cleaned[start:])
+    parts = [part.strip() for part in parts if part.strip()]
     # A stimulus written as one long sentence still has to be markable, and a
     # stray fragment ("Dr.") should not become its own pickable unit.
     merged: list[str] = []
@@ -170,6 +218,14 @@ def split_sentences(text: str | None) -> list[str]:
 
 
 def split_paragraphs(text: str | None) -> list[str]:
+    """The parts of a text that carries its own breaks.
+
+    Kept for stimuli and for any passage stored without a segmentation. It is not
+    the path Reading Comprehension takes any more: no passage in this bank has a
+    newline in it, so this returned the whole passage as one unit on all 2,366
+    Reading Comprehension questions, and `passage_parts` below reads the
+    boundaries `passage_structure` derived instead.
+    """
     cleaned = (text or "").strip()
     if not cleaned:
         return []
@@ -178,6 +234,22 @@ def split_paragraphs(text: str | None) -> list[str]:
         return parts
     parts = [part.strip() for part in cleaned.split("\n") if part.strip()]
     return parts if len(parts) > 1 else [cleaned]
+
+
+def passage_parts(passage) -> list[str]:
+    """How a passage divides, preferring the segmentation stored on it.
+
+    A passage with offsets is divided by them. A passage without falls back to
+    whatever breaks its own text carries, which for this bank means one part —
+    the behaviour that shipped before the offsets existed, so a database that has
+    not been backfilled is degraded rather than broken.
+    """
+    if passage is None:
+        return []
+    stored = paragraphs_from_offsets(passage.canonical_text, passage.paragraph_offsets)
+    if len(stored) > 1:
+        return stored
+    return split_paragraphs(passage.canonical_text)
 
 
 # ---------------------------------------------------------------------------
@@ -676,19 +748,26 @@ GATES: dict[str, dict] = {
         kind="sequence_reveal",
         strength="strong",
         hides_choices=True,
-        instruction="The choices are hidden. Give each paragraph its job in three to twelve words, then they unlock.",
+        # "Part", not "paragraph", everywhere a student can read it. This bank
+        # stores no paragraph breaks and the derived boundaries are topical rather
+        # than authored — they find the region of a real break far better than
+        # chance and the exact sentence no better than chance — so naming them
+        # paragraphs would assert a structure the evidence does not support. What
+        # the technique is actually for survives the rename: a student still has to
+        # read for structure and say what each stretch of the passage is doing.
+        instruction="The choices are hidden. Give each part of the passage its job in three to twelve words, then they unlock.",
         confirm="Map built. Go back to the text for details.",
         fields=(
             _segment_notes(
                 "notes",
-                "What is each paragraph doing?",
+                "What is each part of the passage doing?",
                 source="paragraphs",
                 min_words=3,
                 max_words=12,
                 help="Its job, not its contents. You are building an index, not a summary.",
-                length_message="Paragraph {index} needs three to twelve words. You have {count}.",
-                copy_message="Paragraph {index} is the paragraph's own sentence. Say its job in your words.",
-                duplicate_message="Paragraphs {index} and {other} have the same note. They are doing different jobs.",
+                length_message="Part {index} needs three to twelve words. You have {count}.",
+                copy_message="Part {index} is the passage's own sentence. Say its job in your words.",
+                duplicate_message="Parts {index} and {other} have the same note. They are doing different jobs.",
             ),
         ),
     ),
@@ -726,21 +805,24 @@ GATES: dict[str, dict] = {
         kind="annotate_source",
         strength="moderate",
         weakness=(
-            "The per-paragraph function is a dropdown, and a plausible pattern can be guessed from paragraph "
-            "position alone. Only the free-text turn field forces the student back into the passage."
+            "The per-part function is a dropdown, and a plausible pattern can be guessed from position "
+            "alone. Only the free-text turn field forces the student back into the passage. The parts "
+            "themselves are derived by lexical cohesion rather than authored, so a boundary can fall a "
+            "sentence early or late; what the field asks for survives that, but the divisions are the "
+            "application's reading of the passage and not the writer's."
         ),
         hides_choices=False,
-        instruction="Give each paragraph a function, then say what changes at the turn.",
+        instruction="Give each part of the passage a function, then say what changes at the turn.",
         confirm="Structure labelled. Use it to predict the purpose answers.",
         fields=(
             _segment_label(
                 "functions",
-                "What is each paragraph for?",
+                "What is each part of the passage for?",
                 source="paragraphs",
                 options=("Introduces", "Supports", "Complicates", "Counters", "Illustrates", "Concludes"),
                 not_all_same=True,
-                missing_message="Every paragraph gets a function. {count} left.",
-                variety_message="Every paragraph cannot be doing the same job. Read for the change.",
+                missing_message="Every part gets a function. {count} left.",
+                variety_message="Every part cannot be doing the same job. Read for the change.",
             ),
             _text(
                 "turn",
@@ -861,8 +943,8 @@ GATES: dict[str, dict] = {
 
 def _passage_sentences(question: Question) -> list[str]:
     lines: list[str] = []
-    for paragraph in split_paragraphs(question.passage.canonical_text if question.passage else None):
-        lines.extend(split_sentences(paragraph))
+    for part in passage_parts(question.passage):
+        lines.extend(split_sentences(part))
     return lines
 
 
@@ -870,7 +952,7 @@ def _sources(question: Question) -> dict[str, list[str]]:
     passage_text = question.passage.canonical_text if question.passage else ""
     return {
         "stimulus": split_sentences(question.stimulus or passage_text),
-        "paragraphs": split_paragraphs(passage_text or question.stimulus),
+        "paragraphs": passage_parts(question.passage) or split_paragraphs(question.stimulus),
         "proof_lines": _passage_sentences(question) or split_sentences(question.stimulus),
     }
 
@@ -962,6 +1044,14 @@ def mastery_level(user_id: str, strategy_key: str) -> str:
     return LEVEL_LIGHT if correct / len(satisfied) >= MASTERY_MIN_ACCURACY else LEVEL_FULL
 
 
+# The two prompt sub-arms, spelled out rather than imported: `strategies`
+# imports this module for the status vocabulary, so the dependency only runs
+# one way. `strategies.PROMPT_VARIANTS` is the definition; this is a copy of it
+# kept deliberately small.
+_PROMPT_VARIANTS = frozenset({"prompt", "prompt_required"})
+_VARIANT_REQUIRED = "prompt_required"
+
+
 def assign_enforcement_level(user_id: str, strategy_trial: dict | None, session_mode: str) -> str:
     """Decide, at serve time, how hard this question's gate will be.
 
@@ -969,8 +1059,16 @@ def assign_enforcement_level(user_id: str, strategy_trial: dict | None, session_
     all, so it can never carry a gate either; the guard is here anyway because
     a timed full-length form is the one place where scaffolding would do real
     harm to what is being measured.
+
+    A mandatory question is always `full`. Mastery relaxes a gate on the
+    grounds that the student no longer needs the scaffolding, which is a fine
+    reason to stop blocking a *suggestion* and an incoherent one on an approach
+    the interface is refusing to let past — "required, but optional" is not a
+    state worth having. It also never arises in practice, because
+    `plan_forced_arms` leaves mastered approaches out of the pool it draws
+    from; this is the invariant rather than the mechanism.
     """
-    if not strategy_trial or strategy_trial.get("variant") != "prompt":
+    if not strategy_trial or strategy_trial.get("variant") not in _PROMPT_VARIANTS:
         return LEVEL_NONE
     if session_mode == "diagnostic":
         return LEVEL_NONE
@@ -978,7 +1076,20 @@ def assign_enforcement_level(user_id: str, strategy_trial: dict | None, session_
         return LEVEL_NONE
     if strategy_trial["key"] not in GATES:
         return LEVEL_NONE
+    if strategy_trial["variant"] == _VARIANT_REQUIRED:
+        return LEVEL_FULL
     return mastery_level(user_id, strategy_trial["key"])
+
+
+def stand_down_available(item, gate_ms: int) -> bool:
+    """Whether this student has earned the way out of a mandatory approach.
+
+    See `STAND_DOWN_AFTER_MS`. Either route is enough on its own.
+    """
+    return (
+        (item.strategy_gate_rejections or 0) >= STAND_DOWN_AFTER_REJECTIONS
+        or (gate_ms or 0) >= STAND_DOWN_AFTER_MS
+    )
 
 
 def build_gate(item, *, level: str | None = None) -> dict | None:
@@ -1011,12 +1122,21 @@ def build_gate(item, *, level: str | None = None) -> dict | None:
                 for option in _contrapositive_options(item.id)
             ]
         fields.append(rendered)
+    required = item.strategy_variant == _VARIANT_REQUIRED
     return {
         "version": ENFORCEMENT_VERSION,
         "strategy_key": definition["strategy_key"],
         "kind": definition["kind"],
         "strength": definition["strength"],
         "level": level,
+        # Mandatory: this question's approach cannot be declined, so the client
+        # never draws the Use it / Skip pair and arms the gate on arrival. The
+        # way out is `stand_down`, which the server opens rather than the
+        # client — a browser that decided for itself would be the skip button
+        # with extra steps.
+        "required": required,
+        "stand_down_ready": required and stand_down_available(item, 0),
+        "stand_down_after_ms": STAND_DOWN_AFTER_MS,
         # A light gate keeps the prompt and the instruction but stops blocking.
         # The student has cleared this one enough times that the scaffolding is
         # now a tax rather than a lesson.
@@ -1043,6 +1163,20 @@ GATE_COPY = {
     "abandon_confirm": "Drop it and answer without it? This gets recorded as answering without the approach.",
     "locked_choices": "Answer choices unlock when the step above is done.",
     "locked_submit": "Finish the approach first.",
+    # The mandatory arm, in the fiction it lives in. A tycoon's client asking
+    # for the method on the record is a reason a student can act on; a system
+    # message about experimental design is not, and would be the app talking
+    # about itself in the middle of a case.
+    "required_eyebrow": "STANDING ORDER",
+    "required_title": "The client wants this one worked on the record.",
+    "required_note": "No skip on this matter. Work the steps, then answer.",
+    "stand_down_label": "Withdraw the method",
+    "stand_down_confirm": (
+        "Withdraw it? The file will show the method was ordered and not filed. "
+        "Nothing is charged and the case goes on."
+    ),
+    "stand_down_locked": "Work it first. If it will not come, this opens.",
+    "stand_down_recorded": "Method withdrawn. Answered without it.",
     "struck_choice": "Struck. Un-strike it if you want it back.",
     "invalid_title": "Not yet.",
     "timing_note": "This step is timed separately and does not count against your pace.",
@@ -1062,7 +1196,13 @@ GATE_COPY = {
 # Advisory quality read
 # ---------------------------------------------------------------------------
 
-ARTIFACT_PROMPT_VERSION = "artifact-v1-advisory-only"
+# Bumped alongside `coaching.PROMPT_VERSION`, and for the same reason. Every
+# rating stored under v1 on a Reading Comprehension question was produced without
+# the model seeing the passage or the parts the artifact is keyed to, so those
+# ratings and the ones produced from here are not measurements of the same thing
+# and must not be pooled. Still advisory: the name says so because the property is
+# the important one and a later reader should not have to go looking for it.
+ARTIFACT_PROMPT_VERSION = "artifact-v2-advisory-only-sees-the-passage"
 
 _ARTIFACT_SYSTEM = """You are rating one artifact a student produced while working an LSAT question with a named approach. Return one JSON object and nothing else.
 
@@ -1072,6 +1212,10 @@ You are not grading the answer and you cannot see whether it was right. You are 
 
 Rate only this: does the artifact do the operation the approach asked for, on this question?
 
+Where the student annotated numbered pieces of text, those pieces are supplied as a numbered object — `passage_parts` for the parts of a passage, `passage_lines` for its sentences, `stimulus_sentences` for a stimulus — listed exactly as the student saw them. An artifact keyed by number is keyed by those numbers: the entry under "0" is about item 0. Judge each entry against the piece it is keyed to.
+
+The parts of a passage were derived by this application, not marked by the passage's author, so treat their boundaries as approximate. Never fault a student for a division they did not choose.
+
 - 0.0 to 0.3: it does not engage with this question at all.
 - 0.4 to 0.6: it engages, but it does the operation loosely or partially.
 - 0.7 to 1.0: it does the operation the approach named.
@@ -1079,6 +1223,57 @@ Rate only this: does the artifact do the operation the approach asked for, on th
 Formulaic phrasing, textbook wording, and plainly imitating a worked example are all fine and are never defects. Beginners have not developed a voice yet. Rate what they did, not how it reads. When you are torn, rate higher.
 
 Return exactly: {"quality": number between 0 and 1, "note": one short sentence for the student}"""
+
+
+# What each annotatable source is called in the artifact-review payload. Named
+# after the source rather than after the field, so a gate that adds a second field
+# on the same text does not invent a second name for it.
+_ARTIFACT_SOURCE_KEYS = {
+    "paragraphs": "passage_parts",
+    "proof_lines": "passage_lines",
+    "stimulus": "stimulus_sentences",
+}
+
+
+def _artifact_question_data(question: Question, definition: dict) -> dict:
+    """The text the artifact has to be judged against, including the passage.
+
+    This used to be `section`, `stimulus` and `stem`, which on Reading
+    Comprehension meant `stimulus: null` and no passage at all: the model was
+    asked how well a map of a passage mapped it, was shown neither the passage nor
+    the segmentation, and returned a confident number that went into the student's
+    debrief. `stimulus` is null on all 2,366 Reading Comprehension questions and
+    all six Reading Comprehension approaches are gated, so that was the whole
+    section.
+
+    Sending the raw passage alone would not have fixed it. A `passage_map`
+    artifact is `{"0": "...", "1": "..."}`, keyed by part index, and a model given
+    3,000 unbroken characters cannot tell which stretch note "0" was written
+    about. So what goes out is the segmentation the student actually annotated,
+    numbered the same way the client numbered it, which is the only form in which
+    the keys mean anything.
+
+    The passage is sent whole only when no field is sourced from it, since
+    `paragraphs` and `proof_lines` between them already carry every word — one
+    copy of a 3,000-character passage per rating rather than two, on a call that
+    exists to add a sentence to a debrief.
+    """
+    data = {
+        "section": question.section,
+        "stimulus": question.stimulus,
+        "stem": question.stem,
+    }
+    sources = _sources(question)
+    annotated = {
+        field["source"]
+        for field in definition["fields"]
+        if field["kind"] in {"segment_pick", "segment_label", "segment_notes"}
+    }
+    for source in sorted(annotated):
+        data[_ARTIFACT_SOURCE_KEYS[source]] = dict(enumerate(sources.get(source, [])))
+    if question.passage and not annotated & {"paragraphs", "proof_lines"}:
+        data["passage"] = question.passage.canonical_text
+    return data
 
 
 def review_artifact(attempt) -> float | None:
@@ -1113,11 +1308,7 @@ def review_artifact(attempt) -> float | None:
             "instruction": definition["instruction"],
             "required_operations": [field["label"] for field in definition["fields"]],
         },
-        "question": {
-            "section": question.section,
-            "stimulus": question.stimulus,
-            "stem": question.stem,
-        },
+        "question": _artifact_question_data(question, definition),
         "student_artifact": artifact,
     }
     try:
@@ -1134,11 +1325,18 @@ def review_artifact(attempt) -> float | None:
 
 
 class GateRejection(Exception):
-    """A gate was not satisfied. Carries per-field messages for the client."""
+    """A gate was not satisfied. Carries per-field messages for the client.
 
-    def __init__(self, errors: list[dict]):
+    `stand_down` is only meaningful on the mandatory arm, where it tells the
+    client whether the way out is open yet. Additive: the error code, the
+    status, and the `fields` list are unchanged, so anything already reading
+    this response — including the deploy canary — keeps reading it.
+    """
+
+    def __init__(self, errors: list[dict], *, stand_down: bool | None = None):
         super().__init__("strategy_gate_unsatisfied")
         self.errors = errors
+        self.stand_down = stand_down
 
 
 def _as_list(value) -> list:

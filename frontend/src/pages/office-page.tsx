@@ -40,7 +40,10 @@ export function OfficePage() {
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
   const start = useMutation({
-    mutationFn: () => api.startPractice({ size: 3 }),
+    // No size: the server owns how long a run is. Three was a short run back
+    // when a run was ten; now a run is six, and a three-question run is one the
+    // server refuses because a reading passage cannot fit in it.
+    mutationFn: () => api.startPractice(),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `office-case-open:${session.id}`, seed: session.id, intensity: .58 })
       navigate(`/cases/${session.id}${deckDemo ? '?deckDemo=client' : ''}`)
@@ -114,6 +117,15 @@ export function OfficePage() {
   } : null
   const milestone = game.next_milestone
   const milestoneProgress = milestone ? Math.min(100, Math.round(game.cash / Math.max(1, milestone.cost) * 100)) : 100
+  // The day's goals are 5, 10 and 20 cases, so a fixed "/ 10" was only ever
+  // right for the middle one and read as a broken counter once the day went
+  // past it ("41 / 10"). Track the next goal still open, and once they are all
+  // cleared show the count on its own rather than against a target that has
+  // stopped meaning anything.
+  const dailyGoal = game.daily.goals.find((goal) => !goal.complete)
+  const dailyTally = dailyGoal
+    ? `${game.daily.cases_completed} / ${dailyGoal.cases}`
+    : `${game.daily.cases_completed}`
 
   const openCase = () => active ? navigate(`/cases/${active.id}${deckDemo ? '?deckDemo=client' : ''}`) : start.mutate()
   const demoCopy = [
@@ -207,7 +219,7 @@ export function OfficePage() {
             <span><small>CASH</small><strong>{formatMoney(game.cash, true)}</strong><em>on hand</em></span>
             <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><em>{game.reputation_band.name} counsel</em></span>
             <span><small>LEASE</small><strong>{game.upkeep.completed ? 'Closed' : formatMoney(game.upkeep.daily_rent, true)}</strong><em>{game.upkeep.completed ? 'charter complete' : 'per day'}</em></span>
-            <span><small>TRAINING</small><strong>{game.daily.cases_completed}/10</strong><em>questions today</em></span>
+            <span><small>TRAINING</small><strong>{dailyTally}</strong><em>questions today</em></span>
             <span><small>ACCURACY</small><strong>{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</strong><em>{game.total_cases} measured</em></span>
             <span><small>REPUTATION</small><strong>{Math.round(game.reputation).toLocaleString()}</strong><em>standing</em></span>
           </div>
@@ -296,9 +308,23 @@ export function OfficePage() {
       {deckDemo || deckTreasury ? null : <OfficeEventPopup game={game} />}
 
       <section className="office-gamebar">
-        <article className="client-quest-card">
+        {/* The two contract figures were joined into one line by a middot:
+            what is left of the docket, and what a case on it pays. They are
+            separate facts about the same arrangement and they are read
+            separately, so they are set as two entries rather than one
+            sentence. Same fields, same words, same fallbacks — including the
+            on-hold branch, which only renders once reputation has fallen
+            under the client's requirement and a walk-in starts billing. */}
+        <article className={`client-quest-card ${game.active_client.on_hold ? 'is-on-hold' : ''}`}>
           <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
-          <div><span>ACTIVE CONTRACT</span><h3>{workingClient.name}</h3><p>{game.active_client.on_hold ? 'Original contract on hold' : `${game.active_client.cases_remaining} files remaining`} · {formatMoney(workingClient.base_fee)} base</p></div>
+          <div>
+            <span>ACTIVE CONTRACT</span>
+            <h3>{workingClient.name}</h3>
+            <p>
+              <b>{game.active_client.on_hold ? 'Original contract on hold' : `${game.active_client.cases_remaining} files remaining`}</b>
+              <b>{formatMoney(workingClient.base_fee)} base</b>
+            </p>
+          </div>
           <button onClick={() => {
             if (active) void play('resume', { seed: active.id, intensity: .55 })
             openCase()
@@ -306,7 +332,7 @@ export function OfficePage() {
         </article>
 
         <article className="training-focus-card">
-          <div><span>TODAY’S TRAINING BLOCK</span><h3>{game.daily.cases_completed} / 10 QUESTIONS</h3><p>Volume builds recognition. Reviewed reasoning makes the volume count.</p></div>
+          <div><span>TODAY’S TRAINING BLOCK</span><h3>{dailyTally} QUESTIONS</h3><p>{dailyGoal ? 'Volume builds recognition. Reviewed reasoning makes the volume count.' : 'Every goal on today’s docket is cleared. Volume past it still counts.'}</p></div>
           <button onClick={openCase}>{active ? 'RESUME' : 'START'} <ArrowRight /></button>
         </article>
 

@@ -79,6 +79,26 @@ class Passage(db.Model):
     # passage written by a path that has not learned about the flag is treated
     # as an ordinary single passage rather than crashing the allocator.
     comparative = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # Character offsets in `canonical_text` where each part of the passage begins,
+    # first always 0, written at ingest by `passage_structure.derive_paragraphs`.
+    # Offsets rather than a second copy of the prose, so a segmentation can never
+    # drift from the text it describes.
+    #
+    # Every passage in this bank arrived as one unbroken blob with no newline
+    # anywhere, which left `enforcement.split_paragraphs` returning the whole
+    # passage as a single unit — so "give each paragraph its job in three to
+    # twelve words" asked for one note on three thousand characters, and
+    # `paragraph_function`'s variety check, needing more than one segment to
+    # compare, never ran at all.
+    #
+    # `paragraph_source` says where the boundaries came from, because the two
+    # kinds do not deserve equal trust: "authored" means the text carried real
+    # breaks, "derived_cohesion_v1" means this application found them by lexical
+    # cohesion and they are topical rather than authored. Null on both columns
+    # means no segmentation, which reads as one part exactly as it did before
+    # these columns existed.
+    paragraph_offsets = db.Column(db.JSON, nullable=True)
+    paragraph_source = db.Column(db.String(40), nullable=True)
     source = db.Column(db.String(255), nullable=True)
     review_status = db.Column(db.String(60), nullable=False, default="development_only")
 
@@ -90,7 +110,35 @@ class Question(db.Model):
     passage_id = db.Column(db.String(80), db.ForeignKey("passages.id"), nullable=True, index=True)
     section = db.Column(db.String(60), nullable=False, index=True)
     question_type = db.Column(db.String(100), nullable=False, index=True)
-    difficulty = db.Column(db.Integer, nullable=False, default=3)
+    # Where the type came from: "inferred" (a rule in `app/question_types.py`
+    # matched the stem), "section_placeholder" (nothing matched, so the type is
+    # the section's own name and means "unknown"), "authored" (the bank labelled
+    # it), or "unrecorded" for rows written before this column existed.
+    #
+    # The column exists because the placeholder is indistinguishable from a real
+    # type by inspection — "Logical Reasoning" is a plausible-looking string —
+    # and 45.8% of the bank was carrying one. Four mechanisms read
+    # `question_type` and none of them could tell. Recording provenance makes
+    # the unknowns countable, which is the only reason the scale of it was
+    # findable at all.
+    question_type_source = db.Column(
+        db.String(24), nullable=False, default="inferred", server_default="unrecorded"
+    )
+    # An *official* difficulty on the publisher's own 1-5 scale, and nothing
+    # else. NULL on all 6,886 rows and expected to stay that way: the upstream
+    # datasets carry no difficulty column, and the only per-item LSAT ratings
+    # LSAC has ever published cover five of the eighty-five PrepTests in this
+    # bank and exist as prose in two copyrighted books. See
+    # `docs/question-difficulty.md`.
+    #
+    # This column was `difficulty`, `nullable=False, default=3`, which put a
+    # literal 3 on every question in the bank and then handed it to a language
+    # model as if it were a measurement. The rename is the point: an estimate
+    # must never be written here, because the whole value of the column is that
+    # a number in it means somebody published one. The *estimate* lives in
+    # `QuestionCalibration` with its own provenance, and is read through
+    # `calibration.signal`.
+    published_difficulty = db.Column(db.Integer, nullable=True)
     stimulus = db.Column(db.Text, nullable=True)
     stem = db.Column(db.Text, nullable=False)
     correct_answer = db.Column(db.String(1), nullable=False)
@@ -101,6 +149,12 @@ class Question(db.Model):
 
     passage = db.relationship("Passage")
     choices = db.relationship("QuestionChoice", back_populates="question", cascade="all, delete-orphan", order_by="QuestionChoice.position")
+    calibration = db.relationship(
+        "QuestionCalibration",
+        back_populates="question",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class QuestionChoice(db.Model):
@@ -131,7 +185,15 @@ class StudySession(db.Model):
         index=True,
     )
     mode = db.Column(db.String(20), nullable=False, index=True)
-    practice_style = db.Column(db.String(24), nullable=False, default="deep", index=True)
+    # Which kind of sitting this was: "cases", "diagnostic" or "blind_review".
+    # Not a setting — nothing takes it from a caller. Which function built the
+    # run decides it, and `services.EVIDENCE_CLASS` is what reads it.
+    #
+    # The default was "deep" until now, one of four practice styles migration
+    # 0021 collapsed into "cases". No run has been created with it since, so
+    # the one branch still testing for it was unreachable and is gone; the
+    # default follows.
+    practice_style = db.Column(db.String(24), nullable=False, default="cases", index=True)
     feedback_policy = db.Column(db.String(20), nullable=False, default="immediate")
     status = db.Column(db.String(20), nullable=False, default="in_progress", index=True)
     target_minutes = db.Column(db.Integer, nullable=False)
@@ -139,6 +201,10 @@ class StudySession(db.Model):
     total_items = db.Column(db.Integer, nullable=False, default=0)
     current_index = db.Column(db.Integer, nullable=False, default=0)
     section_plan_json = db.Column(db.JSON, nullable=True)
+    # When the mega-litigation's intermission began. The real LSAT puts a
+    # ten-minute break between the second and third sections; this is the only
+    # clock on the form that is allowed to elapse without a section running.
+    intermission_started_at = db.Column(db.DateTime(timezone=True), nullable=True)
     ended_by_user = db.Column(db.Boolean, nullable=False, default=False)
     summary_json = db.Column(db.JSON, nullable=True)
     pending_attempt_id = db.Column(db.String(36), nullable=True, index=True)
@@ -156,6 +222,57 @@ class StudySession(db.Model):
     user = db.relationship("User")
     diagnostic_session = db.relationship("StudySession", remote_side=[id], uselist=False)
     items = db.relationship("SessionItem", back_populates="session", cascade="all, delete-orphan", order_by="SessionItem.position")
+    sections = db.relationship(
+        "SessionSection",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="SessionSection.section_index",
+    )
+
+
+class SessionSection(db.Model):
+    """One separately timed section of a mega-litigation.
+
+    The real LSAT is not one long run against one clock: it is four (here
+    three, the unscored variable section being omitted) separately timed
+    thirty-five-minute sections, and the rule that makes them sections rather
+    than labels is that time expiring on one ends it permanently. "During the
+    time allotted for each section of the Test, you may work only on that
+    section," and once it expires "no additional inputs may be made" — LSAC
+    Candidate Agreement 2026-2027, § 15.
+
+    This row is the authority on when a section started, when it must end, and
+    whether it has. The client is told how much is left; it is never asked.
+    """
+
+    __tablename__ = "session_sections"
+    __table_args__ = (UniqueConstraint("session_id", "section_index", name="uq_session_section_index"),)
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    session_id = db.Column(db.String(36), db.ForeignKey("study_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    section_index = db.Column(db.Integer, nullable=False)
+    label = db.Column(db.String(60), nullable=False)
+    # "Logical Reasoning" or "Reading Comprehension", matching `Question.section`.
+    section_type = db.Column(db.String(60), nullable=False)
+    start_position = db.Column(db.Integer, nullable=False)
+    end_position = db.Column(db.Integer, nullable=False)
+    question_count = db.Column(db.Integer, nullable=False)
+    time_limit_seconds = db.Column(db.Integer, nullable=False)
+    # Intermission owed *after* this section, in seconds. Non-zero on exactly
+    # one section per form.
+    break_seconds = db.Column(db.Integer, nullable=False, default=0)
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    # Set the moment the student starts the section, and never moved again: the
+    # deadline is wall-clock from here, so closing a laptop does not buy time.
+    started_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    deadline_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    ended_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # "submitted" (the student ended it early), "expired" (the clock ran out),
+    # or "abandoned" (the sitting was walked away from at a boundary).
+    ended_reason = db.Column(db.String(20), nullable=True)
+    unanswered_count = db.Column(db.Integer, nullable=False, default=0)
+
+    session = db.relationship("StudySession", back_populates="sections")
 
 
 class SessionItem(db.Model):
@@ -177,6 +294,32 @@ class SessionItem(db.Model):
     # P0-8 / assign_strategy_trial.
     strategy_propensity = db.Column(db.Float, nullable=True)
     strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # --- Which approach (see the `strategy_selection` layer) -----------------
+    # Whether this question's approach was chosen by the student's own record
+    # or drawn uniformly from the same candidate set, and the probability of
+    # the arm that was drawn. Written on control-arm questions too: the arm
+    # decides which approach a control question is *filed under*, and if the
+    # two offer arms were labelled by different processes the offer trial's own
+    # comparison would stop being about the offer. Null where the two arms
+    # would pick the same approach anyway — under the coverage target, or on a
+    # question with a single candidate — because a row with no counterfactual
+    # takes no part in a comparison.
+    strategy_selection_arm = db.Column(db.String(12), nullable=True)
+    strategy_selection_propensity = db.Column(db.Float, nullable=True)
+    # --- Mandatory approaches (see strategies.plan_forced_arms) --------------
+    # The approach-by-question-type cell this assignment is charged to, and the
+    # probability this question had of being drawn as a mandatory one. The
+    # propensity is written on the questions that lost the draw as well as the
+    # ones that won it, because the losers are what the winners are compared
+    # against. Null means the question was never in a pool: it has no
+    # counterfactual for that draw and takes no part in that comparison.
+    strategy_stratum = db.Column(db.String(160), nullable=True)
+    strategy_forcing_propensity = db.Column(db.Float, nullable=True)
+    # How many times the server refused this question's artifact. Counted here
+    # rather than in the client because it is what opens the way out of a
+    # mandatory approach, and a client that decided that for itself would have
+    # the skip button back.
+    strategy_gate_rejections = db.Column(db.Integer, nullable=False, default=0)
     # How hard the strategy gate on this question will be: "full" blocks the
     # answer until the approach's operations are done, "light" keeps the prompt
     # but stops blocking once the student has demonstrated the approach enough
@@ -184,6 +327,14 @@ class SessionItem(db.Model):
     # serve time so a mid-question mastery change cannot move the goalposts.
     # See app/enforcement.py.
     strategy_enforcement_level = db.Column(db.String(12), nullable=False, default="none")
+    # Whether this slot was filled with any reference to the question's
+    # difficulty. 'blind' is the truth for every row written so far, because
+    # selection has never read difficulty at all. A selector that starts reading
+    # it must call `calibration.exposure_draw` per slot and write 'random' or
+    # 'targeted' here; leaving the default in place would quietly relabel biased
+    # exposure as unbiased, which is the one error the difficulty estimate
+    # cannot recover from. See `app/calibration.py`.
+    exposure_policy = db.Column(db.String(12), nullable=False, default="blind")
     target_time_seconds = db.Column(db.Integer, nullable=False, default=150)
     game_context_json = db.Column(db.JSON, nullable=True)
     timer_compromised = db.Column(db.Boolean, nullable=False, default=False)
@@ -195,6 +346,15 @@ class SessionItem(db.Model):
     draft_selected_label = db.Column(db.String(1), nullable=True)
     draft_reasoning_text = db.Column(db.Text, nullable=True)
     draft_updated_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Flagged for review, exactly as the real test's question bar allows. Kept
+    # on the item rather than in the browser because "flagged and never
+    # returned to" is one of the few honest read-outs on how a section was
+    # triaged, and a client-side flag would vanish on reload.
+    flagged = db.Column(db.Boolean, nullable=False, default=False)
+    # How many times the answer on the sheet was replaced with a different one
+    # inside the section. Free navigation makes changing an answer possible for
+    # the first time, so this is measured rather than self-reported.
+    answer_revisions = db.Column(db.Integer, nullable=False, default=0)
     completed_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     session = db.relationship("StudySession", back_populates="items")
@@ -226,14 +386,33 @@ class Attempt(db.Model):
     strategy_prompt_ms = db.Column(db.Integer, nullable=False, default=0)
     strategy_propensity = db.Column(db.Float, nullable=True)
     strategy_candidates_n = db.Column(db.Integer, nullable=True)
+    # Copied off the session item at answer time, like every other arm on this
+    # row. See `SessionItem.strategy_selection_arm`.
+    strategy_selection_arm = db.Column(db.String(12), nullable=True, index=True)
+    strategy_selection_propensity = db.Column(db.Float, nullable=True)
+    # What FSRS predicted the chance of recalling this card was, at the moment
+    # it came back. Written only on review returns, and only once the card has
+    # a memory state, because a model that has not graded a card has made no
+    # claim about it. This is the whole instrument for `review_scheduling`: the
+    # layer has no holdout, and this column is what lets the scheduler be
+    # scored against its own predictions instead. It has to be recorded here
+    # rather than derived later, because answering the question is what moves
+    # the state the prediction was made from. See `scheduling.review_calibration`.
+    predicted_retrievability = db.Column(db.Float, nullable=True)
     # --- Enforced strategy use (see app/enforcement.py) ----------------------
     # `strategy_applied` above is a self-report about a private mental act.
     # These columns are the observable version of the same claim. `satisfied`
     # means the student cleared the gate for the strategy they opted into,
     # `skipped` means they declined it or dropped it partway, `attested` means
-    # a mastery-relaxed gate took their word for it, and `unenforced` means no
-    # gate was armed at all.
+    # a mastery-relaxed gate took their word for it, `stood_down` means the
+    # approach was mandatory and they were let out of it, and `unenforced`
+    # means no gate was armed at all.
     strategy_gate_status = db.Column(db.String(20), nullable=True, index=True)
+    # Copied off the session item at submit time so an analysis never has to
+    # join back to it. See the same three columns on SessionItem.
+    strategy_stratum = db.Column(db.String(160), nullable=True)
+    strategy_forcing_propensity = db.Column(db.Float, nullable=True)
+    strategy_gate_rejections = db.Column(db.Integer, nullable=False, default=0)
     strategy_enforcement_level = db.Column(db.String(12), nullable=True)
     # Which revision of the gates produced this artifact. An analysis must not
     # pool observations taken under different required operations, because that
@@ -249,6 +428,10 @@ class Attempt(db.Model):
     # the coaching pipeline when it is configured. Never blocks a submission,
     # never reaches the economy, never turns a correct answer into a penalty.
     strategy_artifact_quality = db.Column(db.Float, nullable=True)
+    # Copied off the session item at submit time, exactly as the strategy
+    # columns above are, so a later refit of the difficulty ratings can restrict
+    # itself to unbiased exposure without joining back. See `app/calibration.py`.
+    exposure_policy = db.Column(db.String(12), nullable=False, default="blind", index=True)
     evidence_class = db.Column(db.String(32), nullable=False, default="coached_practice", index=True)
     explanation_score = db.Column(db.Float, nullable=True)
     server_elapsed_ms = db.Column(db.Integer, nullable=False)
@@ -600,6 +783,92 @@ class SkillProgress(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
 
+class QuestionCalibration(db.Model):
+    """What has been learned about one question's difficulty, and from what.
+
+    One row per question that has ever been answered. A question with no row has
+    not been answered and has no difficulty — that absence is the honest empty
+    state the whole bank is in today, and it is why nothing here has a default
+    that could be mistaken for a measurement.
+
+    The estimator is in `app/calibration.py`. Read it before reading a value out
+    of this table, because two of these columns are not what they look like:
+    `rating` is in logits and is only meaningful relative to the bank's mean
+    (`calibration.scale_centre`), and `blind_rating` is a second, deliberately
+    partial estimate that exists to be compared against the first.
+    """
+
+    __tablename__ = "question_calibrations"
+
+    question_id = db.Column(
+        db.String(80),
+        db.ForeignKey("questions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # Difficulty in logits: the θ at which a student has an even chance of the
+    # item, above the guessing floor. Higher is harder. Not centred — see
+    # `calibration.scale_centre`.
+    rating = db.Column(db.Float, nullable=False, default=0.0)
+    # Σ Fisher information, which is what the standard error is 1/√ of. Kept
+    # rather than derived from `responses` because a response from a student far
+    # above or below the item says almost nothing about it, and counting it the
+    # same as an informative one is how an estimate acquires false confidence.
+    information = db.Column(db.Float, nullable=False, default=0.0)
+    responses = db.Column(db.Integer, nullable=False, default=0)
+    correct = db.Column(db.Integer, nullable=False, default=0)
+    # The same estimate built only from responses whose exposure could not have
+    # depended on difficulty. Identical to `rating` while nothing targets;
+    # divergence afterwards is the measurement of selection bias rather than the
+    # worry about it. See `calibration.exposure_draw`.
+    blind_rating = db.Column(db.Float, nullable=False, default=0.0)
+    blind_information = db.Column(db.Float, nullable=False, default=0.0)
+    blind_responses = db.Column(db.Integer, nullable=False, default=0)
+    targeted_responses = db.Column(db.Integer, nullable=False, default=0)
+    # 'uncalibrated' | 'provisional' | 'estimated' | 'calibrated' — how much
+    # evidence there is. Derived from `responses` and `information` on every
+    # update by `calibration.status_for`; stored so a consumer can filter in SQL
+    # without recomputing it per row.
+    status = db.Column(db.String(20), nullable=False, default="uncalibrated", index=True)
+    # 'responses' | 'simulated' | 'imported' | 'official' — where the evidence
+    # came from. Separate from `status` because fifty real responses and fifty
+    # from a demo seeder are the same amount of evidence and not the same
+    # evidence, and only one of them should ever reach a student.
+    origin = db.Column(db.String(20), nullable=False, default="responses", index=True)
+    first_response_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_response_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    question = db.relationship("Question", back_populates="calibration")
+
+
+class LearnerRating(db.Model):
+    """The other side of the match: one student's ability, in the same logits.
+
+    Not a score and not shown to anybody. It exists because an item's difficulty
+    cannot be estimated from raw accuracy — a question is not hard because weak
+    students missed it — so every update needs an opponent rating to be
+    surprised relative to.
+
+    Scoped per section. A single θ per student would let weakness at Reading
+    Comprehension make Logical Reasoning items look easy, which is precisely the
+    confound the item rating exists to remove.
+    """
+
+    __tablename__ = "learner_ratings"
+    __table_args__ = (UniqueConstraint("user_id", "scope", name="uq_learner_rating_scope"),)
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # A `Question.section` value today. A string rather than an enum so a later
+    # per-question-type ability does not need a migration to exist.
+    scope = db.Column(db.String(60), nullable=False)
+    rating = db.Column(db.Float, nullable=False, default=0.0)
+    information = db.Column(db.Float, nullable=False, default=0.0)
+    responses = db.Column(db.Integer, nullable=False, default=0)
+    correct = db.Column(db.Integer, nullable=False, default=0)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
 class ReviewQueueItem(db.Model):
     __tablename__ = "review_queue_items"
     __table_args__ = (UniqueConstraint("user_id", "question_id", name="uq_review_user_question"),)
@@ -642,6 +911,68 @@ class ReviewQueueItem(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
     question = db.relationship("Question")
+
+
+class LayerAssignment(db.Model):
+    """One draw of one adaptive layer's arm, for one student, on one encounter.
+
+    The measurement spine's whole persistent state — see `app/experiments.py`
+    for what it is for. Four properties of this table are load-bearing and each
+    of them is a lesson from the strategy trial rather than a preference:
+
+    `exposure` is the encounter the draw belongs to, and it is part of the
+    uniqueness key. That is what makes asking twice return the same arm instead
+    of redrawing mid-run, and it is what makes a caller who reuses a token
+    visible in `experiments.assignment_health` rather than silently
+    non-random.
+
+    `propensity` is the probability of the arm that was actually drawn, under
+    the shares in force at the moment of the draw. A later inverse-propensity
+    fit trusts this column, so it records what happened rather than what the
+    design intended, and nothing rewrites it afterwards.
+
+    `design_version` moves whenever a layer's arms or shares move, and no
+    reading pools two versions. A share retuned halfway through is two
+    experiments, not a longer one.
+
+    `session_id` carries no foreign key deliberately. The run's id is minted
+    before its row exists — that is what lets a run-level draw happen before
+    question selection — so a constraint here would make the ordering
+    impossible rather than making the data safer. Nothing reads this column
+    except the outcome join, which tolerates a miss.
+    """
+
+    __tablename__ = "layer_assignments"
+    __table_args__ = (
+        UniqueConstraint("layer", "subject_id", "exposure", name="uq_layer_assignment_exposure"),
+        CheckConstraint("propensity > 0 and propensity <= 1", name="ck_layer_assignment_propensity"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    layer = db.Column(db.String(60), nullable=False, index=True)
+    subject_id = db.Column(
+        db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    unit = db.Column(db.String(16), nullable=False)
+    exposure = db.Column(db.String(120), nullable=False)
+    arm = db.Column(db.String(40), nullable=False, index=True)
+    propensity = db.Column(db.Float, nullable=False)
+    design_version = db.Column(db.String(40), nullable=False)
+    session_id = db.Column(db.String(36), nullable=True, index=True)
+    # What the layer's signal said at the moment of the draw, as a sorted
+    # pipe-separated set of tokens, or null for a layer whose reading does not
+    # need it. `experiments.signal_tokens` writes it and only set membership is
+    # ever read off it.
+    #
+    # It exists because a layer's declared population can otherwise be a
+    # comment rather than a fact: `weak_type_targeting` is read on later
+    # encounters with *the types this student was weak at when the run was
+    # built*, and that list is not reconstructible afterwards — the whole point
+    # of the layer is that it moves as the student improves. Recording it here
+    # is the difference between a reading restricted to the population it
+    # claims and one that quietly averages over every type in the bank.
+    signal = db.Column(db.String(240), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
 
 
 class ScoreProjection(db.Model):

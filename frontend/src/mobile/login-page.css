@@ -44,7 +44,7 @@
     margin: 6px 0 7px;
     font-size: clamp(25px, 7.8vw, 31px);
     line-height: 1.02;
-    text-shadow: 3px 3px #0a111d;
+    text-shadow: 0 2px 0 rgba(6, 11, 20, .45);
   }
   .login-copy > p { max-width: none; font-size: 11.5px; line-height: 1.4; }
   .feature-list {
@@ -62,13 +62,13 @@
     min-height: 0;
     max-height: none;
     aspect-ratio: auto;
-    box-shadow: 5px 5px #080c13;
+    box-shadow: var(--el-2);
   }
   .login-panel-wrap {
     min-height: 0;
     padding: 10px 14px max(10px, env(safe-area-inset-bottom));
   }
-  .login-panel { width: min(100%, 390px); padding: 14px 15px 11px; box-shadow: inset 0 0 0 3px #c59b58, 5px 5px #141721; }
+  .login-panel { width: min(100%, 390px); padding: 14px 15px 11px; box-shadow: inset 0 0 0 2px rgba(110, 76, 35, .18), var(--el-3); }
   .login-panel .eyebrow { font-size: 7.5px; }
   .login-panel h2 { margin: 4px 0; font-size: 18px; }
   .login-panel > p { margin: 0 0 7px; font-size: 10px; line-height: 1.35; }
@@ -173,7 +173,7 @@
     margin: 7px 0 8px;
     font-size: clamp(28px, 8.3vw, 35px);
     line-height: 1.02;
-    text-shadow: 3px 3px rgba(5, 11, 18, .78);
+    text-shadow: 0 2px 0 rgba(6, 11, 20, .45);
   }
   .login-copy > p {
     max-width: 35rem;
@@ -192,6 +192,18 @@
     scroll-snap-type: x proximity;
     scrollbar-width: none;
     font-size: 10px;
+    /* The second card is meant to peek, which is how a snap rail says there is
+       more of it. Without a soft edge it does not read as a peek: at 390 the
+       cut lands mid-word on "Reasoning" and the first screen anyone ever sees
+       opens with what looks like broken text. The mask turns the same 104px of
+       card into an edge that is obviously continuing.
+
+       A mask and not an overlay, because this rail sits on a translucent panel
+       over the office scene and a gradient strip painted on top of it would
+       have to match a background that moves. Cheap here for the same reason a
+       full-viewport one would not be: 366x38, four children, no blur. */
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
   }
   .feature-list::-webkit-scrollbar { display: none; }
   .feature-list span {

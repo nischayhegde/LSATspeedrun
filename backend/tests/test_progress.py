@@ -18,7 +18,12 @@ def add_question(index: int, section: str, question_type: str = "Inference") -> 
     passage_id = None
     stimulus = f"Argument stimulus {index}."
     if section == "Reading Comprehension":
-        passage_id = f"progress-passage-{index // 2}"
+        # Five questions to a passage. The shipped bank runs 4 to 16 with a
+        # median of 7 and has nothing shorter than 4, so a fixture built on
+        # two-question passages was testing a bank that cannot exist — and
+        # specifically one where no passage is long enough to be a reading case,
+        # which is the shape practice now serves the section in.
+        passage_id = f"progress-passage-{(index - 20) // 5}"
         if not db.session.get(Passage, passage_id):
             db.session.add(
                 Passage(
@@ -36,7 +41,6 @@ def add_question(index: int, section: str, question_type: str = "Inference") -> 
             passage_id=passage_id,
             section=section,
             question_type=question_type,
-            difficulty=3,
             stimulus=stimulus,
             stem=f"Which answer is best for progress question {index}?",
             correct_answer="C",
@@ -149,13 +153,21 @@ def run_session(
     correct: int = 2,
     confidence: int = 3,
 ) -> str:
-    """Play one practice run to completion, getting `correct` questions right."""
+    """Play one practice run to completion, getting `correct` questions right.
+
+    Loops over the run's actual `total_items` rather than over the size it asked
+    for. A run may come back a question or two longer than requested when the
+    selector had to serve a Reading Comprehension passage whole — see
+    `services.passage_overshoot_allowance` — and answering only `size` of them
+    leaves the run unfinished, which silently skips every on-completion effect
+    the caller is usually here to test.
+    """
     from app.models import Attempt
     from app.services import run_attempt_coaching
 
     session = client.post("/v1/study-sessions", json={"size": size}, headers=headers).json["session"]
     session_id = session["id"]
-    for position in range(size):
+    for position in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
         item = current.get("current_item")
         if not item:
@@ -178,6 +190,16 @@ def run_session(
     return session_id
 
 
+def served_items(client, headers, session_id: str) -> int:
+    """How long the run actually came out.
+
+    A run may exceed the size it asked for by up to
+    `services.passage_overshoot_allowance`, so a test that counts attempts has
+    to ask rather than assume.
+    """
+    return client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]["total_items"]
+
+
 # ---------------------------------------------------------------------------
 # 1. Attempt history
 # ---------------------------------------------------------------------------
@@ -196,9 +218,13 @@ def test_past_sessions_are_listable_with_their_counts(app):
     assert body["total"] == 2
     assert [row["id"] for row in body["sessions"]] == [second, first]
     newest = body["sessions"][0]
-    assert newest["answered"] == 4
+    # Every item in the run was answered, one of them correctly. The run's
+    # length is read back rather than assumed to be the 4 it asked for: a run
+    # that had to serve a passage whole comes back a question or two longer.
+    served = client.get(f"/v1/study-sessions/{second}", headers=headers).json["session"]["total_items"]
+    assert newest["answered"] == served
     assert newest["correct"] == 1
-    assert newest["accuracy"] == 25
+    assert newest["accuracy"] == round(100 / served)
     assert newest["reviewable"] is True
     assert body["has_more"] is False
 
@@ -208,7 +234,7 @@ def test_session_history_paginates(app):
     headers = login(client, "history-page@example.test")
     create_game(client, headers)
     for index in range(3):
-        run_session(app, client, headers, f"page-{index}", size=2, correct=1)
+        run_session(app, client, headers, f"page-{index}", size=4, correct=1)
 
     first_page = client.get("/v1/history/sessions?limit=2", headers=headers).json
     assert len(first_page["sessions"]) == 2
@@ -226,22 +252,23 @@ def test_previously_answered_questions_are_browsable_and_filterable(app):
     headers = login(client, "history-attempts@example.test")
     create_game(client, headers)
     session_id = run_session(app, client, headers, "browse", size=4, correct=2)
+    served = served_items(client, headers, session_id)
 
     everything = client.get("/v1/history/attempts", headers=headers).json
-    assert everything["total"] == 4
-    assert len(everything["attempts"]) == 4
+    assert everything["total"] == served
+    assert len(everything["attempts"]) == served
     row = everything["attempts"][0]
     assert {"attempt_id", "question_type", "is_correct", "selected_label", "correct_label"} <= set(row)
     assert row["target_time_seconds"] > 0
     assert row["pace_ratio"] is not None
 
     misses = client.get("/v1/history/attempts?correct=false", headers=headers).json
-    assert misses["total"] == 2
+    assert misses["total"] == served - 2
     assert all(not attempt["is_correct"] for attempt in misses["attempts"])
     assert misses["filters"]["correct"] is False
 
     scoped = client.get(f"/v1/history/attempts?session_id={session_id}", headers=headers).json
-    assert scoped["total"] == 4
+    assert scoped["total"] == served
 
     by_type = client.get("/v1/history/attempts?question_type=Assumption", headers=headers).json
     assert all(attempt["question_type"] == "Assumption" for attempt in by_type["attempts"])
@@ -255,12 +282,12 @@ def test_attempt_history_pagination_and_detail_payload(app):
     client = app.test_client()
     headers = login(client, "history-detail@example.test")
     create_game(client, headers)
-    run_session(app, client, headers, "detail", size=4, correct=2)
+    session_id = run_session(app, client, headers, "detail", size=4, correct=2)
 
     page = client.get("/v1/history/attempts?limit=2", headers=headers).json
     assert len(page["attempts"]) == 2
     assert page["has_more"] is True
-    assert page["total"] == 4
+    assert page["total"] == served_items(client, headers, session_id)
 
     detailed = client.get("/v1/history/attempts?limit=2&detail=1", headers=headers).json
     first = detailed["attempts"][0]
@@ -285,7 +312,7 @@ def test_attempt_history_is_scoped_to_the_account(app):
     client = app.test_client()
     owner = login(client, "history-owner@example.test")
     create_game(client, owner)
-    run_session(app, client, owner, "owned", size=2, correct=1)
+    run_session(app, client, owner, "owned", size=4, correct=1)
     mine = client.get("/v1/history/attempts", headers=owner).json
     attempt_id = mine["attempts"][0]["attempt_id"]
 
@@ -300,14 +327,15 @@ def test_history_facets_describe_only_what_the_account_has_seen(app):
     client = app.test_client()
     headers = login(client, "history-facets@example.test")
     create_game(client, headers)
-    run_session(app, client, headers, "facets", size=4, correct=3)
+    session_id = run_session(app, client, headers, "facets", size=4, correct=3)
+    served = served_items(client, headers, session_id)
 
     facets = client.get("/v1/history/facets", headers=headers).json
-    assert facets["attempts"] == 4
+    assert facets["attempts"] == served
     assert facets["correct"] == 3
-    assert facets["incorrect"] == 1
+    assert facets["incorrect"] == served - 3
     assert facets["question_types"]
-    assert sum(row["attempts"] for row in facets["question_types"]) == 4
+    assert sum(row["attempts"] for row in facets["question_types"]) == served
     assert facets["first_attempt_at"] and facets["last_attempt_at"]
 
 
@@ -895,10 +923,17 @@ def test_practice_never_serves_a_lone_reading_comprehension_question(app):
     the session's real length and corrupts the pace metrics the same session
     records, because the target times assume the first question on a passage
     pays for the reading and the rest do not.
+
+    A run may finish up to `PASSAGE_OVERSHOOT_ALLOWANCE` questions past the size
+    it was asked for, and only for this reason. Without that allowance a block
+    can never be served unless it is shorter than the whole run, which at the
+    six-question run this app now serves would put two thirds of the Reading
+    Comprehension bank permanently out of reach — see
+    `test_a_short_run_can_still_reach_the_reading_comprehension_bank`.
     """
     import random as random_module
 
-    from app.services import select_random_questions
+    from app.services import passage_overshoot_allowance, select_random_questions
 
     with app.app_context():
         passage_sizes: dict[str, int] = defaultdict(int)
@@ -909,9 +944,10 @@ def test_practice_never_serves_a_lone_reading_comprehension_question(app):
         seen_a_passage = False
         for seed in range(20):
             random_module.seed(seed)
-            for requested in (4, 6, 10):
+            for requested in (1, 2, 4, 6, 10):
                 selected = select_random_questions(requested)
-                assert len(selected) == requested, (seed, requested)
+                ceiling = requested + passage_overshoot_allowance(requested)
+                assert requested <= len(selected) <= ceiling, (seed, requested)
                 grouped: dict[str, int] = defaultdict(int)
                 for question in selected:
                     if question.passage_id:
@@ -923,12 +959,19 @@ def test_practice_never_serves_a_lone_reading_comprehension_question(app):
 
 
 def test_a_practice_run_serves_passage_mates_back_to_back(app):
-    """Intact is not enough — the questions have to arrive together."""
+    """Intact is not enough — the questions have to arrive together.
+
+    Reading cases are drawn a third of the time, so the shape is asked for here
+    rather than waited for: six runs at the shipped share would miss entirely
+    once in eleven attempts, and a test that fails 9% of the time teaches people
+    to re-run the suite.
+    """
     from app.models import SessionItem
 
     client = app.test_client()
     headers = login(client, "practice-passage-order@example.test")
     create_game(client, headers)
+    app.config["PRACTICE_RC_CASE_SHARE"] = 1.0
 
     found_a_passage = False
     for index in range(6):
@@ -1201,11 +1244,24 @@ def test_review_selection_ranks_by_retrievability_not_by_calendar_date(app):
         assert due_for_review(user.id, 1)[0].id == weak.id
 
 
-def test_review_items_are_interleaved_rather_than_front_loaded(app):
-    from app.scheduling import interleave
+def _interleave_items():
+    """Three reviews and seven fresh, every one a different question type.
+
+    Distinct types on purpose. `interleave` runs `_separate_same_type` over its
+    own output, which swaps a block that repeats the previous block's type with
+    the next differently-typed one — so an input where every review shares one
+    type and every fresh item shares another is a pathological case for it: the
+    separator alternates the two groups from the front and the placement these
+    tests are about disappears underneath it. Giving each item its own type
+    makes the separator a no-op and leaves the placement visible.
+
+    Whether the separator reintroduces a positional cue on real material is a
+    question about real material, and it is measured there, end to end, by
+    `tools/audit/rc_reachability_probe.py --slots`.
+    """
 
     class Item:
-        def __init__(self, name, question_type="Flaw", passage_id=None):
+        def __init__(self, name, question_type, passage_id=None):
             self.name = name
             self.question_type = question_type
             self.passage_id = passage_id
@@ -1213,21 +1269,78 @@ def test_review_items_are_interleaved_rather_than_front_loaded(app):
         def __repr__(self):
             return self.name
 
-    reviews = [Item(f"r{index}") for index in range(3)]
-    fresh = [Item(f"f{index}", question_type="Assumption") for index in range(7)]
-    ordered = interleave(reviews, fresh)
+    reviews = [Item(f"r{index}", question_type=f"review-type-{index}") for index in range(3)]
+    fresh = [Item(f"f{index}", question_type=f"fresh-type-{index}") for index in range(7)]
+    return reviews, fresh
 
-    assert len(ordered) == 10
-    assert set(ordered) == set(reviews) | set(fresh)
-    positions = sorted(ordered.index(item) for item in reviews)
-    assert positions != [0, 1, 2], "reviews are still front-loaded"
-    # Spread out: no two reviews adjacent, and none in the opening slot.
-    assert all(second - first > 1 for first, second in zip(positions, positions[1:]))
-    assert positions[0] > 0
 
-    # Degenerate inputs pass straight through.
-    assert interleave([], fresh) == fresh
-    assert interleave(reviews, []) == reviews
+def test_review_items_stay_a_full_stretch_apart_however_the_jitter_falls(app):
+    """The spread property, which the jitter had to preserve.
+
+    Three reviews in a run of ten are always a stretch of the run apart. That is
+    what stops them bunching, and it is a guarantee rather than a tendency — so
+    it is asserted on every one of a hundred draws rather than on one lucky
+    ordering.
+    """
+    from app.scheduling import interleave
+
+    for _ in range(100):
+        reviews, fresh = _interleave_items()
+        ordered = interleave(reviews, fresh)
+        assert len(ordered) == 10
+        assert set(ordered) == set(reviews) | set(fresh)
+        positions = sorted(ordered.index(item) for item in reviews)
+        assert positions != [0, 1, 2], "reviews are front-loaded"
+        # Consecutive reviews are always a stretch apart — three questions here,
+        # ten of them split three ways — wherever the random offset slid the
+        # whole set to. Systematic sampling moves the reviews together, so the
+        # gaps between them can only ever be floor or ceiling of the stretch.
+        gaps = [second - first for first, second in zip(positions, positions[1:])]
+        assert min(gaps) >= 10 // 3, positions
+
+    from app.scheduling import interleave as passthrough
+
+    reviews, fresh = _interleave_items()
+    assert passthrough([], fresh) == fresh
+    assert passthrough(reviews, []) == reviews
+
+
+def test_no_position_in_a_run_is_a_reliable_tell_that_a_question_is_a_repeat(app):
+    """The jitter, and the reason it exists.
+
+    Review placement used to be `round((i + .5) * total / count)` — the midpoint
+    of each stretch, fully determined by the run's length and the number of
+    reviews in it. Measured on a size-10 run, the per-slot review rate was
+    0:0%, 1:100%, 3:60%, 5:70%, 7:75%, 9:90%. The first question was never a
+    repeat and the second always was.
+
+    That is a cue the student can learn, and learning it is worse than useless:
+    knowing a question is one you got wrong before tells you something about the
+    answer without telling you anything about the argument, so you can start
+    responding to the position instead of to the problem. It is the same failure
+    Rohrer's result is about, which `scheduling.py` quotes in its own comment
+    two functions above the code that was producing it. `research/12` §2 asked
+    for a jitter term and nobody added one.
+
+    Stratified placement makes every position carry the same review probability,
+    3/10 here, so position carries no information at all. Asserted as a band
+    rather than an equality because 400 draws of a 30% event has a standard
+    deviation of about 2.3 points; what would fail is the old behaviour, where
+    two of these numbers were 0% and 100%.
+    """
+    from app.scheduling import interleave
+
+    draws = 400
+    review_at = [0] * 10
+    for _ in range(draws):
+        reviews, fresh = _interleave_items()
+        ordered = interleave(reviews, fresh)
+        for position in (ordered.index(item) for item in reviews):
+            review_at[position] += 1
+
+    rates = [count / draws for count in review_at]
+    for position, rate in enumerate(rates):
+        assert 0.15 <= rate <= 0.45, f"position {position} is a repeat {rate:.0%} of the time: {rates}"
 
 
 def test_interleaving_keeps_passage_mates_together(app):
@@ -1253,6 +1366,71 @@ def test_interleaving_keeps_passage_mates_together(app):
     passage_positions = [names.index(name) for name in ("rc1", "rc2", "rc3")]
     assert passage_positions == sorted(passage_positions)
     assert passage_positions[-1] - passage_positions[0] == 2
+
+
+def test_reading_comprehension_is_blocked_on_purpose_and_not_by_accident(app):
+    """The type-discrimination pass leaves Reading Comprehension alone.
+
+    Not because passages are expensive to re-read — that is true, and it is
+    what `_blocks` already handles — but because
+    `research/01-learning-science.md` puts interleaving at g = 0.01 on
+    expository text against g = 0.42 overall. Moving Reading Comprehension
+    blocks around to break up repeated types would be buying a benefit the
+    evidence says is not there.
+
+    The distinction this asserts is between the two halves of interleaving.
+    Reading Comprehension keeps its review items distributed through the run,
+    because that half is about not leaking which questions were missed and
+    applies to any material. It does not get de-blocked by type.
+    """
+    from app.scheduling import interleave, is_blocked_section
+
+    class Item:
+        def __init__(self, name, question_type, section, passage_id=None):
+            self.name = name
+            self.question_type = question_type
+            self.section = section
+            self.passage_id = passage_id
+
+    # Two same-type Reading Comprehension blocks back to back, with a Logical
+    # Reasoning block available to swap in. The de-blocking pass would take it
+    # for a Logical Reasoning pair, and must not here.
+    fresh = [
+        Item("rcA", "Detail", "Reading Comprehension", "p1"),
+        Item("rcB", "Detail", "Reading Comprehension", "p2"),
+        Item("lr1", "Flaw", "Logical Reasoning"),
+    ]
+    reviews = [Item("rev", "Assumption", "Logical Reasoning")]
+    names = [item.name for item in interleave(reviews, fresh)]
+    # Read with the review filtered out, because the two passes are what this
+    # test is separating and only the second one is its subject. Where the
+    # review lands is a uniform draw over the run — see `_review_slots`, which
+    # replaced the fixed midpoints on purpose, having measured them as a
+    # positional cue — so it can fall between the two passages without the
+    # de-blocking pass having touched them. What must hold is that the *fresh*
+    # order still has the passages together, which is the pass that is
+    # supposed to leave Reading Comprehension alone.
+    #
+    # This assertion used to read the combined sequence, and there used to be
+    # one below it asserting the review is never first. Both were true only
+    # while review placement was deterministic; the second is now false by
+    # design, since "the first question is never a repeat" is itself the cue
+    # the jitter exists to remove.
+    fresh_names = [name for name in names if name != "rev"]
+    assert fresh_names.index("rcA") < fresh_names.index("rcB")
+    assert fresh_names.index("rcB") - fresh_names.index("rcA") == 1
+
+    # Same shape, Logical Reasoning throughout, and the pass does fire.
+    fresh = [
+        Item("a", "Flaw", "Logical Reasoning"),
+        Item("b", "Flaw", "Logical Reasoning"),
+        Item("c", "Assumption", "Logical Reasoning"),
+    ]
+    names = [item.name for item in interleave(reviews, fresh)]
+    assert abs(names.index("a") - names.index("b")) > 1
+
+    assert is_blocked_section(fresh[0]) is False
+    assert is_blocked_section(Item("x", "Detail", "Reading Comprehension")) is True
 
 
 def test_practice_runs_never_expose_the_scheduler(app):

@@ -11,7 +11,7 @@
  */
 
 .office-game-page { min-height: calc(100vh - 68px); padding: 28px clamp(16px, 2.6vw, 42px) 55px; color: #f7e9bd; background: #101724; }
-.office-world-shell { max-width: 1660px; margin: auto; position: relative; }.pixel-meter { height: 12px; padding: 2px; border: 2px solid #3e2c22; background: #8d7652; }.pixel-meter i { height: 100%; display: block; background: #4e9e72; box-shadow: inset 0 -3px #317354; }.office-upkeep-strip { margin-top: 14px; padding: 11px 14px; display: grid; grid-template-columns: minmax(170px,.66fr) minmax(480px,2fr) minmax(190px,.8fr); align-items: center; gap: 16px; border: 1px solid rgba(103,183,170,.3); border-left: 4px solid #579a8f; border-radius: 11px; color: #dce5df; background: linear-gradient(110deg,rgba(15,32,39,.97),rgba(25,43,49,.94)); box-shadow: 0 12px 27px rgba(4,9,14,.22),inset 0 1px rgba(255,255,255,.035); }
+.office-world-shell { max-width: 1660px; margin: auto; position: relative; }.pixel-meter { height: 12px; padding: 2px; overflow: hidden; border: 1px solid var(--ink-line-strong); border-radius: var(--r-chip); background: #8d7652; }.pixel-meter i { height: 100%; display: block; border-radius: var(--r-chip); background: linear-gradient(180deg, #62b184, #3f8760); }.office-upkeep-strip { margin-top: 14px; padding: 11px 14px; display: grid; grid-template-columns: minmax(170px,.66fr) minmax(480px,2fr) minmax(190px,.8fr); align-items: center; gap: 16px; border: 1px solid rgba(103,183,170,.3); border-left: 4px solid #579a8f; border-radius: 11px; color: #dce5df; background: linear-gradient(110deg,rgba(15,32,39,.97),rgba(25,43,49,.94)); box-shadow: 0 12px 27px rgba(4,9,14,.22),inset 0 1px rgba(255,255,255,.035); }
 .office-upkeep-heading { display: flex; align-items: center; gap: 9px; }
 .office-upkeep-heading > svg { width: 24px; color: #dfbf70; }
 .office-upkeep-heading span,.office-upkeep-heading small,.office-upkeep-heading strong { display: block; }
@@ -19,7 +19,7 @@
 .office-upkeep-heading strong { margin-top: 3px; color: #f0dfaf; font-family: var(--font-display); font-size: 16px; }
 .office-upkeep-terms { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
 .office-upkeep-terms > span { min-width: 0; padding: 1px 12px; border-left: 1px solid rgba(213,193,143,.16); }
-.office-upkeep-terms strong { display: block; margin-top: 4px; overflow: hidden; color: #e8dfc7; font-family: var(--font-ui); font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.office-upkeep-terms strong { display: block; margin-top: 4px; overflow: hidden; color: #e8dfc7; font-family: var(--font-body); font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .office-upkeep-terms .is-due strong { color: #efaf8f; }
 .office-upkeep-note { color: #9badab; font-size: 10px; line-height: 1.4; text-align: right; }
 .office-upkeep-strip > p { margin: 0; color: #c1cfca; font-size: 11px; }
@@ -37,9 +37,25 @@
 .office-milestone-strip > p { margin: 0; color: #bfc8c2; font-size: 12px; }
 .office-milestone-strip > button { min-height: 38px; padding: 8px 12px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgba(223,195,125,.4); border-radius: 9px; color: #f5e5b8; background: #294854; box-shadow: inset 0 0 0 1px rgba(255,255,255,.035); font-family: var(--font-pixel); font-size: 9px; font-weight: 850; }
 .office-milestone-strip > button svg { width: 14px; }
+/* The economy ledger is a fixed card in the viewport's bottom-left corner
+   (`.economy-ledger`, styles.css), and this strip is the full-width row that
+   comes to rest in that corner: at 1440x900 the card was printed straight over
+   "NEXT OFFICE" and the tier name beneath it. Reserve the corner instead --
+   the ledger is inset 14px and is 214px wide, so 210px of padding puts this
+   strip's copy clear of its right edge at every width the ledger is shown at,
+   and the card reads as sitting in the gutter rather than on top of the row.
+   Scoped to match the ledger itself, which mobile.css stands down at 900px. */
+@media (min-width: 901px) {
+  .office-milestone-strip { padding-left: 210px; }
+}
 
 .office-gamebar { max-width: 1660px; margin: 19px auto 0; display: grid; grid-template-columns: 1fr 1.12fr .82fr; gap: 13px; }
-.office-gamebar > article { min-height: 116px; border: 3px solid #090d15; background: #f0ddb0; box-shadow: inset 0 0 0 2px #c19b5f, 5px 5px #090d15; }
+/* The three cards along the foot of the office. They are paper laid on the
+   desk — the same object as the story page's dossiers and the chapter prompt —
+   so they keep the brass rule printed inside the sheet and a cast edge, and
+   lose the 3px cold-black cabinet and the flat `5px 5px` pixel drop they had
+   been standing on. */
+.office-gamebar > article { min-height: 116px; border: 1px solid var(--ink-line); border-radius: var(--r-card); background: #f0ddb0; box-shadow: inset 0 0 0 2px rgba(200, 155, 75, .55), 4px 5px 0 rgba(27, 26, 36, .13), var(--el-2); }
 .office-gamebar .training-focus-card,
 .office-gamebar .training-evidence-card { color: #172331; }
 .office-gamebar .training-focus-card span,
@@ -49,9 +65,53 @@
 .office-gamebar .training-evidence-card strong { color: #213746; font-size: 34px; text-shadow: 0 1px rgba(255,255,255,.28); }
 .office-gamebar .training-evidence-card small { color: #565e59; font-size: 11px; font-weight: 700; }
 .office-gamebar .training-focus-card button,
-.office-gamebar .training-evidence-card button { min-height: 44px; padding: 9px 13px; border: 2px solid #b88935; font-size: 10px; box-shadow: 3px 3px #9a712b; }
-.client-quest-card { --portrait-overhang: 6px; padding: 12px 12px 20px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
-.office-page[data-deck-demo='client'],
+
+.office-gamebar .training-evidence-card button { min-height: 44px; padding: 9px 13px; border: 1px solid var(--ink-line-strong); border-radius: var(--r-control); font-size: 10px; box-shadow: inset 0 1px 0 rgba(255, 246, 220, .62), var(--el-1); }
+/* ---------------------------------------------------------------------------
+   The active contract.
+
+   Three surfaces draw this same object: the Firm tab's retainer panel, the
+   Practice docket's client header, and this card. The other two set the
+   client's name in Fraunces at 24-26px and hang the contract's figures off it
+   as labelled chips. This one set the name in 13px tracked caps and joined its
+   two figures into one grey sentence with a middot, which left the subject of
+   the card as the smallest type in the row it sits in — smaller than "0 / 5
+   QUESTIONS" and "0%" on either side of it. The name is a name, so it is set
+   in the face this app sets names in, and the figures are separated because
+   they are two facts about the contract rather than one.
+   --------------------------------------------------------------------------- */
+.client-quest-card { --portrait-overhang: 14px; padding: 13px 15px 22px 16px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 14px; }
+.client-quest-card > div { min-width: 0; display: grid; gap: 6px; }
+/* Sized to hold "Regional corporation" on one line in the column this card
+   actually has, which is about 215px at 1440. Every step up from here spends
+   a whole extra row of card height on a name that was already legible, and
+   the row's other two cards are stretched to match whatever this one does. */
+.client-quest-card h3 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: clamp(16px, 1.25vw, 20px); font-weight: 620; letter-spacing: -.01em; line-height: 1.06; text-transform: none; text-wrap: balance; }
+/* The two figures the contract runs on: how much of it is left, and what it
+   pays. Ink hairline on a lighter draw of the same parchment, so they read as
+   entries written on the sheet rather than as controls sitting on it. */
+.client-quest-card p { margin: 0; display: flex; flex-wrap: wrap; gap: 5px; overflow-wrap: anywhere; }
+.client-quest-card p b { padding: 3px 9px 4px; border: 1px solid rgba(27, 26, 36, .24); border-radius: var(--r-chip); color: rgba(27, 26, 36, .74); background: rgba(255, 250, 230, .5); font-family: var(--font-hud); font-size: 9.5px; font-weight: 800; letter-spacing: .03em; }
+/* Reputation has fallen under the client's requirement, the original contract
+   is suspended and a walk-in is billing. A returned filing, not an alarm. */
+.client-quest-card.is-on-hold p b:first-child { border-color: rgba(168, 70, 69, .5); color: #8d3d38; background: rgba(168, 70, 69, .09); }
+/* The portrait's title pill is centred on an 86px bust and set `nowrap`, so
+   the card has to reserve the room it hangs outside the portrait in
+   `--portrait-overhang` above. At the shared 9.5px it needed 105px for
+   "GENERAL COUNSEL" against a 98px allowance and shipped as "GENERAL C…", a
+   fact rendered unreadable to save seven pixels. Set smaller, the longest
+   title in the catalog — "LEAGUE COMMISSIONER" — fits inside an allowance the
+   card's own left padding can still contain, which is what keeps the pill from
+   hanging over the card edge the way it does in the phone brief sheet.
+   Carrying `.av-portrait` is not decoration: `art.css` styles this pill
+   through `.client-portrait.av-portrait > small` and is injected after this
+   sheet, so without the extra class these lose the cascade to it and do
+   nothing. */
+.client-quest-card .client-portrait.av-portrait > small { padding: 2.5px 7px; font-size: 7.5px; letter-spacing: .06em; }
+/* "Take case" — the slate plate the shared secondary button is drawn as, at
+   the size this card asks for. It was a flat navy fill inside a 2px cold-black
+   outline standing on a 3px printed drop. */
+.client-quest-card button { min-height: 34px; padding: 0 10px; border: 1px solid var(--ink-line-strong); border-radius: var(--r-control); color: #f8e6b5; background: linear-gradient(170deg, #2c4a5c, #1c3444); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), var(--el-1); font-family: var(--font-hud); font-size: 10px; font-weight: 900; }.client-quest-card button { display: flex; align-items: center; gap: 5px; }.client-quest-card button svg { width: 12px; }.office-page[data-deck-demo='client'],
 .office-page[data-deck-demo='treasury'] {
   padding: 0;
   overflow: hidden;
@@ -139,8 +199,7 @@
 @keyframes deck-case-action {
   to { color: #102735; background: #f2c75b; box-shadow: 0 0 0 4px rgba(242, 199, 91, .24), 3px 3px #121720; }
 }
-.client-quest-card > div { min-width: 0; }
-.client-quest-card p { overflow-wrap: anywhere; }.client-quest-card h3 { margin: 5px 0; color: #1d2935; font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.client-quest-card p { margin: 0; color: #6d5e4b; font-size: 11px; }.client-quest-card button { min-height: 34px; padding: 0 10px; border: 2px solid #121720; color: #f8e6b5; background: #263f50; box-shadow: 3px 3px #121720; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; }.client-quest-card button { display: flex; align-items: center; gap: 5px; }.client-quest-card button svg { width: 12px; }@media (max-width: 1120px) {  .office-upkeep-strip { grid-template-columns: minmax(160px,.55fr) minmax(440px,1.8fr); }
+@media (max-width: 1120px) {  .office-upkeep-strip { grid-template-columns: minmax(160px,.55fr) minmax(440px,1.8fr); }
   .office-upkeep-note { grid-column: 1 / 3; text-align: left; }
   .office-milestone-strip { grid-template-columns: minmax(170px,.8fr) minmax(230px,1.2fr) auto; gap: 12px; }
   .office-gamebar { grid-template-columns: 1fr 1fr; } }@media (max-width: 900px) {  .office-upkeep-strip { grid-template-columns: 1fr; }

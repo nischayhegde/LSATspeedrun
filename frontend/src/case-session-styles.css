@@ -57,8 +57,23 @@
 .strategy-tip-skip { padding: 6px 2px; border: 0; color: #9db7b2; background: none; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 .strategy-tip-skip:hover { color: #cfe0dc; }
 .strategy-tip-skip.active { color: #e7dcc3; text-decoration-thickness: 2px; }
+/* The gate a question can refuse to accept an answer without, so it is one of
+   the controls a finger has to be able to hit. "Use it" measured 40px and
+   "Skip this one" is text with no box of its own. */
+@media (pointer: coarse) {
+  .strategy-tip-use { min-height: 44px; }
+  .strategy-tip-skip { min-height: 44px; padding-inline: 6px; }
+}
 .strategy-tip.is-skipped { border-color: rgba(148,170,167,.32); }
 .strategy-tip-recorded { display: flex; align-items: center; gap: 8px; color: #8dd4c6; font-size: 11.5px; font-weight: 800; }
+/* A standing order. Shorter than a tip on purpose: no step grid and no action
+   row, because the gate immediately below is already open with the steps in it
+   as fields. The seal down the left edge is the only new ink. */
+.strategy-tip.is-required { padding-left: 22px; border-color: rgba(214,138,96,.55); box-shadow: inset 4px 0 0 #c8703f,0 15px 34px rgba(3,9,14,.28); }
+.strategy-tip.is-required .strategy-tip-head span { color: #eaa877; }
+.strategy-tip-order { margin: 9px 0 0; color: #e8c9a8; font-size: 12px; font-weight: 700; line-height: 1.45; }
+.strategy-tip.is-required.is-skipped { border-color: rgba(148,170,167,.32); box-shadow: inset 4px 0 0 #6d7f7c,0 15px 34px rgba(3,9,14,.28); }
+.strategy-tip.is-required.is-skipped .strategy-tip-order { color: #a9b8b4; }
 
 .case-page-turn { height: min(760px,calc(100vh - 115px)); position: absolute; z-index: 40; inset: 105px 0 auto; overflow: hidden; visibility: hidden; pointer-events: none; perspective: 2600px; perspective-origin: 50% 48%; }
 .case-page-turn.is-turning { visibility: visible; }
@@ -87,6 +102,7 @@
 .question-content.strategy-decision-pending .answer-card,.question-content.strategy-decision-pending .passage-card { box-shadow: 0 9px 24px rgba(28,35,38,.05); }
 @media (max-width: 620px) {
   .strategy-tip { padding: 13px; }
+  .strategy-tip.is-required { padding-left: 17px; }
   .strategy-tip h2 { font-size: 22px; }
   .strategy-tip ol { grid-template-columns: 1fr; }
   .strategy-tip-use { width: 100%; justify-content: center; }
@@ -125,6 +141,17 @@
 .reasoning-box textarea { width: 100%; resize: vertical; padding: 12px 13px; border: 1px solid #d1c7b8; border-radius: 7px; color: #263039; background: #fffefb; line-height: 1.55; }
 .reasoning-box textarea:focus { outline: 3px solid rgba(200,155,75,.15); border-color: var(--gold-dark); }
 .reasoning-box > p { margin: 7px 0 0; color: #85867f; font-size: 11px; }
+/* Autosave state. A save that worked stays quiet and small; one that did not is
+   the only thing on this card allowed to raise its voice, because it is the
+   only one that can cost the student the writing they can see on screen. */
+.draft-save-notice { display: flex; align-items: flex-start; gap: 7px; }
+.draft-save-notice svg { flex: none; margin-top: 1px; }
+.reasoning-box > .draft-save-notice { margin: 0 0 8px; font-size: 11px; }
+.draft-save-notice.is-saving, .draft-save-notice.is-saved { color: #85867f; }
+.draft-save-notice.is-saved { color: #4a7c59; }
+.draft-save-notice.is-recovered { padding: 8px 10px; border: 1px solid #c7ae7b; border-radius: 6px; color: #6b5426; background: rgba(224,199,147,.28); font-size: 11.5px; }
+.reasoning-box > .draft-save-notice.is-unsaved { padding: 9px 11px; border: 1px solid #d8a08f; border-radius: 6px; color: #8a3a26; background: #fbeae4; font-size: 11.5px; line-height: 1.5; }
+.draft-save-notice.is-unsaved strong { font-weight: 850; }
 .confidence-check { margin-top: 16px; padding: 10px 12px; display: flex; align-items: center; gap: 11px; border: 1px solid #cbb98e; background: rgba(246,239,220,.66); }
 .confidence-check > span { color: #263742; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .confidence-check > div { display: flex; gap: 5px; }.confidence-check button { width: 31px; height: 29px; padding: 0; border: 1px solid #756951; color: #3a403f; background: #fffaf0; font: 800 11px var(--font-pixel); }.confidence-check button.active { border-color: #1c3038; color: #fff4ca; background: #23424b; box-shadow: inset 0 0 0 2px #d5ad59; }.confidence-check small { color: #75766f; font-size: 11px; }
@@ -284,7 +311,46 @@
   .client-settlement { grid-template-columns: 1fr; }
   .reward-transfer { min-height: 88px; }
   .reward-packet { min-height: 72px; } }
-.session-page { background-color: #162130; background-image: linear-gradient(90deg, rgba(112,173,170,.05) 2px, transparent 2px), linear-gradient(rgba(112,173,170,.05) 2px, transparent 2px), radial-gradient(ellipse at 50% -10%, #39493e, transparent 50%); background-size: 18px 18px, 18px 18px, auto; }.session-page::before { opacity: .13; background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(5,8,12,.3) 4px); }.active-matter-banner, .case-file-topbar, .judge-review, .client-settlement { border: 4px solid #080c13; border-radius: 0; box-shadow: inset 0 0 0 3px #405a6d, 7px 7px #080c13; }.active-matter-copy > strong, .active-matter-fee strong { font-family: var(--font-pixel); text-transform: uppercase; }.passage-card, .answer-card { border: 4px solid #2c261e; border-radius: 0; box-shadow: inset 0 0 0 3px #c59e5e, 8px 8px #17130f; }.answer-card h1 { font-family: var(--font-pixel); font-size: clamp(17px, 1.7vw, 22px); font-weight: 900; }.choice-label { border: 2px solid #27241f; border-radius: 0; font-family: var(--font-pixel); }.reasoning-box, .reasoning-box textarea, .coaching-panel, .correct-explanation, .debrief-step, .case-score-card { border-radius: 0; }.judge-speech { border: 3px solid #1a1a1d; border-radius: 0; box-shadow: inset 0 0 0 2px #d0a95e, 5px 5px #12151b; }.judge-speech h2, .coaching-heading h2 { font-family: var(--font-pixel); font-size: clamp(16px, 2vw, 22px); text-transform: uppercase; }.grade-pill { border: 2px solid currentColor; border-radius: 0; font-family: var(--font-pixel); font-size: 10px; }.score-seal { border: 5px solid #9c6f2c; border-radius: 0; box-shadow: inset 0 0 0 3px #e9c668; }.score-seal span, .score-seal strong { font-family: var(--font-pixel); }.client-speech { border: 3px solid #171923; border-radius: 0; box-shadow: 5px 5px #171923; }.client-speech strong, .reward-packet strong { font-family: var(--font-pixel); }
+/* ---------------------------------------------------------------------------
+   The desk, re-inked.
+
+   What was here was the Pixel Empire pass over the reading surfaces above, and
+   it was the largest surviving pixel object in the app: an 18px cyan graph
+   grid and scanlines behind the page, every card squared off to a 0 radius
+   inside a 3-5px near-black outline on a hard `7px 7px` offset, and the
+   judge's verdict, the client's line, the grade and the seal all set in the
+   HUD face. The rules it overrode are the diegetic ones — a document is
+   parchment with a real fibre in it, a spoken line is a bubble, a seal is
+   round — and those are what the illustrated direction wants back. So most of
+   this block is deleted rather than restyled, and what remains is the small
+   set of corrections the older sheet genuinely needed: warm ink instead of
+   cold black, the display face on the two lines a reader is meant to register,
+   and the HUD face on the labels around them.
+
+   `.case-instrument` restyles this surface again for the live run, and wins on
+   load order; the exam paper, the debrief and the settlement are drawn by
+   these rules alone, which is why they had to be fixed here rather than there.
+   --------------------------------------------------------------------------- */
+
+/* The banner, topbar, verdict and settlement all keep the shapes they were
+   given above — only the pixel cabinet around them goes. */
+.active-matter-banner, .judge-review, .client-settlement { border-color: var(--ink-line-strong); }
+.judge-review, .client-settlement { box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .18), var(--el-3); }
+/* Not the seat of a key: a document lying against the light. */
+.passage-card, .answer-card { border-color: var(--ink-line); }
+.answer-card h1 { font-family: var(--font-display); font-size: clamp(19px, 1.9vw, 25px); font-weight: 620; letter-spacing: -.015em; }
+.choice-label { border: 1px solid var(--ink-line); font-family: var(--font-hud); font-weight: 800; }
+/* A hand-lettered card pinned to the bench, in warm ink rather than in the
+   cold black the pixel hand outlined everything with. */
+.judge-speech { border: 1px solid var(--ink-line); box-shadow: 5px 6px 0 rgba(27, 26, 36, .16), var(--el-2); }
+.judge-speech h2, .coaching-heading h2 { font-family: var(--font-display); font-size: clamp(18px, 2.2vw, 26px); font-weight: 620; letter-spacing: -.015em; text-transform: none; }
+.grade-pill { border: 1px solid currentColor; border-radius: var(--r-chip); font-family: var(--font-hud); font-size: 10px; }
+/* A seal is round. It was square for one release and it is round again. */
+.score-seal { border: 3px double var(--brass-deep); border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(232, 200, 124, .45); }
+.score-seal span { font-family: var(--font-hud); }
+.score-seal strong { font-family: var(--font-display); font-weight: 620; }
+.client-speech { border: 1px solid var(--ink-line); box-shadow: 4px 5px 0 rgba(27, 26, 36, .14), var(--el-1); }
+.client-speech strong, .reward-packet strong { font-family: var(--font-hud); }
 .session-page {
   background-color: #142534;
   background-image:
@@ -307,5 +373,9 @@
     linear-gradient(120deg, #102e3a, #173f4c);
 }
 
+/* Paper on a desk: a brass rule printed inside the sheet, the sheet's own cast
+   edge in warm ink, and the room's shadow under it. The middle term was `8px
+   8px #17130f` — flat, opaque and cold, which is a printed drop rather than a
+   cast one. */
 .passage-card,
-.answer-card { box-shadow: inset 0 0 0 3px #c59e5e, 8px 8px #17130f, 0 17px 31px rgba(4,8,12,.2); }
+.answer-card { box-shadow: inset 0 0 0 2px rgba(200, 155, 75, .5), 7px 8px 0 rgba(27, 26, 36, .18), var(--el-3); }

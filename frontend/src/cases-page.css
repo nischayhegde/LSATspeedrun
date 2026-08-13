@@ -41,3 +41,13 @@
   .run-queue-item-actions > button { flex: 1; justify-content: center; } }
 
 .lobby-client-portrait { width: 94px; height: 101px; margin: 4px 0 10px; }.lobby-client-portrait { width: 104px; height: 114px; }
+/* Same clamp the client cards take, for the same pill and the same reason:
+   `art.css` centres it under the bust, the bust is not centred in its row, and
+   a long archetype leaves the panel and gets cut by its `overflow: hidden`.
+   "GENERAL COUNSEL" lost 4px at 768. Wrapping keeps both words. */
+.lobby-client-portrait.av-portrait > small {
+  max-width: 132px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+}

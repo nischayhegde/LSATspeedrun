@@ -23,6 +23,13 @@ what `settle_attempt` pays out on. "Cases per upgrade" is therefore how many
 questions the player works to afford one mandatory purchase — a tier-gated
 upgrade, hire, or acquisition — or the next headquarters.
 
+The interface uses the word the other way round: "Start 6 cases" starts one run
+of six questions, and `game.SITTING_QUESTIONS` is the only place in the app that
+means a sitting by it. Every figure below is per question. Sittings are reported
+alongside, because a per-sitting figure is six times a per-case one and the two
+are easy to swap by accident — that swap is what put an earlier revision of this
+script out by 8x.
+
 `UNGRADED_CREDIT` deliberately does not appear below. It is the standing credit
 an ungraded win earns, and standing gates *which* tier the player may enter, not
 how much cash a case pays; only `UNGRADED_MULTIPLIER` moves money.
@@ -48,6 +55,7 @@ from app.game import (  # noqa: E402
     EFFORT_MISS_MULTIPLIER,
     FIRM_TIERS,
     PRO_BONO_FEE_SHARE,
+    SITTING_QUESTIONS,
     TERRITORY_RENT_RELIEF_POOL_BPS,
     TIER_GATED_ASSET_TYPES,
     UNBALANCED_ASSET_TYPES,
@@ -111,6 +119,44 @@ DEFAULT_DB = Path(__file__).resolve().parents[1] / "instance" / "lsat_sherlock.d
 # .66 * 150 + .34 * 328 = 210.5s.
 FALLBACK_SECONDS_PER_CASE = 210.5
 
+# KNOWN WRONG, DELIBERATELY NOT CHANGED. Read this before quoting an hour.
+#
+# The blend above is the *catalog* mix. It is not the mix the selector serves,
+# and the comment two paragraphs up claiming it is "blended over the section mix
+# the selector actually serves" was never true. It is much closer to true now
+# than it was: practice serves Reading Comprehension as whole-passage cases, a
+# third of sittings, so the served mix is 33.7% RC against the catalog's 34.4%
+# (`tools/audit/rc_reachability_probe.py`, warmed cohort). What is still wrong is
+# the per-question figure, because a passage served whole amortises its reading —
+# only the first question is charged 330s and the rest are charged 135s, which is
+# *cheaper* than a Logical Reasoning question's 150s. So the right blend is not
+# .66 * 150 + .34 * 328 but 154.5, measured.
+#
+# So every hour this script prints is about 36% high, and the campaign it calls
+# 122 hours is nearer 90 hours of question time.
+#
+# It is left alone anyway, and the reason is not inertia. 210.5s is the constant
+# the shipped pace band was tuned against: TIER_EFFORT_BASE was moved 5.16 ->
+# 5.33 to hold one-to-two hours *measured this way*, and the band has 0.2% of
+# clearance at its floor. Correcting the conversion would not measure the ladder
+# more accurately, it would repace it — the one-to-two-hour band would become
+# 23.6-47.2 cases and today's 17.3-29.2 would fall straight through the floor,
+# requiring a fresh TIER_EFFORT_BASE and a fresh set of prices. That is a
+# deliberate retune and needs to be asked for, not smuggled in under a
+# measurement fix.
+#
+# What follows from that: this script's hours are a *unit of comparison*, not a
+# claim about a clock. Two curves measured in it can be compared to each other.
+# Neither can be quoted to a player.
+#
+# The measured figure, updated when the reading case arrived. It was 152.7 when
+# the selector served 17.8% Reading Comprehension and it is 154.5 now that it
+# serves 33.7%, which is the entire wall-clock cost of nearly doubling the share
+# of the slower section: 1.2%. Measure it with
+# `tools/audit/rc_reachability_probe.py`, which reads `target_time_seconds` off
+# real runs rather than modelling it.
+SERVED_SECONDS_PER_CASE = 154.5
+
 
 def seconds_per_case(db_path: Path = DEFAULT_DB) -> tuple[float, str]:
     """The shipped per-case time budget, and where the number came from.
@@ -118,28 +164,68 @@ def seconds_per_case(db_path: Path = DEFAULT_DB) -> tuple[float, str]:
     The provenance is returned alongside the figure and printed with the report
     because a conversion constant that is silently wrong invalidates every hour
     quoted downstream while leaving the report looking entirely healthy.
+
+    **This function does not raise, and that is a requirement rather than a
+    courtesy.** It is called at import (`SECONDS_PER_CASE` below) by a module
+    three test files import, so anything it throws is thrown during pytest
+    collection and takes down every test in those files -- including tests that
+    have nothing to do with the database. It used to: a present-but-unmigrated
+    `instance/lsat_sherlock.db` raised `no such table: session_items` and
+    interrupted collection of 3 modules, and a corrupt one raised `file is not a
+    database`. The `try` was around `connect` alone, which catches almost
+    nothing, because sqlite3 opens lazily and every real failure lands on the
+    first `execute`.
+
+    The semantics that follow from that, and the reason they are right rather
+    than merely convenient: reading the database is an *optional refinement*.
+    FALLBACK_SECONDS_PER_CASE is the documented, shipped figure and is what the
+    pace band was tuned against; the query exists only so the conversion cannot
+    drift away from `_target_time_seconds` unnoticed. "I could not measure it"
+    and "there is nothing to measure" are therefore the same answer -- use the
+    documented constant -- and there is no state in which crashing serves a
+    reader better, because the provenance string is printed at the top of every
+    report and says exactly which case was hit.
+
+    The four ways there is nothing to measure are distinguished in that string,
+    because they mean different things to whoever reads it: no file at all, a
+    file that has never been migrated, a migrated file nobody has practised
+    against, and a file that is unreadable -- which, unlike the other three, is
+    a real problem worth chasing.
     """
     if not db_path.exists():
         return FALLBACK_SECONDS_PER_CASE, f"documented fallback (no database at {db_path})"
     try:
         connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            # Grouped by section rather than averaged flat: migration 0012 gave
+            # pre-existing rows the Logical Reasoning default, so a section whose
+            # budget comes back at 150s is reading repaired history rather than
+            # the shipped model, and that has to be visible instead of blended
+            # away.
+            rows = connection.execute(
+                """
+                SELECT questions.section, COUNT(*), AVG(session_items.target_time_seconds)
+                FROM session_items
+                JOIN study_sessions ON study_sessions.id = session_items.session_id
+                JOIN questions ON questions.id = session_items.question_id
+                WHERE study_sessions.mode = 'practice'
+                GROUP BY questions.section
+                """
+            ).fetchall()
+        finally:
+            # `with connection` is a transaction block and leaves the handle
+            # open. This is called once at import, but the tests call it per
+            # case and would leak one handle each.
+            connection.close()
+    except sqlite3.OperationalError as error:
+        if "no such table" in str(error):
+            return (
+                FALLBACK_SECONDS_PER_CASE,
+                f"documented fallback (database at {db_path} has not been migrated)",
+            )
+        return FALLBACK_SECONDS_PER_CASE, f"documented fallback (database unreadable: {error})"
     except sqlite3.Error as error:
         return FALLBACK_SECONDS_PER_CASE, f"documented fallback (database unreadable: {error})"
-    with connection:
-        # Grouped by section rather than averaged flat: migration 0012 gave
-        # pre-existing rows the Logical Reasoning default, so a section whose
-        # budget comes back at 150s is reading repaired history rather than the
-        # shipped model, and that has to be visible instead of blended away.
-        rows = connection.execute(
-            """
-            SELECT questions.section, COUNT(*), AVG(session_items.target_time_seconds)
-            FROM session_items
-            JOIN study_sessions ON study_sessions.id = session_items.session_id
-            JOIN questions ON questions.id = session_items.question_id
-            WHERE study_sessions.mode = 'practice'
-            GROUP BY questions.section
-            """
-        ).fetchall()
     served = sum(count for _, count, _ in rows)
     if not served:
         return FALLBACK_SECONDS_PER_CASE, "documented fallback (no practice items served yet)"
@@ -439,10 +525,23 @@ def _print_curve(label: str, player: Player) -> list[dict]:
         f"target {TARGET_BAND[0]:.1f}-{TARGET_BAND[1]:.1f} cases = "
         f"{TARGET_HOURS_PER_UPGRADE[0]:.0f}-{TARGET_HOURS_PER_UPGRADE[1]:.0f}h) -> {verdict}"
     )
+    # The same band in the unit the player experiences it in. An upgrade is a
+    # number of *sittings* to somebody who plays the game; it is a number of
+    # cases only to this script.
+    print(
+        f"    which is {low / SITTING_QUESTIONS:.1f} - {high / SITTING_QUESTIONS:.1f} sittings "
+        f"of {SITTING_QUESTIONS} questions"
+    )
     cases, hours = total_campaign(player)
     print(
         f"whole campaign: {cases:,.0f} played cases, {hours:,.1f} hours on cases "
         f"at {player.minutes_per_case:.2f} min/case"
+    )
+    print(
+        f"    = {cases / SITTING_QUESTIONS:,.0f} sittings; "
+        f"{cases * SERVED_SECONDS_PER_CASE / 3600:,.1f} hours at the pace the selector "
+        f"actually serves ({SERVED_SECONDS_PER_CASE:.1f} s/question, see "
+        f"SERVED_SECONDS_PER_CASE)"
     )
     for per_day in (1, 2, 3):
         print(f"    at {per_day}h/day: {hours / per_day:,.0f} days ({hours / per_day / 30.4:.1f} months)")

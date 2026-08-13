@@ -1,15 +1,53 @@
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 import requests
 from flask import current_app
 
+from . import calibration
 from .models import Attempt, Question
 
 
-PROMPT_VERSION = "coaching-v3-invalid-is-a-finding"
+# Bumped when the *input* changed as well as when the rubric does: this prompt
+# stops asserting a difficulty of 3 on every question and sends what is measured,
+# including "nothing", so grades either side of it are not comparable.
+#
+# Bumped again because the grader's inputs changed three times over in one revision:
+# the assigned approach is now in the payload, the rubric names the passage
+# instead of only the stimulus, and there are Reading Comprehension error codes
+# for it to choose from. A grade from before any of those is not comparable with
+# one from after, and this string is how the two are told apart.
+#
+# The earliest broken step, as a code so it can be counted. Six of the original
+# twelve name argument moves — a conclusion, a conditional, a causal claim, a
+# quantifier, an assumption, a piece of evidence — and not one of them named
+# anything a Reading Comprehension answer goes wrong by. That mattered more than
+# it looks: the section was unreachable as fresh practice until recently and is now
+# a third of served questions, so a third of graded attempts had no code that fit,
+# leaving the model a choice between `other` and an argument code describing a move
+# the question does not contain.
+#
+# The three added below are the ways an RC answer actually fails, and each is a
+# distinct repair rather than a shade of the same one:
+#
+# * `wrong_passage_location` — the reasoning is about a real part of the passage,
+#   but not the part the question asked about. The repair is to go back and find
+#   the right lines, and it is the most common RC error there is.
+# * `no_textual_warrant` — the answer is plausible, consistent with the passage,
+#   and not stated in it. Distinct from `unsupported_assumption`, which is about a
+#   gap in an argument's own logic; this is about a claim the text never makes.
+# * `view_attribution` — a view the passage reports is treated as the author's, or
+#   the author's own position is credited to somebody the passage cites. The
+#   `viewpoint_ledger` approach exists entirely for this error.
+#
+# The two bumps above landed on separate branches, each calling itself v4. This
+# prompt carries both, so it is neither of them: v5 names both changes rather
+# than letting one prompt reuse a version string that described only half of it.
+PROMPT_VERSION = "coaching-v5-passage-approach-and-measured-difficulty"
+
 ERROR_CODES = {
     "misread_stem",
     "missed_conclusion",
@@ -23,6 +61,9 @@ ERROR_CODES = {
     "attractive_distractor",
     "incomplete_elimination",
     "lucky_guess",
+    "wrong_passage_location",
+    "no_textual_warrant",
+    "view_attribution",
     "other",
 }
 VERDICTS = {"strong", "mostly_correct", "partial", "misconception", "unsupported", "not_provided"}
@@ -30,6 +71,165 @@ VERDICTS = {"strong", "mostly_correct", "partial", "misconception", "unsupported
 
 class CoachingProviderError(RuntimeError):
     pass
+
+
+# A settled attempt pays out whether or not coaching arrived, and the Lambda
+# handler returns success for a job that finished with a "coaching unavailable"
+# notice — correctly, because the student was not harmed. The consequence is
+# that the platform error metric reads zero for a model that has stopped
+# returning readable JSON, so the only way this becomes visible is if this
+# module says so itself. These counters are that signal locally and are
+# reported by /v1/health; in Lambda a container is short-lived, so the ERROR
+# log lines below (each with a stable `coaching.*` event token to build a
+# metric filter on) are the durable half.
+_counter_lock = threading.Lock()
+_counters: dict[str, int] = {}
+
+
+def _record(event: str) -> int:
+    with _counter_lock:
+        _counters[event] = _counters.get(event, 0) + 1
+        return _counters[event]
+
+
+def coaching_diagnostics() -> dict[str, int]:
+    """Counts of the response failures this process has seen, newest values."""
+
+    with _counter_lock:
+        return dict(_counters)
+
+
+def _strip_code_fence(text: str) -> str:
+    """Unwrap ```json ... ``` fencing, which several models add despite being
+    asked for an object and which is not itself a defect worth failing on."""
+
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    body = stripped[3:]
+    newline = body.find("\n")
+    if newline != -1 and body[:newline].strip().lower() in {"", "json"}:
+        body = body[newline + 1 :]
+    end = body.rfind("```")
+    return (body[:end] if end != -1 else body).strip()
+
+
+def _close_truncated(text: str) -> str | None:
+    """Shut an object that the model stopped writing part-way through.
+
+    Walks the text tracking string state and the container stack, then closes
+    whatever is still open. A reply cut off mid-token cannot be closed this way,
+    so the caller retries this against progressively earlier commas.
+    """
+
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]":
+            if not stack or stack[-1] != char:
+                return None
+            stack.pop()
+    if not stack:
+        return None
+    repaired = text
+    if in_string:
+        repaired += '"'
+    return repaired + "".join(reversed(stack))
+
+
+def _decode_json_object(content: str) -> tuple[dict | None, str]:
+    """Read one JSON object out of a model reply, or report that it cannot be.
+
+    Returns the object and the name of the step that recovered it, so a caller
+    can log that a reply needed rescuing rather than treating a salvaged
+    response as if the model had behaved. `("clean")` means it parsed as sent.
+
+    The steps are ordered by how much they assume. Surrounding prose and code
+    fences are cosmetic and common; truncation is a real defect, but a body
+    that is whole up to the cut still carries the fields the student needs, and
+    `_validate_coaching` remains the judge of whether enough of it survived.
+    """
+
+    if not isinstance(content, str) or not content.strip():
+        return None, ""
+
+    def attempt(candidate: str) -> dict | None:
+        try:
+            value = json.loads(candidate)
+        except (ValueError, TypeError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    direct = attempt(content)
+    if direct is not None:
+        return direct, "clean"
+
+    unfenced = _strip_code_fence(content)
+    if unfenced != content.strip():
+        fenced = attempt(unfenced)
+        if fenced is not None:
+            return fenced, "fenced"
+
+    start = unfenced.find("{")
+    if start == -1:
+        return None, ""
+    end = unfenced.rfind("}")
+    if end > start:
+        embedded = attempt(unfenced[start : end + 1])
+        if embedded is not None:
+            return embedded, "embedded"
+
+    # Truncated: close what is open, and if the tail is a half-written token,
+    # step back one complete element at a time. Bounded so a pathological reply
+    # cannot spin.
+    body = unfenced[start:]
+    for _ in range(40):
+        closed = _close_truncated(body)
+        if closed is not None:
+            repaired = attempt(closed)
+            if repaired is not None:
+                return repaired, "truncated"
+        cut = _last_top_level_comma(body)
+        if cut is None:
+            break
+        body = body[:cut]
+    return None, ""
+
+
+def _last_top_level_comma(text: str) -> int | None:
+    """Index of the final comma that sits outside any string, so a partial
+    trailing element can be dropped without cutting into a literal."""
+
+    in_string = False
+    escaped = False
+    found = None
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == ",":
+            found = index
+    return found
 
 
 def provider_ready() -> bool:
@@ -69,48 +269,203 @@ def _chat(system: str, data: dict, max_tokens: int = 5000) -> tuple[dict, dict]:
         "response_format": {"type": "json_object"},
         "max_completion_tokens": max_tokens,
     }
-    try:
-        response = requests.post(
-            _endpoint(),
-            headers={
-                "Authorization": f"Bearer {current_app.config['TFY_API_KEY']}",
-                "Content-Type": "application/json",
-                # Every request carries a student's own written reasoning. Ask the
-                # gateway to opt out of logging/retention on its side regardless of
-                # its default tenant configuration; this is a defense-in-depth
-                # header, not a substitute for a signed zero-retention DPA with
-                # whichever provider TFY_URL actually points at in this deployment.
-                "X-TFY-LOGGING-CONFIG": json.dumps({"enabled": False}),
-            },
-            json=body,
-            timeout=120,
+    # One retry, and only for a reply that could not be read. A transport error
+    # or an HTTP status is not retried here: those are the failures where a
+    # second call is most likely to be a rate limit or an outage being made
+    # worse, and the caller is an async job that is free to run again. An
+    # unreadable body is different — it is non-deterministic, the request was
+    # already paid for, and asking once more is the cheapest thing that can
+    # actually fix it. Coaching runs off the settlement path, so the extra
+    # latency costs a student nothing.
+    attempts = 2
+    for attempt_number in range(1, attempts + 1):
+        try:
+            response = requests.post(
+                _endpoint(),
+                headers={
+                    "Authorization": f"Bearer {current_app.config['TFY_API_KEY']}",
+                    "Content-Type": "application/json",
+                    # Every request carries a student's own written reasoning. Ask the
+                    # gateway to opt out of logging/retention on its side regardless of
+                    # its default tenant configuration; this is a defense-in-depth
+                    # header, not a substitute for a signed zero-retention DPA with
+                    # whichever provider TFY_URL actually points at in this deployment.
+                    "X-TFY-LOGGING-CONFIG": json.dumps({"enabled": False}),
+                },
+                json=body,
+                timeout=120,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            choice = payload["choices"][0]
+            content = choice["message"]["content"]
+            finish_reason = choice.get("finish_reason")
+        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as exc:
+            count = _record("transport_failed")
+            current_app.logger.error(
+                "coaching.transport_failed: the coaching request did not return a usable "
+                "HTTP response (error=%s, occurrences_in_process=%d)",
+                type(exc).__name__,
+                count,
+            )
+            raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.") from exc
+
+        parsed, how = _decode_json_object(content)
+        if parsed is not None:
+            if how != "clean":
+                # Salvaged, not clean. Recorded at warning so that a model
+                # drifting into prose or truncation is visible well before it
+                # degrades into the unreadable case below.
+                count = _record(f"salvaged_{how}")
+                current_app.logger.warning(
+                    "coaching.response_salvaged: recovered the coaching object from a reply that "
+                    "was not valid JSON as sent (method=%s, finish_reason=%s, chars=%d, "
+                    "attempt=%d, occurrences_in_process=%d)",
+                    how,
+                    finish_reason,
+                    len(content or ""),
+                    attempt_number,
+                    count,
+                )
+            return parsed, {
+                "model": payload.get("model") or current_app.config["COACHING_MODEL"],
+                "usage": payload.get("usage") or {},
+            }
+
+        if attempt_number < attempts:
+            count = _record("unreadable_retried")
+            current_app.logger.warning(
+                "coaching.response_unreadable_retrying: the model returned no readable JSON "
+                "object; asking once more (finish_reason=%s, chars=%d, occurrences_in_process=%d)",
+                finish_reason,
+                len(content or ""),
+                count,
+            )
+            continue
+
+        # Nothing to show the student and nothing the platform's own error
+        # metric will count, so this is the line that has to carry it. The
+        # reply itself is never logged: it is coaching written about a
+        # student's own reasoning. `finish_reason="length"` distinguishes a
+        # truncation, which is a token-budget problem, from a model that has
+        # started answering in prose.
+        count = _record("unreadable")
+        current_app.logger.error(
+            "coaching.response_unreadable: the model returned no readable JSON object after %d "
+            "attempts and this attempt will settle without coaching (finish_reason=%s, chars=%d, "
+            "occurrences_in_process=%d)",
+            attempts,
+            finish_reason,
+            len(content or ""),
+            count,
         )
-        response.raise_for_status()
-        payload = response.json()
-        content = payload["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-        if not isinstance(parsed, dict):
-            raise ValueError("Response was not an object")
-        return parsed, {
-            "model": payload.get("model") or current_app.config["COACHING_MODEL"],
-            "usage": payload.get("usage") or {},
+        raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.")
+
+    raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.")
+
+
+def _difficulty_for_prompt(question: Question) -> dict:
+    """What the model is told about how hard this question is.
+
+    It used to be told `"difficulty": 3`, on every question, always — the
+    constant the ingest path wrote onto all 6,886 rows. A constant presented to
+    a language model as a measurement is worse than silence: the model has no
+    way to know it is a placeholder, and "this is a mid-difficulty item" is a
+    real claim that shapes how the coaching is pitched.
+
+    So the field now says what is actually known, including when that is
+    nothing, and it says how it knows. Below `estimated` no number is sent at
+    all — a rating off four responses would be the old problem with extra steps.
+    """
+    row = question.calibration
+    if row is None or not row.responses:
+        return {"status": calibration.STATUS_UNCALIBRATED, "note": "No difficulty data for this item."}
+    if row.origin not in calibration.TRUSTED_ORIGINS:
+        # A seeded or simulated rating is a number about a fiction. Sending it
+        # would be the old constant again, dressed as evidence.
+        return {
+            "status": calibration.STATUS_UNCALIBRATED,
+            "note": "The only answers on record for this item are synthetic. Treat it as unmeasured.",
         }
-    except (requests.RequestException, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        current_app.logger.warning("TrueFoundry coaching request failed: %s", type(exc).__name__)
-        raise CoachingProviderError("The AI coach could not produce valid feedback. Please retry.") from exc
+    if row.status not in {calibration.STATUS_ESTIMATED, calibration.STATUS_CALIBRATED}:
+        return {
+            "status": row.status,
+            "responses": row.responses,
+            "note": (
+                f"Only {row.responses} students have answered this item, which is too few to "
+                "say how hard it is. Do not assume a difficulty."
+            ),
+        }
+    reading = calibration.signal(question, row)
+    return {
+        "status": reading["status"],
+        "band_1_easiest_to_5_hardest": reading["band"],
+        "percent_correct": round(100 * row.correct / row.responses),
+        "responses": row.responses,
+        "note": (
+            "Measured from student responses on this app, not published by the test maker. "
+            f"Standard error {reading['standard_error']} logits."
+        ),
+    }
 
 
 def _question_data(question: Question) -> dict:
     return {
         "section": question.section,
         "question_type": question.question_type,
-        "difficulty": question.difficulty,
+        # The publisher's own rating, and NULL on every item in this bank
+        # because the source material carries none. Never an estimate: see
+        # `models.Question.published_difficulty`.
+        "published_difficulty": question.published_difficulty,
+        "measured_difficulty": _difficulty_for_prompt(question),
         "passage": question.passage.canonical_text if question.passage else None,
         "stimulus": question.stimulus,
         "stem": question.stem,
         "choices": [{"label": choice.label, "text": choice.canonical_text} for choice in question.choices],
         "verified_correct_label": question.correct_answer,
     }
+
+
+def _assigned_approach(attempt: Attempt) -> dict | None:
+    """The approach this attempt was told to use, if it was told to use one.
+
+    The payload had two top-level keys, `question` and `student_submission`, and
+    the word "strategy" appeared in neither it nor the system prompt. So a student
+    could be shown "give each part of the passage its job in three to twelve
+    words", be blocked from answering until they did it, write reasoning that
+    plainly reflects it, and then be graded by a model with no idea that was the
+    assignment — which reads as unfocused prose when it is in fact obedience.
+
+    What goes out is the key, the name and prompt the student was actually shown,
+    the three steps they were told to take, and the gate instruction where the
+    approach had one — because the instruction is the wording their reasoning was
+    written against. Whether the gate was satisfied is included too: a student who
+    was asked to map the passage and did is a different thing to explain than one
+    who was asked and did not.
+
+    `strategy_applied` is false when the approach was offered and declined, which
+    is not an assignment, so nothing is sent and the payload stays byte-identical
+    to the old one — as it does on every attempt with no approach at all.
+    """
+    from . import enforcement, strategies
+
+    key = attempt.strategy_key
+    if not key or attempt.strategy_applied is not True:
+        return None
+    definition = strategies.STRATEGIES.get(key)
+    if not definition:
+        return None
+    approach = {
+        "key": key,
+        "name": definition["plain_title"],
+        "prompt": definition["prompt"],
+        "steps": definition["steps"],
+    }
+    gate = enforcement.GATES.get(key)
+    if gate:
+        approach["instruction"] = gate["instruction"]
+        approach["gate_satisfied"] = attempt.strategy_gate_status == enforcement.STATUS_SATISFIED
+    return approach
 
 
 def _validate_coaching(raw: dict, attempt: Attempt) -> dict:
@@ -216,7 +571,7 @@ Make the response easy to scan:
 - debrief: a two-sentence synthesis with no new claims.
 
 Grade substance, never length, and never style. Use these exact score bands:
-- 0–24 Invalid. Reserved for reasoning that engages with nothing in THIS question. Award it only when at least one of these is plainly true: the field is blank or filler; it discusses a different question or topic; it is copied text from the stimulus, stem, or a choice with no reasoning added; it is the same explanation as one in recent_reasoning_samples; or it gives no reason at all beyond asserting the answer ("it felt right", "the others looked wrong", "this is correct because it is correct").
+- 0–24 Invalid. Reserved for reasoning that engages with nothing in THIS question. Award it only when at least one of these is plainly true: the field is blank or filler; it discusses a different question or topic; it is copied text from the passage, stimulus, stem, or a choice with no reasoning added; it is the same explanation as one in recent_reasoning_samples; or it gives no reason at all beyond asserting the answer ("it felt right", "the others looked wrong", "this is correct because it is correct").
 - 25–49 Weak. A real but thin attempt: it says something true about this question yet misses the central logical issue, or eliminates choices without naming the property that decides them.
 - 50–79 Good. Mostly correct and specific to this question, with a gap.
 - 80–100 Excellent. Clearly identifies and explains the decisive reasoning.
@@ -224,6 +579,13 @@ Grade substance, never length, and never style. Use these exact score bands:
 Two rules on borderline calls, because the same argument written twice must land in the same band:
 - A formulaic voice is not a defect. Repeated sentence shapes, a checklist walkthrough of the choices, textbook phrasing, or plainly imitating a worked example are all fine. If the reasoning names this question's actual task, claim, gap, or choice-distinguishing property, it is at least Weak — even if it paraphrases rather than quotes, and even if a dozen other students would write it the same way. Beginners have not developed a voice yet; grade what they identified.
 - When you are genuinely torn between Invalid and Weak, choose Weak. Invalid is a factual finding that there is no question-specific reasoning present, not an impression that the prose is unremarkable.
+
+On a Reading Comprehension question the passage is the whole of the evidence and the stimulus is empty, so read `question.passage` as the text under discussion and hold every claim to it. Three of the first_error codes exist for this section and are the right choice far more often than the argument codes are:
+- wrong_passage_location: the reasoning discusses a real part of the passage, but not the part the question asked about.
+- no_textual_warrant: the answer is plausible and consistent with the passage, and the passage never actually says it. Use this rather than unsupported_assumption, which is for a gap inside an argument's own logic.
+- view_attribution: a view the passage reports is treated as the author's own, or the author's position is credited to somebody the passage merely cites.
+
+If the payload names an assigned_approach, the student was required to work the question that way before answering, and the wording they were shown is quoted there. Read their reasoning as the product of that instruction: mention the approach by name when it is what got them there or what they abandoned, and pitch next_step_hint so it works with the approach rather than against it. Never grade a student down for following the approach they were given, and never grade them down for the boundaries of a passage part, which this application derived rather than the author marking them.
 
 Incorrect answers can still have Good reasoning, but the explanation can never change the verified answer key.
 
@@ -233,7 +595,7 @@ Return exactly these fields:
   "reasoning_verdict": "strong" | "mostly_correct" | "partial" | "misconception" | "unsupported" | "not_provided",
   "reasoning_summary": string,
   "understood_correctly": string,
-  "first_error": null or {"code": one of [misread_stem, missed_conclusion, missed_evidence, conditional_logic, causal_reasoning, quantifier_shift, scope_shift, unsupported_assumption, answer_task_mismatch, attractive_distractor, incomplete_elimination, lucky_guess, other], "description": string, "repair": string},
+  "first_error": null or {"code": one of [misread_stem, missed_conclusion, missed_evidence, conditional_logic, causal_reasoning, quantifier_shift, scope_shift, unsupported_assumption, answer_task_mismatch, attractive_distractor, incomplete_elimination, lucky_guess, wrong_passage_location, no_textual_warrant, view_attribution, other], "description": string, "repair": string},
   "answer_analysis": {
     "correct_answer_explanation": string,
     "selected_answer_explanation": string,
@@ -262,6 +624,9 @@ Return exactly these fields:
             "recent_reasoning_samples": [value.reasoning_text for value in recent_reasoning],
         },
     }
+    approach = _assigned_approach(attempt)
+    if approach:
+        data["assigned_approach"] = approach
     raw, metadata = _chat(system, data)
     coaching = _validate_coaching(raw, attempt)
     coaching["model"] = metadata["model"]

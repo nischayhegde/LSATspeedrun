@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import type { CharacterGender, FirmTier, GameAsset } from '../types'
-import { buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
+import { COUNSEL_RIG_HEIGHT, buildStylizedCounsel, type StylizedCounselRig } from './stylized-counsel'
 import {
   blockCourtyard,
   blocksFromGrid,
@@ -48,7 +48,7 @@ import {
   type RoadGraph,
   type RoadGraphSpec,
 } from './map-agents'
-import { CROWD_RENDER_SCALE, CrowdRenderer, buildCrowdWalker, type CrowdWalker } from './map-crowd-rig'
+import { CrowdRenderer, buildCrowdWalker, crowdRenderScale, type CrowdWalker } from './map-crowd-rig'
 import { createRiverBed, createRiverSurface, createSeaSurface, setSeaWake, type RiverOptions } from './map-water'
 import { clearObjects, clearanceIntrusion, escapeCorridors, keepRecordsClear, prepareClearance, type ClearanceCorridor, type ClearanceField } from './map-clearance'
 import { IllustratedRenderPass } from './render-style'
@@ -106,6 +106,19 @@ type ArcDefinition = {
   ambient: { sky: number; ground: number; intensity: number }
   fill: { color: number; intensity: number; position: [number, number, number] }
   rim: { color: number; intensity: number; position: [number, number, number] }
+  /**
+   * What a crevice in this district looks like.
+   *
+   * The tint is the colour light falls towards where the sky cannot reach, and
+   * it is a property of the place rather than a global constant: under a blue
+   * sky over warm stone, a gutter loses the blue and keeps the bounce, so it
+   * goes warm as it goes dark. Over water it loses far less, because the sea
+   * throws light back up. Under a night sky there is barely any wide light to
+   * lose in the first place, and the strength drops accordingly.
+   */
+  occlusion: { strength: number; tint: number }
+  /** How much aerial glare this district's atmosphere puts around its sun. */
+  sky: { halo: number }
 }
 
 const ARC: Record<MapRegionKey, ArcDefinition> = {
@@ -130,6 +143,8 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x9ebcc2, ground: 0x263631, intensity: .48 },
     fill: { color: 0x8bb6c1, intensity: .54, position: [20, 13, -18] },
     rim: { color: 0xffd69a, intensity: .76, position: [7, 15, -25] },
+    occlusion: { strength: .78, tint: 0x8a7a66 },
+    sky: { halo: 1 },
   },
   nation: {
     title: 'The Circuit', subtitle: 'Appellate route · regional courts',
@@ -157,6 +172,10 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0xa9c4c5, ground: 0x2b382d, intensity: .4 },
     fill: { color: 0x90b2bd, intensity: .36, position: [22, 12, -16] },
     rim: { color: 0xe8c98c, intensity: .7, position: [5, 14, -24] },
+    // Open country. Hedge bottoms and the shaded side of a barn are the only
+    // real crevices out here, and the grass bounces a lot of green back up.
+    occlusion: { strength: .62, tint: 0x8c8a6e },
+    sky: { halo: 1 },
   },
   ocean: {
     title: 'Treaty Sea', subtitle: 'Maritime counsel · diplomatic harbor',
@@ -170,6 +189,12 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0xaed2d3, ground: 0x193338, intensity: .62 },
     fill: { color: 0x69a9bb, intensity: .72, position: [23, 10, -19] },
     rim: { color: 0xffd18a, intensity: .88, position: [8, 13, -27] },
+    // Water is a second sky. Held down because a harbour under an overcast has
+    // very little directionality left to take away.
+    occlusion: { strength: .5, tint: 0x7d8b8d },
+    // Overcast. The disc is behind cloud, so the glare is spread rather than
+    // concentrated: the tight term still lands where the sun is, but softly.
+    sky: { halo: .72 },
   },
   continent: {
     title: 'Sovereign Arc', subtitle: 'Continental chamber · civic axis',
@@ -194,7 +219,18 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     // below is offset by it), which makes this route the missing 0°/180° pair
     // of radials rather than a path laid across them.
     route: [[-15, -.1], [-5, -.1], [5, -.1], [15, -.1]],
-    rail: [[-16, 7.7], [-9, 7], [-1, 7.7], [7, 6.8], [16, 7.3]],
+    // Threaded between the two inner rings rather than laid along the first of
+    // them. Every other district's rail wanders about z = 7 and nothing minds,
+    // but this composition is concentric: ring 7's outer pavement crosses z =
+    // 7.4 at the axis and the old alignment ran within 9 cm of it, so instead
+    // of a level crossing the tram shared four and a half metres of pavement
+    // with the crowd on each side of the terminus. The cut cannot fix that —
+    // it takes the pavement off the tracks only where some pavement is left
+    // afterwards, and a piece swallowed whole is kept rather than abolished,
+    // so the pieces that were worst off were exactly the ones that survived.
+    // Between the rings there is a two-and-a-half metre gap at the axis that
+    // widens as the arcs fall away, and the crossings it does make are square.
+    rail: [[-16, 14.9], [-9, 14.2], [-1, 14.7], [7, 14.1], [16, 14.6]],
     fov: 31, exposure: 1.3, fogDensity: .0062,
     camera: [24, 29, 39], target: [0, .75, -.3],
     sun: { color: 0xffc79c, intensity: 4.7, position: [-24, 30, 15] },
@@ -203,6 +239,10 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x93b3c4, ground: 0x33443f, intensity: .46 },
     fill: { color: 0xe8d3b4, intensity: .82, position: [16, 11, 20] },
     rim: { color: 0xffc38a, intensity: .92, position: [5, 15, -27] },
+    // Masonry, colonnades and a deep cornice: the district with the most
+    // genuine self-shadowing in the game, and the palette carries the range.
+    occlusion: { strength: .85, tint: 0x8b7a67 },
+    sky: { halo: 1.08 },
   },
   orbit: {
     title: 'Global Compact', subtitle: 'International assembly · final jurisdiction',
@@ -216,6 +256,12 @@ const ARC: Record<MapRegionKey, ArcDefinition> = {
     ambient: { sky: 0x18233d, ground: 0x060a12, intensity: .18 },
     fill: { color: 0x5ea6bd, intensity: .66, position: [24, 8, -19] },
     rim: { color: 0x79dbe3, intensity: 1.05, position: [4, 12, -28] },
+    // Night, and an ambient floor of .18. There is almost no wide light here
+    // to be blocked, and pretending otherwise would only sink the district.
+    occlusion: { strength: .34, tint: 0x4a5766 },
+    // Orbit. The key is a star at a distance and there is no atmosphere to
+    // scatter it, so there is no halo at all — only the disc's own glint.
+    sky: { halo: .18 },
   },
 }
 
@@ -515,6 +561,27 @@ export type MapLandmark = {
 }
 
 /**
+ * A professional network the firm belongs to, as something that exists in the
+ * world rather than as a crest on the office wall.
+ *
+ * A connection's whole mechanical effect is the districts it opens on the
+ * retainer board, so the honest place to put one is at a district it opens: a
+ * contact standing outside the courthouse whose bench they can get you in
+ * front of says what a paragraph of copy would have to spell out. `landmarks`
+ * is that join — `MapLandmark.key`s, already filtered to this region by the
+ * caller, because the scene knows where a landmark is and the catalog knows
+ * which ones a network unlocks, and neither knows both.
+ */
+export type MapSceneContact = {
+  /** The connection asset's own key. Stable, and referenced by the firm tab. */
+  key: string
+  name: string
+  /** The one-line role, shown on the contact's shingle. */
+  role: string
+  landmarks: string[]
+}
+
+/**
  * Landmarks are registered on the world group during construction and read
  * back once the scene is built. Static scenery is merged into shared batches,
  * so a landmark cannot be a scene object that survives to be raycast; picking
@@ -654,21 +721,318 @@ function clearanceCorridors(root: THREE.Group) {
  * plants: the trees along the Arc's south radial ran out to z=17.7, straight
  * through a river that had not existed until now.
  */
+/**
+ * How far a tree's foliage reaches from its trunk.
+ *
+ * The lower crown layer at its largest, plus the jitter its centre is given —
+ * `buildInstancedTreeField`'s own numbers, so the two cannot drift apart.
+ */
+function treeCrownReach(record: TreeRecord) {
+  return (.56 * 1.16 + .15) * (record.scale ?? 1)
+}
+
+/**
+ * What the district actually planted, in plan, for the passes that come after.
+ *
+ * A tree field becomes two instanced meshes, and an `InstancedMesh` carries no
+ * per-instance userData, so a planted tree is invisible to everything that
+ * works from the scene graph — `crowdObstacles` cannot see one and neither can
+ * anything built on it. This is `buildingAudit`'s argument applied to the other
+ * class of instanced mass: whoever plants records it, and a later pass siting
+ * something on the ground can be told where the trees are instead of putting a
+ * person in the middle of one, which is what the first four connection contacts
+ * did.
+ */
+function recordTrees(root: THREE.Group, records: TreeRecord[]) {
+  const audit = (root.userData.treeAudit ??= []) as Array<{ x: number; z: number; radius: number }>
+  for (const record of records) audit.push({ x: record.x, z: record.z, radius: treeCrownReach(record) })
+}
+
 function addTreeField(root: THREE.Group, records: TreeRecord[]) {
   const corridors = clearanceCorridors(root).slice()
   for (const way of roadWays(root)) {
     if (way.kind === 'water') corridors.push({ points: way.points, closed: way.closed, halfWidth: (way.width ?? 2.8) / 2, label: 'water' })
   }
   if (!corridors.length) {
+    recordTrees(root, records)
     root.add(buildInstancedTreeField(records))
     return
   }
   const field = prepareClearance(corridors)
   // A tree's own footprint is its trunk, not its crown: a bough over a channel
   // is a bough over a channel, and only the trunk has to be on the bank.
-  const kept = records.filter((record) => !clearanceIntrusion(field, record.x, record.z, .16 * (record.scale ?? 1)))
+  let kept = records.filter((record) => !clearanceIntrusion(field, record.x, record.z, .16 * (record.scale ?? 1)))
   root.userData.treesCleared = records.length - kept.length
+
+  /*
+   * And then off the pavement, where the crown is the footprint and not the
+   * trunk.
+   *
+   * A street tree on this map is a metre and a half tall with a crown a third
+   * of a metre across, planted .82 out from a local street's centreline. The
+   * walkable band on that street runs from .65 to .83 out, so the tree is not
+   * beside the pavement — it is standing on it, at chest height, and a walker
+   * is inside the foliage for the whole length of the tree. Measured on the
+   * corrected per-triangle instrument, this is the single largest source of
+   * walkers inside solid geometry anywhere on the map: it is most of Sovereign
+   * Arc's .174 and it is most of the Old Quarter's remainder, and every one of
+   * those sites reports the walker's centre inside the crown box rather than
+   * clipping its edge.
+   *
+   * The tree moves, and the network is not touched. The pass that takes
+   * pavement out from under a solid cannot help here — the band is .09 wide and
+   * the crown is .31, so a cut would delete the pavement rather than narrow it,
+   * and deleting pavement is this job's best-documented way of making the
+   * measured outcome worse. Nothing here is declared to the router either, so
+   * no route can be constrained, disconnected or starved by it.
+   *
+   * `roadWays` is whatever the district has recorded by the time it plants,
+   * which for every district here is its streets; `KERB_TO_PAVEMENT` and
+   * `STREET_PAVEMENT_HALF` are the same two numbers `planFootways` will later
+   * lay the pavements against, so the two passes cannot disagree about where
+   * the paving is.
+   */
+  const walked = pedestrianGround(root)
+  if (walked.length) kept = treesOffPavement(root, kept, prepareClearance(walked))
+  recordTrees(root, kept)
   root.add(buildInstancedTreeField(kept))
+}
+
+/**
+ * Move a planting off the ground people walk on, and fell what cannot move.
+ *
+ * Shared by the district's own fields and by the outer country's, which plants
+ * from `createHorizonRing` against a clearance field it is handed rather than
+ * one it builds. The far hamlets were the one planting nothing had ever looked
+ * at, and a walker on Sovereign Arc's south radial spent 101 frames of 900
+ * inside a windbreak at `12,-28`, dead centre of the crown.
+ */
+function treesOffPavement(owner: THREE.Group, records: TreeRecord[], pavements: ClearanceField) {
+  let moved = 0
+  let felled = 0
+  const kept = records.flatMap((record) => {
+    const reach = treeCrownReach(record)
+    if (!clearanceIntrusion(pavements, record.x, record.z, reach)) return [record]
+    // Far enough to reach the back of a verge or the far side of a narrow
+    // block, and no further: past that the tree is not the one the plan asked
+    // for, it is a different tree somewhere else, and felling it is the more
+    // honest edit. Eight passes because a district grid puts a second street
+    // behind the first, and leaving one pavement is often entering another.
+    const site = escapeCorridors(pavements, record.x, record.z, reach, 1.8, undefined, 8)
+    if (!site.cleared) { felled += 1; return [] }
+    moved += 1
+    return [{ ...record, x: site.x, z: site.z }]
+  })
+  // Accumulated, because a district plants several fields and a report that was
+  // overwritten by the last of them read as a handful of trees in a city of
+  // hundreds.
+  const running = (owner.userData.treesOffPavement ??= { fields: 0, considered: 0, moved: 0, felled: 0 }) as {
+    fields: number; considered: number; moved: number; felled: number
+  }
+  running.fields += 1
+  running.considered += records.length
+  running.moved += moved
+  running.felled += felled
+  return kept
+}
+
+/**
+ * Every piece of ground the finished plan lets a person stand on.
+ *
+ * The carriageways with their kerb-to-pavement offset and paved half — the two
+ * numbers `planFootways` lays against, so this cannot disagree with the network
+ * that is built later — plus the pavements the district recorded directly, plus
+ * the walker's own beam. Anything that overlaps this is standing on the
+ * pedestrian network whether or not it has been declared to the router.
+ */
+function pedestrianGround(root: THREE.Group): ClearanceCorridor[] {
+  const ground: ClearanceCorridor[] = []
+  for (const way of roadWays(root)) {
+    if ((way.kind ?? 'road') === 'water') continue
+    ground.push({
+      points: way.points,
+      closed: way.closed,
+      halfWidth: (way.width ?? 1.5) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + walkerHalfBeam(),
+      label: 'walked',
+    })
+  }
+  for (const way of footWays(root)) {
+    ground.push({
+      points: way.points,
+      closed: way.closed,
+      halfWidth: (way.halfWidth ?? CROWD_FOOTWAY_HALF) + walkerHalfBeam(),
+      label: 'walked',
+    })
+  }
+  return ground
+}
+
+/**
+ * The district's planned buildings, as ground that is already spoken for.
+ *
+ * A rectangle is carried as the corridor along its own longer axis with the
+ * shorter half-extent for a width, which is the stadium that contains it: a
+ * little generous at the four corners and exact everywhere else. That is the
+ * right way round for a keep-out, and it means the same segment field can hold
+ * the pavements and the terraces at once.
+ *
+ * `buildingAudit` is what `renderPlannedBuildings` actually built rather than a
+ * reconstruction from instance matrices, so this sees the instanced rows that
+ * `crowdObstacles` cannot — which is the difference between a landmark that
+ * moves off a pavement and one that moves off a pavement into a cottage.
+ */
+function footprintCorridor(x: number, z: number, halfWidth: number, halfDepth: number, rotationY: number, label: string): ClearanceCorridor {
+  const alongX = halfWidth >= halfDepth
+  // Local +x is world (cos, -sin) and local +z is world (sin, cos), matching
+  // `support` in `map-clearance`.
+  const dirX = alongX ? Math.cos(rotationY) : Math.sin(rotationY)
+  const dirZ = alongX ? -Math.sin(rotationY) : Math.cos(rotationY)
+  const reach = Math.max(Math.abs(halfWidth - halfDepth), 1e-3)
+  return {
+    points: [
+      [x - dirX * reach, z - dirZ * reach],
+      [x + dirX * reach, z + dirZ * reach],
+    ] as XZ[],
+    halfWidth: Math.min(halfWidth, halfDepth),
+    label,
+  }
+}
+
+/**
+ * A round obstacle — a tree, a prop with only a footprint radius — as a
+ * corridor.
+ *
+ * The segment is a hair long rather than a point on purpose: `prepareClearance`
+ * discards any segment shorter than 1e-4 as degenerate, so a corridor written
+ * as two identical points is silently dropped and the obstacle simply is not in
+ * the field. That failure is invisible — the field builds, the query answers,
+ * and the answer is "clear" — and it is what put the first four connection
+ * contacts inside a tree apiece.
+ */
+function discCorridor(x: number, z: number, radius: number, label: string): ClearanceCorridor {
+  return { points: [[x - .001, z], [x + .001, z]], halfWidth: radius, label }
+}
+
+function plannedGround(root: THREE.Group): ClearanceCorridor[] {
+  const audit = (root.userData.buildingAudit ?? []) as Array<
+    { x: number; z: number; width: number; depth: number; rotationY: number }
+  >
+  return audit.map((record) => footprintCorridor(
+    record.x,
+    record.z,
+    record.width / 2 + ARTICULATION,
+    record.depth / 2 + ARTICULATION,
+    record.rotationY,
+    'planned',
+  ))
+}
+
+/** Where a landmark ended up, and how far the plan had to move it to get there. */
+type PlanSite = { x: number; z: number; moved: number; cleared: boolean; blockedBy?: string; depth?: number }
+
+/**
+ * Site an authored landmark on the street plan instead of on its own table.
+ *
+ * The tier offices and the rival compounds are the only buildings in the game
+ * whose coordinates are written down rather than planned: a table names a
+ * position, the district lays its streets, and whichever of the two happens to
+ * be there wins. Sixteen of the seventeen lost, and stood on a pavement. That
+ * is why every improvement to a town plan measured worse than leaving it alone
+ * — widening a pavement is only worth doing if there is not a compound on it,
+ * and giving Ashgate's kerbs their width back put a walker inside a rival firm
+ * for 562 frames of 900.
+ *
+ * So the table stops dictating and starts asking. The authored position is
+ * still the request, and it is still honoured whenever the plan has left that
+ * ground free; when it has not, the nearest free ground wins, searched outwards
+ * so the landmark moves as little as the plan allows.
+ *
+ * Two properties make this structural rather than another nudge:
+ *
+ * - The footprint is the *declared* one, oriented, so the test the siting
+ *   passes is the same test the router and the collision grid apply later. A
+ *   site that clears here cannot be found overlapping there.
+ * - `ground` holds the terraces as well as the pavements, so free ground means
+ *   free of both. That is what the earlier escape passes could not do: they
+ *   moved a compound out of a lane using `crowdObstacles`, which cannot see an
+ *   instanced row, and had no way to tell that the ground they moved it onto
+ *   was a cottage.
+ *
+ * An exhaustive ring rather than a gradient escape, for the same reason a grid
+ * search beats a gradient anywhere: two pavements meeting at a corner give the
+ * gradient a local minimum it cannot leave, which is why the escape pass
+ * reported sixteen of seventeen parcels with no clear ground within 3.4 m.
+ */
+function siteOnPlan(
+  ground: ClearanceField,
+  x: number,
+  z: number,
+  hx: number,
+  hz: number,
+  rotationY: number,
+  /**
+   * How far the landmark may look, and in which direction it prefers to look.
+   *
+   * A headquarters is set back from a named stretch of route, so for it the
+   * two directions are not alike: moving along the setback is a deeper or
+   * shallower forecourt on the same street, and moving across it is a
+   * different address. `lateralCost` is what says so, and it is the whole
+   * reason this is not a plain ring search — the nearest free ground in metres
+   * is regularly the wrong ground in town-planning terms.
+   */
+  reach: { alongX: number; alongZ: number; along: number; lateral: number; lateralCost: number },
+): PlanSite {
+  const footprint = { hx, hz, cos: Math.cos(rotationY), sin: Math.sin(rotationY) }
+  const radius = Math.hypot(hx, hz)
+  const at = (atX: number, atZ: number) => clearanceIntrusion(ground, atX, atZ, radius, footprint)
+  const free = (atX: number, atZ: number) => !at(atX, atZ)
+  const asked = at(x, z)
+  if (!asked) return { x, z, moved: 0, cleared: true }
+  // Fine enough to find the gap between two village lanes, which is the
+  // tightest thing being searched: The Circuit's alleys are .52 apart at their
+  // closest and the free strip between their pavements is about a third of a
+  // unit wide.
+  const step = .15
+  const candidates: Array<{ along: number; lateral: number; cost: number }> = []
+  for (let a = -Math.round(reach.along / step); a <= Math.round(reach.along / step); a += 1) {
+    for (let l = -Math.round(reach.lateral / step); l <= Math.round(reach.lateral / step); l += 1) {
+      if (!a && !l) continue
+      candidates.push({
+        along: a * step,
+        lateral: l * step,
+        cost: Math.abs(a * step) + Math.abs(l * step) * reach.lateralCost,
+      })
+    }
+  }
+  candidates.sort((left, right) => left.cost - right.cost)
+  const acrossX = -reach.alongZ
+  const acrossZ = reach.alongX
+  for (const candidate of candidates) {
+    const atX = x + reach.alongX * candidate.along + acrossX * candidate.lateral
+    const atZ = z + reach.alongZ * candidate.along + acrossZ * candidate.lateral
+    if (free(atX, atZ)) return { x: atX, z: atZ, moved: Math.hypot(atX - x, atZ - z), cleared: true }
+  }
+  // What was standing on the ground it asked for, and how deep into it the
+  // parcel reached. Without this a stuck parcel is a dead end for whoever picks
+  // it up: the ground looks empty from above and every audit answers a
+  // different question. This is what identified the Old Quarter's blockers as
+  // the ward lanes, which keep .99 either side, rather than the avenues
+  // everybody including me had assumed.
+  return {
+    x,
+    z,
+    moved: 0,
+    cleared: false,
+    blockedBy: `${asked.label ?? 'unlabelled'}@${(asked.atX ?? 0).toFixed(2)},${(asked.atZ ?? 0).toFixed(2)}±${(asked.halfWidth ?? 0).toFixed(2)}`,
+    depth: +asked.depth.toFixed(2),
+  }
+}
+
+/** Book one siting decision for `tools/map-qa/authored.mjs`. */
+function recordSiting(root: THREE.Group, label: string, site: PlanSite) {
+  const log = (root.userData.landmarkSiting ??= []) as Array<PlanSite & { label: string }>
+  log.push({ ...site, label })
+  return site
 }
 
 function footWays(root: THREE.Group) {
@@ -1426,6 +1790,23 @@ function createBuoy(color = 0xb47b45, scale = 1) {
   return group
 }
 
+/**
+ * How high the deck of a Treaty Sea landform sits, at the `y = -.22` every
+ * caller places one at.
+ *
+ * Derived rather than measured off a screenshot: the extrusion below is .34
+ * deep with a .07 bevel at each end, so it spans .41 above its own origin, and
+ * the origin is sunk .22 to put the coast under the swell. The buildings that
+ * stand on one are plinthed and can afford to be set at .04 and buried; a
+ * person is under a unit tall at `CROWD_RENDER_SCALE` and cannot.
+ *
+ * That sentence used to read ".49 units tall", which was wrong and was quoted
+ * from here into two measurement harnesses before anybody measured a body:
+ * `COUNSEL_RIG_HEIGHT` is 5.558, so the figure is .77 at the shipped scale and
+ * was 1.54 before it. The conclusion is unchanged in the safe direction.
+ */
+const OCEAN_LANDFORM_TOP = .34 + .07 - .22
+
 function createIslandLandform(radius: number, seed: number, color = 0x66745f) {
   const shape = new THREE.Shape()
   const segments = 28
@@ -1567,6 +1948,27 @@ function tintForRegion(region: MapRegionKey, record: InstancedBlockRecord, index
 const WALKER_HALF_BEAM = .16
 
 /**
+ * The same figure, read through a development-only override.
+ *
+ * This constant decides how much ground every setback in every plan reserves,
+ * so it cannot be A/B'd by editing the file: the two arms would land in two
+ * server lifetimes, and two lifetimes are two different worlds — the whole
+ * reason this map's numbers were untrustworthy for a week. The override lets
+ * `tools/map-qa/beam-arm.mjs` rebuild a district with the other value against
+ * the same crowd in the same page, minutes apart.
+ *
+ * Stripped in a production build: `import.meta.env.DEV` is a compile-time
+ * constant, so the branch folds away and the call inlines to the constant.
+ */
+function walkerHalfBeam() {
+  if (import.meta.env.DEV) {
+    const override = (globalThis as { __mapWalkerBeam?: unknown }).__mapWalkerBeam
+    if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override
+  }
+  return WALKER_HALF_BEAM
+}
+
+/**
  * The village footway beside a country lane: the two edges of the paving, and
  * the line the crowd walks down the middle of it, as offsets from the lane.
  *
@@ -1624,7 +2026,7 @@ function buildingCorridors(root: THREE.Group): ClearanceCorridor[] {
     corridors.push({
       points: way.points,
       closed: way.closed,
-      halfWidth: (way.halfWidth ?? .65) + WALKER_HALF_BEAM,
+      halfWidth: (way.halfWidth ?? .65) + walkerHalfBeam(),
       label: 'footway',
     })
   }
@@ -1978,7 +2380,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
     // walkable half-width ends — so a walker at the outer edge of the paving
     // still had its body over the steps. Leaving the beam as well is what makes
     // the margin a margin for a person rather than for a line on a plan.
-    const courtMargin = .3 + WALKER_HALF_BEAM * 2
+    const courtMargin = .3 + walkerHalfBeam() * 2
     const courtScale = Math.min(.84, (court.width - courtMargin) / 5.2, (court.depth - courtMargin) / 3.5)
     const courtShift = Math.max(0, Math.min(.55, court.depth / 2 - 3.5 * courtScale / 2 - .15))
     const building = createCourthouse(courtScale, definition.stone)
@@ -2001,6 +2403,11 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
       const row = Math.floor(index / 5)
       stall.position.set(market.x - Math.min(2.6, market.width / 2 - .5) + column * Math.min(1.32, (market.width - 1) / 4), .09, market.z - .85 + row * 1.6)
       stall.rotation.y = row ? Math.PI : 0
+      // Declared, on the market cross's precedent. Ten stalls stood on the
+      // wool-hall block for as long as it has existed and the pedestrian
+      // router could not see one of them, so a walk across the yard went
+      // through all ten.
+      markSolidProp(stall, .5)
       root.add(stall)
     }
     registerLandmark(root, { key: 'city-wool-hall', name: 'Wool Hall Yard', kind: 'market', detail: 'The older of the quarter\u2019s two markets, on the wool-hall block behind the north arterial.', position: [market.x, market.z], radius: 2.5 })
@@ -2159,12 +2566,27 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
   })
   root.add(canalQuays(canalCurve, { innerHalf: CANAL_HALF, walk: .72, topY: .16, footY: -.09 }))
   streets.forEach((street, index) => {
-    const bridge = box([5.9, .2, streetWidth(street.streetClass) + .55], material(0x7b7770, .95), [CANAL_X, .13, street.position])
+    /*
+     * A bridge carries the whole street, pavements included.
+     *
+     * A pavement runs at half the carriageway plus `KERB_TO_PAVEMENT` and its
+     * own half width, and a walker may stand a beam beyond that again. The deck
+     * was the carriageway plus .275 a side, so both pavements crossed the canal
+     * on nothing at all — visible from the oblique camera as people walking on
+     * the water — and the lamp stood at .55, which is between the kerb and the
+     * pavement rather than clear of either. There is nowhere to step aside to
+     * on a bridge, so a lamp in the walking line is worth more frames there
+     * than the same lamp anywhere else in the district.
+     */
+    const walk = streetWidth(street.streetClass) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + walkerHalfBeam()
+    const bridge = box([5.9, .2, (walk + .25) * 2], material(0x7b7770, .95), [CANAL_X, .13, street.position])
     root.add(bridge)
     if (index % 2 === 0) for (const side of [-1, 1]) {
       const lamp = createLamp()
-      lamp.position.set(CANAL_X + side * 2.3, .2, street.position + .55)
+      lamp.position.set(CANAL_X + side * 2.3, .2, street.position + walk + .14)
       lamp.scale.setScalar(.8)
+      markAuthoredProp(lamp, .15)
+      lamp.userData.propAudit = { name: `city-bridge-lamp-${index}-${side > 0 ? 'e' : 'w'}`, region: 'city', groundY: .2 }
       root.add(lamp)
     }
   })
@@ -4320,6 +4742,54 @@ function addOceanEnvironment(root: THREE.Group) {
   // Slow. A launch at road speed reads as a jet ski, and the wake shader's
   // strength saturates at .97 units per second anyway.
   roadWays(root).push({ points: passage, closed: true, kind: 'water', speed: 1.05 })
+
+  /*
+   * The six districts the catalog retains out here.
+   *
+   * Treaty Sea and Global Compact were both authored without any, which took
+   * the whole map half of the district mechanic away from tier 7 upwards: no
+   * pin on the ledger row, no flight, no brief, and — because five of the
+   * fourteen connections open districts *only* in these two regions — five
+   * networks that could never put their contact anywhere.
+   *
+   * Nothing is built for them, and that is the point rather than a shortcut. A
+   * landmark is a position and a pick radius (see `registerLandmark`); the ring,
+   * the wash and the label are all overlay. So six named places cost this
+   * region zero triangles and zero draw calls, which is what lets the sparse
+   * rebuild stand: it was five quay islands, thirty-two buoys and nine boats of
+   * scenery that had to go, not the sea's ability to have places in it.
+   *
+   * And naming water is what the sea is for. Four of the six *are* water in the
+   * catalog's own copy — roads, an anchorage, a light, an admiralty court whose
+   * whole point is that it has no permanent address — which is the same licence
+   * `city-canal` and `nation-pond` already take on land.
+   *
+   * Sited by hand, and against the eight landforms this region actually has
+   * (three career islands, three rival compounds, two docket islands), the
+   * shipping channel the counsel swims, and the launch's standing circuit. All
+   * three are measured rather than assumed: `tools/map-qa/sites.mjs` prints
+   * them, and `landmarks.mjs` fails the run if a district lands on any of them.
+   */
+  const sea: Array<[string, string, MapLandmarkKind, XZ, number, string]> = [
+    ['ocean-quay', 'The Diplomatic Quay', 'transit', [-16.2, 4.9], 2.5,
+      'The head of the channel, where a delegation comes ashore. Everything that goes wrong before the talks begin goes wrong here first.'],
+    ['ocean-roads', 'The Bonded Roads', 'industry', [-6, -7.6], 2.8,
+      'Deep water south of the fairway, where a hull lies at anchor with its cargo still legally nowhere. An entire practice lives in that gap.'],
+    // South and west of where this was first put: at `-5.8,3.3` its disc came
+    // within .12 of the western docket island's landform, which `landmarks.mjs`
+    // warns about and is one lattice change from being a real overlap. .82 now.
+    ['ocean-chandlers', 'Chandler\u2019s Row', 'market', [-5.4, 2.6], 2.3,
+      'The agents\u2019 water, north of the channel. Every master who refuses to sail is refusing to sail from somewhere on this reach.'],
+    ['ocean-anchorage', 'Treaty Anchorage', 'water', [1.6, 4], 2.4,
+      'The middle of the sea, and neutral only because everyone agreed it was. The agreement is the practice.'],
+    ['ocean-lantern', 'The Lantern Light', 'transit', [16.8, -1], 2.5,
+      'The seaward approach, where pilotage becomes compulsory. Compulsory means litigated, and the board has never had counsel who understood both.'],
+    ['ocean-court', 'Free Harbour Court', 'civic', [5, -8.6], 2.8,
+      'The sea\u2019s own courthouse sits wherever the roll is called. A place on it is the closest thing the Treaty Sea has to a permanent address.'],
+  ]
+  for (const [key, name, kind, position, radius, detail] of sea) {
+    registerLandmark(root, { key, name, kind, detail, position, radius })
+  }
 }
 
 /**
@@ -4352,7 +4822,7 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   // The formal parterres and the two axis monuments are open ground; nothing
   // from the block lattice may be built over them.
   for (const [x, z] of [[-6.6, -3.5], [6.6, -3.5], [-6.6, 3.3], [6.6, 3.3]] as XZ[]) reserved.push({ x, z, radius: 2.5 })
-  reserved.push({ x: 0, z: -9.4, radius: 3.2 }, { x: 0, z: 7.15, radius: 2.4 })
+  reserved.push({ x: 0, z: -9.4, radius: 3.2 }, { x: 0, z: 14.15, radius: 2.4 })
   // The parterre circles above only cover their own centres; a sector block
   // whose ring happens to land between the rond-point and a parterre could
   // still land right on the ceremonial axis itself. A short run of extra
@@ -4550,11 +5020,15 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   assembly.position.set(0, .04, -9.4)
   root.add(assembly)
   registerLandmark(root, { key: 'continent-assembly', name: 'Sovereign Assembly', kind: 'civic', detail: 'The terminating monument of the north axis. Continental matters are heard behind that colonnade.', position: [0, -9.4], radius: 3.4 })
+  // Out at the line, which is now beyond the boulevards rather than on the
+  // first of them. The terminus still stands on the axis and still terminates
+  // it — the north radial runs out to r 18.9, so the avenue now ends at the
+  // station, which is what an avenue ending at a station looks like.
   const transit = createRailPlatform(.86)
-  transit.position.set(0, .02, 7.15)
+  transit.position.set(0, .02, 14.15)
   root.add(transit)
-  transitStops(root).push([0, 7.15])
-  registerLandmark(root, { key: 'continent-transit', name: 'Union Terminus', kind: 'transit', detail: 'The south terminus of the cross axis. The continental shuttle turns back here.', position: [0, 7.4], radius: 2.8 })
+  transitStops(root).push([0, 14.15])
+  registerLandmark(root, { key: 'continent-transit', name: 'Union Terminus', kind: 'transit', detail: 'The north terminus of the cross axis, out past the last boulevard. The continental shuttle turns back here.', position: [0, 14.4], radius: 2.8 })
 
   // The ring boulevard, on the line of the former walls: one closed circuit,
   // so its traffic never has to jump back to a start point.
@@ -4734,6 +5208,38 @@ function addGlobalEnvironment(root: THREE.Group) {
     orbit.rotation.x = Math.PI / 2
     orbit.rotation.y = (radius - 8) * .035
     root.add(orbit)
+  }
+
+  /*
+   * The six districts the catalog retains up here — the other half of the gap
+   * described in `addOceanEnvironment`, and the easier half, because this region
+   * is a station with a continuous deck under all of it. A contact sited at any
+   * of these stands on the platform above, so none of them needs ground found
+   * for it the way a district on open water does.
+   *
+   * Placed on the deck rather than on the relay masts and orbital stations
+   * already standing there: those are five relays and two stations doing their
+   * own job, and hanging a retained district off one would say the district is
+   * that structure. `sites.mjs` prints where they all are, and each of these is
+   * clear of them, of the three career parcels, of the three rival compounds,
+   * of both docket sites and of the transfer corridor itself.
+   */
+  const compact: Array<[string, string, MapLandmarkKind, XZ, number, string]> = [
+    ['orbit-concourse', 'The Compact Concourse', 'transit', [4.2, -3.4], 2.9,
+      'The deck every signatory crosses to reach its own bench. Standing counsel to the desk is in the room before the room convenes.'],
+    ['orbit-chamber', 'Hearing Chamber One', 'civic', [-6.6, -5.4], 2.7,
+      'The first chamber, and the list that decides who is heard and in what order. Nothing here is worth more or costs less to hold.'],
+    ['orbit-registry', 'The Registry Vault', 'civic', [-6, -12], 2.4,
+      'Below the deck on the shadow side, where every treaty in force is actually kept. Custody is a duty, and duties are retained.'],
+    ['orbit-landing', 'Far-Side Landing', 'transit', [-16, 8.6], 2.8,
+      'The furthest pad from the planet, and the furthest place a writ has ever been served. The authority would rather it were served by you.'],
+    ['orbit-gallery', 'The Assembly Gallery', 'civic', [3.4, 12.4], 2.8,
+      'Public seats above a private negotiation. The secretariat needs someone who can tell the powerful no, in writing.'],
+    ['orbit-reading-room', 'The Founders\u2019 Reading Room', 'monument', [16.4, 4.6], 2.4,
+      'Nine chairs and the original charter, out past the last office. There is no larger room to be invited into.'],
+  ]
+  for (const [key, name, kind, position, radius, detail] of compact) {
+    registerLandmark(root, { key, name, kind, detail, position, radius })
   }
 }
 
@@ -5236,7 +5742,9 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
       group.add(road)
     }
     pavingParts.forEach((part) => part.dispose())
-    if (faubourgTrees.length) group.add(buildInstancedTreeField(faubourgTrees))
+    if (faubourgTrees.length) {
+      group.add(buildInstancedTreeField(clearance ? treesOffPavement(group, faubourgTrees, clearance) : faubourgTrees))
+    }
 
     // The plan, kept for inspection. "The edge thins" is otherwise a claim
     // about a screenshot; with the plan on the group a harness can measure
@@ -5370,7 +5878,9 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
       group.add(track)
     }
     laneParts.forEach((part) => part.dispose())
-    if (hamletTrees.length) group.add(buildInstancedTreeField(hamletTrees))
+    if (hamletTrees.length) {
+      group.add(buildInstancedTreeField(clearance ? treesOffPavement(group, hamletTrees, clearance) : hamletTrees))
+    }
   }
 
   // The outer country is authored from the horizon inwards and never knew about
@@ -5385,6 +5895,19 @@ function createHorizonRing(region: MapRegionKey, definition: ArcDefinition, clea
       : outerRecords
     if (cleared.length) group.add(buildFacadeGroup(cleared.map((record, index) => tintForRegion(region, record, index)), { region }))
   }
+  /*
+   * Backdrop, and it has to say so.
+   *
+   * Nothing here is reachable — the crowd network stops at 28.9 and the nearest
+   * of these hills is on a 58-unit ellipse — but a hill instance is 25 m across
+   * and the walker audit tests a box per instance, so one cone's bounding box
+   * covered the whole north-west corner of the Old Quarter and reported every
+   * walker standing in it as inside a solid. That was 119 of the district's 147
+   * hits, four fifths of its measured figure, and it was what the .0021 / .0109
+   * bimodality was flipping between: whether one walker's wander took it into
+   * the corner of a box drawn around a painted hill.
+   */
+  group.traverse((child) => { child.userData.horizonRing = true })
   return group
 }
 
@@ -5777,6 +6300,34 @@ function createDistrictFlag(color: number, scale = 1) {
   fabric.castShadow = true
   fabric.userData.flagUniforms = uniforms
   group.add(fabric)
+  return group
+}
+
+/**
+ * The shingle a connection's contact stands beside.
+ *
+ * A person alone on a verge is a pedestrian who has stopped walking. What makes
+ * them read as *your* contact is the same thing that makes a solicitor's office
+ * read as one from the street: a hanging board on a bracket with the name on
+ * it. Deliberately small — .82 across on a post barely taller than the figure —
+ * because this is a brass plate outside a door, not signage.
+ *
+ * The panel takes the network's own accent so a held connection is the same
+ * teal as a held retainer and a held rival, rather than a fourth colour for the
+ * fourth thing the firm can own.
+ */
+function createContactShingle(accent: number) {
+  const group = new THREE.Group()
+  const post = material(0x3b4245, .42, .38)
+  group.add(cylinder(.036, 1.62, post, [0, .81, 0], 8))
+  // The bracket, which is what tells the eye the board is hung rather than
+  // nailed flat to the post.
+  group.add(box([.34, .05, .05], post, [.17, 1.5, 0]))
+  group.add(box([.05, .2, .05], post, [.32, 1.4, 0]))
+  const board = box([.82, .44, .05], material(0x2b3335, .58, .16), [.32, 1.16, 0])
+  group.add(board)
+  const plate = box([.68, .3, .02], material(accent, .4, .3), [.32, 1.16, .04])
+  group.add(plate)
   return group
 }
 
@@ -6300,9 +6851,12 @@ function decorateLevelParcel(
   roadPoint: THREE.Vector3,
   tangent: THREE.Vector3,
   definition: ArcDefinition,
+  // The parcel's frontage, handed down rather than re-derived: the site the
+  // plan offered may not lie on the perpendicular the table asked for, and the
+  // furniture has to square up with the building rather than with the offset.
+  facing: number,
 ) {
   const towardRoad = roadPoint.clone().sub(site).setY(0).normalize()
-  const facing = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
   const addAt = (object: THREE.Object3D, lateral: number, depth: number, rotation = facing) => {
     object.position.copy(site).add(tangent.clone().multiplyScalar(lateral)).add(towardRoad.clone().multiplyScalar(depth))
     object.position.y = .04
@@ -6728,8 +7282,11 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   const root = new THREE.Group()
   const rig = buildStylizedCounsel(gender, tier)
   // Architectural scale: counsel should read as a person in the district,
-  // not as a figure nearly as tall as a multi-storey headquarters.
-  rig.root.scale.setScalar(.278)
+  // not as a figure nearly as tall as a multi-storey headquarters. The same
+  // figure the crowd is drawn at, and read through the same function — it was
+  // the same number written twice, which meant an arm that changed how big a
+  // person is left the player the only giant on the pavement.
+  rig.root.scale.setScalar(crowdRenderScale())
   rig.root.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.castShadow = true
@@ -6737,11 +7294,26 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
     }
   })
   root.add(rig.root)
+  /*
+   * How tall this person actually is, because everything below stands on it.
+   *
+   * The ring, the ground shadow, the presence light, the diamond and the name
+   * plate were all authored as world offsets against the figure the crowd was
+   * drawn at, and the moment that figure changed size they stopped fitting:
+   * halving the scale left a hoop wider than the counsel was tall, a shadow
+   * pooling a body's width past her feet, and a name plate floating at nearly
+   * three times her height with a gap under it. Derived from the drawn body
+   * rather than restated, so the next arm on `CROWD_RENDER_SCALE` cannot
+   * separate them again. The fractions are the shipped values over the 1.5413
+   * the .278 figure measured, so at that scale this is the same furniture to
+   * four decimals.
+   */
+  const figureHeight = COUNSEL_RIG_HEIGHT * crowdRenderScale()
   const presenceLight = new THREE.PointLight(0xffd189, 2.05, 6.5, 2)
-  presenceLight.position.set(0, 1.55, .86)
+  presenceLight.position.set(0, figureHeight * 1.005, .86)
   root.add(presenceLight)
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(.45, 40),
+    new THREE.CircleGeometry(figureHeight * .292, 40),
     new THREE.MeshBasicMaterial({ color: 0x071015, transparent: true, opacity: .32, depthWrite: false }),
   )
   shadow.rotation.x = -Math.PI / 2
@@ -6749,7 +7321,7 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   shadow.position.y = .028
   root.add(shadow)
   const beacon = new THREE.Mesh(
-    new THREE.RingGeometry(.48, .55, 56),
+    new THREE.RingGeometry(figureHeight * .311, figureHeight * .357, 56),
     new THREE.MeshBasicMaterial({ color: 0xe1bd67, transparent: true, opacity: .72, side: THREE.DoubleSide, depthWrite: false }),
   )
   beacon.rotation.x = -Math.PI / 2
@@ -6759,13 +7331,17 @@ function createLawyer(gender: CharacterGender, tier: number, playerName: string)
   beacon.userData.lawyerBeacon = true
   root.add(beacon)
   const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xf3d082, transparent: true, opacity: .96, depthTest: false, depthWrite: false })
-  const marker = mesh(new THREE.OctahedronGeometry(.11, 0), markerMaterial, [0, 1.82, 0])
+  // The diamond and the name plate keep their authored size and only drop to
+  // meet the head: both are read as labels rather than as objects in the world,
+  // and a smaller counsel needs her marker *more*, not less.
+  const markerY = figureHeight * 1.181
+  const marker = mesh(new THREE.OctahedronGeometry(.11, 0), markerMaterial, [0, markerY, 0])
   marker.renderOrder = 52
   marker.userData.playerMarker = true
-  marker.userData.playerMarkerBaseY = 1.82
+  marker.userData.playerMarkerBaseY = markerY
   root.add(marker)
   const playerLabel = labelSprite(['YOU', playerName], 1.28, '#f0cf7c')
-  playerLabel.position.set(0, 2.12, 0)
+  playerLabel.position.set(0, figureHeight * 1.376, 0)
   playerLabel.userData.mapLabelAlways = true
   root.add(playerLabel)
   root.userData.lawyer = true
@@ -7055,12 +7631,23 @@ function createMountain(scale = 1, color = 0x706b5c, snow = false) {
   return group
 }
 
+/**
+ * The mast is tall enough that the sweep clears a pedestrian.
+ *
+ * It was not. A 2.8-unit mast puts the bottom of the swept disc at 1.13 above
+ * the ground, and a walker on the Arc stands 1.56 with a shoulder .27 across,
+ * so the two turbines nearest the ring road accounted for 104 of the district's
+ * 202 walker-inside-solid frames — half its figure — at 21 cm of penetration,
+ * which is a blade through a head rather than a brush. The blades reach 1.175
+ * below the hub, so the hub has to stand above walker height plus that, and
+ * this now holds at the .72 the Arc places them at.
+ */
 function createWindTurbine(scale = 1) {
   const group = new THREE.Group()
   const pale = material(0xc5cbc4, .42, .18)
-  group.add(cylinder(.06 * scale, 2.8 * scale, pale, [0, 1.4 * scale, 0], 12))
+  group.add(cylinder(.06 * scale, 3.9 * scale, pale, [0, 1.95 * scale, 0], 12))
   const rotor = new THREE.Group()
-  rotor.position.set(0, 2.75 * scale, .04)
+  rotor.position.set(0, 3.85 * scale, .04)
   for (let index = 0; index < 3; index += 1) {
     const blade = box([.09 * scale, 1.25 * scale, .045 * scale], pale, [0, .58 * scale, 0])
     blade.position.y = .55 * scale
@@ -7073,11 +7660,38 @@ function createWindTurbine(scale = 1) {
   return group
 }
 
+/**
+ * The dome, anchored to the same sun the district is lit by.
+ *
+ * It used to be a vertical gradient plus `.035 * sin(time * .08 + x * 4)`: a
+ * band of extra brightness that drifted slowly sideways across the whole sky,
+ * unrelated to anything. That is the single detail that stopped these
+ * districts reading as being at a time of day. A sky is not a gradient with a
+ * wandering bright patch in it; it is brightest around the sun, and the
+ * brightness falls off from there — steeply for the first few degrees, then
+ * very gradually across the rest of the hemisphere. Every scene here has a
+ * strong, low, warm key placed with some care, and the sky behind it was
+ * pointing somewhere else.
+ *
+ * Two powers of the cosine do the whole job: a tight one for the glare around
+ * the disc, a wide one for the general lift on the sun's side of the sky. The
+ * halo is tinted with the sun's own colour, so a warm afternoon key gives a
+ * warm sky beside it and the Global Compact's cold white one does not.
+ *
+ * Costs nothing. It is the same single dome, the same one draw call and the
+ * same one program; only the arithmetic inside the fragment changed, and it
+ * lost a `sin` in the exchange.
+ */
 function createSky(definition: ArcDefinition) {
+  const sunDirection = new THREE.Vector3(...definition.sun.position).normalize()
   const uniforms = {
     uTop: { value: new THREE.Color(definition.skyTop) },
     uBottom: { value: new THREE.Color(definition.skyBottom) },
-    uTime: { value: 0 },
+    uSun: { value: sunDirection },
+    uSunColour: { value: new THREE.Color(definition.sun.color) },
+    // Night has no aerial glare to speak of: the Global Compact's sky should
+    // stay black beside its key, not grow a daylight halo around it.
+    uHalo: { value: definition.sky.halo },
   }
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(170, 56, 28),
@@ -7085,10 +7699,24 @@ function createSky(definition: ArcDefinition) {
       uniforms,
       side: THREE.BackSide,
       vertexShader: 'varying vec3 vWorld; void main(){vWorld=(modelMatrix*vec4(position,1.)).xyz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader: 'uniform vec3 uTop; uniform vec3 uBottom; uniform float uTime; varying vec3 vWorld; void main(){float h=clamp(normalize(vWorld).y*.72+.38,0.,1.);float glow=.035*sin(uTime*.08+normalize(vWorld).x*4.);gl_FragColor=vec4(mix(uBottom,uTop,h)+glow,1.);}',
+      fragmentShader: `
+        uniform vec3 uTop; uniform vec3 uBottom; uniform vec3 uSun; uniform vec3 uSunColour; uniform float uHalo;
+        varying vec3 vWorld;
+        void main() {
+          vec3 view = normalize(vWorld);
+          float height = clamp(view.y * .72 + .38, 0., 1.);
+          vec3 base = mix(uBottom, uTop, height);
+          float toSun = max(dot(view, uSun), 0.);
+          // The tight term is the glare immediately around the disc; the wide
+          // one is the whole sun-side half of the sky sitting a little above
+          // the other half, which is most of what tells a viewer where the
+          // light is coming from.
+          float halo = pow(toSun, 26.) * .5 + pow(toSun, 3.) * .16;
+          gl_FragColor = vec4(base + uSunColour * halo * uHalo, 1.);
+        }
+      `,
     }),
   )
-  sky.userData.skyUniforms = uniforms
   return sky
 }
 
@@ -7379,6 +8007,8 @@ export function MapThreeScene({
   onLandmarkHover,
   onLandmarkSelect,
   ownedLandmarks,
+  contacts,
+  selectedLandmark,
 }: {
   region: MapRegionKey
   points: MapScenePoint[]
@@ -7401,6 +8031,20 @@ export function MapThreeScene({
    * landmark whose key is not here renders exactly as it always has.
    */
   ownedLandmarks?: string[]
+  /**
+   * The professional networks the firm holds that reach into this region, to be
+   * given somewhere in it to stand. See `MapSceneContact`.
+   */
+  contacts?: MapSceneContact[]
+  /**
+   * The district the player currently has selected, as a `MapLandmark.key`.
+   *
+   * Held through a ref rather than the dependency list below: selecting a
+   * district must not rebuild the world. The scene rebuild is a second of work
+   * and would throw away the crowd, the traffic and the camera each time the
+   * player clicked a name in the directory.
+   */
+  selectedLandmark?: string | null
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const commandRef = useRef(cameraCommand)
@@ -7410,6 +8054,7 @@ export function MapThreeScene({
   const landmarksRef = useRef(onLandmarks)
   const landmarkHoverRef = useRef(onLandmarkHover)
   const landmarkSelectRef = useRef(onLandmarkSelect)
+  const selectedLandmarkRef = useRef(selectedLandmark)
   commandRef.current = cameraCommand
   selectedRef.current = selectedKey
   selectRef.current = onSelect
@@ -7417,6 +8062,7 @@ export function MapThreeScene({
   landmarksRef.current = onLandmarks
   landmarkHoverRef.current = onLandmarkHover
   landmarkSelectRef.current = onLandmarkSelect
+  selectedLandmarkRef.current = selectedLandmark
 
   useEffect(() => {
     const host = hostRef.current
@@ -7459,6 +8105,21 @@ export function MapThreeScene({
       bands: 8,
       flatten: .52,
       saturation: 1.3,
+      // Contact shading, which outdoors is almost entirely about the ground.
+      // The sun casts one shadow map here and the hemisphere fills everything
+      // it misses, and a hemisphere cannot tell the strip of pavement in the
+      // angle of a wall from the middle of the road, so a district of a
+      // thousand objects all stood on the same evenly lit plane. Half a metre
+      // of reach is the width of the dark line that should be at the foot of a
+      // wall, under a parked car and in the gutter of a roof valley.
+      occlusion: definition.occlusion.strength,
+      // Wider than the office's, and deliberately so: the smallest thing worth
+      // seating out here is a kerb or a tree bole, and the district is read
+      // from twenty-five metres up. A furniture-sized reach at that distance
+      // resolves to a line too fine to survive the ink pass sitting on top of
+      // it, so the same cost buys nothing.
+      occlusionRadius: 1.15,
+      occlusionTint: definition.occlusion.tint,
     })
 
     const scene = new THREE.Scene()
@@ -7487,6 +8148,21 @@ export function MapThreeScene({
     sun.shadow.camera.left = -52; sun.shadow.camera.right = 52; sun.shadow.camera.top = 44; sun.shadow.camera.bottom = -44
     sun.shadow.camera.far = 260
     sun.shadow.bias = -.0006
+    // A sun shadow has an edge, not a border. The one thing that gives away a
+    // shadow map as a shadow map is a razor-sharp boundary running across a
+    // pavement, and this one was razor-sharp: 2048 texels over a 104-unit
+    // frustum is one texel every five centimetres, so the transition was two
+    // or three centimetres wide on the ground.
+    //
+    // Real penumbra widens with the distance from whatever is casting, which a
+    // single map cannot reproduce. What it can do is stop pretending the sun
+    // is a point. Three's PCF filter already takes nine taps and `radius`
+    // scales how far apart it spreads them, so a wider edge costs exactly
+    // nothing — no extra samples, no second map, no change to the one static
+    // render the map does at build time. Held to two: past about three the
+    // nine taps stop overlapping and the soft edge turns into nine ghosts of
+    // the hard one.
+    sun.shadow.radius = 2
     scene.add(sun)
     const fill = new THREE.DirectionalLight(definition.fill.color, definition.fill.intensity)
     fill.position.set(...definition.fill.position)
@@ -7565,6 +8241,25 @@ export function MapThreeScene({
 
     const anchors = new Map<string, THREE.Vector3>()
     const travelAnchors = new Map<string, THREE.Vector3>()
+    /*
+     * The finished street plan, as the ground the authored landmarks have to
+     * fit into. Built here rather than beside the vehicle clearance field
+     * below because the tier offices are placed first and they are half the
+     * problem, and built from the district's own records so a landmark is
+     * tested against the pavements that will actually exist rather than
+     * against a guess at them. See `siteOnPlan`.
+     */
+    const planGround = prepareClearance([...pedestrianGround(world), ...plannedGround(world)])
+    /*
+     * The parcels this pass itself puts down, accumulated as it goes.
+     *
+     * `planGround` is the district as the district left it, and it is the right
+     * field for siting a headquarters or a compound because neither of those
+     * exists yet. The contacts are sited last and have to avoid the buildings
+     * this loop has just finished placing as well, or the first thing a network
+     * does on arriving in the world is stand in a rival's lobby.
+     */
+    const authoredFootprints: ClearanceCorridor[] = []
     const tiers = points.filter((point): point is MapSceneTier => point.kind === 'tier')
     const rivals = points.filter((point): point is MapSceneRival => point.kind === 'rival')
     const events = points.filter((point): point is MapSceneEvent => point.kind === 'event')
@@ -7582,8 +8277,49 @@ export function MapThreeScene({
       }
       side.multiplyScalar(authoredSides[region][index] ?? 1)
       const setback: Record<MapRegionKey, number> = { city: 2.8, nation: 3.05, ocean: 3.25, continent: 3.05, orbit: 3.65 }
-      const site = roadPoint.clone().add(side.clone().multiplyScalar(setback[region]))
-      clearAuthoredParcel(world, site, region === 'orbit' ? 2.5 : region === 'ocean' ? 2.2 : 2.05)
+      const asked = roadPoint.clone().add(side.clone().multiplyScalar(setback[region]))
+      /*
+       * The setback the table asks for is a request, not an instruction: it is
+       * the distance at which a headquarters *would* front this stretch of
+       * route if the district had left the ground free, and on three districts
+       * in five it has not. The declared plinth is what has to fit — the same
+       * half-extents `createLevelBuilding` marks solid — turned to face the
+       * road exactly as the finished building will be, so the rectangle the
+       * siting clears is the rectangle the router later sees.
+       *
+       * The facing is taken from the asked-for site rather than from the one
+       * the search returns, which keeps the whole parcel — plaza, threshold,
+       * flanking pylons, connector — square to the street the plan set it back
+       * from, instead of skewing it a few degrees for every unit it slides.
+       */
+      const frontage = Math.atan2(roadPoint.x - asked.x, roadPoint.z - asked.z)
+      const plinthHalf = (2.25 + Math.min(1.7, point.data.tier * .105) + .65) / 2
+      const planned = recordSiting(
+        world,
+        `tier-${point.key}`,
+        siteOnPlan(planGround, asked.x, asked.z, plinthHalf, 1.275, frontage, {
+          // The setback's own direction: a deeper forecourt on the same street
+          // is a cheap correction, a slide up the road is an expensive one, and
+          // moving towards the route is bounded by the carriageway itself,
+          // which is in `planGround` and so needs no separate limit.
+          alongX: side.x,
+          alongZ: side.z,
+          along: 2.4,
+          lateral: 1.2,
+          lateralCost: 2.2,
+        }),
+      )
+      const site = new THREE.Vector3(planned.x, asked.y, planned.z)
+      authoredFootprints.push(footprintCorridor(site.x, site.z, plinthHalf, 1.275, frontage, 'tier'))
+      const parcelRadius = region === 'orbit' ? 2.5 : region === 'ocean' ? 2.2 : 2.05
+      // Both the ground the plan gave it and the ground the table asked for.
+      // The district reserved the asked-for parcel before it laid a street and
+      // still keeps its planned buildings out of it, so leaving the scenery
+      // standing there would be a clearing that half happened — and measured,
+      // that inconsistency was worth more of The Circuit's walker share than
+      // the siting it came with.
+      clearAuthoredParcel(world, site, parcelRadius)
+      if (planned.moved > .05) clearAuthoredParcel(world, asked, parcelRadius)
       if (region === 'ocean') {
         const island = createIslandLandform(2.1, 410 + point.data.tier * 23, index % 2 ? 0x66725e : 0x707666)
         island.position.set(site.x, -.22, site.z)
@@ -7591,7 +8327,7 @@ export function MapThreeScene({
         const pier = createPier(2.75, .56)
         pier.position.copy(site).lerp(roadPoint, .52)
         pier.position.y = -.01
-        pier.rotation.y = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
+        pier.rotation.y = frontage
         world.add(pier)
       } else if (region === 'orbit') {
         const stationParcel = cylinder(1.92, .24, material(0x34454c, .48, .38), [site.x, -.02, site.z], 32)
@@ -7619,7 +8355,7 @@ export function MapThreeScene({
         const plazaColor = point.state === 'complete' ? 0x688779 : point.state === 'current' ? definition.accent : point.state === 'next' ? 0x9c8f70 : 0x73746e
         const plazaSize: [number, number, number] = region === 'continent' ? [4.25, .14, 2.7] : region === 'nation' ? [3.8, .14, 2.5] : [3.45, .14, 2.4]
         const plaza = box(plazaSize, material(plazaColor, .9), [site.x, .06, site.z])
-        plaza.rotation.y = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
+        plaza.rotation.y = frontage
         world.add(plaza)
         const threshold = box([1.22, .035, .25], material(point.state === 'current' ? 0xe2c270 : 0xb3a57e, .55, .22), [site.x, .148, site.z])
         threshold.rotation.y = plaza.rotation.y
@@ -7629,14 +8365,13 @@ export function MapThreeScene({
         // A mirrored pair of markers on the approach axis is what actually
         // reads as "formal" at the counsel's own eye level, independent of
         // whatever the background skyline is doing.
-        const facing = plaza.rotation.y
-        const lateral = new THREE.Vector3(Math.cos(facing), 0, -Math.sin(facing))
+        const lateral = new THREE.Vector3(Math.cos(frontage), 0, -Math.sin(frontage))
         if (region === 'continent') {
           for (const flankSide of [-1, 1]) {
             const pylon = createCivicPylon(.92, definition.stone, definition.accent)
             pylon.position.copy(site).add(lateral.clone().multiplyScalar(flankSide * (plazaSize[0] * .5 + .55)))
             pylon.position.y = .02
-            pylon.rotation.y = facing
+            pylon.rotation.y = frontage
             world.add(pylon)
           }
         } else if (region === 'city') {
@@ -7654,9 +8389,9 @@ export function MapThreeScene({
       destinationMarker.userData.destinationBaseY = .02
       group.add(destinationMarker)
       group.position.copy(site)
-      group.rotation.y = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
+      group.rotation.y = frontage
       world.add(group)
-      decorateLevelParcel(world, region, point, index, site, roadPoint, tangent, definition)
+      decorateLevelParcel(world, region, point, index, site, roadPoint, tangent, definition, frontage)
       anchors.set(point.key, new THREE.Vector3(site.x, .12, site.z))
       const travelAnchor = roadPoint.clone().add(side.clone().multiplyScalar(region === 'ocean' || region === 'orbit' ? .5 : .32)).setY(.12)
       travelAnchors.set(point.key, travelAnchor)
@@ -7665,7 +8400,7 @@ export function MapThreeScene({
         const towardRoad = roadPoint.clone().sub(site).setY(0).normalize()
         flag.position.copy(site).add(towardRoad.multiplyScalar(region === 'ocean' ? 1.35 : 1.18)).add(tangent.clone().multiplyScalar(1.08))
         flag.position.y = region === 'ocean' ? .16 : .12
-        flag.rotation.y = Math.atan2(roadPoint.x - site.x, roadPoint.z - site.z)
+        flag.rotation.y = frontage
         world.add(flag)
       }
       if (region !== 'ocean' && region !== 'orbit') for (const offset of [-1.7, 1.7]) {
@@ -7726,10 +8461,14 @@ export function MapThreeScene({
      * with it, and a building on open water reads as a bug rather than as a
      * choice. Each keeps a landform of its own, sized to what stands on it.
      */
-    const groundMarker = (x: number, z: number, radius: number, seed: number) => {
+    const groundMarker = (x: number, z: number, radius: number, seed: number, forContact = false) => {
       if (region !== 'ocean') return
       const island = createIslandLandform(radius, seed, 0x66725e)
       island.position.set(x, -.22, z)
+      // Distinguishable from the landforms the region itself lays down, because
+      // a landmark audit has to be able to ask "is this district sitting on a
+      // rival's island" without its own contact's footing answering yes.
+      if (forContact) island.userData.contactLandform = true
       world.add(island)
     }
     // A standing rival reads as a building with a name on it; putting one
@@ -7743,7 +8482,7 @@ export function MapThreeScene({
     // through the generic `disposeScene` sweep, since nothing about it is
     // marked shared. It is deliberately not handed to `Crowd`: a receptionist
     // holding the door is staying put, not pathfinding the block.
-    const rivalGuardEntries: Array<{ walker: CrowdWalker; baseHipsY: number; phase: number }> = []
+    const standingFigures: Array<{ walker: CrowdWalker; baseHipsY: number; phase: number }> = []
     rivals.forEach((point, index) => {
       const [authoredX, authoredZ] = rivalSites[index % rivalSites.length]
       // A rival compound is a click target, so it cannot simply be dropped if it
@@ -7754,14 +8493,35 @@ export function MapThreeScene({
       // remaining contact. Correcting the site here rather than nudging the
       // finished building keeps the compound, its emphasis ring, its travel anchor
       // and its selection collider all at the same place.
-      const site = escapeCorridors(clearanceField, authoredX, authoredZ, 1.55, 2.2)
+      // Which way the compound faces is fixed by which side of the route it is
+      // on, and does not depend on where the plan puts it, so the footprint the
+      // siting has to fit is known before the site is.
+      const rivalFacing = authoredZ < 0 ? 0 : Math.PI
+      const site = recordSiting(
+        world,
+        `rival-${point.key}`,
+        siteOnPlan(planGround, authoredX, authoredZ, (2.25 + (index % 2) * .45 + .5) / 2, 1.075, rivalFacing, {
+          // A compound is not set back from anything — it is a firm's own
+          // premises somewhere out in the district — so both directions are
+          // equally good and the search is a plain nearest-free-ground. It has
+          // to look further than a headquarters does because two of the four
+          // on The Circuit were dropped inside a village.
+          alongX: 0,
+          alongZ: 1,
+          along: 5,
+          lateral: 5,
+          lateralCost: 1,
+        }),
+      )
       const x = site.x
       const z = site.z
+      authoredFootprints.push(footprintCorridor(x, z, (2.25 + (index % 2) * .45 + .5) / 2, 1.075, rivalFacing, 'rival'))
       clearAuthoredParcel(world, new THREE.Vector3(x, 0, z), 1.85)
+      if (site.moved > .05) clearAuthoredParcel(world, new THREE.Vector3(authoredX, 0, authoredZ), 1.85)
       groundMarker(x, z, 1.95, 620 + index * 29)
       const building = createRivalBuilding(point, index, definition)
       building.position.set(x, .04, z)
-      building.rotation.y = z < 0 ? 0 : Math.PI
+      building.rotation.y = rivalFacing
       world.add(building)
       const ring = emphasisRing('rivals', point.key, point.data.owned ? 0x6fb29c : (point.data.discount_bps ?? 0) > 0 ? 0xd8a94f : 0xb36f60, 1.45)
       ring.position.x = x; ring.position.z = z
@@ -7774,7 +8534,7 @@ export function MapThreeScene({
         // `index * 7.31 + 3.7` so a guard never happens to roll the exact
         // same build, colouring and satchel as a passer-by.
         const guard = buildCrowdWalker(index * 13.7 + 101.3)
-        guard.root.scale.setScalar(CROWD_RENDER_SCALE)
+        guard.root.scale.setScalar(crowdRenderScale())
         const faceSign = z < 0 ? 1 : -1
         // A step further out than the travel anchor (1.45), and shifted to
         // one side, so the figure stands beside the door the player travels
@@ -7784,11 +8544,122 @@ export function MapThreeScene({
         // Left off the scene graph on purpose — like every other crowd
         // walker, its root is only ever read by `CrowdRenderer.sync()`,
         // which is what actually puts it on screen.
-        rivalGuardEntries.push({ walker: guard, baseHipsY: guard.rig.hips.position.y, phase: index * 1.9 + 2.1 })
+        standingFigures.push({ walker: guard, baseHipsY: guard.rig.hips.position.y, phase: index * 1.9 + 2.1 })
       }
     })
-    const rivalGuardRenderer = rivalGuardEntries.length ? new CrowdRenderer(rivalGuardEntries.map((entry) => entry.walker)) : null
-    if (rivalGuardRenderer) world.add(rivalGuardRenderer.group)
+
+    /*
+     * The firm's professional networks, given somewhere in the world to be.
+     *
+     * A connection has been a crest on the office wall and a row in a catalog,
+     * and its whole mechanical effect happens somewhere else entirely: it is
+     * what unlocks a district on the retainer board. Putting the contact at one
+     * of those districts is the shortest possible statement of that rule — the
+     * person who can get you the bench's ear is standing outside the bench.
+     *
+     * Sited with the same `siteOnPlan` the headquarters and the compounds use,
+     * against a field that now includes those buildings, so a contact cannot be
+     * standing on a pavement, in a terrace or in a rival's lobby. A figure is
+     * a third of a unit across and the search starts at the district's own
+     * centre, so in practice it finds the verge or the forecourt beside the
+     * landmark rather than travelling.
+     *
+     * Not declared solid, on the rival guard's precedent: a receptionist
+     * holding a door is not a bollard, and the crowd has never been asked to
+     * path around one. Being off the network is a matter of not standing in
+     * people's way rather than of blocking it.
+     */
+    const districtDirectory = (world.userData.landmarks ?? []) as MapLandmark[]
+    /*
+     * Everything already standing, not merely everything planned.
+     *
+     * `plannedGround` reads `buildingAudit`, which is the terraces and the
+     * instanced rows — the classes a landmark had to be kept out of. A contact
+     * has to clear the authored scenery too: the schoolhouse, the church, the
+     * market hall are declared solids placed by hand rather than laid out by
+     * the block planner, and they are missing from that audit entirely. Sited
+     * against the planned ground alone, three of the Old Quarter's four
+     * contacts reported "already clear" at the exact centre of the district
+     * they belong to and stood inside its principal building.
+     */
+    const contactGround = prepareClearance([
+      ...pedestrianGround(world),
+      ...plannedGround(world),
+      ...authoredFootprints,
+      ...crowdObstacles(world)
+        .filter((prop) => prop.solid)
+        .map((prop) => (prop.hx !== undefined && prop.hz !== undefined
+          ? footprintCorridor(prop.x, prop.z, prop.hx, prop.hz, prop.rotationY ?? 0, 'solid')
+          : discCorridor(prop.x, prop.z, prop.radius, 'solid'))),
+      // And the trees, which are the class that actually caught the first
+      // attempt: three of the four contacts stood inside a crown.
+      ...((world.userData.treeAudit ?? []) as Array<{ x: number; z: number; radius: number }>)
+        .map((tree) => discCorridor(tree.x, tree.z, tree.radius, 'tree')),
+    ])
+    ;(contacts ?? []).forEach((contact, index) => {
+      const posts = contact.landmarks
+        .map((key) => districtDirectory.find((landmark) => landmark.key === key))
+        .filter((landmark): landmark is MapLandmark => Boolean(landmark))
+      if (!posts.length) return
+      // The first district the network opens in this region, in the directory's
+      // own order, so the same network lands in the same place on every build.
+      const post = posts[0]
+      const sited = recordSiting(world, `contact-${contact.key}`, siteOnPlan(
+        contactGround,
+        post.position[0],
+        post.position[1],
+        .42,
+        .42,
+        0,
+        // Far enough to walk out of a market square and onto its edge, and no
+        // further: a contact who has left the district they are the contact for
+        // is not saying anything.
+        { alongX: 0, alongZ: 1, along: post.radius + 2.2, lateral: post.radius + 2.2, lateralCost: 1 },
+      ))
+      if (!sited.cleared) return
+      // Facing the landmark they belong to, so the figure reads as standing
+      // outside a place rather than pointing away from one.
+      const facing = Math.atan2(post.position[0] - sited.x, post.position[1] - sited.z)
+      /*
+       * Four of the Treaty Sea's six districts are open water, so a contact
+       * belonging to one has nothing to stand on: `siteOnPlan` reports the
+       * centre already clear, correctly, because there is no obstacle out there
+       * to be clear of.
+       *
+       * They get the same answer the rivals and the dockets got when this
+       * region gave up its scenery — a landform of their own, sized to what
+       * stands on it — rather than a quay or a pontoon, which is furniture this
+       * region was deliberately emptied of. It is one mesh per contact, three at
+       * most, and only for a network the firm has actually bought, so an
+       * unbought Treaty Sea is triangle-for-triangle the region that was
+       * measured. See `groundMarker`.
+       */
+      groundMarker(sited.x, sited.z, .92, 860 + index * 41, true)
+      const standing = region === 'ocean' ? OCEAN_LANDFORM_TOP : .02
+      const shingle = createContactShingle(0x6cae98)
+      shingle.position.set(sited.x, standing, sited.z)
+      shingle.rotation.y = facing
+      world.add(shingle)
+      const label = labelSprite(['YOUR CONNECTION', contact.name, contact.role], 2.4, '#82c3ad')
+      label.position.set(sited.x, 2.35, sited.z)
+      label.userData.mapLabelKind = 'contact'
+      label.userData.mapLabelKey = `landmark:${post.key}`
+      world.add(label)
+      // The pedestrian crowd seeds on `index * 7.31 + 3.7` and the rival guards
+      // on `index * 13.7 + 101.3`; a third namespace keeps a contact from
+      // rolling the same build and colouring as either.
+      const figure = buildCrowdWalker(index * 9.13 + 517.7)
+      figure.root.scale.setScalar(crowdRenderScale())
+      // Opposite the bracket. The board hangs off the post's local +x, which is
+      // `(cos, -sin)` in world for a `rotation.y`, so putting the figure on that
+      // same side stands them underneath their own sign.
+      figure.root.position.set(sited.x - Math.cos(facing) * .58, standing, sited.z + Math.sin(facing) * .58)
+      figure.root.rotation.y = facing
+      standingFigures.push({ walker: figure, baseHipsY: figure.rig.hips.position.y, phase: index * 2.7 + 5.3 })
+    })
+
+    const standingFigureRenderer = standingFigures.length ? new CrowdRenderer(standingFigures.map((entry) => entry.walker)) : null
+    if (standingFigureRenderer) world.add(standingFigureRenderer.group)
 
     const eventSitesByRegion: Record<MapRegionKey, XZ[]> = {
       city: [[-10.4, 4.15], [10.4, 4.05]],
@@ -8342,7 +9213,7 @@ export function MapThreeScene({
       // a pedestrian and the lawyer read as the same species. It has to be
       // applied before the crowd is constructed, because the crowd reads it as
       // the scale its fade ramps towards.
-      walker.root.scale.setScalar(CROWD_RENDER_SCALE)
+      walker.root.scale.setScalar(crowdRenderScale())
       crowdWalkers.push(walker)
     }
     const crowdRenderer = crowdWalkers.length ? new CrowdRenderer(crowdWalkers) : null
@@ -8398,7 +9269,7 @@ export function MapThreeScene({
     for (let index = 0; index < trafficSims.length; index += 1) trafficSims[index].prime(26, camera)
     if (crowd) crowd.prime(20, camera)
     if (crowdRenderer) crowdRenderer.sync()
-    if (rivalGuardRenderer) rivalGuardRenderer.sync()
+    if (standingFigureRenderer) standingFigureRenderer.sync()
 
     // Treaty Sea has no line for a regional service to run on.
     //
@@ -8652,14 +9523,50 @@ export function MapThreeScene({
     landmarkRing.renderOrder = 42
     landmarkRing.visible = false
     world.add(landmarkRing)
-    // The area behind that ring. Shown for whichever district the pointer is
-    // over, and left on the last one the district directory travelled to, so
-    // choosing a district from the list highlights the ground it covers instead
-    // of only moving the camera towards it.
+    // The area behind that ring, for whichever district the pointer is over.
     const landmarkWash = createRegionWash(0x8fd3c4, .14)
     landmarkWash.visible = false
     world.add(landmarkWash)
-    let focusedLandmark: MapLandmark | null = null
+
+    /*
+     * The district the player has actually chosen, which is a different state
+     * from the one they happen to be pointing at and a different state again
+     * from one the firm holds.
+     *
+     * Three states, three registers, and they have to be able to coexist on one
+     * district because a held district is exactly the one a player is most
+     * likely to select:
+     *
+     *   hovered  a hairline teal outline and a faint teal wash — momentary
+     *   held     `createHeldLandmarkAccent`: a teal mast, flag and ring — static
+     *   selected this: the map's own selection gold, the same `0xe4c36e` the
+     *            headquarters and compound `selectionRing` uses, so choosing a
+     *            district reads as the same act as choosing an office
+     *
+     * The gold sits outside the held ring's radius rather than on it, so a
+     * district that is both shows two concentric marks in two colours instead
+     * of two marks fighting for the same pixels.
+     *
+     * `depthTest` is left on for the wash and off for the outline, which is the
+     * split the rings beside it already use: an area highlight that is occluded
+     * where buildings stand on it is describing the ground correctly, while an
+     * outline has to be findable behind a terrace. Render order 43 keeps the
+     * outline under the 70 the labels were pushed to when rings started slicing
+     * through them.
+     */
+    const districtWash = createRegionWash(0xe4c36e, .12)
+    districtWash.visible = false
+    world.add(districtWash)
+    const districtOutline = new THREE.Mesh(
+      new THREE.RingGeometry(1, 1.055, 72),
+      new THREE.MeshBasicMaterial({ color: 0xe4c36e, transparent: true, opacity: .78, side: THREE.DoubleSide, depthTest: false, depthWrite: false }),
+    )
+    districtOutline.rotation.x = -Math.PI / 2
+    districtOutline.position.y = .16
+    districtOutline.renderOrder = 43
+    districtOutline.visible = false
+    world.add(districtOutline)
+
     landmarksRef.current?.(landmarks)
 
     // Held landmarks: purely additive, and cheap. `ownedLandmarks` is
@@ -8694,7 +9601,7 @@ export function MapThreeScene({
       if (
         data.cloud || data.tree || data.fountainSpray || data.crane || data.lighthouse || data.lighthouseBeam
         || data.turbine || data.orbitalRing || data.radarDish || data.planet || data.signal || data.atmosphere
-        || data.waterUniforms || data.skyUniforms || data.auroraUniforms || data.flagUniforms || data.mapLabelKind
+        || data.waterUniforms || data.auroraUniforms || data.flagUniforms || data.mapLabelKind
         || data.mapObjectKind || data.mapEmphasisKind || data.lawyerBeacon || data.playerMarker || data.destinationMarker
         || data.buoy || data.marshBlade || data.ambientActor || data.ambientWing
       ) animatedObjects.push(object)
@@ -8715,7 +9622,7 @@ export function MapThreeScene({
     // folded into a static batch or have its own matrix frozen.
     pooledVehicles.forEach((object) => liveObjects.add(object))
     if (crowdRenderer) crowdRenderer.group.traverse((object) => liveObjects.add(object))
-    if (rivalGuardRenderer) rivalGuardRenderer.group.traverse((object) => liveObjects.add(object))
+    if (standingFigureRenderer) standingFigureRenderer.group.traverse((object) => liveObjects.add(object))
     // The rig animates limb by limb, so no part of it may be baked.
     lawyer.traverse((object) => liveObjects.add(object))
     if (transitCarrier) liveObjects.add(transitCarrier)
@@ -8724,6 +9631,8 @@ export function MapThreeScene({
     // Moved and rescaled onto whichever district is under the pointer, so its
     // matrix cannot be frozen into a batch either.
     liveObjects.add(landmarkWash)
+    liveObjects.add(districtWash)
+    liveObjects.add(districtOutline)
 
     // The world is complete here; nothing below adds static scenery, so this is
     // the point at which it can be safely baked into batches.
@@ -8905,15 +9814,19 @@ export function MapThreeScene({
         landmarkRing.position.set(landmark.position[0], .2, landmark.position[1])
         landmarkRing.scale.setScalar(landmark.radius)
       }
-      showLandmarkArea(landmark ?? focusedLandmark)
+      // Hover only. The chosen district keeps its own gold treatment below, so
+      // leaving the teal wash on the last district travelled to would put two
+      // washes on the same ground the moment a player pointed elsewhere.
+      showLandmarkArea(landmark)
       landmarkHoverRef.current?.(landmark, landmark && event ? { x: event.clientX, y: event.clientY } : null)
     }
     /** Frames a named landmark; used by the district directory. */
     const travelToLandmark = (key: string) => {
       const landmark = landmarks.find((candidate) => candidate.key === key)
       if (!landmark) return
-      focusedLandmark = landmark
-      showLandmarkArea(landmark)
+      // No wash here: travelling to a district also selects it, and the chosen
+      // district draws its own gold area below. Leaving the teal hover wash on
+      // the last place travelled to put two washes on one piece of ground.
       cameraMode = 'overview'
       panOffset.set(landmark.position[0] - overviewTarget.x, 0, landmark.position[1] - overviewTarget.z)
       clampPan()
@@ -9607,14 +10520,14 @@ export function MapThreeScene({
       // A slow head turn and a slower chest sway is the entire animation
       // budget: two rotations per guard, reusing the phase offset chosen when
       // it was built so four guards never drift into lockstep.
-      if (rivalGuardRenderer) {
-        for (const entry of rivalGuardEntries) {
+      if (standingFigureRenderer) {
+        for (const entry of standingFigures) {
           const t = elapsed * .5 + entry.phase
           entry.walker.rig.chest.rotation.y = Math.sin(t * .6) * .05
           entry.walker.rig.head.rotation.y = Math.sin(t * .35) * .22
           entry.walker.rig.hips.position.y = entry.baseHipsY + Math.sin(t * 1.7) * .012
         }
-        rivalGuardRenderer.sync()
+        standingFigureRenderer.sync()
       }
       animatedObjects.forEach((object) => {
         if (object.userData.cloud) {
@@ -9646,10 +10559,14 @@ export function MapThreeScene({
           object.position.x = Math.sin(elapsed * .035) * .4
         }
         if (object.userData.waterUniforms) object.userData.waterUniforms.uTime.value = elapsed
-        if (object.userData.skyUniforms) object.userData.skyUniforms.uTime.value = elapsed
         if (object.userData.auroraUniforms) object.userData.auroraUniforms.uTime.value = elapsed
         if (object.userData.flagUniforms) object.userData.flagUniforms.uTime.value = elapsed
-        if (object.userData.mapLabelKind) object.visible = Boolean(object.userData.mapLabelAlways) || object.userData.mapLabelKey === selectedRef.current || (object.userData.mapLabelKind === 'career' && object.userData.mapLabelKey === activeTier?.key) || (object.userData.mapLabelKind !== 'career' && object.userData.mapLabelKind === modeRef.current)
+        // A contact's shingle is always in the world; the card naming the
+        // network appears when the player is asking about the district that
+        // contact opens, which is the only moment the answer is relevant and
+        // keeps two or three floating cards off the overview.
+        if (object.userData.mapLabelKind === 'contact') object.visible = object.userData.mapLabelKey === `landmark:${selectedLandmarkRef.current ?? ''}` || object.userData.mapLabelKey === `landmark:${hoveredLandmark?.key ?? ''}`
+        else if (object.userData.mapLabelKind) object.visible = Boolean(object.userData.mapLabelAlways) || object.userData.mapLabelKey === selectedRef.current || (object.userData.mapLabelKind === 'career' && object.userData.mapLabelKey === activeTier?.key) || (object.userData.mapLabelKind !== 'career' && object.userData.mapLabelKind === modeRef.current)
         if (object.userData.mapObjectKind) object.visible = object.userData.mapObjectKind === modeRef.current
         if (object.userData.mapEmphasisKind) {
           object.visible = object.userData.mapEmphasisKind === modeRef.current || object.userData.mapLabelKey === selectedRef.current
@@ -9698,6 +10615,26 @@ export function MapThreeScene({
       if (landmarkRing.visible) {
         landmarkRing.scale.setScalar((hoveredLandmark?.radius ?? 1) * (1 + Math.sin(elapsed * 3.1) * .035))
         ;(landmarkRing.material as THREE.MeshBasicMaterial).opacity = .5 + Math.sin(elapsed * 3.1) * .18
+      }
+      // The chosen district. Resolved from the key every frame rather than on
+      // a change event because the key arrives from React on a prop and the
+      // scene is deliberately not rebuilt when it does; a lookup in a list of
+      // a dozen landmarks is cheaper than the bookkeeping to avoid it.
+      const chosenDistrict = selectedLandmarkRef.current
+        ? landmarks.find((candidate) => candidate.key === selectedLandmarkRef.current) ?? null
+        : null
+      districtWash.visible = Boolean(chosenDistrict)
+      districtOutline.visible = Boolean(chosenDistrict)
+      if (chosenDistrict) {
+        const [chosenX, chosenZ] = chosenDistrict.position
+        districtWash.position.set(chosenX, WASH_Y, chosenZ)
+        districtWash.scale.setScalar(chosenDistrict.radius)
+        districtOutline.position.set(chosenX, .16, chosenZ)
+        // Outside the held ring, which sits at .78 of the radius, so a district
+        // that is both held and selected reads as two marks rather than one
+        // muddy one.
+        districtOutline.scale.setScalar(chosenDistrict.radius * (1.02 + Math.sin(elapsed * 2.4) * .012))
+        ;(districtOutline.material as THREE.MeshBasicMaterial).opacity = .62 + Math.sin(elapsed * 2.4) * .16
       }
       if (landmarkWash.visible) {
         // The same cadence as the ring it sits under, at a fraction of the
@@ -9756,8 +10693,15 @@ export function MapThreeScene({
       ;(window as unknown as { __mapScene?: unknown; __mapThree?: unknown }).__mapThree = THREE
       ;(window as unknown as { __mapScene?: unknown }).__mapScene = {
         region, scene, world, camera, renderer, lawyer, transports, landmarks, buildStartedAt, firstRenderAt,
+        // The composite itself, so its settings can be changed on a live scene
+        // and the cost of a change measured against the same district, the
+        // same crowd and the same frame, rather than against a second run of
+        // the dev server. The map's crowd population is not reproducible
+        // across server lifetimes and its frame time follows the crowd, so an
+        // A/B taken any other way measures the population as much as the code.
+        stylePass,
         firstFrameMs: firstRenderAt - buildStartedAt,
-        roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer, vehicleHulls,
+        roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer: standingFigureRenderer, vehicleHulls,
         // The counsel's rig and its own feet, so "does the walk skate" can be
         // measured — foot travel against body travel — instead of judged from a
         // screenshot. `walkTo` drives a journey on demand, because the walk is
@@ -9811,7 +10755,13 @@ export function MapThreeScene({
       renderer.forceContextLoss()
       if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement)
     }
-  }, [activity, ownedLandmarks, playerGender, playerName, playerTier, points, region])
+    // `contacts` rides here beside `ownedLandmarks` and for the same reason:
+    // buying a network has to put its contact in the world without waiting for
+    // a region change, and the caller flattens both to a string before
+    // memoising them so a refetch on the timer cannot rebuild the district.
+    // `selectedLandmark` deliberately does *not*: it is read through a ref, so
+    // choosing a district lights it rather than rebuilding the world.
+  }, [activity, contacts, ownedLandmarks, playerGender, playerName, playerTier, points, region])
 
   const style = { '--arc-accent': `#${ARC[region].accent.toString(16).padStart(6, '0')}` } as CSSProperties
   return (

@@ -53,9 +53,96 @@ from .story import (
 # is here is v7: putting daily claims into the income model showed the band had
 # been measured against a player who ignores a tenth of their income, and the
 # base is what puts a daily-claiming player back inside one-to-two hours.
-RULE_VERSION = "lsat-tycoon-v8"
+#
+# v9 does not move the settlement formula either. A case pays exactly what it
+# paid under v8, because every price in this module is quoted per *question*
+# and v9 only changes how many questions a sitting contains (SITTING_QUESTIONS,
+# 10 -> 6). What it does move is everything that was counted in whole sittings:
+# client contract lengths fell by the same ratio and the daily goal milestones
+# were rebased onto the new sitting. Neither changes what a day or a contract is
+# worth -- both are re-derived so the money lands where it did -- but the
+# *counts* stamped on a contract and on a daily goal are not comparable across
+# this label, so anything reading `cases_remaining` or a claimed milestone out
+# of history has to split on it.
+RULE_VERSION = "lsat-tycoon-v9"
 STARTING_CASH = 250
-DAILY_REWARD_MULTIPLIERS = {5: 1, 10: 3, 20: 8}
+
+# How many questions the player sits down to answer in one go.
+#
+# This is the only place in the app where "case" means a *sitting* rather than
+# one question, and the distinction is load-bearing enough that it has burned a
+# previous session (see TIER_EFFORT_BASE). Everywhere else in this module -- and
+# in `scripts/simulate_economy_curve.py`, and in `profile.total_cases` -- a
+# "case" is one attempted question, because that is the unit `settle_attempt`
+# pays out on. The interface uses the other sense: "Start 6 cases" starts one
+# run of six questions. Getting the two the wrong way round is a factor-of-six
+# error in every price in the game.
+#
+# 10 -> 6 because a ten-question run with a strategy prompt and a written
+# argument on each question runs past half an hour, which is long enough that
+# players do not start one. Six is a nearer reward for the same work: the
+# campaign still asks for the same ~2,090 questions and the same wall-clock
+# time, in 338 sittings instead of 209.
+#
+# Six rather than five is a measurement, not a preference. A Reading
+# Comprehension passage in this bank runs 4 to 16 questions (median 7) and must
+# be served whole, so the run target and the passage allowance together decide
+# how much of the RC bank can ever be reached and therefore what the average
+# question costs in wall-clock time. See `services.PASSAGE_OVERSHOOT_ALLOWANCE`
+# for the measured comparison; six with a two-question allowance holds the
+# served section mix, and so the campaign's length, to within 0.1%.
+SITTING_QUESTIONS = 6
+# The sitting length everything counted in whole sittings was authored against.
+# Contract lengths and daily goals were both written when a sitting was ten
+# questions, so they are re-expressed against SITTING_QUESTIONS rather than
+# retyped: a contract that closed in about one sitting still closes in about one
+# sitting, and a daily goal that landed on a sitting boundary still lands on one.
+# Keeping the reference explicit is what lets the sitting move again later
+# without a second round of hand-edited literals.
+LEGACY_SITTING_QUESTIONS = 10
+
+
+def _in_sittings(legacy_questions: float, *, minimum: int = 1) -> int:
+    """Re-express a count authored in ten-question sittings against today's."""
+    scaled = legacy_questions * SITTING_QUESTIONS / LEGACY_SITTING_QUESTIONS
+    return max(minimum, round(scaled))
+
+
+# The daily goals, in questions, and what each is worth relative to the others.
+#
+# One, two and three sittings, rather than the 5/10/20 they were authored as.
+# The point of a daily goal is that finishing a run finishes a goal, and at
+# 5/10/20 two of the three landed mid-run. At 6/12/18 all three close at the end
+# of the first, second and third run of the day.
+#
+# Deliberately NOT `_in_sittings`, which would give 3/6/12 and hold the goals at
+# half, one and two sittings. That preserves the wrong quantity. The day's ask
+# is what keeps question volume up, and cutting the top goal from twenty
+# questions to twelve would tell the player to stop at twelve.
+#
+# 18 rather than 20 is the one place this change asks for less than it did, and
+# it is a choice rather than a rounding. Measured on the curve, 6/12/20 is
+# indistinguishable from 6/12/18 -- 2,084.8 played cases and 121.90 hours either
+# way, because the modelled player works twenty a day and claims all three goals
+# under both -- so the economy does not decide it. 6/12/24 does move: 2,229.5
+# cases and 130.4 hours, 7% longer, because a twenty-a-day player stops claiming
+# the top goal at all. So the real choice was 18 against 20, and it went to 18
+# because 20 is not a run boundary: a player chasing it either abandons a fourth
+# run two questions in, which is the exact behaviour this whole change exists to
+# reduce, or finishes it and does 24. 18 asks for three finished runs and
+# nothing half-done. The cost is honest and small -- the nominal daily ask falls
+# 20 -> 18, a tenth -- and 20 is a one-line change if that trade is not wanted.
+#
+# None of this changes what a day is *worth*. DAILY_REWARD_CASE_BUDGET fixes the
+# whole day's cash at two nominal cases and the 1:3:8 ratio splits it, so a
+# player working twenty questions a day claims exactly what they claimed before
+# and the pace band does not move -- which matters, because TIER_EFFORT_BASE has
+# 0.2% of clearance at its floor.
+DAILY_REWARD_MULTIPLIERS = {
+    SITTING_QUESTIONS: 1,
+    SITTING_QUESTIONS * 2: 3,
+    SITTING_QUESTIONS * 3: 8,
+}
 # What a full day of daily-goal claims is worth, quoted in cases like every
 # other price here, and split between the three milestones in the 1:3:8 ratio
 # above so the twenty-case claim is still the one worth staying for.
@@ -255,7 +342,7 @@ UPGRADES = [
         "reputation": 20, "tier": 1, "benefit": "+8% active case payout", "payout_mult": .08, "region": "Old Quarter", "art": "library",
         "description": "A wall of references that changes the room—and client confidence.",
     },
-    _asset("secure_client_portal", "upgrade", "Secure client portal", 8_000, 24, 1, "+7% payout · +2h retainer storage", "Encrypted intake, instant signatures, and a client experience far beyond the old shack.", requires=("case_management",), art="tech", payout_mult=.07, storage_hours=2),
+    _asset("secure_client_portal", "upgrade", "Secure client portal", 8_000, 24, 1, "+7% payout · +2h safe storage", "Encrypted intake, instant signatures, and a client experience far beyond the old shack.", requires=("case_management",), art="tech", payout_mult=.07, storage_hours=2),
     _asset("deposition_studio", "upgrade", "Deposition studio", 11_000, 28, 1, "+9% active case payout", "Broadcast-grade recording catches the pause, contradiction, and detail that decide a matter.", requires=("legal_library",), art="courtroom", payout_mult=.09),
     {
         "key": "conference_room", "type": "upgrade", "name": "Conference room", "cost": 16_000,
@@ -278,26 +365,26 @@ UPGRADES = [
     },
     _asset("litigation_war_room", "upgrade", "Litigation war room", 620_000, 52, 4, "+18% payout · +1× contract bonus", "A wall-sized living case map keeps every team on the same decisive theory.", requires=("trial_analytics_lab",), art="command", payout_mult=.18, contract_bonus_mult=1),
     _asset("jury_simulator", "upgrade", "Predictive jury theater", 950_000, 54, 4, "+20% payout · streak cap +10%", "An immersive jury simulator stress-tests narrative, sequence, and every vulnerable assumption.", requires=("litigation_war_room",), art="hologram", payout_mult=.20, streak_bonus_cap=.10),
-    _asset("branch_command", "upgrade", "Branch command center", 1_600_000, 56, 5, "+20% payout · +4h retainer storage", "Coordinate the whole region from a luminous operations table.", requires=("executive_suite",), art="command", payout_mult=.20, storage_hours=4),
+    _asset("branch_command", "upgrade", "Branch command center", 1_600_000, 56, 5, "+20% payout · +4h safe storage", "Coordinate the whole region from a luminous operations table.", requires=("executive_suite",), art="command", payout_mult=.20, storage_hours=4),
     _asset("legal_airship", "upgrade", "Counsel airship", 3_200_000, 58, 5, "+25% active case payout", "A mobile office crosses the region overnight with a courtroom-ready team aboard.", requires=("branch_command",), art="transit", payout_mult=.25),
     _asset("ai_brief_foundry", "upgrade", "AI brief foundry", 7_000_000, 62, 6, "+28% payout · +1× contract bonus", "A supervised research foundry assembles authorities at national scale while counsel makes every judgment.", requires=("trial_analytics_lab",), art="tech", payout_mult=.28, contract_bonus_mult=1),
-    _asset("national_litigation_grid", "upgrade", "National litigation grid", 12_000_000, 64, 6, "+30% payout · +6h retainer storage", "Every branch shares live arguments, evidence, and expert capacity.", requires=("ai_brief_foundry",), art="network", payout_mult=.30, storage_hours=6),
+    _asset("national_litigation_grid", "upgrade", "National litigation grid", 12_000_000, 64, 6, "+30% payout · +6h safe storage", "Every branch shares live arguments, evidence, and expert capacity.", requires=("ai_brief_foundry",), art="network", payout_mult=.30, storage_hours=6),
     _asset("translation_cloud", "upgrade", "Live translation cloud", 28_000_000, 68, 7, "+32% active case payout", "Cross-border teams hear nuance, not delay, in every negotiation.", requires=("national_litigation_grid",), art="network", payout_mult=.32),
     _asset("satellite_docket", "upgrade", "Satellite docket array", 55_000_000, 70, 7, "+35% payout · streak cap +10%", "Secure satellite links put a command-quality hearing room anywhere on Earth.", requires=("translation_cloud",), art="space", payout_mult=.35, streak_bonus_cap=.10),
     _asset("global_crisis_center", "upgrade", "Global crisis command", 130_000_000, 74, 8, "+38% payout · reputation shield", "A twenty-four-hour command floor stabilizes matters that cross markets and borders in minutes.", requires=("satellite_docket",), art="command", payout_mult=.38, reputation_guard=1.5),
-    _asset("vault_archive", "upgrade", "Subterranean precedent vault", 240_000_000, 76, 8, "+40% payout · +8h retainer storage", "A climate-sealed archive preserves the arguments that built the empire.", requires=("global_crisis_center",), art="library", payout_mult=.40, storage_hours=8),
+    _asset("vault_archive", "upgrade", "Subterranean precedent vault", 240_000_000, 76, 8, "+40% payout · +8h safe storage", "A climate-sealed archive preserves the arguments that built the empire.", requires=("global_crisis_center",), art="library", payout_mult=.40, storage_hours=8),
     _asset("treaty_chamber", "upgrade", "Holographic treaty chamber", 520_000_000, 79, 9, "+45% payout · +1× contract bonus", "Delegations negotiate around a living model of every border, resource, and obligation.", requires=("vault_archive",), art="hologram", payout_mult=.45, contract_bonus_mult=1),
     _asset("prediction_engine", "upgrade", "Precedent prediction engine", 900_000_000, 81, 9, "+48% payout · streak cap +15%", "A transparent simulation reveals which theory survives every likely counterargument.", requires=("treaty_chamber",), art="analytics", payout_mult=.48, streak_bonus_cap=.15),
     _asset("autonomous_case_campus", "upgrade", "Autonomous case campus", 1_700_000_000, 83, 10, "+50% payout · $80M/hour", "Robotic archives, hearing halls, and research wings keep major matters moving continuously.", requires=("prediction_engine",), art="future", payout_mult=.50, passive_hourly=80_000_000),
     _asset("supersonic_courier", "upgrade", "Supersonic counsel shuttle", 3_200_000_000, 85, 10, "+55% active case payout", "Counsel and evidence cross a continent between filing and argument.", requires=("autonomous_case_campus",), art="transit", payout_mult=.55),
-    _asset("oceanic_campus", "upgrade", "Floating arbitration forum", 5_000_000_000, 86, 11, "+60% payout · +12h retainer storage", "A neutral, self-sustaining forum hosts the world's largest commercial disputes offshore.", requires=("supersonic_courier",), art="ocean", payout_mult=.60, storage_hours=12),
+    _asset("oceanic_campus", "upgrade", "Floating arbitration forum", 5_000_000_000, 86, 11, "+60% payout · +12h safe storage", "A neutral, self-sustaining forum hosts the world's largest commercial disputes offshore.", requires=("supersonic_courier",), art="ocean", payout_mult=.60, storage_hours=12),
     _asset("digital_twin_court", "upgrade", "Digital-twin courtroom", 8_500_000_000, 87, 11, "+65% payout · +2× contract bonus", "Reconstruct systems, cities, and events in a courtroom-scale interactive twin.", requires=("oceanic_campus",), art="hologram", payout_mult=.65, contract_bonus_mult=2),
     _asset("orbital_hearing_ring", "upgrade", "Zero-gravity hearing ring", 13_000_000_000, 89, 12, "+70% payout · streak cap +20%", "An orbital forum built for disputes no terrestrial venue can fairly contain.", requires=("digital_twin_court",), art="space", payout_mult=.70, streak_bonus_cap=.20),
     _asset("precedent_supercomputer", "upgrade", "Precedent supercomputer", 19_000_000_000, 90, 12, "+75% payout · $400M/hour", "A moon-cold legal computer models centuries of doctrine while preserving a human decision trail.", requires=("orbital_hearing_ring",), art="future", payout_mult=.75, passive_hourly=400_000_000),
     _asset("lunar_embassy", "upgrade", "Lunar treaty embassy", 30_000_000_000, 92, 13, "+80% payout · reputation shield", "A permanent embassy gives new settlements a trusted neutral table.", requires=("precedent_supercomputer",), art="space", payout_mult=.80, reputation_guard=2.0),
-    _asset("chronicle_vault", "upgrade", "Civilization chronicle vault", 48_000_000_000, 93, 13, "+90% payout · +24h retainer storage", "The definitive record of laws, promises, and judgments is mirrored beyond Earth.", requires=("lunar_embassy",), art="library", payout_mult=.90, storage_hours=24),
+    _asset("chronicle_vault", "upgrade", "Civilization chronicle vault", 48_000_000_000, 93, 13, "+90% payout · +24h safe storage", "The definitive record of laws, promises, and judgments is mirrored beyond Earth.", requires=("lunar_embassy",), art="library", payout_mult=.90, storage_hours=24),
     _asset("planetary_command", "upgrade", "Planetary justice command", 72_000_000_000, 94, 14, "+100% payout · +3× contract bonus", "A planet-wide legal operations center routes the right advocate to any crisis in moments.", requires=("chronicle_vault",), art="command", payout_mult=1.0, contract_bonus_mult=3),
-    _asset("justice_constellation", "upgrade", "Justice constellation", 120_000_000_000, 96, 14, "+125% payout · unlimited-scale retainers", "A constellation of courts, archives, and advocates turns the firm's final crest into civic infrastructure.", requires=("planetary_command",), art="space", payout_mult=1.25, storage_hours=48, streak_bonus_cap=.25),
+    _asset("justice_constellation", "upgrade", "Justice constellation", 120_000_000_000, 96, 14, "+125% payout · streak cap +25% · +48h safe storage", "A constellation of courts, archives, and advocates turns the firm's final crest into civic infrastructure.", requires=("planetary_command",), art="space", payout_mult=1.25, storage_hours=48, streak_bonus_cap=.25),
 ]
 
 STAFF = [
@@ -878,6 +965,15 @@ def _replace_case_payout_benefit(item: dict, percentage: int) -> None:
     item["benefit"] = " · ".join([f"+{percentage}% case payout", *secondary])
 
 
+# What each contract-bonus asset was authored to pay, as a multiple of the fee,
+# when a sitting was ten questions. Filled in by `_rebalance_asset_catalog` as it
+# overwrites them, for the same reason as `LEGACY_CONTRACT_LENGTHS`: the authored
+# figure is destroyed at import and it is the only thing the rescale can be
+# checked against. See
+# `test_sitting_scale.test_a_contract_bonus_is_worth_the_same_per_question`.
+LEGACY_CONTRACT_BONUS_MULTS: dict[str, float] = {}
+
+
 def _rebalance_asset_catalog() -> None:
     """Give every purchase durable value and price it in successful cases."""
     for item in ASSETS:
@@ -925,6 +1021,34 @@ def _rebalance_asset_catalog() -> None:
                 if "/hour" not in part.lower() and "per hour" not in part.lower()
             ]
             item["benefit"] = " · ".join([*parts, f"${_format_game_money(item['passive_hourly'])}/hour passive"])
+        if item.get("contract_bonus_mult"):
+            # A contract bonus is a flat multiple of the fee paid *once per
+            # contract*, so what it is worth per question is `bonus / length`.
+            # Shortening contracts with `_rescale_contract_lengths` therefore
+            # multiplies this asset's value by the same ratio it divides the
+            # length by -- and these assets are priced in cases below, at prices
+            # that did not move, so their value may not move either.
+            #
+            # This is not a rounding-order detail. It is the entire drift
+            # between the old ladder and the new one: with lengths rescaled and
+            # this left alone the campaign came out 2.2% shorter (2,041 played
+            # cases against 2,086), and it is the only thing in this change that
+            # moved money at all. Scaled with the sitting, it is 2,085.
+            #
+            # Eight assets carry it, one to three each, and at a six-question
+            # sitting they read 0.6 to 1.8. The decimal is the honest number: the
+            # bonus is smaller because contracts now close nearly twice as often.
+            LEGACY_CONTRACT_BONUS_MULTS[item["key"]] = item["contract_bonus_mult"]
+            item["contract_bonus_mult"] = round(
+                float(item["contract_bonus_mult"]) * SITTING_QUESTIONS / LEGACY_SITTING_QUESTIONS, 2
+            )
+            parts = [
+                part.strip()
+                for part in item["benefit"].split("·")
+                if "contract" not in part.lower()
+            ]
+            bonus = f"{item['contract_bonus_mult']:g}"
+            item["benefit"] = " · ".join([*parts, f"+{bonus}× contract bonus"])
 
         secondary_effects = sum(
             bool(item.get(key))
@@ -956,7 +1080,193 @@ def _rebalance_client_catalog() -> None:
         )
 
 
+# How much of a client's value waits until the contract closes, from the
+# steadiest client at a tier to the most speculative one.
+CLIENT_CLOSE_SHARE_RANGE = (.08, .22)
+
+
+def _shape_client_contracts() -> None:
+    """Give clients different shapes without giving them different values.
+
+    `_rebalance_client_catalog` equalises expected value across every client at
+    a tier by construction, which is what makes a client a play-style choice
+    rather than an income choice. The problem was that there was very little play
+    style left to choose: `contract_bonus_mult` was 0 for 58 of 69 clients, and
+    the 13 that carry a `payout_mult` premium are compensated by a proportionally
+    lower `base_fee`, so even that reduces to the same money arriving under a
+    different name. The only real separator left was contract length, and its
+    effect shrank all game (below).
+
+    The axis chosen here is *when the money arrives*, not how much. A client's
+    value is split between the per-case fee, which is banked the moment a case is
+    won, and the contract close, which is a lump you only collect by finishing
+    the contract. Longest contract at a tier is the most speculative and shortest
+    is the steadiest, so the `length` the catalog already authored for flavour --
+    a walk-in at 8, a serial plaintiff at 4 -- becomes the thing that decides the
+    shape instead of being cosmetic.
+
+    Why it is a real decision and not just variance: the close is forfeitable.
+    `contract.cases_remaining` only falls on a decisive win, and if reputation
+    slips the client goes on hold and the walk-in bills instead, stranding the
+    progress. So a speculative contract is a bet that you will hold form long
+    enough to close it -- which is exactly what streak standing now protects.
+    Steady clients are correct when your reputation is fragile; speculative ones
+    are correct when a streak is holding your floor up.
+
+    Why it does not move the curve: `payout_mult`, `contract_bonus_mult` and
+    `length` are all inputs to `average_value_factor`, so `base_fee` is re-derived
+    against whatever this writes and expected value per case lands back on
+    `_case_target_for_tier`. This must therefore run before the rebalance.
+
+    It also fixes a collapse. The close was worth 16-39% of a tier-0 client and
+    fell to under 4% by tier 9, because the old close was a flat `2 / length`
+    against a firm multiplier that grows all game. The shape simply evaporated
+    as the player progressed. Solving for a target share instead of a flat bonus
+    keeps the choice alive at every tier.
+    """
+    by_tier: dict[int, list[dict]] = {}
+    for client in CLIENTS:
+        by_tier.setdefault(client["tier"], []).append(client)
+    steadiest, most_speculative = CLIENT_CLOSE_SHARE_RANGE
+    for tier, group in by_tier.items():
+        firm_multiplier = _expected_firm_multiplier(tier)
+        order = sorted(group, key=lambda client: (client["length"], client["key"]))
+        for position, client in enumerate(order):
+            target = (
+                steadiest if len(order) == 1
+                else steadiest + (most_speculative - steadiest) * position / (len(order) - 1)
+            )
+            per_case = 1.20 * firm_multiplier * float(client.get("payout_mult", 1))
+            length = max(1, client["length"])
+            bonus = round(max(0.0, per_case * target / (1 - target) * length - 2), 2)
+            client["contract_bonus_mult"] = bonus
+            # The realised share, not the target. At tier 0 the firm multiplier
+            # is small enough that the hardcoded `+2` base contract multiplier
+            # already exceeds the target on its own and the bonus clamps to zero,
+            # so the two can differ. Publishing what actually happens keeps the
+            # card honest instead of printing an intention.
+            per_close = (2 + bonus) / length
+            client["close_share_bps"] = round(per_close / (per_case + per_close) * 10_000)
+
+
+def _rescale_contract_lengths() -> None:
+    """Re-express every contract in sittings rather than in ten-question runs.
+
+    `length` counts decisive wins, so it is denominated in questions and nothing
+    about it is wrong when the sitting shortens -- which is exactly why it has to
+    move. A walk-in closing in eight wins was a little over one ten-question
+    sitting; left alone at a six-question sitting it becomes nearly two, and the
+    progress bar on the client card advances half as far per run. The player
+    reads that as the contract having got longer, because from where they are
+    sitting it has.
+
+    So the authored lengths are treated as what they were authored as -- a
+    fraction of a sitting -- and re-expressed against the sitting the game
+    actually serves. A contract that used to take about one run still takes about
+    one run. It moves *down*, never up: shortening the run must not turn a
+    three-win contract into six chores.
+
+    This cannot move the pace band, and that is by construction rather than by
+    luck. `length` is an input to `average_value_factor`, so `_rebalance_client_
+    catalog` re-derives `base_fee` against whatever this writes and expected
+    value per case lands back on `_case_target_for_tier`. It must therefore run
+    before `_shape_client_contracts`, which reads `length` to decide the close
+    share, and before the rebalance, which reads both.
+
+    The floor is three wins. Below that the hardcoded `+2` base contract
+    multiplier is a large enough share of a short contract's value that
+    `_shape_client_contracts` clamps its bonus to zero at the low tiers and the
+    close share stops tracking the target -- a distortion the catalog already
+    has at length four and which gets worse the shorter contracts get.
+    """
+    for client in CLIENTS:
+        LEGACY_CONTRACT_LENGTHS[client["key"]] = client["length"]
+        client["length"] = _in_sittings(client["length"], minimum=3)
+
+
+# What each contract was authored to take, in wins, when a sitting was ten
+# questions. Filled in by `_rescale_contract_lengths` as it overwrites them.
+#
+# Kept because the authored figure is otherwise destroyed at import and it is
+# the only thing the rescale can be checked against. The check that matters is
+# one-directional and is the user's own condition on this change: a contract
+# that used to take three wins must not become six chores, so no contract may
+# come out of the rescale longer than it went in. See
+# `test_sitting_scale.test_no_contract_got_longer_when_the_run_got_shorter`.
+LEGACY_CONTRACT_LENGTHS: dict[str, int] = {}
+
+
+_CONTRACT_LENGTH_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "thirteen": 13, "fourteen": 14, "fifteen": 15,
+}
+# "Rapid-fire 4-case contract", "Long 9-file mystery docket". The count and the
+# noun it counts, in the two spellings the catalog uses.
+_CONTRACT_LENGTH_CLAIM = re.compile(
+    r"\b(\d+|" + "|".join(_CONTRACT_LENGTH_WORDS) + r")(-)(case|file)\b",
+    re.IGNORECASE,
+)
+
+
+def _restate_contract_length_copy() -> None:
+    """Rewrite the client-card copy that quotes a contract length in words.
+
+    Four clients describe themselves by their length -- "Fast 5-case
+    confidentiality sprint", "Loyalty-heavy 8-case docket", "Long 9-file mystery
+    docket", "Five-case licensing blitz" -- and none of them contains any of the
+    words `_drop_stale_contract_copy` looks for, so they survive it and would
+    quietly start lying the moment `_rescale_contract_lengths` moves the number.
+
+    Restated rather than deleted, unlike the contract-bonus claims. Those quoted
+    a multiplier the card draws as a bar anyway; these carry the client's whole
+    character ("rapid-fire", "loyalty-heavy", "long"), and a docket that says it
+    is long should still say so with the right number beside it.
+    """
+    for client in CLIENTS:
+        special = str(client.get("special", ""))
+        if not special:
+            continue
+        client["special"] = _CONTRACT_LENGTH_CLAIM.sub(
+            lambda match: f"{client['length']}{match.group(2)}{match.group(3)}",
+            special,
+        )
+
+
+def _drop_stale_contract_copy() -> None:
+    """Strip the hand-written contract-close claims that `_shape_client_contracts` invalidates.
+
+    Eleven clients carried copy like "+3× contract resolution" or "Contingency
+    finish · +2× contract bonus" that quoted `contract_bonus_mult` directly. That
+    field is now computed, so those clauses would silently start lying. Same
+    treatment `_describe_connection_unlocks` gives connections: split on the
+    separator the copy already uses and drop the clause that makes the claim.
+
+    Nothing is generated to replace them. The split between fee and close is a
+    proportion, and the client card draws it as a bar; a sentence saying the same
+    thing next to the bar would be the redundant text this screen has too much of
+    already. The flavour clauses -- "PRO BONO · +5 Reputation on a win",
+    "Volatile · +25% fee premium" -- describe fields this does not touch and are
+    kept.
+    """
+    quoted = ("contract", "resolution", "recovery bonus", "contingency")
+    for client in CLIENTS:
+        kept = [
+            part.strip()
+            for part in str(client.get("special", "")).split("·")
+            if part.strip() and not any(word in part.lower() for word in quoted)
+        ]
+        client["special"] = " · ".join(kept)
+
+
 _rebalance_asset_catalog()
+# Order matters and is asserted by test_game_catalog: lengths are re-expressed
+# first, then the copy that quotes them, then the close shape that reads them,
+# then the fees that are solved against all three.
+_rescale_contract_lengths()
+_restate_contract_length_copy()
+_shape_client_contracts()
+_drop_stale_contract_copy()
 _rebalance_client_catalog()
 CLIENTS.sort(key=lambda client: (client["tier"], client["base_fee"], client["name"]))
 
@@ -965,21 +1275,33 @@ CLIENT_BY_KEY = {item["key"]: item for item in CLIENTS}
 
 
 # ---------------------------------------------------------------------------
-# Standing retainers (map districts)
+# Standing counsel (map districts)
 # ---------------------------------------------------------------------------
 #
-# A firm does not buy land, it buys a book of business. Taking a district means
-# signing its institutions -- the courthouse's duty roster, a market's traders,
-# a port authority -- to a standing retainer, so every routine matter in that
-# district arrives at your door by default. That is a real thing law firms
-# compete over and it explains both benefits below without inventing physics:
-# being the district's default counsel is what a reputation floor *is*, and a
-# branch presence you are already paid to keep is what offsets the lease.
+# A firm does not buy land, it buys standing. Taking a district means signing
+# its institutions -- the courthouse's duty roster, a market's traders, a port
+# authority -- to a standing appointment: the firm is who they call first.
+#
+# What that is worth, exactly, is the two effects below and nothing else: being
+# a district's default counsel is what a reputation floor *is*, and a branch
+# presence you are already paid to keep is what offsets the lease. It used to
+# say here, and on screen, that every routine matter in the district then
+# arrives at your door. It does not. Districts appear nowhere in the session or
+# story code, no docket is district-flavoured, and the copy has been corrected
+# rather than the mechanic invented: the economy is tuned so that three to six
+# cases buy one upgrade, and a second source of matters is not a wording fix.
+# If it is ever built, this is the comment to come back to.
+#
+# The word is "counsel" throughout, never "retainer". A *client* retainer is a
+# different thing in this game and pays the per-case fee; a district
+# appointment pays no fee at all. The two were both called retainers, in the
+# same tab, which is the likeliest source of the "am I taking up cases or
+# receiving them?" confusion.
 #
 # This deliberately does not overlap the rival system. A rival acquisition is a
 # discrete, story-gated move against a *named competitor* that transfers their
 # payout multiplier and passive income to you and is priced at a full five
-# cases. A retainer is ambient, cheap, and buys no payout at all: it buys
+# cases. An appointment is ambient, cheap, and buys no payout at all: it buys
 # standing and overhead relief. One is conquest, the other is coverage.
 
 TERRITORY_REGIONS: list[dict] = [
@@ -1006,7 +1328,7 @@ TERRITORY_STANDING_FLOOR_CEILING = 90.0
 # than an economic lever.
 TERRITORY_RENT_RELIEF_POOL_BPS = 10_000
 
-# What the entire retainer board costs, in successful cases, and therefore the
+# What the entire counsel board costs, in successful cases, and therefore the
 # only number that decides how much this mechanic lengthens the campaign.
 # Districts are priced *out* of this budget rather than each being priced on
 # its own, so the mechanic's total cost cannot drift as districts are added.
@@ -1041,48 +1363,48 @@ TERRITORY_TOTAL_CASE_BUDGET = 65.0
 # still reads as a larger commitment than an early one.
 _DISTRICTS: list[dict] = [
     # -- Old Quarter (tiers 0-4) ------------------------------------------
-    {"key": "chancery_row", "region": "city", "name": "Chancery Row", "landmark": "city-highstreet", "tier": 0, "reputation": 0, "cases": .40, "retainer": "the shopkeepers' association", "description": "Two rows of trade counters that have never had counsel of their own. Every lease dispute on the street starts here."},
-    {"key": "coopers_market", "region": "city", "name": "Cooper's Market", "landmark": "city-market", "tier": 0, "reputation": 14, "cases": .45, "retainer": "the market traders", "description": "Weights, licences, and standing feuds. Dull work, but it is the first place in the Quarter that says your name without prompting."},
-    {"key": "quarter_courthouse", "region": "city", "name": "Quarter Courthouse", "landmark": "city-court", "tier": 1, "reputation": 22, "cases": .70, "retainer": "the duty roster", "description": "A seat on the duty roster means the clerk hands you the day's unassigned matters. Nothing else in the Quarter carries the same weight."},
-    {"key": "wool_hall_yard", "region": "city", "name": "Wool Hall Yard", "landmark": "city-wool-hall", "tier": 1, "reputation": 24, "cases": .50, "retainer": "the exchange floor", "description": "The old cloth exchange still arbitrates its own contracts. Sit in the corner long enough and it becomes your corner."},
-    {"key": "guild_schoolhouse", "region": "city", "name": "Guild Schoolhouse", "landmark": "city-school", "tier": 2, "reputation": 32, "cases": .50, "retainer": "the apprenticeship board", "description": "Indentures, disputes, and the occasional expulsion appeal. It also puts your name in front of everyone the Quarter will be run by in a decade."},
-    {"key": "quarter_halt", "region": "city", "name": "Old Quarter Halt", "landmark": "city-station", "tier": 2, "reputation": 34, "cases": .55, "retainer": "the stationmaster", "description": "Freight claims, injured porters, and a schedule nobody can read. Steady, unglamorous, and always there."},
-    {"key": "millrace_wharf", "region": "city", "name": "Millrace Wharf", "landmark": "city-wharf", "tier": 3, "reputation": 42, "cases": .65, "retainer": "the wharfingers", "description": "Where the Quarter's goods actually change hands, and where its contracts actually get broken."},
-    {"key": "coal_yard", "region": "city", "name": "The Coal Yard", "landmark": "city-goods", "tier": 3, "reputation": 43, "cases": .50, "retainer": "the haulage co-operative", "description": "Nobody wants the coal yard. That is precisely why holding it makes people assume you hold everything else."},
-    {"key": "millrace_canal", "region": "city", "name": "Millrace Canal", "landmark": "city-canal", "tier": 4, "reputation": 50, "cases": .65, "retainer": "the navigation trust", "description": "Water rights predate every other claim in the Quarter and outrank most of them. The trust has needed proper counsel for thirty years."},
-    {"key": "quarter_green", "region": "city", "name": "The Quarter Green", "landmark": "city-green", "tier": 4, "reputation": 50, "cases": .45, "retainer": "the parish board", "description": "Public land, public tempers, public record. Every hearing here is attended by people who talk."},
-    {"key": "ward_gardens", "region": "city", "name": "Ward Gardens", "landmark": "city-ward-green", "tier": 4, "reputation": 52, "cases": .45, "retainer": "the ward committee", "description": "The last address in the Quarter that still asks who your family is before it asks what you charge."},
+    {"key": "chancery_row", "region": "city", "name": "Chancery Row", "landmark": "city-highstreet", "tier": 0, "reputation": 0, "cases": .40, "counsel": "the shopkeepers' association", "description": "Two rows of trade counters that have never had counsel of their own. Every lease dispute on the street starts here."},
+    {"key": "coopers_market", "region": "city", "name": "Cooper's Market", "landmark": "city-market", "tier": 0, "reputation": 14, "cases": .45, "counsel": "the market traders", "description": "Weights, licences, and standing feuds. Dull work, but it is the first place in the Quarter that says your name without prompting."},
+    {"key": "quarter_courthouse", "region": "city", "name": "Quarter Courthouse", "landmark": "city-court", "tier": 1, "reputation": 22, "cases": .70, "counsel": "the duty roster", "description": "A seat on the duty roster means the clerk hands you the day's unassigned matters. Nothing else in the Quarter carries the same weight."},
+    {"key": "wool_hall_yard", "region": "city", "name": "Wool Hall Yard", "landmark": "city-wool-hall", "tier": 1, "reputation": 24, "cases": .50, "counsel": "the exchange floor", "description": "The old cloth exchange still arbitrates its own contracts. Sit in the corner long enough and it becomes your corner."},
+    {"key": "guild_schoolhouse", "region": "city", "name": "Guild Schoolhouse", "landmark": "city-school", "tier": 2, "reputation": 32, "cases": .50, "counsel": "the apprenticeship board", "description": "Indentures, disputes, and the occasional expulsion appeal. It also puts your name in front of everyone the Quarter will be run by in a decade."},
+    {"key": "quarter_halt", "region": "city", "name": "Old Quarter Halt", "landmark": "city-station", "tier": 2, "reputation": 34, "cases": .55, "counsel": "the stationmaster", "description": "Freight claims, injured porters, and a schedule nobody can read. Steady, unglamorous, and always there."},
+    {"key": "millrace_wharf", "region": "city", "name": "Millrace Wharf", "landmark": "city-wharf", "tier": 3, "reputation": 42, "cases": .65, "counsel": "the wharfingers", "description": "Where the Quarter's goods actually change hands, and where its contracts actually get broken."},
+    {"key": "coal_yard", "region": "city", "name": "The Coal Yard", "landmark": "city-goods", "tier": 3, "reputation": 43, "cases": .50, "counsel": "the haulage co-operative", "description": "Nobody wants the coal yard. That is precisely why holding it makes people assume you hold everything else."},
+    {"key": "millrace_canal", "region": "city", "name": "Millrace Canal", "landmark": "city-canal", "tier": 4, "reputation": 50, "cases": .65, "counsel": "the navigation trust", "description": "Water rights predate every other claim in the Quarter and outrank most of them. The trust has needed proper counsel for thirty years."},
+    {"key": "quarter_green", "region": "city", "name": "The Quarter Green", "landmark": "city-green", "tier": 4, "reputation": 50, "cases": .45, "counsel": "the parish board", "description": "Public land, public tempers, public record. Every hearing here is attended by people who talk."},
+    {"key": "ward_gardens", "region": "city", "name": "Ward Gardens", "landmark": "city-ward-green", "tier": 4, "reputation": 52, "cases": .45, "counsel": "the ward committee", "description": "The last address in the Quarter that still asks who your family is before it asks what you charge."},
     # -- The Circuit (tiers 5-6) ------------------------------------------
-    {"key": "fenwick_turnpike", "region": "nation", "name": "Fenwick Turnpike", "landmark": "nation-turnpike", "tier": 5, "reputation": 56, "cases": .60, "retainer": "the road trust", "description": "Every matter on the circuit travels this road, and the trust that maintains it is sued twice a season."},
-    {"key": "fenwick_seat", "region": "nation", "name": "Fenwick County Seat", "landmark": "nation-seat", "tier": 5, "reputation": 57, "cases": .80, "retainer": "the county register", "description": "The register decides which firm the county calls first. There is exactly one such office on the circuit."},
-    {"key": "fenwick_halt", "region": "nation", "name": "Fenwick Halt", "landmark": "nation-halt", "tier": 5, "reputation": 57, "cases": .50, "retainer": "the branch line", "description": "Two trains a day and a great deal of freight liability between them."},
-    {"key": "marlow_crossing", "region": "nation", "name": "Marlow Crossing", "landmark": "nation-marlow", "tier": 5, "reputation": 58, "cases": .60, "retainer": "the parish of Marlow", "description": "A crossroads village that has been arguing about the same boundary since before the county existed."},
-    {"key": "fenwick_green", "region": "nation", "name": "Fenwick Green", "landmark": "nation-green", "tier": 6, "reputation": 62, "cases": .45, "retainer": "the assizes committee", "description": "The circuit court sits here twice a year, and the committee that seats it never forgets who turned up."},
-    {"key": "ashgate_village", "region": "nation", "name": "Ashgate", "landmark": "nation-ashgate", "tier": 6, "reputation": 62, "cases": .50, "retainer": "the village council", "description": "Small, stubborn, and entirely capable of funding a decade of litigation out of spite."},
-    {"key": "ashgate_fair", "region": "nation", "name": "Ashgate Fair", "landmark": "nation-fair", "tier": 6, "reputation": 63, "cases": .50, "retainer": "the fair charter", "description": "A chartered fair still runs its own summary court. Whoever advises it advises half the county for one week a year."},
-    {"key": "marlow_ford", "region": "nation", "name": "Marlow Ford", "landmark": "nation-ford", "tier": 6, "reputation": 63, "cases": .45, "retainer": "the ferry rights", "description": "Ancient crossing rights, modern insurers, and a permanent disagreement between them."},
-    {"key": "marlow_mill_pond", "region": "nation", "name": "Marlow Mill Pond", "landmark": "nation-pond", "tier": 6, "reputation": 64, "cases": .40, "retainer": "the millers", "description": "Water, again. It is always water. The millers pay late but they pay every year."},
-    {"key": "ellery_farms", "region": "nation", "name": "Ellery Farms", "landmark": "nation-farm", "tier": 6, "reputation": 64, "cases": .45, "retainer": "the tenant holdings", "description": "Tenancy, succession, and drainage. The least interesting file on the circuit and the one that never closes."},
+    {"key": "fenwick_turnpike", "region": "nation", "name": "Fenwick Turnpike", "landmark": "nation-turnpike", "tier": 5, "reputation": 56, "cases": .60, "counsel": "the road trust", "description": "Every matter on the circuit travels this road, and the trust that maintains it is sued twice a season."},
+    {"key": "fenwick_seat", "region": "nation", "name": "Fenwick County Seat", "landmark": "nation-seat", "tier": 5, "reputation": 57, "cases": .80, "counsel": "the county register", "description": "The register decides which firm the county calls first. There is exactly one such office on the circuit."},
+    {"key": "fenwick_halt", "region": "nation", "name": "Fenwick Halt", "landmark": "nation-halt", "tier": 5, "reputation": 57, "cases": .50, "counsel": "the branch line", "description": "Two trains a day and a great deal of freight liability between them."},
+    {"key": "marlow_crossing", "region": "nation", "name": "Marlow Crossing", "landmark": "nation-marlow", "tier": 5, "reputation": 58, "cases": .60, "counsel": "the parish of Marlow", "description": "A crossroads village that has been arguing about the same boundary since before the county existed."},
+    {"key": "fenwick_green", "region": "nation", "name": "Fenwick Green", "landmark": "nation-green", "tier": 6, "reputation": 62, "cases": .45, "counsel": "the assizes committee", "description": "The circuit court sits here twice a year, and the committee that seats it never forgets who turned up."},
+    {"key": "ashgate_village", "region": "nation", "name": "Ashgate", "landmark": "nation-ashgate", "tier": 6, "reputation": 62, "cases": .50, "counsel": "the village council", "description": "Small, stubborn, and entirely capable of funding a decade of litigation out of spite."},
+    {"key": "ashgate_fair", "region": "nation", "name": "Ashgate Fair", "landmark": "nation-fair", "tier": 6, "reputation": 63, "cases": .50, "counsel": "the fair charter", "description": "A chartered fair still runs its own summary court. Whoever advises it advises half the county for one week a year."},
+    {"key": "marlow_ford", "region": "nation", "name": "Marlow Ford", "landmark": "nation-ford", "tier": 6, "reputation": 63, "cases": .45, "counsel": "the ferry rights", "description": "Ancient crossing rights, modern insurers, and a permanent disagreement between them."},
+    {"key": "marlow_mill_pond", "region": "nation", "name": "Marlow Mill Pond", "landmark": "nation-pond", "tier": 6, "reputation": 64, "cases": .40, "counsel": "the millers", "description": "Water, again. It is always water. The millers pay late but they pay every year."},
+    {"key": "ellery_farms", "region": "nation", "name": "Ellery Farms", "landmark": "nation-farm", "tier": 6, "reputation": 64, "cases": .45, "counsel": "the tenant holdings", "description": "Tenancy, succession, and drainage. The least interesting file on the circuit and the one that never closes."},
     # -- Treaty Sea (tiers 7-9) -------------------------------------------
-    {"key": "diplomatic_quay", "region": "ocean", "name": "The Diplomatic Quay", "landmark": None, "tier": 7, "reputation": 68, "cases": .65, "retainer": "the harbour authority", "description": "Where delegations come ashore. The authority wants one firm on call for everything that goes wrong before the talks begin."},
-    {"key": "bonded_roads", "region": "ocean", "name": "The Bonded Roads", "landmark": None, "tier": 7, "reputation": 69, "cases": .60, "retainer": "the bonded warehouses", "description": "Cargo that is legally nowhere until someone signs for it. An entire practice lives in that gap."},
-    {"key": "chandlers_row", "region": "ocean", "name": "Chandler's Row", "landmark": None, "tier": 8, "reputation": 74, "cases": .60, "retainer": "the ships' agents", "description": "Every agent on the row keeps a lawyer's name in a drawer for the day a master refuses to sail."},
-    {"key": "lantern_light", "region": "ocean", "name": "The Lantern Light", "landmark": None, "tier": 8, "reputation": 75, "cases": .50, "retainer": "the pilots' board", "description": "Pilotage is compulsory, which means pilotage is litigated. The board has never had counsel who understood both."},
-    {"key": "treaty_anchorage", "region": "ocean", "name": "Treaty Anchorage", "landmark": None, "tier": 9, "reputation": 79, "cases": .70, "retainer": "the anchorage compact", "description": "Neutral water by agreement only. The agreement is the practice."},
-    {"key": "free_harbour_court", "region": "ocean", "name": "Free Harbour Court", "landmark": None, "tier": 9, "reputation": 80, "cases": .80, "retainer": "the admiralty roll", "description": "The sea's own courthouse. A place on the roll is the closest thing the Treaty Sea has to a permanent address."},
+    {"key": "diplomatic_quay", "region": "ocean", "name": "The Diplomatic Quay", "landmark": "ocean-quay", "tier": 7, "reputation": 68, "cases": .65, "counsel": "the harbour authority", "description": "Where delegations come ashore. The authority wants one firm on call for everything that goes wrong before the talks begin."},
+    {"key": "bonded_roads", "region": "ocean", "name": "The Bonded Roads", "landmark": "ocean-roads", "tier": 7, "reputation": 69, "cases": .60, "counsel": "the bonded warehouses", "description": "Cargo that is legally nowhere until someone signs for it. An entire practice lives in that gap."},
+    {"key": "chandlers_row", "region": "ocean", "name": "Chandler's Row", "landmark": "ocean-chandlers", "tier": 8, "reputation": 74, "cases": .60, "counsel": "the ships' agents", "description": "Every agent on the row keeps a lawyer's name in a drawer for the day a master refuses to sail."},
+    {"key": "lantern_light", "region": "ocean", "name": "The Lantern Light", "landmark": "ocean-lantern", "tier": 8, "reputation": 75, "cases": .50, "counsel": "the pilots' board", "description": "Pilotage is compulsory, which means pilotage is litigated. The board has never had counsel who understood both."},
+    {"key": "treaty_anchorage", "region": "ocean", "name": "Treaty Anchorage", "landmark": "ocean-anchorage", "tier": 9, "reputation": 79, "cases": .70, "counsel": "the anchorage compact", "description": "Neutral water by agreement only. The agreement is the practice."},
+    {"key": "free_harbour_court", "region": "ocean", "name": "Free Harbour Court", "landmark": "ocean-court", "tier": 9, "reputation": 80, "cases": .80, "counsel": "the admiralty roll", "description": "The sea's own courthouse. A place on the roll is the closest thing the Treaty Sea has to a permanent address."},
     # -- Sovereign Arc (tiers 10-11) --------------------------------------
-    {"key": "concord_rondpoint", "region": "continent", "name": "Concord Rond-Point", "landmark": "continent-rondpoint", "tier": 10, "reputation": 83, "cases": .65, "retainer": "the quarter's chambers", "description": "Six embassies on one circle, each convinced the other five are in breach."},
-    {"key": "sovereign_assembly", "region": "continent", "name": "The Sovereign Assembly", "landmark": "continent-assembly", "tier": 10, "reputation": 84, "cases": .85, "retainer": "the standing committee", "description": "Advising the committee that drafts the rules is not the same as arguing under them. It is considerably better."},
-    {"key": "union_terminus", "region": "continent", "name": "Union Terminus", "landmark": "continent-transit", "tier": 10, "reputation": 84, "cases": .60, "retainer": "the transit union", "description": "Four jurisdictions meet under one roof, and the union has a grievance in every one of them."},
-    {"key": "wall_ring", "region": "continent", "name": "The Wall Ring", "landmark": "continent-ring", "tier": 11, "reputation": 86, "cases": .65, "retainer": "the boundary commission", "description": "A commission that redraws lines for a living and is sued for every one it draws."},
-    {"key": "north_quarter", "region": "continent", "name": "The North Quarter", "landmark": "continent-quarter", "tier": 11, "reputation": 87, "cases": .70, "retainer": "the residents' syndicate", "description": "Old money that has outlasted three constitutions and intends to outlast a fourth."},
+    {"key": "concord_rondpoint", "region": "continent", "name": "Concord Rond-Point", "landmark": "continent-rondpoint", "tier": 10, "reputation": 83, "cases": .65, "counsel": "the quarter's chambers", "description": "Six embassies on one circle, each convinced the other five are in breach."},
+    {"key": "sovereign_assembly", "region": "continent", "name": "The Sovereign Assembly", "landmark": "continent-assembly", "tier": 10, "reputation": 84, "cases": .85, "counsel": "the standing committee", "description": "Advising the committee that drafts the rules is not the same as arguing under them. It is considerably better."},
+    {"key": "union_terminus", "region": "continent", "name": "Union Terminus", "landmark": "continent-transit", "tier": 10, "reputation": 84, "cases": .60, "counsel": "the transit union", "description": "Four jurisdictions meet under one roof, and the union has a grievance in every one of them."},
+    {"key": "wall_ring", "region": "continent", "name": "The Wall Ring", "landmark": "continent-ring", "tier": 11, "reputation": 86, "cases": .65, "counsel": "the boundary commission", "description": "A commission that redraws lines for a living and is sued for every one it draws."},
+    {"key": "north_quarter", "region": "continent", "name": "The North Quarter", "landmark": "continent-quarter", "tier": 11, "reputation": 87, "cases": .70, "counsel": "the residents' syndicate", "description": "Old money that has outlasted three constitutions and intends to outlast a fourth."},
     # -- Global Compact (tiers 12-14) -------------------------------------
-    {"key": "compact_concourse", "region": "orbit", "name": "The Compact Concourse", "landmark": None, "tier": 12, "reputation": 89, "cases": .70, "retainer": "the delegations' desk", "description": "Every signatory keeps a bench here. Being the desk's standing counsel means being in the room before the room convenes."},
-    {"key": "hearing_chamber_one", "region": "orbit", "name": "Hearing Chamber One", "landmark": None, "tier": 12, "reputation": 90, "cases": .85, "retainer": "the chamber list", "description": "The list decides who is heard and in what order. Nothing in this game is worth more and costs less to hold."},
-    {"key": "registry_vault", "region": "orbit", "name": "The Registry Vault", "landmark": None, "tier": 13, "reputation": 92, "cases": .70, "retainer": "the compact registry", "description": "Where every treaty in force is actually kept. Custody is a duty, and duties are retained."},
-    {"key": "far_side_landing", "region": "orbit", "name": "Far-Side Landing", "landmark": None, "tier": 13, "reputation": 92, "cases": .65, "retainer": "the landing authority", "description": "The furthest place a writ has ever been served, and the authority would rather it were served by you."},
-    {"key": "assembly_gallery", "region": "orbit", "name": "The Assembly Gallery", "landmark": None, "tier": 14, "reputation": 94, "cases": .80, "retainer": "the gallery secretariat", "description": "Public seats at a private negotiation. The secretariat needs someone who can say no to the powerful in writing."},
-    {"key": "founders_reading_room", "region": "orbit", "name": "The Founders' Reading Room", "landmark": None, "tier": 14, "reputation": 95, "cases": .65, "retainer": "the charter trustees", "description": "Nine chairs and the original charter. There is no larger room to be invited into."},
+    {"key": "compact_concourse", "region": "orbit", "name": "The Compact Concourse", "landmark": "orbit-concourse", "tier": 12, "reputation": 89, "cases": .70, "counsel": "the delegations' desk", "description": "Every signatory keeps a bench here. Being the desk's standing counsel means being in the room before the room convenes."},
+    {"key": "hearing_chamber_one", "region": "orbit", "name": "Hearing Chamber One", "landmark": "orbit-chamber", "tier": 12, "reputation": 90, "cases": .85, "counsel": "the chamber list", "description": "The list decides who is heard and in what order. Nothing in this game is worth more and costs less to hold."},
+    {"key": "registry_vault", "region": "orbit", "name": "The Registry Vault", "landmark": "orbit-registry", "tier": 13, "reputation": 92, "cases": .70, "counsel": "the compact registry", "description": "Where every treaty in force is actually kept. Custody is a duty, and duties are retained."},
+    {"key": "far_side_landing", "region": "orbit", "name": "Far-Side Landing", "landmark": "orbit-landing", "tier": 13, "reputation": 92, "cases": .65, "counsel": "the landing authority", "description": "The furthest place a writ has ever been served, and the authority would rather it were served by you."},
+    {"key": "assembly_gallery", "region": "orbit", "name": "The Assembly Gallery", "landmark": "orbit-gallery", "tier": 14, "reputation": 94, "cases": .80, "counsel": "the gallery secretariat", "description": "Public seats at a private negotiation. The secretariat needs someone who can say no to the powerful in writing."},
+    {"key": "founders_reading_room", "region": "orbit", "name": "The Founders' Reading Room", "landmark": "orbit-reading-room", "tier": 14, "reputation": 95, "cases": .65, "counsel": "the charter trustees", "description": "Nine chairs and the original charter. There is no larger room to be invited into."},
 ]
 
 
@@ -1162,6 +1484,101 @@ DISTRICT_KEYS_BY_REGION = {
 }
 
 
+def _district_connection_gate() -> dict[str, str]:
+    """Which connection a district's institutions want to see before they sign.
+
+    Connections were the one asset class whose entire stated benefit was an
+    unlock, and the unlock was worth nothing. `_rebalance_client_catalog`
+    equalises expected commercial value across every client at a tier on
+    purpose -- that is what makes a client a play-style choice rather than an
+    income choice -- so "unlocks the corporate clients" cannot make anyone
+    richer. What was left was a purchase that, at every one of the fourteen
+    tiers it appears in, costs more than the best upgrade at the same tier and
+    pays a smaller `payout_mult` than it. There was no board state in which
+    buying one was correct.
+
+    Rather than inflate them into a better upgrade -- the catalog has thirty-five
+    of those already -- they now gate the mechanic they read like: a standing
+    appointment over a whole district. That is what a professional network is
+    for, it is the only Firm-tab purchase whose effect lands on the map, and it
+    moves no money: districts already carry their own price, standing, and rent
+    relief, all apportioned by `_price_district_catalog`.
+
+    A district asks for the most developed network that is no more advanced than
+    the district itself, so the requirement always sits at or below the tier the
+    player has already reached. The two tier-0 districts stay ungated, which
+    keeps a new player's first appointment and the onboarding path exactly as
+    they were.
+    """
+    ladder = sorted(
+        (item for item in ASSETS if item["type"] == "connection"),
+        key=lambda item: (item["tier"], item["cost"], item["key"]),
+    )
+    tiers = sorted({item["tier"] for item in ladder})
+    # Two connections share tier 3, and two districts sit at tier 3 with them.
+    # Handing both districts to whichever one sorts last would leave the other
+    # gating nothing, which is the defect this whole change exists to remove, so
+    # districts are dealt round-robin across the connections they answer to.
+    at_tier = {tier: [item["key"] for item in ladder if item["tier"] == tier] for tier in tiers}
+    dealt: dict[int, int] = {}
+    gate: dict[str, str] = {}
+    for district in DISTRICTS:
+        eligible = [tier for tier in tiers if tier <= district["tier"]]
+        if not eligible:
+            continue
+        group = at_tier[eligible[-1]]
+        index = dealt.get(eligible[-1], 0)
+        gate[district["key"]] = group[index % len(group)]
+        dealt[eligible[-1]] = index + 1
+    return gate
+
+
+DISTRICT_CONNECTION_GATE = _district_connection_gate()
+
+
+def _connection_district_keys() -> dict[str, list[str]]:
+    """The districts each connection opens, keyed."""
+    opened: dict[str, list[str]] = {}
+    for district_key, connection_key in DISTRICT_CONNECTION_GATE.items():
+        opened.setdefault(connection_key, []).append(district_key)
+    return opened
+
+
+CONNECTION_DISTRICTS = _connection_district_keys()
+
+
+def _connection_district_names() -> dict[str, list[str]]:
+    """The districts each connection opens, for its catalog copy."""
+    return {
+        connection_key: [DISTRICT_BY_KEY[key]["name"] for key in district_keys]
+        for connection_key, district_keys in CONNECTION_DISTRICTS.items()
+    }
+
+
+def _describe_connection_unlocks() -> None:
+    """Replace "unlocks N clients" with the districts the network actually opens.
+
+    The client half of the sentence was the part that was not worth acting on,
+    and a benefit line that promises nothing measurable is worse than a shorter
+    one. `_rebalance_asset_catalog` has already rewritten the payout clause by
+    the time this runs, so only the trailing clause is replaced.
+    """
+    opened = _connection_district_names()
+    for item in ASSETS:
+        if item["type"] != "connection":
+            continue
+        names = opened.get(item["key"], [])
+        parts = [part.strip() for part in item["benefit"].split("·") if "unlock" not in part.lower()]
+        if names:
+            # "Retainers" was the wrong word: a client retainer pays a fee and a
+            # district appointment does not, and the Firm tab now shows both.
+            parts.append(f"Counsel opens in {names[0]}" if len(names) == 1 else f"Counsel opens in {len(names)} districts")
+        item["benefit"] = " · ".join(parts)
+
+
+_describe_connection_unlocks()
+
+
 def _iso_utc(value) -> str | None:
     if value is None:
         return None
@@ -1219,24 +1636,39 @@ def _relieved_daily_rent(profile: PlayerProfile, held: set[str] | None = None) -
     return max(0, daily_rent - daily_rent * relief_bps // 10_000)
 
 
-def _district_locks(profile: PlayerProfile, district: dict) -> list[str]:
+def _district_locks(profile: PlayerProfile, district: dict, owned: set[str] | None = None) -> list[str]:
     locks: list[str] = []
     if profile.office_tier < district["tier"]:
-        locks.append(f"Requires a {FIRM_TIERS[district['tier']]['name']}")
+        # Three of the fifteen office names begin with a vowel -- International
+        # Practice, Oceanic Law Citadel, Orbital Arbitration Ring -- and the
+        # article was fixed, so every district gated behind tier 7, 11 or 12
+        # read "Requires a International Practice" on the counsel board and in
+        # the map's district brief.
+        tier_name = FIRM_TIERS[district["tier"]]["name"]
+        article = "an" if tier_name[:1].upper() in "AEIOU" else "a"
+        locks.append(f"Requires {article} {tier_name}")
     if profile.reputation < district["reputation"]:
         locks.append(f"Requires {district['reputation']} reputation")
+    connection_key = DISTRICT_CONNECTION_GATE.get(district["key"])
+    if connection_key:
+        owned = owned if owned is not None else _owned_keys(profile)
+        if connection_key not in owned:
+            locks.append(f"Requires the {ASSET_BY_KEY[connection_key]['name'].lower()}")
     return locks
 
 
 def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dict:
-    """The full retainer board: every district, its gate, and what it is worth."""
+    """The full counsel board: every district, its gate, and what it is worth."""
     held = held if held is not None else _held_district_keys(profile)
     totals = _territory_totals(held)
     daily_rent = int(FIRM_TIERS[profile.office_tier]["rent_daily"])
     districts = []
+    # Read once for the whole board: the connection gate is checked per district
+    # and this is the only place that walks all thirty-eight of them.
+    owned_assets = _owned_keys(profile)
     for district in DISTRICTS:
         owned = district["key"] in held
-        locks = [] if owned else _district_locks(profile, district)
+        locks = [] if owned else _district_locks(profile, district, owned_assets)
         districts.append(
             {
                 "key": district["key"],
@@ -1246,7 +1678,7 @@ def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dic
                 "landmark_key": district["landmark"],
                 "tier": district["tier"],
                 "reputation": district["reputation"],
-                "retainer": district["retainer"],
+                "counsel": district["counsel"],
                 "description": district["description"],
                 "cost": district["cost"],
                 "standing": district["standing"],
@@ -1268,7 +1700,9 @@ def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dic
                 # Inclusive first/last firm tier this region covers. The live
                 # Firm tab groups catalog addresses under these ranges; without
                 # the field the page throws on `tier_range[0]` and the slide is
-                # a cream shell.
+                # a cream shell. A catalog asset's `region` is the address the
+                # firm occupied at its tier; a territory region is an area of
+                # the map holding a run of tiers.
                 "tier_range": list(region["tiers"]),
                 "total": len(keys),
                 "held": sum(1 for key in keys if key in held),
@@ -1446,14 +1880,88 @@ def _pay_rent_arrears(
     return paid
 
 
-def _touch_daily_streak(profile: PlayerProfile, now) -> None:
-    """Advance the one calendar-day activity streak; a no-op after the first visit each day.
+# The reputation a run of wins guarantees, and the day count that licenses it.
+#
+# Cases are minted on demand and without limit from Practice, so anything that
+# pays per case is farmable per case. The ladder is therefore not the reward --
+# the day count is. A player can hold only as much streak standing as
+# consecutive *working* days support, and a working day is one on which a case
+# was actually finished, so the ceiling on this mechanic is wall-clock time,
+# which is the one resource the game cannot mint.
+#
+# It is also a floor and never a credit: it stops reputation falling, it never
+# pushes it up. Farming a streak cannot buy a tier. It shares the standing
+# argument -- and therefore TERRITORY_STANDING_FLOOR_CEILING -- with district
+# counsel seats, so the two compose by addition under one shared cap instead of
+# being two separate ladders racing each other to the top of the game.
+STREAK_STANDING_LADDER: tuple[tuple[int, float], ...] = (
+    (3, 1.0), (6, 2.0), (10, 3.0), (15, 4.0), (21, 5.0),
+)
+STREAK_STANDING_CAP = 5.0
+# One day of consecutive casework licenses one point of the ladder.
+STREAK_STANDING_PER_DAY = 1.0
 
-    This is deliberately the only "streak" concept tied to calendar days — it
-    counts consecutive days the firm was visited at all, which already covers
-    every day a practice question gets answered. It does not touch
-    `current_streak`/`best_streak`, which track consecutive validated case
-    wins for the payout bonus and are a different mechanic entirely.
+
+def streak_standing(profile: PlayerProfile) -> float:
+    """Reputation floor earned by the current run of validated wins.
+
+    Two gates, both necessary. Depth is the ladder, which diminishes: the first
+    point costs 3 wins and the fifth costs 6 more. Consistency is the day count,
+    which is what stops a single long sitting from buying the whole ladder.
+    """
+    earned = 0.0
+    for wins, standing in STREAK_STANDING_LADDER:
+        if (profile.current_streak or 0) >= wins:
+            earned = standing
+    licensed = min(STREAK_STANDING_CAP, max(0, profile.daily_streak_current or 0) * STREAK_STANDING_PER_DAY)
+    return min(earned, licensed)
+
+
+def _streak_form(profile: PlayerProfile) -> dict:
+    """What the streak is currently worth, and what the next rung costs.
+
+    Both halves are reported because either one can be the thing holding the
+    player back, and a bar that will not move however many cases are answered is
+    worse than no bar. When the day count is the binding gate the UI can say so
+    instead of implying more casework would help.
+    """
+    wins = profile.current_streak or 0
+    days = max(0, profile.daily_streak_current or 0)
+    earned = 0.0
+    next_at = None
+    for rung_wins, rung_standing in STREAK_STANDING_LADDER:
+        if wins >= rung_wins:
+            earned = rung_standing
+        elif next_at is None:
+            next_at = rung_wins
+    licensed = min(STREAK_STANDING_CAP, days * STREAK_STANDING_PER_DAY)
+    return {
+        "wins": wins,
+        "days": days,
+        "standing": round(min(earned, licensed), 2),
+        "earned_standing": round(earned, 2),
+        "licensed_standing": round(licensed, 2),
+        "cap": STREAK_STANDING_CAP,
+        "next_win_target": next_at,
+        # True when more casework today cannot raise the floor and only coming
+        # back tomorrow can.
+        "day_limited": earned > licensed,
+    }
+
+
+def _touch_daily_streak(profile: PlayerProfile, now) -> None:
+    """Advance the working-day streak; a no-op after the first finished case each day.
+
+    This counts consecutive days on which the player *finished a case*, not days
+    the app was opened. It used to run from `_settle_upkeep_unflushed`, which is
+    on every protected route, so loading any page advanced it -- a streak that
+    rewarded showing up rather than working, and the only streak the UI showed.
+    It is now called from the one place that also ticks `DailyProgress.cases_completed`,
+    so both day counters answer to the same bar: a real attempt with a real
+    argument, not a thin win and not a page load.
+
+    It does not touch `current_streak`/`best_streak`, which count consecutive
+    validated case wins for the payout bonus and are a different mechanic.
     """
     today = now.date()
     last = profile.daily_streak_last_date
@@ -1484,7 +1992,6 @@ def _settle_upkeep_unflushed(profile: PlayerProfile, now=None) -> dict:
     now = _as_utc(now or utcnow())
     settled_at = _as_utc(profile.upkeep_settled_at) or now
     last_active_at = _as_utc(profile.last_active_at) or settled_at
-    _touch_daily_streak(profile, now)
 
     # Read once and pass down, the way `serialize_game` already threads `owned`.
     # The rent relief needs the held districts and the reputation guard needs the
@@ -1662,25 +2169,58 @@ def _valuation(profile: PlayerProfile) -> int:
 
 
 def _achievement_state(profile: PlayerProfile, owned: set[str]) -> list[dict]:
+    """The firm's honours, and how far off the ones it has not earned are.
+
+    These grant nothing, deliberately: the economy is tuned around three to six
+    cases per upgrade and a cash prize for reaching 100 cases would quietly
+    retune it. What they were missing is not a reward but a reading. Every one
+    of them counts something the profile already tracks, so a locked honour can
+    say "62 of 100 cases" instead of showing a padlock, which is the difference
+    between a trophy cabinet and a list of things that have not happened.
+
+    `progress` is a pair of plain numbers rather than a percentage so the client
+    can show the count itself, with the unit it is counted in, because "412,000
+    of 1,000,000" wants a dollar sign and "62 of 100" does not. Omitted for the
+    honours that are not a count -- joining one specific network is a yes or a
+    no, and "0 of 1" says less than the requirement line already does.
+    """
+    valuation = _valuation(profile)
+    staff_hired = sum(ASSET_BY_KEY[key]["type"] == "staff" for key in owned if key in ASSET_BY_KEY)
+    rivals_owned = sum(ASSET_BY_KEY[key]["type"] == "rival" for key in owned if key in ASSET_BY_KEY)
     values = [
-        ("first_verdict", "First verdict", "Complete your first case.", profile.total_cases >= 1),
-        ("ten_cases", "Docket regular", "Complete 10 cases.", profile.total_cases >= 10),
-        ("streak_five", "On a roll", "Reach a validated 5-case streak.", profile.best_streak >= 5),
-        ("established", "Established counsel", "Reach 60 Reputation.", profile.reputation >= 60),
-        ("first_hire", "A growing team", "Hire your first staff member.", any(ASSET_BY_KEY[key]["type"] == "staff" for key in owned if key in ASSET_BY_KEY)),
-        ("first_acquisition", "Name on the door", "Acquire a rival firm.", any(ASSET_BY_KEY[key]["type"] == "rival" for key in owned if key in ASSET_BY_KEY)),
-        ("million_value", "Seven-figure firm", "Reach a $1,000,000 valuation.", _valuation(profile) >= 1_000_000),
-        ("hundred_cases", "Century docket", "Complete 100 cases.", profile.total_cases >= 100),
-        ("global_counsel", "Global counsel", "Build an International Practice.", profile.office_tier >= 7),
-        ("billion_value", "Billion-dollar practice", "Reach a $1,000,000,000 valuation.", _valuation(profile) >= 1_000_000_000),
-        ("orbital_bar", "Beyond the atmosphere", "Join the Orbital Bar Association.", "orbital_bar" in owned),
-        ("planetary_nexus", "Justice constellation", "Build the Planetary Justice Nexus.", profile.office_tier >= 14),
-        ("rival_network", "Friendly competition", "Acquire five rival firms.", sum(ASSET_BY_KEY[key]["type"] == "rival" for key in owned if key in ASSET_BY_KEY) >= 5),
+        ("first_verdict", "First verdict", "Complete your first case.", profile.total_cases, 1, "cases"),
+        ("ten_cases", "Docket regular", "Complete 10 cases.", profile.total_cases, 10, "cases"),
+        ("streak_five", "On a roll", "Reach a validated 5-case streak.", profile.best_streak, 5, "streak"),
+        ("established", "Established counsel", "Reach 60 Reputation.", profile.reputation, 60, "reputation"),
+        ("first_hire", "A growing team", "Hire your first staff member.", staff_hired, 1, "hired"),
+        ("first_acquisition", "Name on the door", "Acquire a rival firm.", rivals_owned, 1, "firms"),
+        ("million_value", "Seven-figure firm", "Reach a $1,000,000 valuation.", valuation, 1_000_000, "money"),
+        ("hundred_cases", "Century docket", "Complete 100 cases.", profile.total_cases, 100, "cases"),
+        ("global_counsel", "Global counsel", "Build an International Practice.", profile.office_tier, 7, "tier"),
+        ("billion_value", "Billion-dollar practice", "Reach a $1,000,000,000 valuation.", valuation, 1_000_000_000, "money"),
+        ("orbital_bar", "Beyond the atmosphere", "Join the Orbital Bar Association.", 1 if "orbital_bar" in owned else 0, None, None),
+        ("planetary_nexus", "Justice constellation", "Build the Planetary Justice Nexus.", profile.office_tier, 14, "tier"),
+        ("rival_network", "Friendly competition", "Acquire five rival firms.", rivals_owned, 5, "firms"),
     ]
-    return [{"key": key, "name": name, "description": description, "unlocked": unlocked} for key, name, description, unlocked in values]
+    state = []
+    for key, name, description, current, target, unit in values:
+        entry = {
+            "key": key,
+            "name": name,
+            "description": description,
+            "unlocked": current >= (target if target is not None else 1),
+        }
+        if target is not None:
+            entry["progress"] = {
+                "current": round(float(current), 1),
+                "target": float(target),
+                "unit": unit,
+            }
+        state.append(entry)
+    return state
 
 
-def _public_asset(item: dict, profile: PlayerProfile, owned: set[str]) -> dict:
+def _public_asset(item: dict, profile: PlayerProfile, owned: set[str], held: set[str] | None = None) -> dict:
     # `payout_mult` and `passive_hourly` are published as numbers because the
     # office scene reports what each item contributes, and it has to be able to
     # tell a genuine hourly earner from a case multiplier from a cosmetic that
@@ -1704,6 +2244,18 @@ def _public_asset(item: dict, profile: PlayerProfile, owned: set[str]) -> dict:
         public["list_cost"] = item["cost"]
         public["discount_bps"] = discount_bps
         public["cost"] = _asset_cost(profile, item)
+    if item["type"] == "connection":
+        # The office draws one seal per connection and, until now, had no way to
+        # tell them apart or to know whether the network had been used for
+        # anything. Publishing the districts it gates lets the relationship wall
+        # read directly off the map: a seal for a network you own, a ribbon for
+        # each district that network let you sign.
+        district_keys = CONNECTION_DISTRICTS.get(item["key"], [])
+        public["districts"] = [
+            {"key": key, "name": DISTRICT_BY_KEY[key]["name"], "held": key in (held or set())}
+            for key in district_keys
+        ]
+        public["districts_held"] = sum(1 for key in district_keys if key in (held or set()))
     public["owned"] = item["key"] in owned
     public["available"] = not public["owned"] and _requirements_met(item, profile, owned)
     public["requirements"] = _requirement_copy(item)
@@ -1824,6 +2376,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
         "best_streak": profile.best_streak,
         "daily_streak": profile.daily_streak_current,
         "daily_streak_best": profile.daily_streak_best,
+        "streak_form": _streak_form(profile),
         "total_cases": profile.total_cases,
         "total_correct": profile.total_correct,
         "total_validated_correct": profile.total_validated_correct,
@@ -1862,7 +2415,7 @@ def serialize_game(profile: PlayerProfile, include_catalog: bool = True) -> dict
     }
     if include_catalog:
         payload["catalog"] = {
-            "assets": [_public_asset(item, profile, owned) for item in ASSETS],
+            "assets": [_public_asset(item, profile, owned, held) for item in ASSETS],
             "clients": [_public_client(client, profile, owned) for client in CLIENTS],
             "tiers": [
                 {
@@ -2033,7 +2586,13 @@ def purchase_asset(profile: PlayerProfile, asset_key: str) -> PlayerAsset:
 
 
 def secure_district(profile: PlayerProfile, district_key: str) -> dict:
-    """Sign a district's institutions to a standing retainer."""
+    """Sign a district's institutions to a standing counsel appointment.
+
+    The ledger event is `district_counsel`. It was `district_retainer` until
+    migration 0037, which renamed the stored rows; nothing outside this module
+    reads the key, but a ledger that says one word and a screen that says
+    another is how the client/district confusion started.
+    """
     district = DISTRICT_BY_KEY.get(district_key)
     if not district:
         raise ValueError("district_not_found")
@@ -2063,7 +2622,7 @@ def secure_district(profile: PlayerProfile, district_key: str) -> dict:
     totals = _territory_totals(held)
     _ledger(
         profile,
-        "district_retainer",
+        "district_counsel",
         district_key,
         -price,
         {
@@ -2711,6 +3270,11 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     elif validated:
         profile.current_streak += 1
         profile.best_streak = max(profile.best_streak, profile.current_streak)
+    # Before the reputation floor below reads it: today has to be on the board
+    # already, or the first finished case of a new day would be licensed against
+    # yesterday's day count.
+    if reward_eligible or effort_eligible:
+        _touch_daily_streak(profile, settled_at)
     core_payout = round(base_fee * score_mult * firm_mult) if paid_case else 0
     streak_cap = int(context.get("streak_cap_bps") or 2_000) / 10_000
     streak_bonus = round(core_payout * min(streak_cap, profile.current_streak * .02)) if validated else 0
@@ -2768,8 +3332,15 @@ def settle_attempt(attempt: Attempt, coaching: dict) -> AttemptSettlement | None
     maximum_drop *= _reputation_warmup(profile.total_cases)
     reputation_after = round(max(reputation_after, reputation_before - maximum_drop), 1)
     if reward_eligible:
+        # District standing and streak standing are one argument on purpose.
+        # `_career_floor` caps `casework + standing` at
+        # TERRITORY_STANDING_FLOOR_CEILING, so the two add up under a single
+        # shared ceiling rather than forming two ladders that each try to reach
+        # the top of the game on their own.
         career_floor = _career_floor(
-            projected_correct, projected_validated, territory_standing(profile)
+            projected_correct,
+            projected_validated,
+            territory_standing(profile) + streak_standing(profile),
         )
         reputation_after = round(max(reputation_after, career_floor), 1)
         reputation_after = min(100, round(reputation_after + int(context.get("client_reputation_win_bonus_bps") or 0) / 10_000, 1))

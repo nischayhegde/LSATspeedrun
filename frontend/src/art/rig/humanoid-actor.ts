@@ -469,6 +469,30 @@ const lagError = new THREE.Quaternion()
 const lagStep = new THREE.Quaternion()
 const lagApply = new THREE.Quaternion()
 const lagAxis = new THREE.Vector3()
+const hairDriver = new THREE.Quaternion()
+
+/**
+ * The hair follower's own constants.
+ *
+ * Slower and looser than any joint in `LAG_PLAN`, which is the point: a neck
+ * holds a head, and nothing holds hair. `omega` is a little over half the
+ * head's, so the settle is visible as a settle rather than as a twitch; `zeta`
+ * is well under critical so it swings past and comes back; and the ceiling is
+ * twice the head's, because a lag of nine degrees at the crown is a couple of
+ * centimetres at the ends of a long cut and reads as almost nothing.
+ *
+ * The ceiling is what keeps this honest against the one failure this technique
+ * has. The shell is rigid geometry sitting a centimetre or two off the skull,
+ * so a large enough rotation pushes the scalp through it. Nine degrees at the
+ * pivot moves the nape by about two centimetres against a nape standoff of
+ * eleven to seventeen, so the mass stays outside the head at full deflection on
+ * every one of the six cuts.
+ */
+const HAIR_OMEGA = 7.4
+const HAIR_ZETA = .34
+const HAIR_LIMIT = .16
+/** Radians of pitch per unit of vertical head speed. See `advanceHair`. */
+const HAIR_BOB = .085
 const gainDelta = new THREE.Quaternion()
 /** The four corners of the sole, as multipliers of (halfWidth, depth, toe/heel). */
 const SOLE_CORNERS: readonly (readonly [number, number])[] = [[1, 1], [1, -1], [-1, 1], [-1, -1]]
@@ -634,6 +658,12 @@ export class HumanoidActor {
   private readonly lagBones: LagBone[] = []
   private expressionGain = 1
   private secondaryGain = 1
+  /** The hair follower. See `advanceHair`. */
+  private readonly hairFilter = new THREE.Quaternion()
+  private readonly hairVelocity = new THREE.Vector3()
+  private hairSeeded = false
+  private hairLastLift = 0
+  private hairLastRise = 0
 
   constructor(rig: BindableRig, options: HumanoidActorOptions = {}) {
     this.skeleton = bindHumanoidSkeleton(rig)
@@ -1455,6 +1485,17 @@ export class HumanoidActor {
       }
     }
 
+    // 4a. The hair, which trails whatever the head finally did.
+    //
+    // Here rather than beside the other followers in `advanceSecondary`, and
+    // that ordering is the whole reason it works: the head's own lag, its
+    // look-at and its anatomical clamp have all landed by this point, so the
+    // hair is dragged by the orientation that will actually be drawn. Run from
+    // `advanceSecondary`'s position it would trail a head pose that three later
+    // passes were still going to change, and the hair would lead its own head
+    // on any frame the look-at moved.
+    this.advanceHair(delta, motion.y * hipHeight)
+
     // 4b. Folded leg placement, for any pose whose pelvis is below standing
     //     height.
     //
@@ -1777,6 +1818,128 @@ export class HumanoidActor {
       lagApply.setFromAxisAngle(lagAxis.set(lagError.x, lagError.y, lagError.z).divideScalar(sin), -angle)
       lag.node.quaternion.premultiply(lagApply)
     }
+  }
+
+  /**
+   * Hair that lags the head and settles.
+   *
+   * The complaint this answers is that the hair is rigid geometry parented to
+   * the head, so it turns exactly when the head turns and does nothing else —
+   * which is what makes a long cut read as a moulded shell rather than as hair,
+   * however good its silhouette and palette are.
+   *
+   * ## Why a follower and not a simulation
+   *
+   * The scene budget is the constraint, and it is hard-won: the cast is batched
+   * down to 6.8 draws a body and the Practice floor from 1,798 draws to 974. A
+   * strand solver is out of the question, and so is anything that gives hair its
+   * own material or its own geometry per character, because the crowd batches on
+   * exactly those two things — `map-crowd-rig` groups by geometry and finish, so
+   * a per-character hair anything shatters one batch into as many batches as
+   * there are people.
+   *
+   * What is free is a *transform*. `addHair` puts the whole cut on one node
+   * under the head, the crowd resolves world matrices for the entire skeleton
+   * every frame anyway to fill its instance buffers, and this class is already
+   * running a bank of damped followers for the head, the arms and the hands. So
+   * hair costs one more follower: a quaternion, a vector, and per frame one
+   * inverse, a handful of multiplies and a `tanh`. No new mesh, no new material,
+   * no change to any batch key, and nothing added to `HUMANOID_BONES`.
+   *
+   * ## The two inputs
+   *
+   * A head turn is rotation, and the spring answers that directly: the follower
+   * chases the head's cumulative orientation, arrives late, overshoots because
+   * `zeta` is well below critical, and rings down. That is the head turn
+   * carrying through and settling.
+   *
+   * A walk cycle is mostly *translation* — the pelvis rises and falls twice a
+   * stride — and a rotational follower is blind to it, which would leave a
+   * walking character's hair dead still. The lift is fed in as an angular
+   * impulse instead: when the head rises, the hair is still where it was, so
+   * relative to the head it hangs lower. Taken from the root-motion node's own y
+   * rather than from a world position, so it costs a subtraction and adds no
+   * matrix work to a pass that deliberately avoids it.
+   */
+  private advanceHair(delta: number, lift: number) {
+    const hair = this.skeleton.hair
+    if (!hair) return
+    // Nothing to swing (the male crop scores zero), no secondary motion asked
+    // for, or a body far enough away that a two-centimetre movement of a
+    // hairline is well under a pixel.
+    if (hair.swing <= .02 || this.secondaryGain <= 0 || this.lodLevel === 'low') {
+      if (this.hairSeeded) {
+        hair.node.quaternion.identity()
+        this.hairSeeded = false
+      }
+      return
+    }
+
+    const bones = this.skeleton.bones
+    hairDriver.copy(bones.hips.quaternion)
+      .multiply(bones.spine.quaternion)
+      .multiply(bones.chest.quaternion)
+      .multiply(bones.head.quaternion)
+
+    // Same guard as the joint followers: a zero step is a held pose and a huge
+    // one is a tab coming back from the background, and a spring handed either
+    // as a step input is the one thing this integrator cannot answer smoothly.
+    const reseed = delta <= 0 || delta > .25 || !this.hairSeeded
+    if (reseed) {
+      this.hairFilter.copy(hairDriver)
+      this.hairVelocity.set(0, 0, 0)
+      this.hairSeeded = true
+      this.hairLastLift = lift
+      this.hairLastRise = 0
+      hair.node.quaternion.identity()
+      return
+    }
+
+    // Smoothed, because a `low`-LOD actor accumulates an eighteenth of a second
+    // before it steps and the raw difference over one such step is a spike.
+    const rise = THREE.MathUtils.damp(this.hairLastRise, (lift - this.hairLastLift) / delta, 9, delta)
+    this.hairLastLift = lift
+    this.hairLastRise = rise
+
+    const steps = Math.min(12, Math.max(1, Math.ceil(delta * 120)))
+    const step = delta / steps
+    const stiffness = HAIR_OMEGA * HAIR_OMEGA
+    const decay = Math.exp(-2 * HAIR_ZETA * HAIR_OMEGA * step)
+    // The head rising leaves the hair behind and below it, which about this
+    // pivot is a negative rotation on x. Clamped before it is scaled so that a
+    // clip with an implausible vertical spike cannot inject a large impulse.
+    const bob = -THREE.MathUtils.clamp(rise, -3, 3) * HAIR_BOB * hair.swing
+    for (let index = 0; index < steps; index += 1) {
+      lagError.copy(this.hairFilter).invert().multiply(hairDriver)
+      if (lagError.w < 0) lagError.set(-lagError.x, -lagError.y, -lagError.z, -lagError.w)
+      lagAxis.set(lagError.x, lagError.y, lagError.z).multiplyScalar(2)
+      this.hairVelocity.addScaledVector(lagAxis, stiffness * step)
+      this.hairVelocity.x += bob * step * HAIR_OMEGA
+      this.hairVelocity.multiplyScalar(decay)
+      const speed = this.hairVelocity.length()
+      if (speed > 1e-6) {
+        lagStep.setFromAxisAngle(lagAxis.copy(this.hairVelocity).divideScalar(speed), speed * step)
+        this.hairFilter.multiply(lagStep).normalize()
+      }
+    }
+
+    lagError.copy(this.hairFilter).invert().multiply(hairDriver)
+    if (lagError.w < 0) lagError.set(-lagError.x, -lagError.y, -lagError.z, -lagError.w)
+    const sin = Math.hypot(lagError.x, lagError.y, lagError.z)
+    if (sin < 1e-7) {
+      hair.node.quaternion.identity()
+      return
+    }
+    const raw = 2 * Math.atan2(sin, lagError.w) * hair.swing * this.secondaryGain
+    const angle = HAIR_LIMIT * Math.tanh(raw / HAIR_LIMIT)
+    // Set rather than premultiplied. Every other follower in this file writes a
+    // joint the mixer has already posed this frame; nothing else in the app
+    // touches this node, so its local rotation *is* the lag, and accumulating
+    // onto it would wind the hair round the head.
+    hair.node.quaternion.setFromAxisAngle(
+      lagAxis.set(lagError.x, lagError.y, lagError.z).divideScalar(sin),
+      -angle,
+    )
   }
 
   /**

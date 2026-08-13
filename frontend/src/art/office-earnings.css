@@ -83,6 +83,78 @@
 
 .office-readout-close:hover { background: rgba(255, 255, 255, .14); color: #fff; }
 
+/* "Is this earning right now", said on every card in the same place and the
+   same shape, so the answer is found by looking rather than by reading. */
+.office-readout-state {
+  display: flex;
+  gap: .38rem;
+  align-items: center;
+  margin: 0 0 .28rem;
+  color: #8ea0ab;
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+}
+
+.office-readout-dot {
+  flex: none;
+  width: .42rem;
+  height: .42rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Only the earning state moves. A pulse on a card that is not accruing would be
+   the exact misreading this line exists to prevent. */
+.office-readout-state.is-live { color: #7fd6c2; }
+
+.office-readout-state.is-live .office-readout-dot {
+  animation: office-readout-pulse 1.9s ease-out infinite;
+}
+
+.office-readout-state.is-paused { color: #f0c97a; }
+
+.office-readout-state.is-pending { color: #cdb079; }
+
+.office-readout-state.is-idle { color: #7d8d97; }
+
+/* Hollow for the two states that are not accruing: filled and hollow read
+   apart at a glance even where the colours do not. */
+.office-readout-state.is-pending .office-readout-dot,
+.office-readout-state.is-idle .office-readout-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+/* How full the safe is, as a share of its ceiling — the accumulation the
+   counter above is part-way through, rather than a second reading of it. */
+.office-readout-fill {
+  height: .16rem;
+  margin: 0 0 .5rem;
+  border-radius: .16rem;
+  background: rgba(255, 255, 255, .09);
+  overflow: hidden;
+}
+
+.office-readout-fill::before {
+  content: "";
+  display: block;
+  width: var(--fill, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(127, 214, 194, .45), #7fd6c2);
+}
+
+.office-readout-fill.is-full::before {
+  background: linear-gradient(90deg, rgba(240, 201, 122, .45), #f0c97a);
+}
+
+@keyframes office-readout-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(127, 214, 194, .5); }
+  70% { box-shadow: 0 0 0 .3rem rgba(127, 214, 194, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(127, 214, 194, 0); }
+}
+
 .office-readout-figure {
   display: flex;
   align-items: baseline;
@@ -170,6 +242,52 @@
   font-weight: 600;
 }
 
+/* What a connection opened. Sits at the foot of the card, under whatever the
+   item's mode had to say about money, because a network is both things and the
+   fee share is the smaller half.
+
+   The two chip colours are the crest's own: a signed district glows the same
+   amber the seal's tab lights with and the map uses for a held plot, and an
+   unsigned one stays the dark wood it is carved from. So the card and the
+   object it describes agree at a glance, from either distance. */
+.office-readout-districts {
+  margin: 0;
+  padding-top: .36rem;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.office-readout-districts p {
+  margin: 0 0 .3rem;
+  color: #7d8d97;
+  font-size: .68rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.office-readout-districts ul {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .22rem;
+  list-style: none;
+}
+
+.office-readout-districts li {
+  padding: .1rem .3rem;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 2px;
+  color: #9fb0ba;
+  font-size: .68rem;
+  line-height: 1.35;
+}
+
+.office-readout-districts li.is-held {
+  border-color: rgba(242, 206, 133, .5);
+  color: #f2ce85;
+  background: rgba(242, 206, 133, .1);
+}
+
 /* The actual fix for the ceiling, sitting right under the line that names it.
    Only ever rendered while the card is pinned — see `PassiveBody`'s `pinned`
    prop — because that is the only state in which `.office-readout-card` (via
@@ -221,4 +339,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .office-readout-card { animation: none; }
+  /* The dot stays, and stays the colour that says "earning". It is the state
+     that has to survive here, not the animation of it. */
+  .office-readout-state.is-live .office-readout-dot { animation: none; }
 }

@@ -22,6 +22,10 @@ import { ErrorNotice, formatMoney, LoadingScreen, useRestoredChrome } from '../c
 import { PauseButton, QuestionFlow } from '../case-flow'
 import { useSound } from '../sound'
 import type { StudySession } from '../types'
+// A sectioned form is a different screen, not a mode of the case screen, so it
+// is a different chunk too — nothing about the proctored surface belongs in the
+// bundle a ten-question practice run pays for.
+const ExamFlow = lazy(() => import('../exam-flow').then((module) => ({ default: module.ExamFlow })))
 // The rules in `styles.css` that only this screen can render. It travels with
 // this chunk, and `lsat-route-stylesheets` keeps it in the slot it had inside
 // the entry sheet.
@@ -68,8 +72,11 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
   })
   const dueReviews = queueQuery.data?.review_queue.due ?? 0
   const startRepair = useMutation({
-    // Due repairs are folded into an ordinary run now; there is no repair mode.
-    mutationFn: () => api.startPractice({ size: Math.min(5, Math.max(1, dueReviews)) }),
+    // Due repairs are folded into an ordinary run now; there is no repair mode,
+    // so there is nothing for a run sized to the queue to mean. It used to ask
+    // for one to five questions, which is below the length a reading passage
+    // needs, so clearing a queue could never show the student any reading.
+    mutationFn: () => api.startPractice(),
     onSuccess: ({ session }) => {
       void queryClient.invalidateQueries({ queryKey: ['current-session'] })
       void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
@@ -193,7 +200,7 @@ function CompletedSessionReview({ sessionId }: { sessionId: string }) {
       </section>
 
       <section className="review-next-actions">
-        <div><span className="eyebrow">NEXT BEST ACTION</span><h2>{dueReviews ? `Repair ${Math.min(5, dueReviews)} due item${dueReviews === 1 ? '' : 's'}` : 'Return to unseen questions'}</h2><p>{dueReviews ? 'Write reasoning only where the evidence says it is needed.' : 'Your repair queue is clear; another run of cases provides fresh evidence.'}</p></div>
+        <div><span className="eyebrow">NEXT BEST ACTION</span><h2>{dueReviews ? `Repair ${dueReviews} due item${dueReviews === 1 ? '' : 's'}` : 'Return to unseen questions'}</h2><p>{dueReviews ? 'Write reasoning only where the evidence says it is needed.' : 'Your repair queue is clear; another run of cases provides fresh evidence.'}</p></div>
         <div>
           {isBrief && <button className="primary-button" onClick={() => finishBrief.mutate()} disabled={finishBrief.isPending}>{finishBrief.isPending ? 'Closing brief…' : 'Finish Deep Brief'} <CheckCircle2 /></button>}
           {dueReviews > 0 && <button className="primary-button" onClick={() => startRepair.mutate()} disabled={startRepair.isPending}>{startRepair.isPending ? 'Building review…' : 'Start priority review'} <ArrowRight /></button>}
@@ -314,6 +321,19 @@ export function CaseSessionPage() {
     return <BlindReviewIntro diagnostic={session} />
   }
   if (session.status === 'completed' && !session.pending_result) return <CompletedSessionReview sessionId={session.id} />
+  // A sectioned form takes over the whole screen. It carries its own clock, its
+  // own navigation and its own boundaries, and the case chrome around it —
+  // pause, fee, client — is exactly the set of things a proctored sitting does
+  // not have.
+  if (session.exam && session.status === 'in_progress') {
+    return (
+      <div className="session-page is-exam">
+        <Suspense fallback={<LoadingScreen label="Opening the test booklet…" />}>
+          <ExamFlow session={session} />
+        </Suspense>
+      </div>
+    )
+  }
   return (
     <div className="session-page">
       {deckClientDemo && (

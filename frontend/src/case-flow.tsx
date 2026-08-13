@@ -7,17 +7,21 @@ import {
   Check,
   Clock3,
   Coins,
+  Gavel,
   Pause,
+  RotateCcw,
   Scale,
   ShieldAlert,
   Sparkles,
   Star,
   Target,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { api } from './api'
+import { discardLocalDraft, readLocalDraft, useDraftAutosave, type DraftAutosave } from './draft-autosave'
 import { ErrorNotice, formatMoney } from './components'
 import { AUTOPLAY_ENGAGED, useAutoplay } from './demo/use-autoplay'
 import { ClientPortrait, CounselPortrait3D, JudgePortrait } from './game-art'
@@ -311,6 +315,37 @@ function CasePageTurn({ active, spread }: { active: boolean; spread: boolean }) 
 }
 
 
+/* Autosave used to be silent in both directions: a student had no way to tell a
+   save that worked from one that never landed. Only the states worth acting on
+   get any weight here — a working save stays quiet, a failed one does not. */
+function DraftSaveNotice({ autosave }: { autosave: DraftAutosave }) {
+  if (autosave.state === 'unsaved') {
+    const gone = autosave.failureStatus === 404
+    return (
+      <p className="draft-save-notice is-unsaved" role="status" aria-live="polite">
+        <TriangleAlert size={15} />
+        <span>
+          <strong>Not saved to your account.</strong>{' '}
+          {gone
+            ? 'This run is no longer open on the server. Your text is kept on this device — copy it somewhere safe before leaving this page.'
+            : 'Your text is kept on this device and will be restored if you come back, but it has not reached the server yet.'}
+        </span>
+      </p>
+    )
+  }
+  if (autosave.recovered) {
+    return (
+      <p className="draft-save-notice is-recovered" role="status" aria-live="polite">
+        <RotateCcw size={15} />
+        <span>Restored the reasoning you had typed here — it had not reached the server.</span>
+      </p>
+    )
+  }
+  if (autosave.state === 'saving') return <p className="draft-save-notice is-saving" aria-live="off">Saving…</p>
+  if (autosave.state === 'saved') return <p className="draft-save-notice is-saved" aria-live="off"><Check size={14} /> Saved</p>
+  return null
+}
+
 export function QuestionFlow({ session }: { session: StudySession }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -342,21 +377,22 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   // Every practice run is a paid, fully coached case now, so the only banner
   // and panel split left is diagnostic versus everything else.
   const learningOnly = isAssessment
-  /**
-   * A driven run always starts from an unanswered question.
-   *
-   * The app autosaves the draft as you work, which includes the choice you have
-   * highlighted — so the demo's own last run leaves its answer behind, and
-   * playing the slide a second time without re-staging opens with the credited
-   * answer already lit. The audience then watches the app "choose" something it
-   * is already showing, which is the one impression this whole sequence exists
-   * to avoid. Staging clears the draft, but a rehearsal loop should not depend
-   * on remembering to re-stage between takes, and neither should going back a
-   * slide mid-talk. The written case theory is still loaded from the draft:
-   * that is the staged content, and it is the point.
-   */
-  const [selected, setSelected] = useState(AUTOPLAY_ENGAGED ? '' : item?.draft.selected_label || '')
-  const [reasoning, setReasoning] = useState(item?.draft.reasoning || '')
+  // A mirror on this device only survives when a save never reached the server,
+  // so where one exists it is the newer copy and the server draft is behind.
+  // A driven deck run always starts unanswered so a rehearsal loop does not
+  // open on the credited choice from the last take.
+  const openingDraft = (forItem: typeof item) => {
+    if (AUTOPLAY_ENGAGED) {
+      return { selected: '', reasoning: forItem?.draft.reasoning || '', recovered: false }
+    }
+    const local = readLocalDraft(forItem?.id)
+    if (local) return { selected: local.selected, reasoning: local.reasoning, recovered: true }
+    return { selected: forItem?.draft.selected_label || '', reasoning: forItem?.draft.reasoning || '', recovered: false }
+  }
+  const [opening] = useState(() => openingDraft(item))
+  const [selected, setSelected] = useState(opening.selected)
+  const [reasoning, setReasoning] = useState(opening.reasoning)
+  const [recoveredDraft, setRecoveredDraft] = useState(opening.recovered)
   const minChars = item?.reasoning_min_chars ?? 0
   const reasoningLength = reasoning.trim().length
   const reasoningComplete = !requiresReasoning || reasoningLength >= minChars
@@ -367,14 +403,20 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const [pageTurning, setPageTurning] = useState(false)
   // Picking "Use it" arms the gate. Everything the gate withholds is withheld
   // from here down, so the wrong order is unreachable rather than discouraged.
+  // A mandatory approach asks for no decision, so there is none to wait for:
+  // the gate arms on arrival and stays armed unless the student withdraws it.
+  const strategyRequired = Boolean(item?.strategy_trial?.required)
+  const strategyArmed = strategyRequired ? strategyApplied !== false : strategyApplied === true
   const strategyGate = useStrategyGate(item, {
-    armed: strategyApplied === true,
+    armed: strategyArmed,
     selectedLabel: selected,
     locked: Boolean(result),
     // Dropping the approach mid-question is the escape hatch that lets the
     // gate be strict at all. It records the honest thing — this one was
     // answered without the technique — rather than quietly unarming, because
-    // the trial compares what was actually done.
+    // the trial compares what was actually done. On the mandatory arm the same
+    // control is the withdrawal, and the panel only offers it once the server
+    // will accept one.
     onDrop: () => {
       setStrategyApplied(false)
       void play('paper', { seed: `${item?.id}:strategy-drop`, intensity: .25 })
@@ -394,8 +436,10 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const formExpiredRef = useRef(false)
 
   useEffect(() => {
-    setSelected(AUTOPLAY_ENGAGED ? '' : item?.draft.selected_label || '')
-    setReasoning(item?.draft.reasoning || '')
+    const next = openingDraft(item)
+    setSelected(next.selected)
+    setReasoning(next.reasoning)
+    setRecoveredDraft(next.recovered)
     setConfidence(3)
     setAnswerChanged(false)
     setStrategyApplied(null)
@@ -461,13 +505,14 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     node.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' })
   }, [strategyGate.justCommitted])
 
-  useEffect(() => {
-    if (!item || result) return
-    const timeout = window.setTimeout(() => {
-      void api.saveDraft(session.id, item.id, { selected_label: selected || undefined, reasoning }).catch(() => undefined)
-    }, 700)
-    return () => window.clearTimeout(timeout)
-  }, [item?.id, reasoning, result, selected, session.id])
+  const autosave = useDraftAutosave({
+    sessionId: session.id,
+    itemId: item?.id,
+    selected,
+    reasoning,
+    enabled: Boolean(item) && !result,
+    recovered: recoveredDraft,
+  })
 
   const beginPageTurn = async (afterCurl: () => unknown | Promise<unknown>) => {
     if (pageTurning) return
@@ -497,7 +542,12 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         reasoning,
         confidence,
         answer_changed: answerChanged,
-        ...(item?.strategy_trial ? { strategy_applied: strategyApplied ?? undefined, strategy_prompt_ms: strategyPromptMs } : {}),
+        ...(item?.strategy_trial
+          ? {
+              strategy_applied: strategyRequired ? strategyApplied !== false : strategyApplied ?? undefined,
+              strategy_prompt_ms: strategyPromptMs,
+            }
+          : {}),
         ...strategyGate.payload,
       },
       createRequestId(),
@@ -506,6 +556,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
       if (AUTOPLAY_ENGAGED && submittedResult.duplicate && submittedResult.feedback_released) {
         setReplayed(submittedResult)
       }
+      discardLocalDraft(item?.id)
       if (!submittedResult.feedback_released && !submittedResult.session_complete) {
         void beginPageTurn(() => queryClient.invalidateQueries({ queryKey: ['session', session.id] }))
         return
@@ -514,8 +565,14 @@ export function QuestionFlow({ session }: { session: StudySession }) {
     },
     onError: (error) => {
       setPageTurning(false)
-      // A rejected gate comes back as a 409 with field-level messages on it.
-      strategyGate.applyServerErrors((error as unknown as { fields?: Array<{ field: string | null; message: string }> }).fields)
+      // A rejected gate comes back as a 409 with field-level messages on it,
+      // and on the mandatory arm with the server's ruling on whether the
+      // approach may be withdrawn yet.
+      const refusal = error as unknown as {
+        fields?: Array<{ field: string | null; message: string }>
+        standDown?: boolean
+      }
+      strategyGate.applyServerErrors(refusal.fields, refusal.standDown)
     },
   })
   const continueCases = useMutation({
@@ -711,7 +768,11 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   // decline, and demanding an acknowledgement would make the arm cost more
   // than the thing it is the baseline for.
   const strategyNeutral = item.strategy_neutral
-  const strategyDecisionRequired = Boolean(strategyTrial && strategyApplied === null && !result)
+  // Only the suggestion arm waits on a decision. A standing order was already
+  // decided by the client, so nothing is dimmed and nothing is held back.
+  const strategyDecisionRequired = Boolean(
+    strategyTrial && !strategyRequired && strategyApplied === null && !result,
+  )
   const timerRatio = elapsed / Math.max(1, item.target_time_seconds * 1000)
   const caseClient = gameQuery.data?.game?.catalog.clients.find((client) => client.key === item.case_terms?.client_key)
   const clientName = item.case_terms?.client_name || caseClient?.name || 'Walk-in Client'
@@ -816,7 +877,30 @@ export function QuestionFlow({ session }: { session: StudySession }) {
         )}
       </div>
 
-      {strategyTrial && (
+      {/* The mandatory arm's card is deliberately the shorter of the two. The
+          three steps and the Use it / Skip pair are both answers to a question
+          nobody is being asked here, and the gate directly below is already
+          open with the steps in it as fields — so this says who ordered it and
+          gets out of the way. */}
+      {strategyTrial && strategyRequired && (
+        <section
+          className={`strategy-tip is-required ${strategyApplied === false ? 'is-skipped' : ''}`}
+          aria-label={`Required approach: ${strategyTrial.plain_title}`}
+        >
+          <div className="strategy-tip-head">
+            <span><Gavel size={15} /> {item.strategy_gate?.copy.required_eyebrow || 'STANDING ORDER'}</span>
+          </div>
+          <h2>{strategyTrial.plain_title}</h2>
+          <p>{strategyTrial.plain_line}</p>
+          <p className="strategy-tip-order">
+            {strategyApplied === false
+              ? item.strategy_gate?.copy.stand_down_recorded
+              : item.strategy_gate?.copy.required_note}
+          </p>
+        </section>
+      )}
+
+      {strategyTrial && !strategyRequired && (
         <section className={`strategy-tip ${strategyApplied === true ? 'is-applied' : strategyApplied === false ? 'is-skipped' : ''}`} aria-label={`Suggested approach: ${strategyTrial.plain_title}`}>
           <div className="strategy-tip-head">
             <span><Brain size={15} /> PARTNER TIP</span>
@@ -909,6 +993,7 @@ export function QuestionFlow({ session }: { session: StudySession }) {
                 <label htmlFor="reasoning">Your case theory <b>Required</b></label>
                 <span>{reasoningLength} / {minChars} characters</span>
               </div>
+              <DraftSaveNotice autosave={autosave} />
               <textarea
                 id="reasoning"
                 value={reasoning}

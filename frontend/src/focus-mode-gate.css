@@ -1,9 +1,10 @@
 /* The interstitial a Focus Mode route shows instead of the screen it hides.
  *
  * Lives beside `App.tsx` rather than in `styles.css` because it belongs to the
- * routing layer, not to any page. Colours and type are the app's pixel theme
- * (see the `--pixel-*` block and `.docket-hero` in styles.css) so it reads as
- * part of the game rather than as a browser error.
+ * routing layer, not to any page. It is drawn in the app's own register - the
+ * panel, the hairline, the plate - so it reads as part of the game rather than
+ * as a browser error. The header comment used to say "the app's pixel theme",
+ * which is what it was; `docs/visual-language.md` says which theme is current.
  */
 
 .focus-gate {
@@ -16,47 +17,65 @@
 .focus-gate > div {
   width: min(560px, 100%);
   padding: 32px 30px 30px;
-  border: 4px solid #080c13;
-  background-color: #172a3b;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background-color: #16273a;
+  /* The shell's laid-paper fibre, re-inked for a dark panel. It replaces a
+     20px cyan graph grid, which was the pixel hand's idea of texture and the
+     only place in the app it still showed. */
   background-image:
-    linear-gradient(90deg, rgba(101,201,194,.06) 2px, transparent 2px),
-    linear-gradient(rgba(101,201,194,.06) 2px, transparent 2px);
-  background-size: 20px 20px, 20px 20px;
-  box-shadow: inset 0 0 0 3px #385064, 9px 9px #080c13;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23e8d7a8' stroke-opacity='.05' stroke-linecap='round'%3E%3Cpath d='M3 9h9M21 4h14M44 12h11M8 25h17M33 29h8M52 33h9M6 44h12M26 47h15M47 52h13M15 58h10M38 61h12M57 20h5'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 64px 64px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), var(--el-3);
 }
 
+/* The Focus plate, the same lit-lamp brown as the header toggle that turned
+   the mode on. Seeing the control's own colour here is what connects the
+   blocked screen to the switch that blocked it. */
 .focus-gate-mark {
   width: 44px;
   height: 44px;
   display: grid;
   place-items: center;
-  border: 3px solid #080c13;
+  border: 1px solid rgba(224, 152, 118, .42);
+  border-radius: var(--r-control);
   color: #ffe1ad;
-  background: #653a36;
-  box-shadow: inset -3px -3px #4a2a27;
+  background: linear-gradient(170deg, #78453f, #55302d);
+  box-shadow: inset 0 1px 0 rgba(255, 205, 175, .18), var(--el-1);
 }
 .focus-gate-mark svg { width: 22px; height: 22px; }
 
 .focus-gate span.eyebrow {
   display: block;
   margin-top: 18px;
-  color: #6fc9ba;
-  font-family: var(--font-pixel);
-  font-size: 9px;
+  color: var(--verdigris);
+  font-family: var(--font-hud);
+  font-size: 9.5px;
   font-weight: 900;
   letter-spacing: .16em;
 }
 
+/* Fraunces, sentence case. This is a heading a reader is meant to register,
+   not a HUD label, and the 4px hard drop it carried was the loudest text
+   shadow left in the app. */
 .focus-gate h1 {
   margin: 10px 0 0;
   color: #f6e6cb;
-  font-family: var(--font-pixel);
-  font-size: clamp(20px, 3vw, 27px);
-  font-weight: 900;
-  line-height: 1.25;
-  text-transform: uppercase;
-  text-shadow: 4px 4px #080c13;
+  font-family: var(--font-display);
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 620;
+  line-height: 1.2;
+  letter-spacing: -.018em;
+  text-transform: none;
+  text-shadow: 0 2px 0 rgba(6, 11, 20, .45);
 }
+/* The heading is `{route.name} is put away.`, and every route name starts with
+   a lower-case "the" so the sentence in the paragraph below reads correctly
+   ("…hides upgrades, staff…. That is why the Firm screen has no nav entry").
+   That was invisible while the line was set in an uppercase HUD face and looks
+   like a typo now it is a sentence, so the sentence is capitalised where it is
+   displayed rather than the data being bent to suit one of its two readings. */
+.focus-gate h1::first-letter { text-transform: uppercase; }
 
 .focus-gate p {
   max-width: var(--prose-measure);
@@ -80,7 +99,7 @@
 
 @media (max-width: 620px) {
   .focus-gate { padding: 26px 12px 46px; }
-  .focus-gate > div { padding: 24px 20px; box-shadow: inset 0 0 0 3px #385064, 6px 6px #080c13; }
+  .focus-gate > div { padding: 24px 20px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), var(--el-2); }
   .focus-gate-actions .primary-button,
   .focus-gate-actions .secondary-button { width: 100%; justify-content: center; }
 }

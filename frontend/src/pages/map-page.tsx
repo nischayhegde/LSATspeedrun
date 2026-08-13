@@ -35,7 +35,9 @@ export function ProgressionMapPage() {
       <EmpireWorldMap
         game={game}
         focusRival={searchParams.get('rival')}
-        onManage={(tab) => navigate(`/firm?tab=${tab}`)}
+        focusConnection={searchParams.get('connection')}
+        focusDistrict={searchParams.get('district')}
+        onManage={(tab, district) => navigate(`/firm?tab=${tab}${district ? `&district=${district}` : ''}`)}
         empireValueLabel={formatMoney(game.firm_valuation, true)}
         demo={deckDemo}
         finalDemo={deckDemo}

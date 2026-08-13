@@ -510,6 +510,8 @@ export class TrafficSim {
    * so vehicles drove outside the alley and through the vans at its docks.
    */
   private readonly lane: Float32Array
+  /** Half the width of the widest body this sim drives. See `sweptClearance`. */
+  private readonly bodyHalf: number
   private readonly facing: 'x' | 'z'
   private readonly fade: number
   private readonly lift: number
@@ -603,6 +605,7 @@ export class TrafficSim {
       if (half > bodyHalf) bodyHalf = half
     }
     if (bodyHalf <= 0) bodyHalf = DEFAULT_BODY_HALF
+    this.bodyHalf = bodyHalf
 
     this.lane = new Float32Array(Math.max(1, this.graph.edges.length))
     for (const edge of this.graph.edges) {
@@ -871,6 +874,67 @@ export class TrafficSim {
       if (time < soonest) soonest = time
     }
     return soonest
+  }
+
+  /**
+   * How much room a body standing at this point has before the traffic reaches
+   * it: distance to the nearest lane centre, less half a vehicle. Negative
+   * means anything standing there is inside the path the vehicles take.
+   *
+   * The lane centre, not the carriageway, because the two are not the same
+   * thing and the difference is the whole point. Where a two-way street is too
+   * narrow to hold two bodies abreast, the solver above deliberately keeps the
+   * flows apart at the cost of letting them overhang the kerb — a head-on being
+   * the worse defect — so a kerb can be correctly outside the carriageway and
+   * still inside the traffic. Only this class knows that, which is why the
+   * question is answered here rather than from the graph by the caller.
+   *
+   * Build-time only. It is a linear scan of one kind's edges.
+   */
+  sweptClearance(x: number, z: number) {
+    return this.sweptEscape(x, z).clearance
+  }
+
+  /**
+   * The same measurement, with the direction out.
+   *
+   * Which way is out matters because the obvious step — back the way the
+   * pedestrian came — only helps when the lane in question is the one being
+   * crossed. A pavement end at a junction mouth is typically inside the lane of
+   * the *other* street, and backing along the crossing keeps the walker in it
+   * for the whole retreat. `awayX`/`awayZ` is the unit vector from the nearest
+   * lane centre towards this point, which is the shortest way out of it.
+   */
+  sweptEscape(x: number, z: number) {
+    const edges = this.graph.edgesByKind[this.kind] ?? []
+    let nearest = Number.POSITIVE_INFINITY
+    let awayX = 0
+    let awayZ = 0
+    for (let index = 0; index < edges.length; index += 1) {
+      const edge = this.graph.edges[edges[index]]
+      const from = this.graph.nodes[edge.from]
+      const lane = this.lane[edge.index]
+      // The same placement `advance` uses, so this measures where the vehicles
+      // are rather than where the road is.
+      const ax = from.x - edge.dz * lane
+      const az = from.z + edge.dx * lane
+      const along = THREE.MathUtils.clamp((x - ax) * edge.dx + (z - az) * edge.dz, 0, edge.length)
+      const offX = x - (ax + edge.dx * along)
+      const offZ = z - (az + edge.dz * along)
+      const gap = Math.hypot(offX, offZ)
+      if (gap >= nearest) continue
+      nearest = gap
+      if (gap > 1e-4) {
+        awayX = offX / gap
+        awayZ = offZ / gap
+      } else {
+        // Standing on the lane centre itself: any way out is as good, so take
+        // the one across it rather than leaving the caller without a direction.
+        awayX = -edge.dz
+        awayZ = edge.dx
+      }
+    }
+    return { clearance: nearest - this.bodyHalf, awayX, awayZ }
   }
 
   private despawn(agent: TrafficAgent, index: number) {
@@ -2598,6 +2662,25 @@ const CROSS_SLACK = .45
 /** Longest link accepted between the two kerbs of a street with no traffic on it. */
 const SAME_STREET_RANGE = 3.2
 
+/**
+ * Room a walker wants between its own shoulder and a passing vehicle while it
+ * stands at a kerb waiting for a gap.
+ *
+ * Small, because this buys a step back rather than a retreat: the walker should
+ * still read as somebody standing at the roadside about to cross, and it has to
+ * stay on the pavement it arrived on.
+ */
+const KERB_STANDOFF_MARGIN = .06
+/**
+ * How far back from the kerb that step may go.
+ *
+ * Capped because the standoff is taken blind along the link, away from the road
+ * being crossed, and the further it reaches the likelier it is to arrive
+ * somewhere worse than the kerb — the back of the pavement, a wall, the next
+ * carriageway. Sized to cover a body overhanging a lane by its own radius,
+ * which is the worst case the audit found, and no more.
+ */
+const KERB_STANDOFF_MAX = .45
 /** Minimum look-both-ways pause at a kerb, before traffic is even considered. */
 const KERB_LOOK = .35
 /**
@@ -2621,6 +2704,22 @@ const CROSS_ARRIVED = .1
  * from the pavement, and on a busy junction that quietly empties the district.
  */
 const KERB_PATIENCE = 11
+
+/*
+ * The pace band, as a multiple of a walker's own natural walking speed.
+ *
+ * One is the rate the walk clip was authored at, so the whole band is "how much
+ * quicker or slower than an unhurried walk", and it means the same thing at
+ * every render scale. See the derivation where a walker is constructed: these
+ * are the world-unit `.44` and `.72` divided by the `.7837` a body's natural
+ * speed measured at the scale that band was tuned against, so the crowd is
+ * unchanged at `.278` and correct at any other size.
+ *
+ * The ceiling matters when changing these: `setGroundSpeed` clamps the clip rate
+ * to `2.2`, and a walker asked for more than that outruns its own legs.
+ */
+const PACE_MIN = .5615
+const PACE_SPAN = .9187
 
 /** An obstacle in one footway's own coordinates: along, across, and its size. */
 type WayObstacle = { s: number; d: number; radius: number }
@@ -2653,6 +2752,14 @@ type Crossing = {
    * of standing at a kerb it is not actually at.
    */
   kerbside: boolean
+  /**
+   * Where a walker waiting for a gap should stand, and how far that is from the
+   * kerb. Zero, and the kerb itself, where the kerb is already clear of the
+   * traffic, which is most of them. See `resolveStandoffs`.
+   */
+  waitBack: number
+  waitX: number
+  waitZ: number
 }
 
 type Footway = {
@@ -3126,6 +3233,10 @@ export class Crowd {
   private stitched = 0
   /** How many candidate links were refused for running through something solid. */
   private solidRefusals = 0
+  /** How many kerbs turned out to be in the traffic. See `resolveStandoffs`. */
+  private standoffs = 0
+  /** The deepest of them, as a signed clearance. Negative is a body in a lane. */
+  private standoffWorst = 0
   /** Scratch for `sample`: written by every call, read immediately. */
   private sampleX = 0
   private sampleZ = 0
@@ -3241,7 +3352,7 @@ export class Crowd {
           const others = corner.ends.filter((other) => (other >> 1) !== (code >> 1))
           if (!others.length) continue
           this.crossingsByEnd[code].push(this.crossings.length)
-          this.crossings.push({ toEnds: others, fromX: corner.x, fromZ: corner.z, toX: corner.x, toZ: corner.z, length: 0, kerbside: true })
+          this.crossings.push({ toEnds: others, fromX: corner.x, fromZ: corner.z, toX: corner.x, toZ: corner.z, length: 0, kerbside: true, waitBack: 0, waitX: corner.x, waitZ: corner.z })
           this.conflicts.push([])
         }
       }
@@ -3318,10 +3429,10 @@ export class Crowd {
               const conflicts = this.resolveConflicts(graph, corners[a], corners[b], gap)
               const kerbside = verdict === 'kerbside' && !conflicts.length
               for (const code of corners[a].ends) this.crossingsByEnd[code].push(this.crossings.length)
-              this.crossings.push({ toEnds: corners[b].ends, fromX: corners[a].x, fromZ: corners[a].z, toX: corners[b].x, toZ: corners[b].z, length: gap, kerbside })
+              this.crossings.push({ toEnds: corners[b].ends, fromX: corners[a].x, fromZ: corners[a].z, toX: corners[b].x, toZ: corners[b].z, length: gap, kerbside, waitBack: 0, waitX: corners[a].x, waitZ: corners[a].z })
               this.conflicts.push(conflicts)
               for (const code of corners[b].ends) this.crossingsByEnd[code].push(this.crossings.length)
-              this.crossings.push({ toEnds: corners[a].ends, fromX: corners[b].x, fromZ: corners[b].z, toX: corners[a].x, toZ: corners[a].z, length: gap, kerbside })
+              this.crossings.push({ toEnds: corners[a].ends, fromX: corners[b].x, fromZ: corners[b].z, toX: corners[a].x, toZ: corners[a].z, length: gap, kerbside, waitBack: 0, waitX: corners[b].x, waitZ: corners[b].z })
               // The same points from the other side: the same carriageways at
               // the same places, measured from the other end of the link.
               this.conflicts.push(conflicts.map((conflict) => ({ ...conflict, at: 1 - conflict.at })))
@@ -3330,6 +3441,7 @@ export class Crowd {
         }
       }
       this.stitch(corners, graph, solids)
+      this.resolveStandoffs(solids)
     }
 
     /**
@@ -3375,6 +3487,42 @@ export class Crowd {
         state: 'walk',
         reduced: this.reduced,
       })
+      /*
+       * Pace as a multiple of this body's own walking speed, not as a number of
+       * world units.
+       *
+       * `HumanoidActor.setGroundSpeed` time-scales the walk clip by
+       * `speed / naturalWalkSpeed` so that one stride covers exactly one step,
+       * and `naturalWalkSpeed` is `strideLength * hipHeight * worldScale /
+       * duration` — proportional to how big the body is drawn. A pace in world
+       * units therefore means something different at every render scale, and
+       * halving `CROWD_RENDER_SCALE` proved it: the same `.44 + hash * .72`
+       * band went from a median of 1.01 times the authored clip rate to 1.83,
+       * with four of the Old Quarter's eleven animating walkers past the `2.2`
+       * ceiling in `setGroundSpeed` — and past that ceiling the clip is as fast
+       * as it is allowed to go while the body keeps outrunning it, which is
+       * foot sliding by construction. `.maps/pace.json` is both arms.
+       *
+       * The band below is the old one converted rather than retuned: a walker
+       * measures `naturalWalkSpeed / worldScale` at 2.819 to four figures
+       * across every build and both regions, so at the `.278` this shipped at
+       * the old band worked out as `.44/.7837` to `1.16/.7837` of the authored
+       * rate. Preserving that keeps the crowd that shipped for months looking
+       * exactly as it did, at any scale, and leaves *how fast a person ought to
+       * walk* as a separate question with its own evidence — see
+       * `.map-crossing-notes.md`, which records this crowd as ambling at .51
+       * body-heights a second where a person manages .82.
+       *
+       * Falls back to the old world-unit band if the rig cannot report a
+       * natural speed, so a crowd whose clip library failed to load still
+       * walks rather than standing still.
+       */
+      const stroll = PACE_MIN + hashUnit(seed * 2.17) * PACE_SPAN
+      const natural = humanoid.naturalWalkSpeed
+      // Not multiplied by `height` again: `naturalWalkSpeed` reads the world
+      // scale off the root this constructor has just scaled, so the per-walker
+      // height variation is already in it. Doing both would square it.
+      const cruise = natural > 0 ? natural * stroll : (.44 + hashUnit(seed * 2.17) * .72) * height
       this.walkers.push({
         root: entry.root,
         rig: entry.rig,
@@ -3388,12 +3536,12 @@ export class Crowd {
         lateral: 0,
         targetLateral: 0,
         // Pace is drawn per walker from its own seed and spans a genuinely
-        // wide range: a pavement where everyone moves at .8 reads as a
+        // wide range: a pavement where everyone moves at one speed reads as a
         // conveyor no matter how good the gait is. The clip rate is driven
         // from measured ground speed further down, so a slow walker really
         // does take slower steps rather than sliding.
-        speed: (.44 + hashUnit(seed * 2.17) * .72) * height,
-        cruise: (.44 + hashUnit(seed * 2.17) * .72) * height,
+        speed: cruise,
+        cruise,
         errand: 'walk',
         errandTimer: 2 + hashUnit(seed * 5.09) * 9,
         pace: 1,
@@ -3506,6 +3654,77 @@ export class Crowd {
   }
 
   /**
+   * Step the waiting body back out of the traffic.
+   *
+   * A walker holding at a kerb stands on the crossing's own first endpoint,
+   * which is a pavement end. The crossing rules then decide when it may go, and
+   * they are good at it — but they say nothing about where it waits, because
+   * the kerb was assumed to be a safe place to stand. On this map it is not
+   * always: `TrafficSim.sweptClearance` measures the kerbs of The Circuit as
+   * .24 inside the path of its own cars, so a walker correctly refusing to
+   * cross gets driven into while it refuses. That is the district's one
+   * remaining collision, and it is a car hitting somebody who is standing
+   * still.
+   *
+   * The step is taken along the link, directly away from the road being
+   * crossed, which is where a pedestrian would take it, and only far enough to
+   * get the body out of the lane. Refused where it would put the walker
+   * somewhere worse — inside a building, or into a second carriageway behind —
+   * on the grounds that the kerb is at least a place a pedestrian belongs.
+   *
+   * Only links that are waited at: a corner turn and a kerbside step are walked
+   * straight through and never stood on.
+   */
+  private resolveStandoffs(solids: SolidFootprint[]) {
+    if (!this.traffic.length) return
+    const escapeAt = (x: number, z: number) => {
+      let best = { clearance: Number.POSITIVE_INFINITY, awayX: 0, awayZ: 0 }
+      for (const sim of this.traffic) {
+        const found = sim.sweptEscape(x, z)
+        if (found.clearance < best.clearance) best = found
+      }
+      return best
+    }
+    const wanted = WALKER_SHOULDER + KERB_STANDOFF_MARGIN
+    for (const link of this.crossings) {
+      if (link.kerbside || link.length < .25) continue
+      const here = escapeAt(link.fromX, link.fromZ)
+      if (here.clearance >= wanted) continue
+      const reach = Math.min(wanted - here.clearance, KERB_STANDOFF_MAX)
+      // Two ways off a kerb: back down the pavement the walker came in on, and
+      // straight out of the lane it is standing in. The first is what a
+      // pedestrian would do and keeps the wait on the crossing's own line, so
+      // it is tried first; the second is the one that works at a junction
+      // mouth, where the offending lane belongs to the other street and backing
+      // along the link stays in it for the whole retreat.
+      const candidates = [
+        { x: link.fromX + (link.fromX - link.toX) / link.length * reach, z: link.fromZ + (link.fromZ - link.toZ) / link.length * reach },
+        { x: link.fromX + here.awayX * reach, z: link.fromZ + here.awayZ * reach },
+      ]
+      let chosen: { x: number; z: number; clearance: number } | null = null
+      for (const candidate of candidates) {
+        // Stepping back into a building is worse than standing in the road: a
+        // body in a wall is visible from anywhere, and a body in a lane is only
+        // a defect when a vehicle comes.
+        if (linkThroughSolid(solids, link.fromX, link.fromZ, candidate.x, candidate.z)) continue
+        const after = escapeAt(candidate.x, candidate.z).clearance
+        if (after <= here.clearance) continue
+        if (chosen && after <= chosen.clearance) continue
+        chosen = { x: candidate.x, z: candidate.z, clearance: after }
+        // Good enough is good enough: a step that gets the body out of the
+        // traffic has nothing to gain from being compared with another.
+        if (after >= wanted) break
+      }
+      if (!chosen) continue
+      link.waitX = chosen.x
+      link.waitZ = chosen.z
+      link.waitBack = Math.hypot(chosen.x - link.fromX, chosen.z - link.fromZ)
+      this.standoffs += 1
+      if (here.clearance < this.standoffWorst) this.standoffWorst = here.clearance
+    }
+  }
+
+  /**
    * Join up whatever the crossing rules left stranded.
    *
    * The rules above are deliberately strict, and strictness costs reach: a
@@ -3584,10 +3803,10 @@ export class Crowd {
       const kerbside = !conflicts.length
       this.stitched += 1
       for (const code of a.ends) this.crossingsByEnd[code].push(this.crossings.length)
-      this.crossings.push({ toEnds: b.ends, fromX: a.x, fromZ: a.z, toX: b.x, toZ: b.z, length: bestGap, kerbside })
+      this.crossings.push({ toEnds: b.ends, fromX: a.x, fromZ: a.z, toX: b.x, toZ: b.z, length: bestGap, kerbside, waitBack: 0, waitX: a.x, waitZ: a.z })
       this.conflicts.push(conflicts)
       for (const code of b.ends) this.crossingsByEnd[code].push(this.crossings.length)
-      this.crossings.push({ toEnds: a.ends, fromX: b.x, fromZ: b.z, toX: a.x, toZ: a.z, length: bestGap, kerbside })
+      this.crossings.push({ toEnds: a.ends, fromX: b.x, fromZ: b.z, toX: a.x, toZ: a.z, length: bestGap, kerbside, waitBack: 0, waitX: b.x, waitZ: b.z })
       this.conflicts.push(conflicts.map((conflict) => ({ ...conflict, at: 1 - conflict.at })))
       union(a.ends[0] >> 1, b.ends[0] >> 1)
     }
@@ -3782,6 +4001,10 @@ export class Crowd {
       stitched: this.stitched,
       /** Links refused for passing through a solid footprint. See `linkThroughSolid`. */
       solidRefusals: this.solidRefusals,
+      /** Kerbs found inside the traffic, whose wait was moved. See `resolveStandoffs`. */
+      standoffs: this.standoffs,
+      /** The worst of those, as a clearance: negative is a body inside a lane. */
+      standoffWorst: +this.standoffWorst.toFixed(3),
       components: sizes.size,
       componentSizes: [...sizes.values()].sort((a, b) => b - a).slice(0, 10),
       largestComponentWays: largest ? sizes.get(largest[0]) ?? 0 : 0,
@@ -3806,10 +4029,14 @@ export class Crowd {
     if (!conflicts || !conflicts.length || !this.traffic.length) return true
     const length = Math.max(.4, this.crossings[link].length)
     const pace = Math.max(.25, walker.cruise * 1.12)
+    // A walker held back from the kerb has that step to walk before the
+    // crossing proper begins, and a gap judged from the kerb it is not standing
+    // at is a gap it does not have. See `resolveStandoffs`.
+    const start = this.crossings[link].waitBack
     for (let index = 0; index < conflicts.length; index += 1) {
       const conflict = conflicts[index]
       // When this body would be past the far side of that lane.
-      const needed = (conflict.at * length + LANE_CLEARANCE) / pace + CROSS_MARGIN
+      const needed = (start + conflict.at * length + LANE_CLEARANCE) / pace + CROSS_MARGIN
       if (this.timeToConflict(conflict, needed) < needed) return false
     }
     return true
@@ -4113,12 +4340,20 @@ export class Crowd {
           walker.crossProgress += (walker.speed * step) / Math.max(.4, link.length)
           this.claimRoadway(walker, walker.crossing)
         }
-        const t = THREE.MathUtils.clamp(walker.crossProgress, 0, 1)
-        scratchTarget.set(
-          link.fromX + (link.toX - link.fromX) * t,
-          this.lift,
-          link.fromZ + (link.toZ - link.fromZ) * t,
-        )
+        // Where the kerb is inside the traffic, the wait happens off the line,
+        // at a place chosen for being out of it. Only the wait moves: the
+        // crossing itself still starts at the kerb, and stepping off begins by
+        // walking that step back in. See `resolveStandoffs`.
+        if (walker.crossPhase === 'wait' && link.waitBack > 0) {
+          scratchTarget.set(link.waitX, this.lift, link.waitZ)
+        } else {
+          const t = THREE.MathUtils.clamp(walker.crossProgress, 0, 1)
+          scratchTarget.set(
+            link.fromX + (link.toX - link.fromX) * t,
+            this.lift,
+            link.fromZ + (link.toZ - link.fromZ) * t,
+          )
+        }
         walker.root.position.lerp(scratchTarget, 1 - Math.exp(-11 * step))
         // Facing the far kerb while crossing; while waiting, the head turns to
         // look up and down the road it is about to step into.

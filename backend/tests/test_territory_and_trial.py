@@ -8,8 +8,10 @@ from app import create_app
 from app.extensions import db
 from app.game import (
     ASSET_BY_KEY,
+    ASSETS,
     DISTRICTS,
     DISTRICT_BY_KEY,
+    DISTRICT_CONNECTION_GATE,
     DISTRICT_KEYS_BY_REGION,
     FIRM_TIERS,
     TERRITORY_REGIONS,
@@ -22,6 +24,7 @@ from app.game import (
     _apportion_exactly,
     _career_floor,
     _case_target_for_tier,
+    _district_locks,
     _relieved_daily_rent,
     _territory_totals,
     secure_district,
@@ -29,7 +32,7 @@ from app.game import (
     settle_upkeep,
     territory_state,
 )
-from app.models import PlayerProfile, PlayerTerritory, User, utcnow
+from app.models import PlayerAsset, PlayerProfile, PlayerTerritory, User, utcnow
 from scripts.simulate_economy_curve import Player, cash_per_played_case, total_campaign
 from app.trial import (
     MAX_SUSTAINABLE_WEEKLY_CASES,
@@ -73,6 +76,26 @@ def make_profile(*, tier: int = 0, reputation: float = 0, cash: int = 0) -> Play
     db.session.add(profile)
     db.session.commit()
     return profile
+
+
+def grant_every_connection(profile: PlayerProfile) -> None:
+    """Districts are gated on the connection that introduces them.
+
+    The tests below buy the whole board to check the standing cap and the rent
+    floor, which are properties of the board rather than of its gates, so they
+    hold the network outright instead of restating the gate at every district.
+    """
+    for item in ASSETS:
+        if item["type"] == "connection":
+            db.session.add(
+                PlayerAsset(
+                    profile_id=profile.id,
+                    asset_key=item["key"],
+                    asset_type=item["type"],
+                    purchase_price=0,
+                )
+            )
+    db.session.commit()
 
 
 # --- Mechanic 1: standing retainers ----------------------------------------
@@ -250,6 +273,7 @@ def test_insufficient_cash_leaves_the_board_untouched(app):
 
 def test_sweeping_a_region_pays_a_bonus_and_the_total_is_capped(app):
     profile = make_profile(tier=14, reputation=100, cash=10**14)
+    grant_every_connection(profile)
     city_keys = DISTRICT_KEYS_BY_REGION["city"]
     for index, key in enumerate(city_keys):
         result = secure_district(profile, key)
@@ -264,6 +288,46 @@ def test_sweeping_a_region_pays_a_bonus_and_the_total_is_capped(app):
     every = {item["key"] for item in DISTRICTS}
     assert _territory_totals(every)["standing"] == pytest.approx(TERRITORY_STANDING_CAP, abs=0.05)
     assert _territory_totals(every)["relief_bps"] == 10_000
+
+
+def test_every_connection_opens_a_district_and_a_district_waits_for_its_connection(app):
+    """Connections are the gate on the retainer board.
+
+    Before this they were the only asset class whose whole stated benefit was an
+    unlock, and the unlock was worth nothing: the client catalog is deliberately
+    equalised for expected value, so opening more clients cannot pay. Two
+    properties keep the replacement honest -- no connection gates nothing, and
+    the gate actually bites.
+    """
+    gated = set(DISTRICT_CONNECTION_GATE.values())
+    connections = [item["key"] for item in ASSETS if item["type"] == "connection"]
+    assert gated == set(connections), "every connection must open at least one district"
+
+    # The two tier-0 districts stay open, so a new player's first retainer and
+    # the onboarding path are untouched.
+    assert {item["key"] for item in DISTRICTS} - set(DISTRICT_CONNECTION_GATE) == {
+        "chancery_row",
+        "coopers_market",
+    }
+
+    district = DISTRICT_BY_KEY["quarter_courthouse"]
+    connection_key = DISTRICT_CONNECTION_GATE[district["key"]]
+    profile = make_profile(tier=14, reputation=100, cash=10**12)
+    assert any("network" in lock or "bar" in lock for lock in _district_locks(profile, district))
+    with pytest.raises(ValueError, match="district_locked"):
+        secure_district(profile, district["key"])
+
+    db.session.add(
+        PlayerAsset(
+            profile_id=profile.id,
+            asset_key=connection_key,
+            asset_type="connection",
+            purchase_price=0,
+        )
+    )
+    db.session.commit()
+    assert _district_locks(profile, district) == []
+    assert secure_district(profile, district["key"])["district"] == district["key"]
 
 
 def test_standing_lifts_the_reputation_floor_but_not_past_the_last_gates():
@@ -283,8 +347,48 @@ def test_standing_lifts_the_reputation_floor_but_not_past_the_last_gates():
     assert _career_floor(50, 30, 0) > 91
 
 
+def test_a_streak_buys_reputation_standing_but_only_at_the_rate_days_allow():
+    """The anti-farm argument, pinned.
+
+    Cases are minted on demand from Practice, so the ladder alone would be
+    farmable in one sitting. The day count is the real gate: it cannot be minted,
+    and since the working-day streak now needs a finished case, it cannot be
+    idled either.
+    """
+    from app.game import STREAK_STANDING_CAP, STREAK_STANDING_LADDER, streak_standing
+
+    class Fake:
+        def __init__(self, wins, days):
+            self.current_streak, self.daily_streak_current = wins, days
+
+    # A single marathon session cannot buy more than one day's worth, however
+    # many cases it answers -- this is the whole anti-farm claim.
+    assert streak_standing(Fake(500, 1)) == 1.0
+    assert streak_standing(Fake(3, 1)) == 1.0
+    assert streak_standing(Fake(2, 9)) == 0.0
+
+    # And a long habit cannot buy standing without the casework to back it.
+    assert streak_standing(Fake(0, 99)) == 0.0
+
+    # The ladder diminishes: later rungs cost more wins per point.
+    steps = [wins for wins, _ in STREAK_STANDING_LADDER]
+    gaps = [b - a for a, b in zip(steps, steps[1:])]
+    assert gaps == sorted(gaps) and gaps[0] < gaps[-1]
+    assert streak_standing(Fake(999, 99)) == STREAK_STANDING_CAP
+
+    # It composes with district standing by addition under ONE shared ceiling,
+    # so the two mechanics cannot stack their way past the last content gates.
+    cap = TERRITORY_STANDING_CAP
+    assert _career_floor(30, 20, cap + STREAK_STANDING_CAP) == TERRITORY_STANDING_FLOOR_CEILING
+    assert TERRITORY_STANDING_FLOOR_CEILING < 91
+
+    # It is a floor and never a credit: it cannot push a good reputation up.
+    assert _career_floor(60, 40, STREAK_STANDING_CAP) == _career_floor(60, 40, 0)
+
+
 def test_holding_districts_reduces_the_office_lease(app):
     profile = make_profile(tier=4, reputation=100, cash=10**12)
+    grant_every_connection(profile)
     list_rent = int(FIRM_TIERS[4]["rent_daily"])
     assert _relieved_daily_rent(profile) == list_rent
 
@@ -308,6 +412,7 @@ def test_a_fully_retained_map_stops_the_lease_without_breaking_settlement(app):
     arrears cap, the accrual, and the payment path are all derived from the
     daily figure."""
     profile = make_profile(tier=14, reputation=100, cash=10**15)
+    grant_every_connection(profile)
     for item in DISTRICTS:
         secure_district(profile, item["key"])
 

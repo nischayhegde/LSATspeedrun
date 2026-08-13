@@ -3,15 +3,116 @@
    AI-painted raster art system, and the animation engine.
    ============================================================ */
 
-/* The faces and `--muted` moved to the `:root` block in `styles.css`, which is
-   the base token layer and the sheet every entry imports. They were declared
-   in both places with different values and only won here by load order. */
+/* ------------------------------------------------------------------
+   The illustrated register, named.
+
+   This sheet is loaded on every route, after `styles.css`, so it is the
+   last word on what a token means. The values below are not new colours:
+   each one is the value some current surface already uses, promoted to a
+   name so the next surface does not invent a fourteenth near-identical
+   brass. `docs/visual-language.md` is the written rule set; this is the
+   machine-readable half of it.
+
+   Where a value came from, because a token nobody can trace gets ignored:
+
+   - `--ink` is `0x1b1a24`, the contour colour `IllustratedStyleOptions`
+     draws every 3D silhouette and crease in. The interface outlines
+     itself in the same ink the scenes are drawn in, which is the whole
+     point of having one; the twelve cold near-blacks scattered through
+     the sheets (#080c13, #171923, #10151e, #141721 …) are older hands.
+   - `--parchment` is `0xded1ad`, the paper the office scene's own desk
+     documents are made of.
+   - The brass ramp is the plate `art.css` already draws for the office
+     floor selector, the map's site marks and the judge's gavel:
+     `linear-gradient(170deg, #f2d791, #c89b4b)` inside a `#f0dcae`
+     hairline. `--brass` is the shadow end, `--brass-lit` the light end.
+   - `--verdigris` is `0x7bc8bd`, the office's own emissive glow, and the
+     nearest single value to the ~99 distinct mints in the sheets.
+   - `--panel` / `--hairline` are the existing `--av-panel` /
+     `--av-panel-line`, which the newest surfaces already use.
+
+   The `--av-*` names are kept as aliases: five files reference them and
+   renaming those is churn, not design.
+   ------------------------------------------------------------------ */
 :root {
-  --av-brass: #c89b4b;
-  --av-brass-bright: #e8c87c;
-  --av-night: #0e1521;
-  --av-panel: rgba(13, 20, 32, 0.88);
-  --av-panel-line: rgba(232, 200, 124, 0.32);
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  /* The HUD face: small caps-tracked labels, control text, figures. It is a
+     grotesque, not a pixel font — `--font-pixel` is the name ~150 call sites
+     were written against before the illustrated direction landed, and it is
+     kept pointing here so those sites are correct rather than renamed. */
+  --font-hud: "Archivo", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-pixel: var(--font-hud);
+  /* Body copy. `--font-body` and `--font-ui` are read 21 times across eight
+     sheets — the map HUD alone accounts for ten — and were defined nowhere, so
+     every one of those declarations was resolving to whatever the element
+     happened to inherit. That is Inter today at all 21, checked in the browser
+     on /map, /story, /office and /progress, so naming them changes nothing now
+     and stops a `font-family` on any ancestor silently changing all 21 later. */
+  --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-ui: var(--font-body);
+  --muted: #5c635c;
+
+  --ink: #1b1a24;
+  /* Outlines, not text. A drawn contour over a lit surface is never the flat
+     ink it is drawn with, so the border alpha is part of the token. */
+  --ink-line: rgba(27, 26, 36, .55);
+  --ink-line-strong: rgba(27, 26, 36, .82);
+
+  --parchment: #ded1ad;
+  --brass: #c89b4b;
+  --brass-lit: #f2d791;
+  --brass-bright: #e8c87c;
+  --brass-deep: #9a6c28;
+  --brass-plate: linear-gradient(170deg, #f2d791, #c89b4b);
+  --verdigris: #7bc8bd;
+  --verdigris-deep: #2f6f66;
+
+  --night: #0e1521;
+  --panel: rgba(13, 20, 32, .88);
+  --panel-lit: rgba(23, 37, 55, .92);
+  --hairline: rgba(232, 200, 124, .32);
+  --hairline-strong: rgba(232, 200, 124, .55);
+
+  /* Three radii and nothing between them. A card, a control, a chip. */
+  --r-card: 16px;
+  --r-control: 10px;
+  --r-chip: 999px;
+
+  --av-brass: var(--brass);
+  --av-brass-bright: var(--brass-bright);
+  --av-night: var(--night);
+  --av-panel: var(--panel);
+  --av-panel-line: var(--hairline);
+
+  /* ----------------------------------------------------------------
+     The `--pixel-*` names, repointed rather than renamed.
+
+     `styles.css` defines these for the Pixel Empire pass and 62 rules
+     across nine sheets still read them, most of them in surfaces that
+     are otherwise fine — the war room, the wardrobe, the rival capture
+     cutscene, the map HUD. Renaming those call sites is 62 edits in
+     files three other branches are working in; repointing the names is
+     one edit here, and every one of those surfaces moves onto the
+     illustrated palette at once.
+
+     Chosen so the shift is a correction rather than a redesign:
+     `#171923` and `#090d15` are cold near-blacks and become the warm
+     ink; `#f2c75b` is the thirteenth brass and becomes the one brass;
+     `#65c9c2` is one of ~99 mints and becomes the one mint. The paper,
+     green and red are left where they are — the first is already on the
+     parchment ramp, and the other two carry meaning (bought, blocked)
+     that a palette change should not quietly re-tune.
+
+     `--pixel-shadow` keeps an alpha because it is used as the colour of
+     hard offset shadows: flat ink at full strength is what made those
+     read as printed-on rather than cast. */
+  --pixel-ink: var(--ink);
+  --pixel-shadow: rgba(27, 26, 36, .8);
+  --pixel-night: var(--night);
+  --pixel-gold: var(--brass-bright);
+  --pixel-gold-dark: var(--brass-deep);
+  --pixel-cyan: var(--verdigris);
+  --pixel-border: 1px solid var(--ink-line-strong);
 }
 
 /* Tracking is set for all three heading levels in `styles.css`; it was
@@ -75,10 +176,27 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 
 /* ---------------------------------------------------- study scenery */
 
-.pixel-study-scenery { display: block; overflow: visible; image-rendering: pixelated; pointer-events: none; filter: drop-shadow(0 14px 12px rgba(5,10,16,.24)); }
-.pixel-study-scenery .ps-shadow { fill: rgba(4,8,13,.22); }.pixel-study-scenery .ps-ink { fill: #152430; }.pixel-study-scenery .ps-ink-light { fill: #5d6c6e; }.pixel-study-scenery .ps-panel { fill: #263d48; }.pixel-study-scenery .ps-gold { fill: #e3bd61; }.pixel-study-scenery .ps-mint { fill: #72cdb9; }.pixel-study-scenery .ps-cream { fill: #f4e7c3; }.pixel-study-scenery .ps-paper { fill: #eddbab; }.pixel-study-scenery .ps-red { fill: #b34f45; }.pixel-study-scenery .ps-sky { fill: #42667a; }.pixel-study-scenery .ps-city { fill: #203644; }.pixel-study-scenery .ps-cover { fill: #355267; }
-.pixel-study-scenery .ps-orbit { fill: none; stroke: rgba(118,210,191,.44); stroke-width: 4; }.pixel-study-scenery .ps-orbit-two { stroke: rgba(231,196,104,.32); stroke-dasharray: 9 7; animation: ps-orbit-spin 17s linear infinite; transform-origin: 164px 98px; }.pixel-study-scenery .ps-signal { fill: #f2d27b; animation: ps-signal 1.8s steps(2,end) infinite; }.pixel-study-scenery .ps-signal-two { animation-delay: -.8s; }.pixel-study-scenery .ps-lamp-glow { fill: rgba(248,205,105,.12); animation: ps-lamp-breathe 3.6s ease-in-out infinite; }.pixel-study-scenery .ps-steam { fill: #f2dfbd; opacity: .76; animation: ps-steam-drift 2.4s steps(4,end) infinite; }.pixel-study-scenery .ps-coin-stack { animation: ps-coin-bob 3.8s steps(3,end) infinite; }
-@keyframes ps-orbit-spin { to { rotate: 360deg; } } @keyframes ps-signal { 50% { opacity: .26; } } @keyframes ps-lamp-breathe { 50% { opacity: .48; } } @keyframes ps-steam-drift { 50% { translate: 2px -7px; opacity: .2; } } @keyframes ps-coin-bob { 50% { translate: 0 -4px; } }
+/* One rule inks the whole vignette: every solid in it is a drawn object, so it
+   gets the same warm contour the 3D scenes draw their silhouettes with, at a
+   weight that holds up when the 320-unit drawing lands at roughly 250px. The
+   sheet used to say `image-rendering: pixelated` here and the markup said
+   `shape-rendering: crispEdges`; both were there to keep a staircase looking
+   deliberate, and there is no staircase left to keep. */
+.pixel-study-scenery { display: block; overflow: visible; pointer-events: none; filter: drop-shadow(0 14px 12px rgba(5,10,16,.24)); }
+.pixel-study-scenery :where(path, rect, circle, ellipse, polygon) { stroke: rgba(24, 22, 32, .85); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
+/* Marks on a surface rather than objects with an edge: cast shadows, glows,
+   ruled lines, lit windows, the orbit rings. */
+.pixel-study-scenery .ps-flat { stroke: none; }
+.pixel-study-scenery .ps-shadow { fill: rgba(4,8,13,.22); }.pixel-study-scenery .ps-ink { fill: #152430; }.pixel-study-scenery .ps-panel { fill: #263d48; }.pixel-study-scenery .ps-gold { fill: #e3bd61; }.pixel-study-scenery .ps-mint { fill: #72cdb9; }.pixel-study-scenery .ps-cream { fill: #f4e7c3; }.pixel-study-scenery .ps-paper { fill: #eddbab; }.pixel-study-scenery .ps-red { fill: #b34f45; }.pixel-study-scenery .ps-sky { fill: #42667a; }.pixel-study-scenery .ps-city { fill: #203644; }.pixel-study-scenery .ps-cover { fill: #355267; }
+/* Ruled lines, cords, the chart traces and the steam are strokes, not fills. */
+.pixel-study-scenery .ps-ink-light { fill: none; stroke: #5d6c6e; stroke-width: 3; stroke-linecap: round; }
+.pixel-study-scenery .ps-cord { fill: none; stroke: #c9a75a; stroke-width: 2.4; }
+.pixel-study-scenery .ps-paper.ps-flat { fill: none; stroke: #eddbab; stroke-width: 4; stroke-linecap: round; }
+.pixel-study-scenery .ps-mint.ps-flat { fill: none; stroke: #72cdb9; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
+.pixel-study-scenery .ps-orbit { fill: none; stroke: rgba(118,210,191,.44); stroke-width: 4; }.pixel-study-scenery .ps-orbit-two { stroke: rgba(231,196,104,.32); stroke-dasharray: 9 7; animation: ps-orbit-spin 17s linear infinite; transform-origin: 164px 98px; }.pixel-study-scenery .ps-signal { fill: #f2d27b; animation: ps-signal 2.2s ease-in-out infinite; }.pixel-study-scenery .ps-signal-two { animation-delay: -1.1s; }.pixel-study-scenery .ps-lamp-glow { fill: rgba(248,205,105,.12); animation: ps-lamp-breathe 3.6s ease-in-out infinite; }
+/* Steam rises off a cup; it does not tick. */
+.pixel-study-scenery .ps-steam { fill: none; stroke: #f2dfbd; stroke-width: 2.6; stroke-linecap: round; opacity: .7; animation: ps-steam-drift 3.2s ease-in-out infinite; }.pixel-study-scenery .ps-coin-stack { animation: ps-coin-bob 3.8s ease-in-out infinite; }
+@keyframes ps-orbit-spin { to { rotate: 360deg; } } @keyframes ps-signal { 50% { opacity: .26; } } @keyframes ps-lamp-breathe { 50% { opacity: .48; } } @keyframes ps-steam-drift { 50% { translate: 2px -7px; opacity: .22; } } @keyframes ps-coin-bob { 50% { translate: 0 -4px; } }
 
 @keyframes av-breathe { 0%,100% { transform: translateY(0) rotate(-.08deg) scale(1); } 31% { transform: translateY(-.7px) rotate(.02deg) scale(1.0015,.999); } 48% { transform: translateY(-1.8px) rotate(.11deg) scale(1.003,.997); } 57% { transform: translateY(-1.25px) rotate(.06deg) scale(1.002,.998); } 79% { transform: translateY(-.35px) rotate(-.04deg) scale(1.0005,.9995); } }
 @keyframes av-breathe-flip { 0%,100% { transform: scaleX(-1) rotate(.08deg); } 31% { transform: translateY(-.7px) scaleX(-1.0015) scaleY(.999) rotate(-.02deg); } 48% { transform: translateY(-1.8px) scaleX(-1.003) scaleY(.997) rotate(-.11deg); } 57% { transform: translateY(-1.25px) scaleX(-1.002) scaleY(.998) rotate(-.06deg); } 79% { transform: translateY(-.35px) scaleX(-1.0005) scaleY(.9995) rotate(.04deg); } }
@@ -141,18 +259,28 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 
 /* ----------------------------------------------------- scene frames */
 
-.game-viewport.av-viewport { border: 1px solid #0a111c; border-radius: 20px; background: var(--av-night); box-shadow: 0 26px 64px rgba(6, 10, 18, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05); isolation: isolate; image-rendering: auto; }
-.office-scene.av-scene { border: 1px solid #0a111c; border-radius: 20px; box-shadow: 0 26px 64px rgba(6, 10, 18, 0.45); background: var(--av-night); transform: none; image-rendering: auto; }
+/* A scene is a framed picture hung on the page, and every framed picture in
+   the app is now hung the same way: one warm ink hairline, the card radius,
+   a brass rule just inside the glass, and a real drop. What these two carried
+   instead was `#0a111c` — a cold near-black nothing else uses — at a 20px
+   radius that was neither the card's 16px nor anything else's, and a shadow
+   written out longhand. The frame is interface, not render: the pipeline
+   inside it is untouched. */
+.game-viewport.av-viewport { border: 1px solid var(--ink-line-strong); border-radius: var(--r-card); background: var(--av-night); box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .18), var(--el-3); isolation: isolate; image-rendering: auto; }
+.office-scene.av-scene { border: 1px solid var(--ink-line-strong); border-radius: var(--r-card); background: var(--av-night); box-shadow: inset 0 0 0 1px rgba(232, 200, 124, .18), var(--el-3); transform: none; image-rendering: auto; }
 
 /* character panel + office duo */
 .av-office-duo { display: flex; gap: 18px; align-items: stretch; }
 .av-office-duo .office-explorer { flex: 1; min-width: 0; }
 .av-character-panel {
   position: relative; flex: 0 0 262px; display: flex; flex-direction: column; overflow: visible; isolation: isolate;
-  border: 0; border-radius: 20px; background: transparent; box-shadow: none;
+  border: 0; border-radius: var(--r-card); background: transparent; box-shadow: none;
   animation: av-scene-reveal 0.9s ease both;
 }
-.av-character-panel::before { content: ""; position: absolute; inset: 0; z-index: 0; border: 1px solid #0a111c; border-radius: inherit; pointer-events: none; background: radial-gradient(115% 78% at 50% 8%,#d7c29c,#786759 51%,#1b2833 100%); box-shadow: 0 26px 64px rgba(6,10,18,.45),inset 0 0 0 1px rgba(255,255,255,.3); }
+/* Third frame in the same row as the two above, so it is hung the same way.
+   Its inner rule stays white rather than brass: the gradient behind it runs to
+   parchment at the top, and a warm line on warm paper disappears. */
+.av-character-panel::before { content: ""; position: absolute; inset: 0; z-index: 0; border: 1px solid var(--ink-line-strong); border-radius: inherit; pointer-events: none; background: radial-gradient(115% 78% at 50% 8%,#d7c29c,#786759 51%,#1b2833 100%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), var(--el-3); }
 .av-character-panel::after { content: ""; position: absolute; inset: 1px; z-index: 1; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg,rgba(255,240,205,.07),transparent 36%,rgba(5,10,16,.24)),radial-gradient(120% 105% at 50% 35%,transparent 61%,rgba(4,9,14,.2) 100%); }
 .av-hero-stage { position: relative; z-index: 2; flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; padding: 12px 10px 0; overflow: visible; }
 /* The former inset lighting rectangle created a visible box behind the
@@ -194,7 +322,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 .av-room.av-room-constructed { isolation: isolate; background: #111b28; }
 .av-room.av-room-constructed::before { display: none; }.av-office:hover .av-room-constructed .av-office-svg { transform: translate(calc(var(--px, 0) * -13px), calc(var(--py, 0) * -9px)) scale(1.035); }/* The office is now rendered as a real Three.js set. The old SVG selectors
    remain below only for unrelated historical scene previews. */
-.av-room.av-room-three { isolation: isolate; background: #07111a; animation: none; filter: none; transform: none; }
+.av-room.av-room-three { isolation: isolate; background: #07111a; }
 /* Grade layers over the office are plain alpha, never a blend mode.
 
    A `mix-blend-mode` layer has to read what is underneath it to composite, and
@@ -212,7 +340,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
    normal compositing the same colour *adds* light, so dropping the blend mode
    and keeping the colour would have visibly lifted the top of the room. */
 .av-room.av-room-three::before { display: block; z-index: 3; opacity: .1; background: radial-gradient(100% 82% at 52% 32%,transparent 58%,rgba(0,0,0,.335) 100%),linear-gradient(180deg,rgba(0,0,0,.013),transparent 42%,rgba(0,0,0,.057)); }
-.office-three-canvas { width: 100%; height: 100%; position: absolute; z-index: 1; inset: 0; display: block; opacity: 0; background: #111b23; transition: opacity .18s ease-out; cursor: grab; touch-action: none; image-rendering: auto; filter: none; }
+.office-three-canvas { width: 100%; height: 100%; position: absolute; z-index: 1; inset: 0; display: block; opacity: 0; background: #111b23; transition: opacity .18s ease-out; cursor: grab; touch-action: none; }
 .office-three-canvas.is-ready { opacity: 1; }
 .office-three-canvas.is-dragging-furniture { cursor: grabbing !important; }
 .office-three-canvas.is-looking-around { cursor: grabbing !important; }
@@ -270,7 +398,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 @keyframes av-twinkle { 50% { opacity: 0.25; } }
 
 @keyframes av-kenburns { from { transform: scale(1.0) translateX(0); } to { transform: scale(1.09) translate(-1.4%, -1%); } }
-@keyframes av-scene-reveal { from { opacity: 0; } }
+@keyframes av-scene-reveal { from { opacity: 0; transform: scale(1.03); filter: saturate(0.6) brightness(0.7); } }
 @keyframes av-pop-in { from { opacity: 0; transform: translateY(14px) scale(0.86); } 70% { transform: translateY(-2px) scale(1.03); } to { opacity: 1; transform: none; } }.world-person > .av-person { animation: av-pop-in 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) backwards; animation-delay: var(--enter-delay, 0ms); transition: transform 0.25s ease; }
 @keyframes av-fade-in { from { opacity: 0; } }
 .world-person > .av-person { display: flex; position: static; left: auto; top: auto; transform: none; min-width: 0; padding: 0; border: 0; background: transparent; box-shadow: none; width: 64px; height: 118px; }
@@ -508,7 +636,13 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 .firm-staff-roster > header p { margin: 0; color: #b8b4a7; font-size: 12px; line-height: 1.55; }
 .firm-staff-roster-stage { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(122px,1fr); align-items: end; gap: 3px; padding: 8px 12px 12px; overflow-x: auto; background: linear-gradient(180deg,rgba(113,157,167,.08),transparent 44%),linear-gradient(180deg,transparent 73%,rgba(5,10,16,.58) 73%); }
 .firm-staff-roster-stage::before { content: ""; position: absolute; inset: auto 0 27% 0; height: 1px; background: linear-gradient(90deg,transparent,rgba(224,193,119,.25),transparent); }
+.firm-staff-roster > header .firm-staff-roster-hint { margin-top: 10px; color: #e5bd69; font-size: 11.5px; }
 .firm-staff-roster-stage article { position: relative; min-width: 122px; height: 218px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+/* Each figure is the control that finds its own card in the grid below, so the
+   whole person is the hit area rather than a link tucked under the nameplate. */
+.firm-staff-pick { width: 100%; height: 100%; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; border: 0; border-radius: 11px; color: inherit; background: none; font: inherit; text-align: inherit; cursor: pointer; transition: background .2s ease; }
+.firm-staff-pick:hover { background: rgba(229,195,116,.07); }
+.firm-staff-pick:focus-visible { outline: 2px solid #e5bd69; outline-offset: 2px; }
 .firm-staff-model { width: 116px; height: 176px; transition: transform .25s ease,filter .25s ease; }
 .firm-staff-roster-stage article:hover .firm-staff-model { transform: translateY(-4px); }
 .firm-staff-roster-stage article.is-available .firm-staff-model { opacity: .68; filter: saturate(.68); }
@@ -517,6 +651,9 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 .firm-staff-roster-stage article.is-available .firm-staff-nameplate small { color: #e5bd69; }
 .firm-staff-nameplate strong { display: block; margin-top: 2px; color: #f4ead4; font-size: 12px; line-height: 1.05; }
 .firm-staff-nameplate span { display: block; margin-top: 3px; overflow: hidden; color: #a9a99f; font-size: 8px; letter-spacing: .07em; text-overflow: ellipsis; white-space: nowrap; }
+/* Only on candidates: the fee is the fact that decides whether it is worth
+   walking down to the card, and a hired colleague has no price left to pay. */
+.firm-staff-nameplate em { display: block; margin-top: 4px; color: #f4d98c; font-family: var(--font-pixel); font-size: 8px; font-style: normal; letter-spacing: .06em; }
 .firm-staff-empty { min-width: 360px; align-self: center; justify-self: center; padding: 20px 24px; border: 1px dashed rgba(223,193,119,.3); border-radius: 12px; text-align: center; }
 .firm-staff-empty span { display: block; color: #74c7b8; font-family: var(--font-pixel); font-size: 9px; letter-spacing: .16em; }
 .firm-staff-empty strong { display: block; margin-top: 7px; color: #d8cfb8; font-size: 12px; font-weight: 500; }

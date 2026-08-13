@@ -116,6 +116,22 @@ The design still has limits:
 
 For a production study, add stratified randomization by calibrated difficulty, preregistered primary outcomes, minimum detectable-effect analysis, and an export suitable for independent review.
 
+## The Reading Comprehension passages have no paragraphs, so the app derives parts
+
+Two of the six RC approaches — Low-Resolution Passage Map and Paragraph Function — ask a student to say what each paragraph of a passage is doing. Every one of the 349 passages in this bank arrived from its Hugging Face snapshot as a single unbroken run of prose, with no newline, tab, doubled space or line separator anywhere, so the paragraph breaks were lost upstream and there is nothing in the data to read them from. Until this was fixed, "give each paragraph its job in three to twelve words" asked for one note covering three thousand characters, and Paragraph Function's requirement that the parts not all share a function was skipped on every question in the section, because it needs more than one part before it has anything to compare.
+
+`app/passage_structure.py` divides each passage by lexical cohesion, following Hearst's TextTiling: score every gap between sentences by how far the vocabulary on one side differs from the vocabulary on the other, and cut where that difference is locally deepest. An authored break is used where one exists, and the seam between Passage A and Passage B on the 32 comparative sets is always a cut.
+
+**These are topical parts, not the author's paragraphs, and the app says so.** The 32 comparative seams are the only boundaries in the bank that are genuinely known, so stripping the headings and asking the segmenter to find the seam blind is a held-out test against the easiest boundary there is. It lands within one sentence of the seam 26 times in 32, which a chooser given the same number of boundaries in the same admissible places matched in 1 of 300 draws; it lands on the exact sentence 11 times in 32 against 7.9 expected, which chance matched in 44 of 300. So there is good evidence about roughly where a passage turns and none that the exact sentence is better than a guess.
+
+Three consequences, all deliberate:
+
+- Every boundary is stored on the passage with the provenance `derived_cohesion_v1`, so a later reader can tell a derived boundary from an authored one without inferring it from the shape of the data.
+- The student-facing copy asks what each **part** of the passage is doing, never each paragraph. The operation the technique teaches — read for structure, name what each stretch is doing — is unchanged by the rename, and it is what makes a boundary that lands a sentence early an odd division rather than a false claim about the writing.
+- Both graders are told the boundaries are derived and instructed never to mark a student down for a division they did not choose.
+
+`scripts/derive_passage_paragraphs.py --verify` re-runs the measurement, and `--sample N` prints whole passages divided as the app divides them. The second is not a formality: reading the output is what found a division that had cut the case citation "Charrier v. Bell" in half, which no aggregate score could have shown.
+
 ## Integration with the learning loop
 
 1. Diagnostic establishes a neutral LR/RC baseline without strategy prompts.
@@ -148,4 +164,5 @@ This preserves gamification as a complement to instruction. The game fiction del
 - Butler (2010), [Repeated Testing Produces Superior Transfer of Learning](https://doi.org/10.1037/a0019902)
 - Dunlosky et al. (2013), [Improving Students' Learning With Effective Learning Techniques](https://doi.org/10.1177/1529100612453266)
 - Cepeda et al. (2006), [Distributed Practice in Verbal Recall Tasks](https://doi.org/10.1037/0033-2909.132.3.354)
+- Hearst (1997), [TextTiling: Segmenting Text into Multi-paragraph Subtopic Passages](https://aclanthology.org/J97-1003/) — the method used to divide the RC passages, which arrived with no paragraph breaks
 - Shute (2008), [Focus on Formative Feedback](https://doi.org/10.3102/0034654307313795)

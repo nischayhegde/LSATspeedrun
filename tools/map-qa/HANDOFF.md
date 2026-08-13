@@ -1,3 +1,11 @@
+> **BEFORE YOU MEASURE: restart the dev server, and take your control in the
+> same session on the untouched tree.** An unmodified tree reads .0021 on a
+> fresh server and .0109 on one that has hot-reloaded, and two cold servers can
+> disagree the same way. Replicates within one server lifetime agree to four
+> digits and are not evidence of anything on their own. `lib.mjs` prints a HOT
+> SERVER warning when it can tell. Full write-up at the top of
+> `.map-generator-notes.md`.
+
 # Map scene handoff
 
 Files I modified, relative to HEAD (nothing else):

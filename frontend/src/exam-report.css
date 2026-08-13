@@ -1,0 +1,56 @@
+/* The section read-out on the Mega-litigation tab. Matches `.evidence-class-panel`
+   rather than inventing a new card: it sits under the dark diagnostic lab and a
+   light card there would read as a different app. */
+
+.exam-report {
+  margin: 20px 0; padding: 20px;
+  border: 1px solid rgba(106,199,184,.22); border-radius: 16px;
+  color: #eee5d0; background: linear-gradient(150deg,#152733,#101c28);
+  box-shadow: 0 13px 29px rgba(4,9,15,.2);
+}
+
+.exam-report-list { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.exam-report-row {
+  padding: 14px 16px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px;
+  background: rgba(5,13,20,.28); display: grid; gap: 11px;
+}
+
+.exam-report-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.exam-report-head strong { display: block; color: #dfe6dd; font-size: 14px; font-weight: 750; }
+.exam-report-head small { color: #91a5a2; font-size: 11.5px; }
+.exam-report-head b { color: #efd17c; font: 600 34px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.exam-report-head b.is-strong { color: #72d1bf; }
+.exam-report-head b.is-weak { color: #e08b7f; }
+
+/* Two bars rather than a chart. The comparison is the whole message, and a
+   chart would make the reader work out what the two bars say directly. */
+.exam-report-halves { display: grid; gap: 5px; }
+.exam-report-halves > div {
+  position: relative; height: 20px; border-radius: 5px; background: rgba(255,255,255,.055); overflow: hidden;
+}
+.exam-report-halves span {
+  position: absolute; inset: 0 auto 0 0; border-radius: 5px;
+  background: linear-gradient(90deg,rgba(114,209,191,.5),rgba(114,209,191,.28));
+}
+.exam-report-halves > div:last-child span {
+  background: linear-gradient(90deg,rgba(239,209,124,.5),rgba(239,209,124,.26));
+}
+.exam-report-halves small {
+  position: absolute; inset: 0 0 0 9px; display: flex; align-items: center;
+  color: #cfd8d2; font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+
+.exam-report-notes { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.exam-report-notes span { display: inline-flex; align-items: center; gap: 6px; color: #91a5a2; font-size: 11.5px; }
+.exam-report-notes .is-alert { color: #e8a596; }
+
+.exam-report-foot {
+  max-width: var(--prose-measure); margin: 14px 0 0; padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.08); color: #8fa39f; font-size: 11.5px; line-height: 1.55;
+}
+
+@media (max-width: 700px) {
+  .exam-report { padding: 15px 13px; }
+  .exam-report-head b { font-size: 28px; }
+  .exam-report-notes { gap: 4px 10px; }
+}

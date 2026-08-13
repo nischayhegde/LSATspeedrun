@@ -54,6 +54,15 @@ export type GameAsset = {
    * so it is never an hourly figure. Absent on cosmetics, which have no effect.
    */
   payout_mult?: number
+  /**
+   * Connections only: the districts this network lets you sign as standing
+   * counsel, and whether each is currently held. Read by the connection card in
+   * the Firm tab, which names them, and by the office relationship wall, whose
+   * seals say which network they are and how much of the map each has actually
+   * been used for.
+   */
+  districts?: Array<{ key: string; name: string; held: boolean }>
+  districts_held?: number
 }
 
 export type ClientContract = {
@@ -74,6 +83,13 @@ export type GameClient = {
   region?: string
   archetype?: string
   special?: string
+  /**
+   * How much of this client's value arrives only when the contract closes, in
+   * basis points. Expected value is equalised across every client at a tier, so
+   * this split is the entire difference between signing one and signing another:
+   * money banked per case against money staked on finishing the contract.
+   */
+  close_share_bps?: number
   matter_type?: 'commercial' | 'pro_bono'
   reputation_win_bonus?: number
   reputation_loss_cap?: number
@@ -256,12 +272,15 @@ export type WardrobeCatalog = {
   categories: CosmeticCategory[]
 }
 
-/** One district the firm can hold a standing retainer over.
+/** One district the firm can be appointed standing counsel to.
  *
  *  `landmark_key` is an optional join onto the 3D scene's own district
  *  directory (`MapLandmark.key`). The backend owns this catalog, so a district
  *  stays purchasable and legible even when the procedural planner lays the
- *  region out differently or renames a place. */
+ *  region out differently or renames a place.
+ *
+ *  `counsel` is the body being advised ("the duty roster"), not a fee. A
+ *  client retainer is the other thing entirely, and pays per case. */
 export type TerritoryDistrict = {
   key: string
   name: string
@@ -270,7 +289,7 @@ export type TerritoryDistrict = {
   landmark_key: string | null
   tier: number
   reputation: number
-  retainer: string
+  counsel: string
   description: string
   cost: number
   standing: number
@@ -287,6 +306,11 @@ export type TerritoryState = {
     key: string
     name: string
     seat: string
+    /** Inclusive first and last firm tier this region covers. The catalog's own
+     *  `region` field is a different axis -- the street address the firm held at
+     *  one tier -- and this range is what nests one inside the other, so the two
+     *  can be shown on the same screen without reading as a contradiction. */
+    tier_range: [number, number]
     total: number
     held: number
     swept: boolean
@@ -339,10 +363,24 @@ export type GameState = {
   office: FirmTier
   current_streak: number
   best_streak: number
-  /** Consecutive calendar days the firm has been visited — distinct from the
-   *  validated-win streak above. Advances at most once per day. */
+  /** Consecutive calendar days on which a case was finished — distinct from the
+   *  validated-win streak above. Advances at most once per day, and no longer
+   *  advances merely by loading a page. */
   daily_streak: number
   daily_streak_best: number
+  /** What the win streak is currently worth as a reputation floor, and which of
+   *  the two gates is binding. `day_limited` means more casework today cannot
+   *  raise it and only coming back tomorrow can — the anti-farm gate. */
+  streak_form: {
+    wins: number
+    days: number
+    standing: number
+    earned_standing: number
+    licensed_standing: number
+    cap: number
+    next_win_target: number | null
+    day_limited: boolean
+  }
   total_cases: number
   total_correct: number
   total_validated_correct: number
@@ -386,7 +424,15 @@ export type GameState = {
     claimed: number[]
     goals: Array<{ cases: number; reward: number; complete: boolean; claimed: boolean }>
   }
-  achievements: Array<{ key: string; name: string; description: string; unlocked: boolean }>
+  achievements: Array<{
+    key: string
+    name: string
+    description: string
+    unlocked: boolean
+    /** How far along a locked honour is, when it counts something. Absent on
+     *  the ones that are a yes or a no, like joining a named network. */
+    progress?: { current: number; target: number; unit: 'cases' | 'streak' | 'reputation' | 'hired' | 'firms' | 'money' | 'tier' }
+  }>
   next_milestone?: { kind: 'tier' | 'asset'; name: string; cost: number; reputation: number } | null
   territory: TerritoryState
   story: StoryState
@@ -416,7 +462,20 @@ export type StrategyDefinition = {
   sources: Array<{ label: string; url: string }>
 }
 
-export type StrategyTrial = StrategyDefinition & { variant: 'prompt' }
+/**
+ * A named technique was offered on this question.
+ *
+ * `required` is the mandatory arm: the same offer, with no way to decline it
+ * up front. The card drops its Use it / Skip pair and the gate below arms
+ * itself, because there is no decision left to take. It is a property of the
+ * delivered question rather than of the assignment — a mandatory arm whose
+ * gate could not be built arrives here as `false`, since refusing a skip for
+ * steps nobody was shown would be a dead end.
+ */
+export type StrategyTrial = StrategyDefinition & {
+  variant: 'prompt' | 'prompt_required'
+  required: boolean
+}
 
 /**
  * The control arm's card. It carries no technique, no steps, and no gate,
@@ -504,6 +563,11 @@ export type StrategyGateSpec = {
   blocking: boolean
   hides_choices: boolean
   restricts_choices: boolean
+  required: boolean
+  /** True when the server will already accept a withdrawal on this question. */
+  stand_down_ready: boolean
+  /** How long in the panel earns a withdrawal. The server decides; this mirrors it. */
+  stand_down_after_ms: number
   instruction: string
   confirm: string
   fields: StrategyGateField[]
@@ -591,6 +655,68 @@ export type AttemptResult = {
   }
 }
 
+/** One separately timed section of a mega-litigation, as the client sees it. */
+export type ExamSection = {
+  index: number
+  label: string
+  section_type: string
+  questions: number
+  start_position: number
+  end_position: number
+  time_limit_seconds: number
+  /** Intermission owed *after* this section. Non-zero on exactly one section. */
+  break_seconds: number
+  status: 'pending' | 'in_progress' | 'completed'
+  started_at: string | null
+  deadline_at: string | null
+  ended_at: string | null
+  ended_reason: 'submitted' | 'expired' | 'abandoned' | null
+  unanswered: number
+  target_time_seconds: number
+}
+
+/** One row of the running section's answer sheet. Says nothing about correctness. */
+export type ExamAnswerSheetEntry = {
+  position: number
+  item_id: string
+  /** Numbered from 1 inside its own section, the way the real interface numbers. */
+  number: number
+  answered: boolean
+  flagged: boolean
+  passage_id: string | null
+}
+
+/** One question of the running section, delivered up front. No case dressing. */
+export type ExamPaper = {
+  id: string
+  position: number
+  number: number
+  selected_label: string | null
+  flagged: boolean
+  target_time_seconds: number
+  question: Question
+}
+
+export type ExamState = {
+  stage: 'awaiting_section' | 'in_section' | 'intermission' | 'completed'
+  sections: ExamSection[]
+  active_section_index: number | null
+  next_section_index: number | null
+  /**
+   * Milliseconds left on whichever clock is running — the section's, or the
+   * intermission's. The client ticks this down between reads for smoothness and
+   * re-reads on every server reply, but the server alone decides when a section
+   * is over: a countdown that reaches zero here only prompts a read.
+   */
+  remaining_ms: number | null
+  warning_seconds: number
+  intermission_ends_at: string | null
+  /** When an unattended boundary gives up and closes the sitting out. */
+  boundary_expires_at: string | null
+  answered: number
+  answer_sheet: ExamAnswerSheetEntry[]
+}
+
 export type StudySession = {
   id: string
   mode: 'practice' | 'diagnostic' | 'blind_review'
@@ -608,10 +734,17 @@ export type StudySession = {
   current_index: number
   progress_percent: number
   started_at: string
-  /** Whole-form deadline. Set only for a mega-litigation. */
+  /** Whole-form deadline. Only on a pre-0036 mega-litigation, which had one. */
   deadline_at?: string | null
   /** Server-authoritative time left on that deadline; the client counts down between polls but never decides. */
   remaining_ms?: number | null
+  /**
+   * Present exactly when the run is administered as separately timed sections,
+   * which is every mega-litigation started since 0036. Its absence on a
+   * diagnostic means a sitting begun under the old whole-form clock, which
+   * finishes under the rules it started with.
+   */
+  exam?: ExamState | null
   time_limit_seconds?: number | null
   completed_at?: string | null
   /** Answer-release stage of a completed diagnostic. Absent on every other run. */
@@ -623,6 +756,42 @@ export type StudySession = {
   current_item?: SessionItem | null
   pending_item?: SessionItem | null
   pending_result?: AttemptResult | null
+}
+
+/** Per-section facts a sitting produced. Rates are over the whole section. */
+export type ExamSectionReport = {
+  index: number
+  label: string
+  section_type: string
+  questions: number
+  answered: number
+  unanswered: number
+  correct: number
+  /** Over every question in the section, blanks included. A blank is a result. */
+  accuracy: number
+  /** Over what was actually answered, so the clock's cost separates from being wrong. */
+  answered_accuracy: number | null
+  time_limit_seconds: number
+  seconds_used: number | null
+  seconds_on_questions: number
+  ended_reason: 'submitted' | 'expired' | 'abandoned' | null
+  ran_out_of_time: boolean
+  flagged: number
+  flagged_unanswered: number
+  answers_changed: number
+  /** Both halves scored over their own whole length, so a collapse reads as one. */
+  opening: { questions: number; correct: number }
+  closing: { questions: number; correct: number }
+}
+
+export type ExamReport = {
+  administered: true
+  sections: ExamSectionReport[]
+  unanswered: number
+  sections_expired: number
+  sections_abandoned: number
+  flagged_unanswered: number
+  answers_changed: number
 }
 
 export type PracticeSummary = {
@@ -637,7 +806,9 @@ export type PracticeSummary = {
   elapsed_minutes: number
   explanation_accuracy?: number | null
   skills: Array<{ name: string; attempts: number; accuracy: number }>
-  sections?: Array<{ index: number; label: string; correct: number; questions: number; accuracy: number; elapsed_minutes: number; timing_compromised: boolean }>
+  sections?: Array<{ index: number; label: string; correct: number; questions: number; answered?: number; accuracy: number; elapsed_minutes: number; timing_compromised: boolean }>
+  /** Only on a sectioned mega-litigation. What the administration itself produced. */
+  exam?: ExamReport
   omitted?: number
   confidence?: { average: number | null; high_confidence_errors: number; high_confidence_attempts: number }
   timing_compromised?: boolean
@@ -747,6 +918,8 @@ export type PerformanceSnapshot = {
     form_total: number
     form_accuracy: number | null
     sections: NonNullable<PracticeSummary['sections']>
+    /** Null on a form sat before sections existed, which had no bell to report. */
+    exam: ExamReport | null
     promotion: MegaLitigationPromotion | null
     time_limit_minutes: number
     elapsed_minutes: number
@@ -777,12 +950,45 @@ export type PerformanceSnapshot = {
     sections: StrategySectionReading[]
     sections_note: string
   }
-  /** What the last mega-litigation told practice to work on. */
+  /** What practice is weighted toward, and why.
+   *
+   * This used to be the last mega-litigation's verdict and nothing else. It is
+   * now read from every first encounter the account has filed, decayed toward
+   * recent work, so it moves as a student improves rather than staying frozen
+   * at whatever their last sitting said. `sitting` is the old figure, kept
+   * because a student who has just finished a form wants to know what it said —
+   * it is a report of that run and no longer a statement about what practice
+   * will do next. */
   focus: {
     types: string[]
-    session_id: string | null
-    completed_at: string | null
-    baseline_accuracy: number | null
+    weak: {
+      type: string
+      section: string
+      /** Points below this student's own accuracy on the *rest* of that
+       * section, after shrinkage. The rest rather than the whole: a baseline
+       * containing the type's own answers is one the type moves. */
+      gap: number
+      shrunk_accuracy: number
+      raw_accuracy: number
+      /** The rest of the section, which is what `gap` is measured against. */
+      section_baseline: number
+      effective_sample: number
+      answers: number
+      half_width: number
+      /** Whether the gap clears its own 95% interval. A gap that does not is
+       * reported and never acted on. */
+      separates: boolean
+    }[]
+    /** Whole-section accuracy, for display. Not what `gap` is measured against. */
+    section_baselines: Record<string, number>
+    first_encounters: number
+    half_life_days: number
+    sitting: {
+      types: string[]
+      session_id: string | null
+      completed_at: string | null
+      baseline_accuracy: number | null
+    }
     explanation: string
   }
   recommendation: { skill: string; accuracy: number; reason: string } | null
@@ -988,9 +1194,34 @@ export type HistoryAttempt = {
   created_at: string | null
 }
 
+/**
+ * What is known about how hard one question is, and how well it is known.
+ *
+ * `published` is the test maker's own rating and is null on every item in this
+ * bank, because the source material carries none. `rating` is measured from
+ * student responses, in logits relative to the bank's mean, and is null until
+ * anybody has answered the item. Read `usable_for_targeting` rather than
+ * re-deriving it: a `provisional` rating exists but must not steer anything.
+ * See `backend/app/calibration.py`.
+ */
+export type QuestionDifficulty = {
+  published: number | null
+  status: 'uncalibrated' | 'provisional' | 'estimated' | 'calibrated'
+  origin: 'responses' | 'simulated' | 'imported' | 'official' | null
+  rating: number | null
+  band: 1 | 2 | 3 | 4 | 5 | null
+  standard_error: number | null
+  responses: number
+  correct: number
+  unbiased_responses: number
+  unbiased_rating: number | null
+  selection_bias_gap: number | null
+  usable_for_targeting: boolean
+}
+
 /** The same row with everything needed to re-read the item and the coaching. */
 export type HistoryAttemptDetail = HistoryAttempt & {
-  question: Question & { difficulty?: number }
+  question: Question & { published_difficulty?: number | null; difficulty?: QuestionDifficulty }
   reasoning_text: string | null
   feedback: AttemptResult['feedback'] | null
   strategy_key: string | null

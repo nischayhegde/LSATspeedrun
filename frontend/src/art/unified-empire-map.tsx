@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 
@@ -12,6 +12,7 @@ import type {
   MapLandmark,
   MapLandmarkKind,
   MapRegionKey,
+  MapSceneContact,
   MapSceneEvent,
   MapScenePoint,
   MapSceneRival,
@@ -67,32 +68,60 @@ const landmarkTag: Record<MapLandmarkKind, string> = {
   monument: 'MON',
 }
 
-/* Standing retainers, surfaced in the region they belong to.
+/* Standing counsel, surfaced in the region it is held over.
  *
- * This is coverage, not conquest: signing a district's institutions to a
- * standing retainer makes your firm the default counsel there. It buys no
- * payout multiplier and absorbs no competitor, which is what keeps it from
- * treading on the rival acquisitions the same map already carries — those are
- * discrete moves against named firms, priced at a full five cases each.
+ * Called a *retainer* until now, which is the same word the Clients tab uses
+ * for the opposite arrangement — a client retainer is the thing that pays your
+ * fee, and a district seat pays no fee at all. One word, two mechanics, and
+ * both of them in the Firm tab since this board acquired a ledger there. The
+ * word now belongs to clients; a district appointment is standing counsel.
+ *
+ * This is coverage, not conquest: signing a district's institutions as their
+ * standing counsel makes your firm the default call there. It buys no payout
+ * multiplier and absorbs no competitor, which is what keeps it from treading on
+ * the rival acquisitions the same map already carries — those are discrete
+ * moves against named firms, priced at a full five cases each.
+ *
+ * This board is the *place* half of the mechanic and deliberately no more than
+ * that: the districts of the region on screen, joined to the landmarks the
+ * planner laid out, with the camera flying to one when it is signed. What the
+ * firm holds across all five regions, and the two figures that holding pays,
+ * belong to the retainer ledger on the Firm tab — so the foot of this board
+ * hands off there instead of restating a firm-wide total in the corner of a
+ * map.
  *
  * Collapsed by default, and it stays a strip on the left rail beside the
  * district guide rather than becoming a board the map has to wear. */
-function RetainerBoard({ game, regionKey, regionName, onTravel }: {
+function RetainerBoard({ game, regionKey, regionName, onTravel, onOpenLedger, highlightKeys, openedBy, defaultOpen = false }: {
   game: GameState
   regionKey: MapRegionKey
   regionName: string
   onTravel: (landmarkKey: string) => void
+  onOpenLedger: () => void
+  /** Districts the Firm tab named on the way here, marked so the rows the
+      player asked for are findable among ten others. Plural because arriving
+      from a network card is arriving on behalf of everything that network
+      opens, which is the whole reason to make the trip. */
+  highlightKeys: string[]
+  /** The network that sent the player here, when one did. Buying a connection
+      used to land you on a board with no indication of which of its ten rows
+      had just changed, so the payoff read as "here is a board" rather than
+      "these are yours to sign". */
+  openedBy?: { name: string; owned: boolean } | null
+  /** Open on arrival when the Firm tab sent the player here to see what a
+      connection unlocked. Anything the player was not asked for stays shut. */
+  defaultOpen?: boolean
 }) {
   const queryClient = useQueryClient()
   const { play } = useSound()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const secure = useMutation({
     mutationFn: (districtKey: string) => api.secureDistrict(districtKey),
-    onSuccess: ({ game: next, retainer }) => {
+    onSuccess: ({ game: next, counsel }) => {
       queryClient.setQueryData(['game'], { game: next })
       void queryClient.invalidateQueries({ queryKey: ['game'] })
-      void play(retainer.region_swept ? 'bonus' : 'purchase', { seed: retainer.district, intensity: .55 })
+      void play(counsel.region_swept ? 'bonus' : 'purchase', { seed: counsel.district, intensity: .55 })
       setPendingKey(null)
     },
     onError: () => setPendingKey(null),
@@ -110,28 +139,42 @@ function RetainerBoard({ game, regionKey, regionName, onTravel }: {
   }
 
   return (
-    <aside className={`uw-retainer-board ${open ? 'is-open' : ''} ${openable ? 'has-offer' : ''}`} aria-label={`${regionName} standing retainers`}>
+    <aside className={`uw-retainer-board ${open ? 'is-open' : ''} ${openable ? 'has-offer' : ''}`} aria-label={`${regionName} standing counsel`}>
       <button type="button" className="uw-retainer-toggle" aria-expanded={open} onClick={() => setOpen((was) => !was)}>
-        <small>STANDING RETAINERS</small>
+        <small>STANDING COUNSEL</small>
         <strong>{region.held} of {region.total} districts</strong>
         <i aria-hidden="true">{open ? <MinusMark /> : <PlusMark />}</i>
       </button>
       {open && (
         <>
+          {/* No longer promises that "every routine matter there arrives at
+              your door". Nothing delivered that: a held district moves the
+              reputation floor and the lease and is read by nothing in the
+              session or story code, so the one sentence that told a player what
+              they were buying was the one sentence that was not true. What is
+              left is the two effects that are real, and the distinction from
+              the client retainer that shares the tab. */}
           <p className="uw-retainer-intro">
-            Sign a district&apos;s institutions and every routine matter there arrives at your door.
-            Standing holds your reputation up; a branch you are already paid to keep offsets the lease.
+            Sign a district&apos;s institutions and your firm becomes their standing counsel. No fee
+            per case — that is what a client retainer is for. Standing holds your reputation up from
+            below; a branch you are already paid to keep offsets the daily lease.
           </p>
+          {openedBy && highlightKeys.length > 0 && (
+            <p className="uw-retainer-opened">
+              The <b>{openedBy.name.toLowerCase()}</b> {openedBy.owned ? 'opens' : 'would open'}
+              {' '}{highlightKeys.length === 1 ? 'this district' : `these ${highlightKeys.length} districts`} in {regionName}.
+            </p>
+          )}
           <div className="uw-retainer-list">
             {districts.map((district) => (
-              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}`} key={district.key}>
+              <article className={`uw-retainer-row${district.owned ? ' is-held' : district.available ? ' is-open' : ' is-locked'}${highlightKeys.includes(district.key) ? ' is-asked-for' : ''}`} key={district.key}>
                 {/* Not a <header>: inside the mobile Explore sheet a bare
                     header element inherits that sheet's own title styling. */}
                 <div className="uw-retainer-head">
                   <strong>{district.name}</strong>
                   <b>{district.owned ? 'HELD' : formatMoney(district.cost, true)}</b>
                 </div>
-                <em>Retains {district.retainer}</em>
+                <em>Counsel to {district.counsel}</em>
                 {district.owned
                   ? <small>+{district.standing.toFixed(2)} standing · {(district.rent_relief_bps / 100).toFixed(1)}% of the lease</small>
                   : district.locks.length
@@ -144,7 +187,7 @@ function RetainerBoard({ game, regionKey, regionName, onTravel }: {
                       >
                         {pendingKey === district.key && secure.isPending
                           ? 'Signing…'
-                          : district.affordable ? 'Sign the retainer' : 'Not enough cash'}
+                          : district.affordable ? 'Sign as counsel' : 'Not enough cash'}
                       </button>
                     )}
               </article>
@@ -152,12 +195,13 @@ function RetainerBoard({ game, regionKey, regionName, onTravel }: {
           </div>
           <p className="uw-retainer-foot">
             {region.swept
-              ? `Every district in ${regionName} is retained. +${region.sweep_standing.toFixed(1)} standing for the sweep.`
+              ? `Your firm is counsel to every district in ${regionName}. +${region.sweep_standing.toFixed(1)} standing for the sweep.`
               : `Hold all ${region.total} for a further +${region.sweep_standing.toFixed(1)} standing.`}
-            {' '}Firm-wide: {game.territory.standing.toFixed(1)} of {game.territory.standing_cap.toFixed(1)} standing,
-            {' '}{(game.territory.rent_relief_bps / 100).toFixed(0)}% of the lease covered.
           </p>
-          {secure.error && <p className="uw-retainer-error">That retainer could not be signed. Try again.</p>}
+          <button type="button" className="uw-retainer-ledger-link" onClick={onOpenLedger}>
+            All {game.territory.held} of {game.territory.total} in the ledger <i aria-hidden="true"><ChevronMark /></i>
+          </button>
+          {secure.error && <p className="uw-retainer-error">That appointment could not be signed. Try again.</p>}
         </>
       )}
     </aside>
@@ -175,11 +219,99 @@ function tierState(tier: number, officeTier: number): MapSceneTier['state'] {
   return 'locked'
 }
 
-export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel, demo = false, finalDemo = false }: {
+/**
+ * What a place on the map is worth to the firm.
+ *
+ * The retainer board beneath this is the ledger: every district in the region,
+ * sortable, signable, with the money in it. This is the other half of the same
+ * question and the half a map is actually good at — you are looking at a
+ * *place*, so what it says is what holding this ground would do, and what is
+ * standing between you and it.
+ *
+ * Deliberately not a second buy button. Signing is the board's job and
+ * duplicating it here would give the same act two homes.
+ *
+ * A landmark with no district behind it — the planner lays out far more places
+ * than the catalog retains — falls back to the scene's own description, which
+ * is what this line has always shown.
+ */
+function DistrictBrief({ landmark, game, chosen, onOpenLedger }: {
+  landmark: MapLandmark
+  game: GameState
+  chosen: boolean
+  /** Hands this district on to the Firm tab's ledger, which arrives on the
+      region holding it with the same row marked. The reverse trip already
+      exists as the pin on a ledger row, so the pair is a round trip. */
+  onOpenLedger: (districtKey: string) => void
+}) {
+  const district = game.territory.districts.find((entry) => entry.landmark_key === landmark.key)
+  if (!district) return <p className="uw-district-guide-detail">{landmark.detail}</p>
+  // Which network opened it, named whether or not it is held: an unheld gate
+  // appears in `locks` as prose, and a held one vanishes entirely, so the map
+  // could otherwise never say "you are here because of the bar association".
+  const opener = game.catalog.assets.find(
+    (asset) => asset.type === 'connection' && (asset.districts ?? []).some((entry) => entry.key === district.key),
+  )
+  // Where that network's contact is actually standing. The scene sites one
+  // contact per network at the first district it opens in the region, in the
+  // catalog's own order, so the same rule reproduces it here rather than the
+  // panel claiming a person is outside every door the network opens.
+  const contactHome = opener?.owned
+    ? (opener.districts ?? [])
+      .map((row) => game.territory.districts.find((entry) => entry.key === row.key))
+      .find((entry) => entry?.region === district.region && entry?.landmark_key)
+    : undefined
+  const state = district.owned ? 'held' : district.available ? 'open' : 'locked'
+  // The connection gate gets its own sentence above, so it would otherwise be
+  // stated twice; what is left is the tier and reputation bar.
+  const openerLock = opener ? `requires the ${opener.name.toLowerCase()}` : null
+  const otherLocks = district.locks.filter((lock) => lock.toLowerCase() !== openerLock)
+  return (
+    <div className={`uw-district-brief is-${state}${chosen ? ' is-chosen' : ''}`}>
+      <p>{landmark.detail}</p>
+      <div className="uw-district-brief-head">
+        <b>{district.owned ? 'COUNSEL HELD' : district.available ? 'COUNSEL OPEN' : 'COUNSEL LOCKED'}</b>
+        <span>{district.counsel}</span>
+      </div>
+      <dl className="uw-district-brief-terms">
+        <div><dt>Standing</dt><dd>+{district.standing.toFixed(1)}</dd></div>
+        <div><dt>Rent relief</dt><dd>{(district.rent_relief_bps / 100).toFixed(0)}%</dd></div>
+        <div><dt>{district.owned ? 'Paid' : 'Fee'}</dt><dd>{formatMoney(district.cost, true)}</dd></div>
+      </dl>
+      {opener && (
+        <p className="uw-district-brief-gate">
+          {opener.owned
+            ? <>Open to you through the <b>{opener.name.toLowerCase()}</b>. {contactHome?.key === district.key ? 'Their contact stands here.' : contactHome ? `Their contact stands at ${contactHome.name}.` : ''}</>
+            : <>Gated by the <b>{opener.name.toLowerCase()}</b>, which your firm does not hold.</>}
+        </p>
+      )}
+      {otherLocks.length > 0 && <p className="uw-district-brief-gate">{otherLocks.join(' · ')}</p>}
+      <button type="button" className="uw-district-brief-ledger" onClick={() => onOpenLedger(district.key)}>
+        {district.owned ? 'This appointment in the ledger' : 'Sign it in the ledger'} <i aria-hidden="true"><ChevronMark /></i>
+      </button>
+    </div>
+  )
+}
+
+export function UnifiedEmpireMap({ game, focusRival, focusConnection, focusDistrict, onManage, empireValueLabel, demo = false, finalDemo = false }: {
   game: GameState
   /** A rival key handed over from the firm tab's "Show on the map". */
   focusRival?: string | null
-  onManage: (tab: 'upgrades' | 'rivals') => void
+  /** A connection key handed over the same way. A connection's whole effect is
+      the retainer board it opens, so arriving from one lands on that board's
+      region with the board already open — otherwise buying a network changes
+      nothing the player can see. */
+  focusConnection?: string | null
+  /** A single district, handed over by a row in the Firm tab's retainer
+      ledger. The ledger owns the money and the map owns the place, so this is
+      the ledger asking the map the one question it cannot answer itself:
+      where is it. Lands on the region, opens the board with the row marked,
+      and flies to the landmark as soon as the scene reports one. */
+  focusDistrict?: string | null
+  /** Hand-off to the Firm tab. A district key travels with it when the map has
+      one selected, so the ledger opens on that region with that row marked —
+      the return leg of the trip `focusDistrict` makes. */
+  onManage: (tab: 'upgrades' | 'rivals' | 'connections', districtKey?: string) => void
   empireValueLabel: string
   /** Deck-only tour: begin with the whole district rather than a close-up. */
   demo?: boolean
@@ -192,13 +324,30 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
   const focusAsset = focusRival ? game.catalog.assets.find((asset) => asset.key === focusRival && asset.type === 'rival') : undefined
   const finalTier = game.catalog.tiers[game.catalog.tiers.length - 1]
   const finalRegion = finalTier ? regionForTier(finalTier.tier) : currentRegion
-  const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>((finalDemo ? finalRegion : focusAsset ? regionForTier(focusAsset.tier) : currentRegion).key)
+  const focusNetwork = focusConnection ? game.catalog.assets.find((asset) => asset.key === focusConnection && asset.type === 'connection') : undefined
+  const focusPlot = focusDistrict ? game.territory.districts.find((district) => district.key === focusDistrict) : undefined
+  const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>(
+    (finalDemo
+      ? finalRegion
+      : focusPlot
+        ? regions.find((region) => region.key === focusPlot.region) ?? currentRegion
+        : focusAsset
+          ? regionForTier(focusAsset.tier)
+          : focusNetwork ? regionForTier(focusNetwork.tier) : currentRegion).key,
+  )
   const [selectedKey, setSelectedKey] = useState(finalDemo && finalTier ? `tier-${finalTier.tier}` : focusAsset ? `rival-${focusAsset.key}` : '')
   const [viewMode, setViewMode] = useState<MapViewMode>(focusAsset ? 'rivals' : 'career')
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false)
   const [cameraCommand, setCameraCommand] = useState<{ id: number; action: MapCameraAction; landmark?: string }>({ id: 0, action: demo ? 'home' : 'focus' })
   const [landmarks, setLandmarks] = useState<MapLandmark[]>([])
   const [activeLandmark, setActiveLandmark] = useState<MapLandmark | null>(null)
+  /**
+   * The district the player has chosen, as distinct from the one they are
+   * pointing at. `activeLandmark` follows the pointer across the directory and
+   * is what fills the detail line; this survives the pointer leaving, and is
+   * what the scene draws its selection highlight from.
+   */
+  const [selectedDistrict, setSelectedDistrict] = useState<MapLandmark | null>(null)
   const [landmarkTip, setLandmarkTip] = useState<{ landmark: MapLandmark; x: number; y: number } | null>(null)
   // Collapsed by default. The district's places are discoverable in the world
   // itself (hover a building, click it); this is the index for someone who
@@ -261,6 +410,86 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
     [ownedLandmarkKeys],
   )
 
+  /*
+   * The networks the firm holds that reach into this region, and the districts
+   * in it they open.
+   *
+   * A connection has only ever existed as a crest on the office wall, and its
+   * effect happens on the retainer board rather than where the crest hangs. The
+   * scene can put a contact at a district; the catalog knows which districts a
+   * network unlocks; the territory board is the only place the two meet, since
+   * it is what carries `landmark_key`. So the join happens here.
+   *
+   * Flattened to a string for the same reason `ownedLandmarks` is: this is a
+   * scene dependency, `game` is refetched on a timer, and handing the world a
+   * freshly-built array every refetch would rebuild it every refetch.
+   */
+  const contactKey = game.catalog.assets
+    .filter((asset) => asset.type === 'connection' && asset.owned)
+    .map((asset) => {
+      const opens = (asset.districts ?? [])
+        .map((entry) => game.territory.districts.find((district) => district.key === entry.key))
+        .filter((district): district is TerritoryDistrict => Boolean(district?.landmark_key) && district?.region === activeRegionKey)
+      if (!opens.length) return ''
+      // "Retainers" was the last player-facing survivor of the word's old
+      // second meaning: this label is on a contact standing in a district, and
+      // a district seat is standing counsel, not a retainer. A retainer is the
+      // client relationship three tabs away that pays the per-case fee.
+      const role = opens.length === 1 ? `Opens ${opens[0].name}` : `Opens ${opens.length} districts here`
+      return [asset.key, asset.name, role, opens.map((district) => district.landmark_key).join('~')].join('|')
+    })
+    .filter(Boolean)
+    .join(';')
+  const contacts = useMemo<MapSceneContact[]>(
+    () => (contactKey ? contactKey.split(';').map((row) => {
+      const [key, name, role, landmarks] = row.split('|')
+      return { key, name, role, landmarks: landmarks.split('~') }
+    }) : []),
+    [contactKey],
+  )
+
+  /*
+   * The district behind whatever the player has selected on the ground, which
+   * is the join between this map and the Firm tab's retainer ledger.
+   *
+   * The two surfaces were built separately and each already knew half of it:
+   * the ledger can name a district to the map (`focusDistrict`, arriving as a
+   * marked row and a camera flight), and the scene knows which landmark is
+   * chosen. Running the landmark back through `landmark_key` gives the map the
+   * ledger's own vocabulary, so a selection made out in the world marks the
+   * same row a selection made in the ledger does. Most landmarks are places
+   * the planner laid out with no retainer over them, and those simply yield
+   * nothing to highlight.
+   */
+  const selectedPlot = selectedDistrict
+    ? game.territory.districts.find((district) => district.landmark_key === selectedDistrict.key)
+    : undefined
+  /* Which rows on the board the player is here about.
+   *
+   * Arriving from a network card used to change nothing but which region was
+   * on screen: the board opened, and every row in it looked the same, so the
+   * answer to "what did buying that get me" was a list you had to diff against
+   * memory. A network's districts in this region are therefore marked exactly
+   * as a single named district is, and the board says which network did it.
+   *
+   * What the player asked for last still wins. Selecting a place on the ground
+   * is a newer answer to the same question than the link that brought them. */
+  const networkPlotKeys = focusNetwork
+    ? (focusNetwork.districts ?? [])
+      .filter((entry) => game.territory.districts.find((district) => district.key === entry.key)?.region === activeRegionKey)
+      .map((entry) => entry.key)
+    : []
+  const highlightedPlotKeys = selectedPlot
+    ? [selectedPlot.key]
+    : focusPlot
+      ? [focusPlot.key]
+      : networkPlotKeys
+  const highlightedPlotKey = highlightedPlotKeys[0] ?? null
+  const openedBy = focusNetwork && !selectedPlot && !focusPlot
+    ? { name: focusNetwork.name, owned: focusNetwork.owned }
+    : null
+  const openLedgerAt = (districtKey?: string | null) => onManage('connections', districtKey ?? undefined)
+
   const selected = points.find((point) => point.key === selectedKey)
   const established = game.catalog.tiers.filter((tier) => tier.tier <= game.office_tier).length
   // Empire-wide, not per-region: this is the count the page header used to
@@ -298,6 +527,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
     setViewMode('career')
     setLandmarks([])
     setActiveLandmark(null)
+    setSelectedDistrict(null)
     setLandmarkTip(null)
     setCameraCommand((command) => ({ id: command.id + 1, action: 'focus' }))
     void play('map', { seed: `arc:${key}`, scene: key, intensity: .44 })
@@ -316,6 +546,7 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
   const handleLandmarks = useCallback((next: MapLandmark[]) => {
     setLandmarks(next)
     setActiveLandmark(null)
+    setSelectedDistrict(null)
     setLandmarkTip(null)
   }, [])
   const handleLandmarkHover = useCallback((landmark: MapLandmark | null, client: { x: number; y: number } | null) => {
@@ -323,10 +554,16 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
   }, [])
   const handleLandmarkSelect = useCallback((landmark: MapLandmark) => {
     setActiveLandmark(landmark)
+    setSelectedDistrict(landmark)
+    // Clicking a place in the world is a question, and the brief in the guide
+    // is the answer to it; with the rail shut the click would otherwise only
+    // light the ground and say nothing about what holding it is worth.
+    setGuideOpen(true)
     void play('select', { seed: `landmark:${landmark.key}`, intensity: .4 })
   }, [play])
   const travelToLandmark = (landmark: MapLandmark) => {
     setActiveLandmark(landmark)
+    setSelectedDistrict(landmark)
     setCameraCommand((command) => ({ id: command.id + 1, action: 'landmark', landmark: landmark.key }))
     void play('map', { seed: `travel:${landmark.key}`, scene: activeRegionKey, intensity: .38 })
   }
@@ -339,6 +576,19 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
     const landmark = landmarks.find((candidate) => candidate.key === key)
     if (landmark) travelToLandmark(landmark)
   }, [landmarks])
+
+  // A district named by the ledger cannot be flown to until the scene has
+  // finished laying the region out and reported its directory, which happens
+  // several seconds after this component first renders. Waits for the place to
+  // exist, then goes once — a repeat would fight the player's own camera.
+  const flownTo = useRef<string | null>(null)
+  useEffect(() => {
+    const key = focusPlot?.landmark_key
+    if (!key || flownTo.current === key || focusPlot?.region !== activeRegionKey) return
+    if (!landmarks.some((candidate) => candidate.key === key)) return
+    flownTo.current = key
+    travelToLandmarkKey(key)
+  }, [focusPlot, landmarks, activeRegionKey, travelToLandmarkKey])
 
   const sendCameraCommand = (action: MapCameraAction) => {
     setCameraCommand((command) => ({ id: command.id + 1, action }))
@@ -421,6 +671,8 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
             onLandmarkHover={handleLandmarkHover}
             onLandmarkSelect={handleLandmarkSelect}
             ownedLandmarks={ownedLandmarks}
+            contacts={contacts}
+            selectedLandmark={selectedDistrict?.key ?? null}
           />}
         </Suspense>
 
@@ -488,6 +740,10 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
               regionKey={activeRegionKey}
               regionName={activeRegion.name}
               onTravel={(key) => { travelToLandmarkKey(key); setMobileControlsOpen(false) }}
+              onOpenLedger={() => openLedgerAt(highlightedPlotKey)}
+              highlightKeys={highlightedPlotKeys}
+              openedBy={openedBy}
+              defaultOpen={Boolean(focusNetwork || focusPlot)}
             />
             <div className="uw-mobile-camera-actions">
               <button type="button" onClick={() => { sendCameraCommand('focus'); setMobileControlsOpen(false) }}>Find counsel</button>
@@ -594,7 +850,14 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
                       </button>
                     ))}
                   </div>
-                  {activeLandmark && <p className="uw-district-guide-detail">{activeLandmark.detail}</p>}
+                  {(activeLandmark ?? selectedDistrict) && (
+                    <DistrictBrief
+                      landmark={(activeLandmark ?? selectedDistrict)!}
+                      game={game}
+                      chosen={selectedDistrict?.key === (activeLandmark ?? selectedDistrict)!.key}
+                      onOpenLedger={openLedgerAt}
+                    />
+                  )}
                 </>
               )}
             </aside>
@@ -604,6 +867,10 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel,
             regionKey={activeRegionKey}
             regionName={activeRegion.name}
             onTravel={travelToLandmarkKey}
+            onOpenLedger={() => openLedgerAt(highlightedPlotKey)}
+            highlightKeys={highlightedPlotKeys}
+            openedBy={openedBy}
+            defaultOpen={Boolean(focusNetwork || focusPlot)}
           />
         </div>
 

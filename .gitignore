@@ -6,6 +6,9 @@ __pycache__/
 backend/instance/
 frontend/node_modules/
 frontend/dist/
+# Vite's dependency pre-bundle, moved out of the shared node_modules so that
+# each worktree optimises for its own branch — see `cacheDir` in vite.config.ts.
+frontend/.vite-cache/
 *.tsbuildinfo
 .DS_Store
 /output/
@@ -20,6 +23,8 @@ node_modules/
 .map-verify/
 .perf/
 .perf-office/
+.qa-firmux/
+.qa-run/
 .qa-shots/
 .recover/
 .rig-qa-shots/
@@ -76,8 +81,16 @@ frontend/scratch-*
 .deck-gif/
 .lcp-evidence/
 .map-shots/
+# Lighting-pass scratch: bench reports and before/after stills.
+.light-run/
+.light-shots/
 .office-evidence/
 .qa-tmp/
+
+# The performance harness's throwaway backend: its SQLite database, its seed
+# report and its build logs. `tools/perf/harness-backend.sh --reset` rebuilds
+# the lot in about 40 seconds, and the database is 19 MB.
+.harness/
 .room-evidence/
 .seam-verify/
 .shots-keep/
@@ -113,6 +126,7 @@ frontend/dist-qa*/
 # but not ignored is pushed to main and re-fetched onto the 1 GiB build box.
 deck/node_modules/
 deck/dist/
+deck/.deck-qa/
 deck/.deck-shots/
 deck/.audit-tmp/
 deck/.counsel-shots/
@@ -178,3 +192,77 @@ deck/public/art/
 # scratch probes above. The application's own manifests live in frontend/.
 /package.json
 /package-lock.json
+
+# Local dev worktrees symlink this to a shared install; the trailing-slash rule above does not match a symlink.
+frontend/node_modules
+
+# Every scratch directory named above is a dot directory at the repository root,
+# and so is every one found in the eight sibling worktrees on this machine. The
+# list has now missed three: ~810 MB and ~420 MB were caught by hand just before
+# a release, and `.qa-run/` (27 MB) was committed and had to be untracked. A name
+# has to be added at the moment the directory is created, by whoever is deep in
+# something else, or `deploy-sandbox.ps1` sweeps it into main with `git add --all`.
+#
+# So the default at the root is inverted: a directory whose name begins with a
+# dot is scratch unless something says otherwise. This is safe because an ignore
+# rule cannot untrack anything. `.qa-tmp/` and `.verify/` are the only root dot
+# directories with tracked contents — the parity fixtures and the benchmark
+# harnesses — and both are already ignored by name above, so their tracked files
+# stay tracked and nothing about them changes. Dot *files* are not matched, since
+# the trailing slash restricts the rule to directories, so `.qa-report.md`,
+# `.firm-audit.md` and the rest of the write-ups stay visible as before.
+#
+# It is anchored to the root on purpose, so scratch below the root stays listed
+# by name — `deck/.deck-qa/` and `deck/.deck-shots/` above, `frontend/.rig-*`
+# further up. A nested dot directory is not reliably scratch: a published
+# `frontend/public/.well-known/` is the kind of thing the mobile client asks for,
+# and it would be a bad thing to lose silently.
+/.*/
+
+# Strategy-matching measurement scratch: bank-wide audit dumps, per-question
+# candidate-key dumps and the probes that read them. Below the root, so the rule
+# above cannot see it. Regenerated in seconds by
+# `backend/scripts/audit_strategy_matching.py`.
+backend/.strategy-audit/
+
+# Shared configuration that has to be versioned if it is ever added. Nothing
+# lives here today; the exception is written down now so that the rule above
+# cannot one day swallow CI without anyone noticing.
+!/.github/
+
+# A database is scratch wherever it is written, and the rule above cannot see
+# it. That rule inverts the default for dot directories *at the root*, so it is
+# blind by construction to a database a harness leaves beside the application:
+# `backend/mapgen-qa.db`, with its `-wal` and `-shm` sidecars, was 51 MiB of a
+# copied dev database — 195 user rows and 3,139 auth sessions — and it reached
+# an integration branch bound for a remote that is public. `.qa-run/firm.db`
+# arrived the same way and by a different route. Both were caught by hand.
+#
+# Untracking one of these after the fact does not undo it: the blob stays in
+# the tree of the commit that added it and travels with any push of that
+# branch, so the only real remedy is to keep it out in the first place. That is
+# what this block is for, and it matters more than the size does, because
+# `deploy-sandbox.ps1` runs `git add --all` before it commits the release.
+#
+# Nothing versioned is at risk. The application's own database lives in
+# `backend/instance/`, ignored by name at the top of this file, and no tracked
+# file anywhere in the tree matches these shapes. An ignore rule cannot untrack
+# anything, so a database that is deliberately versioned later stays versioned;
+# it just has to be added with `git add -f`, which is the point.
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# `.env` at the top of this file catches exactly one filename, and the files
+# that carry a real credential are usually not called that. `backend/.env` is
+# ignored; `backend/.env.production`, holding the live TFY_API_KEY and
+# GOOGLE_CLIENT_ID, was not — and the repository already tracks a
+# `.env.production.example` next to where it would sit, so the name is one an
+# operator is actively invited to use. The negations keep the checked-in
+# templates, which are the only .env files that belong in a public repository.
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample

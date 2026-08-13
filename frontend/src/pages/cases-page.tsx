@@ -63,7 +63,10 @@ export function CasesLobbyPage() {
   const reviews = useQuery({ queryKey: ['review-queue'], queryFn: api.reviewQueue })
   const docketQuery = useQuery({ queryKey: ['daily-docket'], queryFn: api.dailyDocket })
   const start = useMutation({
-    mutationFn: (plan?: { size?: number }) => api.startPractice({ size: plan?.size ?? 10 }),
+    // No size: the server owns how long a run is. This asked for ten, which was
+    // the run length before it became six, so the page's own copy said "about 6
+    // questions" and then started a ten-question run.
+    mutationFn: () => api.startPractice(),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `case-open:${session.id}`, seed: session.id, intensity: .62 })
       void queryClient.invalidateQueries({ queryKey: ['active-sessions'] })
@@ -193,7 +196,11 @@ export function CasesLobbyPage() {
   const game = gameQuery.data!.game!
   const workingClient = effectiveClient(game)
   const runs = activeSessions.data?.sessions ?? []
-  const queueCap = activeSessions.data?.queue_cap ?? 8
+  const queueCap = activeSessions.data?.queue_cap ?? 13
+  // A run may finish a question or two over this to serve a Reading
+  // Comprehension passage whole, so the copy says "questions" rather than
+  // promising an exact count of them.
+  const sessionSize = activeSessions.data?.session_size ?? 6
   const queueFull = runs.length >= queueCap
   const dueReviews = reviews.data?.review_queue.due ?? 0
   const daily = docketQuery.data?.daily_docket
@@ -213,7 +220,7 @@ export function CasesLobbyPage() {
       return
     }
     if (queueFull) return
-    if (daily.next_action.kind === 'start_cases') start.mutate({ size: 10 })
+    if (daily.next_action.kind === 'start_cases') start.mutate()
   }
   const describeStarted = (startedAt: string) => {
     const minutes = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 60000))
@@ -227,9 +234,9 @@ export function CasesLobbyPage() {
     if (run.status === 'in_progress') return { label: 'Running', cls: 'is-running' }
     return { label: 'Paused', cls: 'is-paused' }
   }
-  const startNewRun = (plan?: { size?: number }) => {
+  const startNewRun = () => {
     if (queueFull) return
-    start.mutate(plan)
+    start.mutate()
   }
   // A queued run's timer only ticks while its case view is open, so resuming
   // one that is already `in_progress` (or mid-debrief) is just a navigation —
@@ -264,7 +271,14 @@ export function CasesLobbyPage() {
   }
   // A one-line read of the queue, so the header answers "what is in here"
   // before the list has to be scrolled.
-  const repairsIncluded = Math.min(5, dueReviews)
+  // Whether the next run will carry repairs, not how many. The count used to be
+  // `Math.min(5, dueReviews)` — the old ten-question run's fixed half, written
+  // down a second time on the client, and already wrong by two once a run became
+  // six questions. It is now not derivable here at all: how much of a run is
+  // review is read off the student's own queue, and a reading case carries
+  // whichever of its passage's questions happened to be due. The honest promise
+  // is the one the server can always keep.
+  const hasRepairs = dueReviews > 0
   const runningCount = runs.filter((run) => run.status === 'in_progress' && !run.pending_result).length
   const reviewCount = runs.filter((run) => run.pending_result).length
   const queueSummary = [
@@ -311,11 +325,11 @@ export function CasesLobbyPage() {
         <div className="practice-action-client">
           <ClientPortrait kind={workingClient.icon} name={workingClient.name} className="lobby-client-portrait" />
           <div>
-            <small>{game.active_client.on_hold ? 'EFFECTIVE CLIENT' : 'ACTIVE CLIENT'}</small>
+            <small>{game.active_client.on_hold ? 'BILLING INSTEAD' : 'ON RETAINER'}</small>
             <strong>{workingClient.name}</strong>
             <span className="practice-action-terms">
               <b><Coins size={13} /> {formatMoney(workingClient.base_fee)} base fee</b>
-              <b><BriefcaseBusiness size={13} /> {game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} cases left`}</b>
+              <b><BriefcaseBusiness size={13} /> {game.active_client.on_hold ? `${game.active_client.name} paused` : `${game.active_client.cases_remaining} to bonus`}</b>
               <b><Flame size={13} /> {game.current_streak} validated streak</b>
             </span>
           </div>
@@ -343,13 +357,17 @@ export function CasesLobbyPage() {
                   onClick={() => startNewRun()}
                   disabled={start.isPending || queueFull}
                 >
-                  <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : 'Start 10 cases'} <ArrowRight />
+                  <BriefcaseBusiness /> {start.isPending ? 'Building your run…' : queueFull ? `Queue full (${runs.length}/${queueCap})` : `Start ${sessionSize} cases`} <ArrowRight />
                 </button>
+                {/* "About", because a reading case is one whole passage and is
+                    therefore as long as its passage — five to eight questions
+                    where an argument case is six. The shape is drawn when the
+                    run is built, so this can only describe the range. */}
                 <p className="practice-action-shape">{queueFull
                   ? `Queue full (${runs.length}/${queueCap}). Discard a run below to start another.`
-                  : repairsIncluded
-                    ? `10 questions. ${repairsIncluded} review item${repairsIncluded === 1 ? '' : 's'} included.`
-                    : '10 unseen questions.'}</p>
+                  : hasRepairs
+                    ? `About ${sessionSize} questions, or one whole passage. Some will be repairs from your queue.`
+                    : `About ${sessionSize} unseen questions, or one whole passage.`}</p>
               </div>
               {daily && daily.next_action.kind !== 'start_cases' && (
                 <div className="practice-run-alt">
@@ -447,7 +465,7 @@ export function CasesLobbyPage() {
         <div className="practice-guide-body">
           <section>
             <h2>Cases</h2>
-            <p>10 questions{repairsIncluded ? `. ${repairsIncluded} review item${repairsIncluded === 1 ? '' : 's'} included` : ''}. Written explanation on each, then coaching.</p>
+            <p>About {sessionSize} questions{hasRepairs ? ', some of them repeats from your review queue' : ''}. The further behind that queue gets, the more of a run it takes back. A reading case is one whole passage, so it runs to whatever length its passage is. Written explanation on each, then coaching.</p>
           </section>
           {daily && daily.deep_brief.priority_count > 0 && (
             <section>
@@ -463,7 +481,7 @@ export function CasesLobbyPage() {
             <h2>Client</h2>
             <p>{game.active_client.on_hold
               ? `${game.active_client.name} on hold until Reputation recovers. Walk-in fee ${formatMoney(workingClient.base_fee)}.`
-              : `${workingClient.name}. ${formatMoney(workingClient.base_fee)} base fee. ${game.active_client.cases_remaining} cases left.`}</p>
+              : `${workingClient.name}. ${formatMoney(workingClient.base_fee)} base fee. Retain a better-paying client in the Firm tab.`}</p>
           </section>
         </div>
       </details>

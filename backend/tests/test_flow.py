@@ -12,6 +12,7 @@ from app.game import (
     ASSETS,
     ASSET_BY_KEY,
     CLIENT_BY_KEY,
+    DAILY_REWARD_MULTIPLIERS,
     FINAL_CASE_KEY,
     FIRM_TIERS,
     TIER_GATED_ASSET_TYPES,
@@ -38,12 +39,14 @@ from app.models import (
     QuestionChoice,
     ReviewQueueItem,
     SessionItem,
+    SessionSection,
     StudySession,
     User,
     utcnow,
 )
 from app.seed import SOURCE_PREFIX, seed_questions
 from app.story import QUESTS, STORY_CHAPTERS
+from app.type_focus import FocusType
 
 
 def add_question(index: int, section: str) -> None:
@@ -51,7 +54,15 @@ def add_question(index: int, section: str) -> None:
     passage_id = None
     stimulus = f"Argument stimulus {index}."
     if section == "Reading Comprehension":
-        passage_id = f"sample-passage-{index // 2}"
+        # Six questions to a passage, and enough passages to choose between.
+        # The shipped bank has nothing shorter than four and a median of seven,
+        # so the two-question passages this fixture used to build described a
+        # bank that cannot exist — and one where no passage is long enough to be
+        # a reading case, so the end-to-end suite would never have built the
+        # shape practice now serves a third of the time. That is precisely how
+        # the section went missing in the first place: `seed_demo.py` fabricates
+        # a balanced history the real selector never produces.
+        passage_id = f"sample-passage-{(index - 8) // 6}"
         passage = db.session.get(Passage, passage_id)
         if not passage:
             db.session.add(
@@ -69,7 +80,6 @@ def add_question(index: int, section: str) -> None:
         passage_id=passage_id,
         section=section,
         question_type="Inference",
-        difficulty=3,
         stimulus=stimulus,
         stem=f"Which answer is best for sample question {index}?",
         correct_answer="C",
@@ -98,7 +108,7 @@ def app():
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "AUTO_SEED": False,
             "DEV_AUTH_ENABLED": True,
-            "PRACTICE_SESSION_SIZE": 3,
+            "PRACTICE_SESSION_SIZE": 4,
             "TFY_URL": "",
             "TFY_API_KEY": "",
             # Tests drive the worker directly rather than through a background
@@ -115,7 +125,7 @@ def app():
     with application.app_context():
         for index in range(8):
             add_question(index, "Logical Reasoning")
-        for index in range(8, 12):
+        for index in range(8, 20):
             add_question(index, "Reading Comprehension")
         db.session.commit()
     return application
@@ -208,6 +218,51 @@ def test_custom_instance_path_supports_read_only_deployment_layout(tmp_path):
 
     assert application.instance_path == str(instance_path)
     assert instance_path.is_dir()
+
+
+def answer_rest_of_run(app, client, headers, session_id: str, marker: str) -> dict:
+    """Answer whatever is left of a run, and hand back the closing debrief.
+
+    A run is no longer as short as a test would like it to be. The API refuses a
+    general run below `services.RC_CASE_MIN_SITTING`, because one that short
+    cannot hold a reading passage and would quietly be Logical Reasoning only —
+    so a test that wants to reach the end of a run has to actually get there
+    rather than answering one question and asserting completion.
+
+    Coaches and acknowledges each debrief, because an unacknowledged debrief
+    holds the run on the item just answered and the loop would otherwise stop
+    one question in and report the run as unfinished.
+    """
+    from app.models import Attempt
+    from app.services import run_attempt_coaching
+
+    acknowledged: dict = {}
+    while True:
+        # Clear any debrief first, including one the caller left pending on the
+        # answer it came here to make. An unacknowledged debrief hides
+        # `current_item`, which is indistinguishable from "the run is over" and
+        # would make this return having answered nothing.
+        closing = client.post(f"/v1/study-sessions/{session_id}/debrief/acknowledge", headers=headers)
+        if closing.status_code == 200:
+            acknowledged = closing.json
+        current = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+        item = current.get("current_item")
+        if not item:
+            return acknowledged
+        answered = client.post(
+            f"/v1/study-sessions/{session_id}/attempts",
+            json={
+                "item_id": item["id"],
+                "selected_label": "C",
+                "strategy_applied": True,
+                "confidence": 4,
+                "reasoning": explanation(f"{marker} {item['position']}"),
+            },
+            headers={**headers, "Idempotency-Key": f"{marker}-rest-{item['position']}"},
+        )
+        assert answered.status_code == 200, answered.json
+        with app.app_context():
+            run_attempt_coaching(db.session.get(Attempt, answered.json["result"]["attempt_id"]))
 
 
 def create_game(client, headers, gender: str = "female"):
@@ -520,24 +575,29 @@ def test_claiming_every_daily_goal_is_a_bonus_not_a_free_office(app):
     headers = login(client, "daily-rewards@example.test")
     created = create_game(client, headers)
 
-    expected = {milestone: daily_reward_for_tier(0, milestone) for milestone in (5, 10, 20)}
-    assert [goal["reward"] for goal in created["daily"]["goals"]] == [expected[5], expected[10], expected[20]]
+    # Read off the catalog rather than retyped as 5/10/20: the milestones are
+    # one, two and three sittings and moved when the sitting did.
+    milestones = sorted(DAILY_REWARD_MULTIPLIERS)
+    smallest, middle, largest = milestones
+    expected = {milestone: daily_reward_for_tier(0, milestone) for milestone in milestones}
+    assert [goal["reward"] for goal in created["daily"]["goals"]] == [expected[m] for m in milestones]
     assert not any(goal["complete"] for goal in created["daily"]["goals"])
 
     # Nothing is claimable before the cases are actually worked.
-    refused = client.post("/v1/game/daily-rewards/5/claim", headers=headers)
+    refused = client.post(f"/v1/game/daily-rewards/{smallest}/claim", headers=headers)
     assert refused.status_code == 409 and refused.json["error"]["code"] == "goal_incomplete"
-    invalid = client.post("/v1/game/daily-rewards/7/claim", headers=headers)
+    not_a_goal = next(value for value in range(1, 100) if value not in DAILY_REWARD_MULTIPLIERS)
+    invalid = client.post(f"/v1/game/daily-rewards/{not_a_goal}/claim", headers=headers)
     assert invalid.status_code == 409 and invalid.json["error"]["code"] == "invalid_milestone"
 
     with app.app_context():
         profile = PlayerProfile.query.filter_by(id=created["id"]).one()
         progress = DailyProgress.query.filter_by(profile_id=profile.id).one()
-        progress.cases_completed = 20
+        progress.cases_completed = largest
         db.session.commit()
 
     banked = 0
-    for milestone in (5, 10, 20):
+    for milestone in milestones:
         response = client.post(f"/v1/game/daily-rewards/{milestone}/claim", headers=headers)
         assert response.status_code == 200, response.json
         assert response.json["claimed"] == expected[milestone]
@@ -545,9 +605,9 @@ def test_claiming_every_daily_goal_is_a_bonus_not_a_free_office(app):
         repeated = client.post(f"/v1/game/daily-rewards/{milestone}/claim", headers=headers)
         assert repeated.status_code == 409 and repeated.json["error"]["code"] == "already_claimed"
 
-    # Escalating, so the twenty-case goal is the one worth staying for.
-    assert expected[5] < expected[10] < expected[20]
-    assert expected[20] > banked / 2
+    # Escalating, so the last goal of the day is the one worth staying for.
+    assert expected[smallest] < expected[middle] < expected[largest]
+    assert expected[largest] > banked / 2
 
     # And the whole day is a fraction of the cheapest thing the ladder makes
     # the player buy, rather than the whole of it.
@@ -568,18 +628,22 @@ def test_claiming_every_daily_goal_is_a_bonus_not_a_free_office(app):
         db.session.commit()
     promoted = client.get("/v1/game", headers=headers).json["game"]
     assert [goal["reward"] for goal in promoted["daily"]["goals"]] == [
-        daily_reward_for_tier(3, milestone) for milestone in (5, 10, 20)
+        daily_reward_for_tier(3, milestone) for milestone in milestones
     ]
-    assert promoted["daily"]["goals"][2]["reward"] > expected[20]
+    assert promoted["daily"]["goals"][2]["reward"] > expected[largest]
 
 
-def test_daily_activity_streak_advances_resets_and_tracks_best(app):
-    """The calendar-day activity streak is distinct from the validated-win streak.
+def test_the_working_day_streak_counts_finished_cases_not_page_loads(app):
+    """The calendar-day streak is distinct from the validated-win streak.
 
-    It advances once per new day the firm is visited (via `settle_upkeep`,
-    which every `/v1/game` fetch triggers), resets on a missed day, and
-    remembers the best run — independent of `current_streak`/`best_streak`.
+    It advances once per new day on which the player *finishes a case*, resets on
+    a missed day, and remembers the best run -- independent of
+    `current_streak`/`best_streak`. It used to advance from `settle_upkeep`,
+    which runs on every protected route, so simply loading a page kept it alive;
+    this pins the fact that it no longer does.
     """
+    from app.game import _touch_daily_streak
+
     client = app.test_client()
     headers = login(client, "daily-streak@example.test")
     created = create_game(client, headers)
@@ -594,31 +658,33 @@ def test_daily_activity_streak_advances_resets_and_tracks_best(app):
         profile.daily_streak_last_date = now.date()
         db.session.commit()
 
-        # A second visit later the same day does not double-count.
-        settle_upkeep(profile, now + timedelta(hours=6))
+        # Merely being on a page the next day does nothing at all now.
+        settle_upkeep(profile, now + timedelta(days=1))
         profile = PlayerProfile.query.filter_by(id=created["id"]).one()
         assert profile.daily_streak_current == 1
 
-        # A visit exactly one calendar day later extends the streak.
+        # A second finished case later the same day does not double-count.
+        _touch_daily_streak(profile, now + timedelta(hours=6))
+        assert profile.daily_streak_current == 1
+
+        # A case finished exactly one calendar day later extends the streak.
         next_day = now + timedelta(days=1)
-        settle_upkeep(profile, next_day)
-        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        _touch_daily_streak(profile, next_day)
         assert profile.daily_streak_current == 2
         assert profile.daily_streak_best == 2
 
         # Skipping a day resets the current streak but keeps the best one.
         after_gap = next_day + timedelta(days=3)
-        settle_upkeep(profile, after_gap)
-        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        _touch_daily_streak(profile, after_gap)
         assert profile.daily_streak_current == 1
         assert profile.daily_streak_best == 2
 
         # Extending past the old best updates it again.
         for extra_day in range(1, 3):
-            settle_upkeep(profile, after_gap + timedelta(days=extra_day))
-        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+            _touch_daily_streak(profile, after_gap + timedelta(days=extra_day))
         assert profile.daily_streak_current == 3
         assert profile.daily_streak_best == 3
+        db.session.rollback()
 
 
 def test_mixed_active_and_offline_rent_and_inactivity_reputation_decay(app):
@@ -842,7 +908,13 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     assert response.status_code == 201
     session = response.json["session"]
     assert session["mode"] == "practice"
-    assert session["total_items"] == 3
+    # The configured size, or a little over it when the run came out a reading
+    # case and the passage ran past it. Pinning the literal would make this test
+    # a second, quieter definition of the run length.
+    from app.services import reading_case_ceiling
+
+    configured = app.config["PRACTICE_SESSION_SIZE"]
+    assert configured <= session["total_items"] <= reading_case_ceiling(configured)
     assert session["current_item"]["case_terms"] == {
         "client_key": "walk_in",
         "client_name": "Walk-in client",
@@ -851,10 +923,10 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
         chosen_ids = [item.question_id for item in items]
-        # The item served first is position 0, and the run is three distinct
-        # questions drawn from the seeded bank.
+        # The item served first is position 0, and every question in the run is
+        # a distinct one drawn from the seeded bank.
         assert session["current_item"]["question"]["id"] == chosen_ids[0]
-        assert len(set(chosen_ids)) == 3
+        assert len(set(chosen_ids)) == session["total_items"]
         assert all(item.question.source.startswith(SOURCE_PREFIX) for item in items)
         assert all(not hasattr(item, "story_json") for item in items)
         assert all(item.requires_reasoning is True for item in items)
@@ -879,7 +951,8 @@ def test_account_onboards_then_goes_to_random_cases(app, monkeypatch):
 
     active_list = client.get("/v1/study-sessions/active", headers=headers)
     assert active_list.status_code == 200
-    assert active_list.json["queue_cap"] == 8
+    assert active_list.json["queue_cap"] == app.config["PRACTICE_QUEUE_MAX"]
+    assert active_list.json["session_size"] == app.config["PRACTICE_SESSION_SIZE"]
     active_ids = {entry["id"] for entry in active_list.json["sessions"]}
     assert active_ids == {session["id"], second_session["id"]}
 
@@ -894,13 +967,16 @@ def test_practice_queue_cap_and_single_active_timer(app):
     headers = login(client, "queue-cap@example.test")
     create_game(client, headers)
 
+    # The cap is derived from how much queued work is allowed, in questions, so
+    # it moves whenever the run length does — see `PRACTICE_QUEUE_QUESTIONS`.
+    cap = app.config["PRACTICE_QUEUE_MAX"]
     started_ids = []
-    for _ in range(8):
-        response = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+    for _ in range(cap):
+        response = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
         assert response.status_code == 201
         started_ids.append(response.json["session"]["id"])
 
-    overflow = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+    overflow = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
     assert overflow.status_code == 409
     assert overflow.json["error"]["code"] == "queue_full"
 
@@ -918,7 +994,7 @@ def test_practice_queue_cap_and_single_active_timer(app):
 
     active = client.get("/v1/study-sessions/active", headers=headers)
     assert active.status_code == 200
-    assert active.json["queue_cap"] == 8
+    assert active.json["queue_cap"] == cap
     assert {entry["id"] for entry in active.json["sessions"]} == set(started_ids)
 
     # Explicitly resuming an older paused run must re-pause whatever else was
@@ -939,7 +1015,7 @@ def test_practice_queue_cap_and_single_active_timer(app):
     assert discarded.status_code == 200
     assert discarded.json["session"]["status"] == "abandoned"
 
-    freed = client.post("/v1/study-sessions", json={"size": 1}, headers=headers)
+    freed = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
     assert freed.status_code == 201
 
 
@@ -955,19 +1031,39 @@ def test_diagnostic_is_neutral_and_feeds_performance(app):
     assert session["current_item"]["case_terms"] is None
     assert session["total_items"] >= 1
 
+    # A form takes answers onto its section's sheet, not one attempt at a time:
+    # nothing is graded, and nothing is final, until the section closes.
     item = session["current_item"]
-    answered = client.post(
+    refused = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
-        json={
-            "item_id": item["id"],
-            "selected_label": "A",
-            "strategy_applied": True,
-            "reasoning": "I identified the conclusion and tested A against the exact logical requirement.",
-        },
+        json={"item_id": item["id"], "selected_label": "A"},
         headers={**headers, "Idempotency-Key": "diagnostic-answer-one"},
     )
+    assert refused.status_code == 409
+    assert refused.json["error"]["code"] == "exam_uses_answer_sheet"
+
+    answered = client.put(
+        f"/v1/study-sessions/{session['id']}/answers/{item['id']}",
+        json={"selected_label": "A"},
+        headers=headers,
+    )
     assert answered.status_code == 200
-    assert answered.json["result"]["game_reward"] is None
+    with app.app_context():
+        # Recorded, but not yet an attempt: the section is still open.
+        assert Attempt.query.count() == 0
+
+    closed = client.post(
+        f"/v1/study-sessions/{session['id']}/sections/0/submit",
+        headers=headers,
+    )
+    assert closed.status_code == 200
+    with app.app_context():
+        attempt = Attempt.query.one()
+        # A form pays nothing and grades no reasoning, so the only artefacts a
+        # section leaves are the answer and the time it took.
+        assert attempt.settlement is None
+        assert attempt.reasoning_text is None
+        assert attempt.evidence_class == "diagnostic"
 
     performance = client.get("/v1/performance", headers=headers)
     assert performance.status_code == 200
@@ -1002,12 +1098,69 @@ def test_run_size_and_focus_are_bounded(app):
     assert invalid.json["error"]["code"] == "invalid_session_size"
 
 
+def test_a_general_run_too_short_to_hold_a_passage_is_refused_but_a_drill_is_not(app):
+    """The lower bound on a run, and why a drill is exempt from it.
+
+    A run below `RC_CASE_MIN_SITTING` cannot be built as a reading case, and
+    what used to happen then was that it came back as arguments — the right
+    length, so nothing looked wrong, with a third of the exam missing. An audit
+    measured 0% Reading Comprehension at sizes 3 and 5.
+
+    Refused rather than rounded up, because a caller silently handed six
+    questions when it asked for three has been overruled without being told.
+
+    A type-filtered drill is exempt at any length. It has already said what it
+    wants, so it has no section left to drop: a drill on an argument type
+    contains no reading because that is what was asked for.
+    """
+    from app.services import RC_CASE_MIN_SITTING
+
+    client = app.test_client()
+    headers = login(client, "short-run@example.test")
+    create_game(client, headers)
+
+    for size in range(1, RC_CASE_MIN_SITTING):
+        refused = client.post("/v1/study-sessions", json={"size": size}, headers=headers)
+        assert refused.status_code == 400, size
+        assert refused.json["error"]["code"] == "invalid_session_size"
+
+        drill = client.post(
+            "/v1/study-sessions",
+            json={"size": size, "question_type": "Inference"},
+            headers=headers,
+        )
+        assert drill.status_code == 201, drill.json
+        assert drill.json["session"]["total_items"] == size
+        client.post(f"/v1/study-sessions/{drill.json['session']['id']}/abandon", headers=headers)
+
+
+def test_a_deployment_cannot_configure_the_reading_section_away(app):
+    """The same bound, one level up, where it would be a whole deployment.
+
+    The API check only covers what a caller asks for. `PRACTICE_SESSION_SIZE` is
+    what every caller gets when it asks for nothing, so a number in an env file
+    could quietly make every run in the deployment arguments-only. That is the
+    same defect with a much larger blast radius and no request to reject, so it
+    fails at boot instead.
+    """
+    from app.services import RC_CASE_MIN_SITTING
+
+    with pytest.raises(RuntimeError, match="PRACTICE_SESSION_SIZE"):
+        create_app(
+            {
+                "TESTING": True,
+                "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+                "PRACTICE_SESSION_SIZE": RC_CASE_MIN_SITTING - 1,
+            }
+        )
+
+
 def test_a_case_run_releases_feedback_immediately_and_seeds_review(app, monkeypatch):
     client = app.test_client()
     headers = login(client, "answer-only-speedrun@example.test")
     create_game(client, headers)
 
-    started = client.post("/v1/study-sessions", json={"size": 2}, headers=headers)
+    started = client.post("/v1/study-sessions", json={"size": 4}, headers=headers)
     assert started.status_code == 201
     session = started.json["session"]
     assert session["practice_style"] == "cases"
@@ -1046,13 +1199,19 @@ def test_a_case_run_releases_feedback_immediately_and_seeds_review(app, monkeypa
     )
     assert second.status_code == 200
     assert second.json["result"]["feedback_released"] is True
-    assert second.json["result"]["session_complete"] is True
     coach_and_settle(app, monkeypatch, second.json["result"]["attempt_id"])
+
+    # The two answers above are what this test is about — one wrong, one right,
+    # both released immediately. The rest of the run is played out only so the
+    # run reaches "completed" and its review becomes readable.
+    answer_rest_of_run(app, client, headers, session["id"], "speedrun-tail")
+    finished = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
+    assert finished["status"] == "completed"
 
     review = client.get(f"/v1/study-sessions/{session['id']}/review", headers=headers)
     assert review.status_code == 200
-    assert review.json["review"]["summary"]["correct"] == 1
-    assert len(review.json["review"]["items"]) == 2
+    assert review.json["review"]["summary"]["correct"] >= 1
+    assert len(review.json["review"]["items"]) == session["total_items"]
     assert review.json["review"]["items"][0]["selected_label"] == "A"
     assert review.json["review"]["items"][0]["correct_label"] == "C"
     assert review.json["review"]["items"][0]["evidence_class"] == "coached_practice"
@@ -1088,7 +1247,10 @@ def test_daily_docket_drives_cases_into_priority_deep_brief(app, monkeypatch):
     assert docket["next_action"]["kind"] == "start_cases"
 
     session = client.post("/v1/study-sessions", json={"size": 5}, headers=headers).json["session"]
-    for index in range(5):
+    # `total_items`, not the 5 requested: a run that had to serve a Reading
+    # Comprehension passage whole comes back a question longer, and leaving the
+    # last one unanswered would leave the docket mid-run rather than complete.
+    for index in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
         answer = "A" if index == 0 else "C"
         response = client.post(
@@ -1145,7 +1307,7 @@ def test_scheduled_reviews_are_timezone_safe(app):
     headers = login(client, "infinite-review@example.test")
     created = create_game(client, headers)
 
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -1191,20 +1353,6 @@ def test_daily_docket_respects_the_requested_timezone(app):
 
 
 def test_completed_run_stops_at_training_lab_boundary(app, monkeypatch):
-    client = app.test_client()
-    headers = login(client, "completed-speedrun@example.test")
-    create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
-    answered = client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={
-            "item_id": session["current_item"]["id"],
-            "selected_label": "C",
-            "strategy_applied": True,
-            "reasoning": "C follows from the stated relationship; the alternatives add claims the stimulus does not support, which is why they fail even though they restate its vocabulary.",
-        },
-        headers={**headers, "Idempotency-Key": "one-question-speedrun"},
-    ).json["result"]
     monkeypatch.setattr(
         "app.services.generate_attempt_coaching",
         lambda _attempt: (
@@ -1217,16 +1365,18 @@ def test_completed_run_stops_at_training_lab_boundary(app, monkeypatch):
             {},
         ),
     )
-    with app.app_context():
-        from app.services import run_attempt_coaching
+    client = app.test_client()
+    headers = login(client, "completed-speedrun@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
 
-        run_attempt_coaching(db.session.get(Attempt, answered["attempt_id"]))
+    # Acknowledging the last debrief is what ends a run, so this has to be the
+    # last one rather than the only one — the run is played out in full.
+    completed = answer_rest_of_run(app, client, headers, session["id"], "completed-speedrun")
 
-    completed = client.post(f"/v1/study-sessions/{session['id']}/debrief/acknowledge", headers=headers)
-    assert completed.status_code == 200
-    assert completed.json["run_complete"] is True
-    assert completed.json["session"]["status"] == "completed"
-    assert client.get("/v1/study-sessions/current", headers=headers).json == {"session": None}
+    assert completed["run_complete"] is True
+    assert completed["session"]["status"] == "completed"
+    assert client.get("/v1/study-sessions/current", headers=headers).json["session"] is None
 
 
 def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monkeypatch):
@@ -1305,7 +1455,13 @@ def test_answer_choice_explanations_and_reasoning_grade_are_preserved(app, monke
     assert coaching["reasoning_verdict"] == "mostly_correct"
     assert len(coaching["answer_analysis"]["choice_explanations"]) == 5
     assert {choice["label"] for choice in coaching["answer_analysis"]["choice_explanations"]} == set("ABCDE")
-    assert coaching["prompt_version"] == "coaching-v3-invalid-is-a-finding"
+    # The version the grade was produced under, read from the module rather than
+    # spelled out. Pinning the literal made this test fail on every legitimate
+    # bump, which is the opposite of what the column is for: what has to hold is
+    # that the stored grade says which prompt made it.
+    from app.coaching import PROMPT_VERSION
+
+    assert coaching["prompt_version"] == PROMPT_VERSION
     assert captured["request"]["reasoning_effort"] == "xhigh"
     assert "one decisive bottom-line sentence" in captured["request"]["messages"][0]["content"]
     assert coaching_response.json["reward"]["explanation_grade"] == "Excellent"
@@ -2953,32 +3109,43 @@ def test_every_case_carries_a_strategy_trial(app):
 
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        # Every position, not just the old position % 4 == 2 cadence.
-        assert [item.position for item in items if item.strategy_key] == [0, 1, 2, 3, 4, 5, 6]
+        # Every position, not just the old position % 4 == 2 cadence. Counted
+        # off the run rather than written out, because a run that served a
+        # Reading Comprehension passage whole is a question or two longer than
+        # the seven it asked for.
+        assert [item.position for item in items if item.strategy_key] == list(range(len(items)))
         assert all(item.strategy_variant in {"prompt", "control_visible"} for item in items)
 
 
-def test_every_item_in_a_ten_question_run_arrives_with_a_card(app):
-    """End to end, over a real run of ten: no question arrives with nothing.
+def test_every_item_in_a_long_run_arrives_with_a_card(app):
+    """End to end, over a real run: no question arrives with nothing.
 
     This is the whole point of the visible control. A quarter of these carry the
     neutral card instead of a technique, which is what keeps the control arm —
     and therefore the approach ranking, which is a difference against it —
     alive. What the student must never see is a question with no card at all.
 
-    Ten is the production `PRACTICE_SESSION_SIZE`, and the size is requested
-    explicitly because the fixture runs smaller runs everywhere else.
+    A ten-question run is requested explicitly, twice the shipped
+    `PRACTICE_SESSION_SIZE`, so that a run long enough to reach both arms is
+    exercised and so that the fixture's smaller default runs are not what this
+    is measured on.
+
+    The length is a floor and not an equality. A reading case is one passage and
+    is therefore as long as its passage rather than as long as the number that
+    was asked for, so a request for ten can come back as a seven-question
+    passage. What this test is about is that every item has a card, so it takes
+    the run it was given and checks all of it.
     """
-    from app.services import serialize_item
+    from app.services import reading_case_ceiling, reading_case_floor, serialize_item
 
     client = app.test_client()
-    headers = login(client, "ten-question-cards@example.test")
+    headers = login(client, "long-run-cards@example.test")
     create_game(client, headers)
     session = client.post("/v1/study-sessions", json={"size": 10}, headers=headers).json["session"]
 
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        assert len(items) == 10
+        assert reading_case_floor(10) <= len(items) <= reading_case_ceiling(10)
 
         cards = []
         for item in items:
@@ -2995,8 +3162,8 @@ def test_every_item_in_a_ten_question_run_arrives_with_a_card(app):
                 assert payload["strategy_gate"] is None
                 assert item.strategy_enforcement_level == "none"
 
-        assert len(cards) == 10
-        # Both arms are reachable in a run of ten, which is what makes this a
+        assert len(cards) == len(items)
+        # Both arms are reachable in a long run, which is what makes this a
         # trial rather than a universal prompt wearing one.
         assert set(cards) <= {"prompt", "neutral"}
 
@@ -3012,7 +3179,7 @@ def test_the_neutral_arm_needs_no_decision_and_records_no_self_report(app):
     client = app.test_client()
     headers = login(client, "neutral-no-decision@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 3}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
 
     with app.app_context():
         study = db.session.get(StudySession, session["id"])
@@ -3100,11 +3267,17 @@ def test_the_diagnostic_still_has_no_strategy_trial(app):
 
         user = User.query.filter_by(email="diagnostic-no-trial@example.test").one()
         question = Question.query.order_by(Question.id).first()
-        assert assign_strategy_trial(user.id, question, "diagnostic", 2) is None
-        assert assign_strategy_trial(user.id, question, "cases", 1) is not None
+        assert assign_strategy_trial(user.id, question, 1, exposure="run-1") is not None
 
 
 def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
+    """One exposure, asked twice, answers the same — nobody is flipped mid-question.
+
+    The exposure is part of the assignment's identity, so "identical" means the
+    same student meeting the same question at the same slot *of the same run*.
+    Two different runs are two different encounters and are randomised
+    separately, which is `test_strategy_selection`'s subject.
+    """
     client = app.test_client()
     headers = login(client, "strategy-stable@example.test")
     create_game(client, headers)
@@ -3114,12 +3287,33 @@ def test_strategy_assignment_stays_deterministic_across_identical_runs(app):
 
         user = User.query.filter_by(email="strategy-stable@example.test").one()
         question = Question.query.order_by(Question.id).first()
-        first = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
-        second = [assign_strategy_trial(user.id, question, "cases", position) for position in range(6)]
+        first = [
+            assign_strategy_trial(user.id, question, position, exposure="run-1")
+            for position in range(6)
+        ]
+        second = [
+            assign_strategy_trial(user.id, question, position, exposure="run-1")
+            for position in range(6)
+        ]
         assert first == second
         # The control arm still exists alongside the prompts. It is visible now
         # rather than hidden, but it is still an arm that offers no technique.
         assert {trial["variant"] for trial in first} <= {"prompt", "control_visible"}
+
+        # Deterministic within a run, and *not* deterministic across runs.
+        # This is the whole exposure defect in two lines: the arm used to be a
+        # hash of student, question, slot and style, so the same question
+        # returning to the same slot re-drew the same arm forever and a heavy
+        # user's realised control share collapsed toward zero while the
+        # bank-wide figure stayed at a healthy quarter. One question in one
+        # slot across sixty runs has to produce both arms.
+        across = {
+            assign_strategy_trial(
+                user.id, question, 0, exposure=f"run-{index}"
+            )["variant"]
+            for index in range(60)
+        }
+        assert across == {"prompt", "control_visible"}
 
 
 def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monkeypatch):
@@ -3142,7 +3336,7 @@ def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monke
         user = User.query.filter_by(email="strategy-control@example.test").one()
         question = Question.query.order_by(Question.id).first()
         monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.0)
-        assigned = assign_strategy_trial(user.id, question, "deep", 2)
+        assigned = assign_strategy_trial(user.id, question, 2, exposure="run-1")
         assert assigned["variant"] == "control_visible"
         assert assigned["key"] in {"argument_core", "prephrase", "scope_precision", "conditional_chain"}
         # The arm's propensity is untouched by making it visible, so the
@@ -3152,7 +3346,7 @@ def test_strategy_control_assignment_is_stable_and_names_no_technique(app, monke
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=35,
             total_items=1,
@@ -3205,7 +3399,7 @@ def test_prompted_strategy_requires_a_decision_and_valid_prompt_time(app):
     client = app.test_client()
     headers = login(client, "strategy-submit@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     item_id = session["current_item"]["id"]
     # Deliberately omits strategy_applied: the first submission below must be
     # rejected for exactly that reason.
@@ -3269,7 +3463,7 @@ def test_strategy_dashboard_uses_intention_to_treat_and_hedges_language(app):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             status="completed",
             target_minutes=35,
@@ -3364,7 +3558,7 @@ def test_strategy_dashboard_shows_a_percentage_once_both_arms_are_large(app):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=35,
             total_items=64,
@@ -3439,7 +3633,7 @@ def _seed_strategy_trials(
     session = StudySession(
         user_id=user.id,
         mode="practice",
-        practice_style="deep",
+        practice_style="cases",
         feedback_policy="immediate",
         status="completed",
         target_minutes=35,
@@ -3842,10 +4036,21 @@ def test_review_queue_tracks_pending_grade_state(app):
         assert ReviewQueueItem.__table__.c.pre_grade_interval_index.nullable is True
 
 
-def test_cases_is_the_only_practice_style(app):
-    from app.services import PRACTICE_STYLES, REASONING_MIN_CHARS
+def test_a_practice_run_has_no_style_to_choose(app):
+    """There was a `PRACTICE_STYLES` set, and it held one value.
 
-    assert PRACTICE_STYLES == {"cases"}
+    This test used to assert that. A validation set with a single member does
+    not constrain anything — every call passed the only legal value — so it was
+    a configuration point in appearance and a constant in fact. It is gone,
+    along with the parameter it validated, and the assertion below is the one
+    that survives contact with that: a run is a "cases" run because there is
+    nothing else for it to be, not because a default said so.
+    """
+    import inspect
+
+    from app.services import REASONING_MIN_CHARS, create_study_session
+
+    assert "practice_style" not in inspect.signature(create_study_session).parameters
     assert REASONING_MIN_CHARS == 120
 
 
@@ -3853,7 +4058,7 @@ def test_every_case_requires_a_full_explanation(app):
     client = app.test_client()
     headers = login(client, "requires-cases@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     assert session["practice_style"] == "cases"
     assert session["feedback_policy"] == "immediate"
     assert session["current_item"]["requires_reasoning"] is True
@@ -3866,7 +4071,7 @@ def test_requested_practice_style_is_ignored(app):
     create_game(client, headers)
     response = client.post(
         "/v1/study-sessions",
-        json={"size": 1, "practice_style": "speedrun", "feedback_policy": "delayed"},
+        json={"size": 4, "practice_style": "speedrun", "feedback_policy": "delayed"},
         headers=headers,
     )
     assert response.status_code == 201
@@ -3889,7 +4094,7 @@ def test_missing_explanation_is_rejected(app):
     create_game(client, headers)
     session = client.post(
         "/v1/study-sessions",
-        json={"size": 1, "practice_style": "speedrun"},
+        json={"size": 4, "practice_style": "speedrun"},
         headers=headers,
     ).json["session"]
     response = client.post(
@@ -3907,7 +4112,7 @@ def test_short_explanation_is_rejected_with_its_own_code(app):
     create_game(client, headers)
     session = client.post(
         "/v1/study-sessions",
-        json={"size": 1, "practice_style": "speedrun"},
+        json={"size": 4, "practice_style": "speedrun"},
         headers=headers,
     ).json["session"]
     response = client.post(
@@ -3925,7 +4130,7 @@ def test_deep_practice_enforces_the_longer_floor(app):
     create_game(client, headers)
     session = client.post(
         "/v1/study-sessions",
-        json={"size": 1, "practice_style": "deep"},
+        json={"size": 4, "practice_style": "deep"},
         headers=headers,
     ).json["session"]
     # 60 characters clears the speedrun floor of 40 but not the deep floor of 120.
@@ -3959,7 +4164,7 @@ def test_correct_answer_with_invalid_explanation_enters_the_review_queue(app):
     client = app.test_client()
     headers = login(client, "unsupported-correct@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     answered = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -3995,7 +4200,7 @@ def test_good_explanation_on_a_confident_correct_answer_schedules_nothing(app):
     client = app.test_client()
     headers = login(client, "supported-correct@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     answered = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -4018,7 +4223,7 @@ def test_headline_counts_diagnostic_only_and_cases_get_their_own_panel(app):
     headers = login(client, "headline-split@example.test")
     create_game(client, headers)
 
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -4040,6 +4245,10 @@ def test_headline_counts_diagnostic_only_and_cases_get_their_own_panel(app):
 
 def test_review_recovery_reads_the_review_queue_flag(app, monkeypatch):
     """Recovery counts only the repaired item, wherever interleaving placed it."""
+    # An argument run, so the queued repair is actually served. A reading case
+    # is built from one passage and carries only that passage's review, which is
+    # the right behaviour and the wrong run for this test.
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
     client = app.test_client()
     headers = login(client, "recovery-flag@example.test")
     create_game(client, headers)
@@ -4049,8 +4258,11 @@ def test_review_recovery_reads_the_review_queue_flag(app, monkeypatch):
         _queue_due_question(user.id, repaired.id)
         repaired_id = repaired.id
 
-    session = client.post("/v1/study-sessions", json={"size": 2}, headers=headers).json["session"]
-    for index in range(2):
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
+    # Over the run's own length, not over the size it asked for: a reading case
+    # runs to whatever its passage is, and stopping early leaves the run
+    # unfinished so nothing that happens on completion happens.
+    for index in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
         item = current["current_item"]
         result = client.post(
@@ -4079,10 +4291,17 @@ def test_every_case_attaches_game_context_and_the_diagnostic_never_does(app):
     headers = login(client, "every-case-pays@example.test")
     create_game(client, headers)
 
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     with app.app_context():
-        item = SessionItem.query.filter_by(session_id=session["id"]).one()
-        assert item.game_context_json is not None
+        items = (
+            SessionItem.query.filter_by(session_id=session["id"])
+            .order_by(SessionItem.position)
+            .all()
+        )
+        # The case is the run, so the client and fee ride on the item that opens
+        # it and on no other.
+        assert items[0].game_context_json is not None
+        assert all(item.game_context_json is None for item in items[1:])
 
     diagnostic = client.post("/v1/diagnostics", json={}, headers=headers).json["session"]
     with app.app_context():
@@ -4112,31 +4331,79 @@ def _queue_due_question(user_id: str, question_id: str) -> None:
     db.session.commit()
 
 
-def test_due_repairs_are_interleaved_through_a_run_and_capped_at_half(app):
-    """Repairs fill at most half a run, spread through it rather than stacked.
+def _run_origins(app, email, *, holdback):
+    """Which positions of a six-question run came from the review queue.
+
+    `holdback` pins `run_ordering` to one arm, which these tests have to do now
+    that the ordering is drawn rather than fixed: at the shipped quarter, one
+    run in four is front-loaded on purpose and an unpinned assertion about the
+    order would fail on those. Pinning is not a workaround for the layer — it
+    is the only way to test either arm, and both are tested below.
+    """
+    client = app.test_client()
+    headers = login(client, email)
+    create_game(client, headers)
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
+    with app.app_context():
+        user = User.query.filter_by(email=email).one()
+        for question in Question.query.order_by(Question.id).limit(12).all():
+            _queue_due_question(user.id, question.id)
+
+    app.config["ADAPTIVE_LAYERS"] = {"run_ordering": {"holdback": holdback}}
+    try:
+        session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
+    finally:
+        app.config.pop("ADAPTIVE_LAYERS", None)
+    with app.app_context():
+        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
+        return [item.from_review_queue for item in items]
+
+
+def test_due_repairs_are_interleaved_through_a_run_and_never_fill_it(app):
+    """Repairs are spread through a run and always leave fresh material in it.
 
     Front-loading is what the old `repairs + fresh` concatenation did, and it
     leaks the answer key: "the first three are the ones you got wrong" is a cue
     the student reads before the stem. See `app/scheduling.interleave`.
-    """
-    client = app.test_client()
-    headers = login(client, "folded-repairs@example.test")
-    create_game(client, headers)
-    with app.app_context():
-        user = User.query.filter_by(email="folded-repairs@example.test").one()
-        for question in Question.query.order_by(Question.id).limit(5).all():
-            _queue_due_question(user.id, question.id)
 
-    session = client.post("/v1/study-sessions", json={"size": 6}, headers=headers).json["session"]
-    with app.app_context():
-        items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
-        origins = [item.from_review_queue for item in items]
-        assert sum(origins) == 3
-        assert origins != [True, True, True, False, False, False]
-        assert origins[0] is False
+    Interleaving is a property of the argument case, so that is the shape asked
+    for. A reading case is one passage and has nothing to interleave: its review
+    is whichever of the passage's own questions were due, and they arrive in the
+    passage's order because that is the order the passage reads in.
+
+    This student has twelve cards and has answered none of them, so their whole
+    queue is slipping and the review share is at `REVIEW_SHARE_CEILING` — the
+    worst case, and the one worth pinning, because it is where "more review for
+    a student who is behind" would turn into "nothing but repeats" if the
+    ceiling were not there. Two of the six are still new.
+    """
+    from app.services import REVIEW_SHARE_CEILING
+
+    origins = _run_origins(app, "folded-repairs@example.test", holdback=0.0)
+    assert sum(origins) == int(6 * REVIEW_SHARE_CEILING)
+    assert sum(origins) < len(origins), "a run of nothing but repeats"
+    assert origins != [True, True, True, True, False, False]
+
+
+def test_the_front_loaded_arm_really_front_loads(app):
+    """The off arm of `run_ordering` has to actually be off.
+
+    An arm that is never off measures nothing, and an arm that is nominally off
+    while still receiving the treatment measures worse than nothing: the
+    comparison fills, reports a difference near zero, and reads as evidence
+    that interleaving does not work. This is the assertion that would catch the
+    off arm quietly still calling `interleave`.
+    """
+    from app.services import REVIEW_SHARE_CEILING
+
+    origins = _run_origins(app, "front-loaded-arm@example.test", holdback=1.0)
+    assert sum(origins) == int(6 * REVIEW_SHARE_CEILING)
+    assert origins == [True, True, True, True, False, False]
 
 
 def test_an_empty_review_queue_still_produces_a_full_run(app):
+    from app.services import passage_overshoot_allowance
+
     client = app.test_client()
     headers = login(client, "no-repairs@example.test")
     create_game(client, headers)
@@ -4144,7 +4411,7 @@ def test_an_empty_review_queue_still_produces_a_full_run(app):
     assert response.status_code == 201
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=response.json["session"]["id"]).all()
-        assert len(items) == 4
+        assert 4 <= len(items) <= 4 + passage_overshoot_allowance(4)
         assert not any(item.from_review_queue for item in items)
 
 
@@ -4187,6 +4454,9 @@ def test_question_selection_never_returns_an_excluded_question(app):
 
 
 def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeypatch):
+    # An argument run, so the run really is mixed: a reading case is built from
+    # one passage and carries only that passage's review.
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
     client = app.test_client()
     headers = login(client, "mixed-run@example.test")
     create_game(client, headers)
@@ -4196,7 +4466,7 @@ def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeyp
         _queue_due_question(user.id, repaired.id)
         repaired_id = repaired.id
 
-    session = client.post("/v1/study-sessions", json={"size": 2}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     with app.app_context():
         items = SessionItem.query.filter_by(session_id=session["id"]).order_by(SessionItem.position).all()
         assert {item.from_review_queue for item in items} == {True, False}
@@ -4204,7 +4474,7 @@ def test_one_run_can_both_advance_a_repair_and_enqueue_a_fresh_miss(app, monkeyp
 
     # The repair: a correct answer with a Good explanation advances its memory
     # state. The fresh item: a high-confidence miss must enter the queue.
-    for index in range(2):
+    for index in range(session["total_items"]):
         current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
         item = current["current_item"]
         is_repair = item["position"] == repair_position
@@ -4357,7 +4627,7 @@ def test_landing_grade_revises_the_provisional_schedule(app, monkeypatch):
     client = app.test_client()
     headers = login(client, "backfill@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     answered = client.post(
         f"/v1/study-sessions/{session['id']}/attempts",
         json={
@@ -4424,7 +4694,7 @@ def test_strategy_scoring_weighs_explanation_quality(app, monkeypatch):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=10,
             total_items=len(candidates) * 3,
@@ -4465,13 +4735,19 @@ def test_strategy_scoring_weighs_explanation_quality(app, monkeypatch):
         db.session.commit()
 
         monkeypatch.setattr("app.strategies._stable_fraction", lambda _value: 0.5)
+        # Which approach the ranking picks is only defined on the ranked arm of
+        # `strategy_selection`; the uniform arm picks a candidate regardless of
+        # score, on purpose, and that is the comparison. Pinning the arm is how
+        # this test says which of the two it is about.
+        app.config["ADAPTIVE_LAYERS"] = {"strategy_selection": {"holdback": 0.0}}
 
         from app.strategies import assign_strategy_trial
 
-        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        trial = assign_strategy_trial(user.id, question, 2, exposure="run-1")
         assert trial is not None
         assert trial["variant"] == "prompt"
         assert trial["key"] == best
+        assert trial["selection_arm"] == "ranked"
 
 
 def test_strategy_scoring_falls_back_without_graded_attempts(app):
@@ -4484,7 +4760,7 @@ def test_strategy_scoring_falls_back_without_graded_attempts(app):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=10,
             total_items=1,
@@ -4524,7 +4800,7 @@ def test_strategy_scoring_falls_back_without_graded_attempts(app):
         from app.strategies import assign_strategy_trial
 
         # Must not raise (a naive mean over None would) and must still assign.
-        trial = assign_strategy_trial(user.id, question, "deep", 2)
+        trial = assign_strategy_trial(user.id, question, 2, exposure="run-1")
         assert trial is not None
         assert trial["key"] in {"argument_core", "prephrase", "scope_precision", "role_map"}
 
@@ -4539,7 +4815,7 @@ def test_strategy_performance_reports_explanation_metrics(app):
         session = StudySession(
             user_id=user.id,
             mode="practice",
-            practice_style="deep",
+            practice_style="cases",
             feedback_policy="immediate",
             target_minutes=10,
             total_items=2,
@@ -4598,7 +4874,7 @@ def test_explanation_floor_boundary_matches_the_published_minimum(app):
     client = app.test_client()
     headers = login(client, "boundary-cases@example.test")
     create_game(client, headers)
-    session = client.post("/v1/study-sessions", json={"size": 1}, headers=headers).json["session"]
+    session = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
     item_id = session["current_item"]["id"]
     assert session["current_item"]["reasoning_min_chars"] == floor
 
@@ -4618,38 +4894,72 @@ def test_explanation_floor_boundary_matches_the_published_minimum(app):
     assert exact.status_code == 200
 
 
-def _answer_mega_litigation(client, headers, session: dict, correct: int, marker: str) -> dict:
-    """Sit the whole form, getting exactly ``correct`` questions right.
+def _end_intermission(session_id: str) -> None:
+    """Wind a running intermission back so the next section can be begun."""
+    db.session.execute(
+        update(StudySession)
+        .where(StudySession.id == session_id)
+        .values(intermission_started_at=utcnow() - timedelta(hours=1))
+    )
+    db.session.commit()
+
+
+def _answer_mega_litigation(app, client, headers, session: dict, correct: int) -> dict:
+    """Sit the whole form section by section, getting exactly ``correct`` right.
 
     Every fixture question is keyed "C", so a wrong answer is any other label.
-    The diagnostic releases feedback at the end, so no debrief stands between
-    questions and each answer is followed straight by the next.
+    This walks the administration the way a student does: fill in the running
+    section's sheet, submit it, take the intermission if one is owed, begin the
+    next section. Nothing is graded until a section closes.
     """
     session_id = session["id"]
-    for position in range(session["total_items"]):
+    answered = 0
+    for _ in range(4 * max(1, len(session.get("exam", {}).get("sections", [1])))):
         current = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
-        item = current.get("current_item")
-        if not item:
+        if current["status"] != "in_progress":
             break
-        answered = client.post(
-            f"/v1/study-sessions/{session_id}/attempts",
-            json={"item_id": item["id"], "selected_label": "C" if position < correct else "A"},
-            headers={**headers, "Idempotency-Key": f"{marker}-{position}"},
+        form = current.get("exam") or {}
+        if form.get("stage") == "in_section":
+            for entry in form["answer_sheet"]:
+                recorded = client.put(
+                    f"/v1/study-sessions/{session_id}/answers/{entry['item_id']}",
+                    json={"selected_label": "C" if answered < correct else "A"},
+                    headers=headers,
+                )
+                assert recorded.status_code == 200, recorded.json
+                answered += 1
+            closed = client.post(
+                f"/v1/study-sessions/{session_id}/sections/{form['active_section_index']}/submit",
+                headers=headers,
+            )
+            assert closed.status_code == 200, closed.json
+            continue
+        if form.get("next_section_index") is None:
+            break
+        if form.get("stage") == "intermission":
+            with app.app_context():
+                _end_intermission(session_id)
+        started = client.post(
+            f"/v1/study-sessions/{session_id}/sections/{form['next_section_index']}/start",
+            headers=headers,
         )
-        assert answered.status_code == 200, answered.json
+        assert started.status_code == 200, started.json
     return client.get(f"/v1/study-sessions/{session_id}", headers=headers).json
 
 
-def _expire_mega_litigation(session_id: str) -> None:
-    """Move a running form's deadline into the past without touching its status.
+def _expire_running_section(session_id: str) -> None:
+    """Move the running section's bell into the past without touching its status.
 
     Written straight to the column so the run stays exactly as the student left
     it — the point of each test that calls this is what the *next* request does
     when it finds the clock already spent.
     """
+    section = (
+        SessionSection.query.filter_by(session_id=session_id, status="in_progress").one()
+    )
     db.session.execute(
-        update(StudySession)
-        .where(StudySession.id == session_id)
+        update(SessionSection)
+        .where(SessionSection.id == section.id)
         .values(deadline_at=utcnow() - timedelta(minutes=1))
     )
     db.session.commit()
@@ -4663,11 +4973,11 @@ def test_diagnostic_misses_become_one_untimed_blind_review_before_answers_unlock
     missed = 2
 
     finished = _answer_mega_litigation(
+        app,
         client,
         headers,
         diagnostic,
         diagnostic["total_items"] - missed,
-        "blind-source",
     )
     assert finished["session"]["blind_review"] == {
         "state": "ready",
@@ -4752,11 +5062,11 @@ def test_a_perfect_diagnostic_skips_an_empty_blind_review(app):
     create_game(client, headers)
     diagnostic = client.post("/v1/diagnostics", headers=headers).json["session"]
     finished = _answer_mega_litigation(
+        app,
         client,
         headers,
         diagnostic,
         diagnostic["total_items"],
-        "perfect-blind-source",
     )
 
     assert finished["session"]["blind_review"]["state"] == "not_needed"
@@ -4777,7 +5087,7 @@ def test_a_sealed_diagnostic_keeps_the_active_slot_until_its_blind_review_is_don
     headers = login(client, "sealed-diagnostic@example.test")
     create_game(client, headers)
     diagnostic = client.post("/v1/diagnostics", headers=headers).json["session"]
-    _answer_mega_litigation(client, headers, diagnostic, diagnostic["total_items"] - 1, "sealed-source")
+    _answer_mega_litigation(app, client, headers, diagnostic, diagnostic["total_items"] - 1)
 
     current = client.get("/v1/diagnostics/current", headers=headers).json
     assert current["session"]["id"] == diagnostic["id"]
@@ -4801,35 +5111,195 @@ def test_a_sealed_diagnostic_keeps_the_active_slot_until_its_blind_review_is_don
     assert client.get(f"/v1/study-sessions/{diagnostic['id']}/review", headers=headers).status_code == 200
 
 
-def test_a_mega_litigation_runs_on_one_whole_form_clock(app):
-    """One deadline for the sitting, and one even per-question budget under it.
+def test_a_mega_litigation_runs_on_a_clock_per_section(app):
+    """Three separately timed sections, one of them running, with a break owed.
 
-    The blocks keep their labels and boundaries but lose their minutes: with a
-    single clock, a per-section budget would be a number nothing enforces.
+    The real test is "four (4) separately timed, thirty-five (35) minute
+    sections" with a ten-minute intermission between the second and the third
+    (LSAC Candidate Agreement 2026-2027 § 15; LSAC FAQ). This form omits the
+    unscored variable section, so it runs the three scored ones on the same
+    terms.
     """
     client = app.test_client()
     headers = login(client, "mega-clock@example.test")
     create_game(client, headers)
 
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
-    assert session["deadline_at"]
-    assert session["time_limit_seconds"] == session["target_minutes"] * 60
-    assert 0 < session["remaining_ms"] <= session["time_limit_seconds"] * 1000
-    assert all("minutes" not in block for block in session["section_plan"])
-    assert [block["label"] for block in session["section_plan"]] == [
+    form = session["exam"]
+    assert [section["label"] for section in form["sections"]] == [
         "Logical Reasoning I",
         "Reading Comprehension",
         "Logical Reasoning II",
     ]
+    assert {section["time_limit_seconds"] for section in form["sections"]} == {35 * 60}
+    # The break falls after the second section and nowhere else.
+    assert [section["break_seconds"] for section in form["sections"]] == [0, 10 * 60, 0]
+
+    # Section one is running because creating the form is the student saying
+    # they are sitting it. Nothing after it has a clock yet.
+    assert form["stage"] == "in_section"
+    assert form["active_section_index"] == 0
+    assert [section["status"] for section in form["sections"]] == ["in_progress", "pending", "pending"]
+    assert form["sections"][0]["deadline_at"]
+    assert all(section["deadline_at"] is None for section in form["sections"][1:])
+    # The countdown the client is handed is the section's, never the form's.
+    assert 0 < session["remaining_ms"] <= 35 * 60 * 1000
+    assert form["warning_seconds"] == 5 * 60
+    assert session["target_minutes"] == 3 * 35
 
     with app.app_context():
         record = db.session.get(StudySession, session["id"])
-        assert record.deadline_at - record.started_at == timedelta(minutes=record.target_minutes)
-        even_split = round(record.target_minutes * 60 / record.total_items)
-        targets = {item.target_time_seconds for item in SessionItem.query.filter_by(session_id=record.id)}
-        # One budget for every question, not the old 150s LR / 330s RC targets
-        # that summed to more than twice the form's own clock.
-        assert targets == {even_split}
+        for section in record.sections:
+            targets = {
+                item.target_time_seconds
+                for item in SessionItem.query.filter(
+                    SessionItem.session_id == record.id,
+                    SessionItem.position >= section.start_position,
+                    SessionItem.position <= section.end_position,
+                )
+            }
+            # On pace means an even split of *this section's* clock, which is
+            # the only budget that can actually run out on a student.
+            assert targets == {round(section.time_limit_seconds / section.question_count)}
+
+
+def test_a_form_refuses_work_outside_the_section_on_the_clock(app):
+    """"During the time allotted for each section, you may work only on that section."
+
+    Reaching forward into a section that has not started and back into one that
+    has finished are the same prohibition, and both are refused here rather
+    than merely hidden by the interface.
+    """
+    client = app.test_client()
+    headers = login(client, "mega-boundaries@example.test")
+    create_game(client, headers)
+    session = client.post("/v1/diagnostics", headers=headers).json["session"]
+    session_id = session["id"]
+    with app.app_context():
+        record = db.session.get(StudySession, session_id)
+        first, second = sorted(record.sections, key=lambda row: row.section_index)[:2]
+        first_ids = [
+            item.id
+            for item in SessionItem.query.filter(
+                SessionItem.session_id == record.id,
+                SessionItem.position >= first.start_position,
+                SessionItem.position <= first.end_position,
+            ).order_by(SessionItem.position)
+        ]
+        ahead_id = SessionItem.query.filter_by(
+            session_id=record.id, position=second.start_position
+        ).one().id
+        ahead_position = second.start_position
+
+    # Ahead: the next section's questions are not answerable, not navigable,
+    # and — the part an interface cannot be trusted with — not even served.
+    assert client.put(
+        f"/v1/study-sessions/{session_id}/answers/{ahead_id}",
+        json={"selected_label": "C"},
+        headers=headers,
+    ).json["error"]["code"] == "item_outside_active_section"
+    assert client.post(
+        f"/v1/study-sessions/{session_id}/focus/{ahead_position}", headers=headers
+    ).json["error"]["code"] == "item_outside_active_section"
+    assert client.post(
+        f"/v1/study-sessions/{session_id}/sections/1/start", headers=headers
+    ).json["error"]["code"] == "section_already_running"
+
+    # Inside the running section, everything is allowed: skip ahead, come back,
+    # change the answer, take it off again, flag it.
+    for item_id in first_ids:
+        assert client.put(
+            f"/v1/study-sessions/{session_id}/answers/{item_id}",
+            json={"selected_label": "B"},
+            headers=headers,
+        ).status_code == 200
+    changed = client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_ids[0]}",
+        json={"selected_label": "C", "flagged": True},
+        headers=headers,
+    )
+    assert changed.json["answer"] == {
+        "item_id": first_ids[0],
+        "position": 0,
+        "selected_label": "C",
+        "flagged": True,
+    }
+    cleared = client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_ids[1]}",
+        json={"selected_label": ""},
+        headers=headers,
+    )
+    assert cleared.json["answer"]["selected_label"] is None
+    sheet = {row["position"]: row for row in cleared.json["exam"]["answer_sheet"]}
+    assert sheet[0] == {**sheet[0], "answered": True, "flagged": True}
+    assert sheet[1]["answered"] is False
+
+    client.post(f"/v1/study-sessions/{session_id}/sections/0/submit", headers=headers)
+
+    # Behind: the section is closed and nothing reopens it. Nothing is running
+    # at all at a boundary, which is the stronger refusal of the two.
+    assert client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_ids[0]}",
+        json={"selected_label": "A"},
+        headers=headers,
+    ).json["error"]["code"] == "no_section_running"
+    client.post(f"/v1/study-sessions/{session_id}/sections/1/start", headers=headers)
+    assert client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_ids[0]}",
+        json={"selected_label": "A"},
+        headers=headers,
+    ).json["error"]["code"] == "item_outside_active_section"
+    with app.app_context():
+        graded = {
+            attempt.session_item.position: attempt.selected_label
+            for attempt in Attempt.query.join(SessionItem).filter(
+                SessionItem.session_id == session_id
+            )
+        }
+        # Three answers on the sheet at the bell, one taken back off it. The
+        # first is the changed one, which is what got graded.
+        assert graded[0] == "C"
+        assert 1 not in graded
+        item = SessionItem.query.filter_by(session_id=session_id, position=0).one()
+        assert item.answer_revisions == 1
+        assert item.flagged is True
+
+
+def test_the_intermission_holds_the_third_section_shut(app):
+    client = app.test_client()
+    headers = login(client, "mega-intermission@example.test")
+    create_game(client, headers)
+    session_id = client.post("/v1/diagnostics", headers=headers).json["session"]["id"]
+
+    client.post(f"/v1/study-sessions/{session_id}/sections/0/submit", headers=headers)
+    # No break after the first section: the next one is startable at once.
+    waiting = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+    assert waiting["exam"]["stage"] == "awaiting_section"
+    assert waiting["exam"]["remaining_ms"] is None
+    # Nothing from the next section crosses the wire before its clock starts.
+    assert waiting["current_item"] is None
+
+    client.post(f"/v1/study-sessions/{session_id}/sections/1/start", headers=headers)
+    client.post(f"/v1/study-sessions/{session_id}/sections/1/submit", headers=headers)
+
+    resting = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+    assert resting["exam"]["stage"] == "intermission"
+    assert resting["exam"]["intermission_ends_at"]
+    assert 0 < resting["exam"]["remaining_ms"] <= 10 * 60 * 1000
+    early = client.post(f"/v1/study-sessions/{session_id}/sections/2/start", headers=headers)
+    assert early.json["error"]["code"] == "intermission_in_progress"
+
+    with app.app_context():
+        _end_intermission(session_id)
+    resumed = client.post(f"/v1/study-sessions/{session_id}/sections/2/start", headers=headers)
+    assert resumed.status_code == 200
+    assert resumed.json["session"]["exam"]["stage"] == "in_section"
+    assert resumed.json["session"]["current_item"]
+
+    # The last section closing ends the form; scoring runs without being asked.
+    finished = client.post(f"/v1/study-sessions/{session_id}/sections/2/submit", headers=headers)
+    assert finished.json["session"]["status"] == "completed"
+    assert finished.json["summary"]["omitted"] == finished.json["session"]["total_items"]
 
 
 def test_a_mega_litigation_is_the_full_reference_form_end_to_end(app):
@@ -4907,63 +5377,97 @@ def test_a_mega_litigation_cannot_be_paused_or_resumed(app):
         assert db.session.get(StudySession, session["id"]).status == "in_progress"
 
 
-def test_the_clock_running_out_submits_the_mega_litigation_as_it_stood(app):
+def test_a_section_whose_clock_runs_out_ends_hard_and_the_form_carries_on(app):
+    """"Once time expires for each section, no additional inputs may be made."
+
+    The bell is not the end of the sitting — two sections are still owed — but
+    it is the end of that section, and it is final: whatever was on the sheet
+    is graded, whatever was not stays blank, and nothing reopens it. The
+    expiry is discovered by the next request rather than by a sweeper, which
+    is what makes shutting the laptop cost the student the time it costs.
+    """
     client = app.test_client()
     headers = login(client, "mega-expired@example.test")
     create_game(client, headers)
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
-    total = session["total_items"]
-
-    client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={"item_id": session["current_item"]["id"], "selected_label": "C"},
-        headers={**headers, "Idempotency-Key": "expired-one"},
+    session_id = session["id"]
+    first_item = session["current_item"]["id"]
+    client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_item}",
+        json={"selected_label": "C"},
+        headers=headers,
     )
-    current = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json["session"]
 
     with app.app_context():
-        _expire_mega_litigation(session["id"])
+        _expire_running_section(session_id)
+        section_size = db.session.get(StudySession, session_id).sections[0].question_count
 
-    late = client.post(
-        f"/v1/study-sessions/{session['id']}/attempts",
-        json={"item_id": current["current_item"]["id"], "selected_label": "C"},
-        headers={**headers, "Idempotency-Key": "expired-two"},
+    late = client.put(
+        f"/v1/study-sessions/{session_id}/answers/{first_item}",
+        json={"selected_label": "A"},
+        headers=headers,
     )
     assert late.status_code == 409
-    assert late.json["error"]["code"] == "diagnostic_expired"
+    assert late.json["error"]["code"] == "no_section_running"
 
-    finished = client.get(f"/v1/study-sessions/{session['id']}", headers=headers).json
-    assert finished["session"]["status"] == "completed"
-    assert finished["session"]["remaining_ms"] == 0
-    assert finished["summary"]["questions_completed"] == 1
-    assert finished["summary"]["omitted"] == total - 1
-    # Everything unanswered counts against the paper, so the form score is not
-    # the accuracy of the one question that was reached.
-    assert finished["summary"]["accuracy"] == 100
-    assert finished["summary"]["form_accuracy"] == round(100 / total)
+    after = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+    # The form is not over; the section is.
+    assert after["status"] == "in_progress"
+    assert after["exam"]["stage"] == "awaiting_section"
+    closed = after["exam"]["sections"][0]
+    assert closed["status"] == "completed"
+    assert closed["ended_reason"] == "expired"
+    assert closed["unanswered"] == section_size - 1
 
     with app.app_context():
-        record = db.session.get(StudySession, session["id"])
-        # Credited to the moment the clock ran out, not to whenever the student
-        # next happened to make a request.
-        assert record.completed_at == record.deadline_at
+        record = db.session.get(StudySession, session_id)
+        expired = record.sections[0]
+        # Credited to the bell, not to whenever the student next made a
+        # request: an unattended expiry must not hand back the time it took to
+        # notice it.
+        assert expired.ended_at == expired.deadline_at
+        answered = Attempt.query.join(SessionItem).filter(SessionItem.session_id == session_id).one()
+        assert answered.selected_label == "C"
+        assert answered.session_item.position == 0
 
 
-def test_an_expired_mega_litigation_stops_being_the_active_one(app):
-    """The clock frees the student to start another form without asking anyone."""
+def test_a_sitting_walked_away_from_at_a_boundary_is_closed_out(app):
+    """One sitting, kept a fact rather than a label.
+
+    A section that has not been started has no clock, so without this a form
+    could be begun on Monday and finished on Friday and still enter the score
+    projection as a timed administration. The grace period is generous, and
+    what it protects is the meaning of the number.
+    """
     client = app.test_client()
     headers = login(client, "mega-restart@example.test")
     create_game(client, headers)
     first = client.post("/v1/diagnostics", headers=headers).json["session"]
 
     with app.app_context():
-        _expire_mega_litigation(first["id"])
+        _expire_running_section(first["id"])
+        # Still the active form immediately after the bell: two sections are
+        # owed and the student has an hour to come back for them.
         user = User.query.filter_by(email="mega-restart@example.test").one()
-
         from app.services import find_active_diagnostic
 
+        assert find_active_diagnostic(user).id == first["id"]
+
+        db.session.execute(
+            update(SessionSection)
+            .where(SessionSection.session_id == first["id"], SessionSection.status == "completed")
+            .values(ended_at=utcnow() - timedelta(hours=3))
+        )
+        db.session.commit()
+
         assert find_active_diagnostic(user) is None
-        assert db.session.get(StudySession, first["id"]).status == "completed"
+        record = db.session.get(StudySession, first["id"])
+        assert record.status == "completed"
+        assert [section.ended_reason for section in record.sections] == [
+            "expired",
+            "abandoned",
+            "abandoned",
+        ]
 
     current = client.get("/v1/diagnostics/current", headers=headers).json
     assert current["session"] is None
@@ -4983,7 +5487,7 @@ def test_clearing_a_mega_litigation_promotes_the_firm_and_unlocks_prerequisites(
     total = session["total_items"]
     cleared = int(0.70 * total) + 1
 
-    finished = _answer_mega_litigation(client, headers, session, cleared, "promoted")
+    finished = _answer_mega_litigation(app, client, headers, session, cleared)
     summary = finished["summary"]
     assert summary["correct"] == cleared
     assert summary["form_accuracy"] > 70
@@ -5018,7 +5522,7 @@ def test_a_mega_litigation_under_the_bar_promotes_nothing(app):
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     short = int(0.70 * session["total_items"])
 
-    finished = _answer_mega_litigation(client, headers, session, short, "short")
+    finished = _answer_mega_litigation(app, client, headers, session, short)
     assert finished["summary"]["form_accuracy"] <= 70
     assert "promotion" not in finished["summary"]
 
@@ -5036,7 +5540,7 @@ def test_a_promotion_is_paid_once_however_often_the_form_is_finalized(app):
     profile_id = create_game(client, headers)["id"]
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     cleared = int(0.70 * session["total_items"]) + 1
-    _answer_mega_litigation(client, headers, session, cleared, "once")
+    _answer_mega_litigation(app, client, headers, session, cleared)
 
     with app.app_context():
         from app.services import finalize_diagnostic
@@ -5065,13 +5569,13 @@ def test_a_promotion_at_the_top_of_the_ladder_is_a_no_op(app):
         assert LedgerEntry.query.filter_by(kind="mega_litigation_promotion").count() == 0
 
 
-def _clear_a_mega_litigation(client, headers, marker: str) -> dict:
+def _clear_a_mega_litigation(app, client, headers) -> dict:
     """Sit a fresh form and clear the promotion bar. Returns its summary."""
     started = client.post("/v1/diagnostics", headers=headers)
     assert started.status_code == 201, started.json
     session = started.json["session"]
     cleared = int(0.70 * session["total_items"]) + 1
-    finished = _answer_mega_litigation(client, headers, session, cleared, marker)
+    finished = _answer_mega_litigation(app, client, headers, session, cleared)
     assert finished["summary"]["form_accuracy"] > 70
     return finished["summary"]
 
@@ -5087,9 +5591,9 @@ def test_a_second_mega_litigation_the_same_day_promotes_nothing(app):
     headers = login(client, "mega-cooldown@example.test")
     profile_id = create_game(client, headers)["id"]
 
-    assert _clear_a_mega_litigation(client, headers, "cooldown-one")["promotion"]["tier"] == 1
+    assert _clear_a_mega_litigation(app, client, headers)["promotion"]["tier"] == 1
 
-    blocked = _clear_a_mega_litigation(client, headers, "cooldown-two")
+    blocked = _clear_a_mega_litigation(app, client, headers)
     assert "promotion" not in blocked
     assert blocked["promotion_status"]["blocked_reason"] == "cooldown"
     assert blocked["promotion_status"]["available"] is False
@@ -5107,13 +5611,13 @@ def test_a_mega_litigation_promotes_again_once_the_day_has_passed(app):
     headers = login(client, "mega-cooldown-elapsed@example.test")
     profile_id = create_game(client, headers)["id"]
 
-    _clear_a_mega_litigation(client, headers, "elapsed-one")
+    _clear_a_mega_litigation(app, client, headers)
     with app.app_context():
         profile = PlayerProfile.query.filter_by(id=profile_id).one()
         profile.mega_litigation_promoted_at = utcnow() - timedelta(hours=25)
         db.session.commit()
 
-    promotion = _clear_a_mega_litigation(client, headers, "elapsed-two")["promotion"]
+    promotion = _clear_a_mega_litigation(app, client, headers)["promotion"]
     assert promotion["tier"] == 2
     assert promotion["allowance"]["used"] == 2
 
@@ -5137,7 +5641,7 @@ def test_free_promotions_stop_at_the_lifetime_allowance(app):
         profile.mega_litigation_promotions = MEGA_LITIGATION_PROMOTION_LIMIT
         db.session.commit()
 
-    spent = _clear_a_mega_litigation(client, headers, "allowance-spent")
+    spent = _clear_a_mega_litigation(app, client, headers)
     assert "promotion" not in spent
     assert spent["promotion_status"]["blocked_reason"] == "lifetime_limit"
     assert spent["promotion_status"]["remaining"] == 0
@@ -5249,15 +5753,49 @@ def test_a_focused_case_run_draws_most_of_its_questions_from_those_types(app):
             question.question_type = "Flaw"
         db.session.commit()
 
-        from app.services import FOCUS_FILL_RATIO, select_random_questions
+        from app.services import (
+            FOCUS_FILL_RATIO,
+            passage_overshoot_allowance,
+            select_random_questions,
+        )
 
+        weakness = FocusType("Logical Reasoning", "Flaw")
         size = 5
         for _ in range(8):
-            picked = select_random_questions(size, focus_types=["Flaw"])
-            assert len(picked) == size
+            picked = select_random_questions(size, focus_types=[weakness])
+            # A run reaches its size and may pass it only far enough to finish a
+            # Reading Comprehension passage, focus quota or no focus quota.
+            assert size <= len(picked) <= size + passage_overshoot_allowance(size)
             focused = sum(question.question_type == "Flaw" for question in picked)
             assert focused >= round(size * FOCUS_FILL_RATIO)
-            assert focused < size
+            assert focused < len(picked)
+
+        # The same name in the other section is a different weakness, and the
+        # quota must be filled from the section the weakness was found in. This
+        # is the whole point of carrying the section: four type names exist in
+        # both sections, so matching on the name alone let a Logical Reasoning
+        # weakness be "satisfied" by Reading Comprehension passages that merely
+        # shared the name.
+        #
+        # Stated as "the quota is filled from Logical Reasoning" rather than "no
+        # Reading Comprehension appears", because the second would be testing
+        # the overshoot ceiling instead: this call is not section-narrowed, so
+        # the *unfocused* remainder may draw a passage whenever one fits, and
+        # whether one fits at this size is the ceiling's business, not the
+        # match's.
+        for question in Question.query.filter_by(section="Reading Comprehension").all():
+            question.question_type = "Flaw"
+        db.session.commit()
+        for _ in range(8):
+            picked = select_random_questions(size, focus_types=[weakness])
+            from_weakness = sum(
+                question.section == "Logical Reasoning" and question.question_type == "Flaw"
+                for question in picked
+            )
+            assert from_weakness >= round(size * FOCUS_FILL_RATIO), (
+                f"only {from_weakness} of the quota came from Logical Reasoning Flaw; "
+                "the bias followed the type name into the other section"
+            )
 
         # No focus, no bias — the run is a plain sample of everything eligible.
         unfocused = [
@@ -5335,14 +5873,58 @@ def test_a_weak_type_keeps_exploring_strategies_after_others_have_settled(app):
         db.session.commit()
 
         assert BASE_COVERAGE_TRIALS < FOCUS_COVERAGE_TRIALS
-        assert assign_strategy_trial(user.id, question, "cases", 1)["key"] != starved
-        focused = assign_strategy_trial(
-            user.id, question, "cases", 1, focus_types=[question.question_type]
-        )
-        assert focused["key"] == starved
+        # Off the focus list, coverage is satisfied and the exploit phase runs,
+        # which is where `strategy_selection` has arms. Pinned to ranked,
+        # because "the settled leader is preferred over the starved candidate"
+        # is a statement about that arm; the uniform arm is deliberately not
+        # consulting the record and would reach the starved key by design.
+        app.config["ADAPTIVE_LAYERS"] = {"strategy_selection": {"holdback": 0.0}}
+        # Even pinned, the exploit phase can reach the worst performer on an
+        # explore draw, so the claim this test can make is about the coverage
+        # branch: the run of exposures below must contain at least one that is
+        # not the starved key, where a coverage-bound question would return it
+        # on every single one.
+        unfocused = {
+            assign_strategy_trial(user.id, question, 1, exposure=f"run-{index}")["key"]
+            for index in range(12)
+        }
+        assert unfocused - {starved}
+        # On the focus list the bar is higher, the question is still covering,
+        # and the least-sampled candidate is the only one it can return. The
+        # coverage branch has no selection arm, so this holds either way.
+        focused = {
+            assign_strategy_trial(
+                user.id, question, 1, exposure=f"run-{index}",
+                focus_types=[FocusType(question.section, question.question_type)],
+            )["key"]
+            for index in range(12)
+        }
+        assert focused == {starved}
         # The focus list is read by question type, not applied to everything.
-        elsewhere = assign_strategy_trial(user.id, question, "cases", 1, focus_types=["Some Other Type"])
-        assert elsewhere["key"] != starved
+        elsewhere = {
+            assign_strategy_trial(
+                user.id, question, 1, exposure=f"run-{index}",
+                focus_types=[FocusType(question.section, "Some Other Type")],
+            )["key"]
+            for index in range(12)
+        }
+        assert elsewhere - {starved}
+        # And by section as well as type. The same type name in the other
+        # section is a different weakness, and spending the longer coverage
+        # runway on it would spend the trial's observation budget on questions
+        # the student was never shown to be weak at.
+        other_section = (
+            "Reading Comprehension" if question.section == "Logical Reasoning" else "Logical Reasoning"
+        )
+        across = {
+            assign_strategy_trial(
+                user.id, question, 1, exposure=f"run-{index}",
+                focus_types=[FocusType(other_section, question.question_type)],
+            )["key"]
+            for index in range(12)
+        }
+        assert across - {starved}
+        app.config.pop("ADAPTIVE_LAYERS", None)
 
 
 def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
@@ -5352,11 +5934,17 @@ def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
 
     blank = client.get("/v1/performance", headers=headers).json["performance"]
     assert blank["focus"]["types"] == []
-    assert "Finish a mega-litigation" in blank["focus"]["explanation"]
+    # The empty state no longer says "finish a mega-litigation", because the
+    # signal underneath it no longer waits for one. A student's ordinary
+    # practice is now what the weak-type list is read from, so what an empty
+    # list means has changed too: not "we have not measured you yet" but
+    # "nothing you have done stands out below the rest of its section".
+    assert "Nothing stands out yet" in blank["focus"]["explanation"]
+    assert blank["focus"]["sitting"]["types"] == []
 
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     total = session["total_items"]
-    _answer_mega_litigation(client, headers, session, total - 1, "report")
+    _answer_mega_litigation(app, client, headers, session, total - 1)
 
     snapshot = client.get("/v1/performance", headers=headers).json["performance"]
     report = snapshot["diagnostic"]
@@ -5375,3 +5963,105 @@ def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
         user = User.query.filter_by(email="mega-report@example.test").one()
         kinds = {entry.kind for entry in LedgerEntry.query.filter_by(user_id=user.id)}
         assert kinds == {"opening_balance", "mega_litigation_promotion"}
+
+
+def _current_item(client, headers, session_id: str) -> dict | None:
+    body = client.get(f"/v1/study-sessions/{session_id}", headers=headers).json["session"]
+    return body.get("current_item") or body.get("pending_item")
+
+
+def _save_draft(client, headers, session_id: str, item_id: str, reasoning: str):
+    return client.patch(
+        f"/v1/study-sessions/{session_id}/items/{item_id}/draft",
+        json={"selected_label": "B", "reasoning": reasoning},
+        headers=headers,
+    )
+
+
+def test_draft_autosave_covers_every_openable_run_and_404s_only_once_the_run_is_gone(app):
+    """The autosave is the only copy of reasoning a student is part-way through
+    writing, so the shapes it accepts are a contract rather than an accident.
+
+    `_owned_session` scopes by owner *and* by a mode allow-list, and both the
+    draft path and the sibling `/attempts` path go through it. Narrowing either
+    filter — adding a fourth mode, or excluding a run that is merely paused —
+    would turn a legitimate save into a 404, and a 404 here is silently
+    discarded written work rather than a visible failure. That is exactly the
+    shape a QA sweep flagged, so it is pinned here in both directions: every run
+    the case page can display accepts a draft, and a 404 is reserved for a run
+    that genuinely is not there.
+    """
+    client = app.test_client()
+    headers = login(client, "draft-autosave@example.test")
+    create_game(client, headers)
+
+    # A live practice run: the ordinary case page.
+    first = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
+    first_item = _current_item(client, headers, first["id"])
+    saved = _save_draft(client, headers, first["id"], first_item["id"], "The conclusion needs the missing link.")
+    assert saved.status_code == 200
+    assert saved.json["saved"] is True
+    assert saved.json["draft"]["reasoning"] == "The conclusion needs the missing link."
+    with app.app_context():
+        assert db.session.get(SessionItem, first_item["id"]).draft_reasoning_text == (
+            "The conclusion needs the missing link."
+        )
+
+    # Opening a second run auto-pauses the first. A queued run is still on a
+    # student's docket and still holds their typing, so it must keep accepting
+    # drafts — scoping the lookup to `in_progress` alone would lose that work.
+    second = client.post("/v1/study-sessions", json={"size": 4}, headers=headers).json["session"]
+    with app.app_context():
+        assert db.session.get(StudySession, first["id"]).status == "paused"
+    paused_save = _save_draft(client, headers, first["id"], first_item["id"], "Still mine while it waits.")
+    assert paused_save.status_code == 200
+    assert paused_save.json["draft"]["reasoning"] == "Still mine while it waits."
+
+    # A form is the one run the autosave has nothing to hold. It is found
+    # through the same lookup — the mode allow-list still admits it — and then
+    # refused on its own terms, because a sectioned administration has no
+    # reasoning box to be part-way through: `grade_exam_answer` writes
+    # `reasoning_text=None` whatever is on the row. Refusing is the honest
+    # answer rather than the convenient one. Accepting would let a stale tab
+    # keep saving text that is silently dropped at the bell, which is the
+    # failure this test exists to prevent, wearing the opposite mask.
+    diagnostic = client.post("/v1/diagnostics", json={"length": 1}, headers=headers)
+    assert diagnostic.status_code == 201
+    diagnostic_session = diagnostic.json["session"]
+    diagnostic_item = _current_item(client, headers, diagnostic_session["id"])
+    refused = _save_draft(
+        client, headers, diagnostic_session["id"], diagnostic_item["id"], "Reading the stimulus first."
+    )
+    assert refused.status_code == 409
+    assert refused.json["error"]["code"] == "exam_uses_answer_sheet"
+    with app.app_context():
+        assert db.session.get(SessionItem, diagnostic_item["id"]).draft_reasoning_text is None
+
+    # Someone else's run is not found rather than forbidden: whether a given id
+    # exists is not something an unrelated account gets to learn.
+    intruder = app.test_client()
+    intruder_headers = login(intruder, "draft-intruder@example.test")
+    create_game(intruder, intruder_headers)
+    assert _save_draft(
+        intruder, intruder_headers, first["id"], first_item["id"], "Not mine to write on."
+    ).status_code == 404
+
+    # And the honest 404: a run that has been removed underneath an open tab —
+    # which is what `scripts/seed_demo.py` does to the demo account every time
+    # it is re-run. The draft path and the sibling attempts path must agree,
+    # because a client that sees one succeed and the other fail cannot tell
+    # whether the work it is holding was kept.
+    second_item = _current_item(client, headers, second["id"])
+    with app.app_context():
+        db.session.delete(db.session.get(StudySession, second["id"]))
+        db.session.commit()
+    gone_draft = _save_draft(client, headers, second["id"], second_item["id"], "Typed into a run that is gone.")
+    assert gone_draft.status_code == 404
+    assert gone_draft.json["error"]["code"] == "session_not_found"
+    gone_attempt = client.post(
+        f"/v1/study-sessions/{second['id']}/attempts",
+        json={"item_id": second_item["id"], "selected_label": "C", "reasoning": explanation("gone"), "confidence": 3},
+        headers=headers,
+    )
+    assert gone_attempt.status_code == 404
+    assert gone_attempt.json["error"]["code"] == "session_not_found"

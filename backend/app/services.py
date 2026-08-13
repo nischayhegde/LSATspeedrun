@@ -7,12 +7,13 @@ from typing import NamedTuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import current_app
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import joinedload
 
 from .coaching import CoachingProviderError, generate_attempt_coaching
 from .extensions import db
-from .focus import diagnostic_focus, diagnostic_focus_detail
+from .focus import diagnostic_focus_detail
+from .type_focus import rolling_focus, rolling_focus_detail
 from .game import (
     CLIENT_BY_KEY,
     explanation_band,
@@ -23,8 +24,20 @@ from .game import (
     settle_attempt,
     snapshot_case_context,
 )
-from . import enforcement, scheduling
-from .models import AiJob, Attempt, Question, ReviewQueueItem, SessionItem, SkillProgress, StudySession, User, utcnow
+from . import calibration, enforcement, exam, experiments, scheduling
+from .experiments import Exposure
+from .models import (
+    AiJob,
+    Attempt,
+    Question,
+    ReviewQueueItem,
+    SessionItem,
+    SkillProgress,
+    StudySession,
+    User,
+    new_id,
+    utcnow,
+)
 from .scoring import (
     AttemptFact,
     FORM_ITEMS,
@@ -33,33 +46,47 @@ from .scoring import (
     project_score,
     projection_snapshot,
     record_projection,
+    shrink_toward_prior,
 )
 from .seed import SOURCE_PREFIX
 from .trial import trial_plan
 from .enforcement import (
     ENFORCEMENT_VERSION,
+    GATE_COPY,
     GateRejection,
     LEVEL_LIGHT,
     LEVEL_NONE,
     STATUS_ATTESTED,
     STATUS_SATISFIED,
     STATUS_SKIPPED,
+    STATUS_STOOD_DOWN,
     STATUS_UNENFORCED,
     assign_enforcement_level,
     build_gate,
+    stand_down_available,
     validate_artifact,
 )
 from .strategies import (
+    PROMPT_VARIANTS,
     VARIANT_CONTROL_VISIBLE,
-    VARIANT_PROMPT,
+    VARIANT_PROMPT_REQUIRED,
     assign_strategy_trial,
+    plan_forced_arms,
     serialize_strategy,
     strategy_performance,
 )
 
 
-PRACTICE_STYLES = {"cases"}
 FEEDBACK_POLICIES = {"immediate", "delayed"}
+# What kind of sitting a run was, which is not the same thing as a setting.
+# `StudySession.practice_style` used to be a choice the caller made from
+# `PRACTICE_STYLES`, and by the time migration 0021 had collapsed the four
+# styles into one, that set held a single value. A selector with one option is
+# not a selector; the surviving distinctions are between a practice run, a
+# mega-litigation and a blind review, and those are decided by which function
+# built the run rather than by anything the caller passes. The set and the
+# parameter are gone. The column stays, because it is the discriminator these
+# three keys read.
 EVIDENCE_CLASS = {
     "cases": "coached_practice",
     "diagnostic": "diagnostic",
@@ -110,6 +137,147 @@ MEGA_LITIGATION_PROMOTION_ACCURACY = 0.70
 # Share of a practice run's fresh questions drawn from measured weaknesses. The
 # rest stay random so practice keeps covering the whole test.
 FOCUS_FILL_RATIO = 0.6
+
+# The two sections this bank ships, spelled once. Both are compared against
+# `Question.section` all over this module as bare strings; these are here because
+# the case-shape code below turns on them and a typo would silently produce a
+# run with no Reading Comprehension in it, which is the exact bug being fixed.
+LOGICAL_REASONING = "Logical Reasoning"
+READING_COMPREHENSION = "Reading Comprehension"
+
+# What share of practice cases are Reading Comprehension cases.
+#
+# A third, and the number is over-determined: the bank is 34.4% Reading
+# Comprehension (2,366 of 6,886), the scored exam is about the same (27 RC
+# against 51 LR), and the form the mega-litigation imitates is literally one
+# section in three — LR I, RC, LR II. A practice diet of one reading case in
+# three is the same diet, at the scale of a sitting.
+#
+# In *questions* that is about 36%, not 34.4%, because a reading case is a
+# little longer than an argument case: a passage averages 6.8 questions where an
+# argument case is 6. Stated rather than tuned away. Landing exactly on the bank
+# share would want a share of 0.316, and buying 1.6 points of precision with a
+# number nobody can read off the design is a bad trade — particularly for a
+# section that was being served at 0.0%.
+#
+# It exists because the general filler cannot reach Reading Comprehension at
+# all. A passage is indivisible and 88.3% of passages are six questions or
+# longer, so a whole passage has to win a slot race against ~4,520 single
+# Logical Reasoning questions inside a budget that is usually 3. Measured with
+# `tools/audit/rc_reachability_probe.py` before this change, at fresh budgets of
+# 2, 3 and 5 the RC share was 0.0% over 40 runs each. Since fresh selection
+# served no RC, no new RC entered the review queue either, so the section
+# emptied out of practice entirely from about a student's tenth question onward.
+#
+# Raising the overshoot allowance was the first attempt and it is not enough: at
+# a budget of 3 an allowance of 2 admits passages of five or fewer, which is 41
+# of 349, and those still have to win the same race. Measured, budget 3 stayed
+# at 0.0%. The section needs its own case shape, not a bigger crack to squeeze
+# through.
+RC_CASE_SHARE = 1 / 3
+
+# The shortest sitting that can be a reading case at all.
+#
+# This was six, on the reasoning that a reading case is one passage so the
+# sitting must hold one whole, and at five `reading_case_ceiling` is 6 while the
+# median passage is 7. The reasoning was wrong, and wrong in a way worth writing
+# down because it left a whole section unreachable at every size below the
+# shipped one: an independent audit measured **0% Reading Comprehension at sizes
+# 3 and 5, across every session started**.
+#
+# A passage that does not fit is not a passage that cannot be served. Cutting a
+# passage at the ceiling and finishing it next visit is a mechanism this file
+# already had — it is how the two sixteen-question passages are served — and
+# treating it as an exception for four passages rather than as the general
+# answer is what made "does not fit whole" collapse into "serve no reading".
+# Now that a cut passage is actually finished rather than abandoned (see
+# `select_reading_comprehension_case`), the sitting only has to be long enough
+# for a reading case to still feel like the same sitting.
+#
+# Four, which is where it does. `_target_time_seconds` charges 330s for the
+# first question on a passage and 135s for each one after, so against an
+# argument case's 150s a question:
+#
+#     size 3 -> ceiling 4 -> 12.3 min against  7.5 min   1.63x
+#     size 4 -> ceiling 5 -> 14.5 min against 10.0 min   1.45x
+#     size 5 -> ceiling 6 -> 16.8 min against 12.5 min   1.34x
+#     size 6 -> ceiling 8 -> 19.0 min against 15.0 min   1.27x  (median passage)
+#
+# The shipped six-question sitting already accepts 1.27x and calls it near
+# enough the same sitting. 1.45x is the last size where that is still true;
+# 1.63x is not, because the fixed cost of reading the passage has stopped being
+# amortised and a student who asked for a short run would get a long one.
+#
+# Nothing may request a shorter *general* run — `routes.start_study_session`
+# rejects it and `create_app` refuses to boot on a shorter configured size — so
+# this is a floor with nothing underneath it rather than a branch that silently
+# drops a section. A type-filtered drill is exempt and may be any length,
+# because it has already declared its scope and a drill on an argument type
+# contains no reading by definition.
+RC_CASE_MIN_SITTING = 4
+
+# Share of a case's questions that come from the review queue rather than fresh
+# material. Half, which is what `create_study_session` has always used for the
+# Logical Reasoning case (`session_size // 2`), named here because the Reading
+# Comprehension case has to apply the same split across cases rather than inside
+# one — a passage is one unit and cannot be half review.
+#
+# This is now the *centre* of a range rather than a fixed value — the share a
+# student with an ordinary queue gets, which is what makes personalising it a
+# safe change rather than a re-pacing. See `_review_share`.
+REVIEW_SHARE = 0.5
+
+# How far the review share may move from REVIEW_SHARE, and where it lands.
+#
+# The floor exists so review never disappears: a student who is on top of their
+# queue today still has cards that will decay, and a run that stops testing them
+# stops finding out. One question in six is small enough not to pad a run and
+# large enough that the queue keeps turning over.
+#
+# The ceiling exists so practice never becomes pure repetition. Two thirds means
+# a student in real trouble still meets two new questions a run, so the bank
+# keeps opening up and the queue keeps getting new material to work with. It is
+# also self-correcting: more review drains the queue, which lowers the pressure,
+# which lowers the share.
+REVIEW_SHARE_FLOOR = 1 / 6
+REVIEW_SHARE_CEILING = 2 / 3
+
+# The share of a student's queue that has decayed below target retention at
+# which they get the old fixed half. A quarter, which is where a student who
+# plays regularly and answers their repairs actually sits — measured, on the
+# probe's warmed cohort: 81 cards slipping out of 331 tracked.
+#
+# A *share* and not a count, which was the first attempt and was wrong. A queue
+# only grows, so the number of cards below target grows with how long someone
+# has been playing whether or not they are keeping up: the warmed cohort has
+# thirteen runs' worth of overdue material and is not thirteen runs behind, it
+# has simply answered two thousand questions. Any threshold in cards is one that
+# every committed student crosses and then sits above forever, which is a knob
+# that reads "how long have you been here" while claiming to read "how far
+# behind are you". The share does not have that failure: it can only reach the
+# top when a student has genuinely stopped answering their repairs.
+QUEUE_SLIPPED_AT_REVIEW_CENTRE = 0.25
+
+# How far RC_CASE_SHARE may move for a student whose two sections have come
+# apart. A twelfth, so the share runs 1/4 to 5/12 and the reading diet runs from
+# one case in four to one case in two and a half.
+#
+# Bounded deliberately and bounded tightly. The reasons a third is the right
+# default — the bank is 34.4% Reading Comprehension, the scored exam is about
+# the same, and the form is literally one section in three — are reasons about
+# the *test*, and they do not stop being true because a particular student is
+# weak at reading. What a student's own record earns is a lean, not a veto: at
+# the extreme this serves half again as much reading as the default, which is
+# a large intervention, and it still cannot turn practice into a reading course
+# or let a strong reader stop practising the section they will be examined on.
+RC_CASE_SHARE_SPREAD = 1 / 12
+
+# The gap in section accuracy at which the reading share reaches its bound.
+# Fifteen points. Section accuracies live between about 0.4 and 0.8, so fifteen
+# points is a real difference in kind rather than a run of luck — and because
+# both sections are shrunk toward the same population prior, a student without
+# the evidence to establish a gap that size cannot produce one.
+SECTION_GAP_AT_FULL_SHIFT = 0.15
 
 
 def reasoning_min_chars(session: StudySession) -> int:
@@ -188,12 +356,19 @@ def find_resumable_session(user: User) -> StudySession | None:
 
 
 def diagnostic_remaining_ms(session: StudySession) -> int | None:
-    """Milliseconds left on a mega-litigation's whole-form clock.
+    """Milliseconds left on whichever mega-litigation clock is running.
 
-    None for anything without a deadline: coached practice, and diagnostics
-    started before the whole-form clock existed.
+    On a sectioned form that is the current section's thirty-five minutes, or
+    the intermission's ten, or nothing at all while the form waits for the
+    student to begin the next section. On a form started before sections
+    existed it is the whole-form deadline it was created under. None for
+    anything with no clock: coached practice and blind reviews.
     """
-    if session.mode != "diagnostic" or not session.deadline_at:
+    if session.mode != "diagnostic":
+        return None
+    if exam.is_sectioned(session):
+        return exam.remaining_ms(session)
+    if not session.deadline_at:
         return None
     return max(0, int((_aware_utc(session.deadline_at) - utcnow()).total_seconds() * 1000))
 
@@ -246,8 +421,16 @@ def enforce_diagnostic_deadline(session: StudySession) -> bool:
     it, and until then nothing can be written to it.
 
     Returns True when this call finalized the run.
+
+    A sectioned form has three clocks rather than one and its own state machine
+    to advance, so it delegates; forms started before sections existed keep the
+    single whole-form deadline below, unchanged.
     """
-    if session.mode != "diagnostic" or not session.deadline_at:
+    if session.mode != "diagnostic":
+        return False
+    if exam.is_sectioned(session):
+        return exam.enforce_exam_clock(session)
+    if not session.deadline_at:
         return False
     if session.status not in {"in_progress", "paused"}:
         return False
@@ -473,6 +656,11 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
         and item.position == item.session.current_index
         and not item.completed_at
         and not item.timer_started_at
+        # On a sectioned form the question at `current_index` during an
+        # intermission is the *next* section's first one. Starting its timer
+        # there would charge a student for a question they have not been shown
+        # and are not allowed to see yet.
+        and (not exam.is_sectioned(item.session) or exam.active_section(item.session) is not None)
     ):
         item.timer_activated_at = item.timer_activated_at or now
         item.timer_started_at = now
@@ -485,17 +673,33 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
     client = CLIENT_BY_KEY.get(client_key, CLIENT_BY_KEY["walk_in"])
     strategy_trial = (
         serialize_strategy(item.strategy_key)
-        if item.strategy_key and item.strategy_variant == VARIANT_PROMPT
+        if item.strategy_key and item.strategy_variant in PROMPT_VARIANTS
         else None
     )
+    strategy_gate = build_gate(item) if strategy_trial else None
+    # A mandatory question whose gate could not be built has nothing to be
+    # mandatory about — `build_gate` returns None when the stimulus does not
+    # split into anything the operations can annotate — so the card falls back
+    # to the ordinary suggestion rather than refusing a skip for steps that
+    # were never shown. The arm label on the row still says what was assigned;
+    # `strategy_gate_status` records that no gate was met.
+    required = bool(strategy_gate and strategy_gate.get("required"))
     return {
         "id": item.id,
         "position": item.position,
         "section_index": item.section_index,
         "requires_reasoning": item.requires_reasoning,
         "reasoning_min_chars": reasoning_min_chars(item.session),
-        "strategy_trial": ({**strategy_trial, "variant": VARIANT_PROMPT} if strategy_trial else None),
-        "strategy_gate": build_gate(item) if strategy_trial else None,
+        "strategy_trial": (
+            {
+                **strategy_trial,
+                "variant": item.strategy_variant,
+                "required": required,
+            }
+            if strategy_trial
+            else None
+        ),
+        "strategy_gate": strategy_gate,
         # Kept as its own field rather than folded into `strategy_trial`, which
         # means "a named technique was offered" everywhere on both sides of the
         # wire — the submit path keys the required decision off it, and a
@@ -509,6 +713,7 @@ def serialize_item(item: SessionItem, commit: bool = True) -> dict:
         "served_at": _iso_utc(item.served_at),
         "elapsed_ms": _elapsed_ms(item),
         "target_time_seconds": item.target_time_seconds,
+        "flagged": bool(item.flagged),
         "case_terms": (
             {
                 "client_key": client["key"],
@@ -555,6 +760,14 @@ def serialize_session(session: StudySession, include_item: bool = True) -> dict:
     }
     if session.mode == "diagnostic" and session.status == "completed":
         payload["blind_review"] = blind_review_status(session)
+    if exam.is_sectioned(session):
+        payload["exam"] = exam.serialize_exam(session)
+        # Progress on a form is how much of the paper is filled in, not how far
+        # the cursor has travelled: with free navigation the cursor can be
+        # anywhere and mean nothing.
+        payload["progress_percent"] = round(
+            100 * payload["exam"]["answered"] / max(1, session.total_items)
+        )
     if session.pending_attempt_id:
         pending_attempt = db.session.get(Attempt, session.pending_attempt_id)
         if pending_attempt:
@@ -562,6 +775,12 @@ def serialize_session(session: StudySession, include_item: bool = True) -> dict:
             payload["pending_item"] = serialize_item(pending_attempt.session_item, commit=False)
             return payload
     if include_item and session.status == "in_progress":
+        # Between sections there is no current question, and saying so is the
+        # point: the next section's first item must not cross the wire before
+        # its clock has started.
+        if exam.is_sectioned(session) and not exam.active_section(session):
+            payload["current_item"] = None
+            return payload
         item = SessionItem.query.filter_by(
             session_id=session.id,
             position=session.current_index,
@@ -612,7 +831,9 @@ class QuestionFact(NamedTuple):
     section: str | None
 
 
-def _eligible_question_facts(question_type: str | None) -> list[QuestionFact]:
+def _eligible_question_facts(
+    question_type: str | None, section: str | None = None
+) -> list[QuestionFact]:
     query = db.session.query(
         Question.id,
         Question.question_type,
@@ -621,6 +842,8 @@ def _eligible_question_facts(question_type: str | None) -> list[QuestionFact]:
     ).filter(Question.source.like(f"{SOURCE_PREFIX}%"))
     if question_type:
         query = query.filter(Question.question_type == question_type)
+    if section:
+        query = query.filter(Question.section == section)
     return [QuestionFact(*row) for row in query.all()]
 
 
@@ -657,13 +880,16 @@ def select_random_questions(
     user_id: str | None = None,
     exclude_ids: set[str] | None = None,
     focus_types: list[str] | None = None,
+    section: str | None = None,
 ) -> list[Question]:
     # Excluding here rather than from `unseen` alone matters: the fallback below
     # widens the pool to already-seen questions, and a question seeded as a
     # repair is by definition seen. Filtering only `unseen` would let it come
     # back through the fallback and appear twice in one run.
     blocked = exclude_ids or set()
-    eligible = [fact for fact in _eligible_question_facts(question_type) if fact.id not in blocked]
+    eligible = [
+        fact for fact in _eligible_question_facts(question_type, section) if fact.id not in blocked
+    ]
     if not eligible:
         return []
     # Hoisted out of the comprehension below: calling this once here instead of
@@ -696,19 +922,504 @@ def _passage_blocks(pool: list[QuestionFact]) -> list[list[QuestionFact]]:
     return [sorted(block, key=lambda question: question.id) for block in grouped.values()]
 
 
-def _fill_blocks(blocks: list[list[QuestionFact]], budget: int, selected: list[list[QuestionFact]]) -> None:
+# How far past its target a run may run to finish a Reading Comprehension
+# passage whole.
+#
+# A block is indivisible and RC passages in this bank are 4 to 16 questions with
+# a median of 7, so a run that may never exceed its target can only ever serve a
+# passage shorter than the target. At the ten-question runs this app used to
+# serve that cost nothing visible: 98.6% of the RC bank fitted. At six it is
+# ruinous — a flat six-question run can reach 33.5% of the RC bank, and a flat
+# five-question run 8.6%. The rest of Reading Comprehension simply stops being
+# served.
+#
+# That is not only a content problem, it moves the campaign's length. Reading
+# Comprehension is budgeted at 330s for the first question on a passage against
+# 150s for a Logical Reasoning question (`_target_time_seconds`), so squeezing RC
+# out of the mix makes the average question cheaper in wall-clock time and the
+# whole campaign quietly shorter. Reproduce the table below with
+# `scripts/measure_served_section_mix.py` at its defaults (4,000 generated runs
+# per setting against the real bank, seed 20260811):
+#
+#     target 10, no allowance (was)   10.00 q/run   18.2% RC   152.7 s/q   25.5 min
+#     target  6, no allowance          6.00 q/run    3.4% RC   150.7 s/q   15.1 min
+#     target  5, no allowance          5.00 q/run    0.9% RC   150.2 s/q   12.5 min
+#     target  5, allowance 3           5.32 q/run   18.0% RC   152.8 s/q   13.6 min
+#     target  6, allowance 2           6.20 q/run   16.7% RC   152.6 s/q   15.8 min
+#     target  6, allowance 4           6.59 q/run   26.5% RC   153.9 s/q   16.9 min
+#
+# Six with an allowance of two is the setting that holds the served mix, and so
+# the campaign's wall-clock length, closest to what ships: 152.6s against 152.7s,
+# a difference of 0.1%. It also keeps the run tight, 6 to 8 questions, where a
+# five-question target puts a 5-question run beside an 8-question one.
+#
+# And it does the thing this change exists to do: the run goes from 25.5 budgeted
+# minutes to 15.8.
+#
+# The four passages longer than eight questions (one of 9, one of 10, two of 16;
+# 51 questions, 2.2% of the RC bank) are not reachable at this target and were
+# reachable at ten. That is the price of the shorter run and it is paid
+# knowingly: a sixteen-question passage is not a six-question case under any
+# allowance that leaves the run short.
+PASSAGE_OVERSHOOT_ALLOWANCE = 2
+
+
+def passage_overshoot_allowance(count: int) -> int:
+    """How far past ``count`` a run of that size may go to finish a passage.
+
+    PASSAGE_OVERSHOOT_ALLOWANCE, but never more than a third of the run. The
+    flat allowance is sized for the run the app actually serves and is nonsense
+    applied to a small one: a caller asking for two questions and being handed
+    four has not had its run stretched, it has had a different run built. Runs
+    that small are only ever requested explicitly — by the queue-cap path and by
+    tests — and they must come back the length they asked for.
+
+    A third is exactly PASSAGE_OVERSHOOT_ALLOWANCE at the shipped six-question
+    run, so this bounds the small cases without changing the shipped one.
+    """
+    return max(0, min(PASSAGE_OVERSHOOT_ALLOWANCE, count // 3))
+
+
+def reading_case_ceiling(count: int) -> int:
+    """The most questions one Reading Comprehension case may serve.
+
+    The same ceiling the overshoot allowance already defines, reused rather than
+    given a constant of its own, because it answers the same question: how long
+    a sitting may run when a passage is what it is made of. At the shipped
+    six-question case that is 8, which serves 345 of 349 passages (97.8% of the
+    Reading Comprehension bank) whole in a single case.
+
+    In time rather than questions, 8 is where the two case shapes stay
+    comparable. `_target_time_seconds` budgets 330s for the first question on a
+    passage and 135s for each one after it, so an eight-question reading case is
+    21.3 minutes against a six-question argument case's 15.0. The common
+    passage, six or seven questions, is 16.8 to 18.1 minutes — near enough the
+    same sitting. Serving all sixteen questions of the longest passage in one go
+    would be 39 minutes, which is worse than the ten-question run this whole
+    change removed.
+    """
+    return count + passage_overshoot_allowance(count)
+
+
+class SequencingProfile(NamedTuple):
+    """What this student's own record says the shape of their next run should be.
+
+    Everything the sequencer knows about an individual, computed once per run
+    and in one place. Until now the answer was the same for every student at a
+    given length: half review, a third reading, review at fixed positions. The
+    audit's phrase for that was "responsive rather than adaptive" — the system
+    reacted correctly to the signals it had and it had almost none.
+
+    The fields are shares rather than counts so that the same profile applies
+    whatever length was asked for, and the raw signals are carried alongside
+    them so a caller — or a probe — can say *why* a run came out the shape it
+    did without recomputing anything.
+
+    **Where question difficulty would go.** There is now a per-item rating,
+    earned per response in `app/calibration.py`, but nothing in the adaptive
+    path reads it and this profile does not either. When it is consumed, this
+    is where it belongs: a `target_difficulty` beside these, derived from the
+    same accuracy evidence, read by `select_random_questions` and by the
+    passage choice in `select_reading_comprehension_case` to bias *which*
+    questions a run draws rather than how many of each kind. Wiring it means
+    randomising exposure at the same time — see `docs/question-difficulty.md`
+    — which is why it is still left open. It is also why the two selection
+    functions take their inputs as arguments instead of reaching for the
+    profile themselves: adding a field here should not mean rewriting them.
+    """
+
+    review_share: float
+    reading_case_share: float
+    # The evidence, kept for reporting rather than used again below.
+    overdue: int
+    tracked: int
+    lr_accuracy: float
+    rc_accuracy: float
+
+
+def _section_accuracy(user_id: str) -> tuple[float, float, int, int]:
+    """This student's accuracy in each section, shrunk toward the population.
+
+    One aggregate, two rows. Deliberately not `scoring.project_score`, which
+    computes the same two rates far more carefully — time-weighted, weighted by
+    evidence class, with a full uncertainty band — at the cost of reading every
+    answer the account has ever filed. That is the right trade for a number
+    shown to a student as a projected score and the wrong one for a number that
+    decides whether this run has two reading cases or three.
+
+    The shrinkage is not optional and is the whole reason this is safe. Both
+    sections are pulled toward the same population prior with the same strength
+    (`scoring.PRIOR_STRENGTH`, ten answers' worth), so a student with four
+    Reading Comprehension answers, three of them wrong, does not thereby earn a
+    reading-heavy diet — the estimate barely moves off the prior, the gap
+    against their Logical Reasoning rate stays small, and the share stays near
+    its default. Evidence buys deviation, in proportion to how much of it there
+    is.
+
+    Returns both rates and both counts; the counts are what the profile reports
+    so that "no gap" and "no evidence" can be told apart downstream.
+    """
+    rows = (
+        db.session.query(
+            Question.section,
+            func.count(Attempt.id),
+            func.sum(case((Attempt.is_correct, 1), else_=0)),
+        )
+        .join(SessionItem, SessionItem.id == Attempt.session_item_id)
+        .join(Question, Question.id == SessionItem.question_id)
+        .filter(Attempt.user_id == user_id)
+        .group_by(Question.section)
+        .all()
+    )
+    counts = {section: (total or 0, correct or 0) for section, total, correct in rows}
+    accuracies = {}
+    for section in (LOGICAL_REASONING, READING_COMPREHENSION):
+        total, correct = counts.get(section, (0, 0))
+        observed = (correct / total) if total else 0.0
+        accuracies[section] = shrink_toward_prior(observed, float(total))
+    return (
+        accuracies[LOGICAL_REASONING],
+        accuracies[READING_COMPREHENSION],
+        counts.get(LOGICAL_REASONING, (0, 0))[0],
+        counts.get(READING_COMPREHENSION, (0, 0))[0],
+    )
+
+
+def _review_share(overdue: int, tracked: int, session_size: int) -> float:
+    """How much of a run should be review, given how much of the queue is slipping.
+
+    Two straight segments through REVIEW_SHARE, so the student with an ordinary
+    queue gets exactly what the fixed `session_size // 2` used to give them and
+    the personalisation is a deviation from that rather than a replacement for
+    it. Below the centre it falls to REVIEW_SHARE_FLOOR at a queue with nothing
+    slipping; above it, it rises to REVIEW_SHARE_CEILING at a queue where
+    everything has.
+
+    The signal is the fraction of cards that have actually decayed below the
+    retention target. Not the size of the queue: a student with two hundred
+    cards all comfortably above target is not behind on anything, and asking
+    them to spend two thirds of every run proving it would be the "chore list
+    with a date attached" that `scheduling.queue_pressure` exists to avoid.
+
+    Shrunk by a run's worth of pseudo-cards sitting at the centre, for the same
+    reason the section rates are shrunk: a student with three cards, two of them
+    slipping, has not established that they are behind. It also makes the knob
+    move smoothly at the start of an account rather than swinging on the third
+    answer.
+
+    **Accuracy is deliberately not a second input here.** It looks like an
+    obvious one — answer badly, get more consolidation — but it is already in
+    this number twice over. A wrong answer is what puts a card in the queue in
+    the first place, and a failed review is what makes a card's retrievability
+    decay faster afterwards, so a student who is struggling arrives here with a
+    larger overdue count *because* they are struggling. Adding their accuracy on
+    top would count the same evidence a second time and make the knob react
+    roughly twice as hard as intended to exactly the students it should be
+    gentlest with. Accuracy earns its own knob below, where it is not already
+    represented.
+    """
+    if tracked <= 0:
+        # Nothing tracked, nothing to be behind on. The floor, so that the
+        # number this reports matches what the student will actually be served:
+        # `due_for_review` returns an empty queue whatever is asked of it.
+        return REVIEW_SHARE_FLOOR
+    prior = max(1.0, float(session_size))
+    centre = QUEUE_SLIPPED_AT_REVIEW_CENTRE
+    slipped = (overdue + centre * prior) / (tracked + prior)
+    if slipped <= centre:
+        return REVIEW_SHARE_FLOOR + (REVIEW_SHARE - REVIEW_SHARE_FLOOR) * (slipped / centre)
+    over = (slipped - centre) / (1.0 - centre)
+    return REVIEW_SHARE + (REVIEW_SHARE_CEILING - REVIEW_SHARE) * min(1.0, over)
+
+
+def _reading_case_share(lr_accuracy: float, rc_accuracy: float) -> float:
+    """How often a case should be a reading case, given where this student is weak.
+
+    RC_CASE_SHARE, leaned by the gap between the two sections and bounded by
+    RC_CASE_SHARE_SPREAD. A student whose reading trails their arguments sees
+    more reading; a student whose reading is the stronger half sees less, but
+    never little.
+
+    Signed the way round it reads: `lr_accuracy - rc_accuracy` positive means
+    reading is the weaker section, so the share goes up.
+
+    Note what this does *not* do. It does not chase the weakest section to the
+    exclusion of the other, and it does not compound: the share is recomputed
+    from the student's whole record on every run, so a stretch of reading cases
+    that fixes the gap moves the share straight back. A knob that ratcheted —
+    that read only recent performance, or only performance since the last
+    adjustment — would find its own extreme and stay there.
+    """
+    gap = (lr_accuracy - rc_accuracy) / SECTION_GAP_AT_FULL_SHIFT
+    lean = max(-1.0, min(1.0, gap))
+    return RC_CASE_SHARE + RC_CASE_SHARE_SPREAD * lean
+
+
+def sequencing_profile(user_id: str, session_size: int) -> SequencingProfile:
+    """Read the student's record and say what shape their next run should be.
+
+    One call site, `create_study_session`, and one place to look when a run
+    comes out unexpected. Two queries: the review queue, and one aggregate over
+    answers grouped by section.
+    """
+    pressure = scheduling.queue_pressure(user_id)
+    lr_accuracy, rc_accuracy, _lr_seen, _rc_seen = _section_accuracy(user_id)
+    return SequencingProfile(
+        review_share=_review_share(pressure["below_target"], pressure["tracked"], session_size),
+        reading_case_share=_reading_case_share(lr_accuracy, rc_accuracy),
+        overdue=pressure["below_target"],
+        tracked=pressure["tracked"],
+        lr_accuracy=lr_accuracy,
+        rc_accuracy=rc_accuracy,
+    )
+
+
+def reading_case_floor(count: int) -> int:
+    """The fewest questions a passage must carry to be a case on its own.
+
+    Half the sitting that was asked for. A reading case is as long as its
+    passage, which is the point — but a passage has to be enough of a sitting to
+    be worth sitting down to, and two questions is not a case, it is an
+    interruption.
+
+    On the shipped bank this never fires: passages run 4 to 16 questions and the
+    floor at a six-question sitting is 3. It exists for the banks that are not
+    the shipped one — most of the test suite runs on a handful of hand-written
+    questions, and a deployment could ship stub content — where the alternative
+    is that asking for six questions quietly returns two.
+    """
+    return max(2, count // 2)
+
+
+def _reading_case_from_passage(
+    block: list[QuestionFact],
+    ceiling: int,
+    *,
+    prefer_first: set[str],
+) -> list[QuestionFact]:
+    """One passage's questions, in the order this case should serve them.
+
+    `prefer_first` is whatever this case is being built around — the unseen
+    questions on a fresh-led case, the due review cards on a review-led one.
+    Everything else follows in the passage's own order, and the case is cut at
+    `ceiling`.
+
+    This is what happens when a sixteen-question passage meets a six-question
+    sitting, and it is why nothing needs to be stored to make it work. The
+    passage is not split into a fragment and an orphan: each visit serves that
+    one passage and nothing else, and because the questions the student has not
+    answered sort first, a second visit picks up where the first left off. The
+    passage text is attached to every one of its questions, so no question is
+    ever served without it — the invariant the passage-mate fix established.
+    Four passages in this bank need a second visit (one of 9, one of 10, two of
+    16); the other 345 are finished in one.
+    """
+    preferred = [question for question in block if question.id in prefer_first]
+    rest = [question for question in block if question.id not in prefer_first]
+    return (preferred + rest)[:ceiling]
+
+
+def select_reading_comprehension_case(
+    count: int,
+    *,
+    user_id: str | None = None,
+    exclude_ids: set[str] | None = None,
+    due_ids: list[str] | None = None,
+    review_share: float | None = None,
+) -> list[Question]:
+    """One passage, whole, as a case in its own right.
+
+    The Reading Comprehension case exists because a passage cannot compete for
+    slots in a mixed run: it is indivisible, it is usually longer than the whole
+    fresh budget, and it is outnumbered roughly thirteen to one by single
+    Logical Reasoning questions in the shuffle. See RC_CASE_SHARE for the
+    measurement. Rather than widen the crack, this builds the case out of the
+    passage and lets the passage decide how long the case is.
+
+    Which passage, and the one rule that keeps this honest:
+
+    * **Review-led**, when the student has due Reading Comprehension cards and
+      the coin (REVIEW_SHARE) says so: build on the passage carrying the weakest
+      due card, oldest memory first. Re-reading a passage you are close to
+      forgetting and answering its questions again is the strongest form review
+      can take in this section, and it is the *only* way an RC card ever comes
+      back — an argument case will not take one, because a lone reading question
+      dropped among six arguments is the 450-words-with-no-warning bug that was
+      fixed once already.
+    * **Fresh-led** otherwise: a passage the student still has unseen questions
+      on.
+
+    Splitting it this way, across cases rather than inside one, is forced: a
+    passage is one unit, so a case built on it cannot be half review the way an
+    argument case is. Half of reading cases being re-reads is the same diet, and
+    it is what stops the section collapsing in either direction — all-fresh
+    would never return an RC card, all-review would never put a new one in.
+
+    Returns [] when there is no Reading Comprehension material to build on, and
+    the caller falls back to an ordinary run. A bank with no passages in it is a
+    real configuration: most of the test suite runs on one.
+    """
+    if count <= 0:
+        return []
+    blocked = exclude_ids or set()
+    ceiling = reading_case_ceiling(count)
+    floor = reading_case_floor(count)
+    facts = [
+        fact
+        for fact in _eligible_question_facts(None, READING_COMPREHENSION)
+        if fact.passage_id and fact.id not in blocked
+    ]
+    if not facts:
+        return []
+    grouped: dict[str, list[QuestionFact]] = defaultdict(list)
+    for fact in facts:
+        grouped[fact.passage_id].append(fact)
+    passages = {
+        passage_id: sorted(block, key=lambda question: question.id)
+        for passage_id, block in grouped.items()
+        if len(block) >= floor
+    }
+    if not passages:
+        return []
+
+    seen_ids = _seen_question_ids(user_id) if user_id else set()
+
+    # Review-led: the passage under the weakest due card. `due_ids` arrives
+    # already ranked by retrievability, so the first one whose passage is still
+    # available is the weakest memory this case can rebuild.
+    review_led = None
+    if due_ids and random.random() < (REVIEW_SHARE if review_share is None else review_share):
+        due_by_passage = {fact.id: fact.passage_id for fact in facts}
+        for question_id in due_ids:
+            passage_id = due_by_passage.get(question_id)
+            if passage_id and passage_id in passages:
+                review_led = passage_id
+                break
+
+    # Fresh-led: finish a passage already started, else begin a new one, else —
+    # for a student who has worked the whole section — any passage at all.
+    #
+    # **Finishing first is what makes a cut passage safe**, and without it the
+    # cut is a quiet loss rather than a deferral. `_reading_case_from_passage`
+    # sorts unseen questions ahead of seen ones, so a second visit to a passage
+    # picks up where the first stopped; but nothing was *steering* the student
+    # back. A passage was drawn uniformly from every passage with anything
+    # unread, so the odds of returning to the one just cut were 1 in 349, and
+    # the honest description of the old behaviour is that a cut passage was
+    # abandoned with a 0.3% chance of rescue.
+    #
+    # That was survivable only because cutting was rare: at a six-question
+    # sitting the ceiling is 8 and just 4 of 349 passages are longer. It stops
+    # being survivable the moment the sitting is short enough that cutting is
+    # the normal case — at five the ceiling is 6 and 208 passages are longer —
+    # which is exactly the condition under which Reading Comprehension has to
+    # work at short run sizes. Making the cut resumable is what turns "the
+    # passage does not fit" from a reason to serve no reading at all into a
+    # passage read over two sittings.
+    #
+    # It is self-limiting rather than a trap: finishing a passage removes it
+    # from `started`, so the student works through one, then begins another. And
+    # it costs a re-read, which `_target_time_seconds` charges honestly at 330s
+    # for the first question of every visit, because the student really does
+    # have to read the passage again.
+    def next_passage(used: set[str]) -> str | None:
+        started, untouched = [], []
+        for passage_id, block in passages.items():
+            if passage_id in used:
+                continue
+            unseen_here = [question for question in block if question.id not in seen_ids]
+            if not unseen_here:
+                continue
+            (untouched if len(unseen_here) == len(block) else started).append(passage_id)
+        # Shuffled rather than ranked within a tier, because there is no signal
+        # here worth ranking on and a stable order would serve the same passages
+        # to everybody.
+        remaining = started or untouched or [key for key in passages if key not in used]
+        return random.choice(remaining) if remaining else None
+
+    # Usually one passage, and at the shipped six-question sitting one for every
+    # passage that can fill it — 348 of this bank's 349. The median passage
+    # carries 7 and the loop below stops as soon as the run is long enough or
+    # the room left is too small to be worth reading another passage for. The
+    # exception is the single four-question passage, which leaves a whole case's
+    # worth of room under the ceiling and so draws a second rather than hand
+    # back a four-question run.
+    #
+    # More than one when the run is long enough to want it. A reading case used
+    # to be a single passage however long the run was, so a twelve-question run
+    # that drew one came back seven questions long — short of what was asked
+    # for, and short in a way that pulled the *section mix* down with it, since
+    # every argument run was its full twelve. Measured over sizes 1 to 12 that
+    # showed up as Reading Comprehension sliding from 38.6% of a six-question
+    # run to 14.0% of a twelve-question one against a 34.4% bank. It is the same
+    # defect as the one at the short end — a run length quietly deciding how
+    # much of the exam a student sees — approached from above.
+    chosen: list[QuestionFact] = []
+    used: set[str] = set()
+    while True:
+        passage_id = review_led if not used and review_led else next_passage(used)
+        if passage_id is None:
+            break
+        used.add(passage_id)
+        prefer = (
+            set(due_ids or ())
+            if passage_id == review_led
+            else {question.id for question in passages[passage_id] if question.id not in seen_ids}
+        )
+        chosen += _reading_case_from_passage(
+            passages[passage_id], ceiling - len(chosen), prefer_first=prefer
+        )
+        # Stop once the run is as long as it asked to be, and otherwise take
+        # another passage only if what is left could hold a case in its own
+        # right. `RC_CASE_MIN_SITTING` is already the answer to "is this many
+        # questions worth reading a passage for", which is exactly the question
+        # the leftover room asks, so it is reused rather than given a twin that
+        # could drift away from it.
+        #
+        # The room left is measured against `ceiling`, which is where the line
+        # above actually cuts the next passage. Measuring it against `count`
+        # asked a different question from the one the fill then answered and
+        # understated the room by the overshoot allowance, and that is what
+        # starved the nine-question run. No passage in this bank carries nine,
+        # so a nine-question reading case is always short after one passage —
+        # by 1 to 3 questions, every one of which reads as "less than
+        # RC_CASE_MIN_SITTING" against `count` and so ended the case. A reading
+        # case therefore averaged 7.5 questions where the argument case it is
+        # averaged against was a full 9, and Reading Comprehension came out at
+        # 28.1% of a nine-question run against 35-37% at every neighbouring
+        # size. Against `ceiling` the same case has 4 questions of room and
+        # takes a second passage, which is the mechanism twelve-question runs
+        # already used.
+        if len(chosen) >= count or ceiling - len(chosen) < RC_CASE_MIN_SITTING:
+            break
+    return _load_questions_in_order(chosen)
+
+
+def _fill_blocks(
+    blocks: list[list[QuestionFact]],
+    budget: int,
+    selected: list[list[QuestionFact]],
+    *,
+    ceiling: int | None = None,
+) -> None:
     """Add whole blocks to `selected` until `budget` questions are chosen.
 
-    Never overshoots and never splits a block, so a run comes out at the
-    requested size whenever the pool contains any single-question material to
-    round it out — which, with an LR bank in the thousands, is always.
+    Never splits a block. Stops as soon as the budget is met, and never admits a
+    block that would take the run past `ceiling` — which defaults to the budget,
+    the no-overshoot rule this had before, and is raised by
+    PASSAGE_OVERSHOOT_ALLOWANCE on the practice path so a passage can be served
+    whole. A run therefore comes out at exactly the requested size whenever the
+    pool contains single-question material to round it out — which, with an LR
+    bank in the thousands, is always — or a little over it when the block that
+    reached the budget was a passage.
     """
+    limit = budget if ceiling is None else max(budget, ceiling)
     chosen = {id(block) for block in selected}
     total = sum(len(block) for block in selected)
     for block in blocks:
         if total >= budget:
             return
-        if id(block) in chosen or total + len(block) > budget:
+        if id(block) in chosen or total + len(block) > limit:
             continue
         selected.append(block)
         total += len(block)
@@ -717,7 +1428,7 @@ def _fill_blocks(blocks: list[list[QuestionFact]], budget: int, selected: list[l
 def _weight_toward_focus(
     pool: list[QuestionFact], count: int, focus_types: list[str] | None
 ) -> list[QuestionFact]:
-    """Fill most of a run from the mega-litigation's weak types, the rest at random.
+    """Fill most of a run from the student's weak types, the rest at random.
 
     Deliberately a bias and not a filter. Drilling only the weak types would
     stop measuring everything else and would make one bad run self-reinforcing;
@@ -729,23 +1440,61 @@ def _weight_toward_focus(
     focus bias can never separate passage-mates. A block counts as focus
     material if any of its questions is a focus type, which is the only sensible
     reading for a passage whose questions are of several types.
+
+    **A focus type is matched with its section, not by name alone**, and this is
+    a fix rather than a refinement. `type_focus` measures a type against the
+    rest of *its own section* precisely so that the Logical Reasoning / Reading
+    Comprehension balance stays owned by the section-mix knob. Matching on the
+    name alone threw that away: four type names exist in both sections and
+    Inference is the second commonest Logical Reasoning type, so a weakness
+    found in Logical Reasoning Inference made every Reading Comprehension
+    passage carrying an Inference question `preferred` material, and the first
+    and largest fill stage spent its quota on them.
+
+    What that cost depends on the run length, and it is worth being exact about
+    which way it went. Fed the whole bank with a Logical Reasoning Inference
+    weakness, this function returned runs that were 52.1% Reading Comprehension
+    at size 6 and 58.5% at size 9 — the passages were mostly *admitted*, not
+    refused, and a run that asked for arguments came back more than half
+    reading. Only at the short end did the ceiling refuse them, and there the
+    quota went unspent instead: 4.1% at size 4. Either way the weak type itself
+    was under-served, at 47.0% of a run against the 62.4% the same fill reaches
+    once the section travels with the type.
+
+    None of that was reachable through `create_study_session`, which is why it
+    survived: the argument case passes `section=LOGICAL_REASONING`, and the one
+    call that does not — a type-filtered drill — has no focus types to match
+    with. The two conditions are exclusive, so the pool that shows this is one
+    only `tools/audit/type_targeting.py` ever built. That makes it a latent bug
+    rather than a live one, and it is fixed here rather than left resting on an
+    invariant two call sites away that nothing states or tests.
+
+    Every fill shares one ceiling — `count` plus the whole-passage allowance —
+    rather than each stage carrying its own. The focus stage's budget is a share
+    of the run, but the *run* is what may not overrun, so a passage admitted to
+    satisfy the focus quota still has to fit the run it is being built for.
     """
     if count <= 0:
         return []
     blocks = _passage_blocks(pool)
     random.shuffle(blocks)
-    wanted = set(focus_types or ())
+    wanted = {(focus.section, focus.question_type) for focus in focus_types or ()}
+    ceiling = count + passage_overshoot_allowance(count)
     selected: list[list[QuestionFact]] = []
     if wanted:
-        preferred = [block for block in blocks if any(question.question_type in wanted for question in block)]
+        preferred = [
+            block
+            for block in blocks
+            if any((question.section, question.question_type) in wanted for question in block)
+        ]
         preferred_ids = {id(block) for block in preferred}
         others = [block for block in blocks if id(block) not in preferred_ids]
-        _fill_blocks(preferred, round(count * FOCUS_FILL_RATIO), selected)
-        _fill_blocks(others, count, selected)
+        _fill_blocks(preferred, round(count * FOCUS_FILL_RATIO), selected, ceiling=ceiling)
+        _fill_blocks(others, count, selected, ceiling=ceiling)
         # Not enough off-focus material to round the run out; top up from focus.
-        _fill_blocks(preferred, count, selected)
+        _fill_blocks(preferred, count, selected, ceiling=ceiling)
     else:
-        _fill_blocks(blocks, count, selected)
+        _fill_blocks(blocks, count, selected, ceiling=ceiling)
     if not selected and blocks:
         # The only material left is a passage longer than the whole run. Serving
         # it whole and slightly long beats serving a fragment of it, and beats
@@ -841,15 +1590,20 @@ def select_diagnostic_questions(count: int) -> tuple[list[Question], list[int], 
     return questions, section_indexes, plan
 
 
-def _questions_due_for_review(user_id: str, count: int) -> list[Question]:
+def _questions_due_for_review(
+    user_id: str, count: int, *, section: str | None = None
+) -> list[Question]:
     """The weakest cards in this student's queue, ranked by retrievability.
 
     Delegates to `scheduling.due_for_review`, which deliberately does not gate
     on `due_at <= now`: a student who sits down to work at any hour is handed
     the material they are closest to forgetting rather than an empty queue and
     a date. See the module docstring in `app/scheduling.py`.
+
+    `section` narrows the queue to one section, because the two case shapes take
+    their review from different halves of it.
     """
-    return scheduling.due_for_review(user_id, count)
+    return scheduling.due_for_review(user_id, count, section=section)
 
 
 def _pause_other_active_practice_sessions(user_id: str, *, exclude_id: str | None = None) -> None:
@@ -879,7 +1633,6 @@ def create_study_session(
     *,
     count: int | None = None,
     question_type: str | None = None,
-    practice_style: str = "cases",
 ) -> StudySession:
     # The account row is the cross-request mutex for the single active case
     # batch. Both POST /study-sessions and final acknowledgement use this path.
@@ -891,21 +1644,180 @@ def create_study_session(
         db.session.commit()
         raise ValueError("queue_full")
 
-    if practice_style not in PRACTICE_STYLES:
-        raise ValueError("invalid_practice_style")
-    policy = "immediate"
-
     session_size = count if count is not None else int(current_app.config["PRACTICE_SESSION_SIZE"])
-    # Repairs fill at most half a run so a large queue can never turn practice
-    # into pure repetition. A type-filtered run is a focused drill; mixing
-    # off-type repairs into it would defeat the filter the student asked for.
-    repairs = [] if question_type else _questions_due_for_review(user.id, session_size // 2)
+    # The run's id, minted here rather than by the insert below, because two
+    # decisions taken before the run exists need something that names *this
+    # sitting*: the layer draws further down, and the arm each question is
+    # dealt by the strategy trial. See `experiments.Exposure`. It is passed to
+    # the `StudySession` constructor below, and it has to stay passed: nothing
+    # references `layer_assignments.session_id`, so a run built without it
+    # writes assignment rows naming an id that was never inserted and
+    # `layer_reading` quietly reports nothing.
+    #
+    # A reading case returns before the draw below, so this id goes unused on
+    # that path and the case builds its own run. That is correct rather than a
+    # gap: reading cases do not read `focus_types`, so the layer cannot act on
+    # them and enrolling them would dilute the comparison.
+    session_id = new_id()
+
+    # Which shape of case this is. A reading case is one passage and is built
+    # entirely differently — see `select_reading_comprehension_case` for why the
+    # section needs a case of its own rather than a bigger share of a mixed one.
+    #
+    # Drawn per run rather than rotated. A rotation would need a counter that
+    # survives across sessions, and up to PRACTICE_QUEUE_MAX runs can be queued
+    # and abandoned before any of them is answered, so the only counter cheap
+    # enough to reach here (`profile.total_cases`, which moves on settlement)
+    # would hand every queued run the same shape. A draw needs no state and
+    # converges on RC_CASE_SHARE over the 347 sittings a campaign takes; the
+    # cost is variance early on, where a student has a (1 - 1/3)^5 = 13% chance
+    # of seeing no reading case in their first five. That is worth saying out
+    # loud, and it is still the entire section arriving instead of none of it.
+    #
+    # A type-filtered run is the student overriding the weighting by hand, so it
+    # keeps the ordinary shape whatever the draw says, and so does any sitting
+    # too short to hold a passage.
+    #
+    # What this student's own record says the run should look like: how much of
+    # it is review, and how often a case is a reading case. Read once, here, and
+    # nowhere else. See `SequencingProfile`.
+    #
+    # A type-filtered drill skips the read entirely — the student has overridden
+    # the shape by hand, so nothing personal applies and the queries are wasted.
+    sequencing = None if question_type else sequencing_profile(user.id, session_size)
+
+    # The share is read from config so a test can pin the shape it means to
+    # exercise. Nothing sets it; the default is the student's own.
+    rc_share = float(
+        current_app.config.get(
+            "PRACTICE_RC_CASE_SHARE",
+            sequencing.reading_case_share if sequencing else RC_CASE_SHARE,
+        )
+    )
+    reading_case = (
+        not question_type and session_size >= RC_CASE_MIN_SITTING and random.random() < rc_share
+    )
+    if reading_case:
+        # Ranked review cards for this section, handed to the case builder so it
+        # can decide between a re-read and a new passage. Asked for generously
+        # rather than at the review budget: the builder needs enough ranked
+        # candidates to find one whose passage is still available, and it serves
+        # a whole passage regardless of how many of its cards are due.
+        due = _questions_due_for_review(
+            user.id, reading_case_ceiling(session_size), section=READING_COMPREHENSION
+        )
+        questions = select_reading_comprehension_case(
+            session_size,
+            user_id=user.id,
+            due_ids=[question.id for question in due],
+            # The same review share the argument case uses, applied across
+            # reading cases instead of inside one: a passage is a single unit,
+            # so "half this run is review" has to become "half of these runs are
+            # re-reads". A student behind on their queue therefore gets both
+            # more repairs per argument case and more re-read passages.
+            review_share=sequencing.review_share,
+        )
+        if questions:
+            return _build_practice_session(
+                user,
+                profile,
+                questions,
+                session_id=session_id,
+                question_type=None,
+                # Whichever of the passage's questions were already due. A
+                # reading case does not have review *slots* — the passage is the
+                # run — but the questions in it that came off the queue are
+                # review in every sense the rest of the app cares about, and
+                # leaving them unflagged meant `apply_review` never advanced
+                # their memory state and the recovery rate never counted them.
+                # The whole of Reading Comprehension was invisible to the review
+                # machinery it had just been given access to.
+                repair_ids={question.id for question in due},
+            )
+        # No Reading Comprehension in this bank. Most of the test suite runs on
+        # one of those, and so would a deployment that shipped LR only.
+
+    # How much of this run is repair work. Bounded well short of the whole run
+    # in both directions, so a large queue can never turn practice into pure
+    # repetition and a small one can never turn review off. A type-filtered run
+    # is a focused drill; mixing off-type repairs into it would defeat the
+    # filter the student asked for.
+    #
+    # Restricted to Logical Reasoning cards now that reading has a case of its
+    # own. An RC card arriving alone in an argument case is a passage the
+    # student has to re-read for one question, which is the cost the passage-
+    # mate fix removed from fresh material and should not be reintroduced here;
+    # RC cards come back on their own passage, in a reading case.
+    #
+    # At least one whenever there is a queue to draw from, which is what the
+    # floor means once it meets a whole number of questions: a share of a sixth
+    # rounds to zero on any run shorter than four, and "review is never off" has
+    # to survive the short runs too. `due_for_review` returns nothing when the
+    # queue is empty, so this cannot invent repairs for a student who has none.
+    #
+    # `int(x + .5)` rather than `round`, which is banker's rounding — round(0.5)
+    # is 0 and round(2.5) is 2, so a budget could land a question below what the
+    # share asked for depending on whether the product happened to be even.
+    repair_budget = (
+        0 if question_type else max(1, int(session_size * sequencing.review_share + 0.5))
+    )
+    repairs = (
+        []
+        if question_type
+        else _questions_due_for_review(user.id, repair_budget, section=LOGICAL_REASONING)
+    )
     # Due passage-mates travel together so the run reads the passage once. Only
     # the ones the scheduler already chose — see `cluster_passage_mates`.
     repairs = scheduling.cluster_passage_mates(repairs)
-    # A type-filtered run is the student overriding the weighting by hand, so the
-    # last mega-litigation only steers an unfiltered one.
-    focus_types = [] if question_type else diagnostic_focus(user.id)
+    # A type-filtered run is the student overriding the weighting by hand, so
+    # the weak-type signal only steers an unfiltered one.
+    #
+    # `rolling_focus`, not `diagnostic_focus`. The old signal read exactly one
+    # run — the last completed mega-litigation — so a student who was
+    # consistently poor at necessary-assumption questions across two hundred
+    # ordinary cases was not noticed as weak at that category by anything, and a
+    # student who had improved since March was still being fed what March said.
+    # The new one reads every first encounter the account has filed, decayed by
+    # recency, weighted by evidence class so the mega-litigation still counts
+    # nearly twice what a coached case does, and shrunk toward the student's own
+    # accuracy in that section. `app/type_focus.py` has the reasoning, including
+    # what it deliberately does not double-count.
+    #
+    # It subsumes the old signal rather than sitting beside it: same layer, same
+    # arms, new `design_version`.
+    focus_types = [] if question_type else rolling_focus(user.id)
+    # Weak-type targeting is an adaptive layer like any other, and until now it
+    # was one nobody could evaluate: it has steered every eligible run since it
+    # shipped, so there has never been a run to compare a steered one against.
+    # A quarter of eligible runs now draw the untargeted arm. See
+    # `app/experiments.py` for why the run's id is the exposure and why the
+    # propensity is written down.
+    #
+    # The draw happens only where the layer could act — a run with no focus
+    # types is the same run either way, and enrolling it would dilute the
+    # comparison with runs on which the treatment is a no-op. Eligibility is
+    # decided from answers filed before this run started, so it cannot be an
+    # outcome of the arm.
+    if focus_types:
+        # The weak types go on the assignment row. They have to: the layer is
+        # read on later encounters with the types this run leaned into, and by
+        # the time anyone reads it the signal has moved — a student who
+        # improved has a different list, which is the treatment working rather
+        # than a bookkeeping inconvenience. Written here or not at all.
+        targeting = experiments.assign(
+            "weak_type_targeting",
+            user.id,
+            exposure=Exposure.run(session_id),
+            signal=experiments.signal_tokens(focus_types),
+        )
+        # The strategy trial still sees the unblanked list. Its `focus_types`
+        # only lengthens the coverage runway on weak types, which is a decision
+        # about a different layer; letting this arm move it too would bundle
+        # two treatments into one label and make the reading below the effect
+        # of neither.
+        selection_focus_types = focus_types if targeting.on else []
+    else:
+        selection_focus_types = focus_types
     repair_ids = {question.id for question in repairs}
     # A fresh question sharing a passage with a review item would have the run
     # read that passage twice, because reviews and fresh material are placed
@@ -921,18 +1833,94 @@ def create_study_session(
                 Question.passage_id.in_(repair_passages)
             )
         }
+    # Logical Reasoning only, when the shape draw chose an argument case. Not a
+    # restriction so much as the other half of the split: with reading served as
+    # whole passages, leaving RC in the general filler as well would put the
+    # section's share back at the mercy of the review queue's size — measured,
+    # 46.5% RC for a student with no queue against 41.5% for one with a queue,
+    # neither of them the 34.4% asked for — and would do it by serving the
+    # occasional stray passage inside an argument case, which is the shape this
+    # change exists to stop building.
+    #
+    # A type-filtered drill is exempt. `question_type` is its own filter and
+    # 1,373 questions in this bank carry "Reading Comprehension" as their type,
+    # so narrowing by section as well would hand those drills an empty pool.
     fresh = select_random_questions(
         session_size - len(repairs),
         question_type,
         user_id=user.id,
         exclude_ids=blocked_ids,
-        focus_types=focus_types,
+        focus_types=selection_focus_types,
+        section=None if question_type else LOGICAL_REASONING,
     )
     # Genuine interleaving, not front-loading. Reviews are distributed through
     # the run instead of stacked at the start, which is what the old
     # `repairs + fresh` concatenation did — and which leaks "these first four
     # are the ones you got wrong" before the student has read a word.
-    questions = scheduling.interleave(repairs, fresh, question_type=question_type)
+    #
+    # A quarter of the runs where the two orderings differ get the front-loaded
+    # one, which is the app's own previous behaviour rather than a degraded
+    # arm invented for the trial. The draw only happens where there is
+    # something to compare: with no reviews or no fresh material `interleave`
+    # returns the list untouched and the two arms produce the same run, so
+    # enrolling those would dilute the comparison with questions on which the
+    # treatment is a no-op.
+    #
+    # The reading is taken on the *next* time these questions come round, not
+    # on this run, and it is reported per section and never pooled. Both of
+    # those are properties of the layer rather than of this call site; see
+    # `run_ordering` in `app/experiments.py` for why each one matters, and
+    # `scheduling.BLOCKED_SECTIONS` for the Reading Comprehension decision the
+    # arms are now measured around.
+    if repairs and fresh:
+        ordering = experiments.assign(
+            "run_ordering", user.id, exposure=Exposure.run(session_id)
+        )
+        questions = (
+            scheduling.interleave(repairs, fresh, question_type=question_type)
+            if ordering.on
+            else scheduling.front_load(repairs, fresh)
+        )
+    else:
+        questions = scheduling.interleave(repairs, fresh, question_type=question_type)
+    return _build_practice_session(
+        user,
+        profile,
+        questions,
+        session_id=session_id,
+        question_type=question_type,
+        repair_ids=repair_ids,
+        focus_types=focus_types,
+    )
+
+
+def _build_practice_session(
+    user: User,
+    profile,
+    questions: list[Question],
+    *,
+    session_id: str,
+    question_type: str | None,
+    repair_ids: set[str] | None = None,
+    focus_types: list[str] | None = None,
+) -> StudySession:
+    """Write a chosen list of questions out as a run.
+
+    Everything from here down is the same whichever shape chose the questions —
+    the strategy trial, the forced-arm plan, the pace budget and the row writes.
+    Extracted when the reading case arrived so the two shapes share it rather
+    than growing a second copy that drifts.
+
+    `session_id` is minted by the caller before the run is built, because the
+    adaptive layers draw on it — see `create_study_session`. It is required
+    rather than defaulted on purpose: `layer_assignments.session_id` has no
+    foreign key behind it, so a caller that let this row generate its own id
+    would write assignment rows naming a run that was never inserted, and
+    nothing would raise. `layer_reading` would simply return nothing, for ever.
+    """
+    repair_ids = repair_ids or set()
+    focus_types = focus_types or []
+    policy = "immediate"
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
 
@@ -954,22 +1942,55 @@ def create_study_session(
     questions = _questions_by_id(chosen_ids)
 
     session = StudySession(
+        id=session_id,
         user_id=user.id,
         mode="practice",
-        practice_style=practice_style,
+        practice_style="cases",
         feedback_policy=policy,
         target_minutes=user.target_minutes,
         total_items=len(questions),
     )
     db.session.add(session)
     db.session.flush()
+    # The run's own id is the exposure token: it is what distinguishes meeting a
+    # question in this run from meeting the same question at the same slot in the
+    # next one, which is the difference every draw inside the trial is a draw
+    # over. Passing the session means a returning review question is randomised
+    # afresh each time it comes back rather than repeating the arm it drew the
+    # first time — see `assign_strategy_trial`. It is available here because the
+    # session was flushed above, and it is stable for the encounter because the
+    # assignment is written onto the item below and never recomputed.
+    trials = [
+        (
+            position,
+            question,
+            assign_strategy_trial(
+                user.id,
+                question,
+                position,
+                exposure=session.id,
+                focus_types=focus_types,
+            ),
+        )
+        for position, question in enumerate(questions)
+    ]
+    # Which questions make their approach mandatory is decided for the run as a
+    # whole rather than question by question, because the per-run cap is a
+    # property of the run: a fixed quota drawn from a fixed pool gives every
+    # pool member one exact, writable probability, where a position-by-position
+    # draw would leave each one carrying a different probability for reasons
+    # that have nothing to do with what is being measured. See
+    # `strategies.plan_forced_arms`.
+    forcing = plan_forced_arms(user.id, session.id, trials)
     previous_passage_id = None
-    for position, question in enumerate(questions):
+    for position, question, strategy_trial in trials:
         if question.section == "Logical Reasoning":
             target_time_seconds = 150
         else:
             target_time_seconds = 135 if question.passage_id and question.passage_id == previous_passage_id else 330
-        strategy_trial = assign_strategy_trial(user.id, question, practice_style, position, focus_types=focus_types)
+        drawn = forcing.get(position) or {}
+        if drawn.get("required"):
+            strategy_trial = {**strategy_trial, "variant": VARIANT_PROMPT_REQUIRED}
         db.session.add(
             SessionItem(
                 session_id=session.id,
@@ -979,11 +2000,27 @@ def create_study_session(
                 from_review_queue=question.id in repair_ids,
                 strategy_key=strategy_trial["key"] if strategy_trial else None,
                 strategy_variant=strategy_trial["variant"] if strategy_trial else None,
+                # Still the propensity of being *offered a technique*, which is
+                # the draw the dashboard's ranking rests on and which the
+                # mandatory draw deliberately does not touch. The probability
+                # of the second draw is its own column beside it.
                 strategy_propensity=strategy_trial["propensity"] if strategy_trial else None,
                 strategy_candidates_n=strategy_trial["candidates_n"] if strategy_trial else None,
+                # Which of the two ways this question's approach was picked,
+                # and the probability of that arm. Recorded on control-arm
+                # questions as well as prompt-arm ones, because it decides
+                # which approach a control question is filed under and both
+                # arms have to be labelled by the same process. Null where the
+                # two arms would agree anyway.
+                strategy_selection_arm=strategy_trial["selection_arm"] if strategy_trial else None,
+                strategy_selection_propensity=(
+                    strategy_trial["selection_propensity"] if strategy_trial else None
+                ),
+                strategy_stratum=drawn.get("stratum"),
+                strategy_forcing_propensity=drawn.get("forcing_propensity"),
                 # Fixed here rather than at serve time so the gate a student
                 # meets is the one their history at session start earned. Only
-                # the prompt arm is ever enforced: leaving the control arm
+                # the prompt arms are ever enforced: leaving the control arm
                 # untouched is what keeps the trial a comparison between an
                 # offer and no offer instead of a comparison between two
                 # different interfaces. See app/enforcement.py.
@@ -1013,7 +2050,12 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
     questions, section_indexes, section_plan = select_diagnostic_questions(int(current_app.config["DIAGNOSTIC_SESSION_SIZE"]))
     if not questions:
         raise RuntimeError("No Hugging Face LSAT questions are available")
-    target_minutes = max(1, round(sum(section["minutes"] for section in section_plan) * accommodation_multiplier))
+    # Thirty-five minutes a section, plus the intermission, exactly as the real
+    # administration is budgeted. `target_minutes` stays the sum of the working
+    # sections — the break is not time a student is being measured over, and
+    # every pace figure downstream divides by this.
+    section_seconds = max(60, round(exam.SECTION_SECONDS * accommodation_multiplier))
+    target_minutes = max(1, round(len(section_plan) * section_seconds / 60))
     started_at = utcnow()
     session = StudySession(
         user_id=user.id,
@@ -1022,9 +2064,9 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
         feedback_policy="delayed",
         blind_review_required=True,
         accommodation_multiplier=accommodation_multiplier,
-        # The blocks keep their labels and boundaries but lose their minutes:
-        # under one whole-form clock a per-section budget would be a number the
-        # server does not enforce and the student cannot act on.
+        # The blocks are the sections now, and each one carries its own clock
+        # on its own row. What stays here is the map the results screen reads:
+        # which questions belong to which section, and in what order.
         section_plan_json=[
             {key: value for key, value in section.items() if key != "minutes"}
             for section in section_plan
@@ -1032,17 +2074,13 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
         target_minutes=target_minutes,
         total_items=len(questions),
         started_at=started_at,
-        deadline_at=started_at + timedelta(minutes=target_minutes),
     )
     db.session.add(session)
     db.session.flush()
-    # One clock for the form means one budget per question: the student is free
-    # to spend it unevenly, and the even split is what "on pace" is measured
-    # against. The old 150s/330s targets belong to coached practice, where a
-    # written explanation is part of the work, and summed to well over twice
-    # this form's budget.
-    per_question_seconds = max(30, round(target_minutes * 60 / len(questions)))
+    sections = exam.build_sections(session, section_plan, multiplier=accommodation_multiplier)
+    by_index = {section.section_index: section for section in sections}
     for position, question in enumerate(questions):
+        section = by_index[section_indexes[position]]
         db.session.add(
             SessionItem(
                 session_id=session.id,
@@ -1050,10 +2088,19 @@ def create_diagnostic_session(user: User, *, accommodation_multiplier: float = 1
                 position=position,
                 section_index=section_indexes[position],
                 requires_reasoning=False,
-                target_time_seconds=per_question_seconds,
+                # An even split of *this section's* clock across *this
+                # section's* questions. Under section timing that is the only
+                # target that can actually run out on a student, which is what
+                # makes "over target" mean something on the results screen.
+                target_time_seconds=exam.section_target_seconds(section),
             )
         )
     db.session.commit()
+    # The POST that creates a form is the student saying they are sitting it
+    # now — the confirmation gate happens in the client before it — so section
+    # one starts here rather than leaving an armed-but-not-started state to
+    # reason about. Sections two and three are begun explicitly.
+    exam.start_section(session, sections[0].section_index)
     return session
 
 
@@ -1165,10 +2212,12 @@ def finalize_diagnostic(session: StudySession, *, completed_at=None) -> dict:
 
 
 def pause_study_session(session: StudySession) -> StudySession:
-    # A mega-litigation is one sitting. Its clock is wall-clock and nothing stops
-    # it, so "paused" would be a lie the interface told about a run that is
-    # still burning down.
-    if session.mode == "diagnostic" and session.deadline_at:
+    # A mega-litigation is one sitting. Its clocks are wall-clock and nothing
+    # stops them, so "paused" would be a lie the interface told about a run
+    # that is still burning down. On a sectioned form this holds between
+    # sections too, where no section clock is running but the sitting's own
+    # grace period is.
+    if session.mode == "diagnostic" and (session.deadline_at or exam.is_sectioned(session)):
         raise ValueError("diagnostic_no_pause")
     if session.status == "paused":
         return session
@@ -1193,7 +2242,7 @@ def pause_study_session(session: StudySession) -> StudySession:
 
 
 def resume_study_session(session: StudySession) -> StudySession:
-    if session.mode == "diagnostic" and session.deadline_at:
+    if session.mode == "diagnostic" and (session.deadline_at or exam.is_sectioned(session)):
         # Nothing pauses it, so nothing resumes it. An expired run finalizes here
         # rather than pretending it can be picked back up.
         enforce_diagnostic_deadline(session)
@@ -1362,8 +2411,13 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
         .order_by(StudySession.completed_at.desc())
         .all()
     )
+    session_size = int(current_app.config["PRACTICE_SESSION_SIZE"])
+    # "A real run rather than a one-off", expressed as most of a run rather than
+    # as a literal five, which was most of a ten-question run and is more than
+    # one of six.
+    substantial_run = max(2, round(session_size / 2))
     completed_cases = next(
-        (item for item in completed_today if item.mode == "practice" and item.total_items >= 5),
+        (item for item in completed_today if item.mode == "practice" and item.total_items >= substantial_run),
         None,
     )
     active = find_resumable_session(user)
@@ -1384,7 +2438,7 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
     elif brief_state == "ready":
         next_action = {"kind": "open_brief", "session_id": completed_cases.id, "label": "Open Deep Brief"}
     elif cases_state == "ready":
-        next_action = {"kind": "start_cases", "label": "Start 10 cases"}
+        next_action = {"kind": "start_cases", "label": f"Start {session_size} cases"}
     else:
         next_action = {"kind": "done", "label": "Daily docket complete"}
 
@@ -1394,7 +2448,7 @@ def daily_docket_snapshot(user: User, timezone_name: str = "UTC") -> dict:
         "active_session": serialize_session(active, False) if active else None,
         "cases": {
             "state": cases_state,
-            "target": 10,
+            "target": session_size,
             "repairs_due": queue["due"],
             "session_id": (active.id if active else completed_cases.id if completed_cases else None),
             "summary": completed_cases.summary_json if completed_cases else None,
@@ -1504,6 +2558,29 @@ def _update_skill(user_id: str, question: Question, is_correct: bool, elapsed_ms
     stat.recent_mistakes = 0 if is_correct else stat.recent_mistakes + 1
 
 
+def _record_response(user_id: str, item: SessionItem, is_correct: bool, elapsed_ms: int) -> None:
+    """Everything one answered question teaches, other than the attempt row itself.
+
+    Two ledgers, kept together because they must never diverge: the per-type
+    accuracy the dashboard reads, and the item's difficulty rating. Both are
+    written before the `Attempt` exists, and both are reached only after the
+    idempotency and already-graded guards in the two callers, so replaying a
+    submit cannot double-count either.
+
+    `exposure_policy` travels with the item rather than being inferred here.
+    Today it is 'blind' on every row because selection does not read difficulty;
+    the day it does, this is the value that keeps the estimate honest, and
+    inferring it at this point would be inventing it.
+    """
+    _update_skill(user_id, item.question, is_correct, elapsed_ms)
+    calibration.record_response(
+        user_id,
+        item.question,
+        is_correct,
+        exposure=item.exposure_policy or calibration.EXPOSURE_BLIND,
+    )
+
+
 def _attempt_band(attempt: Attempt) -> str | None:
     """Economy band for a graded explanation, or None while the grade is missing.
 
@@ -1602,6 +2679,20 @@ def _schedule_review(attempt: Attempt) -> None:
             return
         existing.last_attempt_id = attempt.id
         _rewind_pending(existing)
+        # The scheduler's own claim about this card, captured after the rewind
+        # and before the advance, which is the only moment it is available: the
+        # rewind restores the pre-attempt state, and the advance destroys it.
+        # Reading it here also makes the second call idempotent, since a
+        # rewound card predicts what it predicted the first time.
+        #
+        # This is the whole measurement for `review_scheduling`. That layer has
+        # no control arm, on purpose and for reasons written on its registry
+        # entry, so what stands in for one is that FSRS commits to a number
+        # before every review and can be scored against it afterwards. See
+        # `scheduling.review_calibration`.
+        attempt.predicted_retrievability = scheduling.predicted_recall(
+            existing, attempt.session_item.served_at
+        )
         _hold_pending(existing, pending)
         _advance_review(existing, attempt)
         return
@@ -1634,6 +2725,68 @@ def _schedule_review(attempt: Attempt) -> None:
     scheduling.apply_review(existing, attempt)
 
 
+def grade_exam_answer(session: StudySession, item: SessionItem, *, ended_at) -> Attempt | None:
+    """Turn one filled-in answer on a closed section's sheet into an attempt.
+
+    The counterpart to `submit_attempt` for a sectioned mega-litigation, and
+    the reason it is separate: on the real test an answer is not an event. It
+    is a mark on a sheet that can be changed until the bell, and only the bell
+    decides what was written. So nothing here is reachable while the section is
+    open, and everything here runs for the whole section at once.
+
+    Deliberately absent, and each one for the same reason — it is not part of
+    the administration and would cost a student clock they are being measured
+    on: no confidence rating, no written reasoning, no game context, no fee, no
+    strategy prompt. What is recorded instead is what the section itself
+    produced: the answer, the time spent on that question across every visit to
+    it, whether it was flagged, and how many times the answer was changed.
+
+    Returns None if the item was already graded, so closing a section twice
+    cannot double-count it.
+    """
+    if item.attempt:
+        return item.attempt
+    label = item.draft_selected_label
+    if not label:
+        return None
+    question = item.question
+    # Clamped the same way `submit_attempt` clamps, so pace statistics pool
+    # across practice and exam attempts without one of them carrying outliers
+    # the other cannot produce.
+    elapsed_ms = max(1000, min(item.active_elapsed_ms or 0, 15 * 60 * 1000))
+    is_correct = label == question.correct_answer
+    _record_response(session.user_id, item, is_correct, elapsed_ms)
+    attempt = Attempt(
+        user_id=session.user_id,
+        session_item_id=item.id,
+        # One key per item, so a retried close is idempotent by construction
+        # rather than by the caller remembering to check.
+        idempotency_key=f"exam:{item.id}",
+        selected_label=label,
+        is_correct=is_correct,
+        reasoning_text=None,
+        confidence=None,
+        # Measured rather than reported: free navigation means the server sees
+        # every replacement.
+        answer_changed=bool(item.answer_revisions),
+        exposure_policy=item.exposure_policy or calibration.EXPOSURE_BLIND,
+        evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "diagnostic")),
+        server_elapsed_ms=elapsed_ms,
+        client_elapsed_ms=None,
+        capm_points=0,
+        pace_scored=False,
+        xp_earned=0,
+        feedback_json=_feedback(question, label, is_correct, None),
+        coaching_status="pending",
+    )
+    db.session.add(attempt)
+    db.session.flush()
+    _schedule_review(attempt)
+    item.completed_at = item.completed_at or ended_at
+    item.draft_updated_at = item.draft_updated_at or ended_at
+    return attempt
+
+
 def submit_attempt(
     user: User,
     session: StudySession,
@@ -1642,6 +2795,11 @@ def submit_attempt(
 ) -> tuple[Attempt, bool]:
     if not user.game_profile:
         raise ValueError("onboarding_required")
+    if exam.is_sectioned(session):
+        # A sectioned form has no per-question submit. Answers go onto the
+        # sheet and the section's close grades them, which is what lets an
+        # answer be changed and what makes the bell final.
+        raise ValueError("exam_uses_answer_sheet")
     requested_item_id = payload.get("item_id")
     existing = Attempt.query.filter_by(idempotency_key=idempotency_key).first()
     if existing:
@@ -1665,13 +2823,6 @@ def submit_attempt(
     if item.attempt:
         return item.attempt, True
     _freeze_current_case(item, user)
-    if (
-        item.game_context_json is None
-        and session.mode == "practice"
-        and session.practice_style == "deep"
-    ):
-        raise ValueError("game_context_required")
-
     selected_label = str(payload.get("selected_label", "")).strip().upper()
     if selected_label not in {choice.label for choice in item.question.choices}:
         raise ValueError("invalid_choice")
@@ -1693,10 +2844,16 @@ def submit_attempt(
     strategy_gate_status = None
     strategy_artifact = None
     enforcement_level = item.strategy_enforcement_level or LEVEL_NONE
-    if item.strategy_key and item.strategy_variant == VARIANT_PROMPT:
+    required_arm = item.strategy_variant == VARIANT_PROMPT_REQUIRED
+    if item.strategy_key and item.strategy_variant in PROMPT_VARIANTS:
         raw_strategy_applied = payload.get("strategy_applied")
         if not isinstance(raw_strategy_applied, bool):
-            raise ValueError("strategy_decision_required")
+            # The mandatory arm asks for no decision, so a client that sends
+            # none is answered rather than refused: the approach was ordered,
+            # and not saying otherwise is taking it.
+            if not required_arm:
+                raise ValueError("strategy_decision_required")
+            raw_strategy_applied = True
         strategy_applied = raw_strategy_applied
         try:
             strategy_prompt_ms = max(0, min(int(payload.get("strategy_prompt_ms") or 0), 60_000))
@@ -1713,6 +2870,19 @@ def submit_attempt(
         # is the one that decides, and they met none.
         if enforcement_level == LEVEL_NONE or build_gate(item) is None:
             strategy_gate_status = STATUS_UNENFORCED
+        elif not strategy_applied and required_arm:
+            # The way out of a mandatory approach. It exists because forcing is
+            # meant to shape behaviour rather than to build dead ends, and it
+            # is refused until the student has actually run into the thing —
+            # two refusals from the checks in `enforcement`, or a long enough
+            # spell inside the panel. Nothing is charged either way; the only
+            # consequence is that the file says the method was not filed.
+            if not stand_down_available(item, strategy_gate_ms):
+                raise GateRejection(
+                    [{"field": None, "message": GATE_COPY["stand_down_locked"]}],
+                    stand_down=False,
+                )
+            strategy_gate_status = STATUS_STOOD_DOWN
         elif not strategy_applied:
             # Declining the approach is a legitimate answer, not a failure. It
             # is also the accessibility escape hatch and the way out for anyone
@@ -1728,18 +2898,28 @@ def submit_attempt(
             try:
                 strategy_artifact = validate_artifact(item, payload.get("strategy_artifact"), selected_label)
                 strategy_gate_status = STATUS_SATISFIED
-            except GateRejection:
-                if enforcement_level != LEVEL_LIGHT:
+            except GateRejection as rejection:
+                if enforcement_level == LEVEL_LIGHT:
+                    # A student who has already cleared this gate eight times
+                    # is taken at their word. The prompt still shows, the steps
+                    # are optional, and the attempt is marked so no analysis
+                    # confuses an attestation with a demonstration.
+                    strategy_gate_status = STATUS_ATTESTED
+                    strategy_artifact = None
+                else:
+                    # Counted on the server because it is what opens the way
+                    # out above, and committed before the refusal leaves
+                    # because the request is about to unwind. Every refusal is
+                    # counted, mandatory or not: it is the same fact either
+                    # way, and only the mandatory arm reads it.
+                    item.strategy_gate_rejections = (item.strategy_gate_rejections or 0) + 1
+                    db.session.commit()
+                    if required_arm:
+                        rejection.stand_down = stand_down_available(item, strategy_gate_ms)
                     raise
-                # A student who has already cleared this gate eight times is
-                # taken at their word. The prompt still shows, the steps are
-                # optional, and the attempt is marked so no analysis confuses
-                # an attestation with a demonstration.
-                strategy_gate_status = STATUS_ATTESTED
-                strategy_artifact = None
     elapsed_ms = max(1000, min(_elapsed_ms(item), 15 * 60 * 1000))
     is_correct = selected_label == item.question.correct_answer
-    _update_skill(user.id, item.question, is_correct, elapsed_ms)
+    _record_response(user.id, item, is_correct, elapsed_ms)
 
     attempt = Attempt(
         user_id=user.id,
@@ -1756,11 +2936,17 @@ def submit_attempt(
         strategy_prompt_ms=strategy_prompt_ms,
         strategy_gate_ms=strategy_gate_ms,
         strategy_gate_status=strategy_gate_status,
+        strategy_stratum=item.strategy_stratum,
+        strategy_forcing_propensity=item.strategy_forcing_propensity,
+        strategy_gate_rejections=item.strategy_gate_rejections or 0,
         strategy_enforcement_level=(enforcement_level if item.strategy_key else None),
         strategy_enforcement_version=(ENFORCEMENT_VERSION if strategy_gate_status else None),
         strategy_artifact_json=strategy_artifact or None,
         strategy_propensity=item.strategy_propensity,
         strategy_candidates_n=item.strategy_candidates_n,
+        exposure_policy=item.exposure_policy or calibration.EXPOSURE_BLIND,
+        strategy_selection_arm=item.strategy_selection_arm,
+        strategy_selection_propensity=item.strategy_selection_propensity,
         evidence_class=EVIDENCE_CLASS.get(session.practice_style, EVIDENCE_CLASS.get(session.mode, "coached_practice")),
         server_elapsed_ms=elapsed_ms,
         client_elapsed_ms=None,
@@ -2028,6 +3214,26 @@ def calculate_session_summary(session: StudySession) -> dict:
         },
         "timing_compromised": any(attempt.session_item.timer_compromised for attempt in attempts),
     }
+    if exam.is_sectioned(session):
+        report = exam.exam_summary(session)
+        summary["exam"] = report
+        # The section block the results screen already renders, but built from
+        # the sections themselves rather than from whichever attempts happen to
+        # exist — otherwise a section the clock ended with eight blanks reports
+        # the accuracy of the seventeen that got answered.
+        summary["sections"] = [
+            {
+                "index": entry["index"],
+                "label": entry["label"],
+                "correct": entry["correct"],
+                "questions": entry["questions"],
+                "answered": entry["answered"],
+                "accuracy": entry["accuracy"],
+                "elapsed_minutes": round(entry["seconds_on_questions"] / 60, 1),
+                "timing_compromised": False,
+            }
+            for entry in report["sections"]
+        ]
     # A promotion is granted once and recorded on the run that earned it. This
     # function is called again whenever a summary is refreshed, so carry it
     # across rather than dropping the one field that is not recomputable.
@@ -2133,6 +3339,12 @@ def performance_snapshot(user: User) -> dict:
             "form_total": latest_diagnostic.total_items,
             "form_accuracy": summary.get("form_accuracy"),
             "sections": summary.get("sections", []),
+            # The administration's own read-out, absent on a form sat before
+            # sections existed. The dashboard branches on its presence rather
+            # than back-filling one, because the numbers in it — blanks at the
+            # bell, the split between the halves of a section — are not
+            # recoverable from a sitting that had no bell and no halves.
+            "exam": summary.get("exam"),
             "promotion": summary.get("promotion"),
             # One clock means pace is a property of the sitting, not of any one
             # question: how much of the budget went out, and how much of the
@@ -2176,20 +3388,37 @@ def performance_snapshot(user: User) -> dict:
     }
     recommendation_skill = next((skill for skill in skills if skill["attempts"] >= 3), None)
     strategy_lab = strategy_performance(user.id)
-    focus_detail = diagnostic_focus_detail(user.id)
+    # What the panel reports is now what the selector reads. It used to report
+    # the last mega-litigation's verdict while claiming "most of each new case
+    # run is drawn from those" — true of the mechanism at the time, and a
+    # description of a much narrower signal than a student would take it for.
+    # The mega-litigation's own list is still available under `sitting`, because
+    # a student who has just sat one wants to know what it said, but it is a
+    # report of that run rather than a statement about what practice will do.
+    rolling_detail = rolling_focus_detail(user.id)
+    sitting_detail = diagnostic_focus_detail(user.id)
     focus = {
-        "types": focus_detail["types"],
-        "session_id": focus_detail["session_id"],
-        "completed_at": _iso_utc(focus_detail["completed_at"]) if focus_detail["completed_at"] else None,
-        "baseline_accuracy": focus_detail["baseline_accuracy"],
+        "types": rolling_detail["types"],
+        "weak": rolling_detail["weak"],
+        "section_baselines": rolling_detail["section_baselines"],
+        "first_encounters": rolling_detail["first_encounters"],
+        "half_life_days": rolling_detail["half_life_days"],
+        "sitting": {
+            "types": sitting_detail["types"],
+            "session_id": sitting_detail["session_id"],
+            "completed_at": _iso_utc(sitting_detail["completed_at"])
+            if sitting_detail["completed_at"]
+            else None,
+            "baseline_accuracy": sitting_detail["baseline_accuracy"],
+        },
         "explanation": (
-            "Your last mega-litigation came in under its own average on "
-            + _join_types(focus_detail["types"])
-            + ". Most of each new case run is drawn from those, and their strategy trials keep testing "
-            "approaches for longer before settling."
-            if focus_detail["types"]
-            else "Finish a mega-litigation and practice will start weighting itself toward whatever it "
-            "shows you are weakest at."
+            "Across your recent first attempts you are coming in under your own average for the "
+            "section on " + _join_types(rolling_detail["types"]) + ". Most of each new case run is "
+            "drawn from those, and their strategy trials keep testing approaches for longer before "
+            "settling. Recent work counts most, so this moves as you improve."
+            if rolling_detail["types"]
+            else "Nothing stands out yet as a question type you are weaker at than the rest of its "
+            "section. Keep practising and this will start weighting itself."
         ),
     }
 
