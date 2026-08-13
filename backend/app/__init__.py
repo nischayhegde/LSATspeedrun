@@ -148,11 +148,16 @@ def create_app(test_config: dict | None = None, *, instance_path: str | None = N
         # signed cookie — but that is a property of the current code rather
         # than a guarantee, and the failure is silent: the app boots, serves,
         # and looks healthy. Refuse at startup instead, where a deployment
-        # notices. The stack under `deploy/` already generates one.
-        raise RuntimeError(
-            "SECRET_KEY must be set to a generated secret in production; "
-            "the development placeholder is published in this repository."
-        )
+        # notices. The stack under `deploy/` already generates one for EC2.
+        # The Lambda worker is not given that file; it never signs a session,
+        # so mint an ephemeral key rather than refuse the process that grades.
+        if os.getenv("AI_JOBS_MODE") == "worker":
+            secret_key = os.urandom(32).hex()
+        else:
+            raise RuntimeError(
+                "SECRET_KEY must be set to a generated secret in production; "
+                "the development placeholder is published in this repository."
+            )
     database_secret = _database_secret()
     database_url = _database_url(database_secret)
     if database_url.startswith("postgres://"):
