@@ -83,21 +83,6 @@ type Props = {
   annotations: number
   /** False for a slide that is warm but not on screen. */
   active: boolean
-  /**
-   * The frame is the whole slide rather than a window inside one.
-   *
-   * Set by `DemoBody`, and it drops the title bar. The bar exists to say "this is
-   * the product, and this is where in it we are", which is worth a strip of a
-   * slide that also has a copy column — and is a 71px black band across the top
-   * of the screen once the app owns the viewport, sitting directly above the app's
-   * *own* header bar. The audience read two title bars stacked and the founders
-   * read the top one as letterboxing.
-   *
-   * So on a full-bleed slide the same line is rendered by `DemoRoute` at the head
-   * of the copy plate instead, where it is deck furniture among deck furniture.
-   * Nothing is lost and no selector disappears — see `DemoRoute`.
-   */
-  bleed?: boolean
 }
 
 /**
@@ -135,7 +120,7 @@ export function DemoRoute({ demo, stills }: { demo: DemoSpec; stills: boolean })
   )
 }
 
-export function DemoFrame({ demo, stills, active, bleed }: Props) {
+export function DemoFrame({ demo, stills, active }: Props) {
   useSyncExternalStore(subscribeRuntime, runtimeVersion)
   const slot = useRef<HTMLDivElement | null>(null)
 
@@ -164,13 +149,13 @@ export function DemoFrame({ demo, stills, active, bleed }: Props) {
   }, [active, demo])
 
   return (
-    <figure className={`demo${bleed ? ' is-bleed' : ''}`}>
+    <figure className="demo">
       <div className="demo-chrome">
         {/* The title bar is the app's own chrome language: an engine-turned navy
             plate, a gold bevelled chip for the mark, monospace for the route.
             Not on a full-bleed slide, where it would be a band over the app's own
             header — the copy plate carries the same line there. */}
-        {bleed ? null : <DemoRoute demo={demo} stills={stills} />}
+        <DemoRoute demo={demo} stills={stills} />
 
         {/* Measured by the stage, which positions the live embed over it. The
             still is painted here rather than there so that it transitions with

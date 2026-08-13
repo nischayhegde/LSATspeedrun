@@ -1,6 +1,9 @@
 import { Fragment, type ReactNode } from 'react'
 
-import { DemoFrame, DemoRoute } from '../demo/demo-frame'
+import demoCounselGame from '../../../frontend/public/art/counsel/pike-composed.webp?url'
+import demoCounselProduct from '../../../frontend/public/art/counsel/vex-composed.webp?url'
+
+import { DemoFrame } from '../demo/demo-frame'
 import { presenterChrome } from '../demo/demo-runtime'
 import { Figure } from '../figures'
 import type { SlideSpec } from './types'
@@ -254,20 +257,28 @@ function PovBody({ slide }: BodyProps) {
  * a caption instead of a column.
  */
 function DemoBody({ slide, stills, annotations, active }: BodyProps) {
+  const step = slide.eyebrow?.match(/(\d+)$/)?.[1] ?? ''
+  const character = slide.section === 'game' ? demoCounselGame : demoCounselProduct
+
   return (
     <div className="body body-demo" data-speaker={slide.speaker}>
       {slide.demo ? (
-        <DemoFrame demo={slide.demo} stills={stills} annotations={annotations} active={active} bleed />
+        <DemoFrame demo={slide.demo} stills={stills} annotations={annotations} active={active} />
       ) : null}
-      <div className="demo-copy caption-plate">
-        {slide.demo ? <DemoBudget seconds={slide.demo.budgetSeconds} /> : null}
-        {slide.demo ? <DemoRoute demo={slide.demo} stills={stills} /> : null}
-        <Eyebrow text={slide.eyebrow} />
-        <Headline text={slide.headline} className="display sm" />
-        <Deck text={slide.deck} />
-        <Points items={slide.points} dense />
-        <Credit text={slide.credit} />
-      </div>
+      <aside className="demo-copy" data-step={step}>
+        <div className="demo-copy-main">
+          {slide.demo ? <DemoBudget seconds={slide.demo.budgetSeconds} /> : null}
+          <Eyebrow text={slide.eyebrow} />
+          <Headline text={slide.headline} className="display sm" />
+          <Deck text={slide.deck} />
+          <Points items={slide.points} dense />
+          <Credit text={slide.credit} />
+        </div>
+        <div className="demo-character" aria-hidden="true">
+          <span>Lawyer Tycoon</span>
+          <img src={character} alt="" />
+        </div>
+      </aside>
     </div>
   )
 }

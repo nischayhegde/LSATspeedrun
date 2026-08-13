@@ -481,3 +481,209 @@
   line-height: 1.05;
   letter-spacing: -.015em;
 }
+
+/* ================================================================
+   COMPOSED PRODUCT PANEL
+   ================================================================
+   The recording is the hero, not the entire slide. The left rail holds a
+   permanent title and an in-product character; the 16:9 panel keeps captured
+   media uncropped and uses roughly three quarters of a widescreen stage. */
+
+.deck-layers .deck-layer[data-kind='demo'] {
+  --scrim: none;
+  overflow: hidden;
+  background:
+    radial-gradient(42% 72% at 9% 86%, rgba(38, 104, 132, .38), transparent 70%),
+    radial-gradient(60% 100% at 100% 48%, rgba(10, 34, 54, .2), transparent 75%),
+    var(--engraved-wave),
+    #081724;
+}
+
+.body.body-demo {
+  grid-template-columns: minmax(calc(14 * var(--u)), 17%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: calc(2.1 * var(--u));
+  row-gap: 0;
+  align-items: center;
+  padding: calc(2.5 * var(--u)) calc(2.7 * var(--u)) calc(3.7 * var(--u));
+  color: var(--beige);
+}
+
+.body.body-demo > .demo {
+  position: relative;
+  inset: auto;
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  width: 100%;
+  height: auto;
+  /* The recordings are 16:10; this adds the deck title bar above them. */
+  aspect-ratio: 31 / 20;
+  align-self: center;
+  justify-self: stretch;
+  animation: plate-in var(--mo-4) var(--ease-out) both;
+}
+
+.body.body-demo .demo-chrome {
+  position: relative;
+  inset: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  border: 1px solid rgba(242, 199, 91, .58);
+  border-radius: calc(.5 * var(--u));
+  overflow: hidden;
+  background: #07111c;
+  box-shadow:
+    inset 0 0 0 1px rgba(118, 153, 168, .25),
+    calc(.65 * var(--u)) calc(.65 * var(--u)) 0 rgba(2, 7, 12, .72),
+    0 calc(1.6 * var(--u)) calc(4.5 * var(--u)) rgba(0, 0, 0, .48);
+}
+
+.body.body-demo .demo-bar {
+  padding: calc(.48 * var(--u)) calc(.85 * var(--u));
+  background-color: #0b1d2d;
+  background-image: var(--engraved-wave);
+}
+
+.body.body-demo .demo-chip {
+  width: calc(2 * var(--u));
+  height: calc(2 * var(--u));
+}
+
+.body.body-demo .demo-screen {
+  position: relative;
+  inset: auto;
+  min-height: 0;
+  background: #070d15;
+}
+
+.body.body-demo .demo-still {
+  object-fit: contain;
+  object-position: center;
+}
+
+.body.body-demo .demo-copy {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: stretch;
+  justify-self: stretch;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: calc(.8 * var(--u)) 0 0;
+  border: 0;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.is-live .body.body-demo .demo-copy { animation: none; }
+
+.body.body-demo .demo-copy::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(1.2 * var(--u));
+  width: calc(15 * var(--u));
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border: 1px solid rgba(242, 199, 91, .2);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(27, 98, 124, .3), transparent 68%);
+  box-shadow: 0 0 calc(4 * var(--u)) rgba(32, 119, 149, .18);
+}
+
+.body.body-demo .demo-copy::after {
+  content: attr(data-step);
+  position: absolute;
+  right: calc(-.35 * var(--u));
+  bottom: calc(7.6 * var(--u));
+  z-index: 0;
+  font-family: var(--font-display);
+  font-size: calc(11 * var(--u));
+  font-weight: 850;
+  line-height: .72;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(242, 199, 91, .16);
+}
+
+.demo-copy-main {
+  position: relative;
+  z-index: 2;
+  padding-left: calc(.2 * var(--u));
+}
+
+.body.body-demo .demo-copy .demo-budget {
+  margin-bottom: calc(1 * var(--u));
+}
+
+.body.body-demo .demo-copy .eyebrow {
+  margin: 0 0 calc(.85 * var(--u));
+  font-size: calc(.72 * var(--u));
+  line-height: 1.25;
+  letter-spacing: .17em;
+  color: var(--pixel-gold);
+}
+
+.body.body-demo .demo-copy .eyebrow::after {
+  flex-basis: calc(2.8 * var(--u));
+}
+
+.body.body-demo .demo-copy .display {
+  font-size: calc(1.95 * var(--u));
+  line-height: 1.02;
+  letter-spacing: -.02em;
+  color: var(--beige);
+  text-wrap: balance;
+}
+
+.demo-character {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: calc(1 * var(--u));
+}
+
+.demo-character span {
+  position: absolute;
+  left: calc(.25 * var(--u));
+  bottom: calc(.55 * var(--u));
+  z-index: 2;
+  padding-top: calc(.55 * var(--u));
+  border-top: 1px solid rgba(242, 199, 91, .55);
+  font-family: var(--font-pixel);
+  font-size: calc(.62 * var(--u));
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--gold-soft);
+}
+
+.demo-character img {
+  position: absolute;
+  left: 50%;
+  bottom: calc(-1.4 * var(--u));
+  width: 122%;
+  height: 100%;
+  transform: translateX(-50%);
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 calc(.8 * var(--u)) calc(1.3 * var(--u)) rgba(0, 0, 0, .62));
+}
+
+@media (max-aspect-ratio: 5 / 4) {
+  .body.body-demo {
+    grid-template-columns: minmax(calc(12 * var(--u)), 24%) minmax(0, 1fr);
+    padding-inline: calc(2.2 * var(--u));
+  }
+
+  .body.body-demo .demo-copy .display { font-size: calc(1.7 * var(--u)); }
+}

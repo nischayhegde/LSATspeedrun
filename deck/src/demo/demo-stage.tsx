@@ -286,16 +286,6 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
    */
   const tracked = useRef<DemoSpec | null>(null)
   /**
-   * Whether the slide the frame is serving is one of the full-bleed demo slides,
-   * held through the fade-out for the same reason `tracked` is.
-   *
-   * It decides which side of the slide layers the embed sits on — see
-   * `data-under` and the long note in `demo-stage.css`. A `split` slide that
-   * carried a demo would be framed inside its own chrome, and that chrome is
-   * opaque, so it keeps the embed above the layer exactly as before.
-   */
-  const trackedBleed = useRef(false)
-  /**
    * Where we believe the frame currently is, which is not the same as what React
    * put in `src`: the presenter navigates inside it, and `continuesFrom` is the
    * slide saying so.
@@ -351,7 +341,6 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
 
     setLeaving(false)
     tracked.current = demo
-    trackedBleed.current = slide?.kind === 'demo'
 
     // A still is showing, so there is no live frame to manage — but the stage
     // stays mounted, because it owns the callouts and they have to be over
@@ -652,11 +641,6 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
       ref={host}
       data-leaving={leaving ? '' : undefined}
       data-loading={loading && run ? '' : undefined}
-      // A full-bleed demo slide puts the app *under* its slide layer rather than
-      // over it, because at full bleed the app is the slide's field and the only
-      // thing left in the layer is type that has to be readable on top of it.
-      // See the long note in `demo-stage.css`.
-      data-under={(demo ? slide?.kind === 'demo' : trackedBleed.current) ? '' : undefined}
       // No live frame: the slide is showing its still, which is painted by the
       // chrome in the layer below. The stage has to become a sheet of glass
       // rather than a surface, or it would cover it.

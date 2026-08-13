@@ -1740,8 +1740,7 @@
 
 .deck[data-demo-slide][data-demo-chrome='off'] .deck-progress,
 .deck[data-demo-slide][data-demo-chrome='off'] .deck-folio,
-.deck[data-demo-slide][data-demo-chrome='off'] .zone,
-.deck[data-demo-slide][data-demo-chrome='off'] .body-demo .demo-copy {
+.deck[data-demo-slide][data-demo-chrome='off'] .zone {
   opacity: 0;
   pointer-events: none;
 }
@@ -1752,15 +1751,13 @@
   transform: translate3d(0, calc(.55 * var(--u)), 0);
 }
 
-.deck[data-demo-slide][data-demo-chrome='off'] .body-demo .demo-copy,
 .deck[data-demo-slide][data-demo-chrome='off'] .demo-chrome-hit-top {
   transform: translate3d(0, calc(-.55 * var(--u)), 0);
 }
 
 .deck[data-demo-slide] .deck-progress,
 .deck[data-demo-slide] .deck-folio,
-.deck[data-demo-slide] .zone,
-.deck[data-demo-slide] .body-demo .demo-copy {
+.deck[data-demo-slide] .zone {
   transition:
     opacity var(--mo-3) var(--ease-out),
     transform var(--mo-3) var(--ease-out);
