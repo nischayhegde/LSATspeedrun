@@ -64,6 +64,7 @@ const DEFAULTS: Required<IllustratedStyleOptions> = {
   grain: .05,
   saturation: 1.12,
   exposure: 1,
+  samples: 4,
 }
 
 const VERTEX = /* glsl */`
