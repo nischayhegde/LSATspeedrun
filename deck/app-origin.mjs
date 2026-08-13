@@ -16,7 +16,18 @@
 export const APP_PORT = 5174
 const LOCAL_ORIGIN = `http://localhost:${APP_PORT}`
 
+function shippedOrigin() {
+  try {
+    const value = import.meta.env && import.meta.env.VITE_APP_ORIGIN
+    return typeof value === 'string' && value ? value.replace(/\/$/, '') : ''
+  } catch {
+    return ''
+  }
+}
+
 function resolveAppOrigin() {
+  const shipped = shippedOrigin()
+  if (shipped) return shipped
   if (typeof window !== 'undefined') {
     const host = window.location.hostname
     if (host && host !== 'localhost' && host !== '127.0.0.1') {
